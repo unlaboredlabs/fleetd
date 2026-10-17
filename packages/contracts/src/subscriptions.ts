@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { HubEventType } from "./events.ts";
 import { EventSeq, MachineId, Timestamp } from "./ids.ts";
 
-const isHttpUrl = (url: string): boolean => {
+export const isHttpUrl = (url: string): boolean => {
   try {
     const { protocol } = new URL(url);
     return protocol === "http:" || protocol === "https:";
