@@ -4,6 +4,7 @@ import {
   type AgentKeyInfo,
   type Ask,
   type Batch,
+  type Claim,
   type Decision,
   type DecisionScope,
   type HubEvent,
@@ -23,6 +24,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import * as Auth from "../auth/Auth.ts";
+import * as ClaimRecords from "../checks/ClaimRecords.ts";
+import * as Estimates from "../estimates/Estimates.ts";
+import * as Incidents from "../incidents/Incidents.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Executors from "../executor/Executors.ts";
@@ -79,6 +83,8 @@ export const IMPLEMENTED_TOOLS = [
   "tasks_list",
   "task_get",
   "cap_set",
+  "claims_list",
+  "incidents_list",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
@@ -95,6 +101,7 @@ export const LIMITS = {
   outcomeTasks: 20,
   /** Threads read to fill `outcomeThreads` once task threads are left out. */
   outcomeThreadScan: 200,
+  workstreamClaims: 20,
 } as const;
 const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited"];
 /** How far back fleetd_status looks for attention events. */
@@ -191,6 +198,9 @@ const make = Effect.gen(function* () {
   const tasks = yield* Tasks.Tasks;
   const taskRecords = yield* TaskRecords.TaskRecords;
   const slots = yield* Slots.Slots;
+  const claims = yield* ClaimRecords.ClaimRecords;
+  const estimates = yield* Estimates.Estimates;
+  const incidents = yield* Incidents.Incidents;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -544,15 +554,71 @@ const make = Effect.gen(function* () {
         yield* decisions.list({ scope: { kind: "workstream", workstreamId: input.workstreamId }, limit: LIMITS.workstreamAsks + 1 }),
         LIMITS.workstreamAsks,
       );
+      const eta = yield* estimates.eta(workstream);
+      const recentClaims = yield* claims.list({ workstreamId: input.workstreamId, limit: LIMITS.workstreamClaims });
       return {
         workstream,
         asks: open.items,
         decisions: scoped.items,
+        ...(eta === undefined ? {} : { eta }),
+        ...(recentClaims.length === 0 ? {} : { claims: recentClaims }),
         ...withTruncated(open.truncated ?? scoped.truncated),
         next:
           workstream.state === "draft"
             ? "The lead has not registered its brief yet; wait for workstream.running with events_wait."
-            : "Open asks are answered with asks_list and inbox_reply.",
+            : workstream.state === "done"
+              ? `Done: its latest claim passed every done-when check (claims_list with workstreamId ${workstream.workstreamId}).`
+              : "Open asks are answered with asks_list and inbox_reply.",
+      };
+    }),
+
+    claims_list: Effect.fnUntraced(function* (caller, input) {
+      if (input.projectRef !== undefined) yield* require(caller, "read", input.projectRef.machineId);
+      if (input.workstreamId !== undefined) {
+        const workstream = yield* workstreams.get(input.workstreamId);
+        if (workstream === undefined || !auth.allows(caller, "read", workstream.projectRef.machineId)) return yield* unknownWorkstream(input.workstreamId);
+      }
+      // Scoped to one project or workstream the store's limit is exact; otherwise read wide and keep what the key may see.
+      const scoped = input.projectRef !== undefined || input.workstreamId !== undefined;
+      const listed = yield* claims.list({
+        ...(input.workstreamId === undefined ? {} : { workstreamId: input.workstreamId }),
+        ...(input.projectRef === undefined ? {} : { ref: input.projectRef }),
+        ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
+        limit: scoped ? input.limit + 1 : 1000,
+      });
+      const all: Array<Claim> = [];
+      const machineOf = new Map<string, MachineId | undefined>();
+      for (const claim of listed) {
+        if (scoped) {
+          all.push(claim);
+          continue;
+        }
+        if (!machineOf.has(claim.workstreamId)) machineOf.set(claim.workstreamId, (yield* workstreams.get(claim.workstreamId))?.projectRef.machineId);
+        const machineId = machineOf.get(claim.workstreamId);
+        if (machineId !== undefined && auth.allows(caller, "read", machineId)) all.push(claim);
+      }
+      const shown = cap(all, input.limit);
+      return {
+        claims: shown.items,
+        ...withTruncated(shown.truncated),
+        next: shown.truncated ? "Narrow the list with workstreamId, projectRef or outcome." : "Each result's evidence is what fleetd saw; workstream_get shows the workstream's state.",
+      };
+    }),
+
+    incidents_list: Effect.fnUntraced(function* (caller, input) {
+      if (input.projectRef !== undefined) yield* require(caller, "read", input.projectRef.machineId);
+      const scoped = input.projectRef !== undefined;
+      const all = (yield* incidents.list({
+        ...(input.projectRef === undefined ? {} : { projectRef: input.projectRef }),
+        ...(input.workstreamId === undefined ? {} : { workstreamId: input.workstreamId }),
+        ...(input.class === undefined ? {} : { class: input.class }),
+        limit: scoped ? input.limit + 1 : 1000,
+      })).filter((i) => auth.allows(caller, "read", i.projectRef.machineId));
+      const shown = cap(all, input.limit);
+      return {
+        incidents: shown.items,
+        ...withTruncated(shown.truncated),
+        ...(shown.truncated ? { next: "Narrow the list with projectRef, workstreamId or class." } : {}),
       };
     }),
 

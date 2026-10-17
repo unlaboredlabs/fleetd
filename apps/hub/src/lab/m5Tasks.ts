@@ -23,7 +23,7 @@ defaults:
 `;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 
-const git = (cwd: string, ...args: Array<string>) =>
+export const git = (cwd: string, ...args: Array<string>) =>
   execFileSync("git", args, {
     cwd,
     encoding: "utf8",
@@ -31,7 +31,7 @@ const git = (cwd: string, ...args: Array<string>) =>
   });
 
 /** The policy file on main, and no task worktrees or branches left from an earlier run (task numbers restart at T1). */
-const prepareRepo = (root: string) => {
+export const prepareRepo = (root: string) => {
   const file = path.join(root, ".fleetd/policy.yaml");
   if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== POLICY) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -51,7 +51,7 @@ const prepareRepo = (root: string) => {
 };
 
 /** T3's provider event log for `threadId` on a machine: what went to and came from Claude, as JSON lines. */
-const providerLog = (home: string, threadId: string): string => {
+export const providerLog = (home: string, threadId: string): string => {
   const dir = path.join(home, "userdata/logs/provider");
   return fs
     .readdirSync(dir)
@@ -62,7 +62,7 @@ const providerLog = (home: string, threadId: string): string => {
 };
 
 /** The tools Claude reported at session start for `threadId`. */
-const initTools = (home: string, threadId: string): ReadonlyArray<string> | undefined => {
+export const initTools = (home: string, threadId: string): ReadonlyArray<string> | undefined => {
   const tools = /"subtype":"init".*?"tools":(\[[^\]]*\])/u.exec(providerLog(home, threadId))?.[1];
   return tools === undefined ? undefined : (JSON.parse(tools) as Array<string>);
 };
@@ -279,15 +279,19 @@ export async function m5Tasks(lab: Lab) {
     check(final.taskCounts?.done === 4 && !(final.threads as Array<Body>).some((t) => taskThreads.has(t.threadId)), `project_get: ${JSON.stringify({ taskCounts: final.taskCounts, threads: final.threads.map((t: Body) => t.threadId) })}`);
     ok(`project_get: taskCounts ${JSON.stringify(final.taskCounts)}; no task thread among its ${final.threads.length} threads`);
 
-    // 5. The instance hides every T3 tool and Claude's Task tool from lead and task threads alike.
+    // 5. The instance hides every T3 tool and Claude's subagent tools (Task, Workflow) from lead and task threads alike.
     for (const threadId of [leadThread, t1.threadRef.threadId as string]) {
       const tools = initTools(home, threadId);
       check(tools !== undefined && tools.includes("Bash"), `init tool list for ${threadId}: ${JSON.stringify(tools)}`);
-      check(!tools!.includes("Task") && !tools!.some((t) => t.startsWith("mcp__t3-code__")), `no Task and no T3 tools for ${threadId}: ${JSON.stringify(tools)}`);
+      check(
+        !tools!.includes("Task") && !tools!.includes("Workflow") && !tools!.some((t) => t.startsWith("mcp__t3-code__")),
+        `no Task, no Workflow and no T3 tools for ${threadId}: ${JSON.stringify(tools)}`,
+      );
     }
     const control = latestInitTools(lab.machines.find((m) => m.id === "lab-b")!.t3Home);
+    const has = (tool: string) => (control?.includes(tool) === true ? "has" : "lacks");
     ok(
-      `5. lab-a threads start without Task or any mcp__t3-code__ tool${control === undefined ? "" : `; control lab-b ${control.includes("Task") ? "has" : "lacks"} Task`}`,
+      `5. lab-a threads start without Task, Workflow or any mcp__t3-code__ tool${control === undefined ? "" : `; control lab-b ${has("Task")} Task and ${has("Workflow")} Workflow`}`,
     );
 
     const total = await countLeadTurns();

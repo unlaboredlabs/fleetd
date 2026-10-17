@@ -49,7 +49,7 @@ describe("renderTaskPrompt", () => {
         "",
         "## Workstream",
         "Goal: a docs page",
-        "Done when: 1) PR merged in wynn-dev/lab; 2) human confirms: does it read well?",
+        "Done when: done:0 PR merged in wynn-dev/lab; done:1 human confirms: does it read well?",
         "This task serves: done-when 1",
         "",
         "## Rules",

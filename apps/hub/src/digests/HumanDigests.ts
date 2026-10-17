@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { workstreamFacts } from "../leads/LeadWakes.ts";
 import * as Workstreams from "../leads/Workstreams.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
@@ -72,6 +73,7 @@ const make = Effect.gen(function* () {
   const workstreams = yield* Workstreams.Workstreams;
   const store = yield* HubStore.HubStore;
   const events = yield* EventLog.EventLog;
+  const factsContext = yield* Effect.context<Effect.Services<ReturnType<typeof workstreamFacts>>>();
 
   const zone = Effect.map(decisions.list({ scope: { kind: "global" }, limit: 500 }), (global) => {
     const tz = global.find((d) => d.key === POLICY_TZ_KEY)?.value.trim();
@@ -89,11 +91,13 @@ const make = Effect.gen(function* () {
         const ref = d.scope.kind === "project" ? d.scope.projectRef : d.scope.kind === "workstream" ? projectOf.get(d.scope.workstreamId) : undefined;
         return ref !== undefined && shown(ref);
       });
+      const listed = all.filter((w) => !["done", "failed", "stopped"].includes(w.state) || recent(w));
       const text = renderHumanDigest({
         nowMs,
         tz,
         asks: (yield* asks.list({ state: "open", limit: LIST_LIMIT })).filter((a) => shown(a.projectRef)),
-        workstreams: all.filter((w) => !["done", "failed", "stopped"].includes(w.state) || recent(w)),
+        workstreams: listed,
+        facts: yield* workstreamFacts(listed).pipe(Effect.provideContext(factsContext)),
         decidedWithoutYou,
         projectNames: new Map((yield* store.projects.list()).map((p) => [projectKey(p), p.title])),
       });

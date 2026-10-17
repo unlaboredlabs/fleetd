@@ -52,6 +52,7 @@ describe("renderLeadDigest", () => {
         openAsks: [ask(4, "db.engine", { batchId: "B1" as never, number: 2, recommendation: "sqlite", proceededOnRec: true })],
         answers: [{ ask: ask(1, "api.health.path", { state: "answered" }), outcome: "answered", value: "/healthz", decision: d1 }],
         decisions: [d1],
+        facts: new Map([["W2" as WorkstreamId, { passed: new Set([1]), eta: "eta 3h20m (raw 40m × 5, prior, 2 of 5 samples)" }]]),
       }),
     );
     expect(text).toBe(
@@ -64,8 +65,9 @@ describe("renderLeadDigest", () => {
         "",
         "## Open workstreams",
         "- W2 running: add a /health endpoint",
-        "  status: endpoint written, PR open",
-        "  done when: 1) GET http://lab:4710/healthz → 200; 2) PR merged in wynn-dev/lab",
+        "  lead says: endpoint written, PR open",
+        "  done when: done:0 GET http://lab:4710/healthz → 200; done:1 ✓ PR merged in wynn-dev/lab",
+        "  eta 3h20m (raw 40m × 5, prior, 2 of 5 samples)",
         "- W3 draft: workstream 3",
         "  no brief yet: register it with `fleetd brief create --workstream W3 --json '<Brief>'`",
         "",

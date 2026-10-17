@@ -1,4 +1,5 @@
-import type { Ask, Decision, Workstream } from "@fleetd/contracts";
+import type { Ask, Decision, Workstream, WorkstreamId } from "@fleetd/contracts";
+import type { WorkstreamFacts } from "../leads/digest.ts";
 import { batchN, projectKey } from "./LedgerRepo.ts";
 
 /** What the 09:00/18:00 digest is rendered from; the caller gathers it. */
@@ -14,6 +15,8 @@ export interface DigestInput {
   readonly decidedWithoutYou: ReadonlyArray<Decision>;
   /** Display names by `machineId/projectId`; the project id is used when missing. */
   readonly projectNames: ReadonlyMap<string, string>;
+  /** Checks passed and ETAs, as fleetd measured them; absent ones show none. */
+  readonly facts?: ReadonlyMap<WorkstreamId, WorkstreamFacts>;
 }
 
 const DECIDED_MAX = 5;
@@ -40,8 +43,8 @@ const when = (nowMs: number, tz: string) => {
 };
 
 /**
- * The human digest: plain text, phone width (DESIGN §4). Facts only from state; a workstream's own status is
- * marked "lead says", since no check backs it until M6.
+ * The human digest: plain text, phone width (DESIGN §4). Facts only from state: ✓ marks checks fleetd ran and saw
+ * pass, and a workstream's own status line is marked "lead says", since nothing backs it.
  */
 export const renderHumanDigest = (input: DigestInput): string => {
   const project = (ref: Ask["projectRef"]) => input.projectNames.get(projectKey(ref)) ?? ref.projectId;
@@ -82,7 +85,17 @@ export const renderHumanDigest = (input: DigestInput): string => {
 
   const status = (w: Workstream) => `${w.workstreamId} ${project(w.projectRef)}: ${clip(w.title || w.source.text, 60)}`;
   const says = (w: Workstream) => (w.headline ? ` — lead says: ${clip(w.headline, 80)}` : "");
-  for (const w of done) lines.push(`Done: ${status(w)} (lead says; not checked yet)`);
+  const checked = (w: Workstream) => {
+    const total = w.brief?.doneWhen.length ?? 0;
+    const passed = input.facts?.get(w.workstreamId)?.passed.size ?? 0;
+    return total === 0 || passed === 0 ? "" : ` · ✓ ${passed} of ${total} checks`;
+  };
+  const eta = (w: Workstream) => {
+    const text = input.facts?.get(w.workstreamId)?.eta;
+    return text === undefined ? "" : ` · ${text}`;
+  };
+  // Only a passing claim makes a workstream done, so done ones are checked by definition.
+  for (const w of done) lines.push(`Done: ${status(w)}${checked(w)}`);
   for (const w of failed) lines.push(`Failed: ${status(w)}${says(w)}`);
 
   if (input.decidedWithoutYou.length > 0) {
@@ -92,6 +105,6 @@ export const renderHumanDigest = (input: DigestInput): string => {
       `Decided without you (${input.decidedWithoutYou.length}): ${list} · reply "forget ${shown[0]!.decisionId}" to undo one`,
     );
   }
-  for (const w of running) lines.push(`Running: ${status(w)}${says(w)}`);
+  for (const w of running) lines.push(`Running: ${status(w)}${says(w)}${checked(w)}${eta(w)}`);
   return lines.join("\n");
 };

@@ -43,7 +43,8 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   intake_submit:
     "Give a project one intent in plain words (e.g. \"add a /health endpoint\"). Creates a draft workstream and wakes the lead, which registers a brief and moves it to running. Idempotent per clientRequestId.",
   workstream_list: "Workstreams newest first, filtered by machineId, projectId and state (limit defaults to 50).",
-  workstream_get: "One workstream with its frozen brief and headline, its open asks and the decisions scoped to it.",
+  workstream_get:
+    "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, its ETA (raw estimate × the tier's measured ratio) and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
   asks_list:
     "The questions waiting for the human, grouped in numbered batches (state defaults to open; batchId picks one batch). Item numbers are fixed per batch: answer them with inbox_reply.",
   inbox_reply:
@@ -58,6 +59,10 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   task_get: "One task: its model and effort, areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
   cap_set:
     "Admin: set the global cap on running turns (1-1000) and/or one project's share of it (0-1000). Applies at once; queued tasks start as soon as they fit. Returns the slot board.",
+  claims_list:
+    "Claims (a lead's `fleetd claim done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
+  incidents_list:
+    "Incidents the hub detected (false_claim, estimate_miss, polish_loop, out_of_area, …), newest first, with evidence lines. Filter by projectRef, workstreamId or class.",
 };
 
 /** MCP requires an object root, so the empty input becomes an empty object schema and refs go to $defs. */

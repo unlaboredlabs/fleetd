@@ -1,6 +1,6 @@
 // Wakes to a lead: triggers for one lead are debounced and coalesced into a single message, which starts with
 // the code-rendered digest and then says why the lead was woken.
-import type { CheckResult, ClaimId, Decision, DecisionScope, ProjectRef, TaskId, TaskResult, ThreadRef, WorkstreamId } from "@fleetd/contracts";
+import type { CheckResult, ClaimId, Decision, DecisionScope, ProjectRef, TaskId, TaskResult, ThreadRef, Workstream, WorkstreamId } from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -8,7 +8,10 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
+import * as ClaimRecords from "../checks/ClaimRecords.ts";
 import { claimFailedLines, claimPassedLine } from "../checks/render.ts";
+import { etaText } from "../estimates/calibration.ts";
+import * as Estimates from "../estimates/Estimates.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
@@ -17,7 +20,7 @@ import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { taskDigestLines, taskResultLines, taskWaitingLines } from "../tasks/render.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
-import { renderLeadDigest } from "./digest.ts";
+import { renderLeadDigest, type WorkstreamFacts } from "./digest.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 
 export const WAKE_DEBOUNCE = Duration.seconds(10);
@@ -89,6 +92,24 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
 export const renderWake = (digest: string, triggers: ReadonlyArray<Trigger>) =>
   `${digest}\n\n## Why you are woken\n${triggerLines(triggers).join("\n")}`;
 
+/** Per workstream with a brief: the checks its latest finished claim passed, and its ETA. Both digests show them. */
+export const workstreamFacts = (workstreams: ReadonlyArray<Workstream>) =>
+  Effect.gen(function* () {
+    const claims = yield* ClaimRecords.ClaimRecords;
+    const estimates = yield* Estimates.Estimates;
+    const facts = new Map<WorkstreamId, WorkstreamFacts>();
+    for (const w of workstreams) {
+      if (w.brief === undefined) continue;
+      const [latest] = yield* claims.list({ workstreamId: w.workstreamId, limit: 1 });
+      const eta = yield* estimates.eta(w);
+      facts.set(w.workstreamId, {
+        passed: new Set(latest?.results.filter((r) => r.result === "pass").map((r) => r.checkIndex) ?? []),
+        ...(eta === undefined ? {} : { eta: etaText(eta) }),
+      });
+    }
+    return facts;
+  });
+
 interface Pending {
   readonly ref: ProjectRef;
   readonly triggers: Array<Trigger>;
@@ -114,6 +135,7 @@ export const make = (options: LeadWakesOptions = {}) =>
     const events = yield* EventLog.EventLog;
     const queue = yield* WriteQueue.WriteQueue;
     const tasks = yield* TaskRecords.TaskRecords;
+    const factsContext = yield* Effect.context<ClaimRecords.ClaimRecords | Estimates.Estimates>();
     const scope = yield* Effect.scope;
     const debounceMs = Duration.toMillis(Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE));
     const maxWaitMs = Duration.toMillis(Duration.fromInputUnsafe(options.maxWait ?? WAKE_MAX_WAIT));
@@ -138,6 +160,7 @@ export const make = (options: LeadWakesOptions = {}) =>
           // Global, project and every workstream-scoped decision in the project; the digest ranks them.
           decisions: yield* decisions.list({ chain: { projectRef: ref }, limit: 500 }),
           tasks: taskDigestLines(yield* tasks.forDigest(ref, since, 50), since),
+          facts: yield* workstreamFacts(workstreams).pipe(Effect.provideContext(factsContext)),
         });
       });
 

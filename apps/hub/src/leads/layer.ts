@@ -1,4 +1,7 @@
 import * as Layer from "effect/Layer";
+import * as ClaimRecords from "../checks/ClaimRecords.ts";
+import * as Estimates from "../estimates/Estimates.ts";
+import * as Incidents from "../incidents/Incidents.ts";
 import * as Asks from "../ledger/Asks.ts";
 import * as Decisions from "../ledger/Decisions.ts";
 import * as Inbox from "../ledger/Inbox.ts";
@@ -9,11 +12,15 @@ import * as Leads from "./Leads.ts";
 import * as LeadWakes from "./LeadWakes.ts";
 import * as Workstreams from "./Workstreams.ts";
 
-/** Leads, Workstreams, LeadWakes, TaskRecords and the ledger's AnswerSink. Needs HubDb, HubStore, EventLog, Executors, WriteQueue, Asks and Decisions. */
+/**
+ * Leads, Workstreams, LeadWakes, TaskRecords and the ledger's AnswerSink, with the claim records, estimates and
+ * incidents the lead digest shows. Needs HubDb, HubStore, EventLog, Executors, WriteQueue, Asks and Decisions.
+ */
 export const layer = (options: Leads.LeadsOptions = {}) =>
   Layer.mergeAll(Leads.layer(options), Workstreams.layer, LeadWakes.layerAnswerSink).pipe(
     Layer.provideMerge(LeadWakes.layer()),
-    Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, TaskRecords.layer)),
+    Layer.provideMerge(Layer.merge(Estimates.layer, ClaimRecords.layer)),
+    Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, TaskRecords.layer, Incidents.layer)),
   );
 
 /**

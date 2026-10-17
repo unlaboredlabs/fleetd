@@ -30,7 +30,7 @@ jobs:
       - run: pnpm build
       - name: Built CLI runs
         # The hub reads the lead prompt from beside the bundle.
-        run: node apps/cli/dist/bin.js --version && test -s apps/cli/dist/prompt-v1.md
+        run: node apps/cli/dist/bin.js --version && test -s apps/cli/dist/prompt-v2.md
 
   rust:
     strategy:

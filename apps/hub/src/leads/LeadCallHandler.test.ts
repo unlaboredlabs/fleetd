@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 import { Decisions } from "../ledger/Decisions.ts";
 import { DECIDE_YOURSELF } from "../ledger/Asks.ts";
 import { leadBy } from "../link/LeadCalls.ts";
+import { Claims } from "../checks/Claims.ts";
 import { Tasks } from "../tasks/Tasks.ts";
+import { ValueBar } from "../valuebar/ValueBar.ts";
 import * as LeadCallHandler from "./LeadCallHandler.ts";
 import * as Leads from "./Leads.ts";
 import * as Workstreams from "./Workstreams.ts";
@@ -32,7 +34,7 @@ const healthAsk = {
   proceededOnRec: true,
 } as LeadCall;
 
-// Task calls are covered in tasks/LeadTaskCalls.test.ts, over the real task service.
+// Task, claim and verdict calls are covered in tasks/LeadTaskCalls.test.ts, over the real services.
 const noTasks = Tasks.of({
   spawn: () => Effect.die("no tasks in this kit"),
   message: () => Effect.die("no tasks in this kit"),
@@ -41,8 +43,15 @@ const noTasks = Tasks.of({
   list: () => Effect.succeed([]),
 });
 
+const noClaims = Claims.of({ claimDone: () => Effect.die("no claims in this kit"), get: () => Effect.succeed(undefined), list: () => Effect.succeed([]) });
+const noValueBar = ValueBar.of({ checkSpawn: () => Effect.void, recordVerdict: () => Effect.die("no value bar in this kit") });
+
 const setup = Effect.gen(function* () {
-  const handler = yield* LeadCallHandler.make.pipe(Effect.provideService(Tasks, noTasks));
+  const handler = yield* LeadCallHandler.make.pipe(
+    Effect.provideService(Tasks, noTasks),
+    Effect.provideService(Claims, noClaims),
+    Effect.provideService(ValueBar, noValueBar),
+  );
   const call = (c: LeadCall) => handler.handle(caller, c);
   return { call, refused: (c: LeadCall) => Effect.flip(call(c)) };
 });

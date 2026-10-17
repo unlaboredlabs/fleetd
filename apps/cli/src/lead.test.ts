@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Decision, LeadCallFrame, LeadResultFrame, Task } from "@fleetd/contracts";
+import type { Claim, Decision, LeadCallFrame, LeadResultFrame, Task } from "@fleetd/contracts";
 import { serveLeadSocket } from "@fleetd/node/LeadCalls.ts";
 import * as Effect from "effect/Effect";
 import * as Logger from "effect/Logger";
@@ -274,6 +274,88 @@ describe("formatResult", () => {
     );
     expect(formatResult({ op: "status_set", workstreamId: "W1" as never, next: "wait for the reviewers" })).toBe(
       "Status set for W1.\nNext: wait for the reviewers\n",
+    );
+  });
+});
+
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+const failedClaim: Claim = {
+  claimId: "C1" as Claim["claimId"],
+  workstreamId: "W1" as Claim["workstreamId"],
+  by: "lead:lab-a/p",
+  at: "2026-10-17T10:00:00.000Z",
+  outcome: "fail",
+  results: [
+    {
+      checkIndex: 0,
+      spec: { type: "http", url: "http://127.0.0.1:8080/healthz", status: 200 },
+      result: "pass",
+      evidence: "GET → 200",
+      ranBy: "hub",
+      at: "2026-10-17T10:00:00.000Z",
+    },
+    {
+      checkIndex: 1,
+      spec: { type: "cmd", machineId: "lab-a" as never, argv: ["test", "-f", "docs/x.md"], expectExit: 0 },
+      result: "fail",
+      evidence: "`test -f docs/x.md` in /w exited 1 (expected 0)",
+      exitCode: 1,
+      ranBy: "node",
+      at: "2026-10-17T10:00:00.000Z",
+    },
+  ],
+};
+
+describe("claim and review commands", () => {
+  it("parses claim done and review verdict, taking a SHA in any case", () => {
+    expect(parseLeadArgs(["claim", "done", "--workstream", "W1"])).toEqual({ op: "claim_done", workstreamId: "W1" });
+    expect(
+      parseLeadArgs(["review", "verdict", "--task", "T3", "--sha", SHA.toUpperCase(), "--blocking", "0", "--non-blocking", "2", "--summary", "reads well"]),
+    ).toEqual({ op: "review_verdict", taskId: "T3", prHeadSha: SHA, blocking: 0, nonBlocking: 2, summary: "reads well" });
+  });
+
+  it("refuses a short SHA, a count that is not a number and a missing flag with the fix", () => {
+    const verdict = ["review", "verdict", "--task", "T3", "--blocking", "0", "--non-blocking", "0", "--summary", "ok"];
+    expect(parseLeadArgs([...verdict, "--sha", "0123abc"])).toMatch(/^--sha must be the full commit SHA .*git rev-parse HEAD/u);
+    expect(parseLeadArgs(["review", "verdict", "--task", "T3", "--sha", SHA, "--blocking", "none", "--non-blocking", "0", "--summary", "ok"])).toBe(
+      "--blocking is a count of findings, got 'none'",
+    );
+    expect(parseLeadArgs(verdict)).toBe("--sha is required");
+    expect(parseLeadArgs(["claim", "done"])).toBe("--workstream is required");
+    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--areas", "docs", "--prompt", "y"])).toBe(
+      "a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>",
+    );
+    expect(parseLeadArgs(["claim", "W1"])).toBe("expected fleetd claim done --workstream <W>");
+  });
+
+  it("shows ✓ only for checks that passed, quotes the evidence of the rest, and exits 1 on a failed claim", async () => {
+    const out = await leadCommand(["claim", "done", "--workstream", "W1"], {
+      env: {},
+      cwd: "/w",
+      send: async (_, frame) => ({
+        t: "lead_result",
+        id: frame.id,
+        result: { op: "claim_done", claimId: failedClaim.claimId, workstreamId: failedClaim.workstreamId, state: "verifying", claim: failedClaim, next: "done:1 did not pass; fix it, then claim again." },
+      }),
+    });
+    expect(out).toEqual({
+      code: 1,
+      stderr: "",
+      stdout: [
+        "C1 on W1 failed: 1 of 2 checks did not pass. W1 is verifying, not done.",
+        "✓ done:0 http: pass",
+        "✗ done:1 cmd: fail, exit 1",
+        "    > `test -f docs/x.md` in /w exited 1 (expected 0)",
+        "Next: done:1 did not pass; fix it, then claim again.",
+        "",
+      ].join("\n"),
+    });
+    const passed: Claim = { ...failedClaim, claimId: "C2" as Claim["claimId"], outcome: "pass", results: [failedClaim.results[0]!] };
+    expect(formatResult({ op: "claim_done", claimId: passed.claimId, workstreamId: passed.workstreamId, state: "done", claim: passed })).toBe(
+      "C2 on W1 passed: fleetd ran all 1 done-when checks and each passed. W1 is done.\n✓ done:0 http: pass\nNext: spawn nothing more for W1.\n",
+    );
+    expect(formatResult({ op: "review_verdict", verdict: { taskId: "T3" as never, prHeadSha: SHA, blocking: 0, nonBlocking: 2, summary: "ok" } })).toBe(
+      "Recorded the verdict of T3 at 0123456789ab: 0 blocking, 2 non-blocking.\nNext: end with your one-paragraph result and stop.\n",
     );
   });
 });

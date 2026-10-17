@@ -72,7 +72,7 @@ const itemStatus = (s: OrchestrationV2TurnItem["status"]): ActionItem["status"] 
 
 const stringify = (v: unknown) => (v === undefined ? undefined : typeof v === "string" ? v : JSON.stringify(v));
 
-/** The action a turn item records, or undefined for messages, reasoning, plans and bookkeeping. */
+/** The action a turn item records, or undefined for messages, reasoning, plans and bookkeeping (T3's own workspace step included). */
 export const toAction = (item: OrchestrationV2TurnItem): ActionItem | undefined => {
   const at = iso(item.completedAt ?? item.startedAt ?? item.updatedAt);
   const status = itemStatus(item.status);
@@ -91,6 +91,8 @@ export const toAction = (item: OrchestrationV2TurnItem): ActionItem | undefined 
   };
   switch (item.type) {
     case "command_execution":
+      // T3 records its own workspace step as a command in every run; the agent ran nothing, so receipts must not count it.
+      if (item.id.includes(":native-item:workspace-preparation")) return undefined;
       return base("command", item.input, item.output, {
         ...(item.exitCode !== undefined || parseExitCode(item.output) !== undefined
           ? { exitCode: item.exitCode ?? parseExitCode(item.output)! }
