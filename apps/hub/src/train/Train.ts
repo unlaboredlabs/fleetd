@@ -34,7 +34,7 @@ import { Decisions } from "../ledger/Decisions.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Tasks from "../tasks/Tasks.ts";
-import { ChangeRecords, HEAD_STATES, QUEUED_STATES } from "./ChangeRecords.ts";
+import { ChangeRecords, HEAD_STATES, QUEUED_STATES, trainState } from "./ChangeRecords.ts";
 import { ReviewGate } from "./ReviewGate.ts";
 import { checkSource, checkTier, freezeKey, isFrozenValue, type Refusal } from "./rules.ts";
 import * as TrainGit from "./TrainGit.ts";
@@ -636,17 +636,7 @@ export const make = (options: TrainOptions = {}) =>
       markReady,
       get: (changeId) => Effect.flatMap(records.get(changeId), (c) => (c === undefined ? Effect.succeed(undefined) : Effect.map(positioned([c]), (p) => p[0]))),
       list: (filter) => Effect.flatMap(records.list(filter), positioned),
-      state: (rawRepo) =>
-        Effect.gen(function* () {
-          const repo = rawRepo.toLowerCase();
-          const [head] = yield* records.inTrain(repo, HEAD_STATES);
-          return {
-            repo,
-            frozen: (yield* records.train(repo))?.frozen ?? false,
-            ...(head === undefined ? {} : { head: head.changeId }),
-            queue: (yield* records.inTrain(repo, QUEUED_STATES)).map((c) => c.changeId),
-          };
-        }),
+      state: (repo) => trainState(records, repo),
       step,
     });
   });

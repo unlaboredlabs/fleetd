@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { MachineId, ProjectId, ThreadId, Timestamp } from "./ids.ts";
 import { Lead, Workstream } from "./ledger.ts";
 import { Task } from "./tasks.ts";
+import { TrainState } from "./train.ts";
 
 export const MachineStatus = Schema.Literals(["online", "offline", "degraded"]);
 export type MachineStatus = typeof MachineStatus.Type;
@@ -75,6 +76,8 @@ export const ProjectOutcome = Schema.Struct({
   taskCounts: Schema.optionalKey(TaskCounts),
   /** Newest first. */
   tasks: Schema.optionalKey(Schema.Array(Task).check(Schema.isMaxLength(20))),
+  /** The merge trains of the project's repos; absent until one of its PRs was enqueued. */
+  trains: Schema.optionalKey(Schema.Array(TrainState).check(Schema.isMaxLength(10))),
   stale: Schema.Boolean,
   asOf: Timestamp,
   /** Hint for the next call. */

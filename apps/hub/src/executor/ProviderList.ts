@@ -1,6 +1,8 @@
 // The provider instances a machine's T3 runs (its `server.getConfig` provider list), and which instance a launch goes
 // to. Every launch goes to the "fleetd" Claude instance, whose launch args deny T3's own spawn tools, except a model
-// only a usable Codex instance offers: that runs there, so L-tier reviews can get a Codex reviewer.
+// only a usable fleetd Codex instance offers: that runs there, so L-tier reviews can get a Codex reviewer. A Codex
+// instance counts only when its id starts with "fleetd": fleetd sets those up with T3's MCP tools off where the
+// provider allows, and any other Codex instance could reach T3's spawn tools.
 import type { Effort, MachineId } from "@fleetd/contracts";
 import type { ServerProvider } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -42,15 +44,22 @@ export const toInstance = (p: ServerProvider): ProviderInstance => {
   };
 };
 
-/** The first usable Codex instance with a model to run, if the machine has one. */
-export const codexInstance = (instances: ReadonlyArray<ProviderInstance>): (ProviderInstance & { readonly defaultModel: string }) | undefined =>
-  instances.find((i): i is ProviderInstance & { readonly defaultModel: string } => i.driver === CODEX_DRIVER && i.usable && i.defaultModel !== undefined);
+/** A usable Codex instance fleetd set up itself (its id starts with "fleetd"). */
+export const isFleetdCodex = (i: ProviderInstance) => i.driver === CODEX_DRIVER && i.usable && i.instanceId.startsWith(FLEETD_INSTANCE);
 
-/** Claude models never leave the fleetd instance; a model only a usable Codex instance lists runs on it. */
+/** The first fleetd Codex instance with a model to run, if the machine has one. */
+export const codexInstance = (instances: ReadonlyArray<ProviderInstance>): (ProviderInstance & { readonly defaultModel: string }) | undefined =>
+  instances.find((i): i is ProviderInstance & { readonly defaultModel: string } => isFleetdCodex(i) && i.defaultModel !== undefined);
+
+/** Usable Codex instances fleetd does not use, because their ids do not start with "fleetd". */
+export const otherCodex = (instances: ReadonlyArray<ProviderInstance>) =>
+  instances.filter((i) => i.driver === CODEX_DRIVER && i.usable && !isFleetdCodex(i)).map((i) => i.instanceId);
+
+/** Claude models never leave the fleetd instance; a model only a fleetd Codex instance lists runs on it. */
 export const routeModel = (instances: ReadonlyArray<ProviderInstance>, model: string): { readonly instanceId: string; readonly driver: string } => {
   const fleetd = { instanceId: FLEETD_INSTANCE, driver: "claudeAgent" };
   if (instances.some((i) => i.driver !== CODEX_DRIVER && i.models.includes(model))) return fleetd;
-  const codex = instances.find((i) => i.driver === CODEX_DRIVER && i.usable && i.models.includes(model));
+  const codex = instances.find((i) => isFleetdCodex(i) && i.models.includes(model));
   return codex === undefined ? fleetd : { instanceId: codex.instanceId, driver: codex.driver };
 };
 

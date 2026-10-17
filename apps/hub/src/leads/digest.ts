@@ -25,6 +25,8 @@ export interface DigestInput {
   readonly decisions: ReadonlyArray<Decision>;
   /** Lines from `taskDigestLines`; absent leaves the section out. */
   readonly tasks?: ReadonlyArray<string>;
+  /** Lines from `leadTrainLines`; absent leaves the section out. */
+  readonly train?: ReadonlyArray<string>;
   /** What fleetd itself measured per workstream; absent ones show none. */
   readonly facts?: ReadonlyMap<WorkstreamId, WorkstreamFacts>;
   /** M9: the pinned playbooks of open workstreams; their instructions are listed once each. */
@@ -156,6 +158,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
     join: "\n",
   };
   const tasks: Section = { title: "Tasks", ...capped(input.tasks ?? [], 20), more: "`fleetd task list`", join: "\n" };
+  const train: Section = { title: "Merge train (only it merges)", ...capped(input.train ?? [], 12), more: "`fleetd change status X<n>`", join: "\n" };
   const asks: Section = { title: "Your open asks", ...capped(input.openAsks.map(askLine), 20), more: "older ones not shown", join: "\n" };
   const decisions: Section = {
     title: "Decisions (most relevant)",
@@ -170,6 +173,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
     workstreams,
     ...(following.size === 0 ? [] : [playbooks]),
     ...(input.tasks === undefined ? [] : [tasks]),
+    ...(input.train === undefined ? [] : [train]),
     asks,
     decisions,
     doNotReAsk,
@@ -183,6 +187,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
     [asks, 5],
     [playbooks, 1],
     [tasks, 5],
+    [train, 4],
     [workstreams, 5],
     [answers, 5],
   ];

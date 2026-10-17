@@ -13,6 +13,7 @@ import { renderHumanDigest } from "../ledger/HumanDigest.ts";
 import { projectKey } from "../ledger/LedgerRepo.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
+import { humanTrainLines, trainFacts } from "../train/digest.ts";
 import { nextCron, parseCron } from "../wakes/schedule.ts";
 
 /** The global Decision key holding the IANA zone digests follow. */
@@ -73,7 +74,7 @@ const make = Effect.gen(function* () {
   const workstreams = yield* Workstreams.Workstreams;
   const store = yield* HubStore.HubStore;
   const events = yield* EventLog.EventLog;
-  const factsContext = yield* Effect.context<Effect.Services<ReturnType<typeof workstreamFacts>>>();
+  const factsContext = yield* Effect.context<Effect.Services<ReturnType<typeof workstreamFacts>> | Effect.Services<ReturnType<typeof trainFacts>>>();
 
   const zone = Effect.map(decisions.list({ scope: { kind: "global" }, limit: 500 }), (global) => {
     const tz = global.find((d) => d.key === POLICY_TZ_KEY)?.value.trim();
@@ -100,6 +101,7 @@ const make = Effect.gen(function* () {
         facts: yield* workstreamFacts(listed).pipe(Effect.provideContext(factsContext)),
         decidedWithoutYou,
         projectNames: new Map((yield* store.projects.list()).map((p) => [projectKey(p), p.title])),
+        train: humanTrainLines(yield* trainFacts((c) => shown(c.projectRef)).pipe(Effect.provideContext(factsContext)), sinceMs),
       });
       return { text, at: new Date(nowMs).toISOString() };
     });

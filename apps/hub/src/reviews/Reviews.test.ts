@@ -23,7 +23,7 @@ const AT = "1970-01-01T00:00:00.000Z";
 const X1 = "X1" as ChangeId;
 
 const CLAUDE: ProviderInstance = { instanceId: "fleetd", driver: "claudeAgent", usable: true, models: ["claude-opus-5-5"] };
-const CODEX: ProviderInstance = { instanceId: "codex", driver: "codex", usable: true, models: ["gpt-6-astra"], defaultModel: "gpt-6-astra" };
+const CODEX: ProviderInstance = { instanceId: "fleetd-codex", driver: "codex", usable: true, models: ["gpt-6-astra"], defaultModel: "gpt-6-astra" };
 
 const makeReviewKit = (options: { readonly providers?: ReadonlyArray<ProviderInstance> } = {}) => {
   const kit = makeKit();
@@ -199,8 +199,8 @@ describe("Reviews", () => {
     );
   });
 
-  it("falls back to two Claude reviewers and notes it on the Change when the machine has no usable Codex instance", async () => {
-    const r = makeReviewKit({ providers: [CLAUDE, { ...CODEX, usable: false }] });
+  it("falls back to two Claude reviewers and notes it on the Change when the machine has no usable fleetd Codex instance", async () => {
+    const r = makeReviewKit({ providers: [CLAUDE, { ...CODEX, usable: false }, { ...CODEX, instanceId: "codex" }] });
     await r.run(
       Effect.gen(function* () {
         const ws = yield* r.kit.setup;
@@ -208,7 +208,9 @@ describe("Reviews", () => {
         yield* r.handOver({ ws, tier: "L" });
         const spawned = yield* r.started(cursor, 3);
         expect(spawned.map((t) => t.model)).toEqual(["claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5"]);
-        expect(r.change().lastError).toBe("No usable Codex instance on lab-a, so both L reviewers run on Claude.");
+        expect(r.change().lastError).toBe(
+          'Codex codex on lab-a is not fleetd\'s (ids must start with "fleetd"; others could reach T3\'s spawn tools), so both L reviewers run on Claude.',
+        );
       }),
     );
   });

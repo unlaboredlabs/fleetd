@@ -49,7 +49,7 @@ const intDefault = (min: number, max: number, fallback: number) =>
 export const FleetStatus = Schema.Struct({
   machines: Schema.Array(Machine),
   projects: Schema.Array(ProjectSummary).check(Schema.isMaxLength(50)),
-  /** Latest failed, waiting and usage-limited events. */
+  /** Latest failed, waiting and usage-limited events, and PRs the merge train sent back to their authors. */
   attention: Schema.Array(HubEvent).check(Schema.isMaxLength(10)),
   cursor: EventSeq,
   /** Absent until the hub runs the slot board (M5). */

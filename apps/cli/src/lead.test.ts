@@ -443,3 +443,57 @@ describe("leadCommand", () => {
     });
   });
 });
+
+describe("change commands", () => {
+  const PR = "https://github.com/wynn-dev/fleetd-testbed/pull/4";
+
+  it("parses change enqueue with --pr or a positional URL, and change status", () => {
+    expect(parseLeadArgs(["change", "enqueue", "--pr", PR, "--task", "T2", "--serves", "done:1", "--tier", "M"])).toEqual({
+      op: "change_enqueue",
+      prUrl: PR,
+      taskId: "T2",
+      serves: "done:1",
+      tier: "M",
+    });
+    expect(parseLeadArgs(["change", "enqueue", PR, "--workstream", "W1"])).toEqual({ op: "change_enqueue", prUrl: PR, workstreamId: "W1" });
+    expect(parseLeadArgs(["change", "status", "X3"])).toEqual({ op: "change_status", changeId: "X3" });
+    expect(parseLeadArgs(["change", "enqueue"])).toBe("--pr is required");
+    expect(parseLeadArgs(["change", "status", "X3", "--task", "T1"])).toBe("--task does not apply to fleetd change status");
+    expect(parseLeadArgs(["change", "merge", "X3"])).toBe("expected fleetd change enqueue|status");
+  });
+
+  it("shows where a Change is, its reviews and why it is parked", () => {
+    const out = formatResult({
+      op: "change_status",
+      change: {
+        changeId: "X3" as never,
+        projectRef: { machineId: "lab-a", projectId: "p1" } as never,
+        repo: "wynn-dev/fleetd-testbed",
+        prNumber: 4,
+        prUrl: PR,
+        branch: "fleetd/T2-beta",
+        taskId: "T2" as never,
+        workstreamId: "W1" as never,
+        serves: "done:1",
+        tier: "M",
+        headSha: SHA,
+        state: "needs_rebase",
+        reviews: [{ taskId: "T5" as never, prHeadSha: SHA, patchId: SHA, blocking: 0, nonBlocking: 1 }],
+        lastError: "conflicts with origin/main in alpha.md",
+        createdAt: "2026-10-17T10:00:00.000Z",
+        updatedAt: "2026-10-17T10:00:00.000Z",
+      },
+      next: "nothing unless its author is gone.",
+    });
+    expect(out).toBe(
+      [
+        "X3 wynn-dev/fleetd-testbed#4 needs_rebase (tier M, serves done:1, by T2)",
+        `  ${PR} at ${SHA.slice(0, 12)}`,
+        `  reviews: T5 0 blocking at ${SHA.slice(0, 12)}`,
+        "  > conflicts with origin/main in alpha.md",
+        "Next: nothing unless its author is gone.",
+        "",
+      ].join("\n"),
+    );
+  });
+});

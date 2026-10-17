@@ -4,7 +4,23 @@ import { describe, expect, it } from "vitest";
 import { makeChecksKit, runChecksKit } from "../checks/testKit.ts";
 import * as LeadCallHandler from "../leads/LeadCallHandler.ts";
 import * as EventLog from "../store/EventLog.ts";
+import { Train } from "../train/Train.ts";
 import { REF } from "./testKit.ts";
+
+// Change calls are covered in train/LeadChangeCalls.test.ts, over the real train.
+const handlerOf = LeadCallHandler.make.pipe(
+  Effect.provideService(
+    Train,
+    Train.of({
+      enqueue: () => Effect.die("no train in this kit"),
+      markReady: () => Effect.die("no train in this kit"),
+      get: () => Effect.succeed(undefined),
+      list: () => Effect.succeed([]),
+      state: () => Effect.die("no train in this kit"),
+      step: () => Effect.succeed(false),
+    }),
+  ),
+);
 
 const caller = { projectRef: REF, by: "lead:lab-a/p1", cwd: "/w/p1" };
 const other = { projectRef: { machineId: "lab-a" as MachineId, projectId: "p2" as ProjectId }, by: "lead:lab-a/p2", cwd: "/w/p2" };
@@ -16,7 +32,7 @@ describe("task lead calls", () => {
       kit,
       Effect.gen(function* () {
         const workstreamId = yield* kit.tasksKit.setup;
-        const handler = yield* LeadCallHandler.make;
+        const handler = yield* handlerOf;
         const call = (c: Record<string, unknown>, who = caller) => handler.handle(who, c as LeadCall);
 
         const spawned = yield* call({ op: "task_spawn", workstreamId, title: "add file", kind: "write", prompt: "create docs/x.md", areas: ["docs"], serves: "done:0", effort: "low" });
@@ -51,7 +67,7 @@ describe("task lead calls", () => {
       kit,
       Effect.gen(function* () {
         const workstreamId = yield* kit.setup([docCheck]);
-        const handler = yield* LeadCallHandler.make;
+        const handler = yield* handlerOf;
         const call = (c: Record<string, unknown>, who = caller) => handler.handle(who, c as LeadCall);
 
         // A writer without --serves is refused with the fix.

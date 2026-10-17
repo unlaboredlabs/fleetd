@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codexInstance, effortOption, type ProviderInstance, routeModel } from "../executor/ProviderList.ts";
+import { codexInstance, effortOption, otherCodex, type ProviderInstance, routeModel } from "../executor/ProviderList.ts";
 import { gate, missingReviews, reviewPlan, type RoleReview } from "./rules.ts";
 
 const P = "1".repeat(40);
@@ -47,18 +47,23 @@ describe("tier matrix", () => {
 
 describe("Codex availability", () => {
   const claude: ProviderInstance = { instanceId: "fleetd", driver: "claudeAgent", usable: true, models: ["claude-opus-5-5"] };
-  const codex: ProviderInstance = { instanceId: "codex", driver: "codex", usable: true, models: ["gpt-6-astra", "astra"], defaultModel: "gpt-6-astra" };
+  const codex: ProviderInstance = { instanceId: "fleetd-codex", driver: "codex", usable: true, models: ["gpt-6-astra", "astra"], defaultModel: "gpt-6-astra" };
+  // Any Codex instance fleetd did not set up could reach T3's own spawn tools.
+  const theirs: ProviderInstance = { ...codex, instanceId: "codex" };
 
-  it("finds a usable Codex instance with a model, and nothing otherwise", () => {
-    expect(codexInstance([claude, codex])?.instanceId).toBe("codex");
+  it("finds a usable fleetd Codex instance with a model, and nothing otherwise", () => {
+    expect(codexInstance([claude, codex])?.instanceId).toBe("fleetd-codex");
     expect(codexInstance([claude])).toBeUndefined();
     expect(codexInstance([claude, { ...codex, usable: false }])).toBeUndefined();
-    expect(codexInstance([claude, { instanceId: "codex", driver: "codex", usable: true, models: [] }])).toBeUndefined();
+    expect(codexInstance([claude, { instanceId: "fleetd-codex", driver: "codex", usable: true, models: [] }])).toBeUndefined();
+    expect(codexInstance([claude, theirs])).toBeUndefined();
+    expect(otherCodex([claude, theirs, codex])).toEqual(["codex"]);
   });
 
-  it("runs only Codex-only models on the Codex instance, with Codex's effort option", () => {
-    expect(routeModel([claude, codex], "gpt-6-astra")).toEqual({ instanceId: "codex", driver: "codex" });
-    expect(routeModel([claude, codex], "astra")).toEqual({ instanceId: "codex", driver: "codex" });
+  it("runs only Codex-only models on the fleetd Codex instance, with Codex's effort option", () => {
+    expect(routeModel([claude, codex], "gpt-6-astra")).toEqual({ instanceId: "fleetd-codex", driver: "codex" });
+    expect(routeModel([claude, codex], "astra")).toEqual({ instanceId: "fleetd-codex", driver: "codex" });
+    expect(routeModel([claude, theirs], "gpt-6-astra").instanceId).toBe("fleetd");
     expect(routeModel([claude, codex], "claude-opus-5-5").instanceId).toBe("fleetd");
     expect(routeModel([claude, { ...codex, usable: false }], "gpt-6-astra").instanceId).toBe("fleetd");
     expect(routeModel([], "anything").instanceId).toBe("fleetd");

@@ -30,7 +30,10 @@ import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
 import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as EventLog from "../store/EventLog.ts";
+import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
+import { ChangeRecords } from "../train/ChangeRecords.ts";
+import { leadTrainLines, trainFacts } from "../train/digest.ts";
 import { taskDigestLines, taskResultLines, taskWaitingLines } from "../tasks/render.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Usage from "../usage/Usage.ts";
@@ -170,7 +173,7 @@ export const make = (options: LeadWakesOptions = {}) =>
     const tasks = yield* TaskRecords.TaskRecords;
     const usage = yield* Usage.Usage;
     const playbooks = yield* Playbooks;
-    const factsContext = yield* Effect.context<ClaimRecords.ClaimRecords | Estimates.Estimates>();
+    const factsContext = yield* Effect.context<ClaimRecords.ClaimRecords | Estimates.Estimates | ChangeRecords | HubDb.HubDb>();
     const scope = yield* Effect.scope;
     const debounceMs = Duration.toMillis(Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE));
     const maxWaitMs = Duration.toMillis(Duration.fromInputUnsafe(options.maxWait ?? WAKE_MAX_WAIT));
@@ -191,6 +194,9 @@ export const make = (options: LeadWakesOptions = {}) =>
           const loaded = yield* playbooks.byRef(ref);
           if (loaded !== undefined) pinned.set(ref, loaded.playbook);
         }
+        const train = yield* trainFacts((c) => c.projectRef.machineId === ref.machineId && c.projectRef.projectId === ref.projectId).pipe(
+          Effect.provideContext(factsContext),
+        );
         return renderLeadDigest({
           project: { ref, title: project?.title ?? ref.projectId },
           at: yield* nowIso,
@@ -202,6 +208,7 @@ export const make = (options: LeadWakesOptions = {}) =>
           tasks: taskDigestLines(yield* tasks.forDigest(ref, since, 50), since),
           facts: yield* workstreamFacts(workstreams).pipe(Effect.provideContext(factsContext)),
           playbooks: pinned,
+          ...(train.trains.length === 0 && train.changes.length === 0 ? {} : { train: leadTrainLines(train, since) }),
         });
       });
 

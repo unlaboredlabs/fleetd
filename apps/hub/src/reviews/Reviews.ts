@@ -12,7 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { GitHub } from "../checks/GitHub.ts";
-import { codexInstance, ProviderList } from "../executor/ProviderList.ts";
+import { codexInstance, otherCodex, ProviderList } from "../executor/ProviderList.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
@@ -146,10 +146,9 @@ export const make = Effect.gen(function* () {
   /** Spawns what the tier still needs for this patch. Idempotent per patch; a waived patch needs nothing. */
   const ensureRound = (change: Change, patchId: string) =>
     Effect.gen(function* () {
-      const codex =
-        change.tier === "L"
-          ? yield* providers.instances(change.projectRef.machineId).pipe(Effect.map(codexInstance), Effect.orElseSucceed(() => undefined))
-          : undefined;
+      const instances =
+        change.tier === "L" ? yield* providers.instances(change.projectRef.machineId).pipe(Effect.orElseSucceed(() => [])) : [];
+      const codex = codexInstance(instances);
       const spawned = sql.rolesFor.all(change.changeId, patchId).map((r) => String(r.role) as ReviewRole);
       const missing = missingReviews(reviewPlan(change.tier, codex !== undefined), spawned);
       if (missing.length === 0) return;
@@ -166,7 +165,13 @@ export const make = Effect.gen(function* () {
       if (refusal !== undefined) return yield* changes.note(change.changeId, `no review round for patch ${patchId.slice(0, 12)}: ${refusal.message}`);
 
       if (change.tier === "L" && codex === undefined) {
-        yield* changes.note(change.changeId, `No usable Codex instance on ${change.projectRef.machineId}, so both L reviewers run on Claude.`);
+        const others = otherCodex(instances);
+        yield* changes.note(
+          change.changeId,
+          others.length === 0
+            ? `No usable Codex instance on ${change.projectRef.machineId}, so both L reviewers run on Claude.`
+            : `Codex ${others.join(", ")} on ${change.projectRef.machineId} is not fleetd's (ids must start with "fleetd"; others could reach T3's spawn tools), so both L reviewers run on Claude.`,
+        );
       }
       for (const planned of missing) {
         const started = yield* Effect.result(spawnReview(change, planned.role, planned.provider === "codex" ? codex?.defaultModel : undefined));

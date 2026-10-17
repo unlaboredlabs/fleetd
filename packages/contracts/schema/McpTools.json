@@ -1247,6 +1247,41 @@
       ],
       "additionalProperties": true
     },
+    "GitHubRepo": {
+      "type": "string",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})\\/([A-Za-z0-9._-]{1,100})$"
+    },
+    "ChangeId": {
+      "type": "string",
+      "pattern": "^X[1-9][0-9]*$"
+    },
+    "TrainState": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "frozen": {
+          "type": "boolean"
+        },
+        "head": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangeId"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "repo",
+        "frozen",
+        "queue"
+      ],
+      "additionalProperties": true
+    },
     "ProjectOutcome": {
       "type": "object",
       "properties": {
@@ -1320,6 +1355,13 @@
             "$ref": "#/$defs/Task"
           },
           "maxItems": 20
+        },
+        "trains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TrainState"
+          },
+          "maxItems": 10
         },
         "stale": {
           "type": "boolean"
@@ -2353,14 +2395,6 @@
       ],
       "additionalProperties": true
     },
-    "GitHubRepo": {
-      "type": "string",
-      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})\\/([A-Za-z0-9._-]{1,100})$"
-    },
-    "ChangeId": {
-      "type": "string",
-      "pattern": "^X[1-9][0-9]*$"
-    },
     "GitHubPrUrl": {
       "type": "string",
       "pattern": "^https:\\/\\/github\\.com\\/([A-Za-z0-9][A-Za-z0-9-]{0,38}\\/[A-Za-z0-9._-]{1,100})\\/pull\\/([1-9][0-9]*)$"
@@ -2523,33 +2557,6 @@
         "reviews",
         "createdAt",
         "updatedAt"
-      ],
-      "additionalProperties": true
-    },
-    "TrainState": {
-      "type": "object",
-      "properties": {
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        },
-        "frozen": {
-          "type": "boolean"
-        },
-        "head": {
-          "$ref": "#/$defs/ChangeId"
-        },
-        "queue": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ChangeId"
-          },
-          "uniqueItems": true
-        }
-      },
-      "required": [
-        "repo",
-        "frozen",
-        "queue"
       ],
       "additionalProperties": true
     },
