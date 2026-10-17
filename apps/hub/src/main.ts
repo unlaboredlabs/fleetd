@@ -14,7 +14,9 @@ import * as HubDb from "./store/HubDb.ts";
 import * as HubStore from "./store/HubStore.ts";
 import * as Webhooks from "./webhooks/Webhooks.ts";
 import * as WriteQueue from "./queue/WriteQueue.ts";
+import * as Sweep from "./sweep/Sweep.ts";
 import * as Wakes from "./wakes/Wakes.ts";
+import * as Watchdog from "./watchdog/Watchdog.ts";
 
 export interface HubOptions {
   /** Absent means the default, `~/.fleetd/hub`. */
@@ -62,12 +64,24 @@ const layerMachines = Layer.effect(
   }),
 ).pipe(Layer.provideMerge(Executors.layer));
 
+/** The sweep's overdue-wakes check; the wake scheduler does the firing. */
+const layerWakeSweep = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const sweep = yield* Sweep.Sweep;
+    const wakes = yield* Wakes.Wakes;
+    yield* sweep.register({ name: "wakes", run: wakes.sweepOverdue(Sweep.WAKE_OVERDUE_MS) });
+  }),
+);
+
 /** The whole hub over the database in `home` (already resolved by `HubDb.resolveHubHome`). */
 export const hubLayer = (home: string, options: HubOptions) =>
   HttpApp.layer(options.listen).pipe(
     Layer.provide(
       AppSocket.layer.pipe(
         Layer.provideMerge(FleetApi.layer),
+        Layer.provideMerge(layerWakeSweep),
+        // The sweep reports failing webhooks, so it sits above them.
+        Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
         Layer.provideMerge(Wakes.layer),
         Layer.provideMerge(

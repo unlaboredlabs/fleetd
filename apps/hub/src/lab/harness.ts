@@ -54,7 +54,7 @@ export const cli = (...args: Array<string>) =>
   execFileSync(process.execPath, [CLI, ...args], { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
 /** Mints a 1 h session on a lab T3 with its own CLI, as the node would. */
-export const mintT3Bearer = (machine: (typeof MACHINES)[number]) =>
+export const mintT3Bearer = (machine: { readonly t3Home: string }) =>
   execFileSync(
     process.execPath,
     [path.join(T3_SRC, "apps/server/src/bin.ts"), "auth", "session", "issue", "--base-dir", machine.t3Home, "--ttl", "1h", "--label", "fleetd-lab", "--token-only"],
@@ -85,11 +85,16 @@ export const stopCli = async (name: string) => {
   const entry = started.findLast((s) => s.name === name);
   if (!entry || entry.child.exitCode !== null || entry.child.signalCode !== null) return;
   const exited = new Promise((r) => entry.child.once("exit", r));
+  const startedMs = Date.now();
   entry.child.kill("SIGTERM");
-  const timer = setTimeout(() => entry.child.kill("SIGKILL"), 10_000);
+  let killed = false;
+  const timer = setTimeout(() => {
+    killed = true;
+    entry.child.kill("SIGKILL");
+  }, 10_000);
   await exited;
   clearTimeout(timer);
-  log(`stopped ${name} pid=${entry.child.pid}`);
+  log(`stopped ${name} pid=${entry.child.pid} (${killed ? "SIGKILL after 10 s" : `SIGTERM, exited in ${Date.now() - startedMs} ms`})`);
 };
 
 export const stopAll = async () => {
@@ -121,7 +126,7 @@ export interface Lab {
   readonly stopHub: () => Promise<void>;
   readonly machines: typeof MACHINES;
   /** A short-lived bearer for a lab T3 itself, to watch it while the hub is down. */
-  readonly mintT3Bearer: (machine: (typeof MACHINES)[number]) => string;
+  readonly mintT3Bearer: (machine: { readonly t3Home: string }) => string;
   /** Waits for the first event after `cursor` that matches, long-polling events_wait. */
   readonly waitEvent: (
     what: string,

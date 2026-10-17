@@ -37,12 +37,15 @@ import { m1Fleet } from "./m1Fleet.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
+import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
 
 /** In run order. Later ones may stop nodes or kill T3, so they come after the ones that need both machines up. */
 const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void> }> = [
   { name: "m1", run: m1Fleet },
   { name: "wake", run: wakeOnTime },
   { name: "push", run: scenarioPush },
+  { name: "stall", run: (lab) => stallNudgeFail(lab) },
+  { name: "missed", run: (lab) => missedCompletion(lab) },
   { name: "degraded", run: degradedMachine },
   { name: "queue", run: offlineQueue },
 ];
