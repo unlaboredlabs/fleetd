@@ -24,6 +24,7 @@ import { McpToolError } from "./mcp.ts";
 import { Effort } from "./effort.ts";
 import { PrUrl, Serves, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
 import { Claim, ClaimId, ReviewVerdict } from "./verification.ts";
+import { Change, ChangeId, GitHubPrUrl } from "./train.ts";
 
 // Lead-side `fleetd` CLI calls. The CLI connects to the local node's unix socket, writes one LeadCallFrame as a
 // line of JSON, reads one LeadResultFrame line back, and closes. The node forwards the frame over its link to the
@@ -140,6 +141,22 @@ export const ClaimDoneCall = Schema.Struct({ op: Schema.tag("claim_done"), works
  */
 export const ReviewVerdictCall = Schema.Struct({ op: Schema.tag("review_verdict"), ...ReviewVerdict.fields });
 
+/**
+ * `fleetd change enqueue <PR URL> [--task T1] [--workstream W1] [--serves s] [--tier S|M|L]`. Absent fields come from
+ * the task, then the workstream's brief; the tier may be raised above the brief's, never lowered.
+ */
+export const ChangeEnqueueCall = Schema.Struct({
+  op: Schema.tag("change_enqueue"),
+  taskId: Schema.optionalKey(TaskId),
+  prUrl: GitHubPrUrl,
+  workstreamId: Schema.optionalKey(WorkstreamId),
+  serves: Schema.optionalKey(Serves),
+  tier: Schema.optionalKey(Tier),
+});
+
+/** `fleetd change status X1`. */
+export const ChangeStatusCall = Schema.Struct({ op: Schema.tag("change_status"), changeId: ChangeId });
+
 export const LeadCall = Schema.Union([
   BriefCreateCall,
   AskCall,
@@ -154,6 +171,8 @@ export const LeadCall = Schema.Union([
   TaskCancelCall,
   ClaimDoneCall,
   ReviewVerdictCall,
+  ChangeEnqueueCall,
+  ChangeStatusCall,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCall" });
@@ -223,6 +242,10 @@ export const ClaimDoneResult = Schema.Struct({
 
 export const ReviewVerdictResult = Schema.Struct({ op: Schema.tag("review_verdict"), verdict: ReviewVerdict, ...next });
 
+export const ChangeEnqueueResult = Schema.Struct({ op: Schema.tag("change_enqueue"), change: Change, ...next });
+
+export const ChangeStatusResult = Schema.Struct({ op: Schema.tag("change_status"), change: Change, ...next });
+
 export const LeadCallResult = Schema.Union([
   BriefCreateResult,
   AskResult,
@@ -237,6 +260,8 @@ export const LeadCallResult = Schema.Union([
   TaskCancelResult,
   ClaimDoneResult,
   ReviewVerdictResult,
+  ChangeEnqueueResult,
+  ChangeStatusResult,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCallResult" });

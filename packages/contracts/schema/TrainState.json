@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/TrainState",
+  "$defs": {
+    "GitHubRepo": {
+      "type": "string",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})\\/([A-Za-z0-9._-]{1,100})$"
+    },
+    "ChangeId": {
+      "type": "string",
+      "pattern": "^X[1-9][0-9]*$"
+    },
+    "TrainState": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "frozen": {
+          "type": "boolean"
+        },
+        "head": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangeId"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "repo",
+        "frozen",
+        "queue"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
