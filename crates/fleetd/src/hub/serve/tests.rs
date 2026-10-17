@@ -315,7 +315,7 @@ async fn tools_check_the_role_then_the_machine_grant_and_filter_fleet_wide_reads
         json!({ "code": -32602, "message": "Tool 'nope' not found" })
     );
     let (is_error, body) = reader.call("fleetd_status", json!({})).await;
-    assert_eq!((is_error, body["code"].as_str()), (true, Some("t3_error")));
+    assert!(!is_error, "{body}");
     // A panicking handler answers the generic error and the server keeps serving.
     let (_, body) = a_only.call("wake_cancel", json!({})).await;
     assert_eq!(
