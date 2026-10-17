@@ -197,7 +197,9 @@
         "pr.merged",
         "train.frozen",
         "train.resumed",
-        "change.refused"
+        "change.refused",
+        "intake.routed",
+        "research.verdict"
       ]
     },
     "ThreadId": {

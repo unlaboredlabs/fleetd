@@ -17,11 +17,13 @@ import {
   DecisionWhy,
   IntakeText,
   Lead,
+  PlaybookName,
   Workstream,
   WorkstreamId,
   WorkstreamState,
 } from "./ledger.ts";
 import { Effort } from "./effort.ts";
+import { IntakeEcho } from "./playbooks.ts";
 import { ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary } from "./model.ts";
 import { SlotState, Task, TaskId, TaskState } from "./tasks.ts";
 import { Claim, Eta, Incident, IncidentClass } from "./verification.ts";
@@ -214,12 +216,32 @@ export const LeadRestartOutput = LeadStartOutput;
 
 // intake_submit
 export const IntakeSubmitInput = Schema.Struct({
-  machineId: MachineId,
-  projectId: ProjectId,
+  /** With projectId, or neither: then the router picks the project unless the text starts with `@<project>`. */
+  machineId: Schema.optionalKey(MachineId),
+  projectId: Schema.optionalKey(ProjectId),
   text: IntakeText,
+  /** Skips the router for the template, like a `fix:` or `research:` prefix. */
+  template: Schema.optionalKey(PlaybookName),
   clientRequestId: RequestId,
-});
-export const IntakeSubmitOutput = Schema.Struct({ workstreamId: WorkstreamId, ...resultFields });
+}).check(
+  Schema.makeFilter((input) =>
+    (input.machineId === undefined) === (input.projectId === undefined)
+      ? undefined
+      : { path: [input.machineId === undefined ? "machineId" : "projectId"], issue: "give machineId and projectId together, or neither" },
+  ),
+);
+export const IntakeSubmitOutput = Schema.Struct({
+  workstreamId: Schema.optionalKey(WorkstreamId),
+  /** The router could not place the intent: the human picks the project by answering this ask. */
+  askId: Schema.optionalKey(AskId),
+  /** Present with workstreamId. */
+  echo: Schema.optionalKey(IntakeEcho),
+  ...resultFields,
+}).check(
+  Schema.makeFilter((output) =>
+    (output.workstreamId === undefined) !== (output.askId === undefined) ? undefined : "exactly one of workstreamId and askId",
+  ),
+);
 
 // workstream_list
 export const WorkstreamListInput = Schema.Struct({

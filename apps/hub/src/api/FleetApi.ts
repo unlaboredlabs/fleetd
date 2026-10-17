@@ -514,6 +514,14 @@ const make = Effect.gen(function* () {
     }),
 
     intake_submit: Effect.fnUntraced(function* (caller, input) {
+      // Placeholder until M9a: routing an intent without a project, and `template`, are not wired yet.
+      if (input.machineId === undefined || input.projectId === undefined) {
+        return yield* new ToolError({
+          code: "invalid",
+          message: "This hub cannot route an intent without a project yet.",
+          fix: "Pass machineId and projectId (projects_list shows them).",
+        });
+      }
       yield* require(caller, "operate", input.machineId);
       const created = yield* workstreams
         .intake({

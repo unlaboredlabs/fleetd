@@ -264,6 +264,15 @@ contract! {
         pub headline: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub headline_at: Option<String>,
+        /// `<name>@<sha>`, pinned at creation (M9).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub playbook: Option<String>,
+        /// Research verdict outcome: go, stop or inconclusive (M9).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub outcome: Option<String>,
+        /// The computed research verdict as the hub sends it; not shown yet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub verdict: Option<Value>,
         pub created_at: String,
         pub updated_at: String,
     }
@@ -291,6 +300,13 @@ contract! {
         pub budget: Option<Budget>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub estimate: Option<Estimate>,
+        /// Research briefs (M9); not shown yet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub baseline: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub metric: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub decision_rule: Option<Value>,
     }
 }
 
