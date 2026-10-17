@@ -13,7 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as EventLog from "../store/EventLog.ts";
 import { recordedEvent } from "./Decisions.ts";
-import { type Actor, LedgerRepo, batchN, invalid, isoAt, projectKey, write } from "./LedgerRepo.ts";
+import { type Actor, LedgerError, LedgerRepo, batchN, invalid, isoAt, projectKey, write } from "./LedgerRepo.ts";
 import { type Action, parseReply, resolvePlan } from "./ReplyGrammar.ts";
 
 /** One answered or withdrawn ask, as delivered to its project's lead. */
@@ -41,6 +41,11 @@ export const layerAnswerSinkNoop = Layer.succeed(AnswerSink, AnswerSink.of({ onA
 export interface ReplyInput {
   readonly raw: string;
   readonly batchId?: BatchId;
+  /**
+   * The caller's grants: whether it may write in a project, or globally when `projectRef` is absent ("pref:" and
+   * "forget"). A reply touching anything it may not write changes nothing. Absent: everything is allowed.
+   */
+  readonly allows?: (projectRef?: ProjectRef) => boolean;
 }
 
 /** `inbox_reply`: applies a terse human reply to a batch. */
@@ -91,6 +96,13 @@ const make = Effect.gen(function* () {
       const parsed = parseReply(input.raw);
       if (!parsed.parsed) throw invalid(parsed.hint);
       const { plan } = parsed;
+      if ((plan.prefs.length > 0 || plan.forgets.length > 0) && input.allows?.() === false) {
+        throw new LedgerError({
+          code: "forbidden",
+          message: '"pref:" and "forget" change decisions for every machine, and this caller may not write on all of them.',
+          fix: "Use a key with an operate grant on all machines (*).",
+        });
+      }
       if (plan.batch !== undefined && input.batchId !== undefined && batchN(input.batchId) !== plan.batch) {
         throw invalid(`The reply names B${plan.batch} but the request names ${input.batchId}.`);
       }
@@ -112,6 +124,14 @@ const make = Effect.gen(function* () {
         const resolved = resolvePlan(plan, batchId, items);
         if (!resolved.ok) throw invalid(resolved.hint);
         const actions = [...resolved.actions].sort((a, b) => a.number - b.number);
+        const denied = actions.find((action) => input.allows?.(action.ask.projectRef) === false);
+        if (denied) {
+          throw new LedgerError({
+            code: "forbidden",
+            message: `Item ${denied.number} is about ${projectKey(denied.ask.projectRef)}, where this caller may not answer.`,
+            fix: "Answer only the items of your own machines, or ask the hub admin for an operate grant there.",
+          });
+        }
         for (const action of actions) applyAction(action, stored.n);
         repo.closeIfDone(stored.n);
       }

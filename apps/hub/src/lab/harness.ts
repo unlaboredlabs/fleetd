@@ -15,7 +15,8 @@ export const HUB_PORT = Number(process.env.FLEETD_LAB_HUB_PORT ?? 4795);
 export const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
 /** Per hub port, so two runs on different ports never delete each other's state. */
 export const RUN = process.env.FLEETD_LAB_RUN ?? path.join(LAB, `e2e-${HUB_PORT}`);
-export const CLI = path.join(REPO, "apps/cli/src/bin.ts");
+/** The bundled CLI (`pnpm test:lab` builds it first), so the lab exercises what ships, lead prompt included. */
+export const CLI = path.join(REPO, "apps/cli/dist/bin.js");
 export const MODEL = "claude-haiku-5-5";
 /** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
 export const QUEUE_TTL_SEC = 40;

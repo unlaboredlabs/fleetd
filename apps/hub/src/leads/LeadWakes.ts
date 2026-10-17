@@ -8,10 +8,10 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
-import * as Executors from "../executor/Executors.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
+import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { taskDigestLines, taskResultLines } from "../tasks/render.ts";
@@ -58,7 +58,8 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
       );
     } else if (t.kind === "decision") {
       const d = t.decision;
-      lines.push(`- The human recorded ${d.decisionId}: ${d.key} = ${quote(d.value)} (${scopeText(d.scope)}). Follow it.`);
+      const who = d.source === "human" ? "The human" : `Agent ${d.by ?? "(unnamed)"}, for the human,`;
+      lines.push(`- ${who} recorded ${d.decisionId}: ${d.key} = ${quote(d.value)} (${scopeText(d.scope)}). Follow it.`);
     } else if (t.kind === "task_result") {
       lines.push(taskResultLines(t));
     }
@@ -94,7 +95,7 @@ export const make = (options: LeadWakesOptions = {}) =>
     const decisions = yield* Decisions;
     const store = yield* HubStore.HubStore;
     const events = yield* EventLog.EventLog;
-    const executors = yield* Executors.Executors;
+    const queue = yield* WriteQueue.WriteQueue;
     const tasks = yield* TaskRecords.TaskRecords;
     const scope = yield* Effect.scope;
     const debounceMs = Duration.toMillis(Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE));
@@ -103,9 +104,8 @@ export const make = (options: LeadWakesOptions = {}) =>
     const flushing = Semaphore.makeUnsafe(1);
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
-    // INTEGRATION POINT (M2a): once the offline write queue (WriteQueue.send) is on main, deliver through it so a
-    // wake to an offline machine waits for the machine instead of being dropped. This is the only send in leads.
-    const deliver = (ref: ThreadRef, message: string, clientRequestId: string) => executors.send(ref, message, clientRequestId);
+    // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
+    const deliver = (ref: ThreadRef, message: string, clientRequestId: string) => queue.send(ref, message, clientRequestId);
 
     const digest: LeadWakes["Service"]["digest"] = (ref, answers = []) =>
       Effect.gen(function* () {
@@ -149,8 +149,8 @@ export const make = (options: LeadWakesOptions = {}) =>
           machineId: p.ref.machineId,
           projectId: p.ref.projectId,
           threadId: lead.threadId,
-          summary: `Lead of ${p.ref.projectId} woken with ${triggers.length} trigger${triggers.length === 1 ? "" : "s"}`,
-          data: { triggers: triggers.map((t) => t.kind) },
+          summary: `Lead of ${p.ref.projectId} ${sent.success.queued ? "wake queued" : "woken"} with ${triggers.length} trigger${triggers.length === 1 ? "" : "s"}`,
+          data: { triggers: triggers.map((t) => t.kind), ...(sent.success.queued ? { queued: true } : {}) },
         });
       }).pipe(flushing.withPermit);
 
@@ -195,4 +195,36 @@ export const layerAnswerSink = Layer.effect(
       onAnswered: (ref, answers) => Effect.forEach(answers, (answer) => wakes.trigger(ref, { kind: "answer", answer }), { discard: true }),
     }),
   ),
+);
+
+/**
+ * Wakes a lead when someone other than a lead records a decision in its project (decisions_record from a human or
+ * an outside agent). Answers to asks are left out: the AnswerSink already delivers those. Follows the event log
+ * from the hub's start, so it sees every path that records a decision.
+ */
+export const layerDecisionWakes = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const wakes = yield* LeadWakes;
+    const decisions = yield* Decisions;
+    const events = yield* EventLog.EventLog;
+    let cursor = yield* events.head();
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Effect.gen(function* () {
+          const page = yield* events.wait({ cursor, types: ["decision.recorded"], timeoutSec: 3600 });
+          cursor = page.cursor;
+          for (const event of page.events) {
+            if (event.machineId === undefined || event.projectId === undefined) continue;
+            // A global decision touches every project; leads see it in their next digest instead.
+            const id = (event.data as { readonly decisionId?: Decision["decisionId"] } | undefined)?.decisionId;
+            const decision = id === undefined ? undefined : yield* decisions.get(id);
+            if (decision === undefined || decision.scope.kind === "global" || decision.source === "lead" || decision.askId !== undefined) {
+              continue;
+            }
+            yield* wakes.trigger({ machineId: event.machineId, projectId: event.projectId }, { kind: "decision", decision });
+          }
+        }),
+      ),
+    );
+  }),
 );

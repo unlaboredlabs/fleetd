@@ -7,7 +7,7 @@
     "fleetd": "./dist/bin.js"
   },
   "scripts": {
-    "build": "rolldown src/bin.ts --file dist/bin.js --platform node --format esm",
+    "build": "rolldown src/bin.ts --file dist/bin.js --platform node --format esm && cp ../hub/src/leads/prompt-v*.md dist/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

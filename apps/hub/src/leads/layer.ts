@@ -9,7 +9,7 @@ import * as Leads from "./Leads.ts";
 import * as LeadWakes from "./LeadWakes.ts";
 import * as Workstreams from "./Workstreams.ts";
 
-/** Leads, Workstreams, LeadWakes, TaskRecords and the ledger's AnswerSink. Needs HubDb, HubStore, EventLog, Executors, Asks and Decisions. */
+/** Leads, Workstreams, LeadWakes, TaskRecords and the ledger's AnswerSink. Needs HubDb, HubStore, EventLog, Executors, WriteQueue, Asks and Decisions. */
 export const layer = (options: Leads.LeadsOptions = {}) =>
   Layer.mergeAll(Leads.layer(options), Workstreams.layer, LeadWakes.layerAnswerSink).pipe(
     Layer.provideMerge(LeadWakes.layer()),
@@ -18,11 +18,12 @@ export const layer = (options: Leads.LeadsOptions = {}) =>
 
 /**
  * The leads layer together with the ledger. Inbox needs the AnswerSink that leads provide, and leads need Asks
- * and Decisions, so the ledger is built in two halves over one repo instead of with `Ledger.layer`.
- * Needs HubDb, HubStore, EventLog and Executors.
+ * and Decisions, so the ledger is built in two halves over one repo instead of with `Ledger.layer`. Includes the
+ * wakes for decisions recorded outside the inbox.
+ * Needs HubDb, HubStore, EventLog, Executors and WriteQueue.
  */
 export const layerWithLedger = (options: Leads.LeadsOptions = {}) =>
-  Inbox.layer.pipe(
+  Layer.merge(Inbox.layer, LeadWakes.layerDecisionWakes).pipe(
     Layer.provideMerge(layer(options)),
     Layer.provideMerge(Layer.mergeAll(Asks.layer, Decisions.layer)),
     Layer.provideMerge(LedgerRepo.layer),

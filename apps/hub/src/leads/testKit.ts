@@ -8,6 +8,7 @@ import * as Executors from "../executor/Executors.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Inbox } from "../ledger/Inbox.ts";
 import type { Actor } from "../ledger/LedgerRepo.ts";
+import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
@@ -60,12 +61,13 @@ export const makeKit = (options: LeadsOptions = { prompt: "You are the lead of p
   const launches: Array<{ readonly machineId: MachineId; readonly input: LaunchInput }> = [];
   const sends: Array<{ readonly threadId: ThreadId; readonly message: string; readonly clientRequestId: string }> = [];
   let offline = false;
+  const liveWaiters: Array<() => void> = [];
 
   const executors = Executors.Executors.of({
     attach: () => Effect.void,
     detach: () => Effect.void,
     isConnected: () => Effect.succeed(!offline),
-    awaitLive: () => Effect.void,
+    awaitLive: () => Effect.suspend(() => (offline ? Effect.callback<void>((resume) => void liveWaiters.push(() => resume(Effect.void))) : Effect.void)),
     launch: (machineId, input) =>
       Effect.suspend(() => {
         if (offline) return Effect.fail(new Executors.MachineNotConnected({ machineId }));
@@ -88,13 +90,17 @@ export const makeKit = (options: LeadsOptions = { prompt: "You are the lead of p
     Layer.provideMerge(HubDb.layerMemory),
     Layer.provideMerge(TestClock.layer()),
   );
-  const layer = LeadsLayer.layerWithLedger(options).pipe(Layer.provideMerge(base));
+  const layer = LeadsLayer.layerWithLedger(options).pipe(Layer.provideMerge(WriteQueue.layer()), Layer.provideMerge(base));
 
   return {
     layer,
     launches,
     sends,
-    setOffline: (value: boolean) => void (offline = value),
+    /** Going back online resumes whatever waits for the machine, such as the write queue. */
+    setOffline: (value: boolean) => {
+      offline = value;
+      if (!value) for (const resume of liveWaiters.splice(0)) resume();
+    },
     addProject: (ref: ProjectRef, title?: string) =>
       Effect.flatMap(HubStore.HubStore, (s) => s.projects.upsertMany(ref.machineId, [project(ref, title) as never])),
   };
