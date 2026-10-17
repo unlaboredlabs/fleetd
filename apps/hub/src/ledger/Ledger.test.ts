@@ -17,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
+import { Incidents } from "../incidents/Incidents.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import { Asks, type AskInput, DECIDE_YOURSELF, QUIET_WINDOW_MS } from "./Asks.ts";
@@ -37,7 +38,7 @@ const run = <A, E>(
   body: (delivered: Ref.Ref<ReadonlyArray<{ project: string; answers: ReadonlyArray<Answer> }>>) => Effect.Effect<
     A,
     E,
-    Asks | Decisions | Inbox | EventLog.EventLog | LedgerRepo
+    Asks | Decisions | Inbox | EventLog.EventLog | LedgerRepo | Incidents
   >,
   db: Layer.Layer<HubDb.HubDb> = HubDb.layerMemory,
 ) =>
@@ -374,8 +375,10 @@ describe("Inbox.reply", () => {
         const out = yield* reply("1 go 2 nvm 3 b 4 no");
         expect(out.echo).toBe("Logged: 1 → rec for a.one (D1), 2 → dropped, 3 → blue (D2), 4 → no (D3)");
         expect(yield* getAsk("A2")).toMatchObject({ state: "withdrawn", answer: { value: "dropped" } });
-        const repo = yield* LedgerRepo;
-        expect(repo.incidents()).toEqual([{ askId: "A2", kind: "misfiled" }]);
+        const misfiled = yield* (yield* Incidents).list({ limit: 10 });
+        expect(misfiled.map((i) => [i.class, i.projectRef.projectId, i.evidence[0]])).toEqual([
+          ["misfiled_ask", "p1", 'A2 (a.two, product) was filed by the lead and dropped by the human: "What about a.two?"'],
+        ]);
         const sent = yield* Ref.get(delivered);
         expect(sent.map((s) => [s.project, s.answers.map((a) => a.ask.askId)])).toEqual([
           ["p1", ["A1", "A2", "A4"]],
@@ -388,7 +391,7 @@ describe("Inbox.reply", () => {
     run((delivered) =>
       Effect.gen(function* () {
         const { projectRef: _, ...unrouted } = ask("docs.where");
-        expect((yield* Effect.flip(file(unrouted))).message).toMatch(/Only an intake\.route\.\* ask may leave out its project/u);
+        expect((yield* Effect.flip(file(unrouted))).message).toMatch(/Only an intake\.route\.\* or playbook\.\* ask may leave out its project/u);
         yield* file({ ...unrouted, key: key("intake.route.tidy-docs-abc123"), options: ["repo-a on lab-a", "repo-b on lab-a"] }, "k1");
         yield* file(ask("a.one"));
         expect((yield* getAsk("A1"))?.projectRef).toBeUndefined();

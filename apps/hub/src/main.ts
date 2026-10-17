@@ -18,6 +18,9 @@ import * as FinishAll from "./playbooks/FinishAll.ts";
 import * as Judges from "./checks/Judges.ts";
 import * as NodeCommands from "./checks/NodeCommands.ts";
 import * as Estimates from "./estimates/Estimates.ts";
+import * as Detectors from "./incidents/Detectors.ts";
+import * as Retro from "./retro/Retro.ts";
+import * as RetroRecords from "./retro/RetroRecords.ts";
 import * as Executors from "./executor/Executors.ts";
 import * as LeadCallHandler from "./leads/LeadCallHandler.ts";
 import * as LeadsLayer from "./leads/layer.ts";
@@ -152,6 +155,15 @@ const layerTasks = Tasks.layer.pipe(
   Layer.provideMerge(Layer.merge(PrHeads.layerGh, Judges.layerJudgeHook.pipe(Layer.provideMerge(Judges.layerVerdicts)))),
 );
 
+/**
+ * The retro, with the incident detectors that read the event log. Its one `claude -p` turn per run goes through the
+ * intake router's isolated runner and model.
+ */
+const layerRetro = (home: string, model: string | undefined) =>
+  Layer.merge(Retro.layer, Detectors.layer).pipe(
+    Layer.provide(Layer.merge(RetroRecords.layer, Retro.layerRunner({ home, ...(model === undefined ? {} : { model }) }))),
+  );
+
 /** The whole hub over the database in `home` (already resolved by `HubDb.resolveHubHome`). */
 export const hubLayer = (home: string, options: HubOptions) =>
   HttpApp.layer(options.listen).pipe(
@@ -170,7 +182,7 @@ export const hubLayer = (home: string, options: HubOptions) =>
         Layer.provideMerge(Push.layer(home)),
         // Wakes sit above the leads layer: a firing waits while the usage layer holds its thread. A deleted
         // project's asks, tasks and workstreams end above tasks and the ledger.
-        Layer.provideMerge(Layer.mergeAll(HumanDigests.layer, Wakes.layer, ProjectRemovals.layer)),
+        Layer.provideMerge(Layer.mergeAll(HumanDigests.layer, Wakes.layer, ProjectRemovals.layer, layerRetro(home, options.routerModel))),
         Layer.provideMerge(layerTasks),
         // Leads and the ledger; lead wakes go out through the write queue below.
         Layer.provideMerge(LeadsLayer.layerWithLedger({ playbookOverrides: path.join(home, "playbooks") })),

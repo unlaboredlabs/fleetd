@@ -127,6 +127,7 @@ const makeRepo = (db: DatabaseSync) => {
     decisionActiveSame: db.prepare(
       "SELECT n, data FROM decisions WHERE key = ? AND scope_kind = ? AND scope_id = ? AND state = 'active'",
     ),
+    activeOnKey: db.prepare("SELECT data FROM decisions WHERE key = ? AND project_key = ? AND state = 'active' ORDER BY n"),
     ftsInsert: db.prepare("INSERT INTO decisions_fts (rowid, key, value, why) VALUES (?, ?, ?, ?)"),
     resolve: db.prepare(
       `SELECT data FROM decisions
@@ -183,10 +184,6 @@ const makeRepo = (db: DatabaseSync) => {
     itemInsert: db.prepare("INSERT INTO batch_items (batch_n, number, ask_n) VALUES (?, ?, ?)"),
     itemNext: db.prepare("SELECT COALESCE(MAX(number), 0) + 1 AS next FROM batch_items WHERE batch_n = ?"),
     items: db.prepare("SELECT number, ask_n FROM batch_items WHERE batch_n = ? ORDER BY number"),
-    incident: db.prepare(
-      "INSERT OR IGNORE INTO ask_incidents (ask_n, kind, project_key, at_ms) VALUES (?, ?, ?, ?)",
-    ),
-    incidents: db.prepare("SELECT ask_n, kind FROM ask_incidents ORDER BY at_ms, ask_n"),
   };
 
   const getDecision = (id: string): Decision | undefined => {
@@ -253,6 +250,10 @@ const makeRepo = (db: DatabaseSync) => {
     const row = sql.resolve.get({ key, ws: chain.workstreamId ?? null, project: projectKey(chain.projectRef) });
     return row ? decodeDecision(String(row.data)) : undefined;
   };
+
+  /** Active decisions on `key` recorded in the project, at project or workstream scope, oldest first. */
+  const activeOnKey = (key: string, projectRef: ProjectRef): Array<Decision> =>
+    sql.activeOnKey.all(key, projectKey(projectRef)).map((row) => decodeDecision(String(row.data)));
 
   const filterParams = (filter: { chain?: Chain; scope?: DecisionScope }) => {
     const scope = filter.scope ? scopeColumns(filter.scope) : undefined;
@@ -396,18 +397,13 @@ const makeRepo = (db: DatabaseSync) => {
       .all({ state: filter.state ?? null, limit: filter.limit ?? 20 })
       .map((row) => getBatch(Number(row.n))!);
 
-  const recordIncident = (ask: Ask, kind: "misfiled", nowMs: number) =>
-    sql.incident.run(askN(ask.askId)!, kind, askProjectKey(ask.projectRef), nowMs);
-
-  const incidents = () =>
-    sql.incidents.all().map((row) => ({ askId: AskId.make(`A${Number(row.ask_n)}`), kind: String(row.kind) }));
-
   return {
     db,
     getDecision,
     recordDecision,
     retireDecision,
     resolve,
+    activeOnKey,
     searchDecisions,
     listDecisions,
     getAskRow,
@@ -423,8 +419,6 @@ const makeRepo = (db: DatabaseSync) => {
     closeIfDone,
     latestOpenBatch,
     listBatches,
-    recordIncident,
-    incidents,
   };
 };
 

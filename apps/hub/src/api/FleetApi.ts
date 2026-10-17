@@ -10,6 +10,7 @@ import {
   type DecisionScope,
   type HubEvent,
   type HubEventType,
+  type IncidentClass,
   type Machine,
   type MachineId,
   type McpToolName,
@@ -53,6 +54,7 @@ import { ChangeRecords } from "../train/ChangeRecords.ts";
 import { freezeKey } from "../train/rules.ts";
 import { Train } from "../train/Train.ts";
 import { Doctor } from "../doctor/Doctor.ts";
+import { APPLY_KEY, Retro } from "../retro/Retro.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -104,6 +106,8 @@ export const IMPLEMENTED_TOOLS = [
   "usage_resume",
   "claims_list",
   "incidents_list",
+  "retro_proposals",
+  "retro_run",
   "changes_list",
   "train_get",
   "train_freeze",
@@ -250,6 +254,7 @@ const make = Effect.gen(function* () {
   const finishAll = yield* FinishAll;
   const doctor = yield* Doctor;
   const push = yield* Push;
+  const retro = yield* Retro;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -709,10 +714,66 @@ const make = Effect.gen(function* () {
         limit: scoped ? input.limit + 1 : 1000,
       })).filter((i) => auth.allows(caller, "read", i.projectRef.machineId));
       const shown = cap(all, input.limit);
+      const sinceMs = (yield* Clock.currentTimeMillis) - input.windowDays * 86_400_000;
+      const filter = {
+        ...(input.projectRef === undefined ? {} : { projectRef: input.projectRef }),
+        ...(input.workstreamId === undefined ? {} : { workstreamId: input.workstreamId }),
+        ...(input.class === undefined ? {} : { class: input.class }),
+        sinceMs,
+      };
+      // Counted from the incidents this key may read, like the list.
+      const tally = new Map<IncidentClass, number>();
+      for (const i of yield* incidents.list({ ...filter, limit: 10_000 })) {
+        if (auth.allows(caller, "read", i.projectRef.machineId)) tally.set(i.class, (tally.get(i.class) ?? 0) + 1);
+      }
+      const counts = [...tally].map(([cls, count]) => ({ class: cls, count })).sort((a, b) => b.count - a.count || a.class.localeCompare(b.class));
       return {
         incidents: shown.items,
+        counts,
+        countsSince: new Date(sinceMs).toISOString(),
         ...withTruncated(shown.truncated),
         ...(shown.truncated ? { next: "Narrow the list with projectRef, workstreamId or class." } : {}),
+      };
+    }),
+
+    retro_proposals: Effect.fnUntraced(function* (caller, input) {
+      // A proposal cites incidents; a key sees it only when it may read every machine they came from.
+      const listed = (yield* retro.proposals({ ...(input.state === undefined ? {} : { state: input.state }), limit: 1000 })).filter((p) =>
+        p.machines.every((m) => auth.allows(caller, "read", m)),
+      );
+      const shown = cap(listed.map((p) => p.proposal), input.limit);
+      const apply = yield* retro.applyEnabled();
+      const lastRun = yield* retro.lastRun();
+      return {
+        proposals: shown.items,
+        apply,
+        ...(lastRun === undefined ? {} : { lastRun }),
+        ...withTruncated(shown.truncated),
+        next: apply
+          ? "Wording changes apply on their own and revert when their metric does not improve; gate changes come to you as asks each Monday."
+          : `Advise-only: nothing applies until the global decision ${APPLY_KEY} = true (decisions_record).`,
+      };
+    }),
+
+    retro_run: Effect.fnUntraced(function* (caller, input) {
+      if (!allowsEverywhere(caller, "admin")) {
+        return yield* new ToolError({
+          code: "forbidden",
+          message: "A retro reads every project's incidents and changes hub-wide playbooks; this key is not admin on every machine.",
+          fix: "Use a key from fleetd hub key create --role admin --machines '*'.",
+        });
+      }
+      const done = yield* retro
+        .run({ windowDays: input.windowDays, trigger: "manual", ...(input.advise === undefined ? {} : { advise: input.advise }) })
+        .pipe(Effect.mapError((refused) => new ToolError({ code: "invalid", message: refused.message, fix: refused.fix })));
+      return {
+        ...done,
+        next:
+          done.run.usage === undefined
+            ? `No incidents in the last ${input.windowDays} days, so no claude turn ran.`
+            : done.run.advise
+              ? "Suggested only; retro_proposals lists them and the digest shows them."
+              : "Wording changes are applied and measured; gate changes wait for Monday's asks. retro_proposals tracks them.",
       };
     }),
 

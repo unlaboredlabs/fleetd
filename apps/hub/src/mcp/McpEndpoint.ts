@@ -76,7 +76,11 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   claims_list:
     "Claims (a lead's `fleetd claim done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
   incidents_list:
-    "Incidents the hub detected (false_claim, estimate_miss, polish_loop, out_of_area, policy_bypass, …), newest first, with evidence lines. Filter by projectRef, workstreamId or class.",
+    "Incidents the hub detected (false_claim, estimate_miss, polish_loop, misfiled_ask, out_of_area, stall, policy_bypass, re_ask, override, playbook_reverted), newest first, with evidence lines, plus per-class counts over the last windowDays (default 7). Filter by projectRef, workstreamId or class.",
+  retro_proposals:
+    "The retro's playbook change proposals, newest first, with their diff, the incidents each fixes, its metric and state (suggested, pending, asked, measuring, kept, reverted, applied, rejected, stale). apply says whether policy.retro.apply lets them apply; until then they are only suggested.",
+  retro_run:
+    "Admin on every machine: run the retro now. One claude -p turn reads the incidents of the last windowDays (default 14) and the current playbooks and proposes changes; the hub drops invalid ones and classifies each as wording or gate by the fields it touches. advise: true only suggests. At most 2 runs a day.",
   changes_list:
     "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), tier, reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
   train_get: "One repo's merge train: frozen or not, the Change it is rebasing, checking or merging now, and the queue in order. Only the train merges.",

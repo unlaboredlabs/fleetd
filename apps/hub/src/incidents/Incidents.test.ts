@@ -1,4 +1,5 @@
-import type { ProjectId, TaskId, WorkstreamId } from "@fleetd/contracts";
+import type { IncidentId, ProjectId, TaskId, WorkstreamId } from "@fleetd/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
@@ -47,6 +48,24 @@ describe("Incidents", () => {
             expect(yield* ids({ projectRef: REF, limit: 10 })).toEqual(["I2", "I1"]);
             expect(yield* ids({ workstreamId: W1, limit: 10 })).toEqual(["I1"]);
             expect(yield* ids({ class: "estimate_miss", limit: 10 })).toEqual(["I3"]);
+            expect((yield* incidents.get("I2" as IncidentId))?.class).toBe("polish_loop");
+
+            // Counts per class over a window, under the same filters.
+            yield* TestClock.adjust(Duration.days(8));
+            yield* incidents.record({ class: "stall", projectRef: REF, evidence: ["no progress"] });
+            yield* incidents.record({ class: "stall", projectRef: OTHER, evidence: ["no progress"] });
+            yield* incidents.record({ class: "false_claim", projectRef: REF, evidence: ["C4 failed"] });
+            const weekAgo = Date.parse("1970-01-02T00:00:00.000Z");
+            expect(yield* incidents.counts({ sinceMs: weekAgo })).toEqual([
+              { class: "stall", count: 2 },
+              { class: "false_claim", count: 1 },
+            ]);
+            expect(yield* incidents.counts({ projectRef: REF })).toEqual([
+              { class: "false_claim", count: 2 },
+              { class: "polish_loop", count: 1 },
+              { class: "stall", count: 1 },
+            ]);
+            expect(yield* ids({ sinceMs: 0, untilMs: weekAgo, limit: 10 })).toEqual(["I3", "I2", "I1"]);
           }),
           layer,
         ),

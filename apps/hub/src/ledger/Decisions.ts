@@ -25,6 +25,8 @@ export class Decisions extends Context.Service<
     readonly get: (decisionId: DecisionId) => Effect.Effect<Decision | undefined>;
     /** The active decision for `key`, looked up in the workstream, then the project, then globally. */
     readonly resolve: (key: DecisionKey, chain: Chain) => Effect.Effect<Decision | undefined>;
+    /** Active decisions on `key` at project or workstream scope in the project, oldest first. */
+    readonly activeOnKey: (key: DecisionKey, projectRef: ProjectRef) => Effect.Effect<ReadonlyArray<Decision>>;
     /** FTS5 over key, value and why; best match first, active only. */
     readonly search: (query: string, filter?: DecisionFilter) => Effect.Effect<ReadonlyArray<Decision>>;
     /** Active decisions, newest first. */
@@ -68,6 +70,7 @@ const make = Effect.gen(function* () {
     retire: (decisionId) => write(repo, () => repo.retireDecision(decisionId)),
     get: (decisionId) => Effect.sync(() => repo.getDecision(decisionId)),
     resolve: (key, chain) => Effect.sync(() => repo.resolve(key, chain)),
+    activeOnKey: (key, projectRef) => Effect.sync(() => repo.activeOnKey(key, projectRef)),
     search: (query, filter = {}) => Effect.sync(() => repo.searchDecisions(query, filter)),
     list: (filter) => Effect.sync(() => repo.listDecisions(filter)),
   });

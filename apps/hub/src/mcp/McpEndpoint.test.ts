@@ -566,6 +566,33 @@ describe("M5 tools", () => {
   });
 });
 
+describe("incidents and the retro", () => {
+  it("incidents_list counts per class over its window within the key's machines; retro_run needs admin everywhere", async () => {
+    const { hub, url, as } = await fleet();
+    const on = (machineId: string) => ({ machineId: machineId as MachineId, projectId: `p-${machineId}` as never });
+    await hub.addIncident({ class: "stall", projectRef: on("lab-a"), evidence: ["no progress"] });
+    await hub.addIncident({ class: "stall", projectRef: on("lab-a"), evidence: ["no progress"] });
+    await hub.addIncident({ class: "false_claim", projectRef: on("lab-b"), evidence: ["C1 failed"] });
+    const all = (await call(await as("reader"), "incidents_list")).body;
+    expect(all.counts).toEqual([
+      { class: "stall", count: 2 },
+      { class: "false_claim", count: 1 },
+    ]);
+    expect(Date.now() - Date.parse(all.countsSince)).toBeGreaterThanOrEqual(7 * 86_400_000);
+    expect((await call(await as("aOnly"), "incidents_list", { windowDays: 1 })).body.counts).toEqual([{ class: "stall", count: 2 }]);
+
+    expect((await call(await as("reader"), "retro_run")).body.code).toBe("forbidden");
+    const aAdmin = await hub.addKey("a-admin", [{ role: "admin", machines: ["lab-a" as MachineId] }]);
+    expect((await call(await connect(url, aAdmin.key), "retro_run")).body).toMatchObject({ code: "forbidden", fix: expect.stringContaining("--role admin --machines '*'") });
+
+    // No model in unit tests: the turn fails, nothing is proposed, and the run is on record, advise-only.
+    const ran = (await call(await as("admin"), "retro_run", { windowDays: 7 })).body;
+    expect(ran.run).toMatchObject({ run: 1, trigger: "manual", advise: true, windowDays: 7, incidents: 3, proposals: [], usage: { kind: "orchestrator", ok: false } });
+    const listed = (await call(await as("reader"), "retro_proposals")).body;
+    expect(listed).toMatchObject({ proposals: [], apply: false, lastRun: { run: 1 }, next: expect.stringContaining("policy.retro.apply = true") });
+  });
+});
+
 describe("usage tools", () => {
   it("usage_status shows each readable machine's login, breaker and probe counter; usage_resume needs operate there", async () => {
     const { hub, as } = await fleet();

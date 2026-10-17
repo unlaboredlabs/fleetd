@@ -35,6 +35,7 @@ import { base64Bytes, SealedSecret, SecretFingerprint } from "./secrets.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
 import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
 import { DoctorCheck, DoctorCheckId } from "./doctor.ts";
+import { RetroProposal, RetroProposalState, RetroRun } from "./retro.ts";
 
 /** Fields every tool result carries: a hint for the next call, and whether lists were trimmed to their limits. */
 const resultFields = {
@@ -420,10 +421,39 @@ export const IncidentsListInput = Schema.Struct({
   workstreamId: Schema.optionalKey(WorkstreamId),
   class: Schema.optionalKey(IncidentClass),
   limit: intDefault(1, 100, 20),
+  /** M12: the span `counts` covers, ending now. */
+  windowDays: intDefault(1, 30, 7),
 });
 export const IncidentsListOutput = Schema.Struct({
   /** Newest first. */
   incidents: Schema.Array(Incident).check(Schema.isMaxLength(100)),
+  /** M12: incidents per class since `countsSince`, under the same filters; classes with none are left out. Most first. */
+  counts: Schema.Array(Schema.Struct({ class: IncidentClass, count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)) })),
+  countsSince: Timestamp,
+  ...resultFields,
+});
+
+// retro_proposals, retro_run (M12)
+export const RetroProposalsInput = Schema.Struct({
+  state: Schema.optionalKey(RetroProposalState),
+  limit: intDefault(1, 100, 20),
+});
+export const RetroProposalsOutput = Schema.Struct({
+  /** Newest first. */
+  proposals: Schema.Array(RetroProposal).check(Schema.isMaxLength(100)),
+  /** The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes are asked. */
+  apply: Schema.Boolean,
+  lastRun: Schema.optionalKey(RetroRun),
+  ...resultFields,
+});
+export const RetroRunInput = Schema.Struct({
+  windowDays: intDefault(1, 28, 14),
+  /** Propose only, even when policy.retro.apply is true. */
+  advise: Schema.optionalKey(Schema.Boolean),
+});
+export const RetroRunOutput = Schema.Struct({
+  run: RetroRun,
+  proposals: Schema.Array(RetroProposal).check(Schema.isMaxLength(10)),
   ...resultFields,
 });
 
@@ -580,6 +610,9 @@ export const McpTools = {
   usage_resume: { scope: "operate", input: UsageResumeInput, output: UsageResumeOutput },
   claims_list: { scope: "read", input: ClaimsListInput, output: ClaimsListOutput },
   incidents_list: { scope: "read", input: IncidentsListInput, output: IncidentsListOutput },
+  retro_proposals: { scope: "read", input: RetroProposalsInput, output: RetroProposalsOutput },
+  // Admin on every machine: a retro reads every project's incidents and changes hub-wide playbooks.
+  retro_run: { scope: "admin", input: RetroRunInput, output: RetroRunOutput },
   changes_list: { scope: "read", input: ChangesListInput, output: ChangesListOutput },
   train_get: { scope: "read", input: TrainGetInput, output: TrainGetOutput },
   train_freeze: { scope: "operate", input: TrainFreezeInput, output: TrainFreezeOutput },

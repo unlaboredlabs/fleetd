@@ -82,8 +82,23 @@ export const Eta = Schema.Struct({
 }).annotate({ identifier: "Eta" });
 export type Eta = typeof Eta.Type;
 
-/** `policy_bypass`: a PR on a watched repo was merged by something other than the train. */
-export const IncidentClass = Schema.Literals(["false_claim", "estimate_miss", "polish_loop", "misfiled_ask", "out_of_area", "stall", "policy_bypass"]);
+/**
+ * `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `re_ask`, a human was
+ * asked about a key that already had an active Decision; `override`, a human replaced a lead's Decision with another
+ * value; `playbook_reverted`, a retro wording change missed its metric and was rolled back.
+ */
+export const IncidentClass = Schema.Literals([
+  "false_claim",
+  "estimate_miss",
+  "polish_loop",
+  "misfiled_ask",
+  "out_of_area",
+  "stall",
+  "policy_bypass",
+  "re_ask",
+  "override",
+  "playbook_reverted",
+]);
 export type IncidentClass = typeof IncidentClass.Type;
 
 /** Recorded by the hub, never by an agent. */

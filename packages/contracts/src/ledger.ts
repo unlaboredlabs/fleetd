@@ -440,10 +440,16 @@ export const askKindRule = Schema.makeFilter(
 /** Asks with this key prefix ask which project an intent belongs to, so they alone have no project. */
 export const UNROUTED_ASK_PREFIX = "intake.route.";
 
-/** Only the router's fallback ask may leave out its project. */
+/** M12: the retro's gate-change asks, `playbook.<name>.<hash>`. Playbooks are hub-wide, so these have no project either. */
+export const PLAYBOOK_ASK_PREFIX = "playbook.";
+
+/** Asks that may leave out their project: the router's fallback and the retro's gate changes. */
+export const isHubAskKey = (key: string) => key.startsWith(UNROUTED_ASK_PREFIX) || key.startsWith(PLAYBOOK_ASK_PREFIX);
+
+/** Only the router's fallback ask and the retro's gate asks may leave out their project. */
 export const askProjectRule = Schema.makeFilter((ask: { readonly projectRef?: ProjectRef; readonly key: string }) =>
-  ask.projectRef === undefined && !ask.key.startsWith(UNROUTED_ASK_PREFIX)
-    ? { path: ["projectRef"], issue: `only an ${UNROUTED_ASK_PREFIX}* ask may leave out projectRef` }
+  ask.projectRef === undefined && !isHubAskKey(ask.key)
+    ? { path: ["projectRef"], issue: `only an ${UNROUTED_ASK_PREFIX}* or ${PLAYBOOK_ASK_PREFIX}* ask may leave out projectRef` }
     : undefined,
 );
 
