@@ -270,6 +270,7 @@ pub fn build_on(
         clock.clone(),
     )?;
     let checks = crate::hub::checks::build(&db, &events, &clock);
+    let ops = crate::hub::usage::wire::build(&config, clock.clone());
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -297,6 +298,11 @@ pub fn build_on(
         value_bar: checks.value_bar,
         checks: checks.checks,
         claims: checks.claims,
+        ops: ops.ports,
+        usage: ops.usage,
+        doctor: ops.doctor,
+        retro: ops.retro,
+        approvals: ops.approvals,
     });
     checks.ports.bind(&hub);
     Ok(hub)
@@ -321,6 +327,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::checks::start_loops(hub));
+    loops.extend(crate::hub::usage::wire::start(hub));
     loops
 }
 
