@@ -67,7 +67,11 @@
         "ask.secret_saved",
         "gated.ran",
         "push.sent",
-        "doctor.changed"
+        "doctor.changed",
+        "retro.ran",
+        "playbook.changed",
+        "playbook.reverted",
+        "playbook.kept"
       ]
     },
     "MachineId": {

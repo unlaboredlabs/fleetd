@@ -16,6 +16,8 @@ import { projectKey } from "../ledger/LedgerRepo.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { humanTrainLines, trainFacts } from "../train/digest.ts";
+import { suggestedLines } from "../retro/digest.ts";
+import * as RetroRecords from "../retro/RetroRecords.ts";
 import { nextCron, parseCron } from "../wakes/schedule.ts";
 
 /** The global Decision key holding the IANA zone digests follow. */
@@ -61,6 +63,7 @@ const make = Effect.gen(function* () {
   const workstreams = yield* Workstreams.Workstreams;
   const store = yield* HubStore.HubStore;
   const events = yield* EventLog.EventLog;
+  const retro = yield* RetroRecords.RetroRecords;
   const factsContext = yield* Effect.context<Effect.Services<ReturnType<typeof workstreamFacts>> | Effect.Services<ReturnType<typeof trainFacts>>>();
 
   const zone = Effect.map(decisions.list({ scope: { kind: "global" }, limit: 500 }), (global) => {
@@ -89,6 +92,7 @@ const make = Effect.gen(function* () {
         decidedWithoutYou,
         projectNames: new Map((yield* store.projects.list()).map((p) => [projectKey(p), p.title])),
         train: humanTrainLines(yield* trainFacts((c) => shown(c.projectRef)).pipe(Effect.provideContext(factsContext)), sinceMs),
+        suggested: suggestedLines((yield* retro.proposals.list({ state: "suggested", limit: 20 })).filter((p) => p.machines.every(visible)).map((p) => p.proposal)),
       });
       return { text, at: new Date(nowMs).toISOString() };
     });
@@ -119,7 +123,7 @@ const make = Effect.gen(function* () {
   };
 });
 
-/** HumanDigests plus its 09:00/18:00 scheduler. Needs Asks, Decisions, Workstreams, HubStore and EventLog. */
+/** HumanDigests plus its 09:00/18:00 scheduler. Needs Asks, Decisions, Workstreams, HubStore, EventLog and HubDb. */
 export const layer = Layer.effect(
   HumanDigests,
   Effect.gen(function* () {
@@ -127,4 +131,4 @@ export const layer = Layer.effect(
     yield* Effect.forkScoped(schedule);
     return service;
   }),
-);
+).pipe(Layer.provide(RetroRecords.layer));

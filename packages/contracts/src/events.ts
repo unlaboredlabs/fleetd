@@ -89,6 +89,14 @@ export const HubEventType = Schema.Literals([
   "push.sent",
   /** M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run). */
   "doctor.changed",
+  /** M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs). */
+  "retro.ran",
+  /** M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`. */
+  "playbook.changed",
+  /** M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`. */
+  "playbook.reverted",
+  /** M12: a wording change met its metric; `data.proposalId`, `data.measured`. */
+  "playbook.kept",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

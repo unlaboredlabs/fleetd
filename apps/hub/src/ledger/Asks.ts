@@ -2,7 +2,9 @@ import {
   AskClass,
   DecisionKey,
   StepCommand,
+  PLAYBOOK_ASK_PREFIX,
   UNROUTED_ASK_PREFIX,
+  isHubAskKey,
   secretEnvName,
   type Ask,
   type CheckSpec,
@@ -48,7 +50,7 @@ export const DECIDE_YOURSELF = "decide this yourself and log it with `fleetd dec
 
 /** What the lead files with `fleetd ask`; `class` is unchecked so the refusal can name the fix. */
 export interface AskInput {
-  /** Absent only for an `intake.route.*` ask (the router's fallback). */
+  /** Absent only for an `intake.route.*` ask (the router's fallback) or a `playbook.*` one (the retro's gate changes). */
   readonly projectRef?: ProjectRef;
   readonly workstreamId?: WorkstreamId;
   readonly kind: AskKind;
@@ -124,8 +126,8 @@ const isStepCommand = Schema.is(StepCommand);
 
 /** Step 1 of the ask path. */
 export const validateAsk = (input: AskInput): LedgerError | undefined => {
-  if (input.projectRef === undefined && !input.key.startsWith(UNROUTED_ASK_PREFIX)) {
-    return invalid(`Only an ${UNROUTED_ASK_PREFIX}* ask may leave out its project.`, "Name the project the ask is about.");
+  if (input.projectRef === undefined && !isHubAskKey(input.key)) {
+    return invalid(`Only an ${UNROUTED_ASK_PREFIX}* or ${PLAYBOOK_ASK_PREFIX}* ask may leave out its project.`, "Name the project the ask is about.");
   }
   if (!isAskClass(input.class)) {
     return invalid(

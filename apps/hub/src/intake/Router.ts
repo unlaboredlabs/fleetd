@@ -151,9 +151,9 @@ interface Exit {
 }
 
 /** Runs `claude` once with the prompt on stdin. Interrupting the effect kills the child. */
-const runClaude = (args: ReadonlyArray<string>, prompt: string, cwd: string, env: Record<string, string>) =>
+const runClaude = (args: ReadonlyArray<string>, prompt: string, cwd: string, env: Record<string, string>, timeoutMs: number) =>
   Effect.callback<Exit>((resume, signal) => {
-    const child = spawn("claude", [...args], { cwd, env, signal, timeout: RUN_TIMEOUT_MS, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("claude", [...args], { cwd, env, signal, timeout: timeoutMs, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let done = false;
@@ -174,37 +174,62 @@ const runClaude = (args: ReadonlyArray<string>, prompt: string, cwd: string, env
     child.stdin.end(prompt);
   });
 
-export const make = (options: RouterOptions) =>
+export interface OneShotOptions extends RouterOptions {
+  /** Default 90 s. */
+  readonly timeoutMs?: number;
+}
+
+/** The answer text of one run, absent when the run failed (`run.error` says why), and the run as orchestrator usage. */
+export interface OneShotResult {
+  readonly text?: string;
+  readonly run: RouterRun;
+}
+
+/**
+ * The isolated `claude -p --output-format json` runner the router and the retro share: `<home>/claude-router` as
+ * the config dir and cwd, the allowlisted environment, and no tools, MCP servers or saved session.
+ */
+export const makeOneShot = (options: OneShotOptions) =>
   Effect.gen(function* () {
     const model = options.model ?? DEFAULT_ROUTER_MODEL;
     const configDir = path.join(options.home, "claude-router");
-    const template = readRouterPrompt();
     yield* Effect.sync(() => fs.mkdirSync(configDir, { recursive: true, mode: 0o700 }));
     const env = routerEnv(options.env ?? process.env, configDir);
-    // No tools, MCP servers or saved session: the run only reads the prompt and answers.
     const args = ["-p", "--output-format", "json", "--model", model, "--tools", "", "--strict-mcp-config", "--no-session-persistence"];
-
-    const attempt = (prompt: string, projects: ReadonlyArray<RouterProject>) =>
+    const timeoutMs = options.timeoutMs ?? RUN_TIMEOUT_MS;
+    return (prompt: string): Effect.Effect<OneShotResult> =>
       Effect.gen(function* () {
         const started = yield* Clock.currentTimeMillis;
-        const exit = yield* runClaude(args, prompt, configDir, env);
+        const exit = yield* runClaude(args, prompt, configDir, env, timeoutMs);
         const durationMs = (yield* Clock.currentTimeMillis) - started;
         const envelope = exit.spawnError === undefined ? readEnvelope(exit.stdout) : { error: `could not start claude: ${exit.spawnError}` };
-        const tokens = {
-          ...(envelope.inputTokens === undefined ? {} : { inputTokens: envelope.inputTokens }),
-          ...(envelope.outputTokens === undefined ? {} : { outputTokens: envelope.outputTokens }),
-        };
         const failed = envelope.error ?? (exit.code === 0 ? undefined : `claude exited with ${exit.code ?? "a signal"}: ${exit.stderr.trim().slice(-200)}`);
-        const verdict: Verdict = failed !== undefined ? { kind: "invalid", error: failed } : judgeAnswer(envelope.text ?? "", projects);
         const run: RouterRun = {
           kind: "orchestrator",
           model,
           durationMs,
-          ok: verdict.kind !== "invalid",
-          ...tokens,
-          ...(verdict.kind === "invalid" ? { error: verdict.error.slice(0, 300) } : {}),
+          ok: failed === undefined,
+          ...(envelope.inputTokens === undefined ? {} : { inputTokens: envelope.inputTokens }),
+          ...(envelope.outputTokens === undefined ? {} : { outputTokens: envelope.outputTokens }),
+          ...(failed === undefined ? {} : { error: failed.slice(0, 300) }),
         };
-        return { verdict, run };
+        return failed === undefined ? { text: envelope.text ?? "", run } : { run };
+      });
+  });
+
+export const make = (options: RouterOptions) =>
+  Effect.gen(function* () {
+    const template = readRouterPrompt();
+    const oneShot = yield* makeOneShot(options);
+
+    const attempt = (prompt: string, projects: ReadonlyArray<RouterProject>) =>
+      Effect.gen(function* () {
+        const { text, run } = yield* oneShot(prompt);
+        const verdict: Verdict = text === undefined ? { kind: "invalid", error: run.error ?? "no answer" } : judgeAnswer(text, projects);
+        return {
+          verdict,
+          run: verdict.kind === "invalid" ? { ...run, ok: false, error: verdict.error.slice(0, 300) } : run,
+        };
       });
 
     const route: IntakeRouter["Service"]["route"] = (input) =>

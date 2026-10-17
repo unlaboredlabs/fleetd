@@ -11,6 +11,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { Incidents } from "../incidents/Incidents.ts";
 import * as EventLog from "../store/EventLog.ts";
 import { recordedEvent } from "./Decisions.ts";
 import { type Actor, LedgerError, LedgerRepo, batchN, invalid, isoAt, projectKey, write } from "./LedgerRepo.ts";
@@ -100,12 +101,14 @@ interface Applied {
   readonly echo: ReadonlyArray<string>;
   readonly decisions: ReadonlyArray<{ readonly decision: Decision; readonly projectRef?: ProjectRef }>;
   readonly answers: ReadonlyArray<Answer>;
+  readonly misfiled: ReadonlyArray<Ask>;
 }
 
 const make = Effect.gen(function* () {
   const repo = yield* LedgerRepo;
   const events = yield* EventLog.EventLog;
   const sink = yield* AnswerSink;
+  const incidents = yield* Incidents;
 
   const apply = (input: ReplyInput, actor: Actor, nowMs: number) =>
     write(repo, (): Applied => {
@@ -126,6 +129,7 @@ const make = Effect.gen(function* () {
       const echo: Array<string> = [];
       const decisions: Array<{ decision: Decision; projectRef?: ProjectRef }> = [];
       const answers: Array<Answer> = [];
+      const misfiled: Array<Ask> = [];
       const by = { source: actor.source, by: actor.by };
       const answerOf = (value: string) => ({ value, by: actor.by, at: isoAt(nowMs), raw: input.raw });
 
@@ -191,8 +195,8 @@ const make = Effect.gen(function* () {
             const withdrawn: Ask = { ...ask, state: "withdrawn", answer: answerOf("dropped") };
             repo.putAsk(withdrawn);
             const row = repo.getAskRow(ask.askId);
-            // The lead filed a product call the human hands back: a misfiled ask, counted in M12.
-            if (row?.filedBy.startsWith("lead:")) repo.recordIncident(ask, "misfiled", nowMs);
+            // The lead filed a product call the human hands back: a misfiled ask.
+            if (row?.filedBy.startsWith("lead:") && ask.projectRef !== undefined) misfiled.push(ask);
             answers.push({ ask: withdrawn, outcome: "withdrawn" });
             applied.push({ number, askId: ask.askId, outcome: "withdrawn", ...by });
             echo.push(`${number} → dropped`);
@@ -218,7 +222,7 @@ const make = Effect.gen(function* () {
         applied.push({ outcome: "pref", value: text, decisionId: decision.decisionId, ...by });
         echo.push(`${decision.key} → ${decision.decisionId}`);
       }
-      return { ...(batchId === undefined ? {} : { batchId }), applied, echo, decisions, answers };
+      return { ...(batchId === undefined ? {} : { batchId }), applied, echo, decisions, answers, misfiled };
     });
 
   const reply = (input: ReplyInput, actor: Actor) =>
@@ -234,6 +238,14 @@ const make = Effect.gen(function* () {
       }
       const done = result.success;
       for (const { decision, projectRef } of done.decisions) yield* events.append(recordedEvent(decision, projectRef));
+      for (const ask of done.misfiled) {
+        yield* incidents.record({
+          class: "misfiled_ask",
+          projectRef: ask.projectRef!,
+          ...(ask.workstreamId === undefined ? {} : { workstreamId: ask.workstreamId }),
+          evidence: [`${ask.askId} (${ask.key}, ${ask.class}) was filed by the lead and dropped by the human: "${ask.text}"`],
+        });
+      }
       const byProject = new Map<string, { projectRef: ProjectRef; answers: Array<Answer> }>();
       for (const answer of done.answers) {
         // No lead to wake for an unrouted ask: intake follows its decision.recorded instead.

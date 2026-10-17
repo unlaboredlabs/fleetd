@@ -42,7 +42,11 @@ import * as Slots from "../slots/Slots.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Tasks from "../tasks/Tasks.ts";
 import { UsageSource } from "../usage/UsageSource.ts";
+import * as Detectors from "../incidents/Detectors.ts";
 import * as Incidents from "../incidents/Incidents.ts";
+import { RetroRunner } from "../retro/Retro.ts";
+import * as RetroLayer from "../retro/Retro.ts";
+import * as RetroRecords from "../retro/RetroRecords.ts";
 import * as Receipts from "../receipts/Receipts.ts";
 import * as JudgeHook from "../valuebar/JudgeHook.ts";
 import * as PrHeads from "../valuebar/PrHeads.ts";
@@ -262,7 +266,17 @@ export const makeTestHub = () => {
     }),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll, ProjectRemovals.layer, layerPush).pipe(
+  // No model in unit tests: a retro run that gets this far records a failed turn.
+  const layerRetro = Layer.merge(RetroLayer.layer, Detectors.layer).pipe(
+    Layer.provide(
+      Layer.merge(
+        RetroRecords.layer,
+        Layer.succeed(RetroRunner, RetroRunner.of({ ask: () => Effect.succeed({ run: { kind: "orchestrator", model: "none", durationMs: 0, ok: false, error: "no model in tests" } }) })),
+      ),
+    ),
+  );
+
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll, ProjectRemovals.layer, layerPush, layerRetro).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),
@@ -281,7 +295,7 @@ export const makeTestHub = () => {
     Layer.provideMerge(HubDb.layerMemory),
   );
 
-  type Seeded = HubStore.HubStore | EventLog.EventLog | Auth.Auth | Asks | TaskRecords.TaskRecords | ChangeRecords.ChangeRecords;
+  type Seeded = HubStore.HubStore | EventLog.EventLog | Auth.Auth | Asks | TaskRecords.TaskRecords | ChangeRecords.ChangeRecords | Incidents.Incidents;
   /** Set once the hub's layer is built, so seeding runs against the same database the server reads. */
   let context: Context.Context<Seeded> | undefined;
   const run = <A>(effect: Effect.Effect<A, unknown, Seeded>) => {
@@ -328,6 +342,8 @@ export const makeTestHub = () => {
     listKeys: () => run(Effect.flatMap(Auth.Auth, (a) => a.list())),
     revoke: (keyId: string) => run(Effect.flatMap(Auth.Auth, (a) => a.revoke(keyId))),
     append: (event: Omit<HubEvent, "seq">) => run(Effect.flatMap(EventLog.EventLog, (e) => e.append(event))),
+    /** An incident as a detector would record it. */
+    addIncident: (input: Incidents.IncidentInput) => run(Effect.flatMap(Incidents.Incidents, (i) => i.record(input))),
     /** A task record as Tasks would store it, without running anything. */
     addTask: (task: Omit<Task, "taskId">) => run(Effect.flatMap(TaskRecords.TaskRecords, (r) => r.create(task))),
     /** A repo's merge train for a project, as its first enqueue makes it. */

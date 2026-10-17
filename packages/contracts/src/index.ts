@@ -6,6 +6,7 @@ export * from "./playbooks.ts";
 export * from "./effort.ts";
 export * from "./tasks.ts";
 export * from "./verification.ts";
+export * from "./retro.ts";
 export * from "./train.ts";
 export * from "./usage.ts";
 export * from "./doctor.ts";

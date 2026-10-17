@@ -1,4 +1,4 @@
-import type { Ask, Decision, Workstream, WorkstreamId } from "@fleetd/contracts";
+import { PLAYBOOK_ASK_PREFIX, type Ask, type Decision, type Workstream, type WorkstreamId } from "@fleetd/contracts";
 import type { WorkstreamFacts } from "../leads/digest.ts";
 import { FINISH_ALL_IDLE, isFinishAll } from "../playbooks/finishAllRules.ts";
 import { batchN, projectKey } from "./LedgerRepo.ts";
@@ -20,6 +20,8 @@ export interface DigestInput {
   readonly facts?: ReadonlyMap<WorkstreamId, WorkstreamFacts>;
   /** Lines from `humanTrainLines`: merges since the last digest and the state of each train. */
   readonly train?: ReadonlyArray<string>;
+  /** M12: the retro's advise-only proposals, from `suggestedLines`. */
+  readonly suggested?: ReadonlyArray<string>;
 }
 
 const DECIDED_MAX = 5;
@@ -51,6 +53,7 @@ const when = (nowMs: number, tz: string) => {
  */
 export const renderHumanDigest = (input: DigestInput): string => {
   const project = (ref: Ask["projectRef"]) => (ref === undefined ? "unrouted" : (input.projectNames.get(projectKey(ref)) ?? ref.projectId));
+  const askProject = (ask: Ask) => (ask.projectRef === undefined && ask.key.startsWith(PLAYBOOK_ASK_PREFIX) ? "playbooks" : project(ask.projectRef));
   const open = input.asks.filter((ask) => ask.state === "open");
   const latest = Math.max(0, ...open.map((ask) => (ask.batchId ? batchN(ask.batchId)! : 0)));
   const running = input.workstreams.filter((w) => RUNNING.has(w.state));
@@ -71,7 +74,7 @@ export const renderHumanDigest = (input: DigestInput): string => {
   for (const ask of ordered) {
     const n = ask.batchId ? batchN(ask.batchId)! : undefined;
     const label = n === undefined ? ask.askId : n === latest ? `${ask.number}` : `#B${n} ${ask.number}`;
-    let line = `${label} [${ask.kind === "do" ? "do" : ask.class}] ${project(ask.projectRef)}: ${clip(ask.text)}`;
+    let line = `${label} [${ask.kind === "do" ? "do" : ask.class}] ${askProject(ask)}: ${clip(ask.text)}`;
     if (ask.kind === "do") {
       const steps = ask.steps?.length ?? 0;
       line += ` (${steps} step${steps === 1 ? "" : "s"}; reply "${ask.number ?? ask.askId} done" when finished)`;
@@ -112,5 +115,6 @@ export const renderHumanDigest = (input: DigestInput): string => {
   // Finish-all's finish line; other idle workstreams stay quiet.
   for (const w of input.workstreams.filter((w) => w.state === "idle" && isFinishAll(w))) lines.push(`Idle: ${status(w)} · ${FINISH_ALL_IDLE}`);
   lines.push(...(input.train ?? []));
+  lines.push(...(input.suggested ?? []));
   return lines.join("\n");
 };

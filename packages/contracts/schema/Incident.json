@@ -42,7 +42,10 @@
             "misfiled_ask",
             "out_of_area",
             "stall",
-            "policy_bypass"
+            "policy_bypass",
+            "re_ask",
+            "override",
+            "playbook_reverted"
           ]
         },
         "projectRef": {
