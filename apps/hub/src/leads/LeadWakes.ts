@@ -1,6 +1,6 @@
 // Wakes to a lead: triggers for one lead are debounced and coalesced into a single message, which starts with
 // the code-rendered digest and then says why the lead was woken.
-import type { Decision, DecisionScope, ProjectRef, ThreadRef, WorkstreamId } from "@fleetd/contracts";
+import type { Decision, DecisionScope, ProjectRef, TaskId, TaskResult, ThreadRef, WorkstreamId } from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -14,6 +14,8 @@ import { Decisions } from "../ledger/Decisions.ts";
 import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
+import { taskDigestLines, taskResultLines } from "../tasks/render.ts";
+import * as TaskRecords from "../tasks/TaskRecords.ts";
 import { renderLeadDigest } from "./digest.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 
@@ -25,7 +27,9 @@ export type Trigger =
   | { readonly kind: "intent"; readonly workstreamId: WorkstreamId; readonly text: string }
   | { readonly kind: "answer"; readonly answer: Answer }
   /** A decision the human recorded that touches the lead's project. */
-  | { readonly kind: "decision"; readonly decision: Decision };
+  | { readonly kind: "decision"; readonly decision: Decision }
+  /** A task ended; its result goes into the wake inline. */
+  | { readonly kind: "task_result"; readonly taskId: TaskId; readonly title: string; readonly result: TaskResult };
 
 export class LeadWakes extends Context.Service<
   LeadWakes,
@@ -55,6 +59,8 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
     } else if (t.kind === "decision") {
       const d = t.decision;
       lines.push(`- The human recorded ${d.decisionId}: ${d.key} = ${quote(d.value)} (${scopeText(d.scope)}). Follow it.`);
+    } else if (t.kind === "task_result") {
+      lines.push(taskResultLines(t));
     }
   }
   const answers = triggers.filter((t) => t.kind === "answer").length;
@@ -89,6 +95,7 @@ export const make = (options: LeadWakesOptions = {}) =>
     const store = yield* HubStore.HubStore;
     const events = yield* EventLog.EventLog;
     const executors = yield* Executors.Executors;
+    const tasks = yield* TaskRecords.TaskRecords;
     const scope = yield* Effect.scope;
     const debounceMs = Duration.toMillis(Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE));
     const maxWaitMs = Duration.toMillis(Duration.fromInputUnsafe(options.maxWait ?? WAKE_MAX_WAIT));
@@ -104,6 +111,7 @@ export const make = (options: LeadWakesOptions = {}) =>
       Effect.gen(function* () {
         const project = yield* store.projects.get(ref);
         const workstreams = yield* records.workstreams.list({ ref, open: true, limit: 50 });
+        const since = (yield* records.leads.get(ref))?.lastWakeAt;
         return renderLeadDigest({
           project: { ref, title: project?.title ?? ref.projectId },
           at: yield* nowIso,
@@ -112,6 +120,7 @@ export const make = (options: LeadWakesOptions = {}) =>
           answers,
           // Global, project and every workstream-scoped decision in the project; the digest ranks them.
           decisions: yield* decisions.list({ chain: { projectRef: ref }, limit: 500 }),
+          tasks: taskDigestLines(yield* tasks.forDigest(ref, since, 50), since),
         });
       });
 

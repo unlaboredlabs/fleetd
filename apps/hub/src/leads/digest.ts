@@ -23,6 +23,8 @@ export interface DigestInput {
   readonly answers: ReadonlyArray<Answer>;
   /** Active decisions along the project's scope chain, any order. */
   readonly decisions: ReadonlyArray<Decision>;
+  /** Lines from `taskDigestLines`; absent leaves the section out. */
+  readonly tasks?: ReadonlyArray<string>;
 }
 
 const oneLine = (text: string, max: number) => {
@@ -112,6 +114,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
 
   const answers: Section = { title: "Answers since your last wake", ...capped(input.answers.map(answerLine), 20), more: "see `fleetd decisions search`", join: "\n" };
   const workstreams: Section = { title: "Open workstreams", ...capped(input.workstreams.map(workstreamLines), 20), more: "older ones not shown", join: "\n" };
+  const tasks: Section = { title: "Tasks", ...capped(input.tasks ?? [], 20), more: "`fleetd task list`", join: "\n" };
   const asks: Section = { title: "Your open asks", ...capped(input.openAsks.map(askLine), 20), more: "older ones not shown", join: "\n" };
   const decisions: Section = {
     title: "Decisions (most relevant)",
@@ -121,7 +124,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
   };
   const doNotReAsk: Section = { title: "Do not re-ask: keys already decided or asked", ...capped(keys, 200), more: "check with `fleetd decisions search`", join: ", " };
 
-  const order = [answers, workstreams, asks, decisions, doNotReAsk];
+  const order = [answers, workstreams, ...(input.tasks === undefined ? [] : [tasks]), asks, decisions, doNotReAsk];
   const render = () => [header, ...order.map(renderSection)].join("\n\n");
   // Lowest value first: the key list, then decisions, asks, workstreams, and answers last. The first pass keeps a
   // few of each so no section vanishes while another is long; the second trims to nothing if it must.
@@ -129,6 +132,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
     [doNotReAsk, 30],
     [decisions, 3],
     [asks, 5],
+    [tasks, 5],
     [workstreams, 5],
     [answers, 5],
   ];
