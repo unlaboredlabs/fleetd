@@ -5,7 +5,7 @@ import pkg from "../package.json" with { type: "json" };
 import { defaultNodeHome, type NodeConfig, readConfig, writeConfig } from "./config.ts";
 import { loadOrCreateBoxKey, loadOrCreateIdentity } from "./identity.ts";
 import { leadSocketPath, makeLeadRelay, serveLeadSocket } from "./LeadCalls.ts";
-import { fetchT3Info, linkUrl, runNode } from "./link.ts";
+import { fetchT3Info, linkUrl, runNode, t3SourceCommit } from "./link.ts";
 import * as T3Sessions from "./T3Sessions.ts";
 import { restartCommand } from "./T3Supervisor.ts";
 
@@ -52,7 +52,7 @@ const run = (home: string, config: NodeConfig, enrollToken?: string, exitWhenEnr
       settings: { machineId: config.machineId, name: config.name, tags: config.tags, nodeVersion: pkg.version, t3Url: config.t3Url },
       identity,
       dial: Socket.makeWebSocket(linkUrl(config.hub)).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal)),
-      t3Info: fetchT3Info(config.t3Url),
+      t3Info: fetchT3Info(config.t3Url, t3SourceCommit(config.t3Cmd)),
       leadCalls,
       secrets: { box, home },
       ...(config.cmdRoots === undefined ? {} : { cmdRoots: config.cmdRoots }),

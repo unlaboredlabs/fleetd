@@ -49,6 +49,11 @@ const nextPush = (cursor: number) =>
   Effect.flatMap(EventLog.EventLog, (events) => events.wait({ cursor, types: ["push.sent"], timeoutSec: 50 })).pipe(Effect.map((page) => page.events[0] as HubEvent));
 const head = Effect.flatMap(EventLog.EventLog, (events) => events.head());
 
+/** The TestClock starts at 1970-01-01T00:00Z, inside the default quiet hours; tests about other rules turn them off. */
+const quietOff = Effect.flatMap(Decisions, (decisions) =>
+  decisions.record({ key: "policy.quiet_hours" as DecisionKey, scope: { kind: "global" }, value: "off" }, { source: "human", by: "human:phone" }),
+);
+
 describe("Web Push", () => {
   it("takes subscriptions from human keys only", async () => {
     const { run } = setup();
@@ -72,6 +77,7 @@ describe("Web Push", () => {
     await run(
       Effect.gen(function* () {
         const push = yield* Push;
+        yield* quietOff;
         const phone = device("https://push.example.com/a");
         yield* push.subscribe((yield* humanKey()).info, phone.input);
 
@@ -97,7 +103,7 @@ describe("Web Push", () => {
     );
   });
 
-  it("holds all but money and irreversible items in policy.quiet_hours, and sends the rest when they end", async () => {
+  it("holds all but money and irreversible items in the default quiet hours (23:00-08:00), and sends the rest when they end", async () => {
     const { run, sent } = setup();
     await run(
       Effect.gen(function* () {
@@ -107,7 +113,6 @@ describe("Web Push", () => {
         const decisions = yield* Decisions;
         // The TestClock starts at 1970-01-01T00:00Z.
         yield* decisions.record({ key: "policy.tz" as DecisionKey, scope: { kind: "global" }, value: "UTC" }, { source: "human", by: "human:phone" });
-        yield* decisions.record({ key: "policy.quiet_hours" as DecisionKey, scope: { kind: "global" }, value: "00:00-08:00" }, { source: "human", by: "human:phone" });
 
         const cursor = yield* head;
         yield* fileAsk("token", "credential", "Need the deploy token");
@@ -129,6 +134,7 @@ describe("Web Push", () => {
     await run(
       Effect.gen(function* () {
         const push = yield* Push;
+        yield* quietOff;
         const auth = yield* Auth.Auth;
         const gone = device("https://push.example.com/gone");
         const revoked = device("https://push.example.com/revoked");
@@ -164,6 +170,7 @@ describe("Web Push", () => {
         const push = yield* Push;
         const phone = device("https://push.example.com/a");
         yield* push.subscribe((yield* humanKey()).info, phone.input);
+        yield* quietOff;
         const events = yield* EventLog.EventLog;
         const offline = (machineId: string) =>
           events.append({ at: new Date(0).toISOString(), type: "machine.offline", machineId: machineId as never, summary: `${machineId} went offline: no word from its node for 90 s` });

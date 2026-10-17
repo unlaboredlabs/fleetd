@@ -3,6 +3,9 @@
 //
 //   node scripts/sync-t3.ts [--source <t3 checkout>] [--pin <commit>]
 //
+// The pin must be a published T3 release: vendor/t3/pin.json records the commit and the npm version built from it
+// (read from the release tag `v<version>` on that commit), and setup installs exactly that version.
+//
 // Only the file-level import closure of ENTRIES is copied: all of @t3tools/contracts plus the
 // slice of @t3tools/client-runtime and @t3tools/shared the RPC client reaches. The full
 // client-runtime pulls in UI state, three.js and every source-control provider, none of which
@@ -17,7 +20,6 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 
 const UPSTREAM = "https://github.com/pingdotgg/t3code";
-const DEFAULT_PIN = "2fbd4318fc5b610c3e7fcfcbd5bbd80b73521d8f";
 const ENTRIES = [
   "packages/contracts/src/index.ts",
   "packages/contracts/src/settings.ts",
@@ -27,11 +29,13 @@ const ENTRIES = [
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const vendorDir = path.join(repoRoot, "vendor", "t3");
+const pinFile = path.join(vendorDir, "pin.json");
+const current = JSON.parse(fs.readFileSync(pinFile, "utf8")) as { commit: string; npm: string };
 
 const { values: args } = parseArgs({
   options: {
     source: { type: "string", default: process.env.T3_SOURCE },
-    pin: { type: "string", default: DEFAULT_PIN },
+    pin: { type: "string", default: current.commit },
   },
 });
 
@@ -52,6 +56,7 @@ try {
     git(source, "fetch", "-q", "--depth", "1", UPSTREAM, args.pin);
   }
   const sha = git(source, "rev-parse", "--verify", `${args.pin}^{commit}`);
+  const npm = releaseVersion(args.source ?? UPSTREAM, sha);
 
   const tree = path.join(work, "tree");
   fs.mkdirSync(tree);
@@ -83,14 +88,31 @@ try {
   }
 
   fs.copyFileSync(path.join(tree, "LICENSE"), path.join(vendorDir, "LICENSE"));
-  fs.writeFileSync(path.join(vendorDir, "PIN"), `${sha}\n`);
+  fs.rmSync(path.join(vendorDir, "PIN"), { force: true });
+  writeJson(pinFile, { commit: sha, npm });
   fs.writeFileSync(path.join(vendorDir, "NOTICE"), notice(sha));
 
   const total = Object.values(summary).reduce((n, s) => n + s.loc, 0);
-  console.log(`vendored T3 ${sha} (${total} LOC)`);
+  console.log(`vendored T3 ${sha}, npm t3@${npm} (${total} LOC)`);
   for (const [pkg, s] of Object.entries(summary)) console.log(`  ${pkg}: ${s.files} files, ${s.loc} LOC`);
 } finally {
   fs.rmSync(work, { recursive: true, force: true });
+}
+
+/** The npm version released from `sha`: its `v<version>` tag. A commit without exactly one has no single published build. */
+function releaseVersion(remote: string, sha: string) {
+  const versions = execFileSync("git", ["ls-remote", "--tags", remote], { encoding: "utf8", maxBuffer: 1 << 28 })
+    .split("\n")
+    .flatMap((line) => {
+      const [ref, name] = line.split("\t");
+      const tag = /^refs\/tags\/v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\^\{\})?$/.exec(name ?? "");
+      return ref === sha && tag ? [tag[1]!] : [];
+    });
+  const unique = [...new Set(versions)];
+  if (unique.length !== 1) {
+    throw new Error(`T3 ${sha} needs exactly one release tag v<version> to pin a published build; found ${unique.join(", ") || "none"}`);
+  }
+  return unique[0]!;
 }
 
 interface PackageInfo {
@@ -194,7 +216,7 @@ function notice(sha: string) {
   return `This directory contains code from T3 Code (${UPSTREAM}),
 Copyright (c) 2026 T3 Tools Inc., used under the MIT License (see LICENSE in this directory).
 
-Source commit: ${sha} (also recorded in PIN).
+Source commit: ${sha} (also recorded in pin.json).
 
 Only a subset of T3's packages/contracts, packages/client-runtime and packages/shared is
 included: the files reachable from the entry points listed in scripts/sync-t3.ts. Source files

@@ -16,7 +16,7 @@ export const HubHello = Schema.Struct({
   _tag: Schema.tag("HubHello"),
   protocolVersion: ProtocolVersion,
   hubVersion: Schema.String,
-  /** T3 commit the hub's vendored wire client was built from (vendor/t3/PIN). */
+  /** T3 commit the hub's vendored wire client was built from (vendor/t3/pin.json). */
   t3Pin: Schema.String,
 });
 export type HubHello = typeof HubHello.Type;

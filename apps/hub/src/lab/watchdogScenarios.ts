@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { connect } from "../executor/T3Connection.ts";
+import { T3_SRC } from "./harness.ts";
 import { NUDGE } from "../watchdog/Watchdog.ts";
 
 type Body = Record<string, any>;
@@ -198,7 +199,6 @@ export async function missedCompletion(ctx: LabContext, machineId = "lab-a") {
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
-const T3_SRC = process.env.T3_SRC ?? path.join(LAB, "t3-src");
 const CLI = path.join(REPO, "apps/cli/src/bin.ts");
 
 /** Children get HOME, PATH, USER and LANG only (never this session's CLAUDE* variables), plus `extra`. */

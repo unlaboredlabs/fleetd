@@ -1,13 +1,11 @@
 import { ORCHESTRATION_V2_WS_METHODS, WsRpcGroup } from "@t3tools/contracts";
+import pin from "../../../vendor/t3/pin.json" with { type: "json" };
 
-/** T3 commit the vendored wire client comes from. Must equal vendor/t3/PIN. */
-export const T3_PIN = "2fbd4318fc5b610c3e7fcfcbd5bbd80b73521d8f";
+/** T3 commit the vendored wire client comes from (vendor/t3/pin.json, written by `pnpm sync:t3`). */
+export const T3_PIN = pin.commit;
 
-/**
- * npm `t3` release `fleetd machine add` installs. T3_PIN has no published build of its own; this is the newest one
- * at or before it (nightly 3238 = commit 70d60e03a7). Move both together. The doctor holds each machine's T3 to it.
- */
-export const T3_NPM_VERSION = "0.1.1-nightly.20261017.3238";
+/** npm `t3` release built from T3_PIN: what `fleetd machine add` installs and the doctor holds each machine to. */
+export const T3_NPM_VERSION = pin.npm;
 
 /**
  * The narrow executor interface fleetd drives stock T3 through (DESIGN §3.2), mapped to the

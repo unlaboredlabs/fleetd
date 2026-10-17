@@ -818,7 +818,7 @@ const make = Effect.gen(function* () {
     push_subscribe: (caller, input) =>
       push.subscribe(caller, input).pipe(
         Effect.mapError(refusal),
-        Effect.as({ ok: true as const, next: "This device gets a push for each loud item: at most one per 20 minutes, quiet hours from policy.quiet_hours." }),
+        Effect.as({ ok: true as const, next: "This device gets a push for each loud item: at most one per 20 minutes, quiet hours from policy.quiet_hours (23:00-08:00 by default)." }),
       ),
 
     push_unsubscribe: (caller, input) =>

@@ -12,10 +12,11 @@ a GPUI desktop app and a phone PWA. Claude is reached only through the `claude` 
 - `apps/pwa` - the phone web app (Preact, no Effect), built into `apps/hub/dist/pwa` for the hub to serve at `/`.
   Import only types from `@fleetd/contracts`; its values would pull Effect into a bundle capped at 60 KB gzipped.
 - `vendor/t3/` - generated slice of T3's `contracts`, `client-runtime` and `shared` at the commit in
-  `vendor/t3/PIN`. **Never edit by hand.** To use more of T3, add an entry to `ENTRIES` in
-  `scripts/sync-t3.ts` and run `pnpm sync:t3 --source <t3 checkout>`. Keep `T3_PIN` in
-  `apps/hub/src/t3.ts` and the `effect`/`typescript` catalog versions in `pnpm-workspace.yaml` in step
-  with the pin (a hub test checks the former).
+  `vendor/t3/pin.json`. **Never edit by hand.** To use more of T3, add an entry to `ENTRIES` in
+  `scripts/sync-t3.ts` and run `pnpm sync:t3 --source <t3 checkout>`. The pin must be a published
+  release (`--pin <commit with a v<version> tag>`): `pin.json` records the commit and its npm version,
+  which the hub, setup, the doctor and the lab all read. Keep the `effect`/`typescript` catalog
+  versions in `pnpm-workspace.yaml` in step with the pin.
 - `app/` - Cargo workspace for the desktop app (`fleetd-app`, GPUI pinned to a Zed release tag) and
   its speed harness (`app/bench/`, run `app/bench/run.sh`). Building on Linux needs GPUI's `-dev`
   packages; without sudo, `app/bench/linux-sysroot.sh` extracts them and `source app/bench/linux-env.sh`

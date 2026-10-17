@@ -27,9 +27,9 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import { connect, type T3Client } from "../src/executor/T3Connection.ts";
+import { T3_SRC } from "../src/lab/harness.ts";
 
 const LAB = process.env.FLEETD_LAB ?? path.join(process.env.HOME ?? "", "src/fleetd-lab");
-const T3_SRC = process.env.T3_SRC ?? path.join(LAB, "t3-src");
 const OUT = path.join(import.meta.dirname, "fixtures");
 const MODEL = "claude-haiku-5-5";
 const LABS = {

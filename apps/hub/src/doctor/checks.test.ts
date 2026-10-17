@@ -2,6 +2,7 @@ import type { Machine, MachineId } from "@fleetd/contracts";
 import type { ServerSettings } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 import * as Checks from "./checks.ts";
+import { T3_PIN } from "../t3.ts";
 
 const id = "lab-a" as MachineId;
 const machine = (patch: Partial<Machine> = {}): Machine => ({
@@ -94,6 +95,9 @@ describe("machine checks", () => {
       message: "T3 0.1.0 runs on lab-a; setup installs 0.1.1-nightly.20261017.3238.",
     });
     expect(Checks.t3Version(machine({ t3: null }), undefined).check.status).toBe("unknown");
+    // From source, the node reports the checkout's commit; only the pinned one passes.
+    expect(Checks.t3Version(machine({ t3: { version: `0.1.0+${T3_PIN}`, protocol: 2 } }), undefined).check.status).toBe("ok");
+    expect(Checks.t3Version(machine({ t3: { version: "0.1.0+2fbd4318fc5b610c3e7fcfcbd5bbd80b73521d8f", protocol: 2 } }), undefined).check.status).toBe("fail");
   });
 
   it("needs at least 5 GB free", () => {
