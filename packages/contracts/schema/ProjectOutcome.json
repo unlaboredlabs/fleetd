@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/ProjectOutcome",
+  "$defs": {
+    "MachineId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "description": "Machine slug, [a-z0-9-]{1,32}"
+    },
+    "ProjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ProjectSummary": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        },
+        "threads": {
+          "type": "object",
+          "properties": {
+            "running": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "waiting": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idle": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "running",
+            "waiting",
+            "idle",
+            "failed"
+          ],
+          "additionalProperties": true
+        },
+        "lastActivityAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "workspaceRoot",
+        "threads",
+        "lastActivityAt"
+      ],
+      "additionalProperties": true
+    },
+    "ThreadId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ThreadSummary": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "waiting",
+            "idle",
+            "completed",
+            "failed",
+            "interrupted",
+            "cancelled"
+          ]
+        },
+        "headline": {
+          "type": "string",
+          "maxLength": 280
+        },
+        "latestMessageTail": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "lastError": {
+          "type": "object",
+          "properties": {
+            "class": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "class",
+            "message"
+          ],
+          "additionalProperties": true
+        },
+        "usageLimitResetAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastProgressAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "projectId",
+        "title",
+        "status",
+        "headline",
+        "latestMessageTail",
+        "lastProgressAt",
+        "stale",
+        "asOf"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectOutcome": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "threads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ThreadSummary"
+          },
+          "maxItems": 20
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project",
+        "threads",
+        "stale",
+        "asOf"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

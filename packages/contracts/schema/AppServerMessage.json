@@ -1,0 +1,346 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/AppServerMessage",
+  "$defs": {
+    "MachineId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "description": "Machine slug, [a-z0-9-]{1,32}"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Machine": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "online",
+            "offline",
+            "degraded"
+          ]
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "t3": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "protocol": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "version",
+                "protocol"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodeVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "tags",
+        "status",
+        "lastSeenAt",
+        "t3",
+        "nodeVersion"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ProjectSummary": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        },
+        "threads": {
+          "type": "object",
+          "properties": {
+            "running": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "waiting": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idle": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "running",
+            "waiting",
+            "idle",
+            "failed"
+          ],
+          "additionalProperties": true
+        },
+        "lastActivityAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "workspaceRoot",
+        "threads",
+        "lastActivityAt"
+      ],
+      "additionalProperties": true
+    },
+    "EventSeq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "HubEventType": {
+      "type": "string",
+      "enum": [
+        "machine.online",
+        "machine.offline",
+        "machine.degraded",
+        "thread.started",
+        "thread.completed",
+        "thread.failed",
+        "thread.interrupted",
+        "thread.waiting",
+        "thread.usage_limited"
+      ]
+    },
+    "ThreadId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "HubEvent": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "type": {
+          "$ref": "#/$defs/HubEventType"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "data": {}
+      },
+      "required": [
+        "seq",
+        "at",
+        "type",
+        "summary"
+      ],
+      "additionalProperties": true
+    },
+    "AppServerMessage": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "ready"
+              ]
+            },
+            "protocol": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "t",
+            "protocol"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "snapshot"
+              ]
+            },
+            "machines": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Machine"
+              }
+            },
+            "projects": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ProjectSummary"
+              },
+              "maxItems": 50
+            },
+            "attention": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HubEvent"
+              },
+              "maxItems": 10
+            },
+            "cursor": {
+              "$ref": "#/$defs/EventSeq"
+            }
+          },
+          "required": [
+            "t",
+            "machines",
+            "projects",
+            "attention",
+            "cursor"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "event"
+              ]
+            },
+            "seq": {
+              "$ref": "#/$defs/EventSeq"
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "type": {
+              "$ref": "#/$defs/HubEventType"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "data": {}
+          },
+          "required": [
+            "t",
+            "seq",
+            "at",
+            "type",
+            "summary"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "error"
+              ]
+            },
+            "code": {
+              "type": "string",
+              "enum": [
+                "machine_offline",
+                "not_found",
+                "forbidden",
+                "invalid",
+                "t3_error"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "fix": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "code",
+            "message"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}
