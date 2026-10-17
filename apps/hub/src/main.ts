@@ -112,7 +112,7 @@ const layerMachines = Layer.effect(
       commands: yield* NodeCommands.NodeCommands,
     });
   }),
-).pipe(Layer.provideMerge(layerTrain), Layer.provideMerge(ChecksLayer.layer()), Layer.provideMerge(NodeCommands.layer));
+).pipe(Layer.provideMerge(layerTrain), Layer.provideMerge(ChecksLayer.layer()));
 
 /** The sweep's overdue-wakes check; the wake scheduler does the firing. */
 const layerWakeSweep = Layer.effectDiscard(
@@ -163,7 +163,8 @@ export const hubLayer = (home: string, options: HubOptions) =>
           WriteQueue.layer(options.queueTtlSec === undefined ? {} : { ttl: Duration.seconds(options.queueTtlSec) }),
         ),
         Layer.provideMerge(Executors.layer),
-        Layer.provideMerge(Layer.mergeAll(HubStore.layer, EventLog.layer, Auth.layer)),
+        // NodeCommands at the base: tasks read their branch diffs through it, the node links answer it.
+        Layer.provideMerge(Layer.mergeAll(HubStore.layer, EventLog.layer, Auth.layer, NodeCommands.layer)),
         Layer.provide(HubDb.layer(home)),
       ),
     ),

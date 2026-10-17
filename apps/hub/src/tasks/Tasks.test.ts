@@ -103,6 +103,26 @@ describe("Tasks", () => {
     );
   });
 
+  it("checks areas on the PR diff, so files a rebase brought in from main are not flagged", async () => {
+    const kit = makeKit();
+    await runKit(
+      kit,
+      Effect.gen(function* () {
+        const ws = yield* kit.setup;
+        yield* (yield* Tasks.Tasks).spawn(LEAD, spawnInput(ws));
+        // The writer rebased onto main to resolve a conflict: T3's checkpoints saw main's README.md and src/a.ts
+        // change in the worktree, but the branch's own diff against its merge base is docs/x.md and src/b.ts.
+        kit.changes.set("t2", { branch: "fleetd/T1-add-file", paths: ["README.md", "docs/x.md", "src/a.ts"], pullRequestUrls: [] });
+        kit.branchDiffs.set("fleetd/T1-add-file", ["docs/x.md", "src/b.ts"]);
+        const before = yield* head;
+        yield* kit.threadEvent("t2", "thread.completed", "Rebased on main and pushed.");
+        yield* nextEvent(before, "task.completed");
+        const flagged = (yield* (yield* EventLog.EventLog).wait({ cursor: before, types: ["task.out_of_area"], timeoutSec: 0 })).events;
+        expect(flagged.map((e) => e.data)).toMatchObject([{ taskId: "T1", paths: ["src/b.ts"] }]);
+      }),
+    );
+  });
+
   it("queues past the cap and starts the next task when the running one ends", async () => {
     const kit = makeKit({ cap: 1 });
     await runKit(
