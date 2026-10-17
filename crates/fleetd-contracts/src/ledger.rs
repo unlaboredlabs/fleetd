@@ -560,7 +560,7 @@ pub struct Decision {
 // Asks
 
 /// decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the
-/// browser seals to the sink's node. approve: a stored command the node runs after a human tap.
+/// desktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AskKind {

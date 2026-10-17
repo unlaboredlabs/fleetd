@@ -1,0 +1,5633 @@
+{
+  "$defs": {
+    "ActionItem": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "exitCode": {
+          "description": "Only when T3 reports one or the output says \"Exit code N\"; T3's Claude adapter sets none itself.",
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "failed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/ActionKind"
+        },
+        "outputTail": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ActionStatus"
+        },
+        "summary": {
+          "description": "The command, path or tool.",
+          "maxLength": 200,
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "status",
+        "summary",
+        "failed"
+      ],
+      "type": "object"
+    },
+    "ActionKind": {
+      "enum": [
+        "command",
+        "file_change",
+        "tool_call",
+        "other"
+      ],
+      "type": "string"
+    },
+    "ActionStatus": {
+      "enum": [
+        "completed",
+        "failed",
+        "running"
+      ],
+      "type": "string"
+    },
+    "ActionsListInput": {
+      "properties": {
+        "failedOnly": {
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ActionsListOutput": {
+      "properties": {
+        "actions": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/ActionItem"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "actions"
+      ],
+      "type": "object"
+    },
+    "AreaName": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "type": "string"
+    },
+    "Ask": {
+      "properties": {
+        "answer": {
+          "$ref": "#/$defs/AskAnswer"
+        },
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "blocks": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "class": {
+          "$ref": "#/$defs/AskClass"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "envName": {
+          "$ref": "#/$defs/EnvName",
+          "description": "secret with an env: sink: the variable it writes, when not the one its key names (`secretEnvName`)."
+        },
+        "evidence": {
+          "description": "What closed or reopened it: \"fingerprint ab12cd34\", a gated run's exit code and output tail, a failed verify.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "secret: set when the node has written the sink."
+        },
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec",
+          "description": "Required for approve; immutable once the ask exists."
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "kind": {
+          "$ref": "#/$defs/AskKind"
+        },
+        "number": {
+          "description": "Fixed within its batch; never renumbered.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "options": {
+          "items": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "type": "array"
+        },
+        "proceededOnRec": {
+          "description": "The lead carried on with the recommendation; the answer confirms or overrides it.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Absent only on an `intake.route.*` ask: the human picks the project by answering it."
+        },
+        "recommendation": {
+          "description": "Required for decide.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sink": {
+          "$ref": "#/$defs/SecretSink",
+          "description": "Required for secret."
+        },
+        "state": {
+          "$ref": "#/$defs/AskState"
+        },
+        "steps": {
+          "description": "Required for do.",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "verify": {
+          "$ref": "#/$defs/CheckSpec",
+          "description": "do: the check the hub runs once the human ticks it done; a failure reopens the ask with the evidence."
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "askId",
+        "kind",
+        "key",
+        "class",
+        "text",
+        "blocks",
+        "proceededOnRec",
+        "state",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "AskAnswer": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "type": "string"
+        },
+        "raw": {
+          "description": "The reply text it was parsed from.",
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "by",
+        "at",
+        "raw"
+      ],
+      "type": "object"
+    },
+    "AskClass": {
+      "enum": [
+        "product",
+        "money",
+        "credential",
+        "irreversible"
+      ],
+      "type": "string"
+    },
+    "AskId": {
+      "pattern": "^A[1-9][0-9]*$",
+      "type": "string"
+    },
+    "AskKind": {
+      "description": "decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the\ndesktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.",
+      "enum": [
+        "decide",
+        "do",
+        "secret",
+        "approve"
+      ],
+      "type": "string"
+    },
+    "AskState": {
+      "enum": [
+        "open",
+        "auto",
+        "answered",
+        "defaulted",
+        "withdrawn"
+      ],
+      "type": "string"
+    },
+    "AsksListInput": {
+      "properties": {
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "state": {
+          "$ref": "#/$defs/AskState",
+          "default": "open"
+        }
+      },
+      "type": "object"
+    },
+    "AsksListOutput": {
+      "properties": {
+        "asks": {
+          "description": "The asks in those batches, by batch then number.",
+          "items": {
+            "$ref": "#/$defs/Ask"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "batches": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Batch"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "batches",
+        "asks"
+      ],
+      "type": "object"
+    },
+    "Attention": {
+      "description": "Whether an event needs the human now, set by the hub when it emits the event. \"loud\": notify, but hold it through\nquiet hours; \"urgent\": notify even during quiet hours (money and irreversible). Absent: the inbox and the digest\nare enough.",
+      "enum": [
+        "loud",
+        "urgent"
+      ],
+      "type": "string"
+    },
+    "AttentionPolicyInput": {
+      "type": "object"
+    },
+    "AttentionPolicyOutput": {
+      "properties": {
+        "coalesceSec": {
+          "description": "At most one notification per this many seconds; what arrives meanwhile is folded into the next.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "quiet": {
+          "description": "Only \"urgent\" events notify inside these; empty when quiet hours are off. Ask again after the last one ends.",
+          "items": {
+            "$ref": "#/$defs/QuietWindow"
+          },
+          "maxItems": 2,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "coalesceSec",
+        "quiet"
+      ],
+      "type": "object"
+    },
+    "Batch": {
+      "properties": {
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/BatchItem"
+          },
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/BatchState"
+        }
+      },
+      "required": [
+        "batchId",
+        "createdAt",
+        "items",
+        "state"
+      ],
+      "type": "object"
+    },
+    "BatchId": {
+      "pattern": "^B[1-9][0-9]*$",
+      "type": "string"
+    },
+    "BatchItem": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "askId"
+      ],
+      "type": "object"
+    },
+    "BatchState": {
+      "enum": [
+        "open",
+        "closed"
+      ],
+      "type": "string"
+    },
+    "BoxPublicKey": {
+      "type": "string"
+    },
+    "BreakerState": {
+      "enum": [
+        "closed",
+        "open"
+      ],
+      "type": "string"
+    },
+    "Brief": {
+      "properties": {
+        "baseline": {
+          "description": "Research: what the candidate is compared against, and how both are measured.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "budget": {
+          "$ref": "#/$defs/BriefBudget"
+        },
+        "constraints": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "decisionRule": {
+          "$ref": "#/$defs/DecisionRule",
+          "description": "Research: frozen with the brief, so the verdict can't move the goalposts."
+        },
+        "doneWhen": {
+          "description": "At least one; frozen with the brief.",
+          "items": {
+            "$ref": "#/$defs/CheckSpec"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "estimate": {
+          "$ref": "#/$defs/Estimate"
+        },
+        "goal": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "metric": {
+          "description": "Research: the one number the judge reports for baseline and candidate, e.g. \"p50 cold start in ms\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "pointers": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal",
+        "why",
+        "pointers",
+        "constraints",
+        "doneWhen",
+        "tier"
+      ],
+      "type": "object"
+    },
+    "BriefBudget": {
+      "properties": {
+        "agentHours": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "BriefHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "CapSetInput": {
+      "properties": {
+        "cap": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "share": {
+          "$ref": "#/$defs/CapSetShare"
+        }
+      },
+      "type": "object"
+    },
+    "CapSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "slots": {
+          "$ref": "#/$defs/SlotState"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slots"
+      ],
+      "type": "object"
+    },
+    "CapSetShare": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "share": {
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectRef",
+        "share"
+      ],
+      "type": "object"
+    },
+    "Change": {
+      "properties": {
+        "branch": {
+          "description": "The PR's head branch.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "lastError": {
+          "description": "The refusal fix, conflicting paths, or failing check names.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "mergedSha": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "The squash commit on the base; set on merge."
+        },
+        "patchId": {
+          "$ref": "#/$defs/PatchId"
+        },
+        "position": {
+          "description": "0-based index into its train's queue; absent when not queued.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "prUrl": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "reviews": {
+          "items": {
+            "$ref": "#/$defs/ChangeReview"
+          },
+          "type": "array"
+        },
+        "serves": {
+          "$ref": "#/$defs/Serves"
+        },
+        "state": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "The write task that opened it; absent when the lead enqueued a PR no task wrote."
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier",
+          "description": "From the workstream's brief; may be raised, never lowered."
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "changeId",
+        "projectRef",
+        "repo",
+        "prNumber",
+        "prUrl",
+        "branch",
+        "workstreamId",
+        "serves",
+        "tier",
+        "headSha",
+        "state",
+        "reviews",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ChangeId": {
+      "pattern": "^X[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ChangeReview": {
+      "description": "One review verdict, valid for exactly this patch. A clean rebase that keeps the patch id keeps it valid.",
+      "properties": {
+        "blocking": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nonBlocking": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "patchId": {
+          "$ref": "#/$defs/PatchId"
+        },
+        "prHeadSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        }
+      },
+      "required": [
+        "taskId",
+        "prHeadSha",
+        "patchId",
+        "blocking",
+        "nonBlocking"
+      ],
+      "type": "object"
+    },
+    "ChangeState": {
+      "enum": [
+        "queued",
+        "reviewing",
+        "ready",
+        "rebasing",
+        "ci",
+        "merging",
+        "merged",
+        "needs_rebase",
+        "ci_failed",
+        "refused",
+        "abandoned"
+      ],
+      "type": "string"
+    },
+    "ChangesListInput": {
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "state": {
+          "$ref": "#/$defs/ChangeState"
+        }
+      },
+      "type": "object"
+    },
+    "ChangesListOutput": {
+      "properties": {
+        "changes": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Change"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "changes"
+      ],
+      "type": "object"
+    },
+    "CheckOutcome": {
+      "description": "`error` (the check could not run) counts as not passing.",
+      "enum": [
+        "pass",
+        "fail",
+        "error"
+      ],
+      "type": "string"
+    },
+    "CheckResult": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "checkIndex": {
+          "description": "0-based index into the brief's doneWhen.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "evidence": {
+          "description": "Output tail, HTTP status and body excerpt, verdict summary, or the fix when `error`.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "exitCode": {
+          "description": "Only for `cmd` checks, which the node runs.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "ranBy": {
+          "$ref": "#/$defs/CheckResultRanBy"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckOutcome"
+        },
+        "spec": {
+          "$ref": "#/$defs/CheckSpec"
+        }
+      },
+      "required": [
+        "checkIndex",
+        "spec",
+        "result",
+        "evidence",
+        "ranBy",
+        "at"
+      ],
+      "type": "object"
+    },
+    "CheckResultRanBy": {
+      "enum": [
+        "hub",
+        "node",
+        "judge",
+        "human"
+      ],
+      "type": "string"
+    },
+    "CheckSpec": {
+      "oneOf": [
+        {
+          "properties": {
+            "pr": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "pr_merged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "ref": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "ci_green",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "contains": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "type": {
+              "const": "http",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array"
+            },
+            "expectExit": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "type": {
+              "const": "cmd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "machineId",
+            "argv",
+            "expectExit"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "testId": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "test",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo",
+            "testId"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "criteria": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "judge",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "criteria"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "question": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "human",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "question"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Claim": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "\"lead:<machineId>/<projectId>\", an agent keyId or \"human\".",
+          "type": "string"
+        },
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ClaimOutcome",
+          "description": "`pass` only when every check passed."
+        },
+        "results": {
+          "description": "In check index order.",
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "claimId",
+        "workstreamId",
+        "by",
+        "at",
+        "results",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "ClaimId": {
+      "pattern": "^C[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ClaimOutcome": {
+      "enum": [
+        "pass",
+        "fail"
+      ],
+      "type": "string"
+    },
+    "ClaimsListInput": {
+      "properties": {
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ClaimOutcome"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "ClaimsListOutput": {
+      "properties": {
+        "claims": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Claim"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "claims"
+      ],
+      "type": "object"
+    },
+    "CommitSha": {
+      "description": "Full lowercase hex commit SHA, 40 or 64 characters",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "Decision": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId",
+          "description": "The ask this answers, when it came from one."
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "Who recorded it: the agent key name, \"lead:<machineId>/<projectId>\" or \"human:<device>\".",
+          "type": "string"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "scope": {
+          "$ref": "#/$defs/DecisionScope"
+        },
+        "source": {
+          "$ref": "#/$defs/DecisionSource"
+        },
+        "state": {
+          "$ref": "#/$defs/DecisionState"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/DecisionId",
+          "description": "The earlier active decision on the same key and scope that this one replaced."
+        },
+        "value": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "decisionId",
+        "key",
+        "scope",
+        "value",
+        "source",
+        "state",
+        "at"
+      ],
+      "type": "object"
+    },
+    "DecisionId": {
+      "pattern": "^D[1-9][0-9]*$",
+      "type": "string"
+    },
+    "DecisionKey": {
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "DecisionRule": {
+      "description": "Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least\n`goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between.",
+      "properties": {
+        "better": {
+          "$ref": "#/$defs/DecisionRuleBetter"
+        },
+        "goAtLeast": {
+          "type": "number"
+        },
+        "stopBelow": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "better",
+        "goAtLeast",
+        "stopBelow"
+      ],
+      "type": "object"
+    },
+    "DecisionRuleBetter": {
+      "enum": [
+        "higher",
+        "lower"
+      ],
+      "type": "string"
+    },
+    "DecisionScope": {
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "global",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "project",
+              "type": "string"
+            },
+            "projectRef": {
+              "$ref": "#/$defs/ProjectRef"
+            }
+          },
+          "required": [
+            "kind",
+            "projectRef"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "workstream",
+              "type": "string"
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DecisionSource": {
+      "description": "Filled by the hub from the caller: a human device, an agent key, or a lead-side call.",
+      "enum": [
+        "human",
+        "lead",
+        "agent"
+      ],
+      "type": "string"
+    },
+    "DecisionState": {
+      "enum": [
+        "active",
+        "superseded",
+        "retired"
+      ],
+      "type": "string"
+    },
+    "DecisionsRecordInput": {
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "scope": {
+          "$ref": "#/$defs/DecisionScope"
+        },
+        "value": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "DecisionsRecordOutput": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "type": "object"
+    },
+    "DecisionsSearchInput": {
+      "properties": {
+        "limit": {
+          "default": 10,
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/DecisionScope",
+          "description": "Absent: every scope."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "DecisionsSearchOutput": {
+      "properties": {
+        "decisions": {
+          "description": "Best match first; active decisions only.",
+          "items": {
+            "$ref": "#/$defs/Decision"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "decisions"
+      ],
+      "type": "object"
+    },
+    "Decrease": {
+      "description": "The only metric direction.",
+      "enum": [
+        "decrease"
+      ],
+      "type": "string"
+    },
+    "DigestGetInput": {
+      "type": "object"
+    },
+    "DigestGetOutput": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text",
+        "at"
+      ],
+      "type": "object"
+    },
+    "DoctorCheck": {
+      "properties": {
+        "fix": {
+          "$ref": "#/$defs/DoctorFix",
+          "description": "Absent when there is nothing to do."
+        },
+        "id": {
+          "$ref": "#/$defs/DoctorCheckId"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Set when scope is machine."
+        },
+        "message": {
+          "description": "Plain language.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/DoctorScope"
+        },
+        "status": {
+          "$ref": "#/$defs/DoctorStatus"
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "status",
+        "message"
+      ],
+      "type": "object"
+    },
+    "DoctorCheckId": {
+      "pattern": "^[a-z0-9-]{1,32}/[a-z0-9_]{1,40}$",
+      "type": "string"
+    },
+    "DoctorFix": {
+      "description": "`auto`: doctor_fix runs it. `manual`: a person runs `command` (where the label says).",
+      "properties": {
+        "command": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DoctorFixKind"
+        },
+        "label": {
+          "maxLength": 200,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "label"
+      ],
+      "type": "object"
+    },
+    "DoctorFixInput": {
+      "properties": {
+        "checkId": {
+          "$ref": "#/$defs/DoctorCheckId"
+        }
+      },
+      "required": [
+        "checkId"
+      ],
+      "type": "object"
+    },
+    "DoctorFixKind": {
+      "enum": [
+        "auto",
+        "manual"
+      ],
+      "type": "string"
+    },
+    "DoctorFixOutput": {
+      "properties": {
+        "check": {
+          "$ref": "#/$defs/DoctorCheck",
+          "description": "The check, run again after the fix."
+        },
+        "next": {
+          "type": "string"
+        },
+        "ran": {
+          "description": "What the fix did, in plain words.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ran",
+        "check"
+      ],
+      "type": "object"
+    },
+    "DoctorListInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "rerun": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "DoctorListOutput": {
+      "properties": {
+        "checkedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When these results were taken."
+        },
+        "checks": {
+          "description": "Hub checks first, then each machine's, in a fixed order.",
+          "items": {
+            "$ref": "#/$defs/DoctorCheck"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "checks",
+        "checkedAt"
+      ],
+      "type": "object"
+    },
+    "DoctorScope": {
+      "enum": [
+        "hub",
+        "machine"
+      ],
+      "type": "string"
+    },
+    "DoctorStatus": {
+      "description": "`unknown`: the hub could not look (machine offline, nothing to read).",
+      "enum": [
+        "ok",
+        "warn",
+        "fail",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Effort": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "type": "string"
+    },
+    "EnvName": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+      "type": "string"
+    },
+    "Estimate": {
+      "properties": {
+        "gates": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "rawMinutes": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "rawMinutes",
+        "gates"
+      ],
+      "type": "object"
+    },
+    "Eta": {
+      "description": "The brief's raw estimate corrected by the tier's measured actual/raw ratio.",
+      "properties": {
+        "calibratedMinutes": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "p80Minutes": {
+          "description": "From 10 samples on.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "ratio": {
+          "description": "Median actual/raw over the tier's last 20 done workstreams; the 5.0 prior below 5 samples.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "rawMinutes": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "samples": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rawMinutes",
+        "calibratedMinutes",
+        "ratio",
+        "samples"
+      ],
+      "type": "object"
+    },
+    "EventSeq": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EventsWaitInput": {
+      "properties": {
+        "cursor": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "Absent means start at the current end."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "timeoutSec": {
+          "default": 50,
+          "maximum": 50,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "types": {
+          "items": {
+            "$ref": "#/$defs/HubEventType"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "EventsWaitOutput": {
+      "properties": {
+        "cursor": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/HubEvent"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "cursor",
+        "more"
+      ],
+      "type": "object"
+    },
+    "FleetdStatusInput": {
+      "type": "object"
+    },
+    "FleetdStatusOutput": {
+      "properties": {
+        "attention": {
+          "description": "Latest failed, waiting and usage-limited events, and PRs the merge train sent back to their authors.",
+          "items": {
+            "$ref": "#/$defs/HubEvent"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "cursor": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/Machine"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectSummary"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "slots": {
+          "$ref": "#/$defs/SlotState",
+          "description": "Absent until the hub runs the slot board (M5)."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machines",
+        "projects",
+        "attention",
+        "cursor"
+      ],
+      "type": "object"
+    },
+    "GatedClass": {
+      "enum": [
+        "irreversible",
+        "money",
+        "credential"
+      ],
+      "type": "string"
+    },
+    "GatedRunSpec": {
+      "description": "Stored with the approve ask and never changed: the human approves exactly these bytes.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "class": {
+          "$ref": "#/$defs/GatedClass"
+        },
+        "cwd": {
+          "pattern": "^/",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "secretEnv": {
+          "items": {
+            "$ref": "#/$defs/SecretEnvEntry"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "timeoutSec": {
+          "maximum": 1800,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "argv",
+        "class",
+        "reason",
+        "timeoutSec"
+      ],
+      "type": "object"
+    },
+    "GitHubPrUrl": {
+      "description": "https://github.com/<owner>/<name>/pull/<n>",
+      "pattern": "^https://github\\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})/pull/([1-9][0-9]*)$",
+      "type": "string"
+    },
+    "GitHubRepo": {
+      "description": "GitHub repository as owner/name",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})$",
+      "type": "string"
+    },
+    "HubEvent": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "attention": {
+          "$ref": "#/$defs/Attention"
+        },
+        "data": {
+          "description": "At most 2 KB of JSON; the hub trims before emitting."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "seq": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "Hub-global and monotonic."
+        },
+        "summary": {
+          "description": "Plain language.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "type": {
+          "$ref": "#/$defs/HubEventType"
+        }
+      },
+      "required": [
+        "seq",
+        "at",
+        "type",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "HubEventType": {
+      "oneOf": [
+        {
+          "enum": [
+            "machine.online",
+            "machine.offline",
+            "machine.degraded",
+            "thread.started",
+            "thread.completed",
+            "thread.failed",
+            "thread.interrupted",
+            "thread.usage_limited",
+            "wake.fired",
+            "workstream.created",
+            "workstream.state",
+            "ask.created",
+            "batch.ready",
+            "decision.recorded",
+            "lead.started",
+            "lead.woken",
+            "task.started",
+            "task.completed",
+            "task.failed",
+            "task.cancelled",
+            "claim.passed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "project.removed",
+          "description": "T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
+          "type": "string"
+        },
+        {
+          "const": "thread.waiting",
+          "description": "Needs approval or user input.",
+          "type": "string"
+        },
+        {
+          "const": "thread.stalled",
+          "description": "No progress past the stall threshold; the hub interrupts and nudges once.",
+          "type": "string"
+        },
+        {
+          "const": "wake.missed",
+          "description": "A wake missed while the hub was down, with catchUp \"skip\".",
+          "type": "string"
+        },
+        {
+          "const": "write.delivered",
+          "description": "A queued write to an offline machine was delivered when it came back.",
+          "type": "string"
+        },
+        {
+          "const": "write.expired",
+          "description": "A queued write outlived its TTL and was dropped.",
+          "type": "string"
+        },
+        {
+          "const": "webhook.failing",
+          "description": "A webhook subscription has been failing for over an hour.",
+          "type": "string"
+        },
+        {
+          "const": "workstream.running",
+          "description": "The brief was frozen; `data.briefHash`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.auto",
+          "description": "An ask was answered from the decision log and never reached a batch.",
+          "type": "string"
+        },
+        {
+          "const": "digest.ready",
+          "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
+          "type": "string"
+        },
+        {
+          "const": "task.queued",
+          "description": "`data.queuedReason`.",
+          "type": "string"
+        },
+        {
+          "const": "task.out_of_area",
+          "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "lease.stale",
+          "description": "A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.",
+          "type": "string"
+        },
+        {
+          "const": "claim.failed",
+          "description": "A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`.",
+          "type": "string"
+        },
+        {
+          "const": "workstream.done",
+          "description": "Every done-when check passed. `data.workstreamId`.",
+          "type": "string"
+        },
+        {
+          "const": "review.verdict",
+          "description": "`data.taskId`, `data.prHeadSha`, `data.blocking`.",
+          "type": "string"
+        },
+        {
+          "const": "incident.recorded",
+          "description": "`data.incidentId`, `data.class`.",
+          "type": "string"
+        },
+        {
+          "const": "change.queued",
+          "description": "`data.changeId`, `data.repo`, `data.prNumber`.",
+          "type": "string"
+        },
+        {
+          "const": "change.ready",
+          "description": "Its tier's reviews are satisfied for the current patch id. `data.changeId`.",
+          "type": "string"
+        },
+        {
+          "const": "change.needs_rebase",
+          "description": "The rebase conflicted; `data.changeId`, `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "change.ci_failed",
+          "description": "`data.changeId`, `data.checks` (failing check names), `data.logUrl`.",
+          "type": "string"
+        },
+        {
+          "const": "pr.merged",
+          "description": "`data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`.",
+          "type": "string"
+        },
+        {
+          "const": "train.frozen",
+          "description": "`data.repo`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "train.resumed",
+          "description": "`data.repo`.",
+          "type": "string"
+        },
+        {
+          "const": "change.refused",
+          "description": "Refused at enqueue; `data.prUrl`, `data.fix`.",
+          "type": "string"
+        },
+        {
+          "const": "intake.routed",
+          "description": "Where an intent went; `data.workstreamId` or `data.askId`, `data.template`, `data.reason`, `data.playbook`.",
+          "type": "string"
+        },
+        {
+          "const": "research.verdict",
+          "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
+          "type": "string"
+        },
+        {
+          "const": "usage.breaker",
+          "description": "M4: a machine's login hit the same limit on several threads, or its proxy has no account; dispatch there pauses.",
+          "type": "string"
+        },
+        {
+          "const": "usage.resumed",
+          "description": "M4: parked threads were sent \"continue\" at their reset or on usage_resume; `data.breakerCleared`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.secret_saved",
+          "description": "M8: the node wrote a secret's sink. `data.askId`, `data.fingerprint`, `data.by` (the human who submitted it).",
+          "type": "string"
+        },
+        {
+          "const": "gated.ran",
+          "description": "M8: the node ran an approved command. `data.askId`, `data.exitCode`, `data.timedOut`, `data.by` (the approver).",
+          "type": "string"
+        },
+        {
+          "const": "doctor.changed",
+          "description": "M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).",
+          "type": "string"
+        },
+        {
+          "const": "retro.ran",
+          "description": "M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).",
+          "type": "string"
+        },
+        {
+          "const": "playbook.changed",
+          "description": "M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.",
+          "type": "string"
+        },
+        {
+          "const": "playbook.reverted",
+          "description": "M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "playbook.kept",
+          "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
+          "type": "string"
+        }
+      ]
+    },
+    "InboxReplyApplied": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "by": {
+          "type": "string"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "number": {
+          "description": "The batch item number; absent for \"pref:\" and \"forget\".",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/InboxReplyOutcome"
+        },
+        "source": {
+          "$ref": "#/$defs/DecisionSource",
+          "description": "The written decision's source and by, filled by the hub from the caller (human device or agent key)."
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "InboxReplyInput": {
+      "properties": {
+        "batchId": {
+          "$ref": "#/$defs/BatchId",
+          "description": "Absent: the latest open batch."
+        },
+        "raw": {
+          "description": "Terse reply such as \"1 go 2 nvm 3 recs fine\"; a leading \"#B<n>\" picks the batch.",
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "raw"
+      ],
+      "type": "object"
+    },
+    "InboxReplyOutcome": {
+      "description": "answered: a Decision was written. later: moved to the next batch. retired: \"forget Dn\". pref: \"pref:\" recorded.",
+      "enum": [
+        "answered",
+        "withdrawn",
+        "later",
+        "retired",
+        "pref"
+      ],
+      "type": "string"
+    },
+    "InboxReplyOutput": {
+      "properties": {
+        "applied": {
+          "items": {
+            "$ref": "#/$defs/InboxReplyApplied"
+          },
+          "type": "array"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "echo": {
+          "description": "E.g. \"Logged: 1 → go (D12), 2 → dropped\".",
+          "type": "string"
+        },
+        "hint": {
+          "description": "How to fix an unparseable reply.",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "parsed": {
+          "description": "False: nothing changed; see `hint`.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "parsed",
+        "applied"
+      ],
+      "type": "object"
+    },
+    "Incident": {
+      "description": "Recorded by the hub, never by an agent.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "class": {
+          "$ref": "#/$defs/IncidentClass"
+        },
+        "evidence": {
+          "description": "Plain-language lines: claim ids with their failing checks, ratios, SHAs.",
+          "items": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "incidentId": {
+          "$ref": "#/$defs/IncidentId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "incidentId",
+        "class",
+        "projectRef",
+        "evidence",
+        "at"
+      ],
+      "type": "object"
+    },
+    "IncidentClass": {
+      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `re_ask`, a human was\nasked about a key that already had an active Decision; `override`, a human replaced a lead's Decision with another\nvalue; `playbook_reverted`, a retro wording change missed its metric and was rolled back.",
+      "enum": [
+        "false_claim",
+        "estimate_miss",
+        "polish_loop",
+        "misfiled_ask",
+        "out_of_area",
+        "stall",
+        "policy_bypass",
+        "re_ask",
+        "override",
+        "playbook_reverted"
+      ],
+      "type": "string"
+    },
+    "IncidentCount": {
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/IncidentClass"
+        },
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "class",
+        "count"
+      ],
+      "type": "object"
+    },
+    "IncidentId": {
+      "pattern": "^I[1-9][0-9]*$",
+      "type": "string"
+    },
+    "IncidentsListInput": {
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/IncidentClass"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "windowDays": {
+          "default": 7,
+          "description": "M12: the span `counts` covers, ending now.",
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "IncidentsListOutput": {
+      "properties": {
+        "counts": {
+          "description": "M12: incidents per class since `counts_since`, under the same filters; classes with none are left out. Most\nfirst.",
+          "items": {
+            "$ref": "#/$defs/IncidentCount"
+          },
+          "type": "array"
+        },
+        "countsSince": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "incidents": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Incident"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "incidents",
+        "counts",
+        "countsSince"
+      ],
+      "type": "object"
+    },
+    "IntakeChannel": {
+      "enum": [
+        "app",
+        "phone",
+        "mcp",
+        "lead"
+      ],
+      "type": "string"
+    },
+    "IntakeEcho": {
+      "description": "Where an intent went and why, whether the router, a prefix, `@<project>` or the caller decided it.",
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "template": {
+          "$ref": "#/$defs/PlaybookName"
+        }
+      },
+      "required": [
+        "projectRef",
+        "template",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "IntakeSubmitInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "With projectId, or neither: then the router picks the project unless the text starts with `@<project>`."
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "template": {
+          "$ref": "#/$defs/PlaybookName",
+          "description": "Skips the router for the template, like a `fix:` or `research:` prefix."
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "IntakeSubmitOutput": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId",
+          "description": "The router could not place the intent: the human picks the project by answering this ask."
+        },
+        "echo": {
+          "$ref": "#/$defs/IntakeEcho",
+          "description": "Present with workstreamId."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "InventoryInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "InventoryOutput": {
+      "properties": {
+        "idle": {
+          "description": "The project's finish-all workstream went (or stayed) idle: nothing left with a value source.",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "spawnable": {
+          "description": "Items with a value source that no open child serves yet.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The ranked list, one item per line.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text",
+        "spawnable",
+        "idle"
+      ],
+      "type": "object"
+    },
+    "Lead": {
+      "properties": {
+        "lastWakeAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked",
+          "description": "M4: the lead thread hit a usage limit; derived from the usage layer when read."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "sessionGeneration": {
+          "description": "Bumped by each lead_restart.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/LeadState"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+        }
+      },
+      "required": [
+        "projectRef",
+        "threadId",
+        "state",
+        "startedAt",
+        "sessionGeneration"
+      ],
+      "type": "object"
+    },
+    "LeadStartInput": {
+      "properties": {
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "model": {
+          "description": "Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub\ndefault.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "LeadStartOutput": {
+      "properties": {
+        "lastWakeAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked",
+          "description": "M4: the lead thread hit a usage limit; derived from the usage layer when read."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "sessionGeneration": {
+          "description": "Bumped by each lead_restart.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/LeadState"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectRef",
+        "threadId",
+        "state",
+        "startedAt",
+        "sessionGeneration"
+      ],
+      "type": "object"
+    },
+    "LeadState": {
+      "enum": [
+        "starting",
+        "idle",
+        "working",
+        "stalled",
+        "stopped"
+      ],
+      "type": "string"
+    },
+    "LoginKind": {
+      "description": "Read from the T3 provider instance status and its env var names, never from credentials.",
+      "enum": [
+        "subscription",
+        "api_key",
+        "custom_base_url",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Machine": {
+      "properties": {
+        "boxPubKey": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
+        },
+        "degradedReason": {
+          "description": "Plain language, set while status is \"degraded\".",
+          "type": "string"
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nodeVersion": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/MachineStatus"
+        },
+        "t3": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineT3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null until the node has reported a reachable T3."
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "tags",
+        "status",
+        "lastSeenAt",
+        "t3",
+        "nodeVersion"
+      ],
+      "type": "object"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "MachineStatus": {
+      "enum": [
+        "online",
+        "offline",
+        "degraded"
+      ],
+      "type": "string"
+    },
+    "MachineT3": {
+      "properties": {
+        "protocol": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "protocol"
+      ],
+      "type": "object"
+    },
+    "McpTools": {
+      "properties": {
+        "actions_list.input": {
+          "$ref": "#/$defs/ActionsListInput"
+        },
+        "actions_list.output": {
+          "$ref": "#/$defs/ActionsListOutput"
+        },
+        "asks_list.input": {
+          "$ref": "#/$defs/AsksListInput"
+        },
+        "asks_list.output": {
+          "$ref": "#/$defs/AsksListOutput"
+        },
+        "attention_policy.input": {
+          "$ref": "#/$defs/AttentionPolicyInput"
+        },
+        "attention_policy.output": {
+          "$ref": "#/$defs/AttentionPolicyOutput"
+        },
+        "cap_set.input": {
+          "$ref": "#/$defs/CapSetInput"
+        },
+        "cap_set.output": {
+          "$ref": "#/$defs/CapSetOutput"
+        },
+        "changes_list.input": {
+          "$ref": "#/$defs/ChangesListInput"
+        },
+        "changes_list.output": {
+          "$ref": "#/$defs/ChangesListOutput"
+        },
+        "claims_list.input": {
+          "$ref": "#/$defs/ClaimsListInput"
+        },
+        "claims_list.output": {
+          "$ref": "#/$defs/ClaimsListOutput"
+        },
+        "decisions_record.input": {
+          "$ref": "#/$defs/DecisionsRecordInput"
+        },
+        "decisions_record.output": {
+          "$ref": "#/$defs/DecisionsRecordOutput"
+        },
+        "decisions_search.input": {
+          "$ref": "#/$defs/DecisionsSearchInput"
+        },
+        "decisions_search.output": {
+          "$ref": "#/$defs/DecisionsSearchOutput"
+        },
+        "digest_get.input": {
+          "$ref": "#/$defs/DigestGetInput"
+        },
+        "digest_get.output": {
+          "$ref": "#/$defs/DigestGetOutput"
+        },
+        "doctor_fix.input": {
+          "$ref": "#/$defs/DoctorFixInput"
+        },
+        "doctor_fix.output": {
+          "$ref": "#/$defs/DoctorFixOutput"
+        },
+        "doctor_list.input": {
+          "$ref": "#/$defs/DoctorListInput"
+        },
+        "doctor_list.output": {
+          "$ref": "#/$defs/DoctorListOutput"
+        },
+        "events_wait.input": {
+          "$ref": "#/$defs/EventsWaitInput"
+        },
+        "events_wait.output": {
+          "$ref": "#/$defs/EventsWaitOutput"
+        },
+        "fleetd_status.input": {
+          "$ref": "#/$defs/FleetdStatusInput"
+        },
+        "fleetd_status.output": {
+          "$ref": "#/$defs/FleetdStatusOutput"
+        },
+        "inbox_reply.input": {
+          "$ref": "#/$defs/InboxReplyInput"
+        },
+        "inbox_reply.output": {
+          "$ref": "#/$defs/InboxReplyOutput"
+        },
+        "incidents_list.input": {
+          "$ref": "#/$defs/IncidentsListInput"
+        },
+        "incidents_list.output": {
+          "$ref": "#/$defs/IncidentsListOutput"
+        },
+        "intake_submit.input": {
+          "$ref": "#/$defs/IntakeSubmitInput"
+        },
+        "intake_submit.output": {
+          "$ref": "#/$defs/IntakeSubmitOutput"
+        },
+        "inventory.input": {
+          "$ref": "#/$defs/InventoryInput"
+        },
+        "inventory.output": {
+          "$ref": "#/$defs/InventoryOutput"
+        },
+        "lead_restart.input": {
+          "$ref": "#/$defs/LeadStartInput"
+        },
+        "lead_restart.output": {
+          "$ref": "#/$defs/LeadStartOutput"
+        },
+        "lead_start.input": {
+          "$ref": "#/$defs/LeadStartInput"
+        },
+        "lead_start.output": {
+          "$ref": "#/$defs/LeadStartOutput"
+        },
+        "project_get.input": {
+          "$ref": "#/$defs/ProjectGetInput"
+        },
+        "project_get.output": {
+          "$ref": "#/$defs/ProjectOutcome"
+        },
+        "projects_list.input": {
+          "$ref": "#/$defs/ProjectsListInput"
+        },
+        "projects_list.output": {
+          "$ref": "#/$defs/ProjectsListOutput"
+        },
+        "retro_proposals.input": {
+          "$ref": "#/$defs/RetroProposalsInput"
+        },
+        "retro_proposals.output": {
+          "$ref": "#/$defs/RetroProposalsOutput"
+        },
+        "retro_run.input": {
+          "$ref": "#/$defs/RetroRunInput"
+        },
+        "retro_run.output": {
+          "$ref": "#/$defs/RetroRunOutput"
+        },
+        "secret_submit.input": {
+          "$ref": "#/$defs/SecretSubmitInput"
+        },
+        "secret_submit.output": {
+          "$ref": "#/$defs/SecretSubmitOutput"
+        },
+        "subscription_delete.input": {
+          "$ref": "#/$defs/SubscriptionDeleteInput"
+        },
+        "subscription_delete.output": {
+          "$ref": "#/$defs/SubscriptionDeleteOutput"
+        },
+        "subscription_list.input": {
+          "$ref": "#/$defs/SubscriptionListInput"
+        },
+        "subscription_list.output": {
+          "$ref": "#/$defs/SubscriptionListOutput"
+        },
+        "subscription_set.input": {
+          "$ref": "#/$defs/SubscriptionSetInput"
+        },
+        "subscription_set.output": {
+          "$ref": "#/$defs/SubscriptionSetOutput"
+        },
+        "task_get.input": {
+          "$ref": "#/$defs/TaskGetInput"
+        },
+        "task_get.output": {
+          "$ref": "#/$defs/TaskGetOutput"
+        },
+        "tasks_list.input": {
+          "$ref": "#/$defs/TasksListInput"
+        },
+        "tasks_list.output": {
+          "$ref": "#/$defs/TasksListOutput"
+        },
+        "thread_interrupt.input": {
+          "$ref": "#/$defs/ThreadInterruptInput"
+        },
+        "thread_interrupt.output": {
+          "$ref": "#/$defs/ThreadInterruptOutput"
+        },
+        "thread_launch.input": {
+          "$ref": "#/$defs/ThreadLaunchInput"
+        },
+        "thread_launch.output": {
+          "$ref": "#/$defs/ThreadLaunchOutput"
+        },
+        "thread_send.input": {
+          "$ref": "#/$defs/ThreadSendInput"
+        },
+        "thread_send.output": {
+          "$ref": "#/$defs/ThreadSendOutput"
+        },
+        "thread_tail.input": {
+          "$ref": "#/$defs/ThreadTailInput"
+        },
+        "thread_tail.output": {
+          "$ref": "#/$defs/ThreadTailOutput"
+        },
+        "train_freeze.input": {
+          "$ref": "#/$defs/TrainFreezeInput"
+        },
+        "train_freeze.output": {
+          "$ref": "#/$defs/TrainFreezeOutput"
+        },
+        "train_get.input": {
+          "$ref": "#/$defs/TrainGetInput"
+        },
+        "train_get.output": {
+          "$ref": "#/$defs/TrainGetOutput"
+        },
+        "usage_resume.input": {
+          "$ref": "#/$defs/UsageResumeInput"
+        },
+        "usage_resume.output": {
+          "$ref": "#/$defs/UsageResumeOutput"
+        },
+        "usage_status.input": {
+          "$ref": "#/$defs/UsageStatusInput"
+        },
+        "usage_status.output": {
+          "$ref": "#/$defs/UsageStatusOutput"
+        },
+        "wake_cancel.input": {
+          "$ref": "#/$defs/WakeCancelInput"
+        },
+        "wake_cancel.output": {
+          "$ref": "#/$defs/WakeCancelOutput"
+        },
+        "wake_list.input": {
+          "$ref": "#/$defs/WakeListInput"
+        },
+        "wake_list.output": {
+          "$ref": "#/$defs/WakeListOutput"
+        },
+        "wake_set.input": {
+          "$ref": "#/$defs/WakeSetInput"
+        },
+        "wake_set.output": {
+          "$ref": "#/$defs/WakeSetOutput"
+        },
+        "workstream_get.input": {
+          "$ref": "#/$defs/WorkstreamGetInput"
+        },
+        "workstream_get.output": {
+          "$ref": "#/$defs/WorkstreamGetOutput"
+        },
+        "workstream_list.input": {
+          "$ref": "#/$defs/WorkstreamListInput"
+        },
+        "workstream_list.output": {
+          "$ref": "#/$defs/WorkstreamListOutput"
+        },
+        "workstream_spawn.input": {
+          "$ref": "#/$defs/WorkstreamSpawnInput"
+        },
+        "workstream_spawn.output": {
+          "$ref": "#/$defs/WorkstreamSpawnOutput"
+        }
+      },
+      "required": [
+        "actions_list.input",
+        "actions_list.output",
+        "asks_list.input",
+        "asks_list.output",
+        "attention_policy.input",
+        "attention_policy.output",
+        "cap_set.input",
+        "cap_set.output",
+        "changes_list.input",
+        "changes_list.output",
+        "claims_list.input",
+        "claims_list.output",
+        "decisions_record.input",
+        "decisions_record.output",
+        "decisions_search.input",
+        "decisions_search.output",
+        "digest_get.input",
+        "digest_get.output",
+        "doctor_fix.input",
+        "doctor_fix.output",
+        "doctor_list.input",
+        "doctor_list.output",
+        "events_wait.input",
+        "events_wait.output",
+        "fleetd_status.input",
+        "fleetd_status.output",
+        "inbox_reply.input",
+        "inbox_reply.output",
+        "incidents_list.input",
+        "incidents_list.output",
+        "intake_submit.input",
+        "intake_submit.output",
+        "inventory.input",
+        "inventory.output",
+        "lead_restart.input",
+        "lead_restart.output",
+        "lead_start.input",
+        "lead_start.output",
+        "project_get.input",
+        "project_get.output",
+        "projects_list.input",
+        "projects_list.output",
+        "retro_proposals.input",
+        "retro_proposals.output",
+        "retro_run.input",
+        "retro_run.output",
+        "secret_submit.input",
+        "secret_submit.output",
+        "subscription_delete.input",
+        "subscription_delete.output",
+        "subscription_list.input",
+        "subscription_list.output",
+        "subscription_set.input",
+        "subscription_set.output",
+        "task_get.input",
+        "task_get.output",
+        "tasks_list.input",
+        "tasks_list.output",
+        "thread_interrupt.input",
+        "thread_interrupt.output",
+        "thread_launch.input",
+        "thread_launch.output",
+        "thread_send.input",
+        "thread_send.output",
+        "thread_tail.input",
+        "thread_tail.output",
+        "train_freeze.input",
+        "train_freeze.output",
+        "train_get.input",
+        "train_get.output",
+        "usage_resume.input",
+        "usage_resume.output",
+        "usage_status.input",
+        "usage_status.output",
+        "wake_cancel.input",
+        "wake_cancel.output",
+        "wake_list.input",
+        "wake_list.output",
+        "wake_set.input",
+        "wake_set.output",
+        "workstream_get.input",
+        "workstream_get.output",
+        "workstream_list.input",
+        "workstream_list.output",
+        "workstream_spawn.input",
+        "workstream_spawn.output"
+      ],
+      "type": "object"
+    },
+    "MetricValues": {
+      "description": "The judge's reported numbers for the brief's metric.",
+      "properties": {
+        "baseline": {
+          "type": "number"
+        },
+        "candidate": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "baseline",
+        "candidate"
+      ],
+      "type": "object"
+    },
+    "OrchestratorKind": {
+      "enum": [
+        "orchestrator"
+      ],
+      "type": "string"
+    },
+    "OrchestratorRun": {
+      "description": "A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage.",
+      "properties": {
+        "durationMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/OrchestratorKind"
+        },
+        "model": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "outputTokens": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "model",
+        "durationMs",
+        "ok"
+      ],
+      "type": "object"
+    },
+    "ParkedCounts": {
+      "properties": {
+        "leads": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tasks": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "leads",
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "PatchId": {
+      "description": "Full lowercase hex patch id, 40 or 64 characters",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "PlaybookChangeKind": {
+      "enum": [
+        "wording",
+        "gate"
+      ],
+      "type": "string"
+    },
+    "PlaybookName": {
+      "description": "The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all.",
+      "enum": [
+        "bugfix",
+        "feature",
+        "research",
+        "finish-all"
+      ],
+      "type": "string"
+    },
+    "PlaybookRef": {
+      "description": "<playbook name>@<full lowercase hex git blob SHA>",
+      "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "ProbeCounter": {
+      "description": "Direct usage or reset-credit calls seen in the machine's T3 trace file. Must be 0.",
+      "properties": {
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "observable": {
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "Why it is not observable.",
+          "type": "string"
+        },
+        "source": {
+          "description": "The trace directory read, when observable.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observable"
+      ],
+      "type": "object"
+    },
+    "ProjectGetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectOutcome": {
+      "description": "The one-call project outcome, returned as-is by project_get.",
+      "properties": {
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lead": {
+          "$ref": "#/$defs/Lead",
+          "description": "Absent until lead_start."
+        },
+        "next": {
+          "description": "Hint for the next call.",
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "taskCounts": {
+          "$ref": "#/$defs/TaskCounts",
+          "description": "Absent until the project has a task."
+        },
+        "tasks": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Task"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "threads": {
+          "description": "Newest activity first. Task threads are left out; they show under `tasks`.",
+          "items": {
+            "$ref": "#/$defs/ThreadSummary"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "trains": {
+          "description": "The merge trains of the project's repos; absent until one of its PRs was enqueued.",
+          "items": {
+            "$ref": "#/$defs/TrainState"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "truncated": {
+          "description": "True when `threads`, `workstreams` or `tasks` was trimmed to its limit.",
+          "type": "boolean"
+        },
+        "workstreams": {
+          "description": "Open workstreams (not done, stopped or failed), newest first.",
+          "items": {
+            "$ref": "#/$defs/Workstream"
+          },
+          "maxItems": 20,
+          "type": "array"
+        }
+      },
+      "required": [
+        "project",
+        "threads",
+        "stale",
+        "asOf"
+      ],
+      "type": "object"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectSummary": {
+      "properties": {
+        "lastActivityAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "threads": {
+          "$ref": "#/$defs/ThreadCounts"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "workspaceRoot",
+        "threads",
+        "lastActivityAt"
+      ],
+      "type": "object"
+    },
+    "ProjectsListInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ProjectsListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectSummary"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "type": "object"
+    },
+    "QuietWindow": {
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "to": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "Receipts": {
+      "description": "Counted by the hub from the task's T3 items, never from its prose.",
+      "properties": {
+        "commands": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "commandsFailed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "filesChanged": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toolCalls": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "commands",
+        "commandsFailed",
+        "filesChanged",
+        "toolCalls"
+      ],
+      "type": "object"
+    },
+    "ResearchOutcome": {
+      "description": "STOP is a success: the question was answered.",
+      "enum": [
+        "go",
+        "stop",
+        "inconclusive"
+      ],
+      "type": "string"
+    },
+    "ResearchVerdict": {
+      "description": "Computed by the hub, never reported by an agent; `outcome` always follows from `rule` and `metricValues`.",
+      "properties": {
+        "computedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "metricValues": {
+          "$ref": "#/$defs/MetricValues"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ResearchOutcome"
+        },
+        "rule": {
+          "$ref": "#/$defs/DecisionRule",
+          "description": "The brief's frozen rule."
+        }
+      },
+      "required": [
+        "outcome",
+        "metricValues",
+        "rule",
+        "computedAt"
+      ],
+      "type": "object"
+    },
+    "RetroMetric": {
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/RetroMetricClass"
+        },
+        "op": {
+          "$ref": "#/$defs/Decrease"
+        },
+        "windowDays": {
+          "description": "Measured over this many days after the change, against the same span before it.",
+          "maximum": 28,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "class",
+        "op",
+        "windowDays"
+      ],
+      "type": "object"
+    },
+    "RetroMetricClass": {
+      "description": "The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream. A\nproposal names one; the retro cannot add or change them.",
+      "enum": [
+        "false_claim",
+        "estimate_miss",
+        "polish_loop",
+        "misfiled_ask",
+        "out_of_area",
+        "stall",
+        "policy_bypass",
+        "re_ask",
+        "override",
+        "agent_minutes_per_done"
+      ],
+      "type": "string"
+    },
+    "RetroProposal": {
+      "properties": {
+        "appliedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "askId": {
+          "$ref": "#/$defs/AskId",
+          "description": "The gate Ask, key `playbook.<name>.<hash>`."
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "baseline": {
+          "$ref": "#/$defs/RetroSnapshot",
+          "description": "The window before it applied; `measured` is the window after."
+        },
+        "claimedKind": {
+          "$ref": "#/$defs/PlaybookChangeKind",
+          "description": "What the model said it was."
+        },
+        "diff": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "dueAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When a wording change's window ends and its metric is computed."
+        },
+        "expected": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "fields": {
+          "description": "Frontmatter fields the diff changes, plus \"body\".",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "fixesIncidents": {
+          "items": {
+            "$ref": "#/$defs/IncidentId"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/PlaybookChangeKind",
+          "description": "Decided by the hub from the fields the diff touches."
+        },
+        "measured": {
+          "$ref": "#/$defs/RetroSnapshot"
+        },
+        "metric": {
+          "$ref": "#/$defs/RetroMetric"
+        },
+        "note": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "playbook": {
+          "$ref": "#/$defs/PlaybookName"
+        },
+        "previousRef": {
+          "$ref": "#/$defs/PlaybookRef"
+        },
+        "proposalId": {
+          "$ref": "#/$defs/RetroProposalId"
+        },
+        "ref": {
+          "$ref": "#/$defs/PlaybookRef",
+          "description": "The version it applied and the one it replaced."
+        },
+        "run": {
+          "description": "The retro run that proposed it.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/RetroProposalState"
+        }
+      },
+      "required": [
+        "proposalId",
+        "run",
+        "at",
+        "playbook",
+        "kind",
+        "claimedKind",
+        "diff",
+        "fields",
+        "fixesIncidents",
+        "metric",
+        "expected",
+        "state"
+      ],
+      "type": "object"
+    },
+    "RetroProposalId": {
+      "pattern": "^R[1-9][0-9]*$",
+      "type": "string"
+    },
+    "RetroProposalState": {
+      "description": "suggested: advise-only, nothing applies. pending: a gate change waiting for the weekly Ask; asked: in it.\nmeasuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person\napproved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.",
+      "enum": [
+        "suggested",
+        "pending",
+        "asked",
+        "measuring",
+        "kept",
+        "reverted",
+        "applied",
+        "rejected",
+        "stale"
+      ],
+      "type": "string"
+    },
+    "RetroProposalsInput": {
+      "properties": {
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/RetroProposalState"
+        }
+      },
+      "type": "object"
+    },
+    "RetroProposalsOutput": {
+      "properties": {
+        "apply": {
+          "description": "The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes are asked.",
+          "type": "boolean"
+        },
+        "lastRun": {
+          "$ref": "#/$defs/RetroRun"
+        },
+        "next": {
+          "type": "string"
+        },
+        "proposals": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/RetroProposal"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "proposals",
+        "apply"
+      ],
+      "type": "object"
+    },
+    "RetroRun": {
+      "properties": {
+        "advise": {
+          "description": "Nothing it proposed applies: `--advise`, or `policy.retro.apply` is not true.",
+          "type": "boolean"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "dropped": {
+          "items": {
+            "$ref": "#/$defs/RetroRunDropped"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "incidents": {
+          "description": "Incidents in the window it was given.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "proposals": {
+          "items": {
+            "$ref": "#/$defs/RetroProposalId"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "run": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "trigger": {
+          "$ref": "#/$defs/RetroTrigger"
+        },
+        "usage": {
+          "$ref": "#/$defs/OrchestratorRun",
+          "description": "Absent when there was nothing to look at and no turn ran."
+        },
+        "windowDays": {
+          "maximum": 28,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run",
+        "at",
+        "trigger",
+        "advise",
+        "windowDays",
+        "incidents",
+        "proposals",
+        "dropped"
+      ],
+      "type": "object"
+    },
+    "RetroRunDropped": {
+      "description": "A change the hub refused, with why.",
+      "properties": {
+        "index": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "playbook": {
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "RetroRunInput": {
+      "properties": {
+        "advise": {
+          "description": "Propose only, even when policy.retro.apply is true.",
+          "type": "boolean"
+        },
+        "windowDays": {
+          "default": 14,
+          "maximum": 28,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "RetroRunOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "proposals": {
+          "items": {
+            "$ref": "#/$defs/RetroProposal"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "run": {
+          "$ref": "#/$defs/RetroRun"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "run",
+        "proposals"
+      ],
+      "type": "object"
+    },
+    "RetroSnapshot": {
+      "description": "A metric's values over one window; agent-minutes is null when no workstream finished in it. Its keys are\nsnake_case on the wire.",
+      "properties": {
+        "agent_minutes_per_done": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimate_miss": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "false_claim": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "polish_loop": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "target",
+        "false_claim",
+        "estimate_miss",
+        "polish_loop",
+        "agent_minutes_per_done"
+      ],
+      "type": "object"
+    },
+    "RetroTrigger": {
+      "enum": [
+        "weekly",
+        "threshold",
+        "manual"
+      ],
+      "type": "string"
+    },
+    "RuntimeMode": {
+      "enum": [
+        "full-access",
+        "approval-required"
+      ],
+      "type": "string"
+    },
+    "SealedSecret": {
+      "type": "string"
+    },
+    "SecretEnvEntry": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/EnvName"
+        },
+        "secretKey": {
+          "$ref": "#/$defs/DecisionKey"
+        }
+      },
+      "required": [
+        "name",
+        "secretKey"
+      ],
+      "type": "object"
+    },
+    "SecretFingerprint": {
+      "description": "8 lowercase hex characters: the sha256 prefix of the plaintext",
+      "pattern": "^[0-9a-f]{8}$",
+      "type": "string"
+    },
+    "SecretSink": {
+      "type": "string"
+    },
+    "SecretSubmitInput": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine)."
+        }
+      },
+      "required": [
+        "askId",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "SecretSubmitOutput": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "askId",
+        "fingerprint"
+      ],
+      "type": "object"
+    },
+    "Serves": {
+      "type": "string"
+    },
+    "SlotState": {
+      "properties": {
+        "cap": {
+          "description": "Global cap on running turns.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perProject": {
+          "items": {
+            "$ref": "#/$defs/SlotStatePerProject"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "queued": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reservedBand": {
+          "description": "Slots of the cap only lead turns may take.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "used": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cap",
+        "used",
+        "queued",
+        "reservedBand",
+        "perProject"
+      ],
+      "type": "object"
+    },
+    "SlotStatePerProject": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "share": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "used": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectRef",
+        "share",
+        "used"
+      ],
+      "type": "object"
+    },
+    "Star": {
+      "description": "`\"*\"`: every event type or machine.",
+      "enum": [
+        "*"
+      ],
+      "type": "string"
+    },
+    "Step": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "expect": {
+          "description": "What the human should see when the step worked.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "where": {
+          "$ref": "#/$defs/StepWhere"
+        }
+      },
+      "required": [
+        "text",
+        "where"
+      ],
+      "type": "object"
+    },
+    "StepPlace": {
+      "enum": [
+        "browser",
+        "phone"
+      ],
+      "type": "string"
+    },
+    "StepWhere": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StepPlace"
+        },
+        {
+          "$ref": "#/$defs/MachineId"
+        }
+      ],
+      "description": "A machineId, \"browser\" or \"phone\"."
+    },
+    "Subscription": {
+      "description": "A webhook push target. Its signing secret is shown once by subscription_set and never returned again.",
+      "properties": {
+        "createdBy": {
+          "description": "keyId of the agent key that created it.",
+          "type": "string"
+        },
+        "failingSince": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When deliveries started failing; absent while healthy."
+        },
+        "kind": {
+          "$ref": "#/$defs/WebhookKind"
+        },
+        "lastDeliveredSeq": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "machines": {
+          "$ref": "#/$defs/SubscriptionMachines"
+        },
+        "state": {
+          "$ref": "#/$defs/SubscriptionState"
+        },
+        "subscriptionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "types": {
+          "$ref": "#/$defs/SubscriptionTypes"
+        },
+        "url": {
+          "$ref": "#/$defs/WebhookUrl"
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "kind",
+        "url",
+        "types",
+        "machines",
+        "createdBy",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SubscriptionDeleteInput": {
+      "properties": {
+        "subscriptionId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionId"
+      ],
+      "type": "object"
+    },
+    "SubscriptionDeleteOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "SubscriptionListInput": {
+      "type": "object"
+    },
+    "SubscriptionListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "subscriptions": {
+          "items": {
+            "$ref": "#/$defs/Subscription"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "subscriptions"
+      ],
+      "type": "object"
+    },
+    "SubscriptionMachines": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Star"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "SubscriptionSetInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "machines": {
+          "$ref": "#/$defs/SubscriptionMachines",
+          "default": "*"
+        },
+        "types": {
+          "$ref": "#/$defs/SubscriptionTypes",
+          "default": "*"
+        },
+        "url": {
+          "$ref": "#/$defs/WebhookUrl"
+        }
+      },
+      "required": [
+        "url",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "SubscriptionSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "secret": {
+          "description": "The webhook signing secret. Shown only here; store it now.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "subscriptionId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "secret"
+      ],
+      "type": "object"
+    },
+    "SubscriptionState": {
+      "enum": [
+        "active",
+        "disabled"
+      ],
+      "type": "string"
+    },
+    "SubscriptionTypes": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Star"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/HubEventType"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "TailAction": {
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionItem"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "at",
+        "action"
+      ],
+      "type": "object"
+    },
+    "TailItem": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TailMessage",
+          "properties": {
+            "kind": {
+              "const": "message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/TailAction",
+          "properties": {
+            "kind": {
+              "const": "action",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TailKind": {
+      "enum": [
+        "message",
+        "action"
+      ],
+      "type": "string"
+    },
+    "TailMessage": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "role": {
+          "$ref": "#/$defs/TailRole"
+        },
+        "text": {
+          "maxLength": 2000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "role",
+        "text"
+      ],
+      "type": "object"
+    },
+    "TailRole": {
+      "enum": [
+        "user",
+        "assistant",
+        "system"
+      ],
+      "type": "string"
+    },
+    "Task": {
+      "properties": {
+        "areas": {
+          "items": {
+            "$ref": "#/$defs/AreaName"
+          },
+          "maxItems": 20,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "attempt": {
+          "description": "1 for the first launch.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "branch": {
+          "description": "`fleetd/<taskId>-<slug>`; write tasks only.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort",
+          "description": "Always explicit; resolved at spawn."
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "estimateMinutes": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "kind": {
+          "$ref": "#/$defs/TaskKind"
+        },
+        "model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked",
+          "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
+        },
+        "pr": {
+          "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "prompt": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "qa": {
+          "description": "A review task spawned with `--qa`.",
+          "type": "boolean"
+        },
+        "queuedReason": {
+          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/TaskResult"
+        },
+        "serves": {
+          "$ref": "#/$defs/Serves",
+          "description": "Required at spawn for write tasks; optional here for tasks stored before M6."
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier"
+        },
+        "title": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "worktreePath": {
+          "pattern": "^/",
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "projectRef",
+        "workstreamId",
+        "title",
+        "kind",
+        "prompt",
+        "areas",
+        "model",
+        "effort",
+        "state",
+        "attempt",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "TaskCounts": {
+      "description": "A project's tasks by state, all time.",
+      "properties": {
+        "cancelled": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "done": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idle": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "queued": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "queued",
+        "running",
+        "idle",
+        "done",
+        "failed",
+        "cancelled"
+      ],
+      "type": "object"
+    },
+    "TaskGetInput": {
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "type": "object"
+    },
+    "TaskGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "task": {
+          "$ref": "#/$defs/Task"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "type": "object"
+    },
+    "TaskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+    },
+    "TaskKind": {
+      "description": "Only write tasks get a worktree and leases.",
+      "enum": [
+        "write",
+        "read",
+        "review"
+      ],
+      "type": "string"
+    },
+    "TaskResult": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "branch": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "claimsUnverified": {
+          "description": "The tail claims success (\"tests pass\", \"fixed\", ...) while `receipts.commands` is 0. Absent before M6.",
+          "type": "boolean"
+        },
+        "prUrl": {
+          "type": "string"
+        },
+        "receipts": {
+          "$ref": "#/$defs/Receipts",
+          "description": "Absent on results stored before M6."
+        },
+        "status": {
+          "$ref": "#/$defs/TaskResultStatus"
+        },
+        "tail": {
+          "description": "The latest assistant message, trimmed to its last 2000 characters.",
+          "maxLength": 2000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "tail",
+        "at"
+      ],
+      "type": "object"
+    },
+    "TaskResultStatus": {
+      "enum": [
+        "done",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "TaskState": {
+      "enum": [
+        "queued",
+        "running",
+        "idle",
+        "done",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "TasksListInput": {
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState"
+        }
+      },
+      "type": "object"
+    },
+    "TasksListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "tasks": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Task"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "ThreadCounts": {
+      "properties": {
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idle": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "running",
+        "waiting",
+        "idle",
+        "failed"
+      ],
+      "type": "object"
+    },
+    "ThreadError": {
+      "properties": {
+        "class": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "class",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "ThreadInterruptInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ThreadInterruptOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "ThreadLaunchInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "prompt": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "runtimeMode": {
+          "$ref": "#/$defs/RuntimeMode",
+          "default": "full-access"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "prompt",
+        "model",
+        "effort",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ThreadLaunchOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadSendInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "message",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ThreadSendOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "queued": {
+          "description": "True when the machine is offline and the message waits in the hub's queue.",
+          "type": "boolean"
+        },
+        "queuedUntil": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When a queued message expires undelivered."
+        },
+        "runId": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "queued"
+      ],
+      "type": "object"
+    },
+    "ThreadStatus": {
+      "enum": [
+        "running",
+        "waiting",
+        "idle",
+        "completed",
+        "failed",
+        "interrupted",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "ThreadSummary": {
+      "properties": {
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "effort": {
+          "description": "As reported by T3; not narrowed to Effort because T3 may report other levels.",
+          "type": "string"
+        },
+        "headline": {
+          "description": "First line of the latest visible assistant text.",
+          "maxLength": 280,
+          "type": "string"
+        },
+        "lastError": {
+          "$ref": "#/$defs/ThreadError"
+        },
+        "lastProgressAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "latestMessageTail": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/ThreadStatus"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "usageLimitResetAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "projectId",
+        "title",
+        "status",
+        "headline",
+        "latestMessageTail",
+        "lastProgressAt",
+        "stale",
+        "asOf"
+      ],
+      "type": "object"
+    },
+    "ThreadTailInput": {
+      "properties": {
+        "kinds": {
+          "items": {
+            "$ref": "#/$defs/TailKind"
+          },
+          "type": "array"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "n": {
+          "default": 10,
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadTailOutput": {
+      "properties": {
+        "items": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/TailItem"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadSummary"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "thread"
+      ],
+      "type": "object"
+    },
+    "Tier": {
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ],
+      "type": "string"
+    },
+    "TimeZone": {
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "TrainFreezeInput": {
+      "properties": {
+        "frozen": {
+          "type": "boolean"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "frozen"
+      ],
+      "type": "object"
+    },
+    "TrainFreezeOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "train": {
+          "$ref": "#/$defs/TrainState"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "train"
+      ],
+      "type": "object"
+    },
+    "TrainGetInput": {
+      "properties": {
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo"
+      ],
+      "type": "object"
+    },
+    "TrainGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "train": {
+          "$ref": "#/$defs/TrainState"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "train"
+      ],
+      "type": "object"
+    },
+    "TrainState": {
+      "description": "One serial train per repo.",
+      "properties": {
+        "frozen": {
+          "description": "Held by a `policy.freeze.<repo>` decision.",
+          "type": "boolean"
+        },
+        "head": {
+          "$ref": "#/$defs/ChangeId",
+          "description": "The Change being rebased, checked or merged now."
+        },
+        "queue": {
+          "description": "Waiting Changes in train order.",
+          "items": {
+            "$ref": "#/$defs/ChangeId"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "frozen",
+        "queue"
+      ],
+      "type": "object"
+    },
+    "UsageBreaker": {
+      "description": "Open: no new turns start on the machine's login until `until` or usage_resume.",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "message": {
+          "description": "The plain notice, as the usage.breaker event said it.",
+          "type": "string"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/BreakerState"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent while open means until usage_resume."
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "UsageClass": {
+      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy cooldown, with a reset. `rate_limit`: a 429.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
+      "enum": [
+        "usage_limit",
+        "rate_limit",
+        "pool_exhausted"
+      ],
+      "type": "string"
+    },
+    "UsageParked": {
+      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`.",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "resumeAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent for pool_exhausted: it resumes on usage_resume."
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "class",
+        "since"
+      ],
+      "type": "object"
+    },
+    "UsageResumeInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "UsageResumeOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "resumed": {
+          "description": "Parked threads sent \"continue\".",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/UsageStatus"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "resumed",
+        "status"
+      ],
+      "type": "object"
+    },
+    "UsageStatus": {
+      "properties": {
+        "breaker": {
+          "$ref": "#/$defs/UsageBreaker"
+        },
+        "lastEvents": {
+          "description": "The latest thread.usage_limited, usage.breaker and usage.resumed events for the machine, oldest first.",
+          "items": {
+            "$ref": "#/$defs/HubEvent"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "login": {
+          "$ref": "#/$defs/LoginKind"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "parked": {
+          "$ref": "#/$defs/ParkedCounts"
+        },
+        "probes": {
+          "$ref": "#/$defs/ProbeCounter"
+        }
+      },
+      "required": [
+        "machineId",
+        "login",
+        "breaker",
+        "parked",
+        "lastEvents",
+        "probes"
+      ],
+      "type": "object"
+    },
+    "UsageStatusInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "type": "object"
+    },
+    "UsageStatusOutput": {
+      "properties": {
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/UsageStatus"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machines"
+      ],
+      "type": "object"
+    },
+    "Wake": {
+      "properties": {
+        "catchUp": {
+          "$ref": "#/$defs/WakeCatchUp",
+          "description": "What to do with a firing missed while the hub was down."
+        },
+        "createdBy": {
+          "description": "keyId of the agent key that set it.",
+          "type": "string"
+        },
+        "lastFiredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "nextRunAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent once the wake is done or cancelled."
+        },
+        "once": {
+          "type": "boolean"
+        },
+        "schedule": {
+          "$ref": "#/$defs/WakeSchedule"
+        },
+        "state": {
+          "$ref": "#/$defs/WakeState"
+        },
+        "target": {
+          "$ref": "#/$defs/WakeTarget"
+        },
+        "wakeId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "wakeId",
+        "target",
+        "schedule",
+        "message",
+        "once",
+        "catchUp",
+        "createdBy",
+        "state"
+      ],
+      "type": "object"
+    },
+    "WakeAt": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "tz": {
+          "$ref": "#/$defs/TimeZone"
+        }
+      },
+      "required": [
+        "at",
+        "tz"
+      ],
+      "type": "object"
+    },
+    "WakeCancelInput": {
+      "properties": {
+        "wakeId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "wakeId"
+      ],
+      "type": "object"
+    },
+    "WakeCancelOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "WakeCatchUp": {
+      "enum": [
+        "fire_once",
+        "skip"
+      ],
+      "type": "string"
+    },
+    "WakeCron": {
+      "description": "Standard 5-field cron; the hub parses it.",
+      "properties": {
+        "cron": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "tz": {
+          "$ref": "#/$defs/TimeZone"
+        }
+      },
+      "required": [
+        "cron",
+        "tz"
+      ],
+      "type": "object"
+    },
+    "WakeEvery": {
+      "properties": {
+        "everySec": {
+          "maximum": 9007199254740991,
+          "minimum": 60,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "everySec"
+      ],
+      "type": "object"
+    },
+    "WakeListInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "state": {
+          "$ref": "#/$defs/WakeState"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "type": "object"
+    },
+    "WakeListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "wakes": {
+          "items": {
+            "$ref": "#/$defs/Wake"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "wakes"
+      ],
+      "type": "object"
+    },
+    "WakeSchedule": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/WakeAt",
+          "properties": {
+            "kind": {
+              "const": "at",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/WakeEvery",
+          "properties": {
+            "kind": {
+              "const": "every",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/WakeCron",
+          "properties": {
+            "kind": {
+              "const": "cron",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "WakeSetInput": {
+      "properties": {
+        "catchUp": {
+          "$ref": "#/$defs/WakeCatchUp",
+          "default": "fire_once"
+        },
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "once": {
+          "default": true,
+          "type": "boolean"
+        },
+        "schedule": {
+          "$ref": "#/$defs/WakeSchedule"
+        },
+        "target": {
+          "$ref": "#/$defs/WakeTarget"
+        }
+      },
+      "required": [
+        "target",
+        "schedule",
+        "message",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "WakeSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "nextRunAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "wakeId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "wakeId",
+        "nextRunAt"
+      ],
+      "type": "object"
+    },
+    "WakeState": {
+      "enum": [
+        "active",
+        "done",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "WakeTarget": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "WebhookKind": {
+      "enum": [
+        "webhook"
+      ],
+      "type": "string"
+    },
+    "WebhookUrl": {
+      "type": "string"
+    },
+    "Workstream": {
+      "properties": {
+        "brief": {
+          "$ref": "#/$defs/Brief",
+          "description": "Absent while draft."
+        },
+        "briefHash": {
+          "$ref": "#/$defs/BriefHash"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "estimateActual": {
+          "$ref": "#/$defs/WorkstreamEstimateActual",
+          "description": "Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate."
+        },
+        "headline": {
+          "maxLength": 280,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "headlineAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ResearchOutcome",
+          "description": "Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed."
+        },
+        "parent": {
+          "$ref": "#/$defs/WorkstreamParent",
+          "description": "M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for."
+        },
+        "playbook": {
+          "$ref": "#/$defs/PlaybookRef",
+          "description": "Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "source": {
+          "$ref": "#/$defs/WorkstreamSource"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        },
+        "title": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "verdict": {
+          "$ref": "#/$defs/ResearchVerdict"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "projectRef",
+        "title",
+        "source",
+        "state",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "WorkstreamEstimateActual": {
+      "properties": {
+        "actualMinutes": {
+          "description": "Wall-clock minutes from running to done; set on done.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "ratioAtStart": {
+          "description": "The tier's calibration ratio when it started running.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "ratioAtStart"
+      ],
+      "type": "object"
+    },
+    "WorkstreamGetInput": {
+      "properties": {
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId"
+      ],
+      "type": "object"
+    },
+    "WorkstreamGetOutput": {
+      "properties": {
+        "asks": {
+          "description": "Its open asks.",
+          "items": {
+            "$ref": "#/$defs/Ask"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "claims": {
+          "description": "Its claims, newest first.",
+          "items": {
+            "$ref": "#/$defs/Claim"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "decisions": {
+          "description": "Active decisions scoped to it.",
+          "items": {
+            "$ref": "#/$defs/Decision"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "eta": {
+          "$ref": "#/$defs/Eta",
+          "description": "Absent without a raw estimate in the brief."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "workstream": {
+          "$ref": "#/$defs/Workstream"
+        }
+      },
+      "required": [
+        "workstream",
+        "asks",
+        "decisions"
+      ],
+      "type": "object"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    },
+    "WorkstreamListInput": {
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        }
+      },
+      "type": "object"
+    },
+    "WorkstreamListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "workstreams": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Workstream"
+          },
+          "maxItems": 100,
+          "type": "array"
+        }
+      },
+      "required": [
+        "workstreams"
+      ],
+      "type": "object"
+    },
+    "WorkstreamParent": {
+      "properties": {
+        "serves": {
+          "$ref": "#/$defs/Serves"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "serves"
+      ],
+      "type": "object"
+    },
+    "WorkstreamSource": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "Who submitted it: an agent keyId, \"human\" or \"lead:<machineId>/<projectId>\".",
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/$defs/IntakeChannel"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "channel",
+        "by",
+        "at"
+      ],
+      "type": "object"
+    },
+    "WorkstreamSpawnInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "serves": {
+          "$ref": "#/$defs/Serves"
+        },
+        "template": {
+          "$ref": "#/$defs/PlaybookName"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "text",
+        "serves"
+      ],
+      "type": "object"
+    },
+    "WorkstreamSpawnOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "parent": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The project's open finish-all workstream it is a child of."
+        },
+        "playbook": {
+          "$ref": "#/$defs/PlaybookRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "parent"
+      ],
+      "type": "object"
+    },
+    "WorkstreamState": {
+      "enum": [
+        "draft",
+        "running",
+        "converging",
+        "verifying",
+        "done",
+        "idle",
+        "stopped",
+        "failed"
+      ],
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/McpTools",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

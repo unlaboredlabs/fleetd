@@ -68,7 +68,7 @@ pub struct NodeHello {
     pub sig: NonEmpty,
     /// One-time token from `fleetd hub token create`; sent only until the hub has registered `pub_key`.
     pub enroll_token: Option<NonEmpty>,
-    /// M8: the X25519 key browsers seal this machine's secrets to. Absent on nodes from before M8.
+    /// M8: the X25519 key the desktop app seals this machine's secrets to. Absent on nodes from before M8.
     pub box_pub_key: Option<BoxPublicKey>,
 }
 
@@ -143,7 +143,7 @@ pub struct CmdResult {
 
 pub type FrameError = Text<1, 500>;
 
-/// Hub -> node: a secret sealed in the browser to this node's `box_pub_key`; the hub never sees the plaintext.
+/// Hub -> node: a secret sealed in the desktop app to this node's `box_pub_key`; the hub never sees the plaintext.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
