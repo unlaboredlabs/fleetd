@@ -14,7 +14,10 @@ a GPUI desktop app and a phone PWA. Claude is reached only through the `claude` 
   `scripts/sync-t3.ts` and run `pnpm sync:t3 --source <t3 checkout>`. Keep `T3_PIN` in
   `apps/hub/src/t3.ts` and the `effect`/`typescript` catalog versions in `pnpm-workspace.yaml` in step
   with the pin (a hub test checks the former).
-- `app/` - Cargo workspace for the desktop app (`fleetd-app`).
+- `app/` - Cargo workspace for the desktop app (`fleetd-app`, GPUI pinned to a Zed release tag) and
+  its speed harness (`app/bench/`, run `app/bench/run.sh`). Building on Linux needs GPUI's `-dev`
+  packages; without sudo, `app/bench/linux-sysroot.sh` extracts them and `source app/bench/linux-env.sh`
+  points cargo at them.
 
 ## Safety rules
 
