@@ -1,0 +1,195 @@
+// M6 "done when" 1-5 on lab-a: done is fleetd's call. A workstream whose only done-when check is a node-run
+// `test -f docs/x.md` fails its first claim (the lead is woken with the exit code and output), passes once a writer's
+// branch with the file is merged into the project's checkout, and records actual vs estimate. A tool-less task that
+// says "tests pass" reaches the lead as unverified; a writer without --serves and a verdict from a non-review task are
+// refused. The same-SHA review rule needs a real PR head from GitHub, so it is covered by a unit test instead
+// (tasks/LeadTaskCalls.test.ts) until M7's testbed. Every `fleetd` call runs from the harness in the project's
+// workspace, as the lead's shell would, so only wakes and the two tasks cost turns (haiku, low).
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { type Body, CLI, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
+import { git, prepareRepo, providerLog } from "./m5Tasks.ts";
+
+const MACHINE = "lab-a";
+const TURN_MS = 240_000;
+const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
+const FILE = "docs/x.md";
+
+export async function m6Verify(lab: Lab) {
+  const { callTool, check, ok } = lab;
+  await lab.waitLive(MACHINE);
+  const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE)?.projectId as string;
+  check(projectId, `${MACHINE} has a project`);
+  const ref = { machineId: MACHINE, projectId };
+  let outcome = (await callTool("project_get", ref)).body;
+  const root = outcome.project.workspaceRoot as string;
+  const home = lab.machines.find((m) => m.id === MACHINE)!.t3Home;
+  // Run alone, task numbers restart at T1, so old fleetd/* branches must go; after m5 they belong to this run.
+  if (outcome.taskCounts === undefined) prepareRepo(root);
+  if (fs.existsSync(path.join(root, FILE))) {
+    git(root, "rm", "-q", FILE);
+    git(root, "commit", "-q", "-m", `lab: remove ${FILE} before the M6 claim`);
+  }
+  ok(`${root}: ${FILE} is not on main`);
+
+  const fleetd = (...args: Array<string>) => {
+    const out = spawnSync(process.execPath, [CLI, ...args], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },
+    });
+    return { code: out.status, stdout: out.stdout, stderr: out.stderr };
+  };
+  const task = async (taskId: string) => (await callTool("task_get", { taskId })).body.task as Body;
+  const scenarioStart = await lab.cursor();
+
+  // The lead: m3's or m5's when they ran first, else a fresh one.
+  let leadThread: string;
+  if (outcome.lead === undefined) {
+    const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
+    check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
+    leadThread = started.body.threadId;
+    await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
+  } else {
+    leadThread = outcome.lead.threadId;
+  }
+  const leadTurnEnds = (cursor: number) =>
+    lab.waitEvent("a lead turn to end", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
+
+  // A workstream with one node-run check, registered from the shell as the lead would, before the intent wake fires.
+  let cursor = await lab.cursor();
+  const intake = await callTool("intake_submit", {
+    ...ref,
+    text: "M6 lab run: add docs/x.md. The brief is registered for you. In every wake about this workstream run no commands: reply with one short line and stop.",
+    clientRequestId: randomUUID(),
+  });
+  check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
+  const w = intake.body.workstreamId as string;
+  const brief = {
+    goal: `add ${FILE}`,
+    why: "the M6 lab scenario",
+    pointers: [],
+    constraints: [],
+    doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["test", "-f", FILE], expectExit: 0 }],
+    tier: "S",
+    estimate: { rawMinutes: 1, gates: [] },
+  };
+  const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
+  check(frozen.code === 0, `brief create: exit ${frozen.code} ${frozen.stdout}${frozen.stderr}`);
+  ok(`${w}: brief frozen with done-when [cmd on ${MACHINE}: test -f ${FILE}], raw estimate 1 min`);
+
+  // 1a. A claim before the file exists: the node runs the check, it fails, the workstream stays verifying.
+  const first = fleetd("claim", "done", "--workstream", w);
+  const firstClaim = new RegExp(`^(C\\d+) on ${w} failed`, "mu").exec(first.stdout)?.[1];
+  check(first.code === 1 && firstClaim !== undefined && first.stdout.includes("✗ done:0 cmd: fail, exit 1"), `first claim fails with exit 1: ${JSON.stringify(first)}`);
+  check((await callTool("workstream_get", { workstreamId: w })).body.workstream.state === "verifying", `${w} stays verifying`);
+  ok(`1. fleetd claim done (exit ${first.code}): ${first.stdout.split("\n").slice(0, 3).join(" | ")}`);
+  const failedEvent = await lab.waitEvent("claim.failed", 10_000, { cursor, types: ["claim.failed"], match: (e) => e.data?.claimId === firstClaim });
+  ok(`1. ${failedEvent.event.type}: ${failedEvent.event.summary}`);
+  const woken = await lab.waitEvent("lead.woken with the failed claim", 90_000, {
+    cursor,
+    machineId: MACHINE,
+    types: ["lead.woken"],
+    match: (e) => (e.data?.triggers ?? []).includes("claim_failed"),
+  });
+  cursor = (await leadTurnEnds(woken.event.seq)).cursor;
+  const wakeText = providerLog(home, leadThread);
+  check(
+    wakeText.includes(`Claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
+    `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`Claim ${firstClaim}`), wakeText.lastIndexOf(`Claim ${firstClaim}`) + 400)}`,
+  );
+  check(wakeText.includes("(raw 1m × 5, prior"), "the lead digest shows the calibrated ETA");
+  ok(`1. the lead's wake (triggers ${JSON.stringify(woken.event.data?.triggers)}) carried the evidence inline, and its digest the ETA`);
+
+  // 3. A writer without --serves is refused with the fix text.
+  const unserved = fleetd("task", "spawn", "--workstream", w, "--title", "x", "--areas", "docs", "--prompt", "y");
+  check(unserved.code === 3 && unserved.stderr.includes("say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>"), `spawn without --serves: ${JSON.stringify(unserved)}`);
+  ok(`3. task spawn --kind write without --serves refused (exit 3): ${unserved.stderr.trim().replace(/\n/gu, " | ")}`);
+
+  // A writer creates the file on its branch; a tool-less reader claims "tests pass".
+  const spawn = (args: Array<string>) => {
+    const out = fleetd("task", "spawn", "--workstream", w, "--model", MODEL, "--effort", "low", ...args);
+    const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
+    check(out.code === 0 && taskId, `task spawn ${args.join(" ")}: ${JSON.stringify(out)}`);
+    return taskId!;
+  };
+  const writer = spawn(["--title", "add x", "--areas", "docs", "--serves", "done:0", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
+  const reader = spawn([
+    "--title", "say tests pass", "--kind", "read",
+    "--prompt", "Do not run any command or use any tool. Reply with exactly these two words and nothing else: tests pass",
+  ]);
+  ok(`spawned ${writer} (write, serves done:0) and ${reader} (read, no tools)`);
+  for (const id of [writer, reader]) {
+    const ended = await lab.waitEvent(`${id} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === id });
+    check(ended.event.type === "task.completed", `${id} completed: ${ended.event.summary}`);
+  }
+
+  // 2. The reader ran nothing but says "tests pass": delivered with its receipts as unverified.
+  const readerTask = await task(reader);
+  check(readerTask.result?.receipts?.commands === 0 && readerTask.result?.claimsUnverified === true, `${reader} receipts: ${JSON.stringify(readerTask.result)}`);
+  let after = cursor;
+  let unverifiedDelivered = false;
+  for (;;) {
+    const wake = await lab.waitEvent("a task result wake", 75_000, { cursor: after, machineId: MACHINE, types: ["lead.woken"] }).catch(() => undefined);
+    if (wake === undefined) break;
+    after = (await leadTurnEnds(wake.event.seq)).cursor;
+    const text = providerLog(home, leadThread);
+    const at = text.indexOf(`- ${reader} completed`);
+    unverifiedDelivered ||= at >= 0 && text.slice(at, at + 300).includes("receipts: 0 commands run — claims unverified");
+    if (unverifiedDelivered && text.includes(`- ${writer} completed`)) break;
+  }
+  check(unverifiedDelivered, `the lead got ${reader} with "receipts: 0 commands run — claims unverified"`);
+  ok(`2. ${reader} ("${readerTask.result.tail}") reached the lead as "receipts: 0 commands run — claims unverified"`);
+
+  // A verdict from a task that is not a review is refused through the same CLI path a reviewer uses.
+  const notReview = fleetd("review", "verdict", "--task", reader, "--sha", "0".repeat(40), "--blocking", "0", "--non-blocking", "0", "--summary", "lab");
+  check(notReview.code === 3 && notReview.stderr.includes("only review tasks record verdicts"), `review verdict from a read task: ${JSON.stringify(notReview)}`);
+  ok(`4. (CLI path) review verdict from ${reader} refused: ${notReview.stderr.trim().split("\n")[0]}; the same-SHA refusal is unit-tested (tasks/LeadTaskCalls.test.ts)`);
+
+  // 1b. The writer's branch reaches the default branch in the project's checkout, and the second claim passes.
+  const branch = (await task(writer)).branch as string;
+  git(root, "merge", "-q", "--no-edit", branch);
+  check(fs.existsSync(path.join(root, FILE)), `${FILE} is on main after merging ${branch}`);
+  ok(`merged ${branch} into main in ${root}`);
+  const second = fleetd("claim", "done", "--workstream", w);
+  const secondClaim = new RegExp(`^(C\\d+) on ${w} passed`, "mu").exec(second.stdout)?.[1];
+  check(second.code === 0 && secondClaim !== undefined && second.stdout.includes("✓ done:0 cmd: pass, exit 0"), `second claim passes: ${JSON.stringify(second)}`);
+  const doneEvent = await lab.waitEvent("workstream.done", 10_000, { cursor, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
+  ok(`1. second claim (exit 0): ${second.stdout.split("\n")[0]}; ${doneEvent.event.type}: ${doneEvent.event.summary}`);
+  const late = fleetd("task", "spawn", "--workstream", w, "--title", "more", "--areas", "docs", "--serves", "done:0", "--prompt", "y");
+  check(late.code === 3 && late.stderr.includes(`${w} is done; open a new intent if there's more to do`), `write spawn on a done workstream: ${JSON.stringify(late)}`);
+  ok(`a write spawn on done ${w} is refused: ${late.stderr.trim().split("\n")[0]}`);
+
+  // 5. Actual vs estimate on done; workstream_get shows the ETA and the claims.
+  const got = (await callTool("workstream_get", { workstreamId: w })).body;
+  const actual = got.workstream.estimateActual;
+  check(got.workstream.state === "done" && typeof actual?.actualMinutes === "number" && actual.ratioAtStart === 5, `estimateActual: ${JSON.stringify(got.workstream)}`);
+  check(
+    got.eta?.rawMinutes === 1 && typeof got.eta.calibratedMinutes === "number" && typeof got.eta.ratio === "number" && typeof got.eta.samples === "number",
+    `workstream_get eta: ${JSON.stringify(got.eta)}`,
+  );
+  check((got.claims as Array<Body>).map((c) => `${c.claimId}:${c.outcome}`).join(",") === `${secondClaim}:pass,${firstClaim}:fail`, `workstream_get claims: ${JSON.stringify(got.claims)}`);
+  ok(`5. ${w} done: actual ${actual.actualMinutes} min vs raw 1 (ratio at start ${actual.ratioAtStart}); workstream_get eta ${JSON.stringify(got.eta)}, claims ${got.claims.length}`);
+  const listed = (await callTool("claims_list", { workstreamId: w })).body;
+  check(listed.claims?.length === 2, `claims_list: ${JSON.stringify(listed)}`);
+  const incidents = (await callTool("incidents_list", { projectRef: ref, workstreamId: w })).body.incidents as Array<Body>;
+  const missed = actual.actualMinutes > 2;
+  check(missed === incidents.some((i) => i.class === "estimate_miss"), `an estimate_miss incident exactly when actual > 2 x raw: ${JSON.stringify(incidents)}`);
+  ok(`claims_list: ${listed.claims.length}; incidents_list: ${incidents.map((i) => `${i.incidentId} ${i.class}`).join(", ") || "none"}`);
+  const digest = (await callTool("digest_get")).body.text as string;
+  check(digest.includes(`Done: ${w} `) && digest.includes("· ✓ 1 of 1 checks"), `the human digest shows the done workstream with its checked ✓: ${digest}`);
+  ok(`human digest: ${digest.split("\n").find((l) => l.startsWith(`Done: ${w} `))}`);
+
+  // Turns this scenario cost: every lead run that ended since it started, plus the two tasks.
+  outcome = (await callTool("project_get", ref)).body;
+  let turns = 0;
+  for (let c = scenarioStart; ; ) {
+    const page = (await callTool("events_wait", { cursor: c, machineId: MACHINE, types: ENDED, timeoutSec: 0 })).body;
+    turns += (page.events as Array<Body>).filter((e) => e.threadId === leadThread).length;
+    if (!page.more) break;
+    c = page.cursor;
+  }
+  ok(`M6 used ${turns} lead turns + 2 task turns = ${turns + 2} claude turns (${MODEL}, effort low)`);
+}

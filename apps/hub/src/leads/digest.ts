@@ -25,6 +25,16 @@ export interface DigestInput {
   readonly decisions: ReadonlyArray<Decision>;
   /** Lines from `taskDigestLines`; absent leaves the section out. */
   readonly tasks?: ReadonlyArray<string>;
+  /** What fleetd itself measured per workstream; absent ones show none. */
+  readonly facts?: ReadonlyMap<WorkstreamId, WorkstreamFacts>;
+}
+
+/** What backs a workstream's status beyond the lead's word: the checks its latest claim passed and its ETA. */
+export interface WorkstreamFacts {
+  /** Check indexes the latest finished claim passed. */
+  readonly passed: ReadonlySet<number>;
+  /** `etaText` of the calibrated estimate. */
+  readonly eta?: string;
 }
 
 const oneLine = (text: string, max: number) => {
@@ -60,14 +70,18 @@ export const rankDecisions = (decisions: ReadonlyArray<Decision>, open: Readonly
   return [...decisions].sort((a, b) => rank(a) - rank(b) || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 };
 
-const workstreamLines = (w: Workstream) => {
+/** The done-when list as `done:<n>`, the index `--serves` and claims use; ✓ only where fleetd's own check passed. */
+export const doneWhenText = (checks: ReadonlyArray<CheckSpec>, passed: ReadonlySet<number> = new Set(), max = 120) =>
+  checks.map((c, i) => `done:${i}${passed.has(i) ? " ✓" : ""} ${oneLine(describeCheck(c), max)}`).join("; ");
+
+const workstreamLines = (w: Workstream, facts: WorkstreamFacts | undefined) => {
   const head = `- ${w.workstreamId} ${w.state}: ${oneLine(w.title, 120)}`;
   if (w.brief === undefined) {
     return `${head}\n  no brief yet: register it with \`fleetd brief create --workstream ${w.workstreamId} --json '<Brief>'\``;
   }
-  const status = w.headline === undefined ? "" : `\n  status: ${oneLine(w.headline, 200)}`;
-  const done = w.brief.doneWhen.map((c, i) => `${i + 1}) ${oneLine(describeCheck(c), 120)}`).join("; ");
-  return `${head}${status}\n  done when: ${done}`;
+  const status = w.headline === undefined ? "" : `\n  lead says: ${oneLine(w.headline, 200)}`;
+  const eta = facts?.eta === undefined ? "" : `\n  ${facts.eta}`;
+  return `${head}${status}\n  done when: ${doneWhenText(w.brief.doneWhen, facts?.passed)}${eta}`;
 };
 
 const askLine = (a: Ask) => {
@@ -113,7 +127,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
   ].join("\n");
 
   const answers: Section = { title: "Answers since your last wake", ...capped(input.answers.map(answerLine), 20), more: "see `fleetd decisions search`", join: "\n" };
-  const workstreams: Section = { title: "Open workstreams", ...capped(input.workstreams.map(workstreamLines), 20), more: "older ones not shown", join: "\n" };
+  const workstreams: Section = { title: "Open workstreams", ...capped(input.workstreams.map((w) => workstreamLines(w, input.facts?.get(w.workstreamId))), 20), more: "older ones not shown", join: "\n" };
   const tasks: Section = { title: "Tasks", ...capped(input.tasks ?? [], 20), more: "`fleetd task list`", join: "\n" };
   const asks: Section = { title: "Your open asks", ...capped(input.openAsks.map(askLine), 20), more: "older ones not shown", join: "\n" };
   const decisions: Section = {

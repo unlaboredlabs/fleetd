@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import {
+  type Claim,
   type Decision,
   LeadCall,
   type LeadCallFrame,
@@ -41,11 +42,16 @@ export const LEAD_USAGE = `  brief create --workstream <W> (--json '<Brief>' | -
   task message <T> "<text>"
              steer a running task, answer a waiting one, or continue an ended one
   task cancel <T> [--reason <r>]
+  claim done --workstream <W>
+             fleetd runs the workstream's done-when checks itself; only all of them passing makes
+             it done (exit 1 when a check did not pass)
+  review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
+             the last step of a review task
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
-             ~/${NODE_SOCKET_PATH}); exit 0 ok, 2 usage, 3 refused, 4 hub unreachable
+             ~/${NODE_SOCKET_PATH}); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable
 `;
 
-const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task"]);
+const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task", "claim", "review"]);
 
 export const isLeadCommand = (argv: ReadonlyArray<string>) => argv[0] !== undefined && LEAD_COMMANDS.has(argv[0]);
 
@@ -104,6 +110,11 @@ export const parseLeadArgs = (
         qa: { type: "boolean" },
         state: { type: "string" },
         reason: { type: "string" },
+        task: { type: "string" },
+        sha: { type: "string" },
+        blocking: { type: "string" },
+        "non-blocking": { type: "string" },
+        summary: { type: "string" },
       },
     });
   } catch (error) {
@@ -254,6 +265,27 @@ export const parseLeadArgs = (
       }
       break;
     }
+    case "claim": {
+      if (sub !== "done" || rest.length > 0) return "expected fleetd claim done --workstream <W>";
+      const wrong = only("workstream");
+      if (wrong !== undefined) return wrong;
+      if (v.workstream === undefined) return "--workstream is required";
+      raw = { op: "claim_done", workstreamId: v.workstream };
+      break;
+    }
+    case "review": {
+      if (sub !== "verdict" || rest.length > 0) return `expected fleetd review verdict --task <T> --sha <sha> --blocking <n> --non-blocking <n> --summary "<s>"`;
+      const wrong = only("task", "sha", "blocking", "non-blocking", "summary");
+      if (wrong !== undefined) return wrong;
+      for (const flag of ["task", "sha", "blocking", "non-blocking", "summary"] as const) if (v[flag] === undefined) return `--${flag} is required`;
+      const sha = v.sha!.trim().toLowerCase();
+      if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(sha)) {
+        return `--sha must be the full commit SHA (40 hex characters; \`git rev-parse HEAD\` or \`gh pr view <url> --json headRefOid\`), got '${v.sha}'`;
+      }
+      for (const flag of ["blocking", "non-blocking"] as const) if (!/^\d+$/u.test(v[flag]!)) return `--${flag} is a count of findings, got '${v[flag]}'`;
+      raw = { op: "review_verdict", taskId: v.task, prHeadSha: sha, blocking: Number(v.blocking), nonBlocking: Number(v["non-blocking"]), summary: v.summary };
+      break;
+    }
     default:
       return `unknown command '${command ?? ""}'`;
   }
@@ -342,6 +374,13 @@ const taskLine = (task: Task) => {
 };
 
 const quoted = (text: string) => text.trim().split("\n").map((line) => `  > ${line}`.trimEnd());
+
+/** One line per check fleetd ran, ✓ only for a pass, with the evidence of any that did not pass. */
+const claimLines = (claim: Claim) =>
+  claim.results.flatMap((r) => {
+    const head = `${r.result === "pass" ? "✓" : "✗"} done:${r.checkIndex} ${r.spec.type}: ${r.result}${r.exitCode === undefined ? "" : `, exit ${r.exitCode}`}`;
+    return r.result === "pass" || r.evidence.trim() === "" ? [head] : [head, ...quoted(r.evidence).map((line) => `  ${line}`)];
+  });
 
 /** The next step for a task in this state. */
 const taskNext = (task: Task) => {
@@ -461,15 +500,27 @@ export const formatResult = (result: LeadCallResult): string => {
       if (result.truncated === true) lines.push("(older tasks not shown; filter with --state or --workstream)");
       next = result.tasks.length === 0 ? "spawn work with fleetd task spawn." : "fleetd task status <T> shows one task's result.";
       break;
-    // Placeholder lines until `claim done` and `review verdict` land (M6c).
-    case "claim_done":
-      lines.push(`${result.claimId} ${result.workstreamId} ${result.claim?.outcome ?? "checking"}; workstream ${result.state}`);
-      next = "carry on; failing checks arrive in a wake with their evidence.";
+    case "claim_done": {
+      const { claim } = result;
+      if (claim === undefined) {
+        lines.push(`${result.claimId} on ${result.workstreamId} is still running its checks; ${result.workstreamId} is ${result.state}.`);
+        next = "carry on with other work; the outcome arrives in a wake.";
+      } else if (claim.outcome === "pass") {
+        lines.push(`${result.claimId} on ${result.workstreamId} passed: fleetd ran all ${claim.results.length} done-when checks and each passed. ${result.workstreamId} is ${result.state}.`, ...claimLines(claim));
+        next = `spawn nothing more for ${result.workstreamId}.`;
+      } else {
+        const failing = claim.results.filter((r) => r.result !== "pass").length;
+        lines.push(`${result.claimId} on ${result.workstreamId} failed: ${failing} of ${claim.results.length} checks did not pass. ${result.workstreamId} is ${result.state}, not done.`, ...claimLines(claim));
+        next = "fix what failed, then claim again.";
+      }
       break;
-    case "review_verdict":
-      lines.push(`Verdict for ${result.verdict.taskId} at ${result.verdict.prHeadSha.slice(0, 12)}: ${result.verdict.blocking} blocking`);
-      next = "stop here; this review is finished.";
+    }
+    case "review_verdict": {
+      const v = result.verdict;
+      lines.push(`Recorded the verdict of ${v.taskId} at ${v.prHeadSha.slice(0, 12)}: ${v.blocking} blocking, ${v.nonBlocking} non-blocking.`);
+      next = "end with your one-paragraph result and stop.";
       break;
+    }
     // Placeholder lines until `change enqueue` and `change status` land (M7c).
     case "change_enqueue":
     case "change_status":
@@ -488,14 +539,18 @@ export interface LeadDeps {
   readonly readFile?: (file: string) => string;
 }
 
-/** `fleetd brief|ask|decide|status|decisions|task …`: one call to the hub through the local node. */
+/** `fleetd brief|ask|decide|status|decisions|task|claim|review …`: one call to the hub through the local node. */
 export const leadCommand = async (argv: ReadonlyArray<string>, deps: LeadDeps): Promise<CliResult> => {
   const call = parseLeadArgs(argv, deps.readFile);
   if (typeof call === "string") return usage(call);
   const frame: LeadCallFrame = { t: "lead_call", id: `cli-${process.pid}`, cwd: callerCwd(deps.env, deps.cwd), call };
   const answer = await (deps.send ?? sendToNode)(nodeSocketPath(deps.env), frame);
   if ("unreachable" in answer) return { code: 4, stdout: "", stderr: `fleetd: ${answer.unreachable}\n` };
-  if (answer.result !== undefined) return { code: 0, stdout: formatResult(answer.result), stderr: "" };
+  if (answer.result !== undefined) {
+    // A claim that ran and failed is an answer, not a refusal, but it must not read as success to a script.
+    const failed = answer.result.op === "claim_done" && answer.result.claim?.outcome === "fail";
+    return { code: failed ? 1 : 0, stdout: formatResult(answer.result), stderr: "" };
+  }
   const { code, message, fix } = answer.error!;
   const text = `${message}${fix === undefined ? "" : `\nNext: ${fix}`}\n`;
   return code === "machine_offline"

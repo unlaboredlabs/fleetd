@@ -15,10 +15,10 @@ const T3_PIN = "2fbd4318fc";
 const HOST = "127.0.0.1";
 
 // lab-a's "fleetd" Claude instance denies every T3 tool (the wildcard form DESIGN §3.2 calls for) and Claude's
-// native subagent tool, Task, so every fan-out is a fleetd task. T3 keeps one value per launch flag, so both go in
-// one comma-separated list. lab-b is the control with no launch args.
+// native subagent tools, Task and Workflow, so every fan-out is a fleetd task in a fleetd slot. T3 keeps one value
+// per launch flag, so all of them go in one comma-separated list. lab-b is the control with no launch args.
 const INSTANCES = [
-  { name: "lab-a", port: 4711, launchArgs: "--disallowedTools mcp__t3-code__*,Task" },
+  { name: "lab-a", port: 4711, launchArgs: "--disallowedTools mcp__t3-code__*,Task,Workflow" },
   { name: "lab-b", port: 4712, launchArgs: "" },
 ];
 

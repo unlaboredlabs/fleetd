@@ -2,10 +2,12 @@
 // The caller is already attributed to a project by its cwd; every call acts only within that project.
 import type { LeadCallResult, ProjectRef, WorkstreamId } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
+import { Claims } from "../checks/Claims.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type LeadCallHandler, LeadCallRefused } from "../link/LeadCalls.ts";
 import { Tasks } from "../tasks/Tasks.ts";
+import { ValueBar } from "../valuebar/ValueBar.ts";
 import * as Workstreams from "./Workstreams.ts";
 
 const SEARCH_LIMIT = 20;
@@ -23,6 +25,8 @@ export const make = Effect.gen(function* () {
   const asks = yield* Asks;
   const decisions = yield* Decisions;
   const tasks = yield* Tasks;
+  const claims = yield* Claims;
+  const valueBar = yield* ValueBar;
 
   /** A workstream named in a call must be one of the caller's own. */
   const ownWorkstream = (ref: ProjectRef, workstreamId: WorkstreamId) =>
@@ -149,14 +153,22 @@ export const make = Effect.gen(function* () {
           return result({ op: "task_message", task: yield* tasks.message(caller, call.taskId, call.message) });
         case "task_cancel":
           return result({ op: "task_cancel", task: yield* tasks.cancel(caller, call.taskId, call.reason) });
-        // Answered once verification is wired here (M6).
-        case "claim_done":
-        case "review_verdict":
-          return yield* refused({
-            code: "forbidden",
-            message: `fleetd ${call.op.replace("_", " ")} is not available on this hub yet.`,
-            fix: "Carry on without it and mention it in your next status line.",
+        case "claim_done": {
+          const outcome = yield* claims.claimDone(call.workstreamId, caller.by, { projectRef: ref });
+          return result({ op: "claim_done", ...outcome });
+        }
+        case "review_verdict": {
+          const { op: _, ...verdict } = call;
+          const recorded = yield* valueBar.recordVerdict(caller, verdict);
+          return result({
+            op: "review_verdict",
+            verdict: recorded,
+            next:
+              recorded.blocking === 0
+                ? "end with your one-paragraph result and stop; this commit will not be reviewed again."
+                : "end with your one-paragraph result listing each blocking finding, then stop; the lead gets it.",
           });
+        }
       }
     }).pipe(Effect.catchTags({ LeadError: (e) => Effect.fail(refused(e)), LedgerError: (e) => Effect.fail(refused(e)) }));
 

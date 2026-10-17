@@ -1,7 +1,7 @@
 // Text the hub writes for tasks: the branch name, the task's first message, its line in the lead digest, and the
 // result the lead receives inline in its wake. Pure.
 import type { Brief, Task, TaskId, TaskResult } from "@fleetd/contracts";
-import { describeCheck } from "../leads/digest.ts";
+import { doneWhenText } from "../leads/digest.ts";
 import { receiptsLine } from "../receipts/count.ts";
 
 export const TAIL_MAX = 2000;
@@ -66,7 +66,7 @@ export const renderTaskPrompt = (input: PromptInput): string => {
   const context: Array<string> = [];
   if (brief !== undefined) {
     context.push(`Goal: ${oneLine(brief.goal, 1000)}`);
-    context.push(`Done when: ${brief.doneWhen.map((c, i) => `${i + 1}) ${oneLine(describeCheck(c), 200)}`).join("; ")}`);
+    context.push(`Done when: ${doneWhenText(brief.doneWhen, undefined, 200)}`);
   }
   if (task.serves !== undefined) context.push(`This task serves: ${oneLine(task.serves, 200)}`);
 
@@ -82,6 +82,12 @@ export const renderTaskPrompt = (input: PromptInput): string => {
     rules.push("- This is a read-only task: do not change, commit or push any files.");
   }
   rules.push("- Do the task yourself; do not hand it to subagents.");
+  if (task.kind === "review") {
+    // The value bar keys review rounds on this verdict: one clean pass per commit ends review.
+    rules.push(
+      `- Before your final message, record your verdict once: \`fleetd review verdict --task ${task.taskId} --sha <the full SHA you reviewed> --blocking <n> --non-blocking <n> --summary "<one paragraph>"\`. Blocking findings are the ones that must change before merge.`,
+    );
+  }
   rules.push("- End with a one-paragraph result: what you did, what is left, and anything the lead must decide.");
 
   return [

@@ -34,13 +34,26 @@ const ask = (n: number, batch: number, extra: Partial<Ask>): Ask => ({
   ...extra,
 });
 
-const workstream = (n: number, state: Workstream["state"], title: string, headline?: string): Workstream => ({
+const twoChecks: Workstream["brief"] = {
+  goal: "g",
+  why: "w",
+  pointers: [],
+  constraints: [],
+  doneWhen: [
+    { type: "http", url: "http://lab/healthz", status: 200 },
+    { type: "pr_merged", repo: "wynn-dev/lab" },
+  ],
+  tier: "S",
+};
+
+const workstream = (n: number, state: Workstream["state"], title: string, headline?: string, brief?: Workstream["brief"]): Workstream => ({
   workstreamId: WorkstreamId.make(`W${n}`),
   projectRef: n % 2 === 0 ? web : api,
   title,
   source: { text: title, channel: "app", by: "human", at },
   state,
   ...(headline === undefined ? {} : { headline }),
+  ...(brief === undefined ? {} : { brief }),
   createdAt: at,
   updatedAt: at,
 });
@@ -86,8 +99,8 @@ describe("renderHumanDigest", () => {
         ask(5, 12, { state: "answered" }),
       ],
       workstreams: [
-        workstream(1, "running", "Add /health", "tests green"),
-        workstream(2, "done", "Billing webhook"),
+        workstream(1, "running", "Add /health", "tests green", twoChecks),
+        workstream(2, "done", "Billing webhook", undefined, twoChecks),
         workstream(3, "idle", "Old thing"),
         workstream(4, "failed", "Android sign-in", "CI red on main"),
       ],
@@ -96,6 +109,10 @@ describe("renderHumanDigest", () => {
         decision(8, "http.retry", "3x on 429"),
         ...[7, 6, 5, 4].map((n) => decision(n, `k.d${n}`, `v${n}`)),
       ],
+      facts: new Map([
+        [WorkstreamId.make("W1"), { passed: new Set([0]), eta: "eta 1h (raw 30m × 2, 12 samples)" }],
+        [WorkstreamId.make("W2"), { passed: new Set([0, 1]) }],
+      ]),
     });
     expect(text.split("\n")).toEqual([
       "fleetd digest · Sat 17 Oct, 09:00",
@@ -104,10 +121,10 @@ describe("renderHumanDigest", () => {
       "1 [money] api: Sentry plan for replay? a) Team $26/mo b) Free rec: Free",
       "2 [product] web: Drop email sign-in? rec: keep (proceeded) — override?",
       '3 [do] api: terraform apply prod (2 steps; reply "3 done" when finished)   (blocks: deploy)',
-      "Done: W2 web: Billing webhook (lead says; not checked yet)",
+      "Done: W2 web: Billing webhook · ✓ 2 of 2 checks",
       "Failed: W4 web: Android sign-in — lead says: CI red on main",
       'Decided without you (6): pkg.manager=pnpm (D9); http.retry=3x on 429 (D8); k.d7=v7 (D7); k.d6=v6 (D6); k.d5=v5 (D5) · reply "forget D9" to undo one',
-      "Running: W1 api: Add /health — lead says: tests green",
+      "Running: W1 api: Add /health — lead says: tests green · ✓ 1 of 2 checks · eta 1h (raw 30m × 2, 12 samples)",
     ]);
   });
 

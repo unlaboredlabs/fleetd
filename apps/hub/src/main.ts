@@ -8,11 +8,11 @@ import * as FleetApi from "./api/FleetApi.ts";
 import * as HttpApp from "./api/HttpApp.ts";
 import * as Auth from "./auth/Auth.ts";
 import * as HumanDigests from "./digests/HumanDigests.ts";
+import * as ChecksLayer from "./checks/layer.ts";
 import * as Judges from "./checks/Judges.ts";
 import * as NodeCommands from "./checks/NodeCommands.ts";
 import * as Estimates from "./estimates/Estimates.ts";
 import * as Executors from "./executor/Executors.ts";
-import * as Incidents from "./incidents/Incidents.ts";
 import * as LeadCallHandler from "./leads/LeadCallHandler.ts";
 import * as LeadsLayer from "./leads/layer.ts";
 import * as Leases from "./leases/Leases.ts";
@@ -71,7 +71,10 @@ export const parseHubArgs = (argv: ReadonlyArray<string>): HubOptions | { readon
   return { ...(home === undefined ? {} : { home }), listen: address, ...(ttl === undefined ? {} : { queueTtlSec: Number(ttl) }) };
 };
 
-/** Node links; lead-side `fleetd` calls they forward are answered over the ledger and leads. */
+/**
+ * Node links; lead-side `fleetd` calls they forward are answered over the ledger, leads, tasks and claims. Claims run
+ * `cmd` checks on the nodes through the same NodeCommands the links answer.
+ */
 const layerMachines = Layer.effect(
   NodeLinkServer.NodeLinkServer,
   Effect.gen(function* () {
@@ -82,7 +85,7 @@ const layerMachines = Layer.effect(
       commands: yield* NodeCommands.NodeCommands,
     });
   }),
-).pipe(Layer.provideMerge(NodeCommands.layer));
+).pipe(Layer.provideMerge(ChecksLayer.layer()), Layer.provideMerge(NodeCommands.layer));
 
 /** The sweep's overdue-wakes check; the wake scheduler does the firing. */
 const layerWakeSweep = Layer.effectDiscard(
@@ -95,7 +98,8 @@ const layerWakeSweep = Layer.effectDiscard(
 
 /**
  * Tasks with the slot board, area leases, the repo policy file read through each machine's T3, and the value bar
- * with receipts, incidents and estimates; recorded verdicts complete waiting judges.
+ * with receipts; recorded verdicts complete waiting judges. Estimates and incidents come with the leads layer; the
+ * estimate clock starts on each workstream.running.
  */
 const layerTasks = Tasks.layer.pipe(
   Layer.provideMerge(
@@ -105,12 +109,10 @@ const layerTasks = Tasks.layer.pipe(
       Policy.layer.pipe(Layer.provide(Policy.layerSourceT3)),
       ValueBar.layer,
       Receipts.layer,
-      Estimates.layerStartOnRunning.pipe(Layer.provideMerge(Estimates.layer)),
+      Estimates.layerStartOnRunning,
     ),
   ),
-  Layer.provideMerge(
-    Layer.mergeAll(Incidents.layer, PrHeads.layerGh, Judges.layerJudgeHook.pipe(Layer.provideMerge(Judges.layerVerdicts))),
-  ),
+  Layer.provideMerge(Layer.merge(PrHeads.layerGh, Judges.layerJudgeHook.pipe(Layer.provideMerge(Judges.layerVerdicts)))),
 );
 
 /** The whole hub over the database in `home` (already resolved by `HubDb.resolveHubHome`). */
