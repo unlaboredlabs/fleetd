@@ -3,7 +3,11 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use fleetd_contracts::{HubEvent, MachineId, ProjectRef, TaskId, TaskResult, ThreadRef, UsageParked, Workstream, WorkstreamId};
+use fleetd_contracts::events::HubEvent;
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+use fleetd_contracts::ledger::{Workstream, WorkstreamId};
+use fleetd_contracts::tasks::{TaskId, TaskResult};
+use fleetd_contracts::usage::UsageParked;
 
 use super::resolve::ModelEffort;
 use super::{SpawnInput, TaskCaller};
@@ -14,7 +18,12 @@ pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// M6 value bar (valuebar area): serves, done workstreams and review rounds. Called before the spawn takes the
 /// tasks lock, since it may ask GitHub for a PR head. TS: ValueBar.checkSpawn.
 pub trait SpawnCheck: Send + Sync {
-    fn check_spawn<'a>(&'a self, caller: &'a TaskCaller, input: &'a SpawnInput, workstream: &'a Workstream) -> BoxFut<'a, Result<(), LeadError>>;
+    fn check_spawn<'a>(
+        &'a self,
+        caller: &'a TaskCaller,
+        input: &'a SpawnInput,
+        workstream: &'a Workstream,
+    ) -> BoxFut<'a, Result<(), LeadError>>;
 }
 
 /// M6 receipts (receipts area): what the thread actually ran, counted from its items, added to the result.
@@ -26,8 +35,16 @@ pub trait ResultReceipts: Send + Sync {
 /// The lead wake a task triggers. TS: LeadWakes Trigger kinds `task_result` and `task_waiting`.
 #[derive(Clone, Debug)]
 pub enum TaskWake {
-    Result { task_id: TaskId, title: String, result: TaskResult },
-    Waiting { task_id: TaskId, title: String, question: String },
+    Result {
+        task_id: TaskId,
+        title: String,
+        result: TaskResult,
+    },
+    Waiting {
+        task_id: TaskId,
+        title: String,
+        question: String,
+    },
 }
 
 /// What tasks read and trigger in the leads area (LeadRecords, LeadWakes).

@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
-use fleetd_contracts::ProjectRef;
-use fleetd_contracts::{POLICY_FILE_PATH, PolicyFile, default_policy};
+use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::tasks::{POLICY_FILE_PATH, PolicyFile, default_policy};
 use serde_yaml_ng::Value;
 
 use crate::clock::Clock;
@@ -19,7 +19,10 @@ pub const POLICY_TTL_MS: u128 = 60_000;
 const EXAMPLE: &str = "areas:\n  docs: [\"docs/**\"]\n  hub: [\"apps/hub/**\", \"packages/contracts/**\"]\ndefaults:          # optional\n  model: claude-opus-5-5\n  effort: high";
 
 fn invalid(problem: &str) -> LeadError {
-    let message: String = format!("{POLICY_FILE_PATH} is invalid: {problem}").chars().take(1000).collect();
+    let message: String = format!("{POLICY_FILE_PATH} is invalid: {problem}")
+        .chars()
+        .take(1000)
+        .collect();
     LeadError::new(
         "invalid",
         message,
@@ -45,54 +48,94 @@ fn js_len(s: &str) -> usize {
 /// Checks the decoded YAML against the PolicyFile schema in the order Effect Schema reports the first issue,
 /// with its messages: structure first, then filters.
 fn check_shape(value: &Value) -> Result<(), String> {
-    let Value::Mapping(root) = value else { return Err("Expected object".into()) };
-    let Some(areas) = root.get("areas") else { return Err(format!("Missing key at {}", key("areas"))) };
-    let Value::Mapping(areas) = areas else { return Err(format!("Expected object at {}", key("areas"))) };
+    let Value::Mapping(root) = value else {
+        return Err("Expected object".into());
+    };
+    let Some(areas) = root.get("areas") else {
+        return Err(format!("Missing key at {}", key("areas")));
+    };
+    let Value::Mapping(areas) = areas else {
+        return Err(format!("Expected object at {}", key("areas")));
+    };
     for (name, globs) in areas {
         let name = match name {
             Value::String(s) => s.clone(),
-            other => serde_yaml_ng::to_string(other).unwrap_or_default().trim().to_owned(),
+            other => serde_yaml_ng::to_string(other)
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
         };
         let path = vec![key("areas"), key(&name)];
-        let Value::Sequence(globs) = globs else { return Err(format!("Expected array at {}", at(&path))) };
+        let Value::Sequence(globs) = globs else {
+            return Err(format!("Expected array at {}", at(&path)));
+        };
         for (i, glob) in globs.iter().enumerate() {
             let p = format!("{}[{i}]", at(&path));
-            let Value::String(glob) = glob else { return Err(format!("Expected string at {p}")) };
+            let Value::String(glob) = glob else {
+                return Err(format!("Expected string at {p}"));
+            };
             if glob.is_empty() {
-                return Err(format!("Expected a value with a length of at least 1 at {p}"));
+                return Err(format!(
+                    "Expected a value with a length of at least 1 at {p}"
+                ));
             }
             if js_len(glob) > 200 {
-                return Err(format!("Expected a value with a length of at most 200 at {p}"));
+                return Err(format!(
+                    "Expected a value with a length of at most 200 at {p}"
+                ));
             }
             if glob.starts_with('/') {
-                return Err(format!("Expected a repo-relative glob, not an absolute path at {p}"));
+                return Err(format!(
+                    "Expected a repo-relative glob, not an absolute path at {p}"
+                ));
             }
         }
         if globs.is_empty() {
-            return Err(format!("Expected a value with a length of at least 1 at {}", at(&path)));
+            return Err(format!(
+                "Expected a value with a length of at least 1 at {}",
+                at(&path)
+            ));
         }
         if globs.len() > 50 {
-            return Err(format!("Expected a value with a length of at most 50 at {}", at(&path)));
+            return Err(format!(
+                "Expected a value with a length of at most 50 at {}",
+                at(&path)
+            ));
         }
     }
     for name in areas.keys() {
         let name = name.as_str().unwrap_or_default();
         let path = at(&[key("areas"), key(name)]);
         if js_len(name) > 40 {
-            return Err(format!("Expected a value with a length of at most 40 at {path}"));
+            return Err(format!(
+                "Expected a value with a length of at most 40 at {path}"
+            ));
         }
-        let slug = name.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-            && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+        let slug = name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
         if !slug {
-            return Err(format!("Expected a string matching the RegExp ^[a-z0-9][a-z0-9_-]*$ at {path}"));
+            return Err(format!(
+                "Expected a string matching the RegExp ^[a-z0-9][a-z0-9_-]*$ at {path}"
+            ));
         }
     }
     if let Some(defaults) = root.get("defaults") {
-        let Value::Mapping(defaults) = defaults else { return Err(format!("Expected object at {}", key("defaults"))) };
+        let Value::Mapping(defaults) = defaults else {
+            return Err(format!("Expected object at {}", key("defaults")));
+        };
         if let Some(model) = defaults.get("model") {
             let p = at(&[key("defaults"), key("model")]);
             match model {
-                Value::String(s) if s.is_empty() => return Err(format!("Expected a value with a length of at least 1 at {p}")),
+                Value::String(s) if s.is_empty() => {
+                    return Err(format!(
+                        "Expected a value with a length of at least 1 at {p}"
+                    ));
+                }
                 Value::String(_) => {}
                 _ => return Err(format!("Expected string at {p}")),
             }
@@ -100,7 +143,8 @@ fn check_shape(value: &Value) -> Result<(), String> {
         if let Some(effort) = defaults.get("effort") {
             let ok = matches!(effort.as_str(), Some("low" | "medium" | "high" | "max"));
             if !ok {
-                let got = serde_json::to_string(&serde_json::to_value(effort).unwrap_or_default()).unwrap_or_default();
+                let got = serde_json::to_string(&serde_json::to_value(effort).unwrap_or_default())
+                    .unwrap_or_default();
                 return Err(format!(
                     "Expected \"low\" | \"medium\" | \"high\" | \"max\", got {got} at {}",
                     at(&[key("defaults"), key("effort")])
@@ -109,13 +153,17 @@ fn check_shape(value: &Value) -> Result<(), String> {
         }
     }
     if let Some(finish_all) = root.get("finishAll") {
-        let Value::Mapping(finish_all) = finish_all else { return Err(format!("Expected object at {}", key("finishAll"))) };
+        let Value::Mapping(finish_all) = finish_all else {
+            return Err(format!("Expected object at {}", key("finishAll")));
+        };
         let p = at(&[key("finishAll"), key("maxChildren")]);
         match finish_all.get("maxChildren") {
             None => return Err(format!("Missing key at {p}")),
             Some(v) => match v.as_f64() {
                 Some(n) if n.fract() == 0.0 && (1.0..=50.0).contains(&n) => {}
-                Some(n) if n.fract() == 0.0 => return Err(format!("Expected a value between 1 and 50, got {n} at {p}")),
+                Some(n) if n.fract() == 0.0 => {
+                    return Err(format!("Expected a value between 1 and 50, got {n} at {p}"));
+                }
                 _ => return Err(format!("Expected an integer at {p}")),
             },
         }
@@ -127,7 +175,12 @@ fn check_shape(value: &Value) -> Result<(), String> {
 pub fn parse_policy(text: &str) -> Result<PolicyFile, LeadError> {
     let value: Value = match serde_yaml_ng::from_str(text) {
         Ok(v) => v,
-        Err(e) => return Err(invalid(&format!("YAML: {}", e.to_string().lines().next().unwrap_or_default()))),
+        Err(e) => {
+            return Err(invalid(&format!(
+                "YAML: {}",
+                e.to_string().lines().next().unwrap_or_default()
+            )));
+        }
     };
     if value.is_null() {
         return Err(invalid("the file is empty; it needs an `areas:` map"));
@@ -140,7 +193,45 @@ pub fn parse_policy(text: &str) -> Result<PolicyFile, LeadError> {
 /// Where the policy text comes from: `None` when the project has no policy file. The hub's source reads it through
 /// the machine's T3 (`Executors::read_file`); tests use a fake.
 pub trait PolicySource: Send + Sync {
-    fn read<'a>(&'a self, project_ref: &'a ProjectRef) -> BoxFut<'a, Result<Option<String>, LeadError>>;
+    fn read<'a>(
+        &'a self,
+        project_ref: &'a ProjectRef,
+    ) -> BoxFut<'a, Result<Option<String>, LeadError>>;
+}
+
+/// Reads the file from the project's workspace root through the machine's T3.
+pub struct T3PolicySource {
+    pub store: Arc<crate::hub::store::HubStore>,
+    pub executors: Arc<crate::hub::executor::Executors>,
+}
+
+impl PolicySource for T3PolicySource {
+    fn read<'a>(
+        &'a self,
+        project_ref: &'a ProjectRef,
+    ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
+        Box::pin(async move {
+            let project = self
+                .store
+                .project_get(project_ref)
+                .map_err(|e| LeadError::new("t3_error", e.to_string(), None))?;
+            let Some(project) = project else {
+                return Err(LeadError::new(
+                    "not_found",
+                    format!("Project {} on {} is not known to the hub.", project_ref.project_id.as_str(), project_ref.machine_id.as_str()),
+                    Some("Check the project with project_get; its machine may not have reported it yet.".to_owned()),
+                ));
+            };
+            self.executors
+                .read_file(
+                    &project_ref.machine_id,
+                    &project.workspace_root,
+                    POLICY_FILE_PATH,
+                )
+                .await
+                .map_err(|e| crate::hub::tasks::from_executor(&e))
+        })
+    }
 }
 
 type Cached = (u128, Result<PolicyFile, LeadError>);
@@ -154,11 +245,19 @@ pub struct Policies {
 
 impl Policies {
     pub fn new(source: Arc<dyn PolicySource>, clock: Arc<dyn Clock>) -> Arc<Self> {
-        Arc::new(Self { source, clock, cache: Mutex::new(HashMap::new()) })
+        Arc::new(Self {
+            source,
+            clock,
+            cache: Mutex::new(HashMap::new()),
+        })
     }
 
     fn now_ms(&self) -> u128 {
-        self.clock.now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+        self.clock
+            .now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
     }
 
     /// The project's policy: from its file, cached up to 60 s, or DEFAULT_POLICY when it has none.
@@ -175,7 +274,10 @@ impl Policies {
             None => Ok(default_policy()),
             Some(text) => parse_policy(&text),
         };
-        self.cache.lock().unwrap().insert(project_ref.clone(), (now, result.clone()));
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(project_ref.clone(), (now, result.clone()));
         result
     }
 
@@ -190,7 +292,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use fleetd_contracts::{MachineId, ProjectId};
+    use fleetd_contracts::ids::{MachineId, ProjectId};
     use serde_json::json;
 
     use super::*;
@@ -210,19 +312,45 @@ mod tests {
     fn refuses_broken_files_with_a_message_and_a_fix() {
         let cases = [
             ("areas: {docs: [docs/**]\n", "is invalid: YAML: "),
-            ("", "is invalid: the file is empty; it needs an `areas:` map"),
+            (
+                "",
+                "is invalid: the file is empty; it needs an `areas:` map",
+            ),
             ("owners: [wynn]\n", "is invalid: Missing key at [\"areas\"]"),
-            ("areas:\n  Docs: [docs/**]\n", "is invalid: Expected a string matching the RegExp ^[a-z0-9][a-z0-9_-]*$ at [\"areas\"][\"Docs\"]"),
-            ("areas:\n  docs: docs/**\n", "is invalid: Expected array at [\"areas\"][\"docs\"]"),
-            ("areas:\n  docs: []\n", "is invalid: Expected a value with a length of at least 1 at [\"areas\"][\"docs\"]"),
-            ("areas:\n  docs: [/etc/**]\n", "is invalid: Expected a repo-relative glob, not an absolute path at [\"areas\"][\"docs\"][0]"),
-            ("areas:\n  docs: [docs/**]\ndefaults:\n  effort: medum\n", "at [\"defaults\"][\"effort\"]"),
+            (
+                "areas:\n  Docs: [docs/**]\n",
+                "is invalid: Expected a string matching the RegExp ^[a-z0-9][a-z0-9_-]*$ at [\"areas\"][\"Docs\"]",
+            ),
+            (
+                "areas:\n  docs: docs/**\n",
+                "is invalid: Expected array at [\"areas\"][\"docs\"]",
+            ),
+            (
+                "areas:\n  docs: []\n",
+                "is invalid: Expected a value with a length of at least 1 at [\"areas\"][\"docs\"]",
+            ),
+            (
+                "areas:\n  docs: [/etc/**]\n",
+                "is invalid: Expected a repo-relative glob, not an absolute path at [\"areas\"][\"docs\"][0]",
+            ),
+            (
+                "areas:\n  docs: [docs/**]\ndefaults:\n  effort: medum\n",
+                "at [\"defaults\"][\"effort\"]",
+            ),
         ];
         for (text, message) in cases {
             let error = parse_policy(text).unwrap_err();
             assert_eq!(error.code, "invalid", "{text:?}");
-            assert!(error.message.contains(".fleetd/policy.yaml "), "{text:?}: {}", error.message);
-            assert!(error.message.contains(message), "{text:?}: {}", error.message);
+            assert!(
+                error.message.contains(".fleetd/policy.yaml "),
+                "{text:?}: {}",
+                error.message
+            );
+            assert!(
+                error.message.contains(message),
+                "{text:?}: {}",
+                error.message
+            );
             let fix = error.fix.unwrap();
             assert!(fix.contains("Fix .fleetd/policy.yaml on the project's default branch."));
             assert!(fix.contains("  docs: [\"docs/**\"]"));
@@ -241,7 +369,11 @@ mod tests {
             Box::pin(async move {
                 self.reads.fetch_add(1, Ordering::SeqCst);
                 if self.offline.load(Ordering::SeqCst) {
-                    return Err(LeadError::new("machine_offline", "offline", Some("wait".into())));
+                    return Err(LeadError::new(
+                        "machine_offline",
+                        "offline",
+                        Some("wait".into()),
+                    ));
                 }
                 Ok(self.text.lock().unwrap().clone())
             })
@@ -252,7 +384,15 @@ mod tests {
         let fake = Arc::new(Fake::default());
         let clock = ManualClock::at(1_792_231_200_000);
         let policies = Policies::new(fake.clone(), clock.clone());
-        (fake, clock, policies, ProjectRef { machine_id: MachineId::unchecked("lab-a"), project_id: ProjectId::unchecked("pa") })
+        (
+            fake,
+            clock,
+            policies,
+            ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("pa"),
+            },
+        )
     }
 
     fn docs_only() -> serde_json::Value {
@@ -268,7 +408,10 @@ mod tests {
         assert_eq!(policies.get(&a).await.unwrap(), default_policy());
         assert_eq!(fake.reads.load(Ordering::SeqCst), 1);
         clock.advance(Duration::from_secs(1));
-        assert_eq!(serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(), docs_only());
+        assert_eq!(
+            serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(),
+            docs_only()
+        );
         assert_eq!(fake.reads.load(Ordering::SeqCst), 2);
     }
 
@@ -281,12 +424,18 @@ mod tests {
         assert_eq!(fake.reads.load(Ordering::SeqCst), 1);
         *fake.text.lock().unwrap() = Some("areas:\n  docs: [docs/**]\n".into());
         policies.invalidate(&a);
-        assert_eq!(serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(), docs_only());
+        assert_eq!(
+            serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(),
+            docs_only()
+        );
         policies.invalidate(&a);
         fake.offline.store(true, Ordering::SeqCst);
         assert_eq!(policies.get(&a).await.unwrap_err().code, "machine_offline");
         fake.offline.store(false, Ordering::SeqCst);
-        assert_eq!(serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(), docs_only());
+        assert_eq!(
+            serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(),
+            docs_only()
+        );
         assert_eq!(fake.reads.load(Ordering::SeqCst), 4);
     }
 }

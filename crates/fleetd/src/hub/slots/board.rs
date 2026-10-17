@@ -1,6 +1,6 @@
 //! The slot board's rules, without I/O: the service in `mod.rs` persists what `take_ops` hands it and feeds it
 //! thread events. TS spec: apps/hub/src/slots/Slots.ts.
-use fleetd_contracts::{ProjectRef, ThreadId};
+use fleetd_contracts::ids::{ProjectRef, ThreadId};
 
 /// Queue order: lead turns, then reviews, then write and read tasks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +61,12 @@ pub struct BoardView {
 /// Why a request of `priority` cannot take a slot now, or `None` if it can. Leads may use the reserved band and
 /// pass the share.
 pub fn blocker(board: BoardView, priority: SlotPriority) -> Option<String> {
-    let BoardView { cap, used, project_used, share } = board;
+    let BoardView {
+        cap,
+        used,
+        project_used,
+        share,
+    } = board;
     let band = reserved_band(cap);
     if priority == SlotPriority::Lead {
         return (used >= cap).then(|| format!("slots: {used}/{cap} in use"));
@@ -74,7 +79,9 @@ pub fn blocker(board: BoardView, priority: SlotPriority) -> Option<String> {
         });
     }
     if project_used >= share {
-        return Some(format!("slots: project share {project_used}/{share} in use"));
+        return Some(format!(
+            "slots: project share {project_used}/{share} in use"
+        ));
     }
     None
 }
@@ -154,7 +161,13 @@ pub struct Board {
 impl Board {
     pub fn new(cap: i64, shares: Vec<(ProjectRef, i64)>, claims: Vec<Claim>) -> Self {
         let next_order = claims.iter().map(|c| c.order).max().unwrap_or(0).max(0) + 1;
-        Self { cap, shares, claims, next_order, ops: Vec::new() }
+        Self {
+            cap,
+            shares,
+            claims,
+            next_order,
+            ops: Vec::new(),
+        }
     }
 
     /// The writes made since the last call.
@@ -179,7 +192,10 @@ impl Board {
     }
 
     fn share_of(&self, r: &ProjectRef) -> i64 {
-        self.shares.iter().find(|(s, _)| same(s, r)).map_or(self.cap, |(_, n)| *n)
+        self.shares
+            .iter()
+            .find(|(s, _)| same(s, r))
+            .map_or(self.cap, |(_, n)| *n)
     }
 
     fn view(&self, r: &ProjectRef) -> BoardView {
@@ -191,7 +207,12 @@ impl Board {
                 project_used += 1;
             }
         }
-        BoardView { cap: self.cap, used, project_used, share: self.share_of(r) }
+        BoardView {
+            cap: self.cap,
+            used,
+            project_used,
+            share: self.share_of(r),
+        }
     }
 
     fn reason_for(&self, i: usize) -> Option<String> {
@@ -201,7 +222,9 @@ impl Board {
 
     /// Grants every queued claim that fits, best priority and oldest first.
     pub fn evaluate(&mut self) {
-        let mut queue: Vec<usize> = (0..self.claims.len()).filter(|&i| self.claims[i].state == ClaimState::Queued).collect();
+        let mut queue: Vec<usize> = (0..self.claims.len())
+            .filter(|&i| self.claims[i].state == ClaimState::Queued)
+            .collect();
         queue.sort_by_key(|&i| (self.claims[i].priority.rank(), self.claims[i].order));
         for i in queue {
             if self.reason_for(i).is_some() {
@@ -214,7 +237,12 @@ impl Board {
 
     /// Asking again for a holder that already has a slot returns granted; for one already queued, its current
     /// reason. An idle holder (its thread stopped) joins the back of the queue.
-    pub fn acquire(&mut self, holder: &str, project_ref: &ProjectRef, priority: SlotPriority) -> Grant {
+    pub fn acquire(
+        &mut self,
+        holder: &str,
+        project_ref: &ProjectRef,
+        priority: SlotPriority,
+    ) -> Grant {
         let i = match self.idx(holder) {
             Some(i) if self.claims[i].state == ClaimState::Held => return Grant::Granted,
             Some(i) => {
@@ -250,7 +278,12 @@ impl Board {
     }
 
     /// The holder's slot follows the thread from now on.
-    pub fn bind(&mut self, holder: &str, machine_id: &fleetd_contracts::MachineId, thread_id: &ThreadId) {
+    pub fn bind(
+        &mut self,
+        holder: &str,
+        machine_id: &fleetd_contracts::ids::MachineId,
+        thread_id: &ThreadId,
+    ) {
         if let Some(i) = self.idx(holder)
             && self.claims[i].project_ref.machine_id == *machine_id
         {
@@ -261,25 +294,36 @@ impl Board {
 
     /// Drops the holder's claim; true when that freed a held slot (the caller then evaluates and notifies).
     pub fn release(&mut self, holder: &str) -> bool {
-        let Some(i) = self.idx(holder) else { return false };
+        let Some(i) = self.idx(holder) else {
+            return false;
+        };
         let c = self.claims.remove(i);
         self.ops.push(Op::Remove(c.holder));
         c.state == ClaimState::Held
     }
 
     pub fn find_by_thread(&self, machine_id: &str, thread_id: &str) -> Option<&Claim> {
-        self.claims
-            .iter()
-            .find(|c| c.thread_id.as_ref().is_some_and(|t| t.as_str() == thread_id) && c.project_ref.machine_id.as_str() == machine_id)
+        self.claims.iter().find(|c| {
+            c.thread_id
+                .as_ref()
+                .is_some_and(|t| t.as_str() == thread_id)
+                && c.project_ref.machine_id.as_str() == machine_id
+        })
     }
 
     /// Applies a thread's running/stopped status. `lead` is the project whose lead runs in this thread, looked up
     /// by the caller only when no claim follows the thread and it runs. True when a slot was freed.
-    pub fn observe(&mut self, machine_id: &str, thread_id: &ThreadId, running: bool, lead: Option<&ProjectRef>) -> bool {
-        let mut i = self
-            .claims
-            .iter()
-            .position(|c| c.thread_id.as_ref() == Some(thread_id) && c.project_ref.machine_id.as_str() == machine_id);
+    pub fn observe(
+        &mut self,
+        machine_id: &str,
+        thread_id: &ThreadId,
+        running: bool,
+        lead: Option<&ProjectRef>,
+    ) -> bool {
+        let mut i = self.claims.iter().position(|c| {
+            c.thread_id.as_ref() == Some(thread_id)
+                && c.project_ref.machine_id.as_str() == machine_id
+        });
         if i.is_none()
             && let Some(project_ref) = lead
         {
@@ -320,7 +364,11 @@ impl Board {
     /// Startup: a claim bound to a thread follows that thread's last known status.
     pub fn restore(&mut self, holder: &str, running: bool) {
         if let Some(i) = self.idx(holder) {
-            self.claims[i].state = if running { ClaimState::Held } else { ClaimState::Idle };
+            self.claims[i].state = if running {
+                ClaimState::Held
+            } else {
+                ClaimState::Idle
+            };
             self.save(i);
         }
     }
@@ -341,15 +389,30 @@ impl Board {
     }
 
     pub fn state(&self) -> BoardState {
-        let mut rows: Vec<ProjectRow> = self.shares.iter().map(|(r, n)| ProjectRow { project_ref: r.clone(), share: *n, used: 0 }).collect();
+        let mut rows: Vec<ProjectRow> = self
+            .shares
+            .iter()
+            .map(|(r, n)| ProjectRow {
+                project_ref: r.clone(),
+                share: *n,
+                used: 0,
+            })
+            .collect();
         for c in &self.claims {
             if c.state == ClaimState::Idle {
                 continue;
             }
-            let k = match rows.iter().position(|row| same(&row.project_ref, &c.project_ref)) {
+            let k = match rows
+                .iter()
+                .position(|row| same(&row.project_ref, &c.project_ref))
+            {
                 Some(k) => k,
                 None => {
-                    rows.push(ProjectRow { project_ref: c.project_ref.clone(), share: self.share_of(&c.project_ref), used: 0 });
+                    rows.push(ProjectRow {
+                        project_ref: c.project_ref.clone(),
+                        share: self.share_of(&c.project_ref),
+                        used: 0,
+                    });
                     rows.len() - 1
                 }
             };
@@ -358,22 +421,31 @@ impl Board {
             }
         }
         // Stable, like Array.prototype.sort.
-        rows.sort_by(|a, b| b.used.cmp(&a.used));
+        rows.sort_by_key(|row| std::cmp::Reverse(row.used));
         rows.truncate(50);
         let count = |s: ClaimState| self.claims.iter().filter(|c| c.state == s).count() as i64;
-        BoardState { cap: self.cap, used: count(ClaimState::Held), queued: count(ClaimState::Queued), reserved_band: reserved_band(self.cap), per_project: rows }
+        BoardState {
+            cap: self.cap,
+            used: count(ClaimState::Held),
+            queued: count(ClaimState::Queued),
+            reserved_band: reserved_band(self.cap),
+            per_project: rows,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use fleetd_contracts::{MachineId, ProjectId};
+    use fleetd_contracts::ids::{MachineId, ProjectId};
 
     use super::super::lead_holder;
     use super::*;
 
     fn project(p: &str) -> ProjectRef {
-        ProjectRef { machine_id: MachineId::unchecked("lab-a"), project_id: ProjectId::unchecked(p) }
+        ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: ProjectId::unchecked(p),
+        }
     }
 
     fn tid(t: &str) -> ThreadId {
@@ -390,10 +462,19 @@ mod tests {
 
     impl Kit {
         fn new(cap: i64) -> Self {
-            Self { board: Board::new(cap, vec![], vec![]), seen: vec![], grants: vec![] }
+            Self {
+                board: Board::new(cap, vec![], vec![]),
+                seen: vec![],
+                grants: vec![],
+            }
         }
         fn held(&self) -> Vec<String> {
-            let mut held: Vec<&Claim> = self.board.claims().iter().filter(|c| c.state == ClaimState::Held).collect();
+            let mut held: Vec<&Claim> = self
+                .board
+                .claims()
+                .iter()
+                .filter(|c| c.state == ClaimState::Held)
+                .collect();
             held.sort_by_key(|c| c.order);
             held.into_iter().map(|c| c.holder.clone()).collect()
         }
@@ -423,7 +504,11 @@ mod tests {
             }
         }
         fn thread(&mut self, t: &str, running: bool, lead: Option<&ProjectRef>) {
-            let lead = if running && self.board.find_by_thread("lab-a", t).is_none() { lead } else { None };
+            let lead = if running && self.board.find_by_thread("lab-a", t).is_none() {
+                lead
+            } else {
+                None
+            };
             if self.board.observe("lab-a", &tid(t), running, lead) {
                 self.freed();
             }
@@ -450,14 +535,41 @@ mod tests {
 
     #[test]
     fn blocker_keeps_the_band_for_leads_and_lets_only_leads_pass_a_full_share() {
-        let board = BoardView { cap: 10, used: 9, project_used: 0, share: 10 };
-        assert_eq!(blocker(board, SlotPriority::Work).as_deref(), Some("slots: 9/10 in use (1 reserved for lead turns)"));
+        let board = BoardView {
+            cap: 10,
+            used: 9,
+            project_used: 0,
+            share: 10,
+        };
+        assert_eq!(
+            blocker(board, SlotPriority::Work).as_deref(),
+            Some("slots: 9/10 in use (1 reserved for lead turns)")
+        );
         assert_eq!(blocker(board, SlotPriority::Lead), None);
-        assert_eq!(blocker(BoardView { used: 10, ..board }, SlotPriority::Lead).as_deref(), Some("slots: 10/10 in use"));
-        let tiny = BoardView { cap: 2, used: 2, project_used: 0, share: 2 };
-        assert_eq!(blocker(tiny, SlotPriority::Review).as_deref(), Some("slots: 2/2 in use"));
-        let shared = BoardView { cap: 40, used: 3, project_used: 3, share: 3 };
-        assert_eq!(blocker(shared, SlotPriority::Work).as_deref(), Some("slots: project share 3/3 in use"));
+        assert_eq!(
+            blocker(BoardView { used: 10, ..board }, SlotPriority::Lead).as_deref(),
+            Some("slots: 10/10 in use")
+        );
+        let tiny = BoardView {
+            cap: 2,
+            used: 2,
+            project_used: 0,
+            share: 2,
+        };
+        assert_eq!(
+            blocker(tiny, SlotPriority::Review).as_deref(),
+            Some("slots: 2/2 in use")
+        );
+        let shared = BoardView {
+            cap: 40,
+            used: 3,
+            project_used: 3,
+            share: 3,
+        };
+        assert_eq!(
+            blocker(shared, SlotPriority::Work).as_deref(),
+            Some("slots: project share 3/3 in use")
+        );
         assert_eq!(blocker(shared, SlotPriority::Lead), None);
     }
 
@@ -491,10 +603,25 @@ mod tests {
         k.acquire("R1", &a, SlotPriority::Review);
         k.acquire("R2", &a, SlotPriority::Review);
         k.acquire(&lead_holder(&a), &a, SlotPriority::Lead);
-        for h in ["T1".to_owned(), lead_holder(&a), "R1".into(), "R2".into(), "T2".into()] {
+        for h in [
+            "T1".to_owned(),
+            lead_holder(&a),
+            "R1".into(),
+            "R2".into(),
+            "T2".into(),
+        ] {
             k.release(&h);
         }
-        assert_eq!(k.grants, [lead_holder(&a), "R1".into(), "R2".into(), "T2".into(), "T3".into()]);
+        assert_eq!(
+            k.grants,
+            [
+                lead_holder(&a),
+                "R1".into(),
+                "R2".into(),
+                "T2".into(),
+                "T3".into()
+            ]
+        );
     }
 
     #[test]
@@ -504,9 +631,18 @@ mod tests {
         for n in 1..=9 {
             assert_eq!(k.work(&format!("T{n}")), Grant::Granted);
         }
-        assert_eq!(k.work("T10"), queued("slots: 9/10 in use (1 reserved for lead turns)"));
-        assert_eq!(k.acquire(&lead_holder(&b), &b, SlotPriority::Lead), Grant::Granted);
-        assert_eq!(k.acquire(&lead_holder(&a), &a, SlotPriority::Lead), queued("slots: 10/10 in use"));
+        assert_eq!(
+            k.work("T10"),
+            queued("slots: 9/10 in use (1 reserved for lead turns)")
+        );
+        assert_eq!(
+            k.acquire(&lead_holder(&b), &b, SlotPriority::Lead),
+            Grant::Granted
+        );
+        assert_eq!(
+            k.acquire(&lead_holder(&a), &a, SlotPriority::Lead),
+            queued("slots: 10/10 in use")
+        );
     }
 
     #[test]
@@ -515,11 +651,25 @@ mod tests {
         let mut k = Kit::new(5);
         k.set_cap(None, Some((a.clone(), 1)));
         assert_eq!(k.acquire("T1", &a, SlotPriority::Work), Grant::Granted);
-        assert_eq!(k.acquire("T2", &a, SlotPriority::Work), queued("slots: project share 1/1 in use"));
+        assert_eq!(
+            k.acquire("T2", &a, SlotPriority::Work),
+            queued("slots: project share 1/1 in use")
+        );
         assert_eq!(k.acquire("T3", &b, SlotPriority::Work), Grant::Granted);
         assert_eq!(
             k.board.state().per_project,
-            [ProjectRow { project_ref: a.clone(), share: 1, used: 1 }, ProjectRow { project_ref: b, share: 5, used: 1 }]
+            [
+                ProjectRow {
+                    project_ref: a.clone(),
+                    share: 1,
+                    used: 1
+                },
+                ProjectRow {
+                    project_ref: b,
+                    share: 5,
+                    used: 1
+                }
+            ]
         );
         k.release("T1");
         assert_eq!(k.grants, ["T2"]);
@@ -542,7 +692,11 @@ mod tests {
         assert!(k.board.take_ops().iter().any(|op| matches!(op, Op::Cap(1))));
 
         // A restarted board from the persisted rows, then the first listener's evaluate.
-        let mut second = Kit { board: Board::new(1, vec![], k.board.claims().to_vec()), seen: vec![], grants: vec![] };
+        let mut second = Kit {
+            board: Board::new(1, vec![], k.board.claims().to_vec()),
+            seen: vec![],
+            grants: vec![],
+        };
         second.seen = second.held();
         let s = second.board.state();
         assert_eq!((s.cap, s.used, s.queued), (1, 1, 1));

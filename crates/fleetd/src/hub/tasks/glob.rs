@@ -110,7 +110,10 @@ fn to_source(glob: &str) -> String {
                     i += 1;
                     continue;
                 };
-                let alts: Vec<String> = alternatives(&g[i + 1..close]).iter().map(|a| to_source(a)).collect();
+                let alts: Vec<String> = alternatives(&g[i + 1..close])
+                    .iter()
+                    .map(|a| to_source(a))
+                    .collect();
                 out.push_str("(?:");
                 out.push_str(&alts.join("|"));
                 out.push(')');
@@ -150,7 +153,11 @@ impl GlobMatcher {
         let p = strip(path);
         match self {
             Self::All => true,
-            Self::Prefix(g) => p == g || p.strip_prefix(g.as_str()).is_some_and(|rest| rest.starts_with('/')),
+            Self::Prefix(g) => {
+                p == g
+                    || p.strip_prefix(g.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+            }
             Self::Pattern(re) => re.as_ref().is_some_and(|re| re.is_match(p)),
         }
     }
@@ -159,7 +166,10 @@ impl GlobMatcher {
 /// Paths that no glob matches, in input order.
 pub fn outside_globs<'a>(paths: &'a [String], globs: &[String]) -> Vec<&'a String> {
     let matchers: Vec<GlobMatcher> = globs.iter().map(|g| GlobMatcher::new(g)).collect();
-    paths.iter().filter(|p| !matchers.iter().any(|m| m.is_match(p))).collect()
+    paths
+        .iter()
+        .filter(|p| !matchers.iter().any(|m| m.is_match(p)))
+        .collect()
 }
 
 #[cfg(test)]
@@ -168,21 +178,65 @@ mod tests {
 
     const CASES: &[(&str, &[&str], &[&str])] = &[
         ("**", &["a", "a/b/c.ts", ".github/workflows/ci.yml"], &[]),
-        ("docs/**", &["docs/x.md", "docs/a/b/c.md", "docs/.keep"], &["docs", "docsx/a.md", "src/docs/a.md"]),
-        ("docs", &["docs", "docs/x.md", "docs/a/b.md"], &["docsx", "docs.md", "src/docs"]),
-        ("docs/", &["docs/x.md", "docs/a/b.md"], &["docs", "docsx/a.md"]),
+        (
+            "docs/**",
+            &["docs/x.md", "docs/a/b/c.md", "docs/.keep"],
+            &["docs", "docsx/a.md", "src/docs/a.md"],
+        ),
+        (
+            "docs",
+            &["docs", "docs/x.md", "docs/a/b.md"],
+            &["docsx", "docs.md", "src/docs"],
+        ),
+        (
+            "docs/",
+            &["docs/x.md", "docs/a/b.md"],
+            &["docs", "docsx/a.md"],
+        ),
         ("./docs/**", &["docs/x.md", "./docs/x.md"], &["src/x.md"]),
-        ("*.md", &["README.md", ".hidden.md"], &["docs/x.md", "README.mdx"]),
-        ("**/*.md", &["README.md", "docs/x.md", "a/b/c/d.md"], &["README.mdx", "docs/x.txt"]),
-        ("src/**/test", &["src/test", "src/a/test", "src/a/b/test"], &["src/test/x", "src/atest", "test"]),
-        ("apps/*/src/**", &["apps/hub/src/a.ts", "apps/cli/src/x/y.ts"], &["apps/hub/test/a.ts", "apps/a/b/src/c.ts"]),
+        (
+            "*.md",
+            &["README.md", ".hidden.md"],
+            &["docs/x.md", "README.mdx"],
+        ),
+        (
+            "**/*.md",
+            &["README.md", "docs/x.md", "a/b/c/d.md"],
+            &["README.mdx", "docs/x.txt"],
+        ),
+        (
+            "src/**/test",
+            &["src/test", "src/a/test", "src/a/b/test"],
+            &["src/test/x", "src/atest", "test"],
+        ),
+        (
+            "apps/*/src/**",
+            &["apps/hub/src/a.ts", "apps/cli/src/x/y.ts"],
+            &["apps/hub/test/a.ts", "apps/a/b/src/c.ts"],
+        ),
         ("src/?.ts", &["src/a.ts"], &["src/ab.ts", "src//.ts"]),
-        ("src/**/*.{ts,tsx}", &["src/a.ts", "src/x/y.tsx"], &["src/a.js", "src/a.tsxx"]),
+        (
+            "src/**/*.{ts,tsx}",
+            &["src/a.ts", "src/x/y.tsx"],
+            &["src/a.js", "src/a.tsxx"],
+        ),
         ("{docs,site}/**", &["docs/a", "site/b/c"], &["blog/a"]),
-        ("file[0-9].txt", &["file1.txt", "file9.txt"], &["filea.txt", "file10.txt"]),
-        ("file[!0-9].txt", &["filea.txt"], &["file1.txt", "file/.txt"]),
+        (
+            "file[0-9].txt",
+            &["file1.txt", "file9.txt"],
+            &["filea.txt", "file10.txt"],
+        ),
+        (
+            "file[!0-9].txt",
+            &["filea.txt"],
+            &["file1.txt", "file/.txt"],
+        ),
         ("a.b(c)+$^|.txt", &["a.b(c)+$^|.txt"], &["aXb(c)+$^|.txt"]),
-        ("packages/contracts/src/tasks.ts", &["packages/contracts/src/tasks.ts"], &["packages/contracts/src/tasks.test.ts"]),
+        (
+            "packages/contracts/src/tasks.ts",
+            &["packages/contracts/src/tasks.ts"],
+            &["packages/contracts/src/tasks.test.ts"],
+        ),
         ("weird]name}/**", &["weird]name}/a"], &["weird/a"]),
         ("unclosed[x/**", &["unclosed[x/a"], &["unclosedx/a"]),
     ];
@@ -206,9 +260,18 @@ mod tests {
 
     #[test]
     fn outside_keeps_uncovered_paths_in_order() {
-        let paths = strings(&["docs/x.md", "README.md", "apps/hub/src/tasks/Tasks.ts", "apps/web/x.ts", "packages/contracts/src/tasks.ts"]);
+        let paths = strings(&[
+            "docs/x.md",
+            "README.md",
+            "apps/hub/src/tasks/Tasks.ts",
+            "apps/web/x.ts",
+            "packages/contracts/src/tasks.ts",
+        ]);
         let globs = strings(&["docs/**", "apps/hub/**", "packages/contracts/src/tasks.ts"]);
-        assert_eq!(outside_globs(&paths, &globs), vec!["README.md", "apps/web/x.ts"]);
+        assert_eq!(
+            outside_globs(&paths, &globs),
+            vec!["README.md", "apps/web/x.ts"]
+        );
         let ab = strings(&["a", "b/c"]);
         assert_eq!(outside_globs(&ab, &[]), vec!["a", "b/c"]);
         assert!(outside_globs(&ab, &strings(&["**"])).is_empty());

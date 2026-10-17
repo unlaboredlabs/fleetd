@@ -1,8 +1,9 @@
 //! Task rows: the Task as JSON in `data`, plus the columns queries filter on. TS spec: apps/hub/src/tasks/TaskRecords.ts.
 use std::collections::HashSet;
 
-use fleetd_contracts::{ProjectRef, ThreadRef};
-use fleetd_contracts::{Task, TaskCounts, TaskId, TaskState};
+use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::model::TaskCounts;
+use fleetd_contracts::tasks::{Task, TaskId, TaskState};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::TaskFilter;
@@ -21,15 +22,23 @@ fn number_of(task_id: &TaskId) -> i64 {
 }
 
 fn state_str(state: TaskState) -> String {
-    serde_json::to_value(state).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
+    serde_json::to_value(state)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 fn decode(data: &str) -> rusqlite::Result<Task> {
-    serde_json::from_str(data).map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+    serde_json::from_str(data).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+    })
 }
 
 fn stored_of(row: &Row<'_>) -> rusqlite::Result<StoredTask> {
-    Ok(StoredTask { task: decode(&row.get::<_, String>(0)?)?, pending_message: row.get(1)? })
+    Ok(StoredTask {
+        task: decode(&row.get::<_, String>(0)?)?,
+        pending_message: row.get(1)?,
+    })
 }
 
 /// Over the hub's one SQLite connection; callers hold its lock.
@@ -59,13 +68,21 @@ impl TaskRecords {
                 |r| r.get(0),
             )?;
         task.task_id = TaskId::unchecked(format!("T{n}"));
-        Self::write(&tx, &StoredTask { task: task.clone(), pending_message: None })?;
+        Self::write(
+            &tx,
+            &StoredTask {
+                task: task.clone(),
+                pending_message: None,
+            },
+        )?;
         tx.commit()?;
         Ok(task)
     }
 
     pub fn get(db: &Connection, task_id: &TaskId) -> rusqlite::Result<Option<StoredTask>> {
-        db.prepare_cached("SELECT data, pending_message FROM tasks WHERE n = ?")?.query_row([number_of(task_id)], stored_of).optional()
+        db.prepare_cached("SELECT data, pending_message FROM tasks WHERE n = ?")?
+            .query_row([number_of(task_id)], stored_of)
+            .optional()
     }
 
     pub fn put(db: &Connection, stored: &StoredTask) -> rusqlite::Result<()> {
@@ -80,7 +97,11 @@ impl TaskRecords {
 
     /// Oldest first, every project.
     pub fn queued(db: &Connection) -> rusqlite::Result<Vec<StoredTask>> {
-        db.prepare_cached("SELECT data, pending_message FROM tasks WHERE state = 'queued' ORDER BY n")?.query_map([], stored_of)?.collect()
+        db.prepare_cached(
+            "SELECT data, pending_message FROM tasks WHERE state = 'queued' ORDER BY n",
+        )?
+        .query_map([], stored_of)?
+        .collect()
     }
 
     /// Newest first.
@@ -93,8 +114,14 @@ impl TaskRecords {
         )?
         .query_map(
             params![
-                filter.project_ref.as_ref().map(|r| r.machine_id.as_str().to_owned()),
-                filter.project_ref.as_ref().map(|r| r.project_id.as_str().to_owned()),
+                filter
+                    .project_ref
+                    .as_ref()
+                    .map(|r| r.machine_id.as_str().to_owned()),
+                filter
+                    .project_ref
+                    .as_ref()
+                    .map(|r| r.project_id.as_str().to_owned()),
                 filter.state.map(state_str),
                 filter.workstream_id.as_ref().map(|w| w.as_str().to_owned()),
                 filter.limit as i64,
@@ -105,14 +132,27 @@ impl TaskRecords {
     }
 
     /// The digest's tasks: every queued, running or idle one, and those that ended after `since`. Newest first.
-    pub fn for_digest(db: &Connection, r: &ProjectRef, since: Option<&str>, limit: usize) -> rusqlite::Result<Vec<Task>> {
+    pub fn for_digest(
+        db: &Connection,
+        r: &ProjectRef,
+        since: Option<&str>,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<Task>> {
         db.prepare_cached(
             "SELECT data FROM tasks
              WHERE machine_id = ?1 AND project_id = ?2
                AND (state IN ('queued', 'running', 'idle') OR (?3 IS NULL OR ended_at > ?3))
              ORDER BY n DESC LIMIT ?4",
         )?
-        .query_map(params![r.machine_id.as_str(), r.project_id.as_str(), since, limit as i64], |row| decode(&row.get::<_, String>(0)?))?
+        .query_map(
+            params![
+                r.machine_id.as_str(),
+                r.project_id.as_str(),
+                since,
+                limit as i64
+            ],
+            |row| decode(&row.get::<_, String>(0)?),
+        )?
         .collect()
     }
 
@@ -123,7 +163,10 @@ impl TaskRecords {
             counts.insert(s.to_owned(), 0.into());
         }
         let mut stmt = db.prepare_cached("SELECT state, COUNT(*) FROM tasks WHERE machine_id = ? AND project_id = ? GROUP BY state")?;
-        let rows = stmt.query_map(params![r.machine_id.as_str(), r.project_id.as_str()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?;
+        let rows = stmt.query_map(
+            params![r.machine_id.as_str(), r.project_id.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )?;
         for row in rows {
             let (state, n) = row?;
             counts.insert(state, n.into());

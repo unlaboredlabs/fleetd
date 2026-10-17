@@ -14,15 +14,22 @@ const SCRIPT: &str = concat!(
     "git -c core.quotePath=false diff --name-only --no-renames \"$mb\" \"refs/heads/$2\"",
 );
 
-static BRANCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$").unwrap());
+static BRANCH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$").unwrap());
 /// The node keeps this much of the output; a list that fills it may have lost its first names.
 pub const OUTPUT_MAX: usize = 2000;
 pub const TIMEOUT_SEC: u64 = 60;
 
 pub fn branch_diff_argv(base: &str, branch: &str) -> Option<Vec<String>> {
-    [base, branch].iter().all(|b| BRANCH.is_match(b) && !b.contains("..")).then(|| {
-        ["sh", "-c", SCRIPT, "fleetd-branch-diff", base, branch].iter().map(|s| (*s).to_owned()).collect()
-    })
+    [base, branch]
+        .iter()
+        .all(|b| BRANCH.is_match(b) && !b.contains(".."))
+        .then(|| {
+            ["sh", "-c", SCRIPT, "fleetd-branch-diff", base, branch]
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect()
+        })
 }
 
 /// The branch's changed paths, sorted, from the node's exit code and output tail; `None` when the node could not
@@ -31,7 +38,12 @@ pub fn parse_branch_diff(exit_code: i64, output_tail: &str) -> Option<Vec<String
     if exit_code != 0 || output_tail.encode_utf16().count() >= OUTPUT_MAX {
         return None;
     }
-    let mut paths: Vec<String> = output_tail.split('\n').map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
+    let mut paths: Vec<String> = output_tail
+        .split('\n')
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect();
     // JS's default sort compares UTF-16 units; for the ASCII paths git prints with quotePath off that is byte order
     // in all but astral-plane names.
     paths.sort();

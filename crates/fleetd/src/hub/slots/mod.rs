@@ -6,11 +6,16 @@ pub mod board;
 
 use std::sync::{Arc, Mutex};
 
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
+use fleetd_contracts::model::ThreadStatus;
 use fleetd_contracts::prim::{Int, List};
-use fleetd_contracts::{HubEventType, MachineId, ProjectId, ProjectRef, SlotState, SlotStatePerProject, TaskKind, ThreadId, ThreadRef, ThreadStatus};
+use fleetd_contracts::tasks::{SlotState, SlotStatePerProject, TaskKind};
 use rusqlite::{OptionalExtension, params};
 
-pub use board::{Board, BoardState, Claim, ClaimState, Grant, Op, SlotPriority, blocker, reserved_band};
+pub use board::{
+    Board, BoardState, Claim, ClaimState, Grant, Op, SlotPriority, blocker, reserved_band,
+};
 
 use crate::hub::store::{EventLog, HubDb, HubStore, StoreError, WaitInput};
 
@@ -26,7 +31,11 @@ const STOPPED: [HubEventType; 5] = [
 ];
 
 pub fn priority_of(kind: TaskKind) -> SlotPriority {
-    if kind == TaskKind::Review { SlotPriority::Review } else { SlotPriority::Work }
+    if kind == TaskKind::Review {
+        SlotPriority::Review
+    } else {
+        SlotPriority::Work
+    }
 }
 
 /// The slot holder for a project's lead turns. Tasks hold under their TaskId.
@@ -71,7 +80,10 @@ pub struct Slots {
 }
 
 fn project_ref(m: String, p: String) -> ProjectRef {
-    ProjectRef { machine_id: MachineId::unchecked(m), project_id: ProjectId::unchecked(p) }
+    ProjectRef {
+        machine_id: MachineId::unchecked(m),
+        project_id: ProjectId::unchecked(p),
+    }
 }
 
 fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
@@ -152,7 +164,11 @@ fn slot_state(s: BoardState) -> SlotState {
         per_project: List::unchecked(
             s.per_project
                 .into_iter()
-                .map(|row| SlotStatePerProject { project_ref: row.project_ref, share: count(row.share), used: count(row.used) })
+                .map(|row| SlotStatePerProject {
+                    project_ref: row.project_ref,
+                    share: count(row.share),
+                    used: count(row.used),
+                })
                 .collect(),
         ),
     }
@@ -162,30 +178,67 @@ impl Slots {
     /// Loads the board, rebuilds held claims from each bound thread's stored status, counts running lead threads,
     /// and follows thread events from the log's head for as long as the hub runs. The queue is re-evaluated when
     /// the first listener registers, so it hears about slots that came free while the hub was down.
-    pub fn start(db: Arc<HubDb>, store: &HubStore, events: Arc<EventLog>, lead_of: LeadOf, options: SlotsOptions) -> Result<Arc<Self>, StoreError> {
+    pub fn start(
+        db: Arc<HubDb>,
+        store: &HubStore,
+        events: Arc<EventLog>,
+        lead_of: LeadOf,
+        options: SlotsOptions,
+    ) -> Result<Arc<Self>, StoreError> {
         let mut board = load(&db, options.default_cap.unwrap_or(DEFAULT_CAP))?;
         let head = events.head();
         let bound: Vec<(String, ThreadRef)> = board
             .claims()
             .iter()
             .filter(|c| c.state != ClaimState::Queued)
-            .filter_map(|c| c.thread_id.clone().map(|t| (c.holder.clone(), ThreadRef { machine_id: c.project_ref.machine_id.clone(), thread_id: t })))
+            .filter_map(|c| {
+                c.thread_id.clone().map(|t| {
+                    (
+                        c.holder.clone(),
+                        ThreadRef {
+                            machine_id: c.project_ref.machine_id.clone(),
+                            thread_id: t,
+                        },
+                    )
+                })
+            })
             .collect();
         for (holder, thread) in bound {
-            let running = store.thread_get(&thread)?.is_some_and(|t| t.thread.status == ThreadStatus::Running);
+            let running = store
+                .thread_get(&thread)?
+                .is_some_and(|t| t.thread.status == ThreadStatus::Running);
             board.restore(&holder, running);
         }
         persist(&db, board.take_ops())?;
-        let slots = Arc::new(Self { db, board: Mutex::new(board), listeners: Mutex::new(Vec::new()), lead_of });
+        let slots = Arc::new(Self {
+            db,
+            board: Mutex::new(board),
+            listeners: Mutex::new(Vec::new()),
+            lead_of,
+        });
         for t in store.threads_running()? {
-            slots.observe(&t.machine_id, &t.thread_id, true)?;
+            if slots
+                .board()
+                .find_by_thread(t.machine_id.as_str(), t.thread_id.as_str())
+                .is_none()
+            {
+                slots.observe(&t.machine_id, &t.thread_id, true)?;
+            }
         }
         let follower = slots.clone();
         tokio::spawn(async move {
             let types: Vec<HubEventType> = RUNNING.iter().chain(STOPPED.iter()).copied().collect();
             let mut cursor = head;
             loop {
-                let page = match events.wait(WaitInput { cursor: Some(cursor), types: Some(types.clone()), machine_id: None, timeout_sec: 3600 }).await {
+                let page = match events
+                    .wait(WaitInput {
+                        cursor: Some(cursor),
+                        types: Some(types.clone()),
+                        machine_id: None,
+                        timeout_sec: 3600,
+                    })
+                    .await
+                {
                     Ok(page) => page,
                     Err(e) => {
                         tracing::warn!(error = %e, "slots: event wait failed");
@@ -195,7 +248,9 @@ impl Slots {
                 };
                 cursor = page.cursor;
                 for event in page.events {
-                    let (Some(m), Some(t)) = (&event.machine_id, &event.thread_id) else { continue };
+                    let (Some(m), Some(t)) = (&event.machine_id, &event.thread_id) else {
+                        continue;
+                    };
                     if let Err(e) = follower.observe(m, t, RUNNING.contains(&event.r#type)) {
                         tracing::warn!(error = %e, "slots: thread event not applied");
                     }
@@ -234,16 +289,38 @@ impl Slots {
     }
 
     /// Applies a thread's running/stopped status.
-    fn observe(&self, machine_id: &MachineId, thread_id: &ThreadId, running: bool) -> Result<(), StoreError> {
-        let unclaimed = self.board().find_by_thread(machine_id.as_str(), thread_id.as_str()).is_none();
-        let lead = if unclaimed && running { (self.lead_of)(machine_id, thread_id) } else { None };
-        self.locked(|b| ((), b.observe(machine_id.as_str(), thread_id, running, lead.as_ref())))
+    fn observe(
+        &self,
+        machine_id: &MachineId,
+        thread_id: &ThreadId,
+        running: bool,
+    ) -> Result<(), StoreError> {
+        let unclaimed = self
+            .board()
+            .find_by_thread(machine_id.as_str(), thread_id.as_str())
+            .is_none();
+        let lead = if unclaimed && running {
+            (self.lead_of)(machine_id, thread_id)
+        } else {
+            None
+        };
+        self.locked(|b| {
+            (
+                (),
+                b.observe(machine_id.as_str(), thread_id, running, lead.as_ref()),
+            )
+        })
     }
 
     /// Takes a slot now, or queues the request (FIFO within priority) and says why. Asking again for a holder that
     /// already has a slot returns granted; for one already queued, its current reason.
     pub fn acquire(&self, request: SlotRequest<'_>) -> Result<Grant, StoreError> {
-        self.locked(|b| (b.acquire(request.holder, request.project_ref, request.priority), false))
+        self.locked(|b| {
+            (
+                b.acquire(request.holder, request.project_ref, request.priority),
+                false,
+            )
+        })
     }
 
     /// The holder's slot follows `thread` from now on: freed whenever the thread stops running, taken again whenever

@@ -6,7 +6,9 @@ pub mod policy;
 
 use std::sync::Arc;
 
-use fleetd_contracts::{AreaName, HubEventType, Lease, MachineId, ProjectId, ProjectRef, TaskId, Timestamp};
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
+use fleetd_contracts::tasks::{AreaName, Lease, TaskId};
 use rusqlite::{Connection, Row, params};
 
 use crate::clock::Clock;
@@ -19,7 +21,14 @@ pub const STALE_AFTER_MS: i64 = 4 * 60 * 60_000;
 
 /// "lease: docs held by T1, hub held by T2", trimmed to fit `Task.queuedReason`.
 fn conflict_reason(conflicts: &[(&str, String)]) -> String {
-    let text = format!("lease: {}", conflicts.iter().map(|(area, by)| format!("{area} held by {by}")).collect::<Vec<_>>().join(", "));
+    let text = format!(
+        "lease: {}",
+        conflicts
+            .iter()
+            .map(|(area, by)| format!("{area} held by {by}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     if text.encode_utf16().count() > 200 {
         let mut units = 0;
         let cut: String = text
@@ -48,8 +57,17 @@ fn to_lease(row: &Row<'_>) -> rusqlite::Result<Lease> {
 }
 
 /// The all-or-none rule over the project's lease rows, inside the caller's transaction.
-fn acquire_in(db: &Connection, project_ref: &ProjectRef, task_id: &TaskId, areas: &[AreaName], since: &str) -> rusqlite::Result<Grant> {
-    let (m, p) = (project_ref.machine_id.as_str(), project_ref.project_id.as_str());
+fn acquire_in(
+    db: &Connection,
+    project_ref: &ProjectRef,
+    task_id: &TaskId,
+    areas: &[AreaName],
+    since: &str,
+) -> rusqlite::Result<Grant> {
+    let (m, p) = (
+        project_ref.machine_id.as_str(),
+        project_ref.project_id.as_str(),
+    );
     let held: Vec<(String, String)> = db
         .prepare_cached("SELECT area, task_id FROM leases WHERE machine_id = ? AND project_id = ?")?
         .query_map(params![m, p], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -57,7 +75,11 @@ fn acquire_in(db: &Connection, project_ref: &ProjectRef, task_id: &TaskId, areas
     let holder = |area: &str| held.iter().find(|(a, _)| a == area).map(|(_, t)| t.clone());
     let conflicts: Vec<(&str, String)> = areas
         .iter()
-        .filter_map(|a| holder(a.as_str()).filter(|t| t != task_id.as_str()).map(|t| (a.as_str(), t)))
+        .filter_map(|a| {
+            holder(a.as_str())
+                .filter(|t| t != task_id.as_str())
+                .map(|t| (a.as_str(), t))
+        })
         .collect();
     if !conflicts.is_empty() {
         return Ok(Grant::Queued(conflict_reason(&conflicts)));
@@ -90,16 +112,26 @@ impl Leases {
 
     /// Takes every area in `areas` for the task, or none: if another task holds any of them, the reason names every
     /// conflict. Areas the task already holds count as granted.
-    pub fn acquire(&self, project_ref: &ProjectRef, task_id: &TaskId, areas: &[AreaName]) -> Result<Grant, StoreError> {
+    pub fn acquire(
+        &self,
+        project_ref: &ProjectRef,
+        task_id: &TaskId,
+        areas: &[AreaName],
+    ) -> Result<Grant, StoreError> {
         let since = iso_ms(now_ms(self.clock.as_ref()));
-        self.db.transaction(|db| Ok(acquire_in(db, project_ref, task_id, areas, &since)?))
+        self.db
+            .transaction(|db| Ok(acquire_in(db, project_ref, task_id, areas, &since)?))
     }
 
     /// Drops every lease the task holds and returns them.
     pub fn release(&self, task_id: &TaskId) -> Result<Vec<Lease>, StoreError> {
         self.db.transaction(|db| {
-            let leases = db.prepare_cached("SELECT * FROM leases WHERE task_id = ?")?.query_map([task_id.as_str()], to_lease)?.collect::<rusqlite::Result<Vec<_>>>()?;
-            db.prepare_cached("DELETE FROM leases WHERE task_id = ?")?.execute([task_id.as_str()])?;
+            let leases = db
+                .prepare_cached("SELECT * FROM leases WHERE task_id = ?")?
+                .query_map([task_id.as_str()], to_lease)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            db.prepare_cached("DELETE FROM leases WHERE task_id = ?")?
+                .execute([task_id.as_str()])?;
             Ok(leases)
         })
     }
@@ -129,7 +161,9 @@ impl Leases {
         let now = now_ms(self.clock.as_ref());
         let stale: Vec<Lease> = self.db.with(|db| {
             Ok(db
-                .prepare_cached("SELECT * FROM leases WHERE stale_flagged = 0 AND since < ? ORDER BY since")?
+                .prepare_cached(
+                    "SELECT * FROM leases WHERE stale_flagged = 0 AND since < ? ORDER BY since",
+                )?
                 .query_map([iso_ms(now - STALE_AFTER_MS)], to_lease)?
                 .collect::<rusqlite::Result<_>>()?)
         })?;
@@ -163,6 +197,17 @@ impl Leases {
     }
 }
 
+/// The stale-lease check for the 5-min sweep.
+pub fn sweep_check(leases: Arc<Leases>) -> crate::hub::sweep::SweepCheck {
+    crate::hub::sweep::SweepCheck {
+        name: "stale leases".to_owned(),
+        run: Arc::new(move || {
+            let leases = leases.clone();
+            Box::pin(async move { leases.flag_stale().map(|_| ()).map_err(|e| e.to_string()) })
+        }),
+    }
+}
+
 /// Epoch ms of an ISO timestamp as the hub writes them (`YYYY-MM-DDTHH:MM:SS.mmmZ`), like `Date.parse`.
 pub(crate) fn parse_iso_ms(s: &str) -> Option<i64> {
     let b = s.as_bytes();
@@ -170,8 +215,21 @@ pub(crate) fn parse_iso_ms(s: &str) -> Option<i64> {
         return None;
     }
     let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
-    let (y, mo, d, h, mi, sec) = (n(0..4)?, n(5..7)?, n(8..10)?, n(11..13)?, n(14..16)?, n(17..19)?);
-    let ms = if b.get(19) == Some(&b'.') { s.get(20..23).and_then(|f| f.parse::<i64>().ok()).unwrap_or(0) } else { 0 };
+    let (y, mo, d, h, mi, sec) = (
+        n(0..4)?,
+        n(5..7)?,
+        n(8..10)?,
+        n(11..13)?,
+        n(14..16)?,
+        n(17..19)?,
+    );
+    let ms = if b.get(19) == Some(&b'.') {
+        s.get(20..23)
+            .and_then(|f| f.parse::<i64>().ok())
+            .unwrap_or(0)
+    } else {
+        0
+    };
     // Howard Hinnant's days_from_civil.
     let y = if mo <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
@@ -193,7 +251,10 @@ mod tests {
     const NOW_MS: u64 = 1_792_231_200_000;
 
     fn project(p: &str) -> ProjectRef {
-        ProjectRef { machine_id: MachineId::unchecked("lab-a"), project_id: ProjectId::unchecked(p) }
+        ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: ProjectId::unchecked(p),
+        }
     }
     fn t(n: u32) -> TaskId {
         TaskId::unchecked(format!("T{n}"))
@@ -212,16 +273,30 @@ mod tests {
         let db = HubDb::open_memory().unwrap();
         let clock = ManualClock::at(NOW_MS);
         let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
-        Kit { leases: Leases::new(db, events.clone(), clock.clone()), events, clock }
+        Kit {
+            leases: Leases::new(db, events.clone(), clock.clone()),
+            events,
+            clock,
+        }
     }
 
     impl Kit {
         fn take(&self, p: &str, n: u32, names: &[&str]) -> Grant {
-            self.leases.acquire(&project(p), &t(n), &areas(names)).unwrap()
+            self.leases
+                .acquire(&project(p), &t(n), &areas(names))
+                .unwrap()
         }
         fn held(&self, n: u32) -> Vec<String> {
-            let filter = LeaseFilter { task_id: Some(t(n)), ..Default::default() };
-            self.leases.list(&filter).unwrap().into_iter().map(|l| l.area.as_str().to_owned()).collect()
+            let filter = LeaseFilter {
+                task_id: Some(t(n)),
+                ..Default::default()
+            };
+            self.leases
+                .list(&filter)
+                .unwrap()
+                .into_iter()
+                .map(|l| l.area.as_str().to_owned())
+                .collect()
         }
     }
 
@@ -235,14 +310,29 @@ mod tests {
         assert_eq!(k.take("pa", 1, &["docs", "hub"]), Grant::Granted);
         assert_eq!(k.held(1), ["docs", "hub"]);
         // T2 wants the same areas in the other order, plus a free one: it gets nothing, not even "web".
-        assert_eq!(k.take("pa", 2, &["hub", "web", "docs"]), queued("lease: hub held by T1, docs held by T1"));
+        assert_eq!(
+            k.take("pa", 2, &["hub", "web", "docs"]),
+            queued("lease: hub held by T1, docs held by T1")
+        );
         assert!(k.held(2).is_empty());
         // So a third task can still take the free area.
         assert_eq!(k.take("pa", 3, &["web"]), Grant::Granted);
-        assert_eq!(k.take("pa", 2, &["hub", "web", "docs"]), queued("lease: hub held by T1, web held by T3, docs held by T1"));
-        let released: Vec<String> = k.leases.release(&t(1)).unwrap().into_iter().map(|l| l.area.as_str().to_owned()).collect();
+        assert_eq!(
+            k.take("pa", 2, &["hub", "web", "docs"]),
+            queued("lease: hub held by T1, web held by T3, docs held by T1")
+        );
+        let released: Vec<String> = k
+            .leases
+            .release(&t(1))
+            .unwrap()
+            .into_iter()
+            .map(|l| l.area.as_str().to_owned())
+            .collect();
         assert_eq!(released, ["docs", "hub"]);
-        assert_eq!(k.take("pa", 2, &["hub", "web", "docs"]), queued("lease: web held by T3"));
+        assert_eq!(
+            k.take("pa", 2, &["hub", "web", "docs"]),
+            queued("lease: web held by T3")
+        );
         k.leases.release(&t(3)).unwrap();
         assert_eq!(k.take("pa", 2, &["hub", "web", "docs"]), Grant::Granted);
         assert_eq!(k.held(2), ["docs", "hub", "web"]);
@@ -262,11 +352,37 @@ mod tests {
             .list(&LeaseFilter::default())
             .unwrap()
             .iter()
-            .map(|l| format!("{}:{}:{}:{}", l.project_ref.project_id.as_str(), l.area.as_str(), l.task_id.as_str(), l.since.as_str()))
+            .map(|l| {
+                format!(
+                    "{}:{}:{}:{}",
+                    l.project_ref.project_id.as_str(),
+                    l.area.as_str(),
+                    l.task_id.as_str(),
+                    l.since.as_str()
+                )
+            })
             .collect();
-        assert_eq!(all, ["pa:docs:T1:2026-10-17T10:00:00.000Z", "pb:docs:T2:2026-10-17T10:01:00.000Z", "pa:hub:T1:2026-10-17T10:01:00.000Z"]);
-        let in_b = LeaseFilter { project_ref: Some(project("pb")), ..Default::default() };
-        assert_eq!(k.leases.list(&in_b).unwrap().iter().map(|l| l.task_id.as_str().to_owned()).collect::<Vec<_>>(), ["T2"]);
+        assert_eq!(
+            all,
+            [
+                "pa:docs:T1:2026-10-17T10:00:00.000Z",
+                "pb:docs:T2:2026-10-17T10:01:00.000Z",
+                "pa:hub:T1:2026-10-17T10:01:00.000Z"
+            ]
+        );
+        let in_b = LeaseFilter {
+            project_ref: Some(project("pb")),
+            ..Default::default()
+        };
+        assert_eq!(
+            k.leases
+                .list(&in_b)
+                .unwrap()
+                .iter()
+                .map(|l| l.task_id.as_str().to_owned())
+                .collect::<Vec<_>>(),
+            ["T2"]
+        );
         assert!(k.leases.release(&t(9)).unwrap().is_empty());
     }
 
@@ -279,17 +395,35 @@ mod tests {
         k.clock.advance(Duration::from_secs(60));
         assert_eq!(k.leases.flag_stale().unwrap(), 1);
         assert_eq!(k.leases.flag_stale().unwrap(), 0);
-        let stale = k.events.page(0, Some(&[HubEventType::LeaseStale]), None).unwrap().events;
+        let stale = k
+            .events
+            .page(0, Some(&[HubEventType::LeaseStale]), None)
+            .unwrap()
+            .events;
         assert_eq!(stale.len(), 1);
-        assert_eq!(stale[0].summary.as_str(), "Lease on docs in pa held by T1 for 4 h; still held");
+        assert_eq!(
+            stale[0].summary.as_str(),
+            "Lease on docs in pa held by T1 for 4 h; still held"
+        );
         assert_eq!(stale[0].project_id.as_ref().map(|p| p.as_str()), Some("pa"));
-        assert_eq!(stale[0].data, Some(serde_json::json!({ "taskId": "T1", "area": "docs", "since": "2026-10-17T10:00:00.000Z" })));
+        assert_eq!(
+            stale[0].data,
+            Some(
+                serde_json::json!({ "taskId": "T1", "area": "docs", "since": "2026-10-17T10:00:00.000Z" })
+            )
+        );
         assert_eq!(k.leases.list(&LeaseFilter::default()).unwrap().len(), 1);
     }
 
     #[test]
     fn parses_hub_timestamps_like_date_parse() {
-        assert_eq!(parse_iso_ms("2026-10-17T10:00:00.000Z"), Some(NOW_MS as i64));
-        assert_eq!(iso_ms(parse_iso_ms("2024-02-29T23:59:59.999Z").unwrap()), "2024-02-29T23:59:59.999Z");
+        assert_eq!(
+            parse_iso_ms("2026-10-17T10:00:00.000Z"),
+            Some(NOW_MS as i64)
+        );
+        assert_eq!(
+            iso_ms(parse_iso_ms("2024-02-29T23:59:59.999Z").unwrap()),
+            "2024-02-29T23:59:59.999Z"
+        );
     }
 }

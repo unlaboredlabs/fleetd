@@ -3,8 +3,8 @@
 //! TS spec: apps/hub/src/tasks/render.ts.
 use std::sync::LazyLock;
 
-use fleetd_contracts::Brief;
-use fleetd_contracts::{Task, TaskKind, TaskResult, TaskResultStatus, TaskState};
+use fleetd_contracts::ledger::Brief;
+use fleetd_contracts::tasks::{Task, TaskKind, TaskResult, TaskResultStatus, TaskState};
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
@@ -42,16 +42,31 @@ fn js_suffix(s: &str, max: usize) -> &str {
 
 pub fn one_line(text: &str, max: usize) -> String {
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if js_len(&flat) > max { format!("{}…", js_prefix(&flat, max - 1)) } else { flat }
+    if js_len(&flat) > max {
+        format!("{}…", js_prefix(&flat, max - 1))
+    } else {
+        flat
+    }
 }
 
 /// Lowercase ASCII words joined by "-", cut at a word boundary; "task" when nothing is left.
 pub fn slug_of(title: &str) -> String {
-    let folded: String = title.nfkd().filter(|c| !is_combining_mark(*c)).collect::<String>().to_lowercase();
-    let words: Vec<&str> = folded.split(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit())).filter(|w| !w.is_empty()).collect();
+    let folded: String = title
+        .nfkd()
+        .filter(|c| !is_combining_mark(*c))
+        .collect::<String>()
+        .to_lowercase();
+    let words: Vec<&str> = folded
+        .split(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit()))
+        .filter(|w| !w.is_empty())
+        .collect();
     let mut slug = String::new();
     for w in &words {
-        let next_len = if slug.is_empty() { w.len() } else { slug.len() + 1 + w.len() };
+        let next_len = if slug.is_empty() {
+            w.len()
+        } else {
+            slug.len() + 1 + w.len()
+        };
         if next_len > SLUG_MAX {
             break;
         }
@@ -76,10 +91,16 @@ pub fn branch_for(task_id: &str, title: &str) -> String {
 /// The last `max` characters, starting with "…" when cut.
 pub fn tail_of(text: &str, max: usize) -> String {
     let t = text.trim();
-    if js_len(t) <= max { t.to_owned() } else { format!("…{}", js_suffix(t, max - 1)) }
+    if js_len(t) <= max {
+        t.to_owned()
+    } else {
+        format!("…{}", js_suffix(t, max - 1))
+    }
 }
 
-static PR_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"https?://[^\s"'<>()]+?/(?:pull|pulls|merge_requests)/[0-9]+"#).unwrap());
+static PR_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"https?://[^\s"'<>()]+?/(?:pull|pulls|merge_requests)/[0-9]+"#).unwrap()
+});
 
 /// The last pull or merge request URL in `texts`, read in order.
 pub fn find_pr_url<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<String> {
@@ -104,8 +125,11 @@ pub struct PromptInput<'a> {
     pub base_branch: Option<&'a str>,
 }
 
-pub fn effort_str(effort: fleetd_contracts::Effort) -> String {
-    serde_json::to_value(effort).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
+pub fn effort_str(effort: fleetd_contracts::effort::Effort) -> String {
+    serde_json::to_value(effort)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 fn kind_str(kind: TaskKind) -> &'static str {
@@ -135,7 +159,10 @@ pub fn render_task_prompt(input: &PromptInput<'_>) -> String {
     let mut context = Vec::new();
     if let Some(brief) = input.brief {
         context.push(format!("Goal: {}", one_line(brief.goal.as_str(), 1000)));
-        context.push(format!("Done when: {}", crate::hub::leads::digest::done_when_text(&brief.done_when, None, 200)));
+        context.push(format!(
+            "Done when: {}",
+            crate::hub::leads::digest::done_when_text(&brief.done_when, None, 200)
+        ));
     }
     if let Some(serves) = serves {
         context.push(format!("This task serves: {}", one_line(serves, 200)));
@@ -147,13 +174,21 @@ pub fn render_task_prompt(input: &PromptInput<'_>) -> String {
             .areas
             .iter()
             .map(|a| {
-                let globs = input.area_globs.iter().find(|(n, _)| n == a.as_str()).map(|(_, g)| g.join(", ")).unwrap_or_default();
+                let globs = input
+                    .area_globs
+                    .iter()
+                    .find(|(n, _)| n == a.as_str())
+                    .map(|(_, g)| g.join(", "))
+                    .unwrap_or_default();
                 format!("{} ({globs})", a.as_str())
             })
             .collect::<Vec<_>>()
             .join("; ");
         rules.push(format!("- Only change files in these areas: {areas}. Changes anywhere else are flagged as out of area."));
-        let base = input.base_branch.map_or_else(|| "the default branch".to_owned(), |b| format!("the default branch ({b})"));
+        let base = input.base_branch.map_or_else(
+            || "the default branch".to_owned(),
+            |b| format!("the default branch ({b})"),
+        );
         rules.push(format!(
             "- You work in your own worktree on branch {}. Commit to your branch; do not merge; do not push to {base}.",
             input.branch.unwrap_or("your task branch")
@@ -166,7 +201,9 @@ pub fn render_task_prompt(input: &PromptInput<'_>) -> String {
             serves.unwrap_or("<what this serves>"),
         ));
     } else {
-        rules.push("- This is a read-only task: do not change, commit or push any files.".to_owned());
+        rules.push(
+            "- This is a read-only task: do not change, commit or push any files.".to_owned(),
+        );
     }
     rules.push("- Do the task yourself; do not hand it to subagents.".to_owned());
     if task.kind == TaskKind::Review {
@@ -201,7 +238,10 @@ pub fn render_task_prompt(input: &PromptInput<'_>) -> String {
 }
 
 fn quoted(text: &str) -> Vec<String> {
-    text.trim().split('\n').map(|l| format!("  > {l}").trim_end().to_owned()).collect()
+    text.trim()
+        .split('\n')
+        .map(|l| format!("  > {l}").trim_end().to_owned())
+        .collect()
 }
 
 /// The "why you are woken" entry for a finished task: its whole result tail, inline.
@@ -218,8 +258,15 @@ pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> Str
     if let Some(p) = &result.pr_url {
         where_.push(format!("PR {}", p.as_str()));
     }
-    let where_ = if where_.is_empty() { String::new() } else { format!(" ({})", where_.join(", ")) };
-    let mut out = vec![format!("- {task_id} {verb}: {}{where_}", one_line(title, 80))];
+    let where_ = if where_.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", where_.join(", "))
+    };
+    let mut out = vec![format!(
+        "- {task_id} {verb}: {}{where_}",
+        one_line(title, 80)
+    )];
     // M6 receipts, counted by the hub; absent on results stored before them.
     if let Some(receipts) = crate::hub::receipts::count::receipts_line(result) {
         out.push(format!("  {receipts}"));
@@ -241,7 +288,10 @@ pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> Str
 
 /// The "why you are woken" entry for a task waiting on input: its question, inline.
 pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String {
-    let mut out = vec![format!("- {task_id} is waiting for input: {}", one_line(title, 80)), "  question:".to_owned()];
+    let mut out = vec![
+        format!("- {task_id} is waiting for input: {}", one_line(title, 80)),
+        "  question:".to_owned(),
+    ];
     out.extend(quoted(question));
     out.push(format!(
         "  next: answer it with `fleetd task message {task_id} \"<answer>\"`, or `fleetd task cancel {task_id}`. Ask the human only if it is a product, money, credential or irreversible call."
@@ -254,25 +304,57 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
     let model = |t: &Task| format!("{}/{}", t.model.as_str(), effort_str(t.effort));
     let mut out = Vec::new();
-    for t in tasks.iter().filter(|t| matches!(t.state, TaskState::Running | TaskState::Idle)) {
-        let what = if t.state == TaskState::Idle { "idle, waiting for input" } else { "running" };
-        let branch = t.branch.as_ref().map_or_else(String::new, |b| format!(" [{}]", b.as_str()));
-        out.push(format!("- {} {what} ({}, {}): {}{branch}", t.task_id.as_str(), kind_str(t.kind), model(t), title(t)));
+    for t in tasks
+        .iter()
+        .filter(|t| matches!(t.state, TaskState::Running | TaskState::Idle))
+    {
+        let what = if t.state == TaskState::Idle {
+            "idle, waiting for input"
+        } else {
+            "running"
+        };
+        let branch = t
+            .branch
+            .as_ref()
+            .map_or_else(String::new, |b| format!(" [{}]", b.as_str()));
+        out.push(format!(
+            "- {} {what} ({}, {}): {}{branch}",
+            t.task_id.as_str(),
+            kind_str(t.kind),
+            model(t),
+            title(t)
+        ));
     }
     for t in tasks.iter().filter(|t| t.state == TaskState::Queued) {
         let reason = t.queued_reason.as_ref().map_or("waiting", |r| r.as_str());
-        out.push(format!("- {} queued ({}): {}; {reason}", t.task_id.as_str(), kind_str(t.kind), title(t)));
+        out.push(format!(
+            "- {} queued ({}): {}; {reason}",
+            t.task_id.as_str(),
+            kind_str(t.kind),
+            title(t)
+        ));
     }
     for t in tasks.iter().filter(|t| {
-        matches!(t.state, TaskState::Done | TaskState::Failed | TaskState::Cancelled)
-            && since.is_none_or(|s| t.ended_at.as_ref().map_or("", |e| e.as_str()) > s)
+        matches!(
+            t.state,
+            TaskState::Done | TaskState::Failed | TaskState::Cancelled
+        ) && since.is_none_or(|s| t.ended_at.as_ref().map_or("", |e| e.as_str()) > s)
     }) {
         let first = t.result.as_ref().map_or_else(String::new, |r| {
             let tail = r.tail.as_str();
             one_line(tail.strip_prefix('…').unwrap_or(tail), 160)
         });
-        let arrow = if first.is_empty() { String::new() } else { format!(" → {first}") };
-        out.push(format!("- {} {} since your last wake: {}{arrow}", t.task_id.as_str(), state_str(t.state), title(t)));
+        let arrow = if first.is_empty() {
+            String::new()
+        } else {
+            format!(" → {first}")
+        };
+        out.push(format!(
+            "- {} {} since your last wake: {}{arrow}",
+            t.task_id.as_str(),
+            state_str(t.state),
+            title(t)
+        ));
     }
     out
 }
