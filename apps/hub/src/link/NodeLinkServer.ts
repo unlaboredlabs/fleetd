@@ -1,6 +1,8 @@
 import { createPublicKey, randomBytes, verify } from "node:crypto";
 import {
   type HubToNode,
+  type LeadCallFrame,
+  type LeadResultFrame,
   type MachineId,
   NodeLinkClose,
   type NodeT3Endpoint,
@@ -9,6 +11,7 @@ import {
   ProtocolVersion,
   type Timestamp,
 } from "@fleetd/contracts";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -22,6 +25,7 @@ import * as Socket from "effect/socket/Socket";
 import * as Auth from "../auth/Auth.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
+import { type LeadCallHandler, LeadCallRefused, leadBy, outsideEveryProject, projectForCwd } from "./LeadCalls.ts";
 
 /** The part of W2's Executors the link drives. Typed structurally until Executors lands, then taken from context. */
 export interface LinkExecutors {
@@ -36,6 +40,8 @@ export interface LinkExecutors {
 export interface NodeLinkOptions {
   readonly hubId: string;
   readonly executors: LinkExecutors;
+  /** Answers lead-side `fleetd` calls the node forwards. Absent: every such call is refused as not available yet. */
+  readonly leadCalls?: LeadCallHandler;
   readonly heartbeatEvery?: Duration.Input;
   readonly silenceTimeout?: Duration.Input;
   readonly helloTimeout?: Duration.Input;
@@ -119,6 +125,42 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
   const announced = new Map<MachineId, "online" | "degraded">();
   const watchdogs = yield* FiberMap.make<MachineId>();
   let nextLinkId = 0;
+
+  /** Attributes a forwarded call to the project its cwd is in, on the machine whose node sent it, and answers it. */
+  const answerLeadCall = (machineId: MachineId, frame: LeadCallFrame): Effect.Effect<LeadResultFrame> =>
+    Effect.gen(function* () {
+      const projects = yield* store.projects.list({ machineId });
+      const project = projectForCwd(projects, frame.cwd);
+      if (project === undefined) return yield* outsideEveryProject(machineId, frame.cwd, projects);
+      if (options.leadCalls === undefined) {
+        return yield* new LeadCallRefused({
+          code: "forbidden",
+          message: "this hub does not take lead-side calls yet",
+          fix: "carry on without this call and mention it in your next status line",
+        });
+      }
+      const projectRef = { machineId, projectId: project.projectId };
+      return yield* options.leadCalls.handle({ projectRef, by: leadBy(projectRef), cwd: frame.cwd }, frame.call);
+    }).pipe(
+      Effect.map((result): LeadResultFrame => ({ t: "lead_result", id: frame.id, result })),
+      Effect.catchTag("LeadCallRefused", ({ code, message, fix }) =>
+        Effect.succeed<LeadResultFrame>({
+          t: "lead_result",
+          id: frame.id,
+          error: { code, message, ...(fix === undefined ? {} : { fix }) },
+        }),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logError("node link: lead call failed").pipe(
+          Effect.annotateLogs({ machineId, op: frame.call.op, cause: Cause.pretty(cause) }),
+          Effect.as<LeadResultFrame>({
+            t: "lead_result",
+            id: frame.id,
+            error: { code: "t3_error", message: "the hub failed while handling this call", fix: "try again shortly" },
+          }),
+        ),
+      ),
+    );
 
   /** Rewrites the stored machine's status (and T3 info, when given); `degradedReason` is kept only while degraded. */
   const writeStatus = (
@@ -314,6 +356,10 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
             yield* Effect.logInfo(`node link: t3 ${frame.state}`).pipe(Effect.annotateLogs({ machineId }));
             break;
           }
+          case "lead_call":
+            // Off the frame loop: a slow call must not hold up heartbeats or other calls.
+            yield* answerLeadCall(machineId, frame).pipe(Effect.flatMap(link.send), Effect.forkScoped);
+            break;
           case "hello":
             return yield* refuse(NodeLinkClose.badFrame, "hello after welcome");
         }

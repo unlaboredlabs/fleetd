@@ -2,6 +2,7 @@ import { HubToNode, type MachineId, NodeLinkClose, type NodeToHub, PROTOCOL_VERS
 import { Clock, Data, Deferred, Duration, Effect, Exit, Option, Random, Redacted, Schema, type Scope, Stream } from "effect";
 import * as Socket from "effect/socket/Socket";
 import type { NodeIdentity } from "./identity.ts";
+import type { LeadRelay } from "./LeadCalls.ts";
 import { makeSessionKeeper, type SessionKeeper, type SessionKeeperOptions } from "./SessionKeeper.ts";
 import { makeT3Supervisor, type T3RestartFailed, type T3State, type T3Supervisor } from "./T3Supervisor.ts";
 
@@ -75,6 +76,7 @@ const runLinkOnce = (
     readonly t3: T3Supervisor;
     readonly enrollToken: string | undefined;
     readonly onWelcome: Effect.Effect<void>;
+    readonly leadCalls: LeadRelay | undefined;
   },
 ) =>
   Effect.gen(function* () {
@@ -166,7 +168,12 @@ const runLinkOnce = (
       Effect.forkScoped,
     );
 
-    while (true) yield* next(silenceTimeout, "frame");
+    if (deps.leadCalls !== undefined) yield* deps.leadCalls.attach(send);
+
+    while (true) {
+      const frame = yield* next(silenceTimeout, "frame");
+      if (frame.t === "lead_result" && deps.leadCalls !== undefined) yield* deps.leadCalls.resolve(frame);
+    }
   }).pipe(
     Effect.catchTags({
       SocketError: (error): Effect.Effect<never, LinkFatal | LinkLost> => {
@@ -194,6 +201,8 @@ export interface RunNodeOptions {
   /** Runs after the first welcome of a link that carried the enroll token. */
   readonly onEnrolled?: Effect.Effect<void>;
   readonly sessions?: SessionKeeperOptions;
+  /** Relays lead-side CLI calls over each welcomed link. */
+  readonly leadCalls?: LeadRelay;
 }
 
 /** Reconnect delay: 1 s doubling to 30 s, ±20% jitter. Resets after each welcome. */
@@ -220,6 +229,7 @@ export const runNode = Effect.fn("runNode")(function* (options: RunNodeOptions) 
         keeper,
         t3,
         enrollToken,
+        leadCalls: options.leadCalls,
         onWelcome: Effect.suspend(() => {
           attempt = 0;
           if (enrollToken === undefined) return Effect.void;
