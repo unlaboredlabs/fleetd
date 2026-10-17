@@ -152,10 +152,13 @@ impl Area {
         self.wakes.on_answered(project_ref, answers);
     }
 
-    /// The area's loops: decision wakes, project removals (with their catch-up), and routing answers.
-    pub fn run(self: &Arc<Self>) {
-        tokio::spawn(Arc::clone(&self.wakes).run_decision_wakes());
-        tokio::spawn(Arc::clone(&self.removals).run());
-        tokio::spawn(Arc::clone(&self.intake).run_answers());
+    /// The area's loops: decision wakes, project removals (with their catch-up), and routing answers. They run until
+    /// aborted; `hub/serve` keeps the handles.
+    pub fn run(self: &Arc<Self>) -> Vec<tokio::task::JoinHandle<()>> {
+        vec![
+            tokio::spawn(Arc::clone(&self.wakes).run_decision_wakes()),
+            tokio::spawn(Arc::clone(&self.removals).run()),
+            tokio::spawn(Arc::clone(&self.intake).run_answers()),
+        ]
     }
 }
