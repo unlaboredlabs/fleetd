@@ -13,7 +13,7 @@ use tokio::sync::Notify;
 use super::contract::*;
 use super::github::{GhOut, GhRunner, TRAIN_CONTEXT};
 use super::host::*;
-use super::records::{Db, ListFilter, M7_DDL};
+use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
 use crate::clock::SystemClock;
 
@@ -317,6 +317,20 @@ impl TrainHost for FakeHost {
     fn resolve_decision(&self, key: &str, _: &ProjectRef) -> Option<DecisionView> {
         self.decisions.lock().unwrap().get(key).cloned()
     }
+    fn record_decision(
+        &self,
+        _: &str,
+        _: &ProjectRef,
+        _: &str,
+        _: Option<&str>,
+        _: bool,
+        _: &str,
+    ) -> Result<(), String> {
+        Err("decisions are set directly in train tests".into())
+    }
+    fn retire_decision(&self, _: &str) -> Result<(), String> {
+        Err("decisions are set directly in train tests".into())
+    }
     fn record_incident(&self, incident: IncidentInput) {
         self.incidents.lock().unwrap().push(incident);
     }
@@ -520,9 +534,7 @@ impl Kit {
             ],
         );
 
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(M7_DDL).unwrap();
-        let db: Db = Arc::new(Mutex::new(conn));
+        let db: Db = crate::hub::store::HubDb::open_memory().unwrap();
         let gh = Arc::new(FakeGh {
             origin,
             pulls: Mutex::default(),
@@ -973,6 +985,7 @@ async fn holds_while_the_freeze_decision_is_true_and_resumes_when_it_goes() {
         key: key.into(),
         value: "true".into(),
         why: Some("release week".into()),
+        global: false,
     };
     kit.host
         .decisions

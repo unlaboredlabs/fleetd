@@ -151,6 +151,8 @@ pub struct Train {
     recovered: Mutex<HashSet<String>>,
     last_bypass_check: Mutex<HashMap<String, i64>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
+    /// The follower and every repo loop, aborted by `stop`.
+    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -187,6 +189,7 @@ impl Train {
             recovered: Mutex::default(),
             last_bypass_check: Mutex::default(),
             merge_refusals: Mutex::default(),
+            tasks: Mutex::default(),
         })
     }
 
@@ -198,12 +201,23 @@ impl Train {
         &self.github
     }
 
+    pub fn host(&self) -> &dyn TrainHost {
+        self.host.as_ref()
+    }
+
+    /// Stops the follower and every repo loop.
+    pub fn stop(&self) {
+        for task in lock(&self.tasks).drain(..) {
+            task.abort();
+        }
+    }
+
     /// Follows `task.completed` for auto-enqueue and starts the loop of every known train.
     pub fn start(self: &Arc<Self>) {
         // The cursor is read here, not in the task, so nothing appended before the task first runs is missed.
         let from = self.host.events_head();
         let me = Arc::downgrade(self);
-        tokio::spawn(async move {
+        let follower = tokio::spawn(async move {
             let mut cursor = from;
             loop {
                 let Some(train) = me.upgrade() else { return };
@@ -217,6 +231,7 @@ impl Train {
                 }
             }
         });
+        lock(&self.tasks).push(follower);
         for train in self.records.trains() {
             self.ensure_loop(&train.repo);
         }
@@ -991,7 +1006,7 @@ impl Train {
             .or_default()
             .clone();
         let (me, repo) = (self.me.clone(), repo.to_string());
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             loop {
                 let Some(train) = me.upgrade() else { return };
                 let pass = {
@@ -1013,6 +1028,7 @@ impl Train {
                 }
             }
         });
+        lock(&self.tasks).push(task);
     }
 
     async fn refuse(

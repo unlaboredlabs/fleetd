@@ -1,5 +1,8 @@
 //! The lead's `fleetd change enqueue|status` (leads/LeadCallHandler.ts `change_enqueue`, `change_status`). The
 //! caller is already attributed to a project by its cwd; both act only within that project.
+//!
+//! PORT: link. Register both in link's `LeadCalls` under `change_enqueue` and `change_status`, answering
+//! `LeadCallResult { op, change, next }` and mapping `TrainError` to `LeadCallRefused` with `tools::tool_error`.
 use super::contract::{Change, ChangeEnqueueCall, ChangeId, ChangeState, ProjectRef};
 use super::service::{Train, TrainError};
 

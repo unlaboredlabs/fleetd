@@ -3,9 +3,9 @@
 //! nothing more. Every verdict is bound to the patch id of the head it reviewed, and only verdicts bound to the
 //! Change's current patch id count. Blocking findings go back to the author task and the Change waits for a new head,
 //! which the train brings back here with its new patch id; M6's polish-loop rule caps those rounds.
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
 use super::patch_ids;
@@ -19,7 +19,7 @@ use crate::hub::train::contract::{
     tier_str,
 };
 use crate::hub::train::host::{BoxFut, EventView, PrVerdict, ReviewSpawn, TrainHost};
-use crate::hub::train::records::Db;
+use crate::hub::train::records::{Db, sql};
 use crate::hub::train::service::{ReviewGate, Train, Verdict};
 
 /// Recorded as the spawner of review tasks and the sender of findings.
@@ -69,10 +69,6 @@ impl Reviews {
         }
     }
 
-    fn conn(&self) -> MutexGuard<'_, Connection> {
-        self.db.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
     fn train(&self) -> Option<Arc<Train>> {
         self.train.upgrade()
     }
@@ -84,7 +80,7 @@ impl Reviews {
     }
 
     /// Follows verdicts and review tasks ending, from now on.
-    pub fn start(self: &Arc<Self>) {
+    pub fn start(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         // Read here, not in the task, so nothing appended before the task first runs is missed.
         let from = self.host.events_head();
         let me = Arc::downgrade(self);
@@ -98,7 +94,7 @@ impl Reviews {
                     reviews.handle(&event).await;
                 }
             }
-        });
+        })
     }
 
     /// The review rule for the Change's tier from its workstream's pinned playbook, else the coded one.
@@ -112,8 +108,8 @@ impl Reviews {
     }
 
     fn reviewer_task(&self, task_id: &str) -> Option<ReviewerTask> {
-        self.conn()
-            .query_row(
+        sql(&self.db, |conn| {
+            conn.query_row(
                 "SELECT change_id, role FROM review_tasks WHERE task_id = ?1",
                 [task_id],
                 |r| {
@@ -125,25 +121,28 @@ impl Reviews {
             )
             .optional()
             .expect("review task")
+        })
     }
 
     fn put_patch(&self, change_id: &ChangeId, sha: &str, patch_id: &str) {
-        self.conn()
+        sql(&self.db, |conn| {
+            conn
             .execute("INSERT OR REPLACE INTO review_patch_ids (change_id, head_sha, patch_id) VALUES (?1, ?2, ?3)", params![change_id.as_str(), sha, patch_id])
-            .expect("put patch id");
+            .expect("put patch id")
+        });
     }
 
     /// The patch id of `sha`: known from the train for heads it handed over, else computed on the project's machine.
     async fn patch_for(&self, change: &Change, sha: &str) -> Result<String, String> {
-        let known: Option<String> = self
-            .conn()
-            .query_row(
+        let known: Option<String> = sql(&self.db, |conn| {
+            conn.query_row(
                 "SELECT patch_id FROM review_patch_ids WHERE change_id = ?1 AND head_sha = ?2",
                 params![change.change_id.as_str(), sha],
                 |r| r.get(0),
             )
             .optional()
-            .expect("patch id");
+            .expect("patch id")
+        });
         if let Some(known) = known {
             return Ok(known);
         }
@@ -174,8 +173,7 @@ impl Reviews {
 
     /// The verdicts bound to `patch_id`, with their roles, as the gate and `mark_ready` take them.
     fn bound_to(&self, change: &Change, patch_id: &str) -> Vec<(ChangeReview, RoleReview)> {
-        let rows: Vec<(String, String, i64, i64, String)> = {
-            let conn = self.conn();
+        let rows: Vec<(String, String, i64, i64, String)> = sql(&self.db, |conn| {
             let mut stmt = conn
                 .prepare_cached(
                     "SELECT b.task_id, b.pr_head_sha, b.blocking, b.non_blocking, t.role
@@ -188,7 +186,7 @@ impl Reviews {
             .expect("query")
             .map(|r| r.expect("row"))
             .collect()
-        };
+        });
         rows.into_iter()
             .map(|(task_id, sha, blocking, non_blocking, role)| {
                 let role = ReviewRole::parse(&role);
@@ -217,15 +215,15 @@ impl Reviews {
 
     fn gate_for(&self, change: &Change, patch_id: &str) -> (Gate, Vec<ChangeReview>) {
         let bound = self.bound_to(change, patch_id);
-        let waived: Option<String> = self
-            .conn()
-            .query_row(
+        let waived: Option<String> = sql(&self.db, |conn| {
+            conn.query_row(
                 "SELECT reason FROM review_waivers WHERE change_id = ?1 AND patch_id = ?2",
                 params![change.change_id.as_str(), patch_id],
                 |r| r.get(0),
             )
             .optional()
-            .expect("waiver");
+            .expect("waiver")
+        });
         let roles: Vec<RoleReview> = bound.iter().map(|(_, r)| r.clone()).collect();
         let g = gate(
             change.tier,
@@ -251,8 +249,7 @@ impl Reviews {
             Vec::new()
         };
         let codex = codex_instance(&instances);
-        let spawned: Vec<ReviewRole> = {
-            let conn = self.conn();
+        let spawned: Vec<ReviewRole> = sql(&self.db, |conn| {
             let mut stmt = conn
                 .prepare_cached(
                     "SELECT role FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2",
@@ -264,7 +261,7 @@ impl Reviews {
             .expect("query")
             .map(|r| ReviewRole::parse(&r.expect("row")))
             .collect()
-        };
+        });
         let missing = missing_reviews(&review_plan(&rule, codex.is_some()), &spawned);
         if missing.is_empty() {
             return;
@@ -272,8 +269,7 @@ impl Reviews {
 
         // The hub's rounds are held to M6's review rules like anyone's. When the polish-loop rule says review is over
         // for this PR, this patch rides on the earlier clean rounds instead of getting a third.
-        let verdicts: Vec<PrVerdict> = {
-            let conn = self.conn();
+        let verdicts: Vec<PrVerdict> = sql(&self.db, |conn| {
             let mut stmt = conn.prepare_cached("SELECT task_id, sha, blocking FROM review_verdicts WHERE pr_key = ?1 ORDER BY n DESC LIMIT 200").expect("prepare");
             stmt.query_map([pr_key(&change.pr_url)], |r| {
                 Ok(PrVerdict {
@@ -285,7 +281,7 @@ impl Reviews {
             .expect("query")
             .map(|r| r.expect("row"))
             .collect()
-        };
+        });
         if let Some(refusal) = self.host.review_refusal(
             &change.workstream_id,
             &change.pr_url,
@@ -294,12 +290,14 @@ impl Reviews {
         ) {
             if refusal.polish_loop {
                 let reason = format!("review waived by the polish-loop rule: {}", refusal.message);
-                self.conn()
+                sql(&self.db, |conn| {
+                    conn
                     .execute(
                         "INSERT OR IGNORE INTO review_waivers (change_id, patch_id, reason) VALUES (?1, ?2, ?3)",
                         params![change.change_id.as_str(), patch_id, reason],
                     )
-                    .expect("put waiver");
+                    .expect("put waiver")
+                });
                 return self.note(&change.change_id, &reason);
             }
             return self.note(
@@ -379,12 +377,14 @@ impl Reviews {
                 );
                 continue;
             }
-            self.conn()
+            sql(&self.db, |conn| {
+                conn
                 .execute(
                     "INSERT OR IGNORE INTO review_tasks (task_id, change_id, role, patch_id) VALUES (?1, ?2, ?3, ?4)",
                     params![task.task_id.as_str(), change.change_id.as_str(), role, patch_id],
                 )
-                .expect("put review task");
+                .expect("put review task")
+            });
         }
     }
 
@@ -462,19 +462,22 @@ impl Reviews {
         let blocking = data.get("blocking").and_then(Value::as_i64).unwrap_or(0);
         let non_blocking = data.get("nonBlocking").and_then(Value::as_i64).unwrap_or(0);
         let patch_id = self.patch_for(&change, &sha).await?;
-        self.conn()
+        sql(&self.db, |conn| {
+            conn
             .execute(
                 "INSERT OR REPLACE INTO review_bindings (task_id, pr_head_sha, patch_id, blocking, non_blocking) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![task_id, sha, patch_id, blocking, non_blocking],
             )
-            .expect("bind verdict");
+            .expect("bind verdict")
+        });
         // Findings on an older patch were already overtaken by a new head.
         if blocking > 0 && change.patch_id.as_deref() == Some(patch_id.as_str()) {
-            let stored: Option<String> = self
-                .conn()
+            let stored: Option<String> = sql(&self.db, |conn| {
+                conn
                 .query_row("SELECT data FROM review_verdicts WHERE task_id = ?1 AND sha = ?2 ORDER BY n DESC LIMIT 1", params![task_id, sha], |r| r.get(0))
                 .optional()
-                .expect("verdict");
+                .expect("verdict")
+            });
             let summary = stored
                 .and_then(|d| serde_json::from_str::<Value>(&d).ok())
                 .and_then(|v| v.get("summary").and_then(Value::as_str).map(String::from))
@@ -527,15 +530,15 @@ impl Reviews {
         let Some(row) = self.reviewer_task(task_id) else {
             return;
         };
-        let bound = self
-            .conn()
-            .query_row(
+        let bound = sql(&self.db, |conn| {
+            conn.query_row(
                 "SELECT 1 FROM review_bindings WHERE task_id = ?1 LIMIT 1",
                 [task_id],
                 |_| Ok(()),
             )
             .optional()
-            .expect("bound");
+            .expect("bound")
+        });
         if bound.is_none() {
             let how = event
                 .event_type

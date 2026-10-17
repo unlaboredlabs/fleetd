@@ -6,10 +6,12 @@ pub mod digest;
 pub mod git;
 pub mod github;
 pub mod host;
+pub mod hub_host;
 pub mod records;
 pub mod rules;
 pub mod service;
 pub mod time;
+pub mod tools;
 
 #[cfg(test)]
 mod tests;

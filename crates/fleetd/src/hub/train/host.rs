@@ -71,6 +71,8 @@ pub struct DecisionView {
     pub key: String,
     pub value: String,
     pub why: Option<String>,
+    /// Global scope (else project or workstream).
+    pub global: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -146,6 +148,18 @@ pub trait TrainHost: Send + Sync + 'static {
     fn playbook(&self, pin: &str) -> Option<PlaybookView>;
     /// Decisions.resolve along the project's chain.
     fn resolve_decision(&self, key: &str, project_ref: &ProjectRef) -> Option<DecisionView>;
+    /// Decisions.record of `key = value` at the project's scope, by `by` (`human:<name>` or an agent key's name).
+    fn record_decision(
+        &self,
+        key: &str,
+        project_ref: &ProjectRef,
+        value: &str,
+        why: Option<&str>,
+        human: bool,
+        by: &str,
+    ) -> Result<(), String>;
+    /// Decisions.retire.
+    fn retire_decision(&self, decision_id: &str) -> Result<(), String>;
     fn record_incident(&self, incident: IncidentInput);
     /// EventLog.append at now, on the project.
     fn append_event(
