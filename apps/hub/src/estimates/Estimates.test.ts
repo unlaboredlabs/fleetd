@@ -6,6 +6,7 @@ import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import * as Incidents from "../incidents/Incidents.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
+import * as Playbooks from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import { REF } from "../tasks/testKit.ts";
@@ -13,7 +14,7 @@ import * as Estimates from "./Estimates.ts";
 
 const layer = Estimates.layer.pipe(
   Layer.provideMerge(Incidents.layer),
-  Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, EventLog.layer)),
+  Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, EventLog.layer, Playbooks.layer())),
   Layer.provideMerge(HubDb.layerMemory),
   Layer.provideMerge(TestClock.layer()),
 );

@@ -21,6 +21,8 @@ export interface LeadsOptions {
   readonly effort?: Effort;
   /** The prompt template; defaults to the current prompt-v<n>.md read from beside this module. */
   readonly prompt?: string;
+  /** The user's playbook overrides, `<hub home>/playbooks`; absent means fleetd's bundled playbooks only. */
+  readonly playbookOverrides?: string;
 }
 
 export const DEFAULT_LEAD_MODEL = "claude-opus-5-5";

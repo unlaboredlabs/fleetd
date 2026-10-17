@@ -218,6 +218,11 @@ const MIGRATIONS: ReadonlyArray<string> = [
     change_id TEXT NOT NULL, patch_id TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY (change_id, patch_id)
   );
   `,
+  // M9 playbooks: the text of every playbook version a workstream pinned, so its brief is checked against that version
+  // after the file changes.
+  `
+  CREATE TABLE playbook_versions (ref TEXT PRIMARY KEY, text TEXT NOT NULL);
+  `,
 ];
 
 /** The `user_version` of a fully migrated database. */

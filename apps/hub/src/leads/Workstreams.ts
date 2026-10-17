@@ -5,6 +5,8 @@ import {
   type AskId,
   type BriefCreateResult,
   type IntakeChannel,
+  type PlaybookName,
+  type PlaybookRef,
   type ProjectRef,
   type StatusSetResult,
   type Workstream,
@@ -18,6 +20,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
+import { floorRefusal, withTierDefault } from "../playbooks/floor.ts";
+import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { briefHash } from "./brief.ts";
@@ -32,13 +36,17 @@ export interface IntakeInput {
   readonly channel: IntakeChannel;
   /** An agent keyId, "human" or "lead:<machineId>/<projectId>". */
   readonly by: string;
+  /** M9: the playbook to pin; absent leaves the workstream unpinned, as before M9. */
+  readonly template?: PlaybookName;
 }
 
 export class Workstreams extends Context.Service<
   Workstreams,
   {
     /** Creates a draft workstream for the intent and wakes the lead. Idempotent per clientRequestId. */
-    readonly intake: (input: IntakeInput) => Effect.Effect<{ readonly workstreamId: WorkstreamId; readonly next?: string }, LeadError>;
+    readonly intake: (
+      input: IntakeInput,
+    ) => Effect.Effect<{ readonly workstreamId: WorkstreamId; readonly playbook?: PlaybookRef; readonly next?: string }, LeadError>;
     /** `fleetd brief create` from the lead of `caller`. `brief` is validated here. */
     readonly briefCreate: (
       caller: ProjectRef,
@@ -76,6 +84,7 @@ export const make = Effect.gen(function* () {
   const wakes = yield* LeadWakes.LeadWakes;
   const asks = yield* Asks;
   const decisions = yield* Decisions;
+  const playbooks = yield* Playbooks;
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
   /** The caller's own workstream, or a refusal that says why. */
@@ -118,19 +127,27 @@ export const make = Effect.gen(function* () {
           fix: "Call projects_list for the known projects.",
         });
       }
+      const pinned = input.template === undefined ? undefined : yield* playbooks.pin(input.template);
       const { workstream, created } = yield* records.workstreams.create({
         ref: input.ref,
         title: titleOf(input.text),
         source: { text: input.text, channel: input.channel, by: input.by, at: yield* nowIso },
         clientRequestId: input.clientRequestId,
+        ...(pinned === undefined ? {} : { playbook: pinned.ref }),
       });
       if (created) {
         yield* event(workstream, "workstream.created", `New intent ${workstream.workstreamId}: ${workstream.title}`);
-        yield* wakes.trigger(input.ref, { kind: "intent", workstreamId: workstream.workstreamId, text: input.text });
+        yield* wakes.trigger(input.ref, {
+          kind: "intent",
+          workstreamId: workstream.workstreamId,
+          text: input.text,
+          ...(pinned === undefined ? {} : { playbook: pinned.playbook }),
+        });
       }
       const lead = yield* records.leads.get(input.ref);
       return {
         workstreamId: workstream.workstreamId,
+        ...(workstream.playbook === undefined ? {} : { playbook: workstream.playbook }),
         next:
           lead === undefined
             ? `${workstream.workstreamId} is a draft. The project has no lead yet; call lead_start and it will pick this up.`
@@ -160,18 +177,28 @@ export const make = Effect.gen(function* () {
 
   const briefCreate: Workstreams["Service"]["briefCreate"] = (caller, input) =>
     Effect.gen(function* () {
-      const brief = yield* decodeBrief(input.brief).pipe(
+      const stored = yield* ownWorkstream(caller, input.workstreamId);
+      const w = stored.workstream;
+      // M9: checked against the version pinned at intake, whatever the playbook file says now.
+      const playbook = w.playbook === undefined ? undefined : (yield* playbooks.byRef(w.playbook))?.playbook;
+      const brief = yield* decodeBrief(playbook === undefined ? input.brief : withTierDefault(input.brief, playbook)).pipe(
         Effect.mapError(
           (error) =>
             new LeadError({
               code: "invalid",
               message: `Invalid brief: ${error.message}`.slice(0, 1000),
-              fix: "A brief needs goal, why, pointers, constraints, at least one doneWhen check and a tier (S, M or L).",
+              fix: `A brief needs goal, why, pointers, constraints, at least one doneWhen check and a tier (S, M or L${playbook === undefined ? "" : `; ${playbook.name} defaults to ${playbook.tierDefault}`}).`,
             }),
         ),
       );
-      const stored = yield* ownWorkstream(caller, input.workstreamId);
-      const w = stored.workstream;
+      const short = playbook === undefined ? undefined : floorRefusal(playbook, brief);
+      if (short !== undefined) {
+        return yield* new LeadError({
+          code: "invalid",
+          message: short,
+          fix: `Add what is missing to the brief and run \`fleetd brief create --workstream ${w.workstreamId}\` again.`,
+        });
+      }
       if (LeadRecords.CLOSED_STATES.includes(w.state)) {
         return yield* new LeadError({ code: "invalid", message: `${w.workstreamId} is ${w.state}; its brief can no longer change.` });
       }

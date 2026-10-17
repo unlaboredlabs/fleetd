@@ -1,4 +1,5 @@
 import os from "node:os";
+import path from "node:path";
 import { parseArgs } from "node:util";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -129,7 +130,7 @@ export const hubLayer = (home: string, options: HubOptions) =>
         Layer.provideMerge(HumanDigests.layer),
         Layer.provideMerge(layerTasks),
         // Leads and the ledger; lead wakes go out through the write queue below.
-        Layer.provideMerge(LeadsLayer.layerWithLedger()),
+        Layer.provideMerge(LeadsLayer.layerWithLedger({ playbookOverrides: path.join(home, "playbooks") })),
         Layer.provideMerge(Wakes.layer),
         Layer.provideMerge(
           WriteQueue.layer(options.queueTtlSec === undefined ? {} : { ttl: Duration.seconds(options.queueTtlSec) }),

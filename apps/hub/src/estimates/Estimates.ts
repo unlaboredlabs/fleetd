@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { Incidents } from "../incidents/Incidents.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
+import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import { calibrate, etaOf, MISS_RATIO, WINDOW } from "./calibration.ts";
@@ -31,6 +32,7 @@ export const make = Effect.gen(function* () {
   const { db } = yield* HubDb.HubDb;
   const records = yield* LeadRecords.LeadRecords;
   const incidents = yield* Incidents;
+  const playbooks = yield* Playbooks;
 
   const sql = {
     get: db.prepare("SELECT * FROM estimates WHERE workstream_id = ?"),
@@ -44,7 +46,15 @@ export const make = Effect.gen(function* () {
     ),
   };
 
-  const calibrationOf = (tier: Tier) => Effect.sync(() => calibrate(sql.ratios.all(tier, WINDOW).map((row) => Number(row.ratio))));
+  // M9 playbook hook: below MIN_SAMPLES the workstream's pinned playbook supplies the prior.
+  const calibrationOf = (tier: Tier, workstream: Workstream) =>
+    Effect.gen(function* () {
+      const pinned = workstream.playbook === undefined ? undefined : yield* playbooks.byRef(workstream.playbook);
+      return calibrate(
+        sql.ratios.all(tier, WINDOW).map((row) => Number(row.ratio)),
+        pinned?.playbook.estimatePrior,
+      );
+    });
 
   const putEstimateActual = (workstreamId: WorkstreamId, estimateActual: NonNullable<Workstream["estimateActual"]>) =>
     Effect.gen(function* () {
@@ -55,9 +65,10 @@ export const make = Effect.gen(function* () {
 
   const recordStart: Estimates["Service"]["recordStart"] = (workstreamId) =>
     Effect.gen(function* () {
-      const brief = (yield* records.workstreams.get(workstreamId))?.workstream.brief;
-      if (brief?.estimate === undefined || sql.get.get(workstreamId) !== undefined) return;
-      const { ratio } = yield* calibrationOf(brief.tier);
+      const workstream = (yield* records.workstreams.get(workstreamId))?.workstream;
+      const brief = workstream?.brief;
+      if (workstream === undefined || brief?.estimate === undefined || sql.get.get(workstreamId) !== undefined) return;
+      const { ratio } = yield* calibrationOf(brief.tier, workstream);
       const now = yield* Clock.currentTimeMillis;
       sql.start.run(workstreamId, brief.tier, brief.estimate.rawMinutes, ratio, now);
       yield* putEstimateActual(workstreamId, { ratioAtStart: ratio });
@@ -91,13 +102,13 @@ export const make = Effect.gen(function* () {
     const brief = workstream.brief;
     if (brief?.estimate === undefined) return Effect.succeed(undefined);
     const raw = brief.estimate.rawMinutes;
-    return Effect.map(calibrationOf(brief.tier), (c) => etaOf(raw, c));
+    return Effect.map(calibrationOf(brief.tier, workstream), (c) => etaOf(raw, c));
   };
 
   return Estimates.of({ recordStart, recordDone, eta });
 });
 
-/** Needs HubDb, LeadRecords and Incidents. */
+/** Needs HubDb, LeadRecords, Incidents and Playbooks. */
 export const layer = Layer.effect(Estimates, make);
 
 /** Starts the clock on every `workstream.running` event from the hub's start on. Needs Estimates and EventLog. */

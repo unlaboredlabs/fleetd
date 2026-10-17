@@ -13,6 +13,11 @@ describe("calibrate", () => {
     expect(calibrate(ratios)).toEqual(expected);
   });
 
+  it("uses the playbook's prior below 5 samples, and the measured ratio from then on", () => {
+    expect(calibrate([1, 1], 3)).toEqual({ ratio: 3, samples: 2 });
+    expect(calibrate([2, 2, 2, 2, 2], 3)).toEqual({ ratio: 2, samples: 5 });
+  });
+
   it("looks only at the latest 20 (the input is newest first)", () => {
     const latest = Array.from({ length: 20 }, () => 1.5);
     expect(calibrate([...latest, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9])).toEqual({ ratio: 1.5, samples: 20, p80Ratio: 1.5 });

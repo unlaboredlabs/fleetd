@@ -93,6 +93,17 @@ describe("reviewRefusal", () => {
   it("leaves write and read tasks alone", () => {
     expect(reviewRefusal({ workstreamId: W1, kind: "write", serves: "done:0" }, "lead", A, [v("T1", A, 0)])).toBeUndefined();
   });
+  it("caps a lead's review rounds at the playbook's maxReviewRounds, counting reviewed heads", () => {
+    const twoRounds = [v("T2", B, 1), v("T1", A, 2)];
+    const capped = `${PR} has had 2 review rounds, the most its playbook allows.`;
+    expect(reviewRefusal(review(), "lead", C, twoRounds, 2)?.message).toBe(capped);
+    expect(reviewRefusal(review(), "lead", undefined, twoRounds, 2)?.message).toBe(capped);
+    // Another reviewer on a head already in review is the same round.
+    expect(reviewRefusal(review(), "lead", B, twoRounds, 2)).toBeUndefined();
+    expect(reviewRefusal(review(), "lead", C, twoRounds, 3)).toBeUndefined();
+    // The train's review gate is never capped.
+    expect(reviewRefusal(review(), "hub:reviews", C, twoRounds, 2)).toBeUndefined();
+  });
 });
 
 describe("prKey and pullsPath", () => {

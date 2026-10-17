@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { Incidents } from "../incidents/Incidents.ts";
 import { LeadError } from "../leads/LeadError.ts";
+import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
@@ -40,6 +41,7 @@ export const make = Effect.gen(function* () {
   const incidents = yield* Incidents;
   const prHeads = yield* PrHeads;
   const judge = yield* JudgeHook;
+  const playbooks = yield* Playbooks;
 
   const sql = {
     insert: db.prepare("INSERT INTO review_verdicts (task_id, pr_key, sha, blocking, at_ms, data) VALUES (?, ?, ?, ?, ?, ?)"),
@@ -67,7 +69,9 @@ export const make = Effect.gen(function* () {
           : yield* prHeads.headSha(pr).pipe(
               Effect.catch((error) => Effect.as(Effect.logWarning("value bar: PR head unknown", { pr, error: error.message }), undefined)),
             );
-      const review = reviewRefusal(request, caller.by, head, verdicts);
+      // M9 playbook hook: the pinned playbook caps review rounds.
+      const pinned = workstream.playbook === undefined ? undefined : yield* playbooks.byRef(workstream.playbook);
+      const review = reviewRefusal(request, caller.by, head, verdicts, pinned?.playbook.valueBar.maxReviewRounds);
       if (review === undefined) return;
       if (review.polishLoop !== undefined) {
         yield* incidents.record({ class: "polish_loop", projectRef: caller.projectRef, workstreamId: workstream.workstreamId, evidence: review.polishLoop });
@@ -112,5 +116,5 @@ export const make = Effect.gen(function* () {
   return ValueBar.of({ checkSpawn, recordVerdict });
 });
 
-/** Needs HubDb, EventLog, TaskRecords, Incidents, PrHeads and JudgeHook. */
+/** Needs HubDb, EventLog, TaskRecords, Incidents, PrHeads, JudgeHook and Playbooks. */
 export const layer = Layer.effect(ValueBar, make);
