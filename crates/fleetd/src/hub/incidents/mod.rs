@@ -13,6 +13,8 @@ use fleetd_contracts::verification::{Incident, IncidentClass, IncidentId};
 use rusqlite::{OptionalExtension, named_params};
 use std::sync::Arc;
 
+pub mod detectors;
+
 /// An `Incident` before the hub numbers and dates it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IncidentInput {
