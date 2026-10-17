@@ -38,14 +38,7 @@ pub fn parse_state(s: &str) -> Option<ChangeState> {
     serde_json::from_value(serde_json::Value::String(s.into())).ok()
 }
 
-/// A playbook's review rule for one tier. Mirrors `fleetd_contracts::playbooks::ReviewRule` (not on main yet) as a
-/// plain view; the hub's adapter fills it from the pinned playbook.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ReviewRule {
-    pub reviewers: i64,
-    pub verifier: bool,
-    pub plan_first: bool,
-}
+pub use fleetd_contracts::playbooks::ReviewRule;
 
 /// `lastError` as stored: at most 2000 characters, as error_text and note cut it.
 pub fn last_error(text: impl Into<String>) -> Text<0, 2000> {

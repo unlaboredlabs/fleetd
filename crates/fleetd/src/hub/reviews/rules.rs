@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::hub::train::contract::{Change, ReviewRule, Tier, tier_str};
-use crate::hub::train::host::{PlaybookView, ProviderView, TaskView};
+use crate::hub::train::host::{PlaybookView, TaskView};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReviewRole {
@@ -39,20 +39,22 @@ pub struct PlannedReview {
     pub provider: ReviewProvider,
 }
 
-const fn rule(reviewers: i64, verifier: bool, plan_first: bool) -> ReviewRule {
+fn rule(reviewers: i64, verifier: bool, plan_first: bool) -> ReviewRule {
     ReviewRule {
-        reviewers,
+        reviewers: fleetd_contracts::prim::Int::unchecked(reviewers),
         verifier,
         plan_first,
     }
 }
 
 /// Without a pinned playbook. S: none. M: one reviewer. L: two reviewers plus a verifier.
-pub const CODED_RULES: [ReviewRule; 3] = [
-    rule(0, false, false),
-    rule(1, false, false),
-    rule(2, true, true),
-];
+pub fn coded_rules() -> [ReviewRule; 3] {
+    [
+        rule(0, false, false),
+        rule(1, false, false),
+        rule(2, true, true),
+    ]
+}
 
 fn tier_index(tier: Tier) -> usize {
     match tier {
@@ -64,12 +66,13 @@ fn tier_index(tier: Tier) -> usize {
 
 /// The pinned playbook's `reviewRules` for the tier, else the coded ones.
 pub fn rule_for(tier: Tier, playbook: Option<&PlaybookView>) -> ReviewRule {
-    playbook.map_or(CODED_RULES, |p| p.review_rules)[tier_index(tier)]
+    let rules = playbook.map_or_else(coded_rules, |p| p.review_rules.clone());
+    rules[tier_index(tier)].clone()
 }
 
 /// The rule's reviewers from fresh sessions, the second on Codex when there is one, plus its verifier.
 pub fn review_plan(rule: &ReviewRule, codex_available: bool) -> Vec<PlannedReview> {
-    let mut plan: Vec<PlannedReview> = (0..rule.reviewers)
+    let mut plan: Vec<PlannedReview> = (0..rule.reviewers.get())
         .map(|i| PlannedReview {
             role: ReviewRole::Reviewer,
             provider: if i == 1 && codex_available {
@@ -90,7 +93,7 @@ pub fn review_plan(rule: &ReviewRule, codex_available: bool) -> Vec<PlannedRevie
 
 /// Nothing to review: the Change may be taken as soon as it is enqueued.
 pub fn needs_no_review(rule: &ReviewRule) -> bool {
-    rule.reviewers == 0 && !rule.verifier
+    rule.reviewers.get() == 0 && !rule.verifier
 }
 
 /// The planned reviews not yet spawned for this patch, given the roles already spawned for it.
@@ -189,7 +192,7 @@ pub fn gate(
     let verified = current
         .iter()
         .any(|r| r.role == ReviewRole::Verifier && r.receipts);
-    if reviewers < rule.reviewers {
+    if reviewers < rule.reviewers.get() {
         return not_ready(
             false,
             format!("{reviewers}/{} clean reviews on this patch", rule.reviewers),
@@ -213,33 +216,7 @@ pub fn has_receipts(task: Option<&TaskView>) -> bool {
     task.is_some_and(|t| t.state == "done" && t.receipt_commands > 0 && !t.claims_unverified)
 }
 
-const CODEX_DRIVER: &str = "codex";
-const FLEETD_INSTANCE: &str = "fleetd";
-
-/// A usable Codex instance fleetd set up itself (its id starts with "fleetd"). Mirrors executor/ProviderList.ts.
-fn is_fleetd_codex(i: &ProviderView) -> bool {
-    i.driver == CODEX_DRIVER && i.usable && i.instance_id.starts_with(FLEETD_INSTANCE)
-}
-
-/// The first fleetd Codex instance with a model to run, and that model.
-pub fn codex_instance(instances: &[ProviderView]) -> Option<(&ProviderView, &str)> {
-    instances.iter().find_map(|i| {
-        if is_fleetd_codex(i) {
-            i.default_model.as_deref().map(|m| (i, m))
-        } else {
-            None
-        }
-    })
-}
-
-/// Usable Codex instances fleetd does not use, because their ids do not start with "fleetd".
-pub fn other_codex(instances: &[ProviderView]) -> Vec<String> {
-    instances
-        .iter()
-        .filter(|i| i.driver == CODEX_DRIVER && i.usable && !is_fleetd_codex(i))
-        .map(|i| i.instance_id.clone())
-        .collect()
-}
+pub use crate::hub::executor::providers::{codex_instance, other_codex};
 
 fn verdict_line(sha: &str, summary: &str) -> String {
     format!(
@@ -334,12 +311,13 @@ pub fn one_line(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
 
     const P: &str = "1111111111111111111111111111111111111111";
     const Q: &str = "2222222222222222222222222222222222222222";
-    const S: ReviewRule = CODED_RULES[0];
-    const M: ReviewRule = CODED_RULES[1];
-    const L: ReviewRule = CODED_RULES[2];
+    static S: LazyLock<ReviewRule> = LazyLock::new(|| coded_rules()[0].clone());
+    static M: LazyLock<ReviewRule> = LazyLock::new(|| coded_rules()[1].clone());
+    static L: LazyLock<ReviewRule> = LazyLock::new(|| coded_rules()[2].clone());
 
     fn review(
         task_id: &str,
@@ -500,7 +478,7 @@ mod tests {
             ],
         };
         assert_eq!(rule_for(Tier::M, Some(&strict)), strict.review_rules[1]);
-        assert_eq!(rule_for(Tier::M, None), M);
+        assert_eq!(rule_for(Tier::M, None), *M);
         assert_eq!(
             names(&review_plan(&rule_for(Tier::S, Some(&strict)), false)),
             ["reviewer/claude"]
@@ -515,7 +493,10 @@ mod tests {
             ]
         );
 
-        let (ss, sm) = (strict.review_rules[0], strict.review_rules[1]);
+        let (ss, sm) = (
+            strict.review_rules[0].clone(),
+            strict.review_rules[1].clone(),
+        );
         // A playbook that reviews S: tier S is no longer ready by itself.
         assert_eq!(
             gate(Tier::S, &ss, Some(P), &[], None).why,
@@ -553,6 +534,7 @@ mod tests {
 
     #[test]
     fn uses_only_a_usable_fleetd_codex_instance_with_a_model() {
+        use crate::hub::train::host::ProviderView;
         let p = |id: &str, driver: &str, usable: bool, model: Option<&str>| ProviderView {
             instance_id: id.into(),
             driver: driver.into(),
@@ -564,9 +546,8 @@ mod tests {
         let codex = p("fleetd-codex", "codex", true, Some("gpt-6-astra"));
         let theirs = p("codex", "codex", true, Some("gpt-6-astra"));
         assert_eq!(
-            codex_instance(&[claude.clone(), codex.clone()])
-                .map(|(i, m)| (i.instance_id.as_str(), m)),
-            Some(("fleetd-codex", "gpt-6-astra"))
+            codex_instance(&[claude.clone(), codex.clone()]).map(|i| i.instance_id.as_str()),
+            Some("fleetd-codex")
         );
         assert!(codex_instance(std::slice::from_ref(&claude)).is_none());
         assert!(
