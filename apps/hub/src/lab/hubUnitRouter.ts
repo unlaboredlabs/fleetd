@@ -26,7 +26,7 @@ const main = async () => {
   let client: Client | undefined;
   try {
     fs.rmSync(RUN, { recursive: true, force: true });
-    cli("init", "--home", HOME, "--listen", `127.0.0.1:${PORT}`, "--url", URL_, "--unit-suffix", SUFFIX.slice(1), "--name", "lab");
+    cli("init", "--home", HOME, "--listen", `127.0.0.1:${PORT}`, "--url", URL_, "--unit-suffix", SUFFIX.slice(1));
     const unitEnv = execFileSync("systemctl", ["--user", "show", UNIT, "-p", "Environment", "--value"], { encoding: "utf8" });
     check(!/ANTHROPIC|CLAUDE/u.test(unitEnv), `the installed unit carries no Claude login variables (${unitEnv.trim()})`);
     ok(`hub installed as ${UNIT}; its environment: ${unitEnv.trim().replace(/PATH=\S+/u, "PATH=…")}`);
