@@ -38,7 +38,13 @@
         "decision.recorded",
         "lead.started",
         "lead.woken",
-        "digest.ready"
+        "digest.ready",
+        "task.queued",
+        "task.started",
+        "task.completed",
+        "task.failed",
+        "task.cancelled",
+        "task.out_of_area"
       ]
     },
     "MachineId": {

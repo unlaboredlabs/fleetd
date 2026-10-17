@@ -14,6 +14,8 @@ import {
   Machine,
   ProjectOutcome,
   ProjectSummary,
+  SlotState,
+  Task,
   ThreadSummary,
   Workstream,
 } from "../src/index.ts";
@@ -33,6 +35,8 @@ const appFacing = {
   Ask,
   Batch,
   Decision,
+  Task,
+  SlotState,
 };
 
 /** File name -> file contents. */
