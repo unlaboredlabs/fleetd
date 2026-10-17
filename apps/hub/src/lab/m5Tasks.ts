@@ -50,17 +50,21 @@ const prepareRepo = (root: string) => {
   }
 };
 
-/** The tools Claude reported at session start for `threadId`, from T3's provider event log on that machine. */
-const initTools = (home: string, threadId: string): ReadonlyArray<string> | undefined => {
+/** T3's provider event log for `threadId` on a machine: what went to and came from Claude, as JSON lines. */
+const providerLog = (home: string, threadId: string): string => {
   const dir = path.join(home, "userdata/logs/provider");
-  for (const name of fs.readdirSync(dir)) {
-    const text = fs.readFileSync(path.join(dir, name), "utf8");
+  return fs
+    .readdirSync(dir)
+    .map((name) => fs.readFileSync(path.join(dir, name), "utf8"))
     // The log names the thread URL-encoded inside its provider session id.
-    if (!text.includes(threadId) && !text.includes(encodeURIComponent(threadId))) continue;
-    const tools = /"subtype":"init".*?"tools":(\[[^\]]*\])/u.exec(text)?.[1];
-    if (tools !== undefined) return JSON.parse(tools) as Array<string>;
-  }
-  return undefined;
+    .filter((text) => text.includes(threadId) || text.includes(encodeURIComponent(threadId)))
+    .join("\n");
+};
+
+/** The tools Claude reported at session start for `threadId`. */
+const initTools = (home: string, threadId: string): ReadonlyArray<string> | undefined => {
+  const tools = /"subtype":"init".*?"tools":(\[[^\]]*\])/u.exec(providerLog(home, threadId))?.[1];
+  return tools === undefined ? undefined : (JSON.parse(tools) as Array<string>);
 };
 
 /** The newest init tool list on a machine, for the control instance. */
@@ -221,12 +225,17 @@ export async function m5Tasks(lab: Lab) {
       match: (e) => (e.data?.triggers ?? []).includes("task_result"),
     });
     await spawnTurn;
-    // Read once the wake's turn is over, so the message is surely in the thread.
     const afterWake = await leadTurnDone(wake.event.seq, "T1 result wake");
-    const messages = (await callTool("thread_tail", { ...ref, threadId: leadThread, n: 20, kinds: ["message"] })).body.items as Array<Body>;
-    const inline = messages.filter((m) => m.role === "user" && m.text.includes("- T1 completed: add file (branch fleetd/T1-add-file"));
-    check(inline.length === 1 && /T1 completed[^\n]*\n {2}result:\n {2}> \S/u.test(inline[0]!.text), `one wake carries T1's result inline: ${JSON.stringify(messages).slice(0, 1500)}`);
-    ok(`1. one wake carried "T1 completed: add file (branch fleetd/T1-add-file)" with the result tail inline`);
+    // Results that land within the debounce window share one wake, which can outgrow thread_tail's 2,000 characters,
+    // so read the wakes as Claude received them, in the lead's provider log (JSON, so newlines show as \n).
+    const home = lab.machines.find((m) => m.id === MACHINE)!.t3Home;
+    const delivered = providerLog(home, leadThread);
+    const head = "- T1 completed: add file (branch fleetd/T1-add-file)";
+    check(
+      delivered.split(head).length === 2 && /^(\\n {2}receipts: [^\\]*)?\\n {2}result:\\n {2}> \S/u.test(delivered.split(head)[1]!),
+      `exactly one wake carries T1's result inline: ${delivered.slice(delivered.indexOf(head), delivered.indexOf(head) + 400)}`,
+    );
+    ok(`1. one wake carried "${head.slice(2)}" with the result tail inline (triggers: ${JSON.stringify(wake.event.data?.triggers)})`);
     check(git(root, "branch", "--list", "fleetd/T1-add-file").trim() !== "", "branch fleetd/T1-add-file exists in the repo");
     check((await task("T1")).worktreePath, `T1 records its worktree: ${JSON.stringify(await task("T1"))}`);
 
@@ -271,7 +280,6 @@ export async function m5Tasks(lab: Lab) {
     ok(`project_get: taskCounts ${JSON.stringify(final.taskCounts)}; no task thread among its ${final.threads.length} threads`);
 
     // 5. The instance hides every T3 tool and Claude's Task tool from lead and task threads alike.
-    const home = lab.machines.find((m) => m.id === MACHINE)!.t3Home;
     for (const threadId of [leadThread, t1.threadRef.threadId as string]) {
       const tools = initTools(home, threadId);
       check(tools !== undefined && tools.includes("Bash"), `init tool list for ${threadId}: ${JSON.stringify(tools)}`);
