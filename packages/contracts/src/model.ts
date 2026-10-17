@@ -75,6 +75,8 @@ export const ActionItem = Schema.Struct({
   /** The command, path or tool. */
   summary: Schema.String.check(Schema.isMaxLength(200)),
   outputTail: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+  /** Only when T3 reports one or the output says "Exit code N"; T3's Claude adapter sets none itself. */
+  exitCode: Schema.optionalKey(Schema.Int),
   failed: Schema.Boolean,
 }).annotate({ identifier: "ActionItem" });
 export type ActionItem = typeof ActionItem.Type;
