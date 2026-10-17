@@ -16,9 +16,9 @@ import * as NodeLinkServer from "../link/NodeLinkServer.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
-import { LAB, REPO, scrubbedEnv } from "./harness.ts";
+import { fleetdCommand, LAB, scrubbedEnv, slotPort } from "./harness.ts";
 
-const PORT = Number(process.env.FLEETD_LAB_CMD_PORT ?? 4781);
+const PORT = Number(process.env.FLEETD_LAB_CMD_PORT ?? slotPort(4781));
 const DIR = path.join(LAB, `m6a-cmd-check-${PORT}`);
 const MACHINE = "lab-m6a" as MachineId;
 const WORKSPACE = path.join(LAB, "repo-a");
@@ -68,9 +68,7 @@ const program = Effect.gen(function* () {
 
   const log = fs.openSync(path.join(DIR, "node.log"), "a");
   const node = spawn(
-    process.execPath,
-    [
-      path.join(REPO, "apps/cli/src/bin.ts"),
+    ...fleetdCommand([
       "node", "join",
       "--hub", `http://127.0.0.1:${PORT}`,
       "--token", token,
@@ -79,7 +77,7 @@ const program = Effect.gen(function* () {
       // Nothing listens here: the node links as degraded, which is all cmd_check needs.
       "--t3-url", `http://127.0.0.1:${PORT + 1}`,
       "--home", path.join(DIR, "node"),
-    ],
+    ]),
     { env: scrubbedEnv(), stdio: ["ignore", log, log] },
   );
   console.log(`started fleetd node pid=${node.pid}`);

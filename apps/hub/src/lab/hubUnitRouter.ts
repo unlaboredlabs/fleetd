@@ -1,6 +1,6 @@
 // Lab check: an intent without a project is routed by a hub installed the way users get it (`fleetd init`'s systemd
 // user unit, so only HOME, PATH and LANG in its environment), proving the router reaches Claude through the user's own
-// `claude` login. Lab only: its own hub home, port and unit suffix; lab T3s on 4711/4712. One haiku router run.
+// `claude` login. Lab only: its own hub home, port and unit suffix; lab T3s on 4711/4712 (FLEETD_LAB_SLOT shifts both). One haiku router run.
 //
 //   node apps/hub/src/lab/hubUnitRouter.ts
 import { execFileSync } from "node:child_process";
@@ -10,13 +10,13 @@ import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, check, cli, lab, LAB, MACHINES, ok, startCli, stopAll, T3_SRC, until, waitEventWith } from "./harness.ts";
+import { type Body, callToolWith, check, cli, lab, LAB, MACHINES, ok, slotPort, SLOT, startCli, stopAll, T3_SRC, until, waitEventWith } from "./harness.ts";
 
-const PORT = 4784;
+const PORT = slotPort(4784);
 const URL_ = `http://127.0.0.1:${PORT}`;
 const RUN = path.join(LAB, `hub-unit-${PORT}`);
 const HOME = path.join(RUN, "hub");
-const SUFFIX = "-labroute";
+const SUFFIX = SLOT === 0 ? "-labroute" : `-labroute${SLOT}`;
 const UNIT = `fleetd-hub${SUFFIX}.service`;
 
 const main = async () => {

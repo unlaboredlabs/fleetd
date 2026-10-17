@@ -12,10 +12,9 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { T3_SRC } from "./harness.ts";
+import { fleetdCommand, LAB, labEnv, slotPort, T3_SRC } from "./harness.ts";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
 
 type Body = Record<string, any>;
 
@@ -25,7 +24,11 @@ export interface LabContext {
 }
 
 /** The node's restart command for a lab instance: the lab's own `up`, which starts it by PID file and waits for health. */
-export const labRestartCmd = (instance: string) => `${process.execPath} ${path.join(REPO, "lab/lab.mjs")} up ${instance}`;
+export const labRestartCmd = (instance: string) => {
+  // The node runs it with a scrubbed environment, so the slot travels in the command.
+  const env = Object.entries(labEnv()).map(([k, v]) => `${k}=${v}`);
+  return [...(env.length === 0 ? [] : ["env", ...env]), process.execPath, path.join(REPO, "lab/lab.mjs"), "up", instance].join(" ");
+};
 
 /** lab-b's T3 PID from the lab's PID file, only if that PID is still lab-b's server (guards against PID reuse). */
 const labServerPid = (instance: "lab-b") => {
@@ -99,10 +102,9 @@ export async function degradedMachine(ctx: LabContext) {
 
 // Standalone run: lab-b T3, a hub and lab-b's node, all stopped by the PIDs captured here.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const HUB_PORT = Number(process.env.FLEETD_LAB_DEGRADED_HUB_PORT ?? 4796);
+  const HUB_PORT = Number(process.env.FLEETD_LAB_DEGRADED_HUB_PORT ?? slotPort(4796));
   const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
   const RUN = path.join(LAB, "e2e-degraded");
-  const CLI = path.join(REPO, "apps/cli/src/bin.ts");
   if (path.resolve(LAB).startsWith(path.join(os.homedir(), ".t3"))) throw new Error("refusing: lab dir is inside ~/.t3");
   const scrubbedEnv = () =>
     Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));
@@ -110,13 +112,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const log = (line: string) => process.stdout.write(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
   const started: Array<{ name: string; child: ChildProcess }> = [];
   const lab = (command: string) =>
-    execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, "lab-b"], { env: scrubbedEnv(), encoding: "utf8" }).trim();
+    execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, "lab-b"], { env: { ...scrubbedEnv(), ...labEnv() }, encoding: "utf8" }).trim();
   const cli = (...args: Array<string>) =>
-    execFileSync(process.execPath, [CLI, ...args], { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync(...fleetdCommand(args), { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const startProcess = (name: string, args: Array<string>) => {
     fs.mkdirSync(path.join(RUN, "logs"), { recursive: true });
     const out = fs.openSync(path.join(RUN, "logs", `${name}.log`), "w");
-    const child = spawn(process.execPath, [CLI, ...args], { env: scrubbedEnv(), stdio: ["ignore", out, out] });
+    const child = spawn(...fleetdCommand(args), { env: scrubbedEnv(), stdio: ["ignore", out, out] });
     started.push({ name, child });
     log(`started ${name} pid=${child.pid}`);
   };
@@ -145,7 +147,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       check(key && token, "hub key and enrollment token");
       startProcess("node-lab-b", [
         "node", "join", "--hub", HUB_URL, "--token", token!, "--machine", "lab-b",
-        "--t3-home", path.join(LAB, "home-b"), "--t3-url", "http://127.0.0.1:4712",
+        "--t3-home", path.join(LAB, "home-b"), "--t3-url", `http://127.0.0.1:${slotPort(4712)}`,
         "--t3-cmd", `${process.execPath} ${path.join(T3_SRC, "apps/server/src/bin.ts")}`,
         "--t3-restart-cmd", labRestartCmd("lab-b"), "--home", path.join(RUN, "node-lab-b"),
       ]);

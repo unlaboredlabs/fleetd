@@ -12,8 +12,8 @@ import {
   type Body,
   callToolWith,
   check,
-  CLI,
   cli,
+  fleetdCommand,
   HUB_PORT,
   HUB_URL,
   isRunning,
@@ -81,6 +81,7 @@ const LOCK = path.join(LAB, "test-lab.lock");
 
 /** One test:lab run at a time: they share the lab's T3 instances, and one run's cleanup stops them. */
 const takeLabLock = () => {
+  fs.mkdirSync(LAB, { recursive: true });
   try {
     const holder = Number(fs.readFileSync(LOCK, "utf8").trim());
     if (holder > 0 && fs.existsSync(`/proc/${holder}`)) throw new Error(`another test:lab run (pid ${holder}) holds ${LOCK}`);
@@ -93,12 +94,14 @@ const takeLabLock = () => {
 const nodeHome = (id: LabMachine) => path.join(RUN, `node-${id}`);
 
 /**
- * What a lead's shell needs, at the stable paths lab/lab.mjs gives each T3: `fleetd` on PATH (this checkout's
- * built CLI) and FLEETD_NODE_SOCK pointing at this run's node socket.
+ * What a lead's shell needs, at the stable paths lab/lab.mjs gives each T3: `fleetd` on PATH (the fleetd under test)
+ * and FLEETD_NODE_SOCK pointing at this run's node socket.
  */
 const linkLeadShell = () => {
   fs.mkdirSync(path.join(LAB, "bin"), { recursive: true });
-  fs.writeFileSync(path.join(LAB, "bin", "fleetd"), `#!/bin/sh\nexec '${process.execPath}' '${CLI}' "$@"\n`, { mode: 0o755 });
+  const [bin, prefix] = fleetdCommand([]);
+  const exec = [bin, ...prefix].map((a) => `'${a}'`).join(" ");
+  fs.writeFileSync(path.join(LAB, "bin", "fleetd"), `#!/bin/sh\nexec ${exec} "$@"\n`, { mode: 0o755 });
   fs.mkdirSync(path.join(LAB, "sock"), { recursive: true });
   for (const m of MACHINES) {
     const link = path.join(LAB, "sock", `${m.id}.sock`);

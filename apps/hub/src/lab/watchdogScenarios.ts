@@ -16,7 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { connect } from "../executor/T3Connection.ts";
-import { T3_SRC } from "./harness.ts";
+import { fleetdCommand, LAB, labEnv, slotPort, T3_SRC } from "./harness.ts";
 import { NUDGE } from "../watchdog/Watchdog.ts";
 
 type Body = Record<string, any>;
@@ -198,8 +198,6 @@ export async function missedCompletion(ctx: LabContext, machineId = "lab-a") {
 // Standalone runner: the same lab setup testLab.ts uses, with its own hub port and run dir.
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
-const CLI = path.join(REPO, "apps/cli/src/bin.ts");
 
 /** Children get HOME, PATH, USER and LANG only (never this session's CLAUDE* variables), plus `extra`. */
 const scrubbedEnv = (extra: Readonly<Record<string, string>> = {}) => ({
@@ -209,19 +207,19 @@ const scrubbedEnv = (extra: Readonly<Record<string, string>> = {}) => ({
 
 async function standalone() {
   if (path.resolve(LAB).startsWith(path.join(os.homedir(), ".t3"))) throw new Error("refusing: lab dir is inside ~/.t3");
-  const hubPort = Number(process.env.FLEETD_LAB_HUB_PORT ?? 4796);
+  const hubPort = Number(process.env.FLEETD_LAB_HUB_PORT ?? slotPort(4796));
   const hubUrl = `http://127.0.0.1:${hubPort}`;
   const run = path.join(LAB, "e2e-watchdog");
   const hubHome = path.join(run, "hub");
-  const machines: Array<LabMachine> = [{ id: "lab-a", t3Home: path.join(LAB, "home-a"), t3Url: "http://127.0.0.1:4711" }];
+  const machines: Array<LabMachine> = [{ id: "lab-a", t3Home: path.join(LAB, "home-a"), t3Url: `http://127.0.0.1:${slotPort(4711)}` }];
   const t0 = Date.now();
   const log = (line: string) => process.stdout.write(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
   const children = new Map<string, ChildProcess>();
-  const cli = (...args: Array<string>) => execFileSync(process.execPath, [CLI, ...args], { env: scrubbedEnv(), encoding: "utf8" });
+  const cli = (...args: Array<string>) => execFileSync(...fleetdCommand(args), { env: scrubbedEnv(), encoding: "utf8" });
   const start = (name: string, args: Array<string>, env: Readonly<Record<string, string>> = {}) => {
     fs.mkdirSync(path.join(run, "logs"), { recursive: true });
     const out = fs.openSync(path.join(run, "logs", `${name}.log`), "a");
-    const child = spawn(process.execPath, [CLI, ...args], { env: scrubbedEnv(env), stdio: ["ignore", out, out] });
+    const child = spawn(...fleetdCommand(args), { env: scrubbedEnv(env), stdio: ["ignore", out, out] });
     children.set(name, child);
     log(`started ${name} pid=${child.pid}`);
   };
@@ -236,7 +234,7 @@ async function standalone() {
     log(`stopped ${name} pid=${child.pid}`);
   };
   const lab = (command: "up" | "down", id: string) =>
-    execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, id], { env: scrubbedEnv(), encoding: "utf8" });
+    execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, id], { env: scrubbedEnv(labEnv()), encoding: "utf8" });
 
   let client: Client | undefined;
   let key = "";
