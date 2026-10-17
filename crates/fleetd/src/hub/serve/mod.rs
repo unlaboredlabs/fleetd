@@ -283,6 +283,33 @@ pub fn build_on(
         Arc::new(crate::hub::train::github::SystemGh),
         crate::hub::train::TrainOptions::default(),
     );
+    // PORT: executor, link and leads are not wired into tasks, slots and leases yet.
+    let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> =
+        Arc::new(crate::hub::tasks::ports::UnwiredPorts);
+    let lead_ports = task_ports.clone();
+    let slots = crate::hub::slots::Slots::new(
+        db.clone(),
+        &store,
+        &events,
+        Arc::new(move |m, t| lead_ports.lead_of(m, t)),
+        crate::hub::slots::SlotsOptions::default(),
+    )?;
+    let leases = crate::hub::leases::Leases::new(db.clone(), events.clone(), clock.clone());
+    let source = crate::hub::leases::policy::T3PolicySource {
+        store: store.clone(),
+        ports: task_ports.clone(),
+    };
+    let policies = crate::hub::leases::Policies::new(Arc::new(source), clock.clone());
+    let tasks = crate::hub::tasks::Tasks::new(crate::hub::tasks::TaskDeps {
+        db: db.clone(),
+        store: store.clone(),
+        events: events.clone(),
+        clock: clock.clone(),
+        ports: task_ports,
+        slots: slots.clone(),
+        leases: leases.clone(),
+        policies: policies.clone(),
+    });
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -317,6 +344,10 @@ pub fn build_on(
         approvals: ops.approvals,
         train,
         reviews,
+        slots,
+        leases,
+        policies,
+        tasks,
     });
     checks.ports.bind(&hub);
     Ok(hub)
@@ -352,6 +383,12 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     });
     loops.push(reviews);
     loops.push(stopper);
+    loops.push(tokio::spawn(
+        hub.slots
+            .clone()
+            .run(hub.events.clone(), hub.shutdown.clone()),
+    ));
+    loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
     loops
 }
 

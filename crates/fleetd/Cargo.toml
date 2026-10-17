@@ -49,6 +49,9 @@ regex = { workspace = true }
 url = { workspace = true }
 hmac = { workspace = true }
 aes-gcm = { workspace = true }
+# tasks, slots, leases
+serde_yaml_ng = { workspace = true }
+unicode-normalization = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
