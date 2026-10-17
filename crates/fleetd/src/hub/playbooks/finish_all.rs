@@ -6,7 +6,7 @@ use std::sync::Arc;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
-    AskState, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
+    IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
     WorkstreamState,
 };
 use fleetd_contracts::verification::{CheckOutcome, ClaimOutcome};
@@ -22,8 +22,6 @@ use crate::hub::leads::error::LeadError;
 use crate::hub::leads::records::{LeadRecords, WorkstreamFilter};
 use crate::hub::leads::workstreams::{IntakeInput, Workstreams};
 use crate::hub::leads::{Ctx, now_iso};
-use crate::hub::ledger::AskFilter;
-use crate::hub::link::commands::CommandInput;
 use crate::hub::store::NewEvent;
 
 const ISSUES_LIMIT: usize = 50;
@@ -325,13 +323,11 @@ impl FinishAll {
         let mut unread = Vec::new();
         let mut notes = Vec::new();
         let run = |argv: &[&str]| {
-            self.ctx.commands.run(
+            self.ctx.ports().run_command(
                 &r.machine_id,
-                CommandInput {
-                    cwd: project.workspace_root.clone(),
-                    argv: argv.iter().map(|s| s.to_string()).collect(),
-                    timeout_sec: Some(60),
-                },
+                project.workspace_root.clone(),
+                argv.iter().map(|s| s.to_string()).collect(),
+                60,
             )
         };
 
@@ -339,8 +335,8 @@ impl FinishAll {
         match run(&["git", "remote", "get-url", "origin"]).await {
             Err(e) => unread.push(format!("open issues: {e}")),
             Ok(remote) => {
-                let repo = if remote.exit_code.map(|c| c.get()) == Some(0) {
-                    github_repo_of(remote.output_tail.as_str())
+                let repo = if remote.exit_code == Some(0) {
+                    github_repo_of(&remote.output_tail)
                 } else {
                     None
                 };
@@ -391,12 +387,7 @@ impl FinishAll {
             }
         }
 
-        let asks = self.ctx.asks.list(&AskFilter {
-            state: Some(AskState::Open),
-            project_ref: Some(r.clone()),
-            limit: Some(20),
-            ..Default::default()
-        })?;
+        let asks = self.ctx.ports().open_asks(Some(r), None, 20)?;
         for ask in asks {
             items.push(InventoryItem {
                 kind: ItemKind::Ask,
@@ -415,7 +406,7 @@ impl FinishAll {
         match run(&TODO_GREP).await {
             Err(e) => notes.push(format!("TODO/FIXME markers not counted: {e}")),
             Ok(grep) => {
-                let code = grep.exit_code.map(|c| c.get());
+                let code = grep.exit_code;
                 if code != Some(0) && code != Some(1) {
                     notes.push(format!(
                         "TODO/FIXME markers not counted: {}",

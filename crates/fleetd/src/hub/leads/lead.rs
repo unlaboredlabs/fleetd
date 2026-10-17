@@ -14,7 +14,6 @@ use super::prompt::{LEAD_PROMPT, LEAD_PROMPT_VERSION, render_lead_prompt};
 use super::records::{LeadRecords, LeadSettings, StoredLead};
 use super::wakes::LeadWakes;
 use super::{Ctx, now_iso};
-use crate::hub::executor::LaunchOptions;
 use crate::hub::store::{NewEvent, now_ms};
 
 pub const DEFAULT_LEAD_MODEL: &str = "claude-opus-5-5";
@@ -188,11 +187,7 @@ impl Leads {
             "clientRequestId": format!("fleetd-lead:{}/{}:{session_generation}:{launched_ms}", r.machine_id, r.project_id),
         }))
         .map_err(|e| LeadError::bare(ErrorCode::Invalid, format!("The lead launch is invalid: {e}")))?;
-        let thread_id = self
-            .ctx
-            .executors
-            .launch(&r.machine_id, &input, LaunchOptions::default())
-            .await?;
+        let thread_id = self.ctx.ports().launch(&r.machine_id, input).await?;
         let at = now_iso(&self.ctx);
         let lead = StoredLead {
             project_ref: r.clone(),

@@ -15,10 +15,10 @@ use fleetd_contracts::ledger::{
 use super::digest::{DigestInput, DigestPlaybook, WorkstreamFacts, one_line, render_lead_digest};
 use super::error::LeadError;
 use super::hooks::BoxFuture;
+use super::ports::{Answer, followed_up};
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
-use crate::hub::ledger::{Answer, AnswerSink, AskFilter, Chain, DecisionFilter};
 use crate::hub::playbooks::Playbooks;
 use crate::hub::store::{NewEvent, now_ms};
 
@@ -240,39 +240,6 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
     }
 }
 
-/// Where a wake goes: the executor's `send`, which goes through the queue area's offline writer when it is set, so a
-/// wake to an offline machine waits for it instead of being dropped. A seam so the debounce can be tested alone.
-pub trait WakeSender: Send + Sync {
-    /// `Ok(queued)`, or why it was not delivered.
-    fn send(
-        &self,
-        thread: ThreadRef,
-        message: String,
-        client_request_id: String,
-    ) -> BoxFuture<Result<bool, String>>;
-}
-
-/// Production sender: the hub's executors.
-pub struct ExecutorSender(pub Arc<crate::hub::executor::Executors>);
-
-impl WakeSender for ExecutorSender {
-    fn send(
-        &self,
-        thread: ThreadRef,
-        message: String,
-        client_request_id: String,
-    ) -> BoxFuture<Result<bool, String>> {
-        let executors = Arc::clone(&self.0);
-        Box::pin(async move {
-            executors
-                .send(&thread, &message, &client_request_id)
-                .await
-                .map(|o| o.queued)
-                .map_err(|e| e.to_string())
-        })
-    }
-}
-
 fn key_of(r: &ProjectRef) -> String {
     format!("{}/{}", r.machine_id, r.project_id)
 }
@@ -281,24 +248,17 @@ pub struct LeadWakes {
     ctx: Arc<Ctx>,
     records: Arc<LeadRecords>,
     playbooks: Arc<Playbooks>,
-    sender: Arc<dyn WakeSender>,
     debouncer: Arc<Debouncer<ProjectRef, Trigger>>,
     flushing: tokio::sync::Mutex<()>,
 }
 
 impl LeadWakes {
-    pub fn new(
-        ctx: Arc<Ctx>,
-        records: Arc<LeadRecords>,
-        playbooks: Arc<Playbooks>,
-        sender: Arc<dyn WakeSender>,
-    ) -> Arc<Self> {
+    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, playbooks: Arc<Playbooks>) -> Arc<Self> {
         let debouncer = Debouncer::new(Arc::clone(&ctx.clock), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
         Arc::new(Self {
             ctx,
             records,
             playbooks,
-            sender,
             debouncer,
             flushing: tokio::sync::Mutex::new(()),
         })
@@ -340,21 +300,9 @@ impl LeadWakes {
                 );
             }
         }
-        let open_asks = ctx.asks.list(&AskFilter {
-            state: Some(fleetd_contracts::ledger::AskState::Open),
-            project_ref: Some(r.clone()),
-            limit: Some(50),
-            ..Default::default()
-        })?;
+        let open_asks = ctx.ports().open_asks(Some(r), None, 50)?;
         // Global, project and every workstream-scoped decision in the project; the digest ranks them.
-        let decisions = ctx.decisions.list(&DecisionFilter {
-            chain: Some(Chain {
-                project_ref: r.clone(),
-                workstream_id: None,
-            }),
-            limit: Some(500),
-            ..Default::default()
-        })?;
+        let decisions = ctx.ports().decisions_in_project(r, 500)?;
         let tasks = ctx
             .hooks
             .tasks
@@ -460,7 +408,8 @@ impl LeadWakes {
         let message = render_wake(&self.digest(r, &answers).await?, &triggers);
         let at = now_iso(&self.ctx);
         let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
-        let queued = match self.sender.send(thread, message, crid).await {
+        // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
+        let queued = match self.ctx.ports().send(thread, message, crid).await {
             Ok(queued) => queued,
             Err(reason) => {
                 tracing::warn!(project = %key_of(r), %reason, "lead wake not delivered");
@@ -494,11 +443,11 @@ impl LeadWakes {
         Ok(())
     }
 
-    /// The ledger's AnswerSink: each applied answer becomes a trigger for its project's lead. An approved command or a
+    /// The ledger's AnswerSink (`wiring`) calls this. Each applied answer becomes a trigger for its project's lead. An approved command or a
     /// checklist with a verify check reaches the lead later, from the approvals follow-up, with its outcome.
     pub fn on_answered(self: &Arc<Self>, r: &ProjectRef, answers: &[Answer]) {
         for answer in answers {
-            if !crate::hub::ledger::followed_up(answer) {
+            if !followed_up(answer) {
                 self.trigger(r, Trigger::Answer(answer.clone()));
             }
         }
@@ -540,7 +489,7 @@ impl LeadWakes {
                     .as_ref()
                     .and_then(|d| d.get("decisionId"))
                     .and_then(|v| v.as_str());
-                let Some(decision) = id.and_then(|id| self.ctx.decisions.get(id).ok().flatten())
+                let Some(decision) = id.and_then(|id| self.ctx.ports().decision(id).ok().flatten())
                 else {
                     continue;
                 };
@@ -559,15 +508,6 @@ impl LeadWakes {
                 );
             }
         }
-    }
-}
-
-/// The ledger's AnswerSink, set with `Inbox::set_answer_sink`.
-pub struct WakeOnAnswer(pub Arc<LeadWakes>);
-
-impl AnswerSink for WakeOnAnswer {
-    fn on_answered(&self, project_ref: &ProjectRef, answers: Vec<Answer>) {
-        self.0.on_answered(project_ref, &answers);
     }
 }
 

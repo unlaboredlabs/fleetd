@@ -10,8 +10,8 @@ use std::sync::Arc;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::ledger::{
-    AskId, AskKind, Decision, DecisionKey, IntakeChannel, PlaybookName, PlaybookRef,
-    UNROUTED_ASK_PREFIX, WorkstreamId,
+    AskId, Decision, DecisionKey, IntakeChannel, PlaybookName, PlaybookRef, UNROUTED_ASK_PREFIX,
+    WorkstreamId,
 };
 use fleetd_contracts::model::ProjectSummary;
 use fleetd_contracts::playbooks::IntakeEcho;
@@ -23,10 +23,10 @@ use self::router::{IntakeRouter, RouterProject, RouterRun};
 use crate::hub::leads::brief::sha256_hex;
 use crate::hub::leads::digest::clip_utf16;
 use crate::hub::leads::error::LeadError;
+use crate::hub::leads::ports::RouteAsk;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::leads::workstreams::{IntakeInput, Workstreams};
 use crate::hub::leads::{Ctx, now_iso};
-use crate::hub::ledger::AskInput;
 use crate::hub::store::{NewEvent, StoreError, WaitInput};
 
 /// Projects offered to the router, most recently active first.
@@ -84,18 +84,6 @@ struct RouteOption {
     label: String,
     #[serde(rename = "ref")]
     project_ref: ProjectRef,
-}
-
-/// A checked contract value from plain JSON, as the TS hub's schema decode did.
-fn wire<T: serde::de::DeserializeOwned>(value: impl Serialize) -> Result<T, LeadError> {
-    serde_json::to_value(value)
-        .and_then(serde_json::from_value)
-        .map_err(|e| {
-            LeadError::bare(
-                fleetd_contracts::mcp::ErrorCode::Invalid,
-                format!("The routing ask is invalid: {e}"),
-            )
-        })
 }
 
 fn clip(text: &str, max: usize) -> String {
@@ -476,35 +464,22 @@ impl Intake {
                 format!("The routing ask key is invalid: {e}"),
             )
         })?;
-        let filed = self.ctx.asks.create(
-            &AskInput {
-                project_ref: None,
-                workstream_id: None,
-                kind: AskKind::Decide,
+        let ask_id = self.ctx.ports().create_route_ask(
+            RouteAsk {
                 key,
-                class: "product".into(),
-                text: wire(clip(
+                text: clip(
                     &format!(
                         "Which project is this intent for? \"{}\" ({why})",
                         clip(&input.text, 300)
                     ),
                     500,
-                ))?,
-                options: Some(wire(
-                    options.iter().map(|o| o.label.clone()).collect::<Vec<_>>(),
-                )?),
-                recommendation: Some(wire(options[0].label.clone())?),
-                steps: None,
-                verify: None,
-                sink: None,
-                env_name: None,
-                gated: None,
-                blocks: wire("this intent until it has a project")?,
-                proceeded_on_rec: false,
+                ),
+                options: options.iter().map(|o| o.label.clone()).collect(),
+                recommendation: options[0].label.clone(),
+                blocks: "this intent until it has a project".into(),
             },
             &input.by,
         )?;
-        let ask_id = filed.ask.ask_id;
         self.put_route(
             &input.client_request_id,
             Some(&ask_id),
@@ -653,7 +628,7 @@ impl Intake {
                 let Some(id) = data.get("decisionId").and_then(|v| v.as_str()) else {
                     continue;
                 };
-                match self.ctx.decisions.get(id) {
+                match self.ctx.ports().decision(id) {
                     Ok(Some(decision)) => {
                         if let Err(error) = self.on_answer(&decision) {
                             tracing::warn!(%error, "intake: routing answer not applied");

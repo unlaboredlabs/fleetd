@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{AskState, DecisionScope, IntakeChannel, WorkstreamState};
+use fleetd_contracts::ledger::{IntakeChannel, WorkstreamState};
 use fleetd_contracts::mcp::*;
 use fleetd_contracts::prim::{Count, List};
 
@@ -13,7 +13,6 @@ use super::error::LeadError;
 use super::records::{LeadSettings, WorkstreamFilter};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require, unknown_project};
 use crate::hub::intake::{SubmitInput, SubmitResult};
-use crate::hub::ledger::{AskFilter, DecisionFilter};
 use crate::hub::playbooks::finish_all::Caller as FinishAllCaller;
 
 const WORKSTREAM_ASKS: usize = 50;
@@ -217,24 +216,13 @@ impl Area {
         };
         let mut asks = self
             .ctx
-            .asks
-            .list(&AskFilter {
-                workstream_id: Some(id.clone()),
-                state: Some(AskState::Open),
-                limit: Some(WORKSTREAM_ASKS as i64 + 1),
-                ..Default::default()
-            })
+            .ports()
+            .open_asks(None, Some(id), WORKSTREAM_ASKS + 1)
             .map_err(refusal)?;
         let mut decisions = self
             .ctx
-            .decisions
-            .list(&DecisionFilter {
-                scope: Some(DecisionScope::Workstream {
-                    workstream_id: id.clone(),
-                }),
-                limit: Some(WORKSTREAM_ASKS as i64 + 1),
-                ..Default::default()
-            })
+            .ports()
+            .decisions_of_workstream(id, WORKSTREAM_ASKS + 1)
             .map_err(refusal)?;
         let truncated = asks.len() > WORKSTREAM_ASKS || decisions.len() > WORKSTREAM_ASKS;
         asks.truncate(WORKSTREAM_ASKS);

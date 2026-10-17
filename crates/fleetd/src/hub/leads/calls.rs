@@ -1,17 +1,16 @@
 //! Lead-side `fleetd` calls this area answers: `brief create`, `status set`, `workstream spawn`, `inventory`. The caller
 //! is already attributed to a project by its cwd; every call acts only within that project.
-use std::sync::Arc;
-
 use fleetd_contracts::lead_calls::{
     InventoryResult, LeadCall, LeadCallResult, WorkstreamSpawnResult,
 };
 use fleetd_contracts::prim::Count;
 
+use fleetd_contracts::ids::ProjectRef;
+
 use super::Area;
-use crate::hub::link::lead_calls::LeadCallFuture;
-use crate::hub::link::{LeadCallHandler, LeadCallRefused, LeadCaller, LeadCalls};
 use crate::hub::playbooks::finish_all::Caller;
 
+/// Registered in the link area's `LeadCalls` by `wiring::wire_area`.
 pub const OPS: [&str; 4] = [
     "brief_create",
     "status_set",
@@ -19,36 +18,17 @@ pub const OPS: [&str; 4] = [
     "inventory",
 ];
 
-struct Handler(Arc<Area>);
-
-impl LeadCallHandler for Handler {
-    fn handle(&self, caller: LeadCaller, call: LeadCall) -> LeadCallFuture {
-        let area = Arc::clone(&self.0);
-        Box::pin(async move {
-            area.lead_call(caller, call)
-                .await
-                .map_err(LeadCallRefused::from)
-        })
-    }
-}
-
-pub fn register(calls: &LeadCalls, area: &Arc<Area>) {
-    let handler: Arc<dyn LeadCallHandler> = Arc::new(Handler(Arc::clone(area)));
-    for op in OPS {
-        calls.register(op, Arc::clone(&handler));
-    }
-}
-
 impl Area {
-    async fn lead_call(
+    pub async fn lead_call(
         &self,
-        caller: LeadCaller,
+        project_ref: &ProjectRef,
+        by: &str,
         call: LeadCall,
     ) -> Result<LeadCallResult, super::error::LeadError> {
-        let r = &caller.project_ref;
+        let r = project_ref;
         let finish_all_caller = || Caller {
             project_ref: r.clone(),
-            by: caller.by.clone(),
+            by: by.to_string(),
             channel: None,
         };
         Ok(match call {

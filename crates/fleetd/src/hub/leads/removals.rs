@@ -11,17 +11,16 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{AskState, WorkstreamState};
+use fleetd_contracts::ledger::WorkstreamState;
 
 use super::error::LeadError;
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
-use crate::hub::ledger::AskFilter;
 use crate::hub::store::{NewEvent, WaitInput};
 
 pub const STOPPED_REASON: &str = "its project was deleted in T3";
 pub const ASK_REASON: &str = "project deleted";
-const SCAN_LIMIT: i64 = 10_000;
+const SCAN_LIMIT: usize = 10_000;
 
 pub struct ProjectRemovals {
     ctx: Arc<Ctx>,
@@ -38,17 +37,9 @@ impl ProjectRemovals {
         if self.ctx.store.project_get(r)?.is_some() {
             return Ok(());
         }
-        let asks = self.ctx.asks.list(&AskFilter {
-            state: Some(AskState::Open),
-            project_ref: Some(r.clone()),
-            limit: Some(SCAN_LIMIT),
-            ..Default::default()
-        })?;
+        let asks = self.ctx.ports().open_asks(Some(r), None, SCAN_LIMIT)?;
         for ask in asks {
-            let _ = self
-                .ctx
-                .asks
-                .withdraw(ask.ask_id.as_str(), None, None, Some(ASK_REASON));
+            let _ = self.ctx.ports().withdraw_ask(&ask.ask_id, ASK_REASON);
         }
         if let Some(tasks) = self.ctx.hooks.tasks.get() {
             for (task_id, _) in tasks.live(Some(r)) {
@@ -60,7 +51,7 @@ impl ProjectRemovals {
         let open = self.records.workstreams_list(&WorkstreamFilter {
             project_ref: Some(r.clone()),
             open: true,
-            limit: SCAN_LIMIT as usize,
+            limit: SCAN_LIMIT,
             ..Default::default()
         })?;
         for w in open {
@@ -95,11 +86,7 @@ impl ProjectRemovals {
         let mut add = |r: ProjectRef| {
             refs.insert(format!("{}/{}", r.machine_id, r.project_id), r);
         };
-        for ask in self.ctx.asks.list(&AskFilter {
-            state: Some(AskState::Open),
-            limit: Some(SCAN_LIMIT),
-            ..Default::default()
-        })? {
+        for ask in self.ctx.ports().open_asks(None, None, SCAN_LIMIT)? {
             if let Some(r) = ask.project_ref {
                 add(r);
             }
@@ -111,7 +98,7 @@ impl ProjectRemovals {
         }
         for w in self.records.workstreams_list(&WorkstreamFilter {
             open: true,
-            limit: SCAN_LIMIT as usize,
+            limit: SCAN_LIMIT,
             ..Default::default()
         })? {
             add(w.project_ref);

@@ -181,7 +181,7 @@ impl Workstreams {
     fn check_amend(&self, stored: &StoredWorkstream, ask_id: &AskId) -> Result<(), LeadError> {
         let w = &stored.workstream;
         let refuse = |message: String| LeadError::invalid(message, amend_fix(&w.workstream_id));
-        let ask = self.ctx.asks.get(ask_id.as_str())?;
+        let ask = self.ctx.ports().ask(ask_id)?;
         let Some(ask) = ask.filter(|a| {
             a.project_ref
                 .as_ref()
@@ -202,7 +202,7 @@ impl Workstreams {
         let decision = ask
             .decision_id
             .as_ref()
-            .map(|id| self.ctx.decisions.get(id.as_str()))
+            .map(|id| self.ctx.ports().decision(id.as_str()))
             .transpose()?
             .flatten();
         if ask.state != AskState::Answered

@@ -9,31 +9,31 @@ pub mod digest;
 pub mod error;
 pub mod hooks;
 pub mod lead;
+pub mod ports;
 pub mod prompt;
 pub mod records;
 pub mod removals;
 pub mod tools;
 pub mod wakes;
+pub mod wiring;
 pub mod workstreams;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use fleetd_contracts::ids::ProjectRef;
 
 pub use self::error::LeadError;
 pub use self::hooks::LeadHooks;
 pub use self::lead::{Leads, LeadsOptions};
+pub use self::ports::{Answer, LeadPorts};
 pub use self::records::LeadRecords;
 pub use self::wakes::{LeadWakes, Trigger};
 pub use self::workstreams::Workstreams;
 use crate::clock::Clock;
-use crate::hub::executor::Executors;
 use crate::hub::intake::Intake;
 use crate::hub::intake::router::{IntakeRouter, OneShot};
-use crate::hub::ledger::{Answer, Asks, Decisions};
-use crate::hub::link::NodeCommands;
 use crate::hub::playbooks::{FinishAll, PlaybookError, Playbooks, Research};
 use crate::hub::store::{EventLog, HubDb, HubStore, iso_ms, now_ms};
 
@@ -42,13 +42,41 @@ pub struct Ctx {
     pub db: Arc<HubDb>,
     pub store: Arc<HubStore>,
     pub events: Arc<EventLog>,
-    pub executors: Arc<Executors>,
-    pub commands: Arc<NodeCommands>,
-    pub asks: Arc<Asks>,
-    pub decisions: Arc<Decisions>,
     pub clock: Arc<dyn Clock>,
+    /// The executor, queue, node link and ledger; `Unwired` until `wiring::wire_area` sets them.
+    ports: OnceLock<Arc<dyn LeadPorts>>,
     /// Set by later areas in `hub/serve`.
     pub hooks: LeadHooks,
+}
+
+impl Ctx {
+    pub fn new(
+        db: Arc<HubDb>,
+        store: Arc<HubStore>,
+        events: Arc<EventLog>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            db,
+            store,
+            events,
+            clock,
+            ports: OnceLock::new(),
+            hooks: LeadHooks::default(),
+        }
+    }
+
+    /// Called once by `wiring::wire_area`.
+    pub fn set_ports(&self, ports: Arc<dyn LeadPorts>) {
+        let _ = self.ports.set(ports);
+    }
+
+    pub fn ports(&self) -> &dyn LeadPorts {
+        match self.ports.get() {
+            Some(ports) => ports.as_ref(),
+            None => &ports::Unwired,
+        }
+    }
 }
 
 /// `new Date(now).toISOString()` on the hub clock.
@@ -95,12 +123,10 @@ impl Area {
         let ctx = Arc::new(ctx);
         let records = LeadRecords::new(Arc::clone(&ctx.db));
         let playbooks = Playbooks::new(Arc::clone(&ctx.db), Some(options.home.join("playbooks")))?;
-        let sender = Arc::new(wakes::ExecutorSender(Arc::clone(&ctx.executors)));
         let wakes = LeadWakes::new(
             Arc::clone(&ctx),
             Arc::clone(&records),
             Arc::clone(&playbooks),
-            sender,
         );
         let leads = Leads::new(
             Arc::clone(&ctx),

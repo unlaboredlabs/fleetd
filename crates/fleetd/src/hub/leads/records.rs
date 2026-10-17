@@ -310,16 +310,16 @@ impl LeadRecords {
     }
 }
 
-/// The ledger's view of workstreams: which project one belongs to, and a project's open ones.
-impl crate::hub::ledger::WorkstreamLookup for LeadRecords {
-    fn project_of(&self, workstream_id: &WorkstreamId) -> Option<ProjectRef> {
+/// The ledger's `WorkstreamLookup` (which project a workstream belongs to, a project's open ones), used by `wiring`.
+impl LeadRecords {
+    pub fn project_of(&self, workstream_id: &WorkstreamId) -> Option<ProjectRef> {
         self.workstream_get(workstream_id)
             .ok()
             .flatten()
             .map(|s| s.workstream.project_ref)
     }
 
-    fn open_in(&self, project_ref: &ProjectRef, limit: usize) -> Vec<WorkstreamId> {
+    pub fn open_in(&self, project_ref: &ProjectRef, limit: usize) -> Vec<WorkstreamId> {
         self.workstreams_list(&WorkstreamFilter {
             project_ref: Some(project_ref.clone()),
             open: true,

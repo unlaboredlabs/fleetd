@@ -7,7 +7,7 @@ use fleetd_contracts::ledger::{
     Ask, CheckSpec, Decision, DecisionScope, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
 
-use crate::hub::ledger::{Answer, AnswerOutcome};
+use super::ports::Answer;
 use crate::hub::playbooks::finish_all_rules::{FINISH_ALL_IDLE, is_finish_all};
 
 pub const DIGEST_MAX_TOKENS: usize = 1500;
@@ -268,7 +268,7 @@ fn ask_line(a: &Ask) -> String {
 
 fn answer_line(answer: &Answer) -> String {
     let ask = &answer.ask;
-    if answer.outcome == AnswerOutcome::Withdrawn {
+    if answer.withdrawn {
         return format!(
             "- {} {}: dropped by the human; do not pursue it",
             ask.ask_id, ask.key
