@@ -198,7 +198,7 @@ impl Shell {
             return;
         }
         if key.is_empty() {
-            self.form.error = Some("Paste an agent key (fleetd hub key create).".into());
+            self.form.error = Some("Paste a key from `fleetd hub key create --human --name <device>`.".into());
             self.form.field = Field::Key;
             return;
         }
@@ -509,8 +509,11 @@ impl Shell {
                     .rounded_md()
                     .child(div().text_size(px(16.)).child("Connect to a fleetd hub"))
                     .child(field("Hub URL", Field::Url, self.form.url.clone(), "http://127.0.0.1:4790"))
-                    .child(field("Agent key", Field::Key, masked, "fld_… (fleetd hub key create)"))
+                    .child(field("Key", Field::Key, masked, "fld_…"))
                     .when_some(self.form.error.clone(), |d, e| d.child(div().text_color(rgb(Theme::RED)).child(e)))
+                    .child(div().whitespace_normal().child(muted(
+                        "On the hub, create a key for this device with `fleetd hub key create --human --name <device>`, so your answers are recorded as yours.",
+                    )))
                     .child(muted("Tab switches fields, Enter connects. The key is kept in the OS keychain, never in a file.")),
             )
             .into_any_element()

@@ -134,6 +134,28 @@ describe("app call frame", () => {
     expect(await app.call("late", "fleetd_status", {})).toMatchObject({ t: "error", id: "late", code: "forbidden" });
   });
 
+  it("records answers given with a human key as the human's, and an agent key's as the agent's", async () => {
+    const { hub, url } = await fleet();
+    await hub.fileAsk("lab-a", "p-lab-a", "api.health.path", "/healthz");
+    await hub.fileAsk("lab-a", "p-lab-a", "db.engine", "sqlite");
+    const human = await open(url);
+    await human.auth((await hub.addKey("wynn-laptop", [{ role: "operate", machines: "*" }], "human")).key);
+    const agent = await open(url);
+    await agent.auth((await hub.addKey("script", [{ role: "operate", machines: "*" }])).key);
+
+    expect(await human.call("h", "inbox_reply", { raw: "1 go" })).toMatchObject({
+      t: "result",
+      output: { parsed: true, applied: [{ number: 1, source: "human", by: "human:wynn-laptop" }] },
+    });
+    expect(await agent.call("a", "inbox_reply", { raw: "2 go" })).toMatchObject({
+      output: { parsed: true, applied: [{ number: 2, source: "agent", by: "script" }] },
+    });
+    const scope = { kind: "project", projectRef: { machineId: "lab-a", projectId: "p-lab-a" } };
+    expect(await human.call("d", "decisions_record", { key: "ui.theme", value: "dark", scope })).toMatchObject({
+      output: { decision: { source: "human", by: "human:wynn-laptop" } },
+    });
+  });
+
   it("answers a quick call while a long-poll call is still waiting", async () => {
     const { hub, url } = await fleet();
     const { key } = await hub.addKey("reader", [{ role: "read", machines: "*" }]);

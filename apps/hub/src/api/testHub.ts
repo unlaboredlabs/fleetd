@@ -5,6 +5,7 @@ import type {
   DecisionKey,
   ProjectId,
   Grant,
+  KeyKind,
   HubEvent,
   Machine,
   MachineId,
@@ -179,8 +180,8 @@ export const makeTestHub = () => {
     addProjects: (machineId: string, projects: ReadonlyArray<ProjectSummary>) =>
       run(Effect.flatMap(HubStore.HubStore, (s) => s.projects.upsertMany(machineId as MachineId, projects))),
     addThread: (t: ThreadSummary & { readonly lastSequence?: number }) => run(Effect.flatMap(HubStore.HubStore, (s) => s.threads.upsert(t))),
-    addKey: (name: string, grants: ReadonlyArray<Grant>) =>
-      run(Effect.flatMap(Auth.Auth, (a) => a.createKey(name, grants))).then(({ key, info }) => ({ key, keyId: info.keyId })),
+    addKey: (name: string, grants: ReadonlyArray<Grant>, kind?: KeyKind) =>
+      run(Effect.flatMap(Auth.Auth, (a) => a.createKey(name, grants, kind))).then(({ key, info }) => ({ key, keyId: info.keyId })),
     revoke: (keyId: string) => run(Effect.flatMap(Auth.Auth, (a) => a.revoke(keyId))),
     append: (event: Omit<HubEvent, "seq">) => run(Effect.flatMap(EventLog.EventLog, (e) => e.append(event))),
     /** `fleetd ask` from the lead of a project: a product decide with a recommendation. */

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { ErrorCode, Grant, type AgentKeyInfo, type MachineId, type Role } from "@fleetd/contracts";
+import { ErrorCode, Grant, type AgentKeyInfo, type KeyKind, type MachineId, type Role } from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -29,6 +29,7 @@ export class Auth extends Context.Service<
     readonly createKey: (
       name: string,
       grants: ReadonlyArray<Grant>,
+      kind?: KeyKind,
     ) => Effect.Effect<{ readonly key: string; readonly info: AgentKeyInfo }>;
     /** Accepts `fld_…` or `Bearer fld_…`. Revocation is seen on the next call. */
     readonly verify: (bearer: string) => Effect.Effect<AgentKeyInfo, Unauthorized>;
@@ -85,6 +86,7 @@ const encodeGrants = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Grant)
 const toInfo = (row: Record<string, unknown>): AgentKeyInfo => ({
   keyId: String(row.key_id),
   name: String(row.name),
+  ...(row.kind === "human" ? { kind: "human" as const } : {}),
   prefix: String(row.prefix),
   grants: decodeGrants(String(row.grants)),
   createdAt: iso(Number(row.created_ms)),
@@ -105,7 +107,7 @@ const make = Effect.gen(function* () {
 
   const sql = {
     keyInsert: db.prepare(
-      "INSERT INTO agent_keys (key_id, hash, prefix, name, grants, created_ms) VALUES ($key_id, $hash, $prefix, $name, $grants, $created_ms)",
+      "INSERT INTO agent_keys (key_id, hash, prefix, name, grants, created_ms, kind) VALUES ($key_id, $hash, $prefix, $name, $grants, $created_ms, $kind)",
     ),
     keyByHash: db.prepare("SELECT * FROM agent_keys WHERE hash = ?"),
     keyTouch: db.prepare("UPDATE agent_keys SET last_used_ms = ? WHERE key_id = ?"),
@@ -123,7 +125,7 @@ const make = Effect.gen(function* () {
     nodeKeyGet: db.prepare("SELECT pub_key FROM node_keys WHERE machine_id = ?"),
   };
 
-  const createKey = (name: string, grants: ReadonlyArray<Grant>) =>
+  const createKey = (name: string, grants: ReadonlyArray<Grant>, kind: KeyKind = "agent") =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const key = secret(KEY_PREFIX);
@@ -133,6 +135,7 @@ const make = Effect.gen(function* () {
         prefix: key.slice(0, KEY_PREFIX.length + 6),
         name,
         grants: encodeGrants(grants),
+        kind,
         created_ms: now,
       };
       sql.keyInsert.run(row);
