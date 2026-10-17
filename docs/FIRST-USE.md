@@ -160,7 +160,9 @@ Then, through that MCP:
 2. `fleetd hub key revoke <setup-admin keyId>`.
 3. `projects_list` → note the `projectId` of cliproxyapi-console on `forge`.
 4. `lead_start {machineId: "forge", projectId}`. The default lead is `claude-opus-5-5` at effort high.
-5. `doctor_list {rerun: true}`. Everything should be ok except push, which needs step 5.
+5. `doctor_list {rerun: true}`. Everything should be ok except push, which needs step 5. `hub/claude_login`
+   must be ok: it means the hub's router and retro can reach Claude through the `claude` login in
+   `~/.claude/settings.json`.
 
 Optional, and recommended once the first merge works: let only fleetd merge to this repo's `main`. Re-run
 `scripts/testbed.ts`'s ruleset step by hand against `wynn-dev/cliproxyapi-console`, or add a ruleset requiring
@@ -202,10 +204,9 @@ The device now appears in `fleetd hub key list` as a human key.
 
 ## The first workstream
 
-Use a small, real defect in cliproxyapi-console, and **put the project in the text**, e.g.
-`intake_submit {text: "@cliproxyapi-console fix: <one line>"}`. The `@project` prefix matters for now: the hub's
-project router can't log in to Claude in this install (known gap below), so an intent without a project lands in
-the inbox as "Unrouted".
+Use a small, real defect in cliproxyapi-console, e.g. `intake_submit {text: "fix: <one line>"}`. The hub's router
+picks the project with one `claude -p` run, using the same login as the `claude` CLI of the user the hub runs as. The
+doctor's `hub/claude_login` check shows whether that login works.
 
 Watch the full loop:
 1. The lead freezes a brief.
@@ -262,8 +263,5 @@ Elsewhere:
   GPU speed numbers are still pending (`app/bench/MAC-RUN.md`).
 - **`machine add` against a real second machine.** It was tested as same-user emulation on forge.
 - **Real Opus leads on real work.** Lab leads ran on haiku.
-- **The hub's Claude login.** The hub unit carries no `ANTHROPIC_*` environment, so the intake router and the
-  weekly retro can't reach Claude. Workaround: always name the project (`@cliproxyapi-console`). The retro is
-  advise-only anyway. Fix (small): give `fleetd init` an env file like the worker's `t3.env`.
 - **A Codex reviewer.** No Codex instance exists, so L-tier reviews use Claude twice.
 - **Self-improvement.** It needs about 2 weeks of real incidents.

@@ -139,6 +139,14 @@ describe("hub checks", () => {
     expect(Checks.ghAuth({ spawnError: "ENOENT" }).check.message).toContain("not installed");
   });
 
+  it("claude logged in, logged out, or missing on the hub", () => {
+    const status = (loggedIn: boolean, authMethod: string) => ({ exitCode: loggedIn ? 0 : 1, stdout: JSON.stringify({ loggedIn, authMethod }), stderr: "" });
+    expect(Checks.claudeLogin(status(true, "oauth_token")).check).toMatchObject({ id: "hub/claude_login", status: "ok", message: expect.stringContaining("(oauth_token)") });
+    expect(Checks.claudeLogin(status(false, "none")).check).toMatchObject({ status: "fail", fix: { kind: "manual", command: "claude auth login" } });
+    expect(Checks.claudeLogin({ spawnError: "ENOENT" }).check).toMatchObject({ status: "fail", message: expect.stringContaining("not on the hub's PATH") });
+    expect(Checks.claudeLogin({ exitCode: 1, stdout: "error: boom", stderr: "" }).check.status).toBe("unknown");
+  });
+
   it("push needs a subscription", () => {
     expect(Checks.pushConfigured(2, undefined).check).toMatchObject({ status: "ok", message: "2 devices get push." });
     expect(Checks.pushConfigured(0, "https://hub.ts.net").check).toMatchObject({ status: "warn", fix: { command: "fleetd hub device add --name phone --url https://hub.ts.net" } });

@@ -65,7 +65,7 @@ export class RetroRunner extends Context.Service<RetroRunner, { readonly ask: (p
   "fleetd/retro/RetroRunner",
 ) {}
 
-/** The router's isolated runner (its config dir, environment allowlist and model), with a longer timeout. */
+/** The router's claude runner (the user's login, environment allowlist and model), with a longer timeout. */
 export const layerRunner = (options: RouterOptions) =>
   Layer.effect(RetroRunner, Effect.map(makeOneShot({ ...options, timeoutMs: RUN_TIMEOUT_MS }), (ask) => RetroRunner.of({ ask })));
 

@@ -60,6 +60,41 @@ export const ghAuth = (outcome: GhOutcome): Entry => {
   return hubEntry("gh_auth", "ok", account === undefined ? "gh is logged in on the hub." : `gh is logged in on the hub as ${account}.`);
 };
 
+/** `claude auth status --json` as the router runs it (same environment, so the same login). */
+export type ClaudeOutcome = GhOutcome;
+
+export const CLAUDE_LOGIN_FIX = manual(
+  "Log the hub user's claude in (or put ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json)",
+  "claude auth login",
+);
+
+/** The intake router and the retro reach a model only through this login; without it they can't run. */
+export const claudeLogin = (outcome: ClaudeOutcome): Entry => {
+  if ("spawnError" in outcome) {
+    return outcome.spawnError === "ENOENT"
+      ? hubEntry(
+          "claude_login",
+          "fail",
+          "Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run.",
+          manual("Install Claude Code on the hub machine, then log in", "claude auth login"),
+        )
+      : hubEntry("claude_login", "unknown", `Could not run claude on the hub: ${outcome.spawnError}`);
+  }
+  let status: { readonly loggedIn?: unknown; readonly authMethod?: unknown } | undefined;
+  try {
+    status = JSON.parse(outcome.stdout) as typeof status;
+  } catch {
+    status = undefined;
+  }
+  if (status === undefined) return hubEntry("claude_login", "unknown", `claude auth status gave no JSON (exit ${outcome.exitCode}).`);
+  if (status.loggedIn !== true) {
+    return hubEntry("claude_login", "fail", "claude on the hub is not logged in; the intake router and the retro can't reach a model.", CLAUDE_LOGIN_FIX);
+  }
+  const method = typeof status.authMethod === "string" ? ` (${status.authMethod})` : "";
+  return hubEntry("claude_login", "ok", `claude on the hub is logged in${method}; the intake router and the retro can run.`);
+};
+
+
 /** `undefined`: this hub keeps no push subscriptions. */
 export const pushConfigured = (devices: number | undefined, url: string | undefined): Entry => {
   if (devices === undefined) return hubEntry("push", "unknown", "This hub keeps no push subscriptions yet.");

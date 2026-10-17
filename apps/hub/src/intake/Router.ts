@@ -1,8 +1,8 @@
-// The intake router: one `claude -p` run on the hub machine, the only way fleetd reaches a model. It runs with its own
-// config dir (no stored credentials, so no usage probe), the login env of the hub's own environment, and nothing of
-// any `CLAUDE*` session the hub was started from.
+// The intake router: one `claude -p` run on the hub machine, the only way fleetd reaches a model. It uses the login the
+// user's own `claude` uses (~/.claude: OAuth, or a base URL and token in its settings' env), in safe mode so none of
+// the user's hooks, plugins, MCP servers or CLAUDE.md load, and nothing of any `CLAUDE*` session the hub was started from.
 import { RouterResult, type ProjectRef } from "@fleetd/contracts";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import * as Clock from "effect/Clock";
@@ -55,7 +55,7 @@ export class IntakeRouter extends Context.Service<
 >()("fleetd/intake/IntakeRouter") {}
 
 export interface RouterOptions {
-  /** The hub home; runs use `<home>/claude-router` as their Claude config dir. */
+  /** The hub home; runs use the empty `<home>/claude-router` as their working directory. */
   readonly home: string;
   readonly model?: string;
   /** Where the login variables and PATH come from; the hub's own environment by default. */
@@ -77,16 +77,31 @@ export const renderRouterPrompt = (template: string, input: { readonly text: str
     )
     .replace("{{intent}}", input.text.trim());
 
-/** The child's whole environment: an allowlist, so the hub's own `CLAUDE*` variables never reach it. */
-export const routerEnv = (source: Readonly<Record<string, string | undefined>>, configDir: string) => {
+/**
+ * The child's whole environment: an allowlist, so the hub's own `CLAUDE*` variables never reach it. Without
+ * `CLAUDE_CONFIG_DIR`, `claude` reads the user's login from `$HOME/.claude`, as it does in their own shell.
+ */
+export const routerEnv = (source: Readonly<Record<string, string | undefined>>) => {
   const env: Record<string, string> = {};
   for (const key of [...BASE_ENV, ...LOGIN_ENV]) {
     const value = source[key];
     if (value !== undefined && value !== "") env[key] = value;
   }
-  env.CLAUDE_CONFIG_DIR = configDir;
   return env;
 };
+
+/** `claude <args>` with the router's environment and nothing else, for the doctor's login check (no model call). */
+export const claudeRunner = (args: ReadonlyArray<string>) =>
+  Effect.callback<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }, { readonly spawnError: string }>((resume, signal) => {
+    execFile("claude", [...args], { signal, timeout: 30_000, env: routerEnv(process.env), maxBuffer: 1 << 20 }, (error, stdout, stderr) => {
+      if (error === null) return resume(Effect.succeed({ exitCode: 0, stdout, stderr }));
+      if (typeof error.code === "number") return resume(Effect.succeed({ exitCode: error.code, stdout, stderr }));
+      resume(Effect.fail({ spawnError: error.code === "ENOENT" ? "ENOENT" : error.message }));
+    });
+  });
+
+/** No tools, no MCP servers, no saved session, and none of the user's customizations; the login still applies. */
+export const ONE_SHOT_FLAGS = ["--tools", "", "--strict-mcp-config", "--no-session-persistence", "--safe-mode"] as const;
 
 const decodeResult = Schema.decodeUnknownResult(RouterResult);
 
@@ -186,21 +201,21 @@ export interface OneShotResult {
 }
 
 /**
- * The isolated `claude -p --output-format json` runner the router and the retro share: `<home>/claude-router` as
- * the config dir and cwd, the allowlisted environment, and no tools, MCP servers or saved session.
+ * The `claude -p --output-format json` runner the router and the retro share: the user's own login, the empty
+ * `<home>/claude-router` as cwd (so no project CLAUDE.md applies), the allowlisted environment and `ONE_SHOT_FLAGS`.
  */
 export const makeOneShot = (options: OneShotOptions) =>
   Effect.gen(function* () {
     const model = options.model ?? DEFAULT_ROUTER_MODEL;
-    const configDir = path.join(options.home, "claude-router");
-    yield* Effect.sync(() => fs.mkdirSync(configDir, { recursive: true, mode: 0o700 }));
-    const env = routerEnv(options.env ?? process.env, configDir);
-    const args = ["-p", "--output-format", "json", "--model", model, "--tools", "", "--strict-mcp-config", "--no-session-persistence"];
+    const cwd = path.join(options.home, "claude-router");
+    yield* Effect.sync(() => fs.mkdirSync(cwd, { recursive: true, mode: 0o700 }));
+    const env = routerEnv(options.env ?? process.env);
+    const args = ["-p", "--output-format", "json", "--model", model, ...ONE_SHOT_FLAGS];
     const timeoutMs = options.timeoutMs ?? RUN_TIMEOUT_MS;
     return (prompt: string): Effect.Effect<OneShotResult> =>
       Effect.gen(function* () {
         const started = yield* Clock.currentTimeMillis;
-        const exit = yield* runClaude(args, prompt, configDir, env, timeoutMs);
+        const exit = yield* runClaude(args, prompt, cwd, env, timeoutMs);
         const durationMs = (yield* Clock.currentTimeMillis) - started;
         const envelope = exit.spawnError === undefined ? readEnvelope(exit.stdout) : { error: `could not start claude: ${exit.spawnError}` };
         const failed = envelope.error ?? (exit.code === 0 ? undefined : `claude exited with ${exit.code ?? "a signal"}: ${exit.stderr.trim().slice(-200)}`);

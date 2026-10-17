@@ -86,6 +86,7 @@ const fakeFleet = () => {
         }),
     },
     gh: () => Effect.succeed({ exitCode: 0, stdout: "", stderr: "Logged in to github.com account wynn-dev" }),
+    claude: () => Effect.succeed({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true, authMethod: "oauth_token" }), stderr: "" }),
     pushDevices: Effect.succeed(1),
     health: () => Effect.succeed({ ok: true }),
     append: (event) => Effect.sync(() => (state.events.push(event), { ...event, seq: state.events.length }) as HubEvent),
@@ -107,6 +108,7 @@ describe("doctor", () => {
         expect(first.checks.map((c) => c.id)).toEqual([
           "hub/reachable",
           "hub/gh_auth",
+          "hub/claude_login",
           "hub/push",
           "hub/https",
           "lab-a/online",
