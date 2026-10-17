@@ -95,7 +95,7 @@ const make = Effect.gen(function* () {
       const text = renderHumanDigest({
         nowMs,
         tz,
-        asks: (yield* asks.list({ state: "open", limit: LIST_LIMIT })).filter((a) => shown(a.projectRef)),
+        asks: (yield* asks.list({ state: "open", limit: LIST_LIMIT })).filter((a) => a.projectRef === undefined || shown(a.projectRef)),
         workstreams: listed,
         facts: yield* workstreamFacts(listed).pipe(Effect.provideContext(factsContext)),
         decidedWithoutYou,

@@ -166,7 +166,7 @@ export const make = Effect.gen(function* () {
           fix: `File \`fleetd ask --class product --key ${w.workstreamId.toLowerCase()}.brief --text "<the change and why>" --rec "<your proposal>" --workstream ${w.workstreamId}\` and rerun with --amend once the human answers it.`,
         });
       const ask = yield* asks.get(askId);
-      if (ask === undefined || !sameProject(ask.projectRef, w.projectRef)) return yield* refuse(`There is no ask ${askId} in this project.`);
+      if (ask?.projectRef === undefined || !sameProject(ask.projectRef, w.projectRef)) return yield* refuse(`There is no ask ${askId} in this project.`);
       if (ask.workstreamId !== undefined && ask.workstreamId !== w.workstreamId) {
         return yield* refuse(`${askId} is about ${ask.workstreamId}, not ${w.workstreamId}.`);
       }

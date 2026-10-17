@@ -9,6 +9,8 @@ import * as FleetApi from "./api/FleetApi.ts";
 import * as HttpApp from "./api/HttpApp.ts";
 import * as Auth from "./auth/Auth.ts";
 import * as HumanDigests from "./digests/HumanDigests.ts";
+import * as Intake from "./intake/Intake.ts";
+import * as IntakeRouter from "./intake/Router.ts";
 import * as ChecksLayer from "./checks/layer.ts";
 import * as Judges from "./checks/Judges.ts";
 import * as NodeCommands from "./checks/NodeCommands.ts";
@@ -39,11 +41,14 @@ export interface HubOptions {
   readonly listen: { readonly host: string; readonly port: number };
   /** How long a write to an offline machine waits in the queue; absent means 24 h. */
   readonly queueTtlSec?: number;
+  /** The intake router's model; absent means claude-haiku-5-5. */
+  readonly routerModel?: string;
 }
 
-export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
+export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--router-model <model>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
-             writes to an offline machine wait 24 h)
+             writes to an offline machine wait 24 h, intents without a project
+             are routed by the claude CLI with claude-haiku-5-5)
 `;
 
 /** `host:port`, `:port` or `port`; IPv6 hosts in brackets, as in `[::1]:4790`. */
@@ -60,7 +65,7 @@ export const parseListen = (value: string): HubOptions["listen"] | undefined => 
 export const parseHubArgs = (argv: ReadonlyArray<string>): HubOptions | { readonly error: string } => {
   let parsed;
   try {
-    parsed = parseArgs({ args: [...argv], options: { home: { type: "string" }, listen: { type: "string" }, "queue-ttl": { type: "string" } }, strict: true });
+    parsed = parseArgs({ args: [...argv], options: { home: { type: "string" }, listen: { type: "string" }, "queue-ttl": { type: "string" }, "router-model": { type: "string" } }, strict: true });
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
@@ -69,7 +74,13 @@ export const parseHubArgs = (argv: ReadonlyArray<string>): HubOptions | { readon
   if (address === undefined) return { error: `--listen must be host:port, got '${listen}'` };
   const ttl = parsed.values["queue-ttl"];
   if (ttl !== undefined && !/^[1-9]\d*$/u.test(ttl)) return { error: `--queue-ttl must be a whole number of seconds, got '${ttl}'` };
-  return { ...(home === undefined ? {} : { home }), listen: address, ...(ttl === undefined ? {} : { queueTtlSec: Number(ttl) }) };
+  const routerModel = parsed.values["router-model"];
+  return {
+    ...(home === undefined ? {} : { home }),
+    listen: address,
+    ...(ttl === undefined ? {} : { queueTtlSec: Number(ttl) }),
+    ...(routerModel === undefined ? {} : { routerModel }),
+  };
 };
 
 /**
@@ -122,6 +133,7 @@ export const hubLayer = (home: string, options: HubOptions) =>
     Layer.provide(
       AppSocket.layer.pipe(
         Layer.provideMerge(FleetApi.layer),
+        Layer.provideMerge(Intake.layer.pipe(Layer.provide(IntakeRouter.layer({ home, ...(options.routerModel === undefined ? {} : { model: options.routerModel }) })))),
         Layer.provideMerge(Layer.merge(layerWakeSweep, Leases.layerSweep)),
         // The sweep reports failing webhooks, so it sits above them.
         Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),

@@ -384,6 +384,22 @@ describe("Inbox.reply", () => {
       }),
     ));
 
+  it("an unrouted intake.route.* ask has no project: its answer is a global decision and wakes no lead", () =>
+    run((delivered) =>
+      Effect.gen(function* () {
+        const { projectRef: _, ...unrouted } = ask("docs.where");
+        expect((yield* Effect.flip(file(unrouted))).message).toMatch(/Only an intake\.route\.\* ask may leave out its project/u);
+        yield* file({ ...unrouted, key: key("intake.route.tidy-docs-abc123"), options: ["repo-a on lab-a", "repo-b on lab-a"] }, "k1");
+        yield* file(ask("a.one"));
+        expect((yield* getAsk("A1"))?.projectRef).toBeUndefined();
+        expect((yield* eventsOf("ask.created"))[0]?.machineId).toBeUndefined();
+        expect((yield* reply("1 b 2 go")).echo).toBe("Logged: 1 → repo-b on lab-a (D1), 2 → rec for a.one (D2)");
+        const decisions = yield* Decisions;
+        expect(yield* decisions.get(DecisionId.make("D1"))).toMatchObject({ key: "intake.route.tidy-docs-abc123", scope: { kind: "global" }, askId: "A1" });
+        expect((yield* Ref.get(delivered)).map((s) => [s.project, s.answers.map((a) => a.ask.askId)])).toEqual([["p1", ["A2"]]]);
+      }),
+    ));
+
   it("recs fine accepts what is left; items not mentioned stay open", () =>
     run(() =>
       Effect.gen(function* () {

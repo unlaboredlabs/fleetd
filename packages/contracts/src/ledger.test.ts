@@ -85,6 +85,13 @@ describe("Ask record", () => {
     expect(accepts(Ask, { ...noRec, kind: "do", steps: [{ text: "Tick the box", where: "phone" }] })).toBe(true);
     expect(accepts(Ask, { ...ask, class: "naming" })).toBe(false);
   });
+
+  it("leaves out projectRef only on an intake.route.* ask", () => {
+    const { projectRef: _, ...unrouted } = ask;
+    expect(accepts(Ask, unrouted)).toBe(false);
+    expect(accepts(Ask, { ...unrouted, key: "intake.route.tidy-the-docs-1a2b3c" })).toBe(true);
+    expect(accepts(Ask, { ...ask, key: "intake.route.tidy-the-docs-1a2b3c" })).toBe(true);
+  });
 });
 
 describe("Brief", () => {

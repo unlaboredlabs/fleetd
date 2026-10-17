@@ -532,12 +532,20 @@ impl Shell {
             body = body.child(muted("Nothing needs you. Leads decide everything that isn't a product, money, credential or irreversible call."));
         }
         let mut batch = "";
-        for item in items {
+        let (routed, unrouted): (Vec<_>, Vec<_>) = items.into_iter().partition(|item| item.ask.project_ref.is_some());
+        for item in routed {
             if item.batch_id != batch {
                 batch = item.batch_id;
                 body = body.child(div().pt_2().text_color(rgb(Theme::MUTED)).child(format!("Batch {batch}")));
             }
             body = body.child(self.ask_card(item.batch_id, item.number, item.ask, cx));
+        }
+        // Intents the router could not place: answering one picks the project.
+        if !unrouted.is_empty() {
+            body = body.child(div().pt_2().text_color(rgb(Theme::MUTED)).child("Unrouted"));
+            for item in unrouted {
+                body = body.child(self.ask_card(item.batch_id, item.number, item.ask, cx));
+            }
         }
         div()
             .flex_1()
@@ -550,7 +558,10 @@ impl Shell {
     }
 
     fn ask_card(&self, batch_id: &str, number: u32, ask: &Ask, cx: &mut Context<Self>) -> impl IntoElement {
-        let project = format!("{}/{}", ask.project_ref.machine_id, ask.project_ref.project_id);
+        let project = match &ask.project_ref {
+            Some(p) => format!("{}/{}", p.machine_id, p.project_id),
+            None => format!("{batch_id} · no project yet"),
+        };
         let class_color = match ask.class {
             AskClass::Product => Theme::ACCENT,
             AskClass::Money | AskClass::Irreversible => Theme::RED,

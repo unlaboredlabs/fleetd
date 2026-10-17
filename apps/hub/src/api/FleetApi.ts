@@ -34,6 +34,7 @@ import * as Webhooks from "../webhooks/Webhooks.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as Wakes from "../wakes/Wakes.ts";
 import * as HumanDigests from "../digests/HumanDigests.ts";
+import { Intake } from "../intake/Intake.ts";
 import * as Leads from "../leads/Leads.ts";
 import * as Workstreams from "../leads/Workstreams.ts";
 import { Asks } from "../ledger/Asks.ts";
@@ -195,6 +196,7 @@ const make = Effect.gen(function* () {
   const wakes = yield* Wakes.Wakes;
   const leads = yield* Leads.Leads;
   const workstreams = yield* Workstreams.Workstreams;
+  const intake = yield* Intake;
   const asks = yield* Asks;
   const decisions = yield* Decisions;
   const inbox = yield* Inbox;
@@ -520,25 +522,18 @@ const make = Effect.gen(function* () {
     }),
 
     intake_submit: Effect.fnUntraced(function* (caller, input) {
-      // Placeholder until M9a: routing an intent without a project, and `template`, are not wired yet.
-      if (input.machineId === undefined || input.projectId === undefined) {
-        return yield* new ToolError({
-          code: "invalid",
-          message: "This hub cannot route an intent without a project yet.",
-          fix: "Pass machineId and projectId (projects_list shows them).",
-        });
-      }
       yield* require(caller, "operate", input.machineId);
-      const created = yield* workstreams
-        .intake({
-          ref: { machineId: input.machineId, projectId: input.projectId },
+      return yield* intake
+        .submit({
           text: input.text,
+          ...(input.template === undefined ? {} : { template: input.template }),
+          ...(input.machineId === undefined || input.projectId === undefined ? {} : { ref: { machineId: input.machineId, projectId: input.projectId } }),
           clientRequestId: input.clientRequestId,
           channel: "mcp",
           by: caller.keyId,
+          allows: (machineId) => auth.allows(caller, "operate", machineId),
         })
         .pipe(Effect.mapError(refusal));
-      return { workstreamId: created.workstreamId, ...(created.next === undefined ? {} : { next: created.next }) };
     }),
 
     workstream_list: Effect.fnUntraced(function* (caller, input) {
@@ -637,7 +632,7 @@ const make = Effect.gen(function* () {
     }),
 
     asks_list: Effect.fnUntraced(function* (caller, input) {
-      const visible = (ask: Ask) => auth.allows(caller, "read", ask.projectRef.machineId);
+      const visible = (ask: Ask) => auth.allows(caller, "read", ask.projectRef?.machineId);
       const listed = (yield* asks.list({ state: input.state, ...(input.batchId === undefined ? {} : { batchId: input.batchId }), limit: 1000 })).filter(visible);
       const shownAsks = cap(listed, LIMITS.asks);
       const ids = new Set(shownAsks.items.map((ask) => ask.askId as string));

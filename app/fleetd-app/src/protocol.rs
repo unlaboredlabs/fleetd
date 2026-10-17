@@ -400,7 +400,9 @@ literals! {
 contract! {
     pub struct Ask {
         pub ask_id: String,
-        pub project_ref: ProjectRef,
+        /// Absent only on an `intake.route.*` ask, which asks which project a new intent is for (M9).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub project_ref: Option<ProjectRef>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub workstream_id: Option<String>,
         pub kind: AskKind,

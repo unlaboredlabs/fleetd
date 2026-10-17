@@ -45,6 +45,9 @@ export interface Chain {
 /** Stable text form of a project ref; machine ids cannot contain "/". */
 export const projectKey = (ref: ProjectRef) => `${ref.machineId}/${ref.projectId}`;
 
+/** An ask's project column: "" for an unrouted ask, which has no project yet. */
+export const askProjectKey = (ref: ProjectRef | undefined) => (ref === undefined ? "" : projectKey(ref));
+
 export const isoAt = (ms: number) => new Date(ms).toISOString();
 
 const scopeColumns = (scope: DecisionScope) => {
@@ -282,15 +285,15 @@ const makeRepo = (db: DatabaseSync) => {
     sql.askSet.run(encodeAsk(ask), ask.state, ask.batchId === undefined ? null : batchN(ask.batchId)!, askN(ask.askId)!);
 
   /** Inserts an ask; `build` receives the new id and returns the record to store. */
-  const insertAsk = (projectRef: ProjectRef, key: string, workstreamId: string | undefined, filedBy: string, nowMs: number, build: (askId: AskId) => Ask): Ask => {
-    const n = Number(sql.askInsert.get(projectKey(projectRef), workstreamId ?? null, key, "open", filedBy, nowMs)?.n);
+  const insertAsk = (projectRef: ProjectRef | undefined, key: string, workstreamId: string | undefined, filedBy: string, nowMs: number, build: (askId: AskId) => Ask): Ask => {
+    const n = Number(sql.askInsert.get(askProjectKey(projectRef), workstreamId ?? null, key, "open", filedBy, nowMs)?.n);
     const ask = build(AskId.make(`A${n}`));
     putAsk(ask);
     return ask;
   };
 
-  const openAskWithKey = (projectRef: ProjectRef, key: string): Ask | undefined => {
-    const row = sql.askOpenSame.get(projectKey(projectRef), key);
+  const openAskWithKey = (projectRef: ProjectRef | undefined, key: string): Ask | undefined => {
+    const row = sql.askOpenSame.get(askProjectKey(projectRef), key);
     return row ? decodeAsk(String(row.data)) : undefined;
   };
 
@@ -389,7 +392,7 @@ const makeRepo = (db: DatabaseSync) => {
       .map((row) => getBatch(Number(row.n))!);
 
   const recordIncident = (ask: Ask, kind: "misfiled", nowMs: number) =>
-    sql.incident.run(askN(ask.askId)!, kind, projectKey(ask.projectRef), nowMs);
+    sql.incident.run(askN(ask.askId)!, kind, askProjectKey(ask.projectRef), nowMs);
 
   const incidents = () =>
     sql.incidents.all().map((row) => ({ askId: AskId.make(`A${Number(row.ask_n)}`), kind: String(row.kind) }));

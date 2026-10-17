@@ -47,7 +47,7 @@ const when = (nowMs: number, tz: string) => {
  * pass, and a workstream's own status line is marked "lead says", since nothing backs it.
  */
 export const renderHumanDigest = (input: DigestInput): string => {
-  const project = (ref: Ask["projectRef"]) => input.projectNames.get(projectKey(ref)) ?? ref.projectId;
+  const project = (ref: Ask["projectRef"]) => (ref === undefined ? "unrouted" : (input.projectNames.get(projectKey(ref)) ?? ref.projectId));
   const open = input.asks.filter((ask) => ask.state === "open");
   const latest = Math.max(0, ...open.map((ask) => (ask.batchId ? batchN(ask.batchId)! : 0)));
   const running = input.workstreams.filter((w) => RUNNING.has(w.state));
