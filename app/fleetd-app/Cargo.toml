@@ -24,3 +24,13 @@ runtime-shaders = ["gpui_platform/runtime_shaders"]
 gpui = { git = "https://github.com/zed-industries/zed", rev = "fb69067729cb16a7f6135e2c1600c26a28c59659", default-features = false, features = ["font-kit", "wayland", "x11", "profiler"] }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "fb69067729cb16a7f6135e2c1600c26a28c59659", features = ["font-kit", "wayland", "x11"] }
 raw-window-handle = "0.6"
+# Hub client. smol's async-net and futures are already in gpui's dependency graph; async-tungstenite adds
+# only tungstenite. Plain ws:// for now (the hub binds loopback or a tailnet address).
+async-net = "2"
+async-io = "2"
+async-tungstenite = { version = "0.35", default-features = false, features = ["handshake", "futures-03-sink"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# OS keychain: macOS Keychain, Windows Credential Manager, Secret Service (zbus, already in the graph) on Linux.
+keyring = "4.2"

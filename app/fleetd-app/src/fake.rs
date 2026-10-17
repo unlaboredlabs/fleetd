@@ -1,6 +1,10 @@
-//! Deterministic fake data standing in for the hub until the app talks to it.
+//! Deterministic fake data for the bench, which runs without a hub.
 
 use std::fmt::Write;
+
+use serde_json::{Value, json};
+
+use crate::state::{Conn, Detail, ProjectRow, State};
 
 pub struct Rng(u64);
 
@@ -23,19 +27,6 @@ impl Rng {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThreadState {
-    Running,
-    Waiting,
-    Done,
-    Failed,
-}
-
-pub enum Row {
-    Project { name: String, machine: &'static str, fleet: usize },
-    Thread { title: String, state: ThreadState, age: String },
-}
-
 const PROJECTS: &[&str] = &[
     "fleetd", "t3-fork-plan", "hermes", "adri", "cliproxy", "forge-infra", "dotfiles", "zed-notes",
     "pwa-push", "merge-train", "lab-harness", "billing-site", "docs-site", "mobile-shell", "ingest",
@@ -50,35 +41,62 @@ const NOUNS: &[&str] = &[
     "node heartbeat", "diff endpoint", "event cursor", "usage parking", "PWA push", "doctor checks",
     "policy leases", "brief freezer", "verifier job", "thread tail", "secret sealing",
 ];
+const AT: &str = "2026-10-17T10:00:00.000Z";
 
-/// ~200 rows: projects with their threads underneath.
-pub fn project_rows() -> Vec<Row> {
+/// What a hub with 20 projects, two machines and one open ask batch looks like, for the bench (which
+/// runs without a hub). The first project is open with its lead log.
+pub fn fixture_state() -> State {
     let mut rng = Rng::new(7);
-    let mut rows = Vec::with_capacity(200);
+    let mut state = State::default();
+    state.conn = Conn::Live;
+    state.machines = ["forge", "mac"]
+        .iter()
+        .map(|m| {
+            from(json!({ "machineId": m, "name": m, "tags": [], "status": if *m == "mac" { "degraded" } else { "online" },
+                "lastSeenAt": AT, "t3": { "version": "2fbd4318fc", "protocol": 2 }, "nodeVersion": "0.0.0",
+                "degradedReason": if *m == "mac" { Some("T3 restarted 3 times in 10 min") } else { None } }))
+        })
+        .collect();
     for (i, name) in PROJECTS.iter().enumerate() {
-        let threads = 9;
-        rows.push(Row::Project {
-            name: name.to_string(),
-            machine: MACHINES[i % MACHINES.len()],
-            fleet: 1 + rng.below(8),
-        });
-        for _ in 0..threads {
-            let state = match rng.below(10) {
-                0..=3 => ThreadState::Running,
-                4..=5 => ThreadState::Waiting,
-                6..=8 => ThreadState::Done,
-                _ => ThreadState::Failed,
-            };
-            let title = format!("{} {}", rng.pick(VERBS), rng.pick(NOUNS));
-            let age = match rng.below(3) {
-                0 => format!("{}m", 1 + rng.below(59)),
-                1 => format!("{}h", 1 + rng.below(23)),
-                _ => format!("{}d", 1 + rng.below(9)),
-            };
-            rows.push(Row::Thread { title, state, age });
-        }
+        let machine = MACHINES[i % MACHINES.len()];
+        let project = json!({ "machineId": machine, "projectId": name, "title": name, "workspaceRoot": format!("/w/{name}"),
+            "threads": { "running": rng.below(4), "waiting": rng.below(2), "idle": 3, "failed": 0 }, "lastActivityAt": AT });
+        let workstreams: Vec<Value> = (0..1 + rng.below(4))
+            .map(|w| {
+                let title = format!("{} {}", rng.pick(VERBS), rng.pick(NOUNS));
+                json!({ "workstreamId": format!("W{}", i * 10 + w + 1), "projectRef": { "machineId": machine, "projectId": name },
+                    "title": title, "source": { "text": title, "channel": "app", "by": "human", "at": AT },
+                    "brief": { "goal": title, "why": "Asked for.", "pointers": [], "constraints": [], "tier": "M",
+                        "doneWhen": [{ "type": "ci_green", "repo": format!("wynn-dev/{name}") }, { "type": "pr_merged", "repo": format!("wynn-dev/{name}") },
+                                     { "type": "http", "url": "http://127.0.0.1:4790/healthz", "status": 200 }] },
+                    "state": (["running", "converging", "verifying"][rng.below(3)]), "headline": format!("{} in review", title),
+                    "headlineAt": AT, "createdAt": AT, "updatedAt": AT })
+            })
+            .collect();
+        let outcome = json!({ "project": project, "threads": [], "stale": machine == "mac", "asOf": AT, "workstreams": workstreams,
+            "lead": { "projectRef": { "machineId": machine, "projectId": name }, "threadId": format!("lead-{name}"),
+                "state": (["idle", "working", "working", "stalled"][rng.below(4)]), "startedAt": AT, "sessionGeneration": 0 } });
+        state.projects.push(ProjectRow { summary: from(project), outcome: Some(from(outcome)), error: None });
     }
-    rows
+    let asks = [
+        ("A1", "product", "Which path should the health endpoint use?", Some(vec!["/healthz", "/health"]), "/healthz"),
+        ("A2", "money", "Raise the hub's Claude slot cap from 40 to 48 for this week?", None, "Keep 40"),
+        ("A3", "irreversible", "Delete the old forge-infra staging bucket (412 GB)?", None, "Delete it"),
+    ];
+    for (n, (id, class, text, options, rec)) in asks.iter().enumerate() {
+        let ask = json!({ "askId": id, "projectRef": { "machineId": "forge", "projectId": PROJECTS[n] }, "kind": "decide",
+            "key": format!("fixture.ask{n}"), "class": class, "text": text, "options": options, "recommendation": rec,
+            "blocks": "nothing", "proceededOnRec": n == 0, "state": "open", "batchId": "B1", "number": n + 1, "createdAt": AT });
+        state.asks.insert(id.to_string(), from(ask));
+    }
+    state.batches = vec![from(json!({ "batchId": "B1", "createdAt": AT, "state": "open",
+        "items": [{ "number": 1, "askId": "A1" }, { "number": 2, "askId": "A2" }, { "number": 3, "askId": "A3" }] }))];
+    state.detail = Some(Detail { key: ("forge".into(), PROJECTS[0].into()), tail: Vec::new(), tail_error: None, version: 0 });
+    state
+}
+
+fn from<T: serde::de::DeserializeOwned>(v: Value) -> T {
+    serde_json::from_value(v).expect("fixture matches the contracts")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -208,7 +226,8 @@ const CODE: &[&str] = &[
     "",
 ];
 
-/// A ~1k-line unified diff over a few files.
+/// A ~1k-line unified diff over a few files (for the diff view's tests until the hub serves diffs).
+#[allow(dead_code)]
 pub fn diff_text() -> String {
     let mut rng = Rng::new(42);
     let mut out = String::new();

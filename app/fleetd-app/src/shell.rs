@@ -1,21 +1,27 @@
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedSender};
 use gpui::{
-    Context, Div, FocusHandle, KeyDownEvent, Keystroke, Rgba, ScrollDelta, ScrollStrategy,
-    ScrollWheelEvent, SharedString, UniformListScrollHandle, Window, div, point, prelude::*, px,
-    rgb, uniform_list,
+    AnyElement, Context, Div, FocusHandle, KeyDownEvent, Keystroke, ScrollDelta, ScrollStrategy, ScrollWheelEvent,
+    SharedString, Stateful, Task, UniformListScrollHandle, Window, div, point, prelude::*, px, rgb, uniform_list,
 };
 
 use crate::bench::{self, Mode, Probe};
-use crate::diff::{self, DiffKind, DiffLine};
-use crate::fake::{self, LogKind, LogStream, Row, ThreadState};
+use crate::client;
+use crate::fake::{self, LogKind, LogStream};
+use crate::keychain::{self, Saved};
+use crate::protocol::*;
+use crate::state::{Conn, ProjectKey, ProjectRow, State};
 
 const UI_FONT: &str = "IBM Plex Sans";
 const MONO_FONT: &str = "Lilex";
-const ROW_H: f32 = 22.;
+const ROW_H: f32 = 30.;
 const LINE_H: f32 = 18.;
 const LINES_PER_SEC: u64 = 50;
 const SCROLL_PX_PER_SEC: f32 = 2400.;
+const POLL_EVERY: Duration = Duration::from_secs(3);
+const SHORTCUTS: [&str; 3] = if cfg!(target_os = "macos") { ["⌘1", "⌘2", "⌘3"] } else { ["^1", "^2", "^3"] };
 
 struct Theme;
 impl Theme {
@@ -28,9 +34,33 @@ impl Theme {
     const GREEN: u32 = 0x7cc47f;
     const RED: u32 = 0xe5737a;
     const YELLOW: u32 = 0xd9b45c;
-    const ADD_BG: u32 = 0x1f3324;
-    const DEL_BG: u32 = 0x3a2024;
-    const HUNK_BG: u32 = 0x23293a;
+    const SELECTED: u32 = 0x2d3a52;
+    const HOVER: u32 = 0x2a2c31;
+    const BUTTON: u32 = 0x2f3238;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Screen {
+    /// Reading the keychain.
+    Loading,
+    Connect,
+    Inbox,
+    Projects,
+    Project,
+    Machines,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Field {
+    Url,
+    Key,
+}
+
+struct ConnectForm {
+    url: String,
+    key: String,
+    field: Field,
+    error: Option<String>,
 }
 
 struct LogRow {
@@ -38,98 +68,320 @@ struct LogRow {
     text: SharedString,
 }
 
+/// The live link to the hub. Dropping it stops the client.
+struct HubLink {
+    url: String,
+    tx: UnboundedSender<ClientMessage>,
+    _tasks: [Task<()>; 3],
+}
+
 pub struct Shell {
-    rows: Vec<Row>,
+    state: State,
+    screen: Screen,
     selected: usize,
+    bar: String,
+    form: ConnectForm,
+    hub: Option<HubLink>,
+    /// Shown above the screen, e.g. that the key could not be saved to the keychain.
+    note: Option<String>,
     log: Vec<LogRow>,
+    log_version: u64,
     log_scroll: UniformListScrollHandle,
+    projects_scroll: UniformListScrollHandle,
     follow: bool,
-    stream: LogStream,
-    diff: Vec<DiffLine>,
-    input: String,
     focus: FocusHandle,
-    probe: Option<Probe>,
+    bench: Option<(LogStream, Probe)>,
 }
 
 impl Shell {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let mode = Mode::from_env();
-        let history: usize = env_num("FLEETD_HISTORY", 20_000);
-        let mut stream = LogStream::new(1);
-        let log = (0..history).map(|_| to_row(stream.next_line())).collect();
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-
-        if env_num("FLEETD_STREAM", 1) == 1 {
-            cx.spawn(async move |this, cx| {
-                loop {
-                    cx.background_executor().timer(Duration::from_millis(1000 / LINES_PER_SEC)).await;
-                    if this.update(cx, |this, cx| this.append(cx)).is_err() {
-                        return;
-                    }
-                }
-            })
-            .detach();
-        }
-        if let Some(mode) = mode {
-            spawn_bench(mode, window, cx);
-        }
-
         let log_scroll = UniformListScrollHandle::new();
         log_scroll.scroll_to_bottom();
-        Self {
-            rows: fake::project_rows(),
-            selected: 1,
-            log,
+        let mut shell = Self {
+            state: State::default(),
+            screen: Screen::Loading,
+            selected: 0,
+            bar: String::new(),
+            form: ConnectForm { url: "http://127.0.0.1:4790".into(), key: String::new(), field: Field::Url, error: None },
+            hub: None,
+            note: None,
+            log: Vec::new(),
+            log_version: 0,
             log_scroll,
+            projects_scroll: UniformListScrollHandle::new(),
             follow: true,
-            stream,
-            diff: diff::parse_unified(&fake::diff_text()),
-            input: String::new(),
             focus,
-            probe: mode.map(|_| Probe::new()),
+            bench: None,
+        };
+        match Mode::from_env() {
+            Some(mode) => shell.start_bench(mode, window, cx),
+            None => shell.load_saved(cx),
+        }
+        shell
+    }
+
+    // ---- hub link ------------------------------------------------------------------------
+
+    fn load_saved(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let loaded = match keychain::from_env() {
+                Some(saved) => Ok(Some(saved)),
+                None => cx.background_executor().spawn(async { keychain::load() }).await,
+            };
+            this.update(cx, |this, cx| {
+                match loaded {
+                    Ok(Some(saved)) => this.connect(saved, cx),
+                    Ok(None) => this.screen = Screen::Connect,
+                    Err(e) => {
+                        this.form.error = Some(e);
+                        this.screen = Screen::Connect;
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn connect(&mut self, saved: Saved, cx: &mut Context<Self>) {
+        let (out_tx, out_rx) = mpsc::unbounded();
+        let (in_tx, mut in_rx) = mpsc::unbounded();
+        let run = cx.background_executor().spawn(client::run(saved.url.clone(), saved.key, out_rx, in_tx));
+        let pump = cx.spawn(async move |this, cx| {
+            while let Some(incoming) = in_rx.next().await {
+                let ok = this.update(cx, |this, cx| {
+                    let out = this.state.apply(incoming);
+                    this.send(out);
+                    this.after_state_change();
+                    cx.notify();
+                });
+                if ok.is_err() {
+                    return;
+                }
+            }
+        });
+        let poll = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(POLL_EVERY).await;
+                let ok = this.update(cx, |this, _| {
+                    let out = this.state.poll();
+                    this.send(out);
+                });
+                if ok.is_err() {
+                    return;
+                }
+            }
+        });
+        self.form.url = saved.url.clone();
+        self.hub = Some(HubLink { url: saved.url, tx: out_tx, _tasks: [run, pump, poll] });
+        self.state = State::default();
+        self.screen = Screen::Inbox;
+        self.selected = 0;
+    }
+
+    fn send(&self, out: Vec<ClientMessage>) {
+        if let Some(hub) = &self.hub {
+            for message in out {
+                hub.tx.unbounded_send(message).ok();
+            }
         }
     }
 
-    fn append(&mut self, cx: &mut Context<Self>) {
-        let line = to_row(self.stream.next_line());
-        self.push(line, cx);
+    fn submit_connect(&mut self, cx: &mut Context<Self>) {
+        let url = self.form.url.trim().to_string();
+        let key = self.form.key.trim().to_string();
+        if let Err(e) = client::app_url(&url) {
+            self.form.error = Some(e);
+            return;
+        }
+        if key.is_empty() {
+            self.form.error = Some("Paste an agent key (fleetd hub key create).".into());
+            self.form.field = Field::Key;
+            return;
+        }
+        let saved = Saved { url, key };
+        let to_save = saved.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { keychain::save(&to_save) }).await;
+            this.update(cx, |this, cx| {
+                this.note = result.err().map(|e| format!("{e} Connected for this session only; the key was not stored anywhere."));
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        self.form.key.clear();
+        self.form.error = None;
+        self.connect(saved, cx);
     }
 
-    fn push(&mut self, line: LogRow, cx: &mut Context<Self>) {
-        self.log.push(line);
-        if self.follow {
-            self.log_scroll.scroll_to_item(self.log.len() - 1, ScrollStrategy::Bottom);
+    fn disconnect(&mut self, cx: &mut Context<Self>) {
+        self.hub = None;
+        self.state = State::default();
+        self.screen = Screen::Connect;
+        self.form.field = Field::Key;
+        self.note = None;
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async { keychain::clear() }).await;
+            this.update(cx, |this, cx| {
+                this.form.error = result.err();
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn after_state_change(&mut self) {
+        if let Conn::Refused(message) = &self.state.conn {
+            self.form.error = Some(message.clone());
+            self.form.field = Field::Key;
+            self.hub = None;
+            self.screen = Screen::Connect;
         }
-        cx.notify();
+        let version = self.state.detail.as_ref().map_or(0, |d| d.version);
+        if version != self.log_version {
+            self.log_version = version;
+            self.log = self.state.detail.as_ref().map(|d| tail_rows(&d.tail)).unwrap_or_default();
+            if self.follow && !self.log.is_empty() {
+                self.log_scroll.scroll_to_item(self.log.len() - 1, ScrollStrategy::Bottom);
+            }
+        }
+    }
+
+    // ---- navigation and keys ---------------------------------------------------------------
+
+    fn go(&mut self, screen: Screen) {
+        if self.hub.is_none() && self.bench.is_none() {
+            return;
+        }
+        if screen != Screen::Project {
+            self.state.close_project();
+        }
+        self.screen = screen;
+        self.selected = 0;
+    }
+
+    fn open_project(&mut self, key: ProjectKey) {
+        let out = self.state.open_project(key);
+        self.send(out);
+        self.log.clear();
+        self.log_version = 0;
+        self.follow = true;
+        self.screen = Screen::Project;
+    }
+
+    fn list_len(&self) -> usize {
+        match self.screen {
+            Screen::Projects => self.state.projects.len(),
+            Screen::Machines => self.state.machines.len(),
+            _ => 0,
+        }
     }
 
     fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         let ks = &event.keystroke;
-        if let Some(probe) = &mut self.probe {
+        if let Some((_, probe)) = &mut self.bench {
             probe.key_received(Instant::now(), &ks.key);
         }
-        if ks.modifiers.control || ks.modifiers.platform || ks.modifiers.alt {
+        let m = &ks.modifiers;
+        if m.secondary() && !m.alt {
+            match ks.key.as_str() {
+                "1" => self.go(Screen::Inbox),
+                "2" => self.go(Screen::Projects),
+                "3" => self.go(Screen::Machines),
+                "v" => {
+                    let text = cx.read_from_clipboard().and_then(|c| c.text()).unwrap_or_default();
+                    self.type_text(text.trim());
+                }
+                _ => return,
+            }
+            cx.stop_propagation();
+            cx.notify();
             return;
         }
-        match ks.key.as_str() {
-            "backspace" => {
-                self.input.pop();
+        if m.control || m.platform || m.alt {
+            return;
+        }
+        let key = ks.key.as_str();
+        if self.screen == Screen::Connect {
+            match key {
+                "tab" => self.form.field = if self.form.field == Field::Url { Field::Key } else { Field::Url },
+                "enter" => self.submit_connect(cx),
+                "backspace" => {
+                    self.field_mut().pop();
+                }
+                _ => match printable(ks) {
+                    Some(ch) => self.type_text(ch),
+                    None => return,
+                },
             }
-            "enter" => {
-                if !self.input.is_empty() {
-                    let text = format!("› you: {}", std::mem::take(&mut self.input));
-                    self.follow = true;
-                    self.push(LogRow { kind: LogKind::User, text: text.into() }, cx);
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+        match key {
+            "up" | "down" => {
+                self.selected = if key == "up" { self.selected.saturating_sub(1) } else { (self.selected + 1).min(self.list_len().saturating_sub(1)) };
+                if self.screen == Screen::Projects {
+                    self.projects_scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
                 }
             }
-            _ => match &ks.key_char {
-                Some(ch) if !ch.chars().any(char::is_control) => self.input.push_str(ch),
-                _ => return,
+            "escape" if !self.bar.is_empty() => self.bar.clear(),
+            "escape" if self.screen == Screen::Project => self.go(Screen::Projects),
+            "backspace" => {
+                self.bar.pop();
+            }
+            "enter" if !self.bar.is_empty() => {
+                let raw = std::mem::take(&mut self.bar);
+                if self.bench.is_some() {
+                    // No hub in the bench: echo locally, as typing a reply would.
+                    self.push_log(LogRow { kind: LogKind::User, text: format!("› you: {raw}").into() });
+                } else {
+                    let out = self.state.reply(&raw, None);
+                    self.send(out);
+                }
+            }
+            "enter" if self.screen == Screen::Projects => {
+                if let Some(key) = self.state.projects.get(self.selected).map(ProjectRow::key) {
+                    self.open_project(key);
+                }
+            }
+            _ => match printable(ks) {
+                Some(ch) => self.bar.push_str(ch),
+                None => return,
             },
         }
         cx.stop_propagation();
         cx.notify();
+    }
+
+    fn field_mut(&mut self) -> &mut String {
+        match self.form.field {
+            Field::Url => &mut self.form.url,
+            Field::Key => &mut self.form.key,
+        }
+    }
+
+    fn type_text(&mut self, text: &str) {
+        let text: String = text.chars().filter(|c| !c.is_control()).collect();
+        if self.screen == Screen::Connect { self.field_mut().push_str(&text) } else { self.bar.push_str(&text) }
+    }
+
+    fn quick_reply(&mut self, batch_id: String, raw: String, cx: &mut Context<Self>) {
+        let out = self.state.reply(&raw, Some(&batch_id));
+        self.send(out);
+        cx.notify();
+    }
+
+    fn push_log(&mut self, line: LogRow) {
+        self.log.push(line);
+        if self.follow {
+            self.log_scroll.scroll_to_item(self.log.len() - 1, ScrollStrategy::Bottom);
+        }
     }
 
     fn on_log_wheel(&mut self, event: &ScrollWheelEvent, _: &mut Window, _: &mut Context<Self>) {
@@ -142,63 +394,365 @@ impl Shell {
         }
     }
 
-    fn project_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        pane(px(280.)).font_family(UI_FONT).child(header("Projects", format!("{}", self.rows.len()))).child(
-            uniform_list(
-                "projects",
-                self.rows.len(),
-                cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                    range
-                        .map(|ix| {
-                            let selected = ix == this.selected;
-                            let row = div()
-                                .id(ix)
-                                .h(px(ROW_H))
-                                .px_2()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .whitespace_nowrap()
-                                .overflow_hidden()
-                                .when(selected, |d| d.bg(rgb(0x2d3a52)))
-                                .hover(|d| d.bg(rgb(0x2a2c31)))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.selected = ix;
-                                    cx.notify();
-                                }));
-                            match &this.rows[ix] {
-                                Row::Project { name, machine, fleet } => row
-                                    .text_color(rgb(Theme::TEXT))
-                                    .child(div().flex_1().child(name.clone()))
-                                    .child(muted(format!("{machine} · {fleet}"))),
-                                Row::Thread { title, state, age } => row
-                                    .pl_5()
-                                    .text_color(rgb(Theme::MUTED))
-                                    .child(div().text_color(rgb(state_color(*state))).child("●"))
-                                    .child(div().flex_1().overflow_hidden().child(title.clone()))
-                                    .child(muted(age.clone())),
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                }),
-            )
-            .flex_1(),
-        )
+    // ---- screens -------------------------------------------------------------------------
+
+    fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let inbox = self.state.inbox().len();
+        let offline = self.state.machines.iter().filter(|m| m.status != MachineStatus::Online).count();
+        let nav = |label: &'static str, count: String, shortcut: &'static str, screen: Screen, cx: &mut Context<Self>| {
+            let active = self.screen == screen || (screen == Screen::Projects && self.screen == Screen::Project);
+            div()
+                .id(label)
+                .h(px(30.))
+                .px_3()
+                .flex()
+                .items_center()
+                .gap_2()
+                .cursor_pointer()
+                .when(active, |d| d.bg(rgb(Theme::SELECTED)))
+                .hover(|d| d.bg(rgb(Theme::HOVER)))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.go(screen);
+                    cx.notify();
+                }))
+                .child(div().flex_1().child(label))
+                .child(muted(count))
+                .child(muted(shortcut))
+        };
+        let (dot, status) = match (&self.state.conn, self.bench.is_some()) {
+            (_, true) => (Theme::YELLOW, "bench fixture, no hub".to_string()),
+            (Conn::Live, _) => (Theme::GREEN, "live".to_string()),
+            (Conn::Connecting { reason: None, .. }, _) => (Theme::YELLOW, "connecting…".to_string()),
+            (Conn::Connecting { reason: Some(r), retry_in }, _) => {
+                (Theme::RED, format!("retrying in {}s: {r}", retry_in.map_or(0, |d| d.as_secs_f32().ceil() as u64)))
+            }
+            (Conn::Refused(_), _) => (Theme::RED, "key refused".to_string()),
+        };
+        let bench_status = status.clone();
+        pane(px(220.))
+            .child(header("fleetd", String::new()))
+            .child(nav("Inbox", if inbox > 0 { inbox.to_string() } else { String::new() }, SHORTCUTS[0], Screen::Inbox, cx))
+            .child(nav("Projects", self.state.projects.len().to_string(), SHORTCUTS[1], Screen::Projects, cx))
+            .child(nav(
+                "Machines",
+                if offline > 0 { format!("{offline} down") } else { self.state.machines.len().to_string() },
+                SHORTCUTS[2],
+                Screen::Machines,
+                cx,
+            ))
+            .child(div().flex_1())
+            .when(self.hub.is_some(), |d| {
+                d.child(
+                    div()
+                        .p_3()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .border_t_1()
+                        .border_color(rgb(Theme::BORDER))
+                        .child(div().flex().gap_2().items_center().child(div().text_color(rgb(dot)).child("●")).child(muted(status)))
+                        .child(muted(self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default()))
+                        .child(button("disconnect", "Disconnect and forget key", cx.listener(|this, _, _, cx| this.disconnect(cx)))),
+                )
+            })
+            .when(self.bench.is_some(), |d| d.child(div().p_3().child(muted(bench_status))))
     }
 
-    fn log_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn connect_screen(&self, window: &Window) -> AnyElement {
+        let focused = self.focus.is_focused(window);
+        let field = |label: &'static str, which: Field, value: String, placeholder: &'static str| {
+            let active = focused && self.form.field == which;
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(muted(label))
+                .child(
+                    div()
+                        .h(px(32.))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .border_1()
+                        .rounded_sm()
+                        .border_color(rgb(if active { Theme::ACCENT } else { Theme::BORDER }))
+                        .bg(rgb(Theme::BG))
+                        .font_family(MONO_FONT)
+                        .child(if value.is_empty() {
+                            div().text_color(rgb(Theme::MUTED)).child(placeholder)
+                        } else {
+                            div().child(value)
+                        })
+                        .when(active, |d| d.child(caret())),
+                )
+        };
+        let masked = if self.form.key.is_empty() {
+            String::new()
+        } else {
+            format!("{}{}", &self.form.key[..self.form.key.len().min(4)], "•".repeat(self.form.key.len().saturating_sub(4).min(40)))
+        };
+        div()
+            .flex_1()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .w(px(460.))
+                    .p_5()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    .bg(rgb(Theme::PANEL))
+                    .border_1()
+                    .border_color(rgb(Theme::BORDER))
+                    .rounded_md()
+                    .child(div().text_size(px(16.)).child("Connect to a fleetd hub"))
+                    .child(field("Hub URL", Field::Url, self.form.url.clone(), "http://127.0.0.1:4790"))
+                    .child(field("Agent key", Field::Key, masked, "fld_… (fleetd hub key create)"))
+                    .when_some(self.form.error.clone(), |d, e| d.child(div().text_color(rgb(Theme::RED)).child(e)))
+                    .child(muted("Tab switches fields, Enter connects. The key is kept in the OS keychain, never in a file.")),
+            )
+            .into_any_element()
+    }
+
+    fn inbox_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let items = self.state.inbox();
+        let mut body = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().p_3().flex().flex_col().gap_2();
+        if let Some(echo) = &self.state.echo {
+            body = body.child(div().text_color(rgb(if echo.ok { Theme::GREEN } else { Theme::YELLOW })).child(echo.text.clone()));
+        }
+        if let Some(e) = &self.state.asks_error {
+            body = body.child(div().text_color(rgb(Theme::RED)).child(e.clone()));
+        }
+        if items.is_empty() && self.state.asks_error.is_none() {
+            body = body.child(muted("Nothing needs you. Leads decide everything that isn't a product, money, credential or irreversible call."));
+        }
+        let mut batch = "";
+        for item in items {
+            if item.batch_id != batch {
+                batch = item.batch_id;
+                body = body.child(div().pt_2().text_color(rgb(Theme::MUTED)).child(format!("Batch {batch}")));
+            }
+            body = body.child(self.ask_card(item.batch_id, item.number, item.ask, cx));
+        }
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .child(header("Inbox", "reply below: 1 go 2 nvm 3 b · recs fine".into()))
+            .child(body)
+            .into_any_element()
+    }
+
+    fn ask_card(&self, batch_id: &str, number: u32, ask: &Ask, cx: &mut Context<Self>) -> impl IntoElement {
+        let project = format!("{}/{}", ask.project_ref.machine_id, ask.project_ref.project_id);
+        let class_color = match ask.class {
+            AskClass::Product => Theme::ACCENT,
+            AskClass::Money | AskClass::Irreversible => Theme::RED,
+            _ => Theme::YELLOW,
+        };
+        let reply = |label: String, raw: String, cx: &mut Context<Self>| {
+            let batch_id = batch_id.to_string();
+            button(SharedString::from(format!("{}-{number}-{raw}", ask.ask_id)), label, cx.listener(move |this, _, _, cx| {
+                this.quick_reply(batch_id.clone(), raw.clone(), cx)
+            }))
+        };
+        let mut buttons = div().flex().flex_wrap().gap_2().pt_1();
+        if ask.kind == AskKind::Do {
+            buttons = buttons.child(reply("done".into(), format!("{number} done"), cx));
+        } else {
+            let rec = ask.recommendation.clone().unwrap_or_default();
+            buttons = buttons.child(reply(format!("go: {}", clip(&rec, 40)), format!("{number} go"), cx));
+        }
+        for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
+            let letter = (b'a' + i as u8) as char;
+            buttons = buttons.child(reply(format!("{letter}: {}", clip(option, 40)), format!("{number} {letter}"), cx));
+        }
+        buttons = buttons.child(reply("no".into(), format!("{number} no"), cx));
+        let mut card = div()
+            .p_3()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .bg(rgb(Theme::PANEL))
+            .border_1()
+            .border_color(rgb(Theme::BORDER))
+            .rounded_md()
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .items_center()
+                    .child(div().text_color(rgb(Theme::ACCENT)).child(format!("{number}")))
+                    .child(div().text_color(rgb(class_color)).text_size(px(11.5)).child(ask.class.as_str()))
+                    .child(muted(project))
+                    .when(ask.proceeded_on_rec, |d| d.child(muted("· went ahead on the recommendation")))
+                    .when(ask.blocks != "nothing", |d| d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child(format!("blocks: {}", ask.blocks)))),
+            )
+            .child(div().whitespace_normal().child(ask.text.clone()));
+        for (i, step) in ask.steps.iter().flatten().enumerate() {
+            card = card.child(muted(format!("{}. [{}] {}", i + 1, step.place, step.text)));
+            if let Some(command) = &step.command {
+                card = card.child(div().pl_4().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()));
+            }
+        }
+        card.child(buttons)
+    }
+
+    fn projects_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .child(header("Projects", "↑↓ select · Enter opens".into()))
+            .child(
+                uniform_list(
+                    "projects",
+                    self.state.projects.len(),
+                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                        range.map(|ix| this.project_row(ix, cx)).collect::<Vec<_>>()
+                    }),
+                )
+                .track_scroll(&self.projects_scroll)
+                .flex_1(),
+            )
+            .into_any_element()
+    }
+
+    fn project_row(&self, ix: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+        let row = &self.state.projects[ix];
+        let (lead_color, lead_label) = lead_badge(row);
+        let open = row.workstreams().len();
+        let headline = row.error.clone().or_else(|| row.headline().map(str::to_string)).unwrap_or_default();
+        let key = row.key();
+        div()
+            .id(ix)
+            .w_full()
+            .h(px(ROW_H))
+            .px_3()
+            .flex()
+            .items_center()
+            .gap_3()
+            .whitespace_nowrap()
+            .overflow_hidden()
+            .cursor_pointer()
+            .when(ix == self.selected, |d| d.bg(rgb(Theme::SELECTED)))
+            .hover(|d| d.bg(rgb(Theme::HOVER)))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.selected = ix;
+                this.open_project(key.clone());
+                cx.notify();
+            }))
+            .child(div().w(px(90.)).flex_none().flex().gap_1().items_center().child(div().text_color(rgb(lead_color)).child("●")).child(muted(lead_label)))
+            .child(div().w(px(180.)).flex_none().overflow_hidden().text_ellipsis().child(row.summary.title.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_color(rgb(if row.error.is_some() { Theme::RED } else { Theme::MUTED }))
+                    .child(headline),
+            )
+            .child(muted(if open == 0 { "no open work".to_string() } else { format!("{open} open") }))
+            .child(self.machine_chip(&row.summary.machine_id))
+            .when(row.stale(), |d| d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child("stale")))
+    }
+
+    fn machine_chip(&self, machine_id: &str) -> Div {
+        let color = match self.state.machine(machine_id).map(|m| m.status) {
+            Some(MachineStatus::Online) => Theme::GREEN,
+            Some(MachineStatus::Degraded) => Theme::YELLOW,
+            _ => Theme::RED,
+        };
+        div()
+            .px_2()
+            .rounded_sm()
+            .bg(rgb(Theme::BUTTON))
+            .flex()
+            .gap_1()
+            .items_center()
+            .text_size(px(11.5))
+            .child(div().text_color(rgb(color)).child("●"))
+            .child(machine_id.to_string())
+    }
+
+    fn project_screen(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let Some(key) = self.state.detail.as_ref().map(|d| d.key.clone()) else { return self.projects_screen(cx) };
+        let row = self.state.project(&key);
+        let title = row.map_or(key.1.clone(), |r| r.summary.title.clone());
+        let mut left = div().id("workstreams").flex_1().min_h_0().overflow_y_scroll().p_3().flex().flex_col().gap_3();
+        if let Some(row) = row {
+            if let Some(e) = &row.error {
+                left = left.child(div().text_color(rgb(Theme::RED)).whitespace_normal().child(e.clone()));
+            }
+            if row.workstreams().is_empty() && row.outcome.is_some() {
+                left = left.child(muted("No open workstreams."));
+            }
+            for w in row.workstreams() {
+                left = left.child(workstream_card(w));
+            }
+        }
+        let (lead_color, lead_label) = row.map_or((Theme::MUTED, "no lead"), lead_badge);
+        let tail_error = self.state.detail.as_ref().and_then(|d| d.tail_error.clone());
+        let log_title = match row.and_then(|r| r.lead()) {
+            Some(lead) => format!("lead · {} · session {}", lead.thread_id, lead.session_generation),
+            None => "lead".into(),
+        };
+        div()
+            .flex_1()
+            .flex()
+            .min_w_0()
+            .child(
+                pane(px(440.))
+                    .child(
+                        header_el(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .items_center()
+                                .child(title)
+                                .child(self.machine_chip(&key.0))
+                                .when(row.is_some_and(ProjectRow::stale), |d| d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child("stale"))),
+                            muted("Esc back"),
+                        ),
+                    )
+                    .child(left),
+            )
+            .child(self.log_pane(log_title, lead_color, lead_label, tail_error, window, cx))
+            .into_any_element()
+    }
+
+    fn log_pane(
+        &mut self,
+        title: String,
+        lead_color: u32,
+        lead_label: &'static str,
+        error: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         self.drive_scroll_bench(window);
         if !self.follow && self.scroll_bench_idle() && self.log_scroll.is_scrolled_to_end() == Some(true) {
             self.follow = true;
         }
         let status = if self.follow { "following" } else { "paused" };
+        let empty = self.log.is_empty();
         div()
             .flex_1()
             .flex()
             .flex_col()
             .min_w_0()
             .bg(rgb(Theme::BG))
-            .child(header("lead · fleetd", format!("{} lines · {status}", self.log.len())))
+            .child(header_el(
+                div().flex().gap_2().items_center().child(div().text_color(rgb(lead_color)).child("●")).child(muted(lead_label)).child(title),
+                muted(format!("{} lines · {status}", self.log.len())),
+            ))
+            .when_some(error, |d, e| d.child(div().px_3().py_1().text_color(rgb(Theme::RED)).child(e)))
+            .when(empty, |d| d.child(div().p_3().child(muted("The lead's latest messages and actions show here."))))
             .child(
                 uniform_list(
                     "log",
@@ -220,27 +774,50 @@ impl Shell {
             )
     }
 
-    fn diff_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        pane(px(620.)).child(header("train.ts and 3 more", format!("{} lines", self.diff.len()))).child(
-            uniform_list(
-                "diff",
-                self.diff.len(),
-                cx.processor(|this, range: std::ops::Range<usize>, _, _| {
-                    range.map(|ix| diff_row(&this.diff[ix])).collect::<Vec<_>>()
-                }),
-            )
-            .flex_1()
-            .font_family(MONO_FONT)
-            .text_size(px(12.5)),
-        )
+    fn machines_screen(&self) -> AnyElement {
+        let mut list = div().id("machines").flex_1().min_h_0().overflow_y_scroll().flex().flex_col();
+        if self.state.machines.is_empty() {
+            list = list.child(div().p_3().child(muted("No machines have joined this hub yet (fleetd machine add).")));
+        }
+        for (ix, m) in self.state.machines.iter().enumerate() {
+            let (color, label) = match m.status {
+                MachineStatus::Online => (Theme::GREEN, "online"),
+                MachineStatus::Degraded => (Theme::YELLOW, "degraded"),
+                MachineStatus::Offline => (Theme::RED, "offline"),
+                MachineStatus::Other => (Theme::MUTED, "unknown"),
+            };
+            let detail = match (&m.degraded_reason, m.status) {
+                (Some(reason), _) => reason.clone(),
+                (None, MachineStatus::Offline) => format!("last seen {}", ago(&m.last_seen_at)),
+                _ => String::new(),
+            };
+            let t3 = m.t3.as_ref().map_or("T3 not reachable".to_string(), |t| format!("T3 {}", t.version));
+            list = list.child(
+                div()
+                    .min_h(px(ROW_H))
+                    .px_3()
+                    .py_1()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .when(ix == self.selected, |d| d.bg(rgb(Theme::SELECTED)))
+                    .child(div().w(px(110.)).flex_none().flex().gap_1().items_center().child(div().text_color(rgb(color)).child("●")).child(muted(label)))
+                    .child(div().w(px(160.)).flex_none().child(m.name.clone()))
+                    .child(div().flex_1().min_w_0().whitespace_normal().text_color(rgb(if m.degraded_reason.is_some() { Theme::YELLOW } else { Theme::MUTED })).child(detail))
+                    .child(muted(t3))
+                    .child(muted(format!("node {}", m.node_version)))
+                    .child(muted(ago(&m.last_seen_at))),
+            );
+        }
+        div().flex_1().flex().flex_col().min_w_0().child(header("Machines", String::new())).child(list).into_any_element()
     }
 
-    fn input_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn reply_bar(&self, window: &Window) -> impl IntoElement {
         let focused = self.focus.is_focused(window);
+        let echo = self.state.echo.as_ref().filter(|_| self.screen != Screen::Inbox);
         div()
-            .track_focus(&self.focus)
-            .on_key_down(cx.listener(Self::on_key))
             .h(px(40.))
+            .flex_none()
             .px_3()
             .flex()
             .items_center()
@@ -251,20 +828,56 @@ impl Shell {
             .font_family(MONO_FONT)
             .text_size(px(13.))
             .child(div().text_color(rgb(Theme::ACCENT)).child("›"))
-            .child(if self.input.is_empty() {
-                div().text_color(rgb(Theme::MUTED)).child("Message the lead")
+            .child(if self.bar.is_empty() {
+                div().text_color(rgb(Theme::MUTED)).child("Reply to the inbox: 1 go 2 nvm 3 b")
             } else {
-                div().text_color(rgb(Theme::TEXT)).child(self.input.clone())
+                div().text_color(rgb(Theme::TEXT)).child(self.bar.clone())
             })
-            .child(div().w(px(7.)).h(px(16.)).bg(rgb(Theme::ACCENT)))
+            .when(focused, |d| d.child(caret()))
+            .child(div().flex_1())
+            .when_some(echo, |d, e| {
+                d.child(div().max_w(px(600.)).overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(rgb(if e.ok { Theme::GREEN } else { Theme::YELLOW })).font_family(UI_FONT).child(e.text.clone()))
+            })
+    }
+
+    // ---- bench -----------------------------------------------------------------------------
+
+    fn start_bench(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
+        let history: usize = env_num("FLEETD_HISTORY", 20_000);
+        let mut stream = LogStream::new(1);
+        self.log = (0..history).map(|_| to_row(stream.next_line())).collect();
+        self.state = fake::fixture_state();
+        self.screen = Screen::Project;
+        self.bench = Some((stream, Probe::new()));
+        if env_num("FLEETD_STREAM", 1) == 1 {
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(Duration::from_millis(1000 / LINES_PER_SEC)).await;
+                    let appended = this.update(cx, |this, cx| {
+                        let line = to_row(this.bench.as_mut().unwrap().0.next_line());
+                        this.push_log(line);
+                        cx.notify();
+                    });
+                    if appended.is_err() {
+                        return;
+                    }
+                }
+            })
+            .detach();
+        }
+        spawn_bench(mode, window, cx);
+    }
+
+    fn probe(&mut self) -> &mut Probe {
+        &mut self.bench.as_mut().unwrap().1
     }
 
     fn scroll_bench_idle(&self) -> bool {
-        self.probe.as_ref().is_none_or(|p| p.scroll_started.is_none())
+        self.bench.as_ref().is_none_or(|(_, p)| p.scroll_started.is_none())
     }
 
     fn drive_scroll_bench(&mut self, window: &mut Window) {
-        let Some(started) = self.probe.as_ref().and_then(|p| p.scroll_started) else { return };
+        let Some(started) = self.bench.as_ref().and_then(|(_, p)| p.scroll_started) else { return };
         self.follow = false;
         let state = self.log_scroll.0.borrow();
         let max = f32::from(state.base_handle.max_offset().y).max(1.);
@@ -276,6 +889,22 @@ impl Shell {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let screen = match self.screen {
+            Screen::Loading => div().flex_1().into_any_element(),
+            Screen::Connect => self.connect_screen(window),
+            Screen::Inbox => self.inbox_screen(cx),
+            Screen::Projects => self.projects_screen(cx),
+            Screen::Project => self.project_screen(window, cx),
+            Screen::Machines => self.machines_screen(),
+        };
+        let banner = self.note.clone().or_else(|| self.state.notice.clone());
+        let main = div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .when_some(banner, |d, text| d.child(div().px_3().py_1().bg(rgb(0x3a3220)).text_color(rgb(Theme::YELLOW)).child(text)))
+            .child(div().flex_1().min_h_0().flex().child(screen));
         div()
             .size_full()
             .flex()
@@ -284,17 +913,127 @@ impl Render for Shell {
             .text_color(rgb(Theme::TEXT))
             .text_size(px(13.))
             .font_family(UI_FONT)
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
             .child(
                 div()
                     .flex_1()
                     .min_h_0()
                     .flex()
-                    .child(self.project_pane(cx))
-                    .child(self.log_pane(window, cx))
-                    .child(self.diff_pane(cx)),
+                    .when(self.screen != Screen::Connect && self.screen != Screen::Loading, |d| d.child(self.sidebar(cx)))
+                    .child(main),
             )
-            .child(self.input_bar(window, cx))
+            .when(!matches!(self.screen, Screen::Connect | Screen::Loading), |d| d.child(self.reply_bar(window)))
     }
+}
+
+fn workstream_card(w: &Workstream) -> impl IntoElement {
+    let state_color = match w.state {
+        WorkstreamState::Done => Theme::GREEN,
+        WorkstreamState::Failed | WorkstreamState::Stopped => Theme::RED,
+        WorkstreamState::Draft | WorkstreamState::Idle => Theme::MUTED,
+        _ => Theme::ACCENT,
+    };
+    let mut card = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .items_center()
+                .child(muted(w.workstream_id.clone()))
+                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(w.title.clone()))
+                .child(div().text_color(rgb(state_color)).text_size(px(11.5)).child(w.state.as_str())),
+        )
+        .when_some(w.headline.clone(), |d, h| d.child(div().text_color(rgb(Theme::MUTED)).whitespace_normal().child(format!("lead says: {h}"))));
+    match &w.brief {
+        // ✓ comes only from checks the hub ran (M6); until then every item is open.
+        Some(brief) => {
+            for check in &brief.done_when {
+                card = card.child(div().pl_3().flex().gap_2().child(muted("○")).child(div().whitespace_normal().text_size(px(12.)).child(check.describe())));
+            }
+        }
+        None => card = card.child(div().pl_3().child(muted("draft: the lead hasn't written the brief yet"))),
+    }
+    card
+}
+
+fn lead_badge(row: &ProjectRow) -> (u32, &'static str) {
+    match row.lead().map(|l| l.state) {
+        None if row.outcome.is_none() => (Theme::MUTED, "…"),
+        None => (Theme::MUTED, "no lead"),
+        Some(LeadState::Working) => (Theme::ACCENT, "working"),
+        Some(LeadState::Idle) => (Theme::GREEN, "idle"),
+        Some(LeadState::Starting) => (Theme::YELLOW, "starting"),
+        Some(LeadState::Stalled) => (Theme::RED, "stalled"),
+        Some(LeadState::Stopped) => (Theme::MUTED, "stopped"),
+        Some(LeadState::Other) => (Theme::MUTED, "?"),
+    }
+}
+
+/// Log rows for a tail: one per line, a timestamp on the first line of each item.
+fn tail_rows(items: &[TailItem]) -> Vec<LogRow> {
+    let mut rows = Vec::new();
+    let mut push = |kind, text: String| rows.push(LogRow { kind, text: text.into() });
+    for item in items {
+        match item {
+            TailItem::Message { at, role, text } => {
+                let kind = if role == "user" { LogKind::User } else { LogKind::Thought };
+                for (i, line) in text.lines().enumerate() {
+                    push(kind, if i == 0 { format!("{}  {role}: {line}", clock(at)) } else { format!("          {line}") });
+                }
+            }
+            TailItem::Action { at, action } => {
+                let kind = if action.failed { LogKind::Error } else { LogKind::Tool };
+                push(kind, format!("{}  ● {} [{}]", clock(at), action.summary, action.status));
+                for line in action.output_tail.iter().flat_map(|o| o.lines()) {
+                    push(if action.failed { LogKind::Error } else { LogKind::Output }, format!("            {line}"));
+                }
+            }
+        }
+    }
+    rows
+}
+
+/// "2026-10-17T10:04:05.123Z" → "10:04:05".
+fn clock(iso: &str) -> &str {
+    iso.get(11..19).unwrap_or(iso)
+}
+
+/// Seconds since the Unix epoch for "YYYY-MM-DDTHH:MM:SS[.fff]Z".
+fn unix_secs(iso: &str) -> Option<i64> {
+    let n = |r: std::ops::Range<usize>| iso.get(r)?.parse::<i64>().ok();
+    let (y, mo, d, h, mi, s) = (n(0..4)?, n(5..7)?, n(8..10)?, n(11..13)?, n(14..16)?, n(17..19)?);
+    // Days from civil (H. Hinnant).
+    let y = if mo <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (mo + if mo > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era * 146_097 + doe - 719_468) * 86_400 + h * 3600 + mi * 60 + s)
+}
+
+/// "4m ago"-style age; computed at render, which only happens on change, so it never ticks by itself.
+fn ago(iso: &str) -> String {
+    let Some(then) = unix_secs(iso) else { return iso.to_string() };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+    let s = (now - then).max(0);
+    match s {
+        0..60 => "just now".into(),
+        60..3600 => format!("{}m ago", s / 60),
+        3600..86_400 => format!("{}h ago", s / 3600),
+        _ => format!("{}d ago", s / 86_400),
+    }
+}
+
+fn printable(ks: &Keystroke) -> Option<&str> {
+    ks.key_char.as_deref().filter(|ch| !ch.chars().any(char::is_control))
+}
+
+fn clip(text: &str, max: usize) -> String {
+    if text.chars().count() <= max { text.to_string() } else { format!("{}…", text.chars().take(max - 1).collect::<String>()) }
 }
 
 fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
@@ -306,7 +1045,7 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
         loop {
             wait(cx, tick).await;
             let Ok(Some(first)) = this.update(cx, |s, _| {
-                let p = s.probe.as_mut().unwrap();
+                let p = s.probe();
                 p.poll();
                 p.first_present.map(|at| (p.unix_ns(at), p.first_draw.map_or(0, |d| p.unix_ns(d)), p.draws_to_first_present))
             }) else {
@@ -315,13 +1054,13 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
             let (present, draw, draws) = first;
             let x11 = x11_window.unwrap_or(0);
             this.update(cx, |s, _| {
-                s.probe.as_ref().unwrap().emit(&format!("event=first_present unix_ns={present} first_draw_unix_ns={draw} draws={draws} x11_window={x11}"))
+                s.probe().emit(&format!("event=first_present unix_ns={present} first_draw_unix_ns={draw} draws={draws} x11_window={x11}"))
             })
             .ok();
             break;
         }
         let emit_keys = |s: &mut Shell| {
-            let p = s.probe.as_mut().unwrap();
+            let p = s.probe();
             for (key, lat) in p.poll() {
                 p.emit(&format!("event=key key={key} latency_ns={}", lat.as_nanos()));
             }
@@ -345,14 +1084,11 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
                 }
                 wait(cx, Duration::from_millis(300)).await;
                 this.update(cx, |s, _| emit_keys(s)).ok();
-                this.update_in(cx, |s, window, _| s.probe.as_ref().unwrap().emit(&format!("event=keys active={}", window.is_window_active()))).ok();
+                this.update_in(cx, |s, window, _| s.probe().emit(&format!("event=keys active={}", window.is_window_active()))).ok();
             }
             Mode::KeysExternal => {
                 wait(cx, Duration::from_secs(1)).await;
-                this.update(cx, |s, _| {
-                    s.probe.as_ref().unwrap().emit(&format!("event=ready x11_window={}", x11_window.unwrap_or(0)))
-                })
-                .ok();
+                this.update(cx, |s, _| s.probe().emit(&format!("event=ready x11_window={}", x11_window.unwrap_or(0)))).ok();
                 // The driver quits us after its last key; keep resolving latencies until then.
                 loop {
                     wait(cx, Duration::from_millis(20)).await;
@@ -365,7 +1101,7 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
                 wait(cx, Duration::from_secs(1)).await;
                 let start = Instant::now();
                 this.update(cx, |s, cx| {
-                    s.probe.as_mut().unwrap().scroll_started = Some(start);
+                    s.probe().scroll_started = Some(start);
                     cx.notify();
                 })
                 .ok();
@@ -373,17 +1109,17 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
                 let end = Instant::now();
                 wait(cx, Duration::from_millis(100)).await;
                 this.update_in(cx, |s, window, _| {
-                    let p = s.probe.as_mut().unwrap();
+                    let active = window.is_window_active();
+                    let p = s.probe();
                     p.poll();
                     let (fps, worst) = bench::scroll_stats(&p.presents, start, end);
                     p.scroll_started = None;
-                    let active = window.is_window_active();
                     p.emit(&format!("event=scroll fps={fps:.1} worst_frame_us={} active={active}", worst.as_micros()));
                 })
                 .ok();
             }
         }
-        this.update(cx, |s, _| s.probe.as_ref().unwrap().emit("event=done")).ok();
+        this.update(cx, |s, _| s.probe().emit("event=done")).ok();
         cx.update(|_, cx| cx.quit()).ok();
     })
     .detach();
@@ -407,73 +1143,57 @@ fn env_num(name: &str, default: usize) -> usize {
 }
 
 fn pane(width: gpui::Pixels) -> Div {
-    div()
-        .w(width)
-        .flex_none()
-        .flex()
-        .flex_col()
-        .bg(rgb(Theme::PANEL))
-        .border_color(rgb(Theme::BORDER))
-        .border_r_1()
+    div().w(width).flex_none().flex().flex_col().bg(rgb(Theme::PANEL)).border_color(rgb(Theme::BORDER)).border_r_1()
 }
 
 fn header(title: &str, detail: String) -> Div {
+    header_el(div().text_color(rgb(Theme::TEXT)).child(title.to_string()), muted(detail))
+}
+
+fn header_el(title: impl IntoElement, detail: impl IntoElement) -> Div {
     div()
         .h(px(32.))
+        .flex_none()
         .px_3()
         .flex()
         .items_center()
         .justify_between()
+        .gap_2()
         .border_b_1()
         .border_color(rgb(Theme::BORDER))
         .font_family(UI_FONT)
-        .child(div().text_color(rgb(Theme::TEXT)).child(title.to_string()))
-        .child(muted(detail))
+        .child(title)
+        .child(detail)
 }
 
 fn muted(text: impl Into<SharedString>) -> Div {
     div().text_color(rgb(Theme::MUTED)).text_size(px(11.5)).child(text.into())
 }
 
+fn caret() -> Div {
+    div().w(px(7.)).h(px(16.)).bg(rgb(Theme::ACCENT))
+}
+
+fn button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .px_2()
+        .py_0p5()
+        .rounded_sm()
+        .bg(rgb(Theme::BUTTON))
+        .text_size(px(12.))
+        .cursor_pointer()
+        .hover(|d| d.bg(rgb(Theme::SELECTED)))
+        .on_click(on_click)
+        .child(label.into())
+}
+
 fn text_row() -> Div {
     div().h(px(LINE_H)).px_3().flex().items_center().whitespace_nowrap().overflow_hidden()
-}
-
-fn diff_row(line: &DiffLine) -> Div {
-    let num = |n: Option<u32>| {
-        div()
-            .w(px(40.))
-            .flex_none()
-            .flex()
-            .justify_end()
-            .pr_2()
-            .text_color(rgb(Theme::MUTED))
-            .child(n.map(|n| n.to_string()).unwrap_or_default())
-    };
-    let (bg, fg, sign): (Option<u32>, u32, &str) = match line.kind {
-        DiffKind::File => (None, Theme::TEXT, ""),
-        DiffKind::Hunk => (Some(Theme::HUNK_BG), Theme::ACCENT, ""),
-        DiffKind::Context => (None, Theme::MUTED, " "),
-        DiffKind::Added => (Some(Theme::ADD_BG), Theme::GREEN, "+"),
-        DiffKind::Removed => (Some(Theme::DEL_BG), Theme::RED, "-"),
-    };
-    let row = div().h(px(LINE_H)).flex().items_center().whitespace_nowrap().overflow_hidden();
-    let row = match bg {
-        Some(bg) => row.bg(Rgba::from(rgb(bg))),
-        None => row,
-    };
-    row.child(num(line.old))
-        .child(num(line.new))
-        .child(div().text_color(rgb(fg)).child(format!("{sign}{}", line.text)))
-}
-
-fn state_color(state: ThreadState) -> u32 {
-    match state {
-        ThreadState::Running => Theme::ACCENT,
-        ThreadState::Waiting => Theme::YELLOW,
-        ThreadState::Done => Theme::GREEN,
-        ThreadState::Failed => Theme::RED,
-    }
 }
 
 fn log_color(kind: LogKind) -> u32 {
@@ -487,3 +1207,39 @@ fn log_color(kind: LogKind) -> u32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unix_secs_parses_hub_timestamps() {
+        assert_eq!(unix_secs("1970-01-01T00:00:00.000Z"), Some(0));
+        assert_eq!(unix_secs("2026-10-17T10:00:00.000Z"), Some(1_792_231_200));
+        assert_eq!(unix_secs("2024-02-29T23:59:59Z"), Some(1_709_251_199));
+        assert_eq!(unix_secs("soon"), None);
+    }
+
+    #[test]
+    fn tail_rows_split_messages_and_show_action_output() {
+        let items = vec![
+            TailItem::Message { at: "2026-10-17T10:04:05.000Z".into(), role: "assistant".into(), text: "Plan:\n1. read".into() },
+            TailItem::Action {
+                at: "2026-10-17T10:04:06.000Z".into(),
+                action: ActionItem {
+                    at: "2026-10-17T10:04:06.000Z".into(),
+                    kind: "command".into(),
+                    status: "failed".into(),
+                    summary: "pnpm test".into(),
+                    output_tail: Some("1 failed".into()),
+                    exit_code: Some(1),
+                    failed: true,
+                },
+            },
+        ];
+        let rows: Vec<(LogKind, String)> = tail_rows(&items).into_iter().map(|r| (r.kind, r.text.to_string())).collect();
+        assert_eq!(rows[0], (LogKind::Thought, "10:04:05  assistant: Plan:".into()));
+        assert_eq!(rows[1].1.trim(), "1. read");
+        assert_eq!(rows[2], (LogKind::Error, "10:04:06  ● pnpm test [failed]".into()));
+        assert_eq!((rows[3].0, rows[3].1.trim()), (LogKind::Error, "1 failed"));
+    }
+}
