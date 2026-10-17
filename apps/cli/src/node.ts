@@ -30,7 +30,7 @@ const usage = (message: string) => {
 };
 
 /** Runs until SIGINT/SIGTERM (exit 0) or a failure the node cannot retry past (exit 1). */
-const runUntilSignal = async (program: Effect.Effect<unknown, { readonly message: string }>) => {
+export const runUntilSignal = async (program: Effect.Effect<unknown, { readonly message: string }>) => {
   const fiber = Effect.runFork(program);
   const stop = () => Effect.runFork(Fiber.interrupt(fiber));
   process.once("SIGINT", stop);
