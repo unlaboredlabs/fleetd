@@ -55,13 +55,15 @@ export const writeRefusal = (request: SpawnRequest, workstream: Workstream): Ref
 /**
  * Review spawns (QA runs included): a PR to review, no clean verdict on its current head yet, and not a third round
  * after two clean verdicts in a row on different heads. `headSha` is undefined when GitHub could not be asked;
- * `verdicts` are this PR's, newest first.
+ * `verdicts` are this PR's, newest first. `maxRounds` is the playbook's maxReviewRounds: a lead's review of a head not
+ * reviewed yet is refused once that many heads were. The train's own reviews are exempt, so it never stalls on it.
  */
 export const reviewRefusal = (
   request: SpawnRequest,
   by: string,
   headSha: string | undefined,
   verdicts: ReadonlyArray<PrVerdict>,
+  maxRounds?: number,
 ): Refusal | undefined => {
   if (request.kind !== "review") return undefined;
   if (request.pr === undefined) {
@@ -83,6 +85,13 @@ export const reviewRefusal = (
         `${before.taskId}: 0 blocking at ${before.sha}`,
         `${last.taskId}: 0 blocking at ${last.sha}`,
       ],
+    };
+  }
+  const rounds = new Set(verdicts.map((v) => v.sha));
+  if (maxRounds !== undefined && !isHubCaller(by) && rounds.size >= maxRounds && (headSha === undefined || !rounds.has(headSha))) {
+    return {
+      message: `${request.pr} has had ${rounds.size} review rounds, the most its playbook allows.`,
+      fix: "Send the PR to the train. If it still has a blocking defect, fix it with a write task (--serves defect:<text>) and let the train's review gate check it, or ask the human.",
     };
   }
   return undefined;

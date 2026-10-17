@@ -1,6 +1,18 @@
 // Wakes to a lead: triggers for one lead are debounced and coalesced into a single message, which starts with
 // the code-rendered digest and then says why the lead was woken.
-import type { CheckResult, ClaimId, Decision, DecisionScope, ProjectRef, TaskId, TaskResult, ThreadRef, Workstream, WorkstreamId } from "@fleetd/contracts";
+import type {
+  CheckResult,
+  ClaimId,
+  Decision,
+  DecisionScope,
+  PlaybookRef,
+  ProjectRef,
+  TaskId,
+  TaskResult,
+  ThreadRef,
+  Workstream,
+  WorkstreamId,
+} from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -15,13 +27,14 @@ import * as Estimates from "../estimates/Estimates.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
+import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { taskDigestLines, taskResultLines, taskWaitingLines } from "../tasks/render.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Usage from "../usage/Usage.ts";
-import { renderLeadDigest, type WorkstreamFacts } from "./digest.ts";
+import { oneLine, renderLeadDigest, type DigestPlaybook, type WorkstreamFacts } from "./digest.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 
 export const WAKE_DEBOUNCE = Duration.seconds(10);
@@ -29,7 +42,13 @@ export const WAKE_DEBOUNCE = Duration.seconds(10);
 export const WAKE_MAX_WAIT = Duration.seconds(60);
 
 export type Trigger =
-  | { readonly kind: "intent"; readonly workstreamId: WorkstreamId; readonly text: string }
+  | {
+      readonly kind: "intent";
+      readonly workstreamId: WorkstreamId;
+      readonly text: string;
+      /** M9: the playbook it pinned, whose instructions go into this wake. */
+      readonly playbook?: DigestPlaybook;
+    }
   | { readonly kind: "answer"; readonly answer: Answer }
   /** A decision the human recorded that touches the lead's project. */
   | { readonly kind: "decision"; readonly decision: Decision }
@@ -42,7 +61,9 @@ export type Trigger =
   /** A task's thread stopped to ask for input or approval; the question goes into the wake inline. */
   | { readonly kind: "task_waiting"; readonly taskId: TaskId; readonly title: string; readonly question: string }
   /** M7 merge train: a merge, or a PR the train refused or gave up on, as one line. */
-  | { readonly kind: "train"; readonly line: string };
+  | { readonly kind: "train"; readonly line: string }
+  /** M9: a research workstream's computed verdict, as one line. */
+  | { readonly kind: "research_verdict"; readonly workstreamId: WorkstreamId; readonly line: string };
 
 export class LeadWakes extends Context.Service<
   LeadWakes,
@@ -61,14 +82,25 @@ const quote = (text: string) => {
 
 const scopeText = (scope: DecisionScope) => (scope.kind === "workstream" ? scope.workstreamId : scope.kind);
 
-/** The "why you are woken" lines. Answers are already listed in the digest, so they get one summary line. */
-export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<string> => {
+/**
+ * The "why you are woken" lines. Answers are already listed in the digest, so they get one summary line; so do
+ * playbook instructions the digest already shows.
+ */
+export const triggerLines = (triggers: ReadonlyArray<Trigger>, digest = ""): ReadonlyArray<string> => {
   const lines: Array<string> = [];
   for (const t of triggers) {
     if (t.kind === "intent") {
       lines.push(
         `- New intent ${t.workstreamId}: '${quote(t.text)}'. Register it with \`fleetd brief create --workstream ${t.workstreamId} --json '<Brief>'\`.`,
       );
+      if (t.playbook !== undefined) {
+        const instructions = oneLine(t.playbook.leadInstructions, 600);
+        lines.push(
+          digest.includes(instructions)
+            ? `  It follows the ${t.playbook.name} playbook; its instructions are under "Playbooks" above.`
+            : `  It follows the ${t.playbook.name} playbook: ${instructions}`,
+        );
+      }
     } else if (t.kind === "decision") {
       const d = t.decision;
       const who = d.source === "human" ? "The human" : `Agent ${d.by ?? "(unnamed)"}, for the human,`;
@@ -81,7 +113,7 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
       lines.push(claimPassedLine(t));
     } else if (t.kind === "task_waiting") {
       lines.push(taskWaitingLines(t));
-    } else if (t.kind === "train") {
+    } else if (t.kind === "train" || t.kind === "research_verdict") {
       lines.push(`- ${t.line}`);
     }
   }
@@ -91,7 +123,7 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
 };
 
 export const renderWake = (digest: string, triggers: ReadonlyArray<Trigger>) =>
-  `${digest}\n\n## Why you are woken\n${triggerLines(triggers).join("\n")}`;
+  `${digest}\n\n## Why you are woken\n${triggerLines(triggers, digest).join("\n")}`;
 
 /** Per workstream with a brief: the checks its latest finished claim passed, and its ETA. Both digests show them. */
 export const workstreamFacts = (workstreams: ReadonlyArray<Workstream>) =>
@@ -137,6 +169,7 @@ export const make = (options: LeadWakesOptions = {}) =>
     const queue = yield* WriteQueue.WriteQueue;
     const tasks = yield* TaskRecords.TaskRecords;
     const usage = yield* Usage.Usage;
+    const playbooks = yield* Playbooks;
     const factsContext = yield* Effect.context<ClaimRecords.ClaimRecords | Estimates.Estimates>();
     const scope = yield* Effect.scope;
     const debounceMs = Duration.toMillis(Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE));
@@ -153,6 +186,11 @@ export const make = (options: LeadWakesOptions = {}) =>
         const project = yield* store.projects.get(ref);
         const workstreams = yield* records.workstreams.list({ ref, open: true, limit: 50 });
         const since = (yield* records.leads.get(ref))?.lastWakeAt;
+        const pinned = new Map<PlaybookRef, DigestPlaybook>();
+        for (const ref of new Set(workstreams.flatMap((w) => (w.playbook === undefined ? [] : [w.playbook])))) {
+          const loaded = yield* playbooks.byRef(ref);
+          if (loaded !== undefined) pinned.set(ref, loaded.playbook);
+        }
         return renderLeadDigest({
           project: { ref, title: project?.title ?? ref.projectId },
           at: yield* nowIso,
@@ -163,6 +201,7 @@ export const make = (options: LeadWakesOptions = {}) =>
           decisions: yield* decisions.list({ chain: { projectRef: ref }, limit: 500 }),
           tasks: taskDigestLines(yield* tasks.forDigest(ref, since, 50), since),
           facts: yield* workstreamFacts(workstreams).pipe(Effect.provideContext(factsContext)),
+          playbooks: pinned,
         });
       });
 

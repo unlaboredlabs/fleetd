@@ -25,14 +25,17 @@ const median = (sorted: ReadonlyArray<number>) => {
 /** Nearest-rank percentile. */
 const percentile = (sorted: ReadonlyArray<number>, p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!;
 
-/** `ratios` are actual/raw of the tier's latest done workstreams; only the first WINDOW count. Non-positive ones are dropped. */
-export const calibrate = (ratios: ReadonlyArray<number>): Calibration => {
+/**
+ * `ratios` are actual/raw of the tier's latest done workstreams; only the first WINDOW count. Non-positive ones are
+ * dropped. `prior` is the playbook's estimatePrior where the workstream pinned one.
+ */
+export const calibrate = (ratios: ReadonlyArray<number>, prior: number = PRIOR_RATIO): Calibration => {
   const sorted = ratios
     .slice(0, WINDOW)
     .filter((r) => Number.isFinite(r) && r > 0)
     .sort((a, b) => a - b);
   const samples = sorted.length;
-  if (samples < MIN_SAMPLES) return { ratio: PRIOR_RATIO, samples };
+  if (samples < MIN_SAMPLES) return { ratio: prior, samples };
   return { ratio: median(sorted), samples, ...(samples >= P80_MIN_SAMPLES ? { p80Ratio: percentile(sorted, 0.8) } : {}) };
 };
 

@@ -1,6 +1,6 @@
 // The lead digest: the code-rendered project state at the top of every wake. It is the lead's real memory, so it
 // must stay small (DIGEST_MAX_TOKENS) and say plainly what was left out.
-import type { Ask, CheckSpec, Decision, ProjectRef, Workstream, WorkstreamId } from "@fleetd/contracts";
+import type { Ask, CheckSpec, Decision, Playbook, PlaybookRef, ProjectRef, Workstream, WorkstreamId } from "@fleetd/contracts";
 import type { Answer } from "../ledger/Inbox.ts";
 
 export const DIGEST_MAX_TOKENS = 1500;
@@ -27,7 +27,11 @@ export interface DigestInput {
   readonly tasks?: ReadonlyArray<string>;
   /** What fleetd itself measured per workstream; absent ones show none. */
   readonly facts?: ReadonlyMap<WorkstreamId, WorkstreamFacts>;
+  /** M9: the pinned playbooks of open workstreams; their instructions are listed once each. */
+  readonly playbooks?: ReadonlyMap<PlaybookRef, DigestPlaybook>;
 }
+
+export type DigestPlaybook = Pick<Playbook, "name" | "leadInstructions">;
 
 /** What backs a workstream's status beyond the lead's word: the checks its latest claim passed and its ETA. */
 export interface WorkstreamFacts {
@@ -37,7 +41,7 @@ export interface WorkstreamFacts {
   readonly eta?: string;
 }
 
-const oneLine = (text: string, max: number) => {
+export const oneLine = (text: string, max: number) => {
   const flat = text.replace(/\s+/gu, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
@@ -74,8 +78,8 @@ export const rankDecisions = (decisions: ReadonlyArray<Decision>, open: Readonly
 export const doneWhenText = (checks: ReadonlyArray<CheckSpec>, passed: ReadonlySet<number> = new Set(), max = 120) =>
   checks.map((c, i) => `done:${i}${passed.has(i) ? " ✓" : ""} ${oneLine(describeCheck(c), max)}`).join("; ");
 
-const workstreamLines = (w: Workstream, facts: WorkstreamFacts | undefined) => {
-  const head = `- ${w.workstreamId} ${w.state}: ${oneLine(w.title, 120)}`;
+const workstreamLines = (w: Workstream, facts: WorkstreamFacts | undefined, playbook: DigestPlaybook | undefined) => {
+  const head = `- ${w.workstreamId} ${w.state}${playbook === undefined ? "" : ` (${playbook.name})`}: ${oneLine(w.title, 120)}`;
   if (w.brief === undefined) {
     return `${head}\n  no brief yet: register it with \`fleetd brief create --workstream ${w.workstreamId} --json '<Brief>'\``;
   }
@@ -127,7 +131,30 @@ export const renderLeadDigest = (input: DigestInput): string => {
   ].join("\n");
 
   const answers: Section = { title: "Answers since your last wake", ...capped(input.answers.map(answerLine), 20), more: "see `fleetd decisions search`", join: "\n" };
-  const workstreams: Section = { title: "Open workstreams", ...capped(input.workstreams.map((w) => workstreamLines(w, input.facts?.get(w.workstreamId))), 20), more: "older ones not shown", join: "\n" };
+  const playbookOf = (w: Workstream) => (w.playbook === undefined ? undefined : input.playbooks?.get(w.playbook));
+  const workstreams: Section = {
+    title: "Open workstreams",
+    ...capped(input.workstreams.map((w) => workstreamLines(w, input.facts?.get(w.workstreamId), playbookOf(w))), 20),
+    more: "older ones not shown",
+    join: "\n",
+  };
+  const following = new Map<PlaybookRef, { readonly playbook: DigestPlaybook; readonly ids: Array<WorkstreamId> }>();
+  for (const w of input.workstreams) {
+    const playbook = playbookOf(w);
+    if (w.playbook === undefined || playbook === undefined) continue;
+    const entry = following.get(w.playbook) ?? { playbook, ids: [] };
+    entry.ids.push(w.workstreamId);
+    following.set(w.playbook, entry);
+  }
+  const playbooks: Section = {
+    title: "Playbooks: follow these for their workstreams",
+    ...capped(
+      [...following.values()].map(({ playbook, ids }) => `- ${playbook.name} (${ids.join(", ")}): ${oneLine(playbook.leadInstructions, 600)}`),
+      4,
+    ),
+    more: "older versions not shown",
+    join: "\n",
+  };
   const tasks: Section = { title: "Tasks", ...capped(input.tasks ?? [], 20), more: "`fleetd task list`", join: "\n" };
   const asks: Section = { title: "Your open asks", ...capped(input.openAsks.map(askLine), 20), more: "older ones not shown", join: "\n" };
   const decisions: Section = {
@@ -138,7 +165,15 @@ export const renderLeadDigest = (input: DigestInput): string => {
   };
   const doNotReAsk: Section = { title: "Do not re-ask: keys already decided or asked", ...capped(keys, 200), more: "check with `fleetd decisions search`", join: ", " };
 
-  const order = [answers, workstreams, ...(input.tasks === undefined ? [] : [tasks]), asks, decisions, doNotReAsk];
+  const order = [
+    answers,
+    workstreams,
+    ...(following.size === 0 ? [] : [playbooks]),
+    ...(input.tasks === undefined ? [] : [tasks]),
+    asks,
+    decisions,
+    doNotReAsk,
+  ];
   const render = () => [header, ...order.map(renderSection)].join("\n\n");
   // Lowest value first: the key list, then decisions, asks, workstreams, and answers last. The first pass keeps a
   // few of each so no section vanishes while another is long; the second trims to nothing if it must.
@@ -146,6 +181,7 @@ export const renderLeadDigest = (input: DigestInput): string => {
     [doNotReAsk, 30],
     [decisions, 3],
     [asks, 5],
+    [playbooks, 1],
     [tasks, 5],
     [workstreams, 5],
     [answers, 5],
