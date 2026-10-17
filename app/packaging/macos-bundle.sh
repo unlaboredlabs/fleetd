@@ -14,8 +14,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 bins=()
 for b in "$@"; do bins+=("$(cd "$(dirname "$b")" && pwd)/$(basename "$b")"); done
 if [ ${#bins[@]} -eq 0 ]; then
-  (cd "$here/.." && cargo build --release --locked -p fleetd-app >&2)
-  bins=("${CARGO_TARGET_DIR:-$here/../target}/release/fleetd-app")
+  (cd "$here" && cargo build --release --locked -p fleetd-app >&2)
+  bins=("${CARGO_TARGET_DIR:-$here/../../target}/release/fleetd-app")
 fi
 version="${FLEETD_VERSION:-0.0.0}"
 # CFBundleVersion must be dot-separated integers; 0.4.0-nightly.20261017.abc1234 -> 0.4.0.

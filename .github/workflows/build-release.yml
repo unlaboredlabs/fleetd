@@ -144,14 +144,13 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: app
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # fleetd-app only: built together with fleetd, cargo would unify their features (serde_json preserve_order).
       - name: Build arm64 and x86_64
-        working-directory: app
         run: cargo build --release --locked -p fleetd-app --target aarch64-apple-darwin --target x86_64-apple-darwin
       - name: Bundle a universal fleetd.app
         run: |
-          app="$(app/packaging/macos-bundle.sh app/target/aarch64-apple-darwin/release/fleetd-app app/target/x86_64-apple-darwin/release/fleetd-app)"
+          app="$(app/packaging/macos-bundle.sh target/aarch64-apple-darwin/release/fleetd-app target/x86_64-apple-darwin/release/fleetd-app)"
           lipo -info "$app/Contents/MacOS/fleetd-app"
           mkdir -p dist
           mv "$app" dist/fleetd.app
@@ -187,16 +186,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: app
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build
-        working-directory: app
         run: cargo build --release --locked -p fleetd-app
       - name: Package
         run: |
-          echo "needs glibc $(objdump -T app/target/release/fleetd-app | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+          echo "needs glibc $(objdump -T target/release/fleetd-app | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
           mkdir -p dist
-          app/packaging/linux-package.sh app/target/release/fleetd-app dist/fleetd-app-linux-x64.tar.gz
+          app/packaging/linux-package.sh target/release/fleetd-app dist/fleetd-app-linux-x64.tar.gz
           ls -l dist
       - uses: actions/upload-artifact@v7
         with:
