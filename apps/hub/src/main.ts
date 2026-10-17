@@ -13,6 +13,7 @@ import * as HumanDigests from "./digests/HumanDigests.ts";
 import * as Intake from "./intake/Intake.ts";
 import * as IntakeRouter from "./intake/Router.ts";
 import * as ChecksLayer from "./checks/layer.ts";
+import * as FinishAll from "./playbooks/FinishAll.ts";
 import * as Judges from "./checks/Judges.ts";
 import * as NodeCommands from "./checks/NodeCommands.ts";
 import * as Estimates from "./estimates/Estimates.ts";
@@ -100,9 +101,9 @@ const layerTrain = TrainGate.layerBindTrain.pipe(
 );
 
 /**
- * Node links; lead-side `fleetd` calls they forward are answered over the ledger, leads, tasks, claims, the train and
- * approvals. Claims, the train, sealed secrets and approved commands reach the nodes through the same NodeCommands
- * the links answer; ticked checklists are re-checked by the claims' check runner.
+ * Node links; lead-side `fleetd` calls they forward are answered over the ledger, leads, tasks, claims, the train,
+ * approvals and finish-all's inventory. Claims, the train, sealed secrets, approved commands and the inventory reach
+ * the nodes through the same NodeCommands the links answer; ticked checklists are re-checked by the claims' check runner.
  */
 const layerMachines = Layer.effect(
   NodeLinkServer.NodeLinkServer,
@@ -115,7 +116,7 @@ const layerMachines = Layer.effect(
     });
   }),
 ).pipe(
-  Layer.provideMerge(Layer.merge(Approvals.layer, Approvals.layerChecklists)),
+  Layer.provideMerge(Layer.mergeAll(Approvals.layer, Approvals.layerChecklists, FinishAll.layer)),
   Layer.provideMerge(layerTrain),
   Layer.provideMerge(ChecksLayer.layer()),
 );

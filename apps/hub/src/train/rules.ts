@@ -21,14 +21,18 @@ const addLine = (serves: string) => `add 'Source: ${serves}' to the PR body`;
 /**
  * The PR's `Source:` must be a valid serves form, name an existing done-when check when it is `done:<n>`, and equal
  * `expected` (the task's or the caller's serves) when there is one. Returns the serves or why not, with the fix.
+ * When the pinned playbook does not require the line (`valueBar.requireSource: false`), a PR without one serves
+ * `expected`; with nothing expected either, it still needs the line, since a Change must say what it serves.
  */
 export const checkSource = (
   body: string | null | undefined,
   expected: string | undefined,
   workstream: Workstream,
+  requireSource = true,
 ): { readonly serves: string } | Refusal => {
   const source = sourceOf(body);
   const example = expected ?? "done:0";
+  if (source === undefined && !requireSource && expected !== undefined) return { serves: expected };
   if (source === undefined) return { message: "The PR body has no 'Source:' line.", fix: addLine(example) };
   if (!isServes(source)) {
     return { message: `'Source: ${source}' is not a valid serves form.`, fix: `${addLine(example)} (done:<n>, issue:<#n|url>, defect:<text> or ask:A<n>)` };

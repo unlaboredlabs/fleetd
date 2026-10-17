@@ -112,6 +112,8 @@ export const make = (options: ClaimsOptions = {}) =>
         const stored = yield* leadRecords.workstreams.get(claim.workstreamId);
         if (stored === undefined) return;
         const w = stored.workstream;
+        // A research judge's numbers already made it done, with its verdict.
+        if (w.state === "done") return;
         const passed = claim.outcome === "pass";
         const label = `${claim.claimId} on ${w.workstreamId}`;
         if (passed) {

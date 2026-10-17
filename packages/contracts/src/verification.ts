@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { ProjectRef, Timestamp } from "./ids.ts";
-import { CheckSpec, WorkstreamId } from "./ledger.ts";
+import { CheckSpec, MetricValues, WorkstreamId } from "./ledger.ts";
 import { TaskId } from "./tasks.ts";
 
 // M6 objects: claims and their check results, review verdicts, calibrated ETAs and incidents.
@@ -65,6 +65,8 @@ export const ReviewVerdict = Schema.Struct({
   blocking: Count,
   nonBlocking: Count,
   summary: text(1000),
+  /** M9: a research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict. */
+  metricValues: Schema.optionalKey(MetricValues),
 }).annotate({ identifier: "ReviewVerdict" });
 export type ReviewVerdict = typeof ReviewVerdict.Type;
 

@@ -13,6 +13,7 @@ import * as LeadRecords from "../leads/LeadRecords.ts";
 import { LeadWakes } from "../leads/LeadWakes.ts";
 import * as Decisions from "../ledger/Decisions.ts";
 import * as LedgerRepo from "../ledger/LedgerRepo.ts";
+import * as Playbooks from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
@@ -44,7 +45,9 @@ const fakes = Layer.mergeAll(
 
 const layer = Train.layer({ autoRun: false }).pipe(
   Layer.provideMerge(fakes),
-  Layer.provideMerge(Layer.mergeAll(ChangeRecords.layer, Incidents.layer, LeadRecords.layer, Decisions.layer.pipe(Layer.provideMerge(LedgerRepo.layer)))),
+  Layer.provideMerge(
+    Layer.mergeAll(ChangeRecords.layer, Incidents.layer, LeadRecords.layer, Playbooks.layer(), Decisions.layer.pipe(Layer.provideMerge(LedgerRepo.layer))),
+  ),
   Layer.provideMerge(Layer.mergeAll(HubStore.layer, EventLog.layer)),
   Layer.provide(HubDb.layerMemory),
 );

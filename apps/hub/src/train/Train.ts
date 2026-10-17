@@ -31,6 +31,7 @@ import { LeadError } from "../leads/LeadError.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as LeadWakes from "../leads/LeadWakes.ts";
 import { Decisions } from "../ledger/Decisions.ts";
+import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Tasks from "../tasks/Tasks.ts";
@@ -107,6 +108,7 @@ export const make = (options: TrainOptions = {}) =>
     const commands = yield* NodeCommands;
     const github = yield* TrainGitHub;
     const gate = yield* ReviewGate;
+    const playbooks = yield* Playbooks;
     const scope = yield* Effect.scope;
 
     const pollInterval = Duration.fromInputUnsafe(options.pollInterval ?? Duration.seconds(15));
@@ -540,7 +542,8 @@ export const make = (options: TrainOptions = {}) =>
           Effect.mapError((e) => new LeadError({ code: "invalid", message: `Could not read ${prUrl} from GitHub: ${e.message}`, fix: "Check the URL; the hub reads PRs with its own `gh` login." })),
         );
         const expected = input.serves ?? task?.serves;
-        const source = checkSource(pull.body, expected, workstream);
+        const pinned = workstream.playbook === undefined ? undefined : yield* playbooks.byRef(workstream.playbook);
+        const source = checkSource(pull.body, expected, workstream, pinned?.playbook.valueBar.requireSource ?? true);
         const rowOf = (serves: string) => ({
           projectRef: ref,
           repo,
@@ -641,5 +644,5 @@ export const make = (options: TrainOptions = {}) =>
     });
   });
 
-/** Needs ChangeRecords, Tasks, LeadRecords, LeadWakes, Decisions, Incidents, EventLog, HubStore, NodeCommands, TrainGitHub and ReviewGate. */
+/** Needs ChangeRecords, Tasks, LeadRecords, LeadWakes, Decisions, Playbooks, Incidents, EventLog, HubStore, NodeCommands, TrainGitHub and ReviewGate. */
 export const layer = (options?: TrainOptions) => Layer.effect(Train, make(options));

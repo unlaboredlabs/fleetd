@@ -13,6 +13,8 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { GitHub } from "../checks/GitHub.ts";
 import { codexInstance, otherCodex, ProviderList } from "../executor/ProviderList.ts";
+import * as LeadRecords from "../leads/LeadRecords.ts";
+import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
@@ -20,7 +22,19 @@ import * as Tasks from "../tasks/Tasks.ts";
 import { prKey, reviewRefusal } from "../valuebar/rules.ts";
 import { PatchIds } from "./PatchIds.ts";
 import { ReviewChanges } from "./ReviewChanges.ts";
-import { findingsMessage, gate, hasReceipts, missingReviews, oneLine, reviewPlan, reviewPrompt, type ReviewRole, type RoleReview } from "./rules.ts";
+import {
+  findingsMessage,
+  gate,
+  hasReceipts,
+  missingReviews,
+  needsNoReview,
+  oneLine,
+  reviewPlan,
+  reviewPrompt,
+  type ReviewRole,
+  type RoleReview,
+  ruleFor,
+} from "./rules.ts";
 
 /** Recorded as the spawner of review tasks and the sender of findings. */
 export const REVIEWS_BY = "hub:reviews";
@@ -56,7 +70,17 @@ export const make = Effect.gen(function* () {
   const patchIds = yield* PatchIds;
   const providers = yield* ProviderList;
   const changes = yield* ReviewChanges;
+  const leadRecords = yield* LeadRecords.LeadRecords;
+  const playbooks = yield* Playbooks;
   const lock = Semaphore.makeUnsafe(1);
+
+  /** The review rule for the Change's tier from its workstream's pinned playbook, else the coded one. */
+  const ruleOf = (change: Change) =>
+    Effect.gen(function* () {
+      const pinned = (yield* leadRecords.workstreams.get(change.workstreamId))?.workstream.playbook;
+      const loaded = pinned === undefined ? undefined : yield* playbooks.byRef(pinned);
+      return ruleFor(change.tier, loaded?.playbook);
+    });
 
   const sql = {
     putTask: db.prepare("INSERT OR IGNORE INTO review_tasks (task_id, change_id, role, patch_id) VALUES (?, ?, ?, ?)"),
@@ -123,7 +147,7 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const bound = yield* boundTo(change, patchId);
       const waived = sql.waiver.get(change.changeId, patchId);
-      const g = gate(change.tier, patchId, bound.map((b) => b.role), waived === undefined ? undefined : String(waived.reason));
+      const g = gate(change.tier, yield* ruleOf(change), patchId, bound.map((b) => b.role), waived === undefined ? undefined : String(waived.reason));
       return { gate: g, reviews: bound.map((b) => b.review) };
     });
 
@@ -146,11 +170,13 @@ export const make = Effect.gen(function* () {
   /** Spawns what the tier still needs for this patch. Idempotent per patch; a waived patch needs nothing. */
   const ensureRound = (change: Change, patchId: string) =>
     Effect.gen(function* () {
-      const instances =
-        change.tier === "L" ? yield* providers.instances(change.projectRef.machineId).pipe(Effect.orElseSucceed(() => [])) : [];
+      const rule = yield* ruleOf(change);
+      // Codex takes the second reviewer, so it matters only from two reviewers on.
+      const wantsCodex = rule.reviewers >= 2;
+      const instances = wantsCodex ? yield* providers.instances(change.projectRef.machineId).pipe(Effect.orElseSucceed(() => [])) : [];
       const codex = codexInstance(instances);
       const spawned = sql.rolesFor.all(change.changeId, patchId).map((r) => String(r.role) as ReviewRole);
-      const missing = missingReviews(reviewPlan(change.tier, codex !== undefined), spawned);
+      const missing = missingReviews(reviewPlan(rule, codex !== undefined), spawned);
       if (missing.length === 0) return;
 
       // The hub's rounds are held to M6's review rules like anyone's. When the polish-loop rule says review is over for
@@ -164,13 +190,13 @@ export const make = Effect.gen(function* () {
       }
       if (refusal !== undefined) return yield* changes.note(change.changeId, `no review round for patch ${patchId.slice(0, 12)}: ${refusal.message}`);
 
-      if (change.tier === "L" && codex === undefined) {
+      if (wantsCodex && codex === undefined) {
         const others = otherCodex(instances);
         yield* changes.note(
           change.changeId,
           others.length === 0
-            ? `No usable Codex instance on ${change.projectRef.machineId}, so both L reviewers run on Claude.`
-            : `Codex ${others.join(", ")} on ${change.projectRef.machineId} is not fleetd's (ids must start with "fleetd"; others could reach T3's spawn tools), so both L reviewers run on Claude.`,
+            ? `No usable Codex instance on ${change.projectRef.machineId}, so both ${change.tier} reviewers run on Claude.`
+            : `Codex ${others.join(", ")} on ${change.projectRef.machineId} is not fleetd's (ids must start with "fleetd"; others could reach T3's spawn tools), so both ${change.tier} reviewers run on Claude.`,
         );
       }
       for (const planned of missing) {
@@ -191,7 +217,7 @@ export const make = Effect.gen(function* () {
 
   const review: Reviews["Service"]["review"] = (change) =>
     Effect.gen(function* () {
-      if (change.tier === "S") return "ready" as const;
+      if (needsNoReview(yield* ruleOf(change))) return "ready" as const;
       const patchId = change.patchId ?? (yield* patchFor(change, change.headSha));
       sql.putPatch.run(change.changeId, change.headSha, patchId);
       const before = yield* gateFor(change, patchId);
@@ -281,5 +307,5 @@ export const make = Effect.gen(function* () {
   return Reviews.of({ review });
 });
 
-/** Needs HubDb, EventLog, HubStore, Tasks, GitHub, PatchIds, ProviderList and ReviewChanges. */
+/** Needs HubDb, EventLog, HubStore, Tasks, GitHub, PatchIds, ProviderList, ReviewChanges, LeadRecords and Playbooks. */
 export const layer = Layer.effect(Reviews, make);

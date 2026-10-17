@@ -1,6 +1,6 @@
 // Review tiers, the readiness gate, and the text reviewers and authors get. Pure; Reviews.ts feeds them the Change,
 // its review tasks and what those recorded.
-import type { Change, Task, Tier } from "@fleetd/contracts";
+import type { Change, Playbook, ReviewRule, Task, Tier } from "@fleetd/contracts";
 
 export type ReviewRole = "reviewer" | "verifier";
 export type ReviewProvider = "claude" | "codex";
@@ -10,21 +10,24 @@ export interface PlannedReview {
   readonly provider: ReviewProvider;
 }
 
-/** S: none. M: one reviewer. L: two reviewers from fresh sessions, the second on Codex when there is one, plus a verifier. */
-export const reviewPlan = (tier: Tier, codexAvailable: boolean): ReadonlyArray<PlannedReview> => {
-  switch (tier) {
-    case "S":
-      return [];
-    case "M":
-      return [{ role: "reviewer", provider: "claude" }];
-    case "L":
-      return [
-        { role: "reviewer", provider: "claude" },
-        { role: "reviewer", provider: codexAvailable ? "codex" : "claude" },
-        { role: "verifier", provider: "claude" },
-      ];
-  }
+/** Without a pinned playbook. S: none. M: one reviewer. L: two reviewers plus a verifier. */
+export const CODED_RULES: Readonly<Record<Tier, ReviewRule>> = {
+  S: { reviewers: 0, verifier: false, planFirst: false },
+  M: { reviewers: 1, verifier: false, planFirst: false },
+  L: { reviewers: 2, verifier: true, planFirst: true },
 };
+
+/** The pinned playbook's `reviewRules` for the tier, else the coded ones. */
+export const ruleFor = (tier: Tier, playbook?: Pick<Playbook, "reviewRules">): ReviewRule => playbook?.reviewRules[tier] ?? CODED_RULES[tier];
+
+/** The rule's reviewers from fresh sessions, the second on Codex when there is one, plus its verifier. */
+export const reviewPlan = (rule: ReviewRule, codexAvailable: boolean): ReadonlyArray<PlannedReview> => [
+  ...Array.from({ length: rule.reviewers }, (_, i): PlannedReview => ({ role: "reviewer", provider: i === 1 && codexAvailable ? "codex" : "claude" })),
+  ...(rule.verifier ? [{ role: "verifier", provider: "claude" } as const] : []),
+];
+
+/** Nothing to review: the Change may be taken as soon as it is enqueued. */
+export const needsNoReview = (rule: ReviewRule) => rule.reviewers === 0 && !rule.verifier;
 
 /** The planned reviews not yet spawned for this patch, given the roles already spawned for it. */
 export const missingReviews = (plan: ReadonlyArray<PlannedReview>, spawned: ReadonlyArray<ReviewRole>): ReadonlyArray<PlannedReview> => {
@@ -53,12 +56,12 @@ export type Gate =
   | { readonly ready: false; readonly waitingForHead: boolean; readonly why: string };
 
 /**
- * The tier is satisfied for `patchId` when its required clean verdicts are bound to exactly that patch: M one reviewer,
- * L two distinct reviewers plus a verifier with receipts. Any blocking verdict on the patch holds it until a new head
- * changes the patch. `waived` is set when the polish-loop rule ended review for this patch.
+ * The rule is satisfied for `patchId` when its required clean verdicts are bound to exactly that patch: its number of
+ * distinct reviewers, plus a verifier with receipts when it has one. Any blocking verdict on the patch holds it until
+ * a new head changes the patch. `waived` is set when the polish-loop rule ended review for this patch.
  */
-export const gate = (tier: Tier, patchId: string | undefined, reviews: ReadonlyArray<RoleReview>, waived?: string): Gate => {
-  if (tier === "S") return { ready: true, why: "tier S needs no review" };
+export const gate = (tier: Tier, rule: ReviewRule, patchId: string | undefined, reviews: ReadonlyArray<RoleReview>, waived?: string): Gate => {
+  if (needsNoReview(rule)) return { ready: true, why: `tier ${tier} needs no review` };
   if (patchId === undefined) return { ready: false, waitingForHead: false, why: "the patch id is not known yet" };
   const current = reviews.filter((r) => r.patchId === patchId);
   const blocked = current.filter((r) => r.blocking > 0);
@@ -69,9 +72,8 @@ export const gate = (tier: Tier, patchId: string | undefined, reviews: ReadonlyA
   if (waived !== undefined) return { ready: true, why: waived };
   const reviewers = new Set(current.filter((r) => r.role === "reviewer").map((r) => r.taskId)).size;
   const verified = current.some((r) => r.role === "verifier" && r.receipts);
-  const needed = tier === "M" ? 1 : 2;
-  if (reviewers < needed) return { ready: false, waitingForHead: false, why: `${reviewers}/${needed} clean reviews on this patch` };
-  if (tier === "L" && !verified) return { ready: false, waitingForHead: false, why: "waiting for the verifier's clean verdict with receipts" };
+  if (reviewers < rule.reviewers) return { ready: false, waitingForHead: false, why: `${reviewers}/${rule.reviewers} clean reviews on this patch` };
+  if (rule.verifier && !verified) return { ready: false, waitingForHead: false, why: "waiting for the verifier's clean verdict with receipts" };
   return { ready: true, why: `tier ${tier} reviews are clean on patch ${patchId.slice(0, 12)}` };
 };
 

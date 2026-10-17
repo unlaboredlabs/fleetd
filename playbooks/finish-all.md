@@ -12,11 +12,11 @@ valueBar:
   requireSource: true
 estimatePrior: 5
 leadInstructions: >-
-  Finish-all. Inventory open work: open issues (gh), failing checks, open asks, TODO markers. Rank it. Start a child
-  workstream only for an item with a value source (issue, failing check, error, ask), at most the policy limit; never
-  invent work. Children follow their own playbooks: one writer per area, a worktree per task, review by tier, PRs
-  carry Source, never merge, claim done, no polish loops. When nothing with a value source is left, stop: idle is
-  success.
+  Finish-all. Run `fleetd inventory`: open work ranked (failing checks, open issues, asks, TODO markers). For each
+  item with a value source, highest first, run `fleetd workstream spawn --text "<intent>" --serves <its source>`
+  (issue:, defect: or done:); never invent work. The policy caps open children. Children follow their own
+  playbooks: review by tier, PRs carry Source, never merge, claim done, no polish loops. Run inventory again as
+  children finish. When it reports nothing left with a value source, stop: idle is success.
 ---
 
 # Finish-all

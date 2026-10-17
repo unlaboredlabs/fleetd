@@ -296,6 +296,9 @@ contract! {
         /// `<name>@<sha>`, pinned at creation (M9).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub playbook: Option<String>,
+        /// The finish-all workstream that spawned this one, and what it serves there (M9).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub parent: Option<WorkstreamParent>,
         /// Research verdict outcome: go, stop or inconclusive (M9).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub outcome: Option<String>,
@@ -306,6 +309,8 @@ contract! {
         pub updated_at: String,
     }
 }
+
+contract! { pub struct WorkstreamParent { pub workstream_id: String, pub serves: String } }
 
 contract! {
     pub struct EstimateActual {

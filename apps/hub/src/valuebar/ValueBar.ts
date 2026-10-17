@@ -1,5 +1,6 @@
 // The value bar at spawn time (rules.ts), plus review verdicts: `fleetd review verdict` records one per review task,
-// keyed by its PR and head SHA, which is what later review spawns on that PR are checked against.
+// keyed by its PR and head SHA, which is what later review spawns on that PR are checked against. A judge of a
+// research workstream reports the metric too, and its numbers become the workstream's computed verdict.
 import { ReviewVerdict, type ProjectRef, type Workstream } from "@fleetd/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -8,7 +9,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { Incidents } from "../incidents/Incidents.ts";
 import { LeadError } from "../leads/LeadError.ts";
+import * as LeadRecords from "../leads/LeadRecords.ts";
 import { Playbooks } from "../playbooks/Playbooks.ts";
+import { Research } from "../playbooks/Research.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
@@ -26,8 +29,14 @@ export class ValueBar extends Context.Service<
   {
     /** Refuses a spawn the value bar rules out. A polish loop is also recorded as an incident. */
     readonly checkSpawn: (caller: Caller, request: SpawnRequest, workstream: Workstream) => Effect.Effect<void, LeadError>;
-    /** `fleetd review verdict`: stores it against the task's PR, emits `review.verdict` and tells the judge hook. */
-    readonly recordVerdict: (caller: Caller, verdict: ReviewVerdict) => Effect.Effect<ReviewVerdict, LeadError>;
+    /**
+     * `fleetd review verdict`: stores it against the task's PR, emits `review.verdict` and tells the judge hook. The
+     * judge of a research workstream must report `metricValues`, and gets the computed research verdict back as text.
+     */
+    readonly recordVerdict: (
+      caller: Caller,
+      verdict: ReviewVerdict,
+    ) => Effect.Effect<{ readonly verdict: ReviewVerdict; readonly research?: string }, LeadError>;
   }
 >()("fleetd/valuebar/ValueBar") {}
 
@@ -42,6 +51,8 @@ export const make = Effect.gen(function* () {
   const prHeads = yield* PrHeads;
   const judge = yield* JudgeHook;
   const playbooks = yield* Playbooks;
+  const research = yield* Research;
+  const records = yield* LeadRecords.LeadRecords;
 
   const sql = {
     insert: db.prepare("INSERT INTO review_verdicts (task_id, pr_key, sha, blocking, at_ms, data) VALUES (?, ?, ?, ?, ?, ?)"),
@@ -88,6 +99,22 @@ export const make = Effect.gen(function* () {
       if (task.kind !== "review") {
         return yield* refuse(`${task.taskId} is a ${task.kind} task; only review tasks record verdicts.`);
       }
+      // Hub-spawned judges review criteria, not a PR, so they are the review tasks without one.
+      const judged = task.pr === undefined ? (yield* records.workstreams.get(task.workstreamId))?.workstream : undefined;
+      const isResearch = judged?.playbook?.startsWith("research@") === true;
+      if (verdict.metricValues !== undefined && !isResearch) {
+        return yield* refuse(
+          `${task.taskId} is not the judge of a research workstream; only those report --baseline and --candidate.`,
+          "Leave out --baseline and --candidate.",
+        );
+      }
+      if (isResearch && verdict.metricValues === undefined) {
+        const metric = judged?.brief?.metric === undefined ? "the brief's metric" : `"${judged.brief.metric}"`;
+        return yield* refuse(
+          `${task.taskId} judges research workstream ${task.workstreamId}, so its verdict must carry the measured numbers.`,
+          `Rerun with --baseline <n> --candidate <n>: ${metric} measured for the baseline and for the candidate.`,
+        );
+      }
       const now = yield* DateTime.now;
       const nowMs = DateTime.toEpochMillis(now);
       yield* Effect.sync(() =>
@@ -109,12 +136,14 @@ export const make = Effect.gen(function* () {
           ...(task.pr === undefined ? {} : { pr: task.pr }),
         },
       });
+      // Before the judge check resolves, so the claim that follows finds the workstream already done with its outcome.
+      const computed = isResearch && verdict.metricValues !== undefined ? yield* research.recordVerdict(task.workstreamId, verdict.metricValues) : undefined;
       yield* judge.onVerdict(task.taskId, verdict);
-      return verdict;
+      return { verdict, ...(computed === undefined ? {} : { research: computed.text }) };
     });
 
   return ValueBar.of({ checkSpawn, recordVerdict });
 });
 
-/** Needs HubDb, EventLog, TaskRecords, Incidents, PrHeads, JudgeHook and Playbooks. */
+/** Needs HubDb, EventLog, TaskRecords, LeadRecords, Incidents, PrHeads, JudgeHook, Playbooks and Research. */
 export const layer = Layer.effect(ValueBar, make);

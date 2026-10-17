@@ -34,6 +34,14 @@ export type Body = Record<string, any>;
 export const scrubbedEnv = () =>
   Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));
 
+/** The user's own `claude` login from ~/.claude/settings.json, for process env only (never a file, argv or log). */
+export const claudeLoginEnv = (): Record<string, string> => {
+  const settings = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude/settings.json"), "utf8")) as { env?: Record<string, unknown> };
+  return Object.fromEntries(
+    ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"].flatMap((k) => (typeof settings.env?.[k] === "string" && settings.env[k] !== "" ? [[k, settings.env[k] as string]] : [])),
+  );
+};
+
 const t0 = Date.now();
 export const log = (line: string) => process.stdout.write(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
 export const ok = (line: string) => log(`ok  ${line}`);

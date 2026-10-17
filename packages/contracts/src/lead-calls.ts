@@ -23,6 +23,10 @@ import {
   GATED_MAX_TIMEOUT_SEC,
   Headline,
   SecretEnv,
+  IntakeText,
+  PlaybookName,
+  PlaybookRef,
+  Serves,
   WorkstreamId,
   Tier,
   WorkstreamState,
@@ -30,7 +34,7 @@ import {
 import { McpToolError } from "./mcp.ts";
 import { SecretSink } from "./secrets.ts";
 import { Effort } from "./effort.ts";
-import { PrUrl, Serves, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
+import { PrUrl, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
 import { Claim, ClaimId, ReviewVerdict } from "./verification.ts";
 import { Change, ChangeId, GitHubPrUrl } from "./train.ts";
 
@@ -42,11 +46,14 @@ import { Change, ChangeId, GitHubPrUrl } from "./train.ts";
 /** Under the node user's home directory; mode 0600. */
 export const NODE_SOCKET_PATH = ".fleetd/node/node.sock";
 
-/** `fleetd brief create --workstream W12 --json '<Brief>'`. Freezes the brief and moves a draft to running. */
+/**
+ * `fleetd brief create --workstream W12 --json '<Brief>'`. Freezes the brief and moves a draft to running. `tier` may
+ * be left out: the workstream's pinned playbook fills its `tierDefault`, and the hub refuses it when there is none.
+ */
 export const BriefCreateCall = Schema.Struct({
   op: Schema.tag("brief_create"),
   workstreamId: WorkstreamId,
-  brief: Brief,
+  brief: Brief.mapFields((fields) => ({ ...fields, tier: Schema.optionalKey(Tier) })),
   /** `--amend`: the human-answered ask that approved changing an already frozen brief. */
   amend: Schema.optionalKey(AskId),
 });
@@ -191,6 +198,20 @@ export const ChangeEnqueueCall = Schema.Struct({
 /** `fleetd change status X1`. */
 export const ChangeStatusCall = Schema.Struct({ op: Schema.tag("change_status"), changeId: ChangeId });
 
+/**
+ * `fleetd workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n> [--template t]`: a
+ * finish-all lead starts a child workstream in its own project, for one item with a value source.
+ */
+export const WorkstreamSpawnCall = Schema.Struct({
+  op: Schema.tag("workstream_spawn"),
+  text: IntakeText,
+  serves: Serves,
+  template: Schema.optionalKey(PlaybookName),
+});
+
+/** `fleetd inventory`: the project's open work, ranked, as plain text. */
+export const InventoryCall = Schema.Struct({ op: Schema.tag("inventory") });
+
 export const LeadCall = Schema.Union([
   BriefCreateCall,
   AskCall,
@@ -208,6 +229,8 @@ export const LeadCall = Schema.Union([
   ChangeEnqueueCall,
   ChangeStatusCall,
   GatedRunCall,
+  WorkstreamSpawnCall,
+  InventoryCall,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCall" });
@@ -284,6 +307,25 @@ export const ChangeStatusResult = Schema.Struct({ op: Schema.tag("change_status"
 /** The approve ask, open until a human answers it. */
 export const GatedRunResult = Schema.Struct({ op: Schema.tag("gated_run"), askId: AskId, state: AskState, ...next });
 
+export const WorkstreamSpawnResult = Schema.Struct({
+  op: Schema.tag("workstream_spawn"),
+  workstreamId: WorkstreamId,
+  parent: WorkstreamId,
+  playbook: Schema.optionalKey(PlaybookRef),
+  ...next,
+});
+
+export const InventoryResult = Schema.Struct({
+  op: Schema.tag("inventory"),
+  /** The ranked list, one item per line. */
+  text: Schema.String,
+  /** Items with a value source that no open child serves yet. */
+  spawnable: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** The project's finish-all workstream went (or stayed) idle: nothing left with a value source. */
+  idle: Schema.Boolean,
+  ...next,
+});
+
 export const LeadCallResult = Schema.Union([
   BriefCreateResult,
   AskResult,
@@ -301,6 +343,8 @@ export const LeadCallResult = Schema.Union([
   ChangeEnqueueResult,
   ChangeStatusResult,
   GatedRunResult,
+  WorkstreamSpawnResult,
+  InventoryResult,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCallResult" });

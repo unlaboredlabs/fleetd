@@ -1,5 +1,5 @@
-// `pnpm test:lab [scenario…]`: the M1, M2, M3, M5, M6 and M7 "done when" scenarios, end to end, against the disposable lab
-// (never in CI); M7 also uses the GitHub testbed wynn-dev/fleetd-testbed. Two stock T3 instances (lab/lab.mjs), one hub and two nodes, driven only through a real MCP client.
+// `pnpm test:lab [scenario…]`: the M1-M9 "done when" scenarios, end to end, against the disposable lab
+// (never in CI); M7 and M9 also use the GitHub testbed wynn-dev/fleetd-testbed. Two stock T3 instances (lab/lab.mjs), one hub and two nodes, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
 // runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
 import fs from "node:fs";
@@ -12,6 +12,7 @@ import {
   type Body,
   callToolWith,
   check,
+  claudeLoginEnv,
   CLI,
   cli,
   HUB_PORT,
@@ -40,6 +41,7 @@ import { m3Loop } from "./m3Loop.ts";
 import { m5Tasks } from "./m5Tasks.ts";
 import { m6Verify } from "./m6Verify.ts";
 import { m7Train, removeTestbedProject } from "./m7Train.ts";
+import { m9Playbooks } from "./m9Playbooks.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
@@ -60,8 +62,10 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m5", run: m5Tasks },
   // After m5: it reuses the lead when there is one.
   { name: "m6", run: m6Verify },
-  // Last: it adds the testbed as a second project on lab-a for its run.
+  // It adds the testbed as a second project on lab-a for its run, and removes it.
   { name: "m7", run: m7Train },
+  // After m7, which leaves no testbed project: its router must choose among the lab projects only.
+  { name: "m9", run: m9Playbooks },
 ];
 
 /** Extra `node join` flags per machine. */
@@ -101,8 +105,9 @@ const linkLeadShell = () => {
   }
 };
 
+// The intake router runs `claude -p` on the hub, so the hub gets the same login variables lab/lab.mjs gives T3.
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
-  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
+  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], { ...claudeLoginEnv(), ...env });
   await until("hub /healthz", 30_000, async () => {
     try {
       return (await fetch(`${HUB_URL}/healthz`)).ok ? true : undefined;

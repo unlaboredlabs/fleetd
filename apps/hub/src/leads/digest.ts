@@ -2,6 +2,7 @@
 // must stay small (DIGEST_MAX_TOKENS) and say plainly what was left out.
 import type { Ask, CheckSpec, Decision, Playbook, PlaybookRef, ProjectRef, Workstream, WorkstreamId } from "@fleetd/contracts";
 import type { Answer } from "../ledger/Inbox.ts";
+import { FINISH_ALL_IDLE, isFinishAll } from "../playbooks/finishAllRules.ts";
 
 export const DIGEST_MAX_TOKENS = 1500;
 /** Decisions listed by full value; the rest only appear by key under "do not re-ask". */
@@ -81,7 +82,9 @@ export const doneWhenText = (checks: ReadonlyArray<CheckSpec>, passed: ReadonlyS
   checks.map((c, i) => `done:${i}${passed.has(i) ? " ✓" : ""} ${oneLine(describeCheck(c), max)}`).join("; ");
 
 const workstreamLines = (w: Workstream, facts: WorkstreamFacts | undefined, playbook: DigestPlaybook | undefined) => {
-  const head = `- ${w.workstreamId} ${w.state}${playbook === undefined ? "" : ` (${playbook.name})`}: ${oneLine(w.title, 120)}`;
+  const child = w.parent === undefined ? "" : `, child of ${w.parent.workstreamId} for ${oneLine(w.parent.serves, 80)}`;
+  const head = `- ${w.workstreamId} ${w.state}${playbook === undefined && child === "" ? "" : ` (${playbook?.name ?? "no playbook"}${child})`}: ${oneLine(w.title, 120)}`;
+  if (w.state === "idle" && isFinishAll(w)) return `${head}\n  ${FINISH_ALL_IDLE}; \`fleetd inventory\` again only when something new comes in`;
   if (w.brief === undefined) {
     return `${head}\n  no brief yet: register it with \`fleetd brief create --workstream ${w.workstreamId} --json '<Brief>'\``;
   }

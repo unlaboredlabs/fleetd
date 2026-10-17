@@ -38,6 +38,8 @@ export interface IntakeInput {
   readonly by: string;
   /** M9: the playbook to pin; absent leaves the workstream unpinned, as before M9. */
   readonly template?: PlaybookName;
+  /** M9 finish-all: the workstream that spawns this one, and what it serves there. */
+  readonly parent?: Workstream["parent"];
 }
 
 export class Workstreams extends Context.Service<
@@ -134,6 +136,7 @@ export const make = Effect.gen(function* () {
         source: { text: input.text, channel: input.channel, by: input.by, at: yield* nowIso },
         clientRequestId: input.clientRequestId,
         ...(pinned === undefined ? {} : { playbook: pinned.ref }),
+        ...(input.parent === undefined ? {} : { parent: input.parent }),
       });
       if (created) {
         yield* event(workstream, "workstream.created", `New intent ${workstream.workstreamId}: ${workstream.title}`);
