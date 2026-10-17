@@ -450,7 +450,7 @@ impl Shell {
                         .gap_1()
                         .border_t_1()
                         .border_color(rgb(Theme::BORDER))
-                        .child(div().flex().gap_2().items_center().child(div().text_color(rgb(dot)).child("●")).child(muted(status)))
+                        .child(div().flex().gap_2().child(div().text_color(rgb(dot)).child("●")).child(div().flex_1().min_w_0().whitespace_normal().child(muted(status))))
                         .child(muted(self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default()))
                         .child(button("disconnect", "Disconnect and forget key", cx.listener(|this, _, _, cx| this.disconnect(cx)))),
                 )

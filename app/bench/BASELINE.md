@@ -75,6 +75,35 @@ release build, Xvfb, a seeded lab hub with 6 projects and 4 open asks, VmRSS 12 
 
 Reading the keychain happens off the UI thread after the first frame, so it doesn't delay cold start.
 
+## Linux (forge): TLS for https/wss hubs, software-rendered
+
+Adds rustls on ring with the OS certificate verifier. Same bench as the A1 section above.
+
+**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T12:55Z, fleetd 5be24df plus the TLS change, gpui zed v1.24.2 (fb69067).
+
+| Metric | Value |
+|---|---|
+| Binary size (release, stripped) | 26.5 MiB |
+| Idle RSS, empty log, 10 s after first frame | 125.7 MiB |
+| Idle RSS, 20k-line log loaded, 10 s after first frame | 131.7 MiB |
+| RSS, 20k-line log + streaming 50 lines/s, after 10 s | 143.9 MiB |
+| Cold start, exec -> first frame presented, warm cache (10 runs) | median 68.9 ms, p90 70.8 ms, max 72.1 ms |
+|   of which: exec -> first frame draw starts | median 49.3 ms, p90 50.9 ms, max 52.6 ms |
+| Cold start, binary + 36 mapped files evicted from page cache (10 runs) | median 212.7 ms, p90 214.7 ms, max 215.6 ms |
+| Input latency in-app, key handler -> echo frame presented (200 keys, gpui dispatch) | median 10.5 ms, p90 15.8 ms, max 21.0 ms |
+| Input latency in-app, key handler -> echo frame presented (200 XTEST keys) | median 12.0 ms, p90 14.1 ms, max 19.1 ms |
+| Input latency external, XTEST send -> echo pixels readable from X (200 keys) | median 13.6 ms, p90 15.3 ms, max 34.5 ms |
+| Scroll 20k-line log for 5 s: presented frames/s | 62.2 |
+| Scroll 20k-line log for 5 s: worst frame interval | 27.1 ms |
+
+Against the A1 section above:
+- +1.5 MiB binary (rustls, ring, rustls-platform-verifier).
+- Everything else within noise: cold start median -1.0 ms (warm), +0.3 ms (evicted).
+- Startup can't pay for TLS: the certificate roots load only on the first wss:// connect, on a
+  background thread.
+- Connected idle RSS, measured by hand in the lab (same hub, 3 runs each): 137.5 MiB over
+  wss:// through a TLS terminator, against 136.1 MiB over ws://.
+
 ## Linux (forge): GPU (RADV)
 
 Pending: `wynn` is not in the `render`/`video` groups yet (`getent group render` shows no members). Once

@@ -2,12 +2,15 @@
 //! [`Incoming`]; the app's [`ClientMessage`]s go out on the socket. Every (re)connect starts with `auth`,
 //! and the app state resyncs from a fresh snapshot, so nothing is replayed across connections.
 
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_tungstenite::tungstenite::Message;
 use async_tungstenite::tungstenite::protocol::CloseFrame;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, StreamExt, select};
+use futures_rustls::rustls::{self, pki_types::ServerName};
+use rustls_platform_verifier::BuilderVerifierExt;
 
 use crate::protocol::{ClientMessage, ServerMessage};
 
@@ -30,26 +33,43 @@ pub fn backoff(attempt: u32) -> Duration {
     Duration::from_millis(500u64.saturating_mul(1 << attempt.min(6))).min(Duration::from_secs(30))
 }
 
-/// `http://host:port` or `ws://host:port[/app]` → the `/app` WebSocket URL, plus `host:port` to dial.
-pub fn app_url(input: &str) -> Result<(String, String), String> {
+/// Where to dial for a hub URL the user typed.
+#[derive(Debug, PartialEq)]
+pub struct HubAddr {
+    /// The `/app` WebSocket URL.
+    pub url: String,
+    /// `host:port` to open the TCP connection to.
+    pub addr: String,
+    /// The name the TLS certificate must match, when `wss`.
+    pub tls_name: Option<String>,
+}
+
+/// `http(s)://host[:port]` or `ws(s)://host[:port][/app]` (no scheme means http).
+pub fn app_url(input: &str) -> Result<HubAddr, String> {
     let input = input.trim();
-    let rest = if let Some(r) = input.strip_prefix("ws://").or_else(|| input.strip_prefix("http://")) {
-        r
-    } else if input.starts_with("wss://") || input.starts_with("https://") {
-        return Err("TLS (wss://, https://) is not supported yet; use the hub's ws:// or http:// address.".into());
-    } else if input.contains("://") {
-        return Err("Use an http:// or ws:// URL.".into());
-    } else {
-        input
+    let (tls, rest) = match input.split_once("://") {
+        Some(("http" | "ws", rest)) => (false, rest),
+        Some(("https" | "wss", rest)) => (true, rest),
+        Some(_) => return Err("Use an http://, https://, ws:// or wss:// URL.".into()),
+        None => (false, input),
     };
     let rest = rest.trim_end_matches('/');
     let (host, path) = rest.split_once('/').map_or((rest, ""), |(h, p)| (h, p));
     if host.is_empty() {
         return Err("The URL needs a host, e.g. http://127.0.0.1:4790.".into());
     }
-    let addr = if host.rsplit_once(':').is_some_and(|(_, p)| p.parse::<u16>().is_ok()) { host.to_string() } else { format!("{host}:80") };
+    // "[::1]:4790", "hub:4790", "hub", "[::1]"
+    let (name, port) = match host.rsplit_once(':') {
+        Some((name, port)) if !name.is_empty() && (name.ends_with(']') || !name.contains(':')) && port.parse::<u16>().is_ok() => (name, Some(port)),
+        _ => (host, None),
+    };
+    let port = port.map_or(if tls { "443" } else { "80" }, |p| p);
     let path = if path.is_empty() { "app" } else { path };
-    Ok((format!("ws://{host}/{path}"), addr))
+    Ok(HubAddr {
+        url: format!("{}://{host}/{path}", if tls { "wss" } else { "ws" }),
+        addr: format!("{name}:{port}"),
+        tls_name: tls.then(|| name.trim_start_matches('[').trim_end_matches(']').to_string()),
+    })
 }
 
 /// What the connection does with one text frame.
@@ -130,18 +150,25 @@ async fn connect_once(
     incoming: &UnboundedSender<Incoming>,
 ) -> Ended {
     let dropped = |reason: String, was_ready| Ended::Dropped { reason, was_ready };
-    let (ws_url, addr) = match app_url(url) {
+    let hub = match app_url(url) {
         Ok(v) => v,
         Err(e) => return Ended::Refused(e),
     };
-    let tcp = match async_net::TcpStream::connect(addr.as_str()).await {
+    let tcp = match async_net::TcpStream::connect(hub.addr.as_str()).await {
         Ok(tcp) => tcp,
-        Err(e) => return dropped(format!("Can't reach {addr}: {e}"), false),
+        Err(e) => return dropped(format!("Can't reach {}: {e}", hub.addr), false),
     };
     tcp.set_nodelay(true).ok();
-    let mut ws = match async_tungstenite::client_async(ws_url.as_str(), tcp).await {
+    let stream: Box<dyn Io> = match &hub.tls_name {
+        None => Box::new(tcp),
+        Some(name) => match tls_connect(name, tcp).await {
+            Ok(tls) => Box::new(tls),
+            Err(e) => return dropped(format!("TLS with {} failed: {e}", hub.addr), false),
+        },
+    };
+    let mut ws = match async_tungstenite::client_async(hub.url.as_str(), stream).await {
         Ok((ws, _)) => ws,
-        Err(e) => return dropped(format!("WebSocket handshake with {ws_url} failed: {e}"), false),
+        Err(e) => return dropped(format!("WebSocket handshake with {} failed: {e}", hub.url), false),
     };
     let auth = serde_json::to_string(&ClientMessage::Auth { key: key.to_string() }).unwrap();
     if let Err(e) = ws.send(Message::text(auth)).await {
@@ -186,6 +213,30 @@ async fn connect_once(
     }
 }
 
+trait Io: futures::AsyncRead + futures::AsyncWrite + Unpin + Send {}
+impl<T: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Io for T {}
+
+/// The certificate is checked by the OS verifier (Security.framework on macOS, the system roots on Linux,
+/// which honor SSL_CERT_FILE). Built once, on first use, so plain ws:// hubs never load any roots.
+fn tls_config() -> Result<Arc<rustls::ClientConfig>, String> {
+    static CONFIG: OnceLock<Result<Arc<rustls::ClientConfig>, String>> = OnceLock::new();
+    CONFIG
+        .get_or_init(|| {
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            rustls::ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .and_then(|b| b.with_platform_verifier())
+                .map(|b| Arc::new(b.with_no_client_auth()))
+                .map_err(|e| e.to_string())
+        })
+        .clone()
+}
+
+async fn tls_connect(name: &str, tcp: async_net::TcpStream) -> Result<futures_rustls::client::TlsStream<async_net::TcpStream>, String> {
+    let server = ServerName::try_from(name.to_string()).map_err(|e| format!("bad host name {name}: {e}"))?;
+    futures_rustls::TlsConnector::from(tls_config()?).connect(server, tcp).await.map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,13 +250,32 @@ mod tests {
 
     #[test]
     fn app_url_accepts_http_and_ws_forms() {
-        assert_eq!(app_url("http://127.0.0.1:4790").unwrap(), ("ws://127.0.0.1:4790/app".into(), "127.0.0.1:4790".into()));
-        assert_eq!(app_url(" ws://hub:4790/app/ ").unwrap(), ("ws://hub:4790/app".into(), "hub:4790".into()));
-        assert_eq!(app_url("100.1.2.3:4790").unwrap().0, "ws://100.1.2.3:4790/app");
-        assert_eq!(app_url("http://hub").unwrap().1, "hub:80");
-        assert!(app_url("https://hub").unwrap_err().contains("TLS"));
+        let plain = |ws: &str, addr: &str| HubAddr { url: ws.into(), addr: addr.into(), tls_name: None };
+        assert_eq!(app_url("http://127.0.0.1:4790").unwrap(), plain("ws://127.0.0.1:4790/app", "127.0.0.1:4790"));
+        assert_eq!(app_url(" ws://hub:4790/app/ ").unwrap(), plain("ws://hub:4790/app", "hub:4790"));
+        assert_eq!(app_url("100.1.2.3:4790").unwrap().url, "ws://100.1.2.3:4790/app");
+        assert_eq!(app_url("http://hub").unwrap().addr, "hub:80");
         assert!(app_url("ftp://hub").is_err());
         assert!(app_url("http://").is_err());
+    }
+
+    #[test]
+    fn app_url_takes_tls_forms_with_the_name_to_verify() {
+        assert_eq!(
+            app_url("https://forge.tail1234.ts.net").unwrap(),
+            HubAddr {
+                url: "wss://forge.tail1234.ts.net/app".into(),
+                addr: "forge.tail1234.ts.net:443".into(),
+                tls_name: Some("forge.tail1234.ts.net".into()),
+            }
+        );
+        let v6 = app_url("wss://[::1]:4790/app").unwrap();
+        assert_eq!((v6.addr.as_str(), v6.tls_name.as_deref()), ("[::1]:4790", Some("::1")));
+    }
+
+    #[test]
+    fn tls_config_builds_with_the_platform_verifier() {
+        tls_config().unwrap();
     }
 
     #[test]
