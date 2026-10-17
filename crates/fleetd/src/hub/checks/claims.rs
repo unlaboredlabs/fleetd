@@ -2,7 +2,7 @@
 //! index order, and only all of them passing makes it done. A failure wakes the lead with each failing check's
 //! evidence; the third failed claim on a workstream is a false-claim incident. TS spec: apps/hub/src/checks/Claims.ts.
 use super::now_ts;
-use super::ports::{ClaimWake, Ports, Refusal};
+use super::ports::{ClaimWake, Ports, Refusal, invalid, not_found};
 use super::records::{ClaimFilter, ClaimRecords};
 use super::render::failed_claim_evidence;
 use super::runner::{CheckContext, CheckRunner, ran_by_of};
@@ -48,11 +48,7 @@ fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
 }
 
 fn store_refusal(e: StoreError) -> Refusal {
-    Refusal {
-        code: "internal",
-        message: e.to_string(),
-        fix: None,
-    }
+    super::ports::internal(e)
 }
 
 fn state_name(s: WorkstreamState) -> String {
@@ -103,6 +99,10 @@ impl Claims {
         }
     }
 
+    pub fn ports(&self) -> &Arc<dyn Ports> {
+        &self.ports
+    }
+
     pub fn records(&self) -> &Arc<ClaimRecords> {
         &self.records
     }
@@ -131,6 +131,7 @@ impl Claims {
             thread_id: None,
             summary,
             data: Some(data),
+            attention: None,
         })?;
         Ok(())
     }
@@ -297,7 +298,7 @@ impl Claims {
     ) -> Result<(ClaimId, JoinHandle<Claim>), Refusal> {
         let _held = self.lock.lock().await;
         let not_found = || {
-            Refusal::not_found(
+            not_found(
                 format!("There is no workstream {workstream_id}."),
                 Some("Use a workstream id from your digest."),
             )
@@ -310,7 +311,7 @@ impl Claims {
         }
         match w.state {
             WorkstreamState::Done => {
-                return Err(Refusal::invalid(
+                return Err(invalid(
                     format!("{workstream_id} is already done."),
                     Some("Open a new intent if there is more to do."),
                 ));
@@ -320,7 +321,7 @@ impl Claims {
                     .as_ref()
                     .is_some_and(|p| p.as_str().starts_with("finish-all@")) =>
             {
-                return Err(Refusal::invalid(
+                return Err(invalid(
                     format!(
                         "{workstream_id} is idle: {FINISH_ALL_IDLE}. A finish-all run ends idle, not done."
                     ),
@@ -328,7 +329,7 @@ impl Claims {
                 ));
             }
             WorkstreamState::Stopped | WorkstreamState::Failed => {
-                return Err(Refusal::invalid(
+                return Err(invalid(
                     format!(
                         "{workstream_id} is {}; there is nothing to claim.",
                         state_name(w.state)
@@ -339,7 +340,7 @@ impl Claims {
             _ => {}
         }
         if w.brief.is_none() {
-            return Err(Refusal::invalid(
+            return Err(invalid(
                 format!(
                     "{workstream_id} has no frozen brief, so it has no done-when checks to run."
                 ),

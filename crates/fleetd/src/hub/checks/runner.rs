@@ -6,7 +6,6 @@ use super::judges::{JudgeInput, Judges};
 use super::ports::{HumanAsk, Ports};
 use super::{units, utf16_prefix, utf16_suffix};
 use crate::clock::Clock;
-use crate::hub::link::commands::{CommandInput, NodeCommands};
 use crate::hub::store::{EventLog, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef};
@@ -158,7 +157,6 @@ fn encode_uri_component(s: &str) -> String {
 }
 
 pub struct CheckRunner {
-    commands: Arc<NodeCommands>,
     github: Arc<GitHub>,
     judges: Arc<Judges>,
     ports: Arc<dyn Ports>,
@@ -169,7 +167,6 @@ pub struct CheckRunner {
 
 impl CheckRunner {
     pub fn new(
-        commands: Arc<NodeCommands>,
         github: Arc<GitHub>,
         judges: Arc<Judges>,
         ports: Arc<dyn Ports>,
@@ -177,7 +174,6 @@ impl CheckRunner {
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
-            commands,
             github,
             judges,
             ports,
@@ -222,22 +218,15 @@ impl CheckRunner {
         };
         let shown = format!("`{}`", argv.join(" "));
         let out = match self
-            .commands
-            .run(
-                machine_id,
-                CommandInput {
-                    cwd: root.clone(),
-                    argv: argv.to_vec(),
-                    timeout_sec: None,
-                },
-            )
+            .ports
+            .run_command(machine_id, root.clone(), argv.to_vec())
             .await
         {
             Ok(out) => out,
-            Err(e) => {
+            Err(message) => {
                 return verdict(
                     CheckOutcome::Error,
-                    format!("{shown} did not run on {machine_id}: {}", e.message),
+                    format!("{shown} did not run on {machine_id}: {message}"),
                 );
             }
         };
@@ -248,7 +237,7 @@ impl CheckRunner {
                 with_tail(&format!("{shown} timed out and was killed"), tail),
             );
         }
-        let Some(code) = out.exit_code.map(|c| c.get()) else {
+        let Some(code) = out.exit_code else {
             return verdict(
                 CheckOutcome::Error,
                 with_tail(&format!("{shown} did not exit on its own"), tail),
@@ -477,7 +466,7 @@ impl CheckRunner {
     }
 
     /// Waits for the human's answer to `ask_id`, read off the decision its answer records.
-    async fn answer_to(&self, cursor: u64, ask_id: &AskId) -> String {
+    async fn answer_to(&self, cursor: i64, ask_id: &AskId) -> String {
         let mut after = cursor;
         loop {
             let input = WaitInput {

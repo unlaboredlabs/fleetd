@@ -131,6 +131,7 @@ impl Incidents {
                 incident.evidence.first().map(|l| l.as_str()).unwrap_or("")
             ),
             data: Some(data),
+            attention: None,
         })?;
         Ok(incident)
     }

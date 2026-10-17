@@ -5,6 +5,7 @@
 //! `verify`) and `Claims`. `cmd` checks run through the link area's `NodeCommands`.
 pub mod claims;
 pub mod github;
+pub mod hub_ports;
 pub mod judges;
 pub mod ports;
 pub mod records;
@@ -17,9 +18,110 @@ mod tests;
 
 pub use claims::{ClaimDoneOutcome, Claims, FALSE_CLAIM_AT, INLINE_WAIT};
 pub use github::{GH_AUTH_FIX, GhCli, GhError, GhErrorKind, GhRunner, GitHub};
+pub use hub_ports::HubPorts;
 pub use judges::{JUDGE_BY, JudgeVerdicts, Judges};
 pub use records::{ClaimFilter, ClaimRecords};
 pub use runner::{CLAIMS_BY, CheckRunner, CheckScope};
+
+use crate::clock::Clock;
+use crate::hub::api::Hub;
+use crate::hub::estimates::Estimates;
+use crate::hub::incidents::Incidents;
+use crate::hub::incidents::detectors::Detectors;
+use crate::hub::receipts::Receipts;
+use crate::hub::store::{EventLog, HubDb};
+use crate::hub::valuebar::{GhPrHeads, ValueBar};
+use std::sync::Arc;
+
+/// This slice's services, built before the `Hub` that holds them; `ports` is bound to the `Hub` right after.
+pub struct Built {
+    pub ports: Arc<HubPorts>,
+    pub incidents: Arc<Incidents>,
+    pub estimates: Arc<Estimates>,
+    pub receipts: Arc<Receipts>,
+    pub value_bar: Arc<ValueBar>,
+    pub checks: Arc<CheckRunner>,
+    pub claims: Arc<Claims>,
+}
+
+pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) -> Built {
+    let ports = HubPorts::new();
+    let dyn_ports: Arc<dyn ports::Ports> = ports.clone();
+    let incidents = Arc::new(Incidents::new(db.clone(), events.clone(), clock.clone()));
+    let estimates = Arc::new(Estimates::new(
+        db.clone(),
+        dyn_ports.clone(),
+        incidents.clone(),
+        clock.clone(),
+    ));
+    let receipts = Arc::new(Receipts::new(dyn_ports.clone()));
+    let gh: Arc<dyn GhRunner> = Arc::new(GhCli);
+    let verdicts = Arc::new(JudgeVerdicts::default());
+    let value_bar = Arc::new(ValueBar::new(
+        db.clone(),
+        events.clone(),
+        dyn_ports.clone(),
+        incidents.clone(),
+        Arc::new(GhPrHeads { runner: gh.clone() }),
+        verdicts.clone(),
+        clock.clone(),
+    ));
+    let judges = Arc::new(Judges::new(dyn_ports.clone(), events.clone(), verdicts));
+    let checks = Arc::new(CheckRunner::new(
+        Arc::new(GitHub::new(gh)),
+        judges,
+        dyn_ports.clone(),
+        events.clone(),
+        clock.clone(),
+    ));
+    let claims = Arc::new(Claims::new(
+        Arc::new(ClaimRecords::new(db.clone())),
+        checks.clone(),
+        dyn_ports,
+        events.clone(),
+        estimates.clone(),
+        incidents.clone(),
+        clock.clone(),
+        INLINE_WAIT,
+    ));
+    Built {
+        ports,
+        incidents,
+        estimates,
+        receipts,
+        value_bar,
+        checks,
+        claims,
+    }
+}
+
+/// This slice's loops: estimates start their clock on `workstream.running`, and the incident detectors follow the
+/// event log. Both stop with the hub.
+pub fn start_loops(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
+    let ports = HubPorts::new();
+    ports.bind(hub);
+    let detectors = Arc::new(Detectors::new(hub.incidents.clone(), ports));
+    let loops: [std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>; 2] = [
+        Box::pin(
+            hub.estimates
+                .clone()
+                .run_start_on_running(hub.events.clone()),
+        ),
+        Box::pin(detectors.run(hub.events.clone())),
+    ];
+    loops
+        .into_iter()
+        .map(|run| {
+            let shutdown = hub.shutdown.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    () = run => {}
+                    () = shutdown.wait() => {}
+                }
+            })
+        })
+        .collect()
+}
 
 /// Now on `clock`, as the contracts' ISO timestamp.
 pub(crate) fn now_ts(clock: &dyn crate::clock::Clock) -> fleetd_contracts::ids::Timestamp {

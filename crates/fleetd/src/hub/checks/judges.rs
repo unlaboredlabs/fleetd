@@ -175,7 +175,7 @@ impl Judges {
     }
 
     /// Resolves with the task's end state ("completed", "failed", "cancelled") from the event log.
-    async fn ended(&self, cursor: u64, task_id: &TaskId) -> String {
+    async fn ended(&self, cursor: i64, task_id: &TaskId) -> String {
         let mut after = cursor;
         loop {
             let input = WaitInput {

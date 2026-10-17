@@ -1,111 +1,59 @@
-//! The MCP tools `claims_list` and `incidents_list`, and the lead calls `claim_done` and `review_verdict`, as handler
-//! bodies over this area's services. The framework's registries decode input, check the tool's scope, call these and
-//! encode errors; `ToolRefusal` carries the TS ToolError texts. TS spec: apps/hub/src/api/FleetApi.ts (claims_list,
-//! incidents_list) and apps/hub/src/leads/LeadCallHandler.ts (claim_done, review_verdict).
-use super::claims::Claims;
-use super::ports::{Ports, Refusal};
+//! The MCP tools `claims_list` and `incidents_list`, and the lead calls `claim_done` and `review_verdict`.
+//! TS spec: apps/hub/src/api/FleetApi.ts (claims_list, incidents_list) and apps/hub/src/leads/LeadCallHandler.ts
+//! (claim_done, review_verdict).
+use super::ports::Refusal;
 use super::records::ClaimFilter;
-use crate::hub::incidents::{IncidentFilter, Incidents};
-use crate::hub::valuebar::{Caller, ValueBar};
-use fleetd_contracts::ids::{MachineId, ProjectRef};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, cap, readable, require};
+use crate::hub::incidents::IncidentFilter;
+use crate::hub::valuebar::Caller as LeadCaller;
+use fleetd_contracts::auth::Role;
+use fleetd_contracts::ids::{MachineId, Timestamp};
+use fleetd_contracts::lead_calls::{ClaimDoneResult, ReviewVerdictResult};
 use fleetd_contracts::ledger::WorkstreamId;
-use fleetd_contracts::verification::{Claim, ClaimOutcome, IncidentClass, ReviewVerdict};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use fleetd_contracts::mcp::{
+    ClaimsListInput, ClaimsListOutput, ErrorCode, IncidentCount, IncidentsListInput,
+    IncidentsListOutput, McpToolError,
+};
+use fleetd_contracts::prim::{Int, List};
+use fleetd_contracts::verification::{Claim, ReviewVerdict};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// A tool's wire error: `{code, message, fix?}`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ToolRefusal {
-    pub code: &'static str,
-    pub message: String,
-    pub fix: Option<String>,
+pub fn register(tools: &mut Registry) {
+    tools.add("claims_list", claims_list);
+    tools.add("incidents_list", incidents_list);
 }
 
-pub fn forbidden_read(machine_id: &MachineId) -> ToolRefusal {
-    ToolRefusal {
-        code: "forbidden",
-        message: format!("This key has no read grant on machine {machine_id}."),
-        fix: Some("Ask the hub admin for a key with that grant (fleetd hub key create --role … --machines …).".into()),
-    }
+fn unknown_workstream(id: &WorkstreamId) -> ToolError {
+    McpToolError::new(ErrorCode::NotFound, format!("No workstream {id}."))
+        .with_fix("Call workstream_list to see workstreams.")
 }
 
-fn unknown_workstream(id: &WorkstreamId) -> ToolRefusal {
-    ToolRefusal {
-        code: "not_found",
-        message: format!("No workstream {id}."),
-        fix: Some("Call workstream_list to see workstreams.".into()),
-    }
-}
-
-fn internal(e: impl std::fmt::Display) -> ToolRefusal {
-    ToolRefusal {
-        code: "internal",
-        message: e.to_string(),
-        fix: None,
-    }
-}
-
-fn default_limit() -> usize {
-    20
-}
-fn default_window() -> u32 {
-    7
-}
-
-/// ClaimsListInput, already validated by the framework against the contract (limit 1-100).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaimsListInput {
-    pub workstream_id: Option<WorkstreamId>,
-    pub project_ref: Option<ProjectRef>,
-    pub outcome: Option<ClaimOutcome>,
-    #[serde(default = "default_limit")]
-    pub limit: usize,
-}
-
-/// IncidentsListInput (limit 1-100, windowDays 1-30).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IncidentsListInput {
-    pub project_ref: Option<ProjectRef>,
-    pub workstream_id: Option<WorkstreamId>,
-    pub class: Option<IncidentClass>,
-    #[serde(default = "default_limit")]
-    pub limit: usize,
-    #[serde(default = "default_window")]
-    pub window_days: u32,
-}
-
-/// `allows(machine)`: the caller's read grant on that machine.
-pub fn claims_list(
-    claims: &Claims,
-    ports: &dyn Ports,
+async fn claims_list(
+    hub: Arc<Hub>,
+    caller: Caller,
     input: ClaimsListInput,
-    allows: &dyn Fn(&MachineId) -> bool,
-) -> Result<Value, ToolRefusal> {
-    if let Some(r) = &input.project_ref
-        && !allows(&r.machine_id)
-    {
-        return Err(forbidden_read(&r.machine_id));
+) -> Result<ClaimsListOutput, ToolError> {
+    if let Some(r) = &input.project_ref {
+        require(&caller, Role::Read, Some(&r.machine_id))?;
     }
+    let ports = hub.claims.ports();
     if let Some(id) = &input.workstream_id {
         match ports.workstream(id) {
-            Some(w) if allows(&w.project_ref.machine_id) => {}
+            Some(w) if readable(&caller, &w.project_ref.machine_id) => {}
             _ => return Err(unknown_workstream(id)),
         }
     }
-    // Scoped to one project or workstream the store's limit is exact; otherwise read wide and keep what the key may see.
+    let limit = input.limit.get() as usize;
+    // Scoped to one project or workstream the store's limit is exact; otherwise read wide and keep what the key may
+    // see.
     let scoped = input.project_ref.is_some() || input.workstream_id.is_some();
-    let listed = claims
-        .list(&ClaimFilter {
-            workstream_id: input.workstream_id.clone(),
-            project_ref: input.project_ref.clone(),
-            outcome: input.outcome,
-            limit: if scoped { input.limit + 1 } else { 1000 },
-        })
-        .map_err(internal)?;
+    let listed = hub.claims.list(&ClaimFilter {
+        workstream_id: input.workstream_id.clone(),
+        project_ref: input.project_ref.clone(),
+        outcome: input.outcome,
+        limit: if scoped { limit + 1 } else { 1000 },
+    })?;
     let mut all: Vec<Claim> = Vec::new();
     let mut machine_of: HashMap<WorkstreamId, Option<MachineId>> = HashMap::new();
     for claim in listed {
@@ -121,84 +69,89 @@ pub fn claims_list(
                     .map(|w| w.project_ref.machine_id)
             })
             .clone();
-        if machine.is_some_and(|m| allows(&m)) {
+        if machine.is_some_and(|m| readable(&caller, &m)) {
             all.push(claim);
         }
     }
-    let truncated = all.len() > input.limit;
-    all.truncate(input.limit);
-    let mut out = json!({ "claims": all });
-    if truncated {
-        out["truncated"] = json!(true);
-    }
-    out["next"] = json!(if truncated {
+    let shown = cap(all, limit);
+    let next = if shown.truncated.is_some() {
         "Narrow the list with workstreamId, projectRef or outcome."
     } else {
         "Each result's evidence is what fleetd saw; workstream_get shows the workstream's state."
-    });
-    Ok(out)
+    };
+    Ok(ClaimsListOutput {
+        claims: List::unchecked(shown.items),
+        truncated: shown.truncated,
+        next: Some(next.into()),
+    })
 }
 
-pub fn incidents_list(
-    incidents: &Incidents,
+async fn incidents_list(
+    hub: Arc<Hub>,
+    caller: Caller,
     input: IncidentsListInput,
-    allows: &dyn Fn(&MachineId) -> bool,
-) -> Result<Value, ToolRefusal> {
-    if let Some(r) = &input.project_ref
-        && !allows(&r.machine_id)
-    {
-        return Err(forbidden_read(&r.machine_id));
+) -> Result<IncidentsListOutput, ToolError> {
+    if let Some(r) = &input.project_ref {
+        require(&caller, Role::Read, Some(&r.machine_id))?;
     }
     let filter = IncidentFilter {
-        project_ref: input.project_ref,
-        workstream_id: input.workstream_id,
+        project_ref: input.project_ref.clone(),
+        workstream_id: input.workstream_id.clone(),
         class: input.class,
         since_ms: None,
         until_ms: None,
     };
-    let listed = incidents
-        .list_for_tool(filter, input.limit, input.window_days, &|r| {
-            allows(&r.machine_id)
-        })
-        .map_err(internal)?;
-    let counts: Vec<Value> = listed
+    let listed = hub.incidents.list_for_tool(
+        filter,
+        input.limit.get() as usize,
+        input.window_days.get() as u32,
+        &|r| readable(&caller, &r.machine_id),
+    )?;
+    let counts = listed
         .counts
-        .iter()
-        .map(|(class, count)| json!({ "class": class, "count": count }))
+        .into_iter()
+        .map(|(class, count)| IncidentCount {
+            class,
+            count: Int::unchecked(count as i64),
+        })
         .collect();
-    let mut out = json!({ "incidents": listed.incidents, "counts": counts, "countsSince": listed.counts_since });
-    if listed.truncated {
-        out["truncated"] = json!(true);
-        out["next"] = json!("Narrow the list with projectRef, workstreamId or class.");
-    }
-    Ok(out)
+    Ok(IncidentsListOutput {
+        incidents: List::unchecked(listed.incidents),
+        counts,
+        counts_since: Timestamp(listed.counts_since),
+        truncated: listed.truncated.then_some(true),
+        next: listed
+            .truncated
+            .then(|| "Narrow the list with projectRef, workstreamId or class.".into()),
+    })
 }
 
-/// Lead call `claim_done`: the result frame's body (`op` included).
+/// Lead call `claim_done`.
 pub async fn lead_claim_done(
-    claims: &Arc<Claims>,
-    caller: &Caller,
+    hub: &Hub,
+    caller: &LeadCaller,
     workstream_id: &WorkstreamId,
-) -> Result<Value, Refusal> {
-    let outcome = claims
+) -> Result<ClaimDoneResult, Refusal> {
+    let outcome = hub
+        .claims
         .claim_done(workstream_id, &caller.by, Some(&caller.project_ref))
         .await?;
-    let mut out = serde_json::to_value(&outcome).map_err(|e| Refusal {
-        code: "internal",
-        message: e.to_string(),
-        fix: None,
-    })?;
-    out["op"] = json!("claim_done");
-    Ok(out)
+    Ok(ClaimDoneResult {
+        claim_id: outcome.claim_id,
+        workstream_id: outcome.workstream_id,
+        state: outcome.state,
+        claim: outcome.claim,
+        next: Some(outcome.next),
+    })
 }
 
 /// Lead call `review_verdict`: records it and says how the reviewer ends.
 pub async fn lead_review_verdict(
-    value_bar: &ValueBar,
-    caller: &Caller,
+    hub: &Hub,
+    caller: &LeadCaller,
     verdict: ReviewVerdict,
-) -> Result<Value, Refusal> {
-    let recorded = value_bar.record_verdict(caller, verdict).await?;
+) -> Result<ReviewVerdictResult, Refusal> {
+    let recorded = hub.value_bar.record_verdict(caller, verdict).await?;
     let stop = if recorded.verdict.blocking.get() == 0 {
         "end with your one-paragraph result and stop; this commit will not be reviewed again."
     } else {
@@ -208,5 +161,8 @@ pub async fn lead_review_verdict(
         Some(research) => format!("{research} {stop}"),
         None => stop.to_owned(),
     };
-    Ok(json!({ "op": "review_verdict", "verdict": recorded.verdict, "next": next }))
+    Ok(ReviewVerdictResult {
+        verdict: recorded.verdict,
+        next: Some(next),
+    })
 }

@@ -1,8 +1,9 @@
 //! What the checks, receipts, value bar, estimates and incidents areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
 //! Keeping it to this one seam means the claim flow and the value bar run their real logic under test.
-use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{AskId, MetricValues, PlaybookRef, Workstream, WorkstreamId};
+use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
 use fleetd_contracts::verification::{CheckResult, ClaimId};
@@ -61,35 +62,35 @@ pub struct JudgeSpawn {
     pub prompt: String,
 }
 
-/// A refusal at the wire (TS LeadError): `code` is "invalid", "not_found", ...; the same texts as TS.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Refusal {
-    pub code: &'static str,
-    pub message: String,
-    pub fix: Option<String>,
+/// A `cmd_result` from the node: `exit_code` None when the process did not exit on its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandRun {
+    pub exit_code: Option<i64>,
+    pub output_tail: String,
+    pub timed_out: bool,
 }
 
-impl Refusal {
-    pub fn invalid(message: impl Into<String>, fix: Option<&str>) -> Self {
-        Self {
-            code: "invalid",
-            message: message.into(),
-            fix: fix.map(str::to_owned),
-        }
-    }
-    pub fn not_found(message: impl Into<String>, fix: Option<&str>) -> Self {
-        Self {
-            code: "not_found",
-            message: message.into(),
-            fix: fix.map(str::to_owned),
-        }
+/// A refusal at the wire (TS LeadError and ToolError): `{code, message, fix?}` with the TS texts.
+pub type Refusal = McpToolError;
+
+pub fn invalid(message: impl Into<String>, fix: Option<&str>) -> Refusal {
+    with_fix(McpToolError::new(ErrorCode::Invalid, message), fix)
+}
+
+pub fn not_found(message: impl Into<String>, fix: Option<&str>) -> Refusal {
+    with_fix(McpToolError::new(ErrorCode::NotFound, message), fix)
+}
+
+fn with_fix(error: Refusal, fix: Option<&str>) -> Refusal {
+    match fix {
+        Some(fix) => error.with_fix(fix),
+        None => error,
     }
 }
 
-impl std::fmt::Display for Refusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
+/// A store failure: logged, answered with the generic "The hub failed to answer that request."
+pub fn internal(error: crate::hub::store::StoreError) -> Refusal {
+    error.into()
 }
 
 pub trait Ports: Send + Sync + 'static {
@@ -99,6 +100,13 @@ pub trait Ports: Send + Sync + 'static {
     fn put_workstream(&self, workstream: &Workstream);
     // leads: LeadWakes.trigger
     fn wake(&self, project: &ProjectRef, wake: ClaimWake);
+    // link: NodeCommands.run (default 120 s timeout); the error is NodeCommandError's message.
+    fn run_command(
+        &self,
+        machine: &MachineId,
+        cwd: String,
+        argv: Vec<String>,
+    ) -> BoxFuture<'_, Result<CommandRun, String>>;
     // store: HubStore.projects
     fn workspace_root(&self, project: &ProjectRef) -> Option<String>;
     // playbooks

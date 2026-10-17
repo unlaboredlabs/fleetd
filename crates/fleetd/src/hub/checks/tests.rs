@@ -1,22 +1,22 @@
 //! The claim flow on a real in-memory database and event log, with a fake node and fake other areas.
 //! TS spec: apps/hub/src/checks/Claims.test.ts.
 use super::ports::{
-    BoxFuture, ClaimWake, HumanAsk, HumanAskFiled, JudgeSpawn, PlaybookLimits, Ports, Refusal,
+    BoxFuture, ClaimWake, CommandRun, HumanAsk, HumanAskFiled, JudgeSpawn, PlaybookLimits, Ports,
+    Refusal,
 };
 use super::render::claim_failed_lines;
 use super::*;
 use crate::clock::{Clock, SystemClock};
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentFilter, Incidents};
-use crate::hub::link::commands::{AttachedLink, NodeCommands};
 use crate::hub::store::{EventLog, HubDb, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{
     AskId, MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
+use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
-use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::tasks::{Task, TaskId};
 use fleetd_contracts::verification::{CheckOutcome, CheckResultRanBy, ClaimOutcome, IncidentClass};
 use serde_json::{Value, json};
@@ -58,6 +58,10 @@ fn workstream(id: &str, done_when: Option<Vec<Value>>) -> Workstream {
 struct Fake {
     workstreams: Mutex<HashMap<WorkstreamId, Workstream>>,
     wakes: Mutex<Vec<ClaimWake>>,
+    /// What the node answers every command: exit code and output tail.
+    node: Arc<Mutex<(i64, String)>>,
+    /// Each command run: machine, cwd and argv.
+    commands: Arc<Mutex<Vec<Value>>>,
 }
 
 impl Ports for Fake {
@@ -73,6 +77,25 @@ impl Ports for Fake {
     fn wake(&self, _: &ProjectRef, wake: ClaimWake) {
         self.wakes.lock().unwrap().push(wake);
     }
+    fn run_command(
+        &self,
+        machine: &MachineId,
+        cwd: String,
+        argv: Vec<String>,
+    ) -> BoxFuture<'_, Result<CommandRun, String>> {
+        self.commands
+            .lock()
+            .unwrap()
+            .push(json!({ "machineId": machine, "cwd": cwd, "argv": argv }));
+        let (code, tail) = self.node.lock().unwrap().clone();
+        Box::pin(async move {
+            Ok(CommandRun {
+                exit_code: Some(code),
+                output_tail: tail,
+                timed_out: false,
+            })
+        })
+    }
     fn workspace_root(&self, _: &ProjectRef) -> Option<String> {
         Some("/w/p1".into())
     }
@@ -84,7 +107,7 @@ impl Ports for Fake {
         _: &'a WorkstreamId,
         _: MetricValues,
     ) -> BoxFuture<'a, Result<String, Refusal>> {
-        Box::pin(async { Err(Refusal::invalid("no research here", None)) })
+        Box::pin(async { Err(super::ports::invalid("no research here", None)) })
     }
     fn task(&self, _: &TaskId) -> Option<Task> {
         None
@@ -93,7 +116,7 @@ impl Ports for Fake {
         vec![]
     }
     fn spawn_judge(&self, _: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>> {
-        Box::pin(async { Err(Refusal::invalid("no judges here", None)) })
+        Box::pin(async { Err(super::ports::invalid("no judges here", None)) })
     }
     fn file_human_ask(&self, _: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>> {
         Box::pin(async { panic!("no human is asked in these tests") })
@@ -118,7 +141,6 @@ struct Kit {
     /// What the fake node answers to every `cmd_check`: exit code and output tail.
     node: Arc<Mutex<(i64, String)>>,
     commands: Arc<Mutex<Vec<Value>>>,
-    _link: AttachedLink,
 }
 
 fn kit(workstreams: Vec<Workstream>) -> Kit {
@@ -137,29 +159,9 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
         incidents.clone(),
         clock.clone(),
     ));
-    let commands = Arc::new(NodeCommands::default());
-    let node = Arc::new(Mutex::new((0, String::new())));
-    let sent = Arc::new(Mutex::new(Vec::new()));
-    let lab_a = MachineId::unchecked("lab-a");
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HubToNode>();
-    let link = commands.attach(&lab_a, tx);
-    {
-        // The fake node: answers every cmd_check with the exit code and tail set by the test.
-        let (commands, node, sent) = (commands.clone(), node.clone(), sent.clone());
-        tokio::spawn(async move {
-            while let Some(frame) = rx.recv().await {
-                let frame = serde_json::to_value(&frame).unwrap();
-                sent.lock().unwrap().push(frame.clone());
-                let (code, tail) = node.lock().unwrap().clone();
-                let reply = json!({ "t": "cmd_result", "id": frame["id"], "exitCode": code, "outputTail": tail, "timedOut": false });
-                commands.resolve(&lab_a, serde_json::from_value::<NodeToHub>(reply).unwrap());
-            }
-        });
-    }
     let verdicts = Arc::new(JudgeVerdicts::default());
     let judges = Arc::new(Judges::new(dyn_ports.clone(), events.clone(), verdicts));
     let runner = Arc::new(CheckRunner::new(
-        commands,
         Arc::new(GitHub::new(Arc::new(GhCli))),
         judges,
         dyn_ports.clone(),
@@ -178,12 +180,11 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
     ));
     Kit {
         claims,
-        ports,
+        ports: ports.clone(),
         events,
         incidents,
-        node,
-        commands: sent,
-        _link: link,
+        node: ports.node.clone(),
+        commands: ports.commands.clone(),
     }
 }
 
@@ -336,7 +337,7 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
     let again = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap_err();
     assert_eq!(
         (again.code, again.message.as_str()),
-        ("invalid", "W1 is already done.")
+        (ErrorCode::Invalid, "W1 is already done.")
     );
 }
 
@@ -420,7 +421,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
     assert_eq!(
         (draft.code, draft.message.as_str()),
         (
-            "invalid",
+            ErrorCode::Invalid,
             "W2 has no frozen brief, so it has no done-when checks to run."
         )
     );
@@ -432,7 +433,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
             .await
             .unwrap_err()
             .code,
-        "not_found"
+        ErrorCode::NotFound
     );
     assert_eq!(
         k.claims
@@ -440,7 +441,7 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
             .await
             .unwrap_err()
             .code,
-        "not_found"
+        ErrorCode::NotFound
     );
     let idle = k
         .claims

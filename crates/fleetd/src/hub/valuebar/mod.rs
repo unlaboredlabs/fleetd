@@ -7,7 +7,7 @@ pub mod rules;
 
 use crate::clock::Clock;
 use crate::hub::checks::JudgeVerdicts;
-use crate::hub::checks::ports::{Ports, Refusal};
+use crate::hub::checks::ports::{Ports, Refusal, invalid, not_found};
 use crate::hub::incidents::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
 use fleetd_contracts::events::HubEventType;
@@ -35,16 +35,20 @@ pub struct RecordedVerdict {
     pub research: Option<String>,
 }
 
+/// A refusal with an optional fix the rules computed.
+fn with_fix_opt(error: Refusal, fix: Option<String>) -> Refusal {
+    match fix {
+        Some(fix) => error.with_fix(fix),
+        None => error,
+    }
+}
+
 fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
 }
 
 fn internal(e: StoreError) -> Refusal {
-    Refusal {
-        code: "internal",
-        message: e.to_string(),
-        fix: None,
-    }
+    crate::hub::checks::ports::internal(e)
 }
 
 fn kind_name(kind: TaskKind) -> &'static str {
@@ -103,11 +107,7 @@ impl ValueBar {
         workstream: &Workstream,
     ) -> Result<(), Refusal> {
         if let Some(write) = write_refusal(request, workstream) {
-            return Err(Refusal {
-                code: "invalid",
-                message: write.message,
-                fix: write.fix,
-            });
+            return Err(with_fix_opt(invalid(write.message, None), write.fix));
         }
         let pr = if request.kind == TaskKind::Review {
             request.pr.as_deref()
@@ -151,11 +151,7 @@ impl ValueBar {
                 })
                 .map_err(internal)?;
         }
-        Err(Refusal {
-            code: "invalid",
-            message: review.message,
-            fix: review.fix,
-        })
+        Err(with_fix_opt(invalid(review.message, None), review.fix))
     }
 
     /// `fleetd review verdict`: stores it against the task's PR, emits `review.verdict` and completes a waiting judge
@@ -170,13 +166,13 @@ impl ValueBar {
             .task(&verdict.task_id)
             .filter(|t| same_project(&t.project_ref, &caller.project_ref))
         else {
-            return Err(Refusal::not_found(
+            return Err(not_found(
                 format!("No task {} in this project.", verdict.task_id),
                 Some("Pass --task with your own task id."),
             ));
         };
         if task.kind != TaskKind::Review {
-            return Err(Refusal::invalid(
+            return Err(invalid(
                 format!(
                     "{} is a {} task; only review tasks record verdicts.",
                     task.task_id,
@@ -196,7 +192,7 @@ impl ValueBar {
             .and_then(|w| w.playbook.as_ref())
             .is_some_and(|p| p.as_str().starts_with("research@"));
         if verdict.metric_values.is_some() && !is_research {
-            return Err(Refusal::invalid(
+            return Err(invalid(
                 format!(
                     "{} is not the judge of a research workstream; only those report --baseline and --candidate.",
                     task.task_id
@@ -210,7 +206,7 @@ impl ValueBar {
                 .and_then(|w| w.brief.as_ref())
                 .and_then(|b| b.metric.as_ref())
                 .map_or_else(|| "the brief's metric".to_owned(), |m| format!("\"{m}\""));
-            return Err(Refusal::invalid(
+            return Err(invalid(
                 format!(
                     "{} judges research workstream {}, so its verdict must carry the measured numbers.",
                     task.task_id, task.workstream_id
@@ -264,6 +260,7 @@ impl ValueBar {
                     verdict.non_blocking
                 ),
                 data: Some(event_data),
+                attention: None,
             })
             .map_err(internal)?;
         // Before the judge check resolves, so the claim that follows finds the workstream already done with its outcome.

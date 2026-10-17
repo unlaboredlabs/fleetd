@@ -270,6 +270,8 @@ pub fn build_on(
         clock.clone(),
     )?;
     Ok(Arc::new(Hub {
+    let checks = crate::hub::checks::build(&db, &events, &clock);
+    let hub = Arc::new(Hub {
         config,
         clock,
         shutdown: Shutdown::default(),
@@ -291,6 +293,15 @@ pub fn build_on(
         wakes,
         webhooks,
     }))
+        incidents: checks.incidents,
+        estimates: checks.estimates,
+        receipts: checks.receipts,
+        value_bar: checks.value_bar,
+        checks: checks.checks,
+        claims: checks.claims,
+    });
+    checks.ports.bind(&hub);
+    Ok(hub)
 }
 
 /// Every area's long-running loop, one tokio task each; they stop with `hub.shutdown` (and are aborted after the
@@ -311,6 +322,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(hub.watchdog.start());
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
+    loops.extend(crate::hub::checks::start_loops(hub));
     loops
 }
 
