@@ -100,6 +100,14 @@ export const HubEventType = Schema.Literals([
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 
+/**
+ * Whether an event needs the human now, set by the hub when it emits the event (apps/hub/src/attention). "loud":
+ * notify, but hold it through quiet hours; "urgent": notify even during quiet hours (money and irreversible).
+ * Absent: the inbox and the digest are enough.
+ */
+export const Attention = Schema.Literals(["loud", "urgent"]).annotate({ identifier: "Attention" });
+export type Attention = typeof Attention.Type;
+
 export const HubEvent = Schema.Struct({
   /** Hub-global and monotonic. */
   seq: EventSeq,
@@ -112,6 +120,7 @@ export const HubEvent = Schema.Struct({
   summary: Schema.String.check(Schema.isMaxLength(200)),
   /** At most 2 KB of JSON; the hub trims before emitting. */
   data: Schema.optionalKey(Schema.Unknown),
+  attention: Schema.optionalKey(Attention),
 }).annotate({ identifier: "HubEvent" });
 export type HubEvent = typeof HubEvent.Type;
 

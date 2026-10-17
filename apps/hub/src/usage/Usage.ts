@@ -289,6 +289,7 @@ const make = Effect.gen(function* () {
       yield* emit({
         type: "usage.breaker",
         machineId,
+        attention: "loud",
         summary: breakerMessage(machineId, last.class, until, last.model, counts),
         data: { class: last.class, parked: counts, ...(until === undefined ? {} : { until }), ...(last.model === undefined ? {} : { model: last.model }) },
       });

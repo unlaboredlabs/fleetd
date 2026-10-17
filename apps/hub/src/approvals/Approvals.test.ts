@@ -132,6 +132,8 @@ describe("gated runs", () => {
         yield* reply("1 go");
         const reopened = yield* next(cursor, "ask.created");
         expect(reopened.data).toMatchObject({ askId: filed.askId, reopened: true });
+        // A money approval put back unrun needs the human, even at night.
+        expect(reopened.attention).toBe("urgent");
         const ask = (yield* (yield* Asks).get(filed.askId))!;
         expect(ask).toMatchObject({ state: "open", batchId: "B2", evidence: expect.stringContaining("node was offline") });
         expect(ask.answer).toBeUndefined();

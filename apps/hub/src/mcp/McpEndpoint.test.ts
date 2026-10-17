@@ -655,6 +655,30 @@ describe("usage tools", () => {
   });
 });
 
+describe("attention_policy", () => {
+  it("gives the coalescing window and the quiet windows policy.quiet_hours sets in policy.tz, or none when they are off", async () => {
+    const { as } = await fleet();
+    const admin = await as("admin");
+    const record = (key: string, value: string) => call(admin, "decisions_record", { key, value, scope: { kind: "global" } });
+    await record("policy.tz", "UTC");
+    // Quiet from an hour ago to an hour from now, whatever the wall clock says.
+    const hhmm = (ms: number) => new Date(ms).toISOString().slice(11, 16);
+    const end = hhmm(Date.now() + 3_600_000);
+    await record("policy.quiet_hours", `${hhmm(Date.now() - 3_600_000)}-${end}`);
+    const policy = (await call(await as("reader"), "attention_policy")).body;
+    expect(policy.coalesceSec).toBe(1200);
+    expect(policy.quiet).toHaveLength(2);
+    const [current, next] = policy.quiet as Array<{ from: string; to: string }>;
+    expect(Date.parse(current!.from)).toBeLessThanOrEqual(Date.now());
+    expect(Date.parse(current!.to)).toBeGreaterThan(Date.now());
+    expect(current!.to.slice(11, 16)).toBe(end);
+    expect(Date.parse(next!.from) - Date.parse(current!.from)).toBe(86_400_000);
+
+    await record("policy.quiet_hours", "off");
+    expect((await call(admin, "attention_policy")).body.quiet).toEqual([]);
+  });
+});
+
 describe("doctor tools", () => {
   it("doctor_list shows hub checks and the machines a key reads; doctor_fix takes admin or a person's device, and refuses manual fixes with the command", async () => {
     const { hub, url, as } = await fleet();

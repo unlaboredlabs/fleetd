@@ -9,8 +9,6 @@ import { LEAD, makeKit, REF } from "../leads/testKit.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import * as EventLog from "../store/EventLog.ts";
-import * as HubStore from "../store/HubStore.ts";
-import { thread } from "../api/testHub.ts";
 import { Push, make } from "./Push.ts";
 import { decryptPayload, generateVapidKeys, type PushRequest } from "./webPush.ts";
 
@@ -154,7 +152,13 @@ describe("Web Push", () => {
 
         // A usage breaker is loud too; by then the gone subscription is no longer tried.
         cursor = first.seq;
-        yield* (yield* EventLog.EventLog).append({ at: new Date(0).toISOString(), type: "usage.breaker", machineId: REF.machineId, summary: "Claude limit reached on lab-a's login" });
+        yield* (yield* EventLog.EventLog).append({
+          at: new Date(0).toISOString(),
+          type: "usage.breaker",
+          machineId: REF.machineId,
+          summary: "Claude limit reached on lab-a's login",
+          attention: "loud",
+        });
         yield* TestClock.adjust("20 minutes");
         yield* nextPush(cursor);
         expect(sent.slice(2).map((r) => r.url)).toEqual([live.input.endpoint]);
@@ -163,7 +167,7 @@ describe("Web Push", () => {
     );
   });
 
-  it("pushes machine.offline only while that machine had runs going", async () => {
+  it("pushes only events the hub marked for attention", async () => {
     const { run, sent } = setup();
     await run(
       Effect.gen(function* () {
@@ -172,12 +176,17 @@ describe("Web Push", () => {
         yield* push.subscribe((yield* humanKey()).info, phone.input);
         yield* quietOff;
         const events = yield* EventLog.EventLog;
-        const offline = (machineId: string) =>
-          events.append({ at: new Date(0).toISOString(), type: "machine.offline", machineId: machineId as never, summary: `${machineId} went offline: no word from its node for 90 s` });
-        yield* (yield* HubStore.HubStore).threads.upsert(thread("lab-b", "p1", "t1", { status: "running" }));
+        const offline = (machineId: string, attention?: "loud") =>
+          events.append({
+            at: new Date(0).toISOString(),
+            type: "machine.offline",
+            machineId: machineId as never,
+            summary: `${machineId} went offline: no word from its node for 90 s`,
+            ...(attention === undefined ? {} : { attention }),
+          });
         const cursor = yield* head;
         yield* offline("lab-a");
-        yield* offline("lab-b");
+        yield* offline("lab-b", "loud");
         yield* nextPush(cursor);
         expect(sent.map(phone.open)).toEqual(["lab-b went offline: no word from its node for 90 s"]);
       }),

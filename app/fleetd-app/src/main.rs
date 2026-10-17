@@ -5,9 +5,11 @@ mod client;
 mod diff;
 mod fake;
 mod keychain;
+mod notify;
 mod protocol;
 #[cfg(test)]
 mod schema_check;
+mod seal;
 mod shell;
 mod state;
 
@@ -28,6 +30,8 @@ fn main() {
                 Cow::Borrowed(include_bytes!("../assets/fonts/Lilex-Regular.ttf").as_slice()),
             ])
             .expect("bundled fonts load");
+        // Required for system notifications; on macOS they also need the app bundle (app/macos-bundle.sh).
+        cx.set_app_identity("dev.fleetd.app", "fleetd");
         let bounds = Bounds::centered(None, size(px(1400.), px(900.)), cx);
         cx.open_window(
             WindowOptions {

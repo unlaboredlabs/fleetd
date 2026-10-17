@@ -75,6 +75,7 @@ export const make = (everyMs: number) =>
             at: new Date(yield* Clock.currentTimeMillis).toISOString(),
             type: "machine.offline",
             machineId: machine.machineId,
+            attention: "loud",
             summary: `${machine.machineId} is still offline with ${n} running thread${n === 1 ? "" : "s"}; their runs are not being watched`,
             data: { since: machine.lastSeenAt, runningThreads: threads.slice(0, 20).map((t) => t.threadId), count: n },
           });

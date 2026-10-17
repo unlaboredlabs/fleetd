@@ -133,6 +133,35 @@ Against the TLS section above:
   62.0 fps, worst frame 26.2 ms. The bench screen (project detail) doesn't draw the inbox, and earlier sections'
   warm medians already span 68.9-73.2 ms, so we read the cold-start change as run-to-run noise.
 
+## Linux (forge): every human action in the app, software-rendered
+
+Secret asks are entered masked and sealed in the app (crypto_box), checklist commands get Copy buttons, and the app
+posts native "needs you" notifications from the hub's `attention` field. Same bench as the M8 section above.
+
+**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T21:09Z, fleetd f730744, gpui zed v1.24.2 (fb69067).
+
+| Metric | Value |
+|---|---|
+| Binary size (release, stripped) | 26.7 MiB |
+| Idle RSS, empty log, 10 s after first frame | 126.0 MiB |
+| Idle RSS, 20k-line log loaded, 10 s after first frame | 131.9 MiB |
+| RSS, 20k-line log + streaming 50 lines/s, after 10 s | 143.6 MiB |
+| Cold start, exec -> first frame presented, warm cache (10 runs) | median 70.8 ms, p90 72.0 ms, max 73.1 ms |
+|   of which: exec -> first frame draw starts | median 51.1 ms, p90 52.1 ms, max 52.1 ms |
+| Cold start, binary + 36 mapped files evicted from page cache (10 runs) | median 214.7 ms, p90 216.2 ms, max 218.1 ms |
+| Input latency in-app, key handler -> echo frame presented (200 keys, gpui dispatch) | median 10.8 ms, p90 16.0 ms, max 20.2 ms |
+| Input latency in-app, key handler -> echo frame presented (200 XTEST keys) | median 12.2 ms, p90 14.1 ms, max 17.3 ms |
+| Input latency external, XTEST send -> echo pixels readable from X (200 keys) | median 13.8 ms, p90 15.3 ms, max 20.2 ms |
+| Scroll 20k-line log for 5 s: presented frames/s | 62.2 |
+| Scroll 20k-line log for 5 s: worst frame interval | 28.3 ms |
+
+Against the M8 section above:
+- +0.2 MiB binary (crypto_box with salsa20, poly1305, blake2; gpui already carried the notification code).
+- Idle RSS within noise: -0.3 / -0.3 / -0.7 MiB.
+- Cold start median -1.0 ms (warm), +1.8 ms (evicted); input latency medians -0.5 / +0.3 / +0.1 ms; scroll
+  62.2 fps, worst frame 28.3 ms (earlier sections: 23.5-27.1 ms). The bench screen doesn't draw the inbox, and the
+  notification check runs once per hub frame and every 3 s, so we read all of it as run-to-run noise.
+
 ## Linux (forge): GPU (RADV)
 
 Pending: `wynn` is not in the `render`/`video` groups yet (`getent group render` shows no members). Once

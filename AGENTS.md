@@ -20,7 +20,7 @@ a GPUI desktop app and a phone PWA. Claude is reached only through the `claude` 
 - `app/` - Cargo workspace for the desktop app (`fleetd-app`, GPUI pinned to a Zed release tag) and
   its speed harness (`app/bench/`, run `app/bench/run.sh`). Building on Linux needs GPUI's `-dev`
   packages; without sudo, `app/bench/linux-sysroot.sh` extracts them and `source app/bench/linux-env.sh`
-  points cargo at them.
+  points cargo at them. On macOS, `app/macos-bundle.sh` wraps it in `fleetd.app`, which notifications need.
 
 ## Safety rules
 

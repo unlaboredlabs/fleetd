@@ -223,6 +223,13 @@
       "type": "string",
       "minLength": 1
     },
+    "Attention": {
+      "type": "string",
+      "enum": [
+        "loud",
+        "urgent"
+      ]
+    },
     "HubEvent": {
       "type": "object",
       "properties": {
@@ -248,7 +255,10 @@
           "type": "string",
           "maxLength": 200
         },
-        "data": {}
+        "data": {},
+        "attention": {
+          "$ref": "#/$defs/Attention"
+        }
       },
       "required": [
         "seq",
@@ -5359,6 +5369,52 @@
           ],
           "additionalProperties": true
         },
+        "attention_policy.input": {
+          "not": {
+            "type": "null"
+          }
+        },
+        "attention_policy.output": {
+          "type": "object",
+          "properties": {
+            "coalesceSec": {
+              "type": "integer",
+              "maximum": 9007199254740991,
+              "exclusiveMinimum": 0
+            },
+            "quiet": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "$ref": "#/$defs/Timestamp"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/Timestamp"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "additionalProperties": true
+              },
+              "maxItems": 2
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "coalesceSec",
+            "quiet"
+          ],
+          "additionalProperties": true
+        },
         "doctor_fix.input": {
           "type": "object",
           "properties": {
@@ -5483,6 +5539,8 @@
         "push_vapid_key.output",
         "doctor_list.input",
         "doctor_list.output",
+        "attention_policy.input",
+        "attention_policy.output",
         "doctor_fix.input",
         "doctor_fix.output"
       ],
