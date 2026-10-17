@@ -4,6 +4,20 @@ import { MachineId, Timestamp } from "./ids.ts";
 
 // Node link: WebSocket JSON, one message per frame, discriminated by "t".
 // Hub sends `challenge` first; node answers `hello` signed over that nonce; hub replies `welcome`.
+// The hub refuses or ends a link by closing the socket with one of these codes and a plain-language reason.
+
+export const NodeLinkClose = {
+  /** A frame that does not decode, or arrives out of order. */
+  badFrame: 4000,
+  /** Bad signature, unknown key, or an invalid, used or expired enroll token. Retrying will not help. */
+  unauthorized: 4001,
+  /** The two sides speak different protocol versions. Retrying will not help. */
+  protocolMismatch: 4002,
+  /** A newer link for the same machine took over. */
+  replaced: 4003,
+  /** No frame for 45 s. */
+  heartbeatTimeout: 4008,
+} as const;
 
 export const HubChallenge = Schema.Struct({ t: Schema.tag("challenge"), nonce: Schema.NonEmptyString });
 export type HubChallenge = typeof HubChallenge.Type;
@@ -23,8 +37,10 @@ export const NodeHello = Schema.Struct({
   }),
   /** ed25519 public key, base64. */
   pubKey: Schema.NonEmptyString,
-  /** Signature over the hub's challenge nonce, base64. */
+  /** Signature over the hub's challenge nonce (its UTF-8 bytes), base64. */
   sig: Schema.NonEmptyString,
+  /** One-time token from `fleetd hub token create`; sent only until the hub has registered `pubKey`. */
+  enrollToken: Schema.optionalKey(Schema.NonEmptyString),
 });
 export type NodeHello = typeof NodeHello.Type;
 

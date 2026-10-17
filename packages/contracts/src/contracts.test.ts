@@ -39,6 +39,18 @@ describe("node link", () => {
       pubKey: "cHVi",
       sig: "c2ln",
     },
+    {
+      t: "hello",
+      machineId: "lab-b",
+      name: "Lab B",
+      tags: [],
+      nodeVersion: "0.0.0",
+      protocol: 1,
+      t3: { url: "http://127.0.0.1:4712", version: "2fbd4318fc", protocol: 2 },
+      pubKey: "cHVi",
+      sig: "c2ln",
+      enrollToken: "tok",
+    },
     { t: "t3session", bearer: "b", expiresAt: at },
     { t: "hb", at },
   ];
