@@ -1,6 +1,5 @@
-//! What the wakes, queue and webhooks areas take from areas that have not landed yet, as narrow traits shaped like
-//! their draft APIs: the executor's writes (#54) and usage's holds (#63). Each owning area implements its trait for
-//! its service in a few lines; until then the hub runs with `Offline` and `NoHold`.
+//! What the wakes, queue and webhooks areas take from other areas, as narrow traits: the executor's writes and
+//! usage's holds (implemented for `Usage` in `usage::wire`).
 use std::future::Future;
 use std::pin::Pin;
 
@@ -184,7 +183,6 @@ impl executor::OfflineWriter for QueueWriter {
     }
 }
 
-// PORT: usage (#63) implements this for its service.
 /// usage: the hold a paused login or parked thread puts on new turns (TS Usage.hold/whenClear).
 pub trait UsageHold: Send + Sync {
     fn hold(&self, target: &ThreadRef) -> BoxFuture<'_, Option<String>>;
@@ -192,7 +190,7 @@ pub trait UsageHold: Send + Sync {
     fn when_clear(&self, target: &ThreadRef) -> BoxFuture<'_, ()>;
 }
 
-/// Until usage lands: nothing is ever held.
+/// Nothing is ever held (tests).
 pub struct NoHold;
 
 impl UsageHold for NoHold {
