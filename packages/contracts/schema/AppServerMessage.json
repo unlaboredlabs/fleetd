@@ -183,7 +183,8 @@
         "task.completed",
         "task.failed",
         "task.cancelled",
-        "task.out_of_area"
+        "task.out_of_area",
+        "lease.stale"
       ]
     },
     "ThreadId": {

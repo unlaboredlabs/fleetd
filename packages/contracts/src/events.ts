@@ -44,6 +44,8 @@ export const HubEventType = Schema.Literals([
   "task.cancelled",
   /** A write task's diff touched files outside its leased areas; `data.paths`. */
   "task.out_of_area",
+  /** A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`. */
+  "lease.stale",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

@@ -20,6 +20,7 @@ import {
   ProviderInstanceId,
   ThreadId as T3ThreadId,
   TurnItemId,
+  WS_METHODS,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -45,6 +46,7 @@ import {
 } from "./ShellMapper.ts";
 import { connect, type T3Client } from "./T3Connection.ts";
 import { openTool, ThreadWatch } from "./ThreadWatch.ts";
+import { WorkspaceFiles } from "./WorkspaceFiles.ts";
 import {
   actionsOf,
   activeRunId,
@@ -475,7 +477,27 @@ const make = Effect.gen(function* () {
       }),
   });
 
+  const files = WorkspaceFiles.of({
+    read: (machineId, cwd, relativePath) =>
+      Effect.gen(function* () {
+        const { client } = yield* liveOf(machineId);
+        return yield* client[WS_METHODS.projectsReadFile]({ cwd, relativePath }).pipe(
+          Effect.map((r): string | undefined => r.contents),
+          // T3 resolves the target's real path first, so a missing file fails there.
+          Effect.catchTag("ProjectReadFileError", (error) =>
+            error.operation === "realpath-target"
+              ? Effect.succeed(undefined)
+              : Effect.fail(new T3RequestFailed({ machineId, operation: "read", cause: error })),
+          ),
+          Effect.mapError((cause) =>
+            cause instanceof T3RequestFailed ? cause : new T3RequestFailed({ machineId, operation: "read", cause }),
+          ),
+        );
+      }),
+  });
+
   return {
+    files,
     executors: Executors.of({
       attach,
       detach,
@@ -500,7 +522,9 @@ const make = Effect.gen(function* () {
   };
 });
 
-/** Provides Executors and the ThreadWatch the watchdog follows running threads through. */
+/** Provides Executors, the ThreadWatch the watchdog follows running threads through, and WorkspaceFiles. */
 export const layer = Layer.effectContext(
-  Effect.map(make, ({ executors, watch }) => Context.make(Executors, executors).pipe(Context.add(ThreadWatch, watch))),
+  Effect.map(make, ({ executors, watch, files }) =>
+    Context.make(Executors, executors).pipe(Context.add(ThreadWatch, watch), Context.add(WorkspaceFiles, files)),
+  ),
 );
