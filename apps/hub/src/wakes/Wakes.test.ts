@@ -2,7 +2,7 @@ import type { WakeSchedule } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
-import { allEvents, makeFakeExecutors, nextEvent, NOW, ref, run, settle, startHub } from "../queue/testKit.ts";
+import { allEvents, makeFakeExecutors, makeFakeUsage, nextEvent, NOW, ref, run, settle, startHub } from "../queue/testKit.ts";
 import type * as Wakes from "./Wakes.ts";
 
 const T1 = ref("lab-a", "t1");
@@ -123,6 +123,36 @@ describe("Wakes", () => {
         const delivered = yield* nextEvent("write.delivered", fired.seq);
         expect(delivered.data).toMatchObject({ wakeId, clientRequestId: `wake:${wakeId}:1` });
         expect(fake.sends.map((s) => s.message)).toEqual(["check in"]);
+      }),
+    );
+  });
+
+  it("holds a firing while the usage layer holds its thread, then delivers it once, whatever its catchUp", async () => {
+    const fake = makeFakeExecutors();
+    fake.goLive("lab-a");
+    const usage = makeFakeUsage();
+    await run(
+      fake,
+      Effect.gen(function* () {
+        const { wakes } = yield* startHub({}, usage.service);
+        const { wakeId } = yield* wakes.set(wake(inAMinute, { catchUp: "skip" }));
+        usage.hold(T1);
+        yield* TestClock.adjust("1 minute");
+        yield* settle;
+        // Not fired, not missed: still due, and the sweep does not count it as overdue.
+        expect(fake.sends).toEqual([]);
+        expect(yield* allEvents).toEqual([]);
+        expect(yield* wakes.get(wakeId)).toMatchObject({ state: "active", nextRunAt: iso(NOW + MIN) });
+        expect(yield* wakes.sweepOverdue(0)).toBe(0);
+
+        yield* TestClock.adjust("2 hours");
+        yield* usage.release(T1);
+        const fired = yield* nextEvent("wake.fired", 0);
+        expect(fake.sends).toEqual([{ ref: T1, message: "(held 120 min by a usage pause) check in", clientRequestId: `wake:${wakeId}:1` }]);
+        expect(fired.data).toMatchObject({ wakeId, n: 1, heldMin: 120 });
+        expect(fired.data).not.toHaveProperty("late");
+        expect(yield* wakes.get(wakeId)).toMatchObject({ state: "done" });
+        expect((yield* allEvents).map((e) => e.type)).toEqual(["wake.fired"]);
       }),
     );
   });

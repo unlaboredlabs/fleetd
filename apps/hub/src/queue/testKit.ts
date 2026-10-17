@@ -2,6 +2,7 @@
 // with "hub processes" (queue + wakes) that can be started and stopped over it to test restarts.
 import type { HubEvent, HubEventType, MachineId, ThreadId, ThreadRef } from "@fleetd/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -10,6 +11,7 @@ import { TestClock } from "effect/testing";
 import * as Executors from "../executor/Executors.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
+import * as Usage from "../usage/Usage.ts";
 import * as Wakes from "../wakes/Wakes.ts";
 import * as WriteQueue from "./WriteQueue.ts";
 
@@ -79,11 +81,40 @@ export const run = <A, E>(fake: FakeExecutors, effect: Effect.Effect<A, E, Base 
     ),
   );
 
+/** A usage layer that holds `held` threads until `release` is called for them; nothing is held by default. */
+export const makeFakeUsage = () => {
+  const held = new Map<string, Deferred.Deferred<void>>();
+  const key = (r: ThreadRef) => `${r.machineId}/${r.threadId}`;
+  const reason = "usage: paused until Tue 09:00 UTC (Claude limit on lab-a's login)";
+  const service = Usage.Usage.of({
+    gate: () => Effect.die("unused"),
+    hold: (r) => Effect.sync(() => (held.has(key(r)) ? reason : undefined)),
+    parkedOf: () => Effect.die("unused"),
+    whenClear: (r) => Effect.suspend(() => (held.has(key(r)) ? Deferred.await(held.get(key(r))!) : Effect.void)),
+    status: () => Effect.die("unused"),
+    resume: () => Effect.die("unused"),
+    drain: Effect.void,
+  });
+  return {
+    service,
+    hold: (r: ThreadRef) => void held.set(key(r), Deferred.makeUnsafe<void>()),
+    release: (r: ThreadRef) =>
+      Effect.suspend(() => {
+        const done = held.get(key(r));
+        held.delete(key(r));
+        return done === undefined ? Effect.void : Deferred.succeed(done, undefined);
+      }),
+  };
+};
+
 /** One hub process over the shared database; `stop` is the hub going down. */
-export const startHub = (options: WriteQueue.WriteQueueOptions = {}) =>
+export const startHub = (options: WriteQueue.WriteQueueOptions = {}, usage = makeFakeUsage().service) =>
   Effect.gen(function* () {
     const scope = yield* Scope.make();
-    const context = yield* Layer.buildWithScope(Wakes.layer.pipe(Layer.provideMerge(WriteQueue.layer(options))), scope);
+    const context = yield* Layer.buildWithScope(
+      Wakes.layer.pipe(Layer.provideMerge(WriteQueue.layer(options)), Layer.provide(Layer.succeed(Usage.Usage, usage))),
+      scope,
+    );
     return {
       queue: Context.get(context, WriteQueue.WriteQueue),
       wakes: Context.get(context, Wakes.Wakes),

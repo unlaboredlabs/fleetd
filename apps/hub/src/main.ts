@@ -154,11 +154,11 @@ export const hubLayer = (home: string, options: HubOptions) =>
         Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
         Layer.provideMerge(layerMachines),
-        Layer.provideMerge(HumanDigests.layer),
+        // Wakes sit above the leads layer: a firing waits while the usage layer holds its thread.
+        Layer.provideMerge(Layer.merge(HumanDigests.layer, Wakes.layer)),
         Layer.provideMerge(layerTasks),
         // Leads and the ledger; lead wakes go out through the write queue below.
         Layer.provideMerge(LeadsLayer.layerWithLedger({ playbookOverrides: path.join(home, "playbooks") })),
-        Layer.provideMerge(Wakes.layer),
         Layer.provideMerge(
           WriteQueue.layer(options.queueTtlSec === undefined ? {} : { ttl: Duration.seconds(options.queueTtlSec) }),
         ),
