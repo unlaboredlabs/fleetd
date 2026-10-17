@@ -1,5 +1,5 @@
 // M12 lab check, standalone (no T3 or nodes needed): `node apps/hub/src/lab/m12Retro.ts` after `pnpm --filter
-// @fleetd/pwa build && pnpm --filter fleetd build`. Seeds a synthetic incident history into a fresh hub home under the
+// fleetd build`. Seeds a synthetic incident history into a fresh hub home under the
 // lab, starts the built hub with the user's own claude login, and runs `fleetd retro run --advise`: one real
 // claude-haiku-5-5 turn. Checks the run is recorded as orchestrator usage, every kept proposal is only suggested,
 // no playbook file was written, and the digest and MCP tools show it. The hub is stopped by its spawn PID.

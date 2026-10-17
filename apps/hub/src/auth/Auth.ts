@@ -50,16 +50,11 @@ export class Auth extends Context.Service<
     readonly nodePubKey: (machineId: MachineId) => Effect.Effect<string | undefined>;
     /** Forgets the machine's node key, so its node is refused from its next link on; false if it had none. */
     readonly revokeNode: (machineId: MachineId) => Effect.Effect<boolean>;
-    /** `fleetd hub device add`: one-time, valid for 15 minutes, redeemed on /app for a human key named `name`. */
-    readonly createPairToken: (name: string) => Effect.Effect<{ readonly token: string; readonly expiresAt: string }>;
-    /** Burns the token and mints the device's human key (operate on every machine, like `hub key create --human`). */
-    readonly consumePairToken: (token: string) => Effect.Effect<{ readonly key: string; readonly info: AgentKeyInfo }, Unauthorized>;
   }
 >()("fleetd/auth/Auth") {}
 
 const KEY_PREFIX = "fld_";
 const ENROLL_PREFIX = "fle_";
-const PAIR_PREFIX = "flp_";
 const KEY_PATTERN = /^fld_[a-z2-7]{52}$/u;
 const LAST_USED_EVERY_MS = 60_000;
 const ENROLL_TTL_MS = 15 * 60_000;
@@ -131,9 +126,6 @@ const make = Effect.gen(function* () {
     ),
     nodeKeyGet: db.prepare("SELECT pub_key FROM node_keys WHERE machine_id = ?"),
     nodeKeyDelete: db.prepare("DELETE FROM node_keys WHERE machine_id = ?"),
-    pairInsert: db.prepare("INSERT INTO pair_tokens (hash, name, expires_ms) VALUES (?, ?, ?)"),
-    pairGet: db.prepare("SELECT * FROM pair_tokens WHERE hash = ?"),
-    pairBurn: db.prepare("UPDATE pair_tokens SET used_ms = $now WHERE hash = $hash AND used_ms IS NULL AND expires_ms > $now"),
   };
 
   const createKey = (name: string, grants: ReadonlyArray<Grant>, kind: KeyKind = "agent") =>
@@ -219,33 +211,7 @@ const make = Effect.gen(function* () {
       });
     });
 
-  const createPairToken = (name: string) =>
-    Effect.gen(function* () {
-      const expires = (yield* Clock.currentTimeMillis) + ENROLL_TTL_MS;
-      const token = secret(PAIR_PREFIX);
-      sql.pairInsert.run(sha256(token), name, expires);
-      return { token, expiresAt: iso(expires) };
-    });
-
-  const consumePairToken = (token: string) =>
-    Effect.gen(function* () {
-      const now = yield* Clock.currentTimeMillis;
-      const hash = sha256(token);
-      // One statement, so two browsers racing on one link cannot both win.
-      if (sql.pairBurn.run({ now, hash }).changes === 1) {
-        return yield* createKey(String(sql.pairGet.get(hash)!.name), [{ role: "operate", machines: "*" }], "human");
-      }
-      const row = sql.pairGet.get(hash);
-      return yield* new Unauthorized({
-        code: "forbidden",
-        message: !row ? "unknown pairing link" : row.used_ms !== null ? "this pairing link was already used" : "this pairing link expired",
-        fix: "on the hub, run `fleetd hub device add --name <device> --url <hub url>` and open the new link within 15 minutes",
-      });
-    });
-
   return Auth.of({
-    createPairToken,
-    consumePairToken,
     createKey,
     verify,
     revoke,

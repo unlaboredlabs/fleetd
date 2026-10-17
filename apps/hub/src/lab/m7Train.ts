@@ -1,4 +1,4 @@
-// M7 "done when" 1-5 on lab-a against the public testbed wynn-dev/fleetd-testbed (CI fails iff a file FAIL exists;
+// M7 "done when" 1-5 on lab-a against the public testbed unlaboredlabs/fleetd-testbed (CI fails iff a file FAIL exists;
 // main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a second T3 project on lab-a,
 // with its policy file kept untracked, so nothing but the train ever lands on main. With the train frozen by a
 // Decision, two M-tier writers (areas alpha, beta, files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
@@ -15,12 +15,12 @@ import { type Body, CLI, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts"
 import { providerLog } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
-const REPO = "wynn-dev/fleetd-testbed";
+const REPO = "unlaboredlabs/fleetd-testbed";
 export const TESTBED = path.join(LAB, "testbed");
 const TURN_MS = 240_000;
 const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
-const FREEZE_KEY = "policy.freeze.wynn-dev.fleetd-testbed";
+const FREEZE_KEY = "policy.freeze.unlaboredlabs.fleetd-testbed";
 /** Branch prefixes this scenario pushes to the testbed, cleaned up before and after. */
 const OURS = ["fleetd/", "lab-m7/"];
 // Each run writes under its own directory, since main keeps what earlier runs merged.

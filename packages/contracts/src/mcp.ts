@@ -31,7 +31,7 @@ import { SlotState, Task, TaskId, TaskState } from "./tasks.ts";
 import { Claim, Eta, Incident, IncidentClass } from "./verification.ts";
 import { Change, ChangeState, GitHubRepo, TrainState } from "./train.ts";
 import { UsageStatus } from "./usage.ts";
-import { base64Bytes, SealedSecret, SecretFingerprint } from "./secrets.ts";
+import { SealedSecret, SecretFingerprint } from "./secrets.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
 import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
 import { DoctorCheck, DoctorCheckId } from "./doctor.ts";
@@ -498,58 +498,10 @@ export const UsageResumeOutput = Schema.Struct({
 // secret_submit: human keys only. The hub relays the sealed value to the sink's node and waits for its fingerprint.
 export const SecretSubmitInput = Schema.Struct({
   askId: AskId,
-  /** Sealed in the browser to the sink machine's `boxPubKey` (see Machine). */
+  /** Sealed in the desktop app to the sink machine's `boxPubKey` (see Machine). */
   sealed: SealedSecret,
 });
 export const SecretSubmitOutput = Schema.Struct({ askId: AskId, fingerprint: SecretFingerprint, ...resultFields });
-
-const isLoopback = (hostname: string) => hostname === "localhost" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/u.test(hostname);
-
-/** https, or http on loopback only (a lab's mock push service). */
-export const PushEndpoint = Schema.String.check(
-  Schema.isMaxLength(2000),
-  Schema.makeFilter(
-    (url: string) => {
-      try {
-        const parsed = new URL(url);
-        return parsed.protocol === "https:" || (parsed.protocol === "http:" && isLoopback(parsed.hostname));
-      } catch {
-        return false;
-      }
-    },
-    { expected: "an https:// push service URL (http:// only on loopback)" },
-  ),
-).annotate({ identifier: "PushEndpoint" });
-
-const base64url = (bytes: number, expected: string) =>
-  Schema.String.check(Schema.makeFilter((text: string) => base64Bytes(text, "base64url") === bytes, { expected }));
-
-// push_subscribe: human keys only. The browser's PushSubscription.toJSON(); the same endpoint again replaces it.
-export const PushSubscribeInput = Schema.Struct({
-  endpoint: PushEndpoint,
-  keys: Schema.Struct({
-    p256dh: base64url(65, "base64url of a 65-byte uncompressed P-256 public key"),
-    auth: base64url(16, "base64url of a 16-byte auth secret"),
-  }),
-  /** Shown in push and key listings, e.g. "phone". */
-  deviceName: Schema.NonEmptyString.check(Schema.isMaxLength(80), Schema.isPattern(/^[^\r\n]*$/u)),
-});
-export const PushSubscribeOutput = Schema.Struct({ ok: Schema.Literal(true), ...resultFields });
-
-// push_unsubscribe: idempotent.
-export const PushUnsubscribeInput = Schema.Struct({ endpoint: PushEndpoint });
-export const PushUnsubscribeOutput = Schema.Struct({
-  /** False when no subscription had this endpoint. */
-  removed: Schema.Boolean,
-  ...resultFields,
-});
-
-// push_vapid_key: the hub's VAPID public key, for PushManager.subscribe's applicationServerKey.
-export const PushVapidKeyInput = Schema.Struct({});
-export const PushVapidKeyOutput = Schema.Struct({
-  publicKey: base64url(65, "base64url of the hub's 65-byte uncompressed P-256 VAPID public key"),
-  ...resultFields,
-});
 
 // doctor_list: the latest result of every check this key may read; rerun runs them all now first.
 export const DoctorListInput = Schema.Struct({
@@ -629,12 +581,9 @@ export const McpTools = {
   train_get: { scope: "read", input: TrainGetInput, output: TrainGetOutput },
   train_freeze: { scope: "operate", input: TrainFreezeInput, output: TrainFreezeOutput },
   secret_submit: { scope: "operate", input: SecretSubmitInput, output: SecretSubmitOutput },
-  push_subscribe: { scope: "read", input: PushSubscribeInput, output: PushSubscribeOutput },
-  push_unsubscribe: { scope: "read", input: PushUnsubscribeInput, output: PushUnsubscribeOutput },
-  push_vapid_key: { scope: "read", input: PushVapidKeyInput, output: PushVapidKeyOutput },
   doctor_list: { scope: "read", input: DoctorListInput, output: DoctorListOutput },
   attention_policy: { scope: "read", input: AttentionPolicyInput, output: AttentionPolicyOutput },
-  // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
+  // Admin keys, or a person's device (a human key) with operate on the machine; the handler checks which.
   doctor_fix: { scope: "operate", input: DoctorFixInput, output: DoctorFixOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;
 export type McpToolName = keyof typeof McpTools;

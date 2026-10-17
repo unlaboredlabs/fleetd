@@ -1,8 +1,5 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { ensureVapidKeys, parseGitIdentity } from "./state.ts";
+import { describe, expect, it } from "vitest";
+import { parseGitIdentity } from "./state.ts";
 import { renderLaunchdPlist, renderSystemdUnit, type ServiceSpec } from "./units.ts";
 
 const spec: ServiceSpec = {
@@ -36,23 +33,8 @@ describe("service units", () => {
 });
 
 describe("hub setup state", () => {
-  let dir: string | undefined;
-  afterEach(() => dir !== undefined && fs.rmSync(dir, { recursive: true, force: true }));
-
   it("parses a git identity", () => {
     expect(parseGitIdentity("wynn-dev <66362261+wynn-dev@users.noreply.github.com>")).toEqual({ name: "wynn-dev", email: "66362261+wynn-dev@users.noreply.github.com" });
     expect(parseGitIdentity("no email")).toBeUndefined();
-  });
-
-  it("creates P-256 VAPID keys once, 0600", () => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-vapid-"));
-    expect(ensureVapidKeys(dir)).toBe(true);
-    const file = path.join(dir, "vapid.json");
-    const keys = JSON.parse(fs.readFileSync(file, "utf8"));
-    expect(Buffer.from(keys.publicKey, "base64url")).toHaveLength(65);
-    expect(Buffer.from(keys.privateKey, "base64url")).toHaveLength(32);
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-    expect(ensureVapidKeys(dir)).toBe(false);
-    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual(keys);
   });
 });

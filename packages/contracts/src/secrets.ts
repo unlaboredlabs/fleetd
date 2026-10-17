@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { MachineId } from "./ids.ts";
 
-// M8 secrets: the browser seals a value to the target node's X25519 key (libsodium `crypto_box_seal`); the hub only
+// M8 secrets: the desktop app seals a value to the target node's X25519 key (libsodium `crypto_box_seal`); the hub only
 // relays the ciphertext and keeps the fingerprint the node reports back.
 
 const ALPHABETS = {

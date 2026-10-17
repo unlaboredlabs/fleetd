@@ -25,8 +25,7 @@ export const CLOSE_UNAUTHORIZED = 4401;
 export const MAX_CALLS_IN_FLIGHT = 32;
 
 /**
- * The app WebSocket at /app: `device_pair` to redeem a pairing link for a human key, `auth` with a key, then
- * `snapshot` for the fleetd_status data,
+ * The app WebSocket at /app: `auth` with a key, then `snapshot` for the fleetd_status data,
  * `events` to stream HubEvents after a cursor as they happen, and `call` to run any MCP tool.
  */
 export class AppSocket extends Context.Service<
@@ -95,17 +94,6 @@ const make = Effect.gen(function* () {
         return yield* send(errorFrame({ code: "invalid", message: "Unknown or malformed message.", fix: "Send {t:auth|snapshot|events}." }));
       }
       const message = decoded.success;
-      // Before auth only: a pairing link from `fleetd hub device add` becomes this device's human key. A refused link
-      // leaves the socket open, so the page can say why.
-      if (message.t === "device_pair") {
-        if (caller !== undefined) {
-          return yield* send(errorFrame({ code: "invalid", message: "This connection is already authenticated.", fix: "Pair from a fresh connection." }));
-        }
-        const paired = yield* Effect.result(auth.consumePairToken(message.token));
-        if (paired._tag === "Failure") return yield* send(errorFrame(paired.failure));
-        yield* Effect.logInfo("device paired").pipe(Effect.annotateLogs({ keyId: paired.success.info.keyId, name: paired.success.info.name }));
-        return yield* send({ t: "device_paired", key: paired.success.key, keyId: paired.success.info.keyId });
-      }
       if (message.t === "auth") {
         const verified = yield* Effect.result(auth.verify(message.key));
         if (verified._tag === "Failure") {

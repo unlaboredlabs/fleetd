@@ -85,8 +85,6 @@ export const HubEventType = Schema.Literals([
   "ask.secret_saved",
   /** M8: the node ran an approved command. `data.askId`, `data.exitCode`, `data.timedOut`, `data.by` (the approver). */
   "gated.ran",
-  /** M8: a Web Push went out; no item content. `data.items` (how many it covers, "+N more" folded in), `data.devices`. */
-  "push.sent",
   /** M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run). */
   "doctor.changed",
   /** M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs). */

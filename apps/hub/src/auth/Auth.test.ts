@@ -171,27 +171,3 @@ describe("enrollment tokens", () => {
       }),
     ));
 });
-
-describe("device pairing tokens", () => {
-  it("mint one human key per link, within 15 minutes, and store only the link's hash", () =>
-    run(
-      Effect.gen(function* () {
-        const auth = yield* Auth.Auth;
-        const { db } = yield* HubDb.HubDb;
-        const { token, expiresAt } = yield* auth.createPairToken("phone");
-        expect(token).toMatch(/^flp_[a-z2-7]{52}$/u);
-        expect(expiresAt).toBe("1970-01-01T00:15:00.000Z");
-        expect(JSON.stringify(db.prepare("SELECT * FROM pair_tokens").all())).not.toContain(token);
-
-        const { key, info } = yield* auth.consumePairToken(token);
-        expect(info).toMatchObject({ name: "phone", kind: "human", grants: operateAll });
-        expect((yield* auth.verify(key)).keyId).toBe(info.keyId);
-        expect(yield* failure(auth.consumePairToken(token))).toMatchObject({ message: "this pairing link was already used" });
-
-        const late = yield* auth.createPairToken("tablet");
-        yield* TestClock.adjust("15 minutes");
-        expect(yield* failure(auth.consumePairToken(late.token))).toMatchObject({ code: "forbidden", message: "this pairing link expired" });
-        expect((yield* auth.list()).map((k) => k.name)).toEqual(["phone"]);
-      }),
-    ));
-});

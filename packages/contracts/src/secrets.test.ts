@@ -6,7 +6,6 @@ import {
   BoxPublicKey,
   LeadCall,
   NodeToHub,
-  PushSubscribeInput,
   SECRET_MAX_BYTES,
   SealedSecret,
   SecretSink,
@@ -161,24 +160,5 @@ describe("node link M8 frames", () => {
     expect(accepts(NodeToHub, hello)).toBe(true);
     expect(accepts(NodeToHub, { ...hello, boxPubKey: b64(32) })).toBe(true);
     expect(accepts(NodeToHub, { ...hello, boxPubKey: b64(16) })).toBe(false);
-  });
-});
-
-describe("push_subscribe", () => {
-  const input = {
-    endpoint: "https://fcm.googleapis.com/fcm/send/abc",
-    keys: { p256dh: Buffer.alloc(65, 4).toString("base64url"), auth: Buffer.alloc(16, 9).toString("base64url") },
-    deviceName: "phone",
-  };
-
-  it("takes a browser subscription and a loopback lab endpoint", () => {
-    expect(accepts(PushSubscribeInput, input)).toBe(true);
-    expect(accepts(PushSubscribeInput, { ...input, endpoint: "http://127.0.0.1:4790/push" })).toBe(true);
-  });
-
-  it("refuses plain http off loopback and wrong key sizes", () => {
-    expect(accepts(PushSubscribeInput, { ...input, endpoint: "http://push.example.com/x" })).toBe(false);
-    expect(accepts(PushSubscribeInput, { ...input, keys: { ...input.keys, p256dh: Buffer.alloc(64, 4).toString("base64url") } })).toBe(false);
-    expect(accepts(PushSubscribeInput, { ...input, keys: { ...input.keys, auth: Buffer.alloc(15, 9).toString("base64url") } })).toBe(false);
   });
 });

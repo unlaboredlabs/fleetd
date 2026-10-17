@@ -1,14 +1,14 @@
 # First use: fleetd beside the live setup on forge
 
-A runbook for Adri to execute. Adri has SSH to forge as `wynn` (no sudo) and a shell on the Mac. Wynn only pairs
-his phone (step 5) and opens the desktop app (step 4).
+A runbook for Adri to execute. Adri has SSH to forge as `wynn` (no sudo) and a shell on the Mac. Wynn only opens
+the desktop app (step 4); that is where he answers everything.
 
 **Ground rule: nothing in the live setup changes.** That means:
 - `t3code.service` stays untouched (T3 at `100.104.249.49:3773`, home `~/.t3`);
 - the leads Adri runs on it stay untouched;
 - CLIProxyAPI on the Mac and Hermes are not modified.
 
-Every step below uses its own ports, directories and unit names, and step 6 removes all of it.
+Every step below uses its own ports, directories and unit names, and step 5 removes all of it.
 
 ## What runs where
 
@@ -16,7 +16,7 @@ Every step below uses its own ports, directories and unit names, and step 6 remo
 |---|---|---|
 | Live T3 (untouched) | `t3code.service` | `100.104.249.49:3773`, `~/.t3` |
 | fleetd hub | `fleetd-hub.service` (systemd user unit) | `127.0.0.1:4790`, home `~/.fleetd/hub`, log `~/.fleetd/hub/hub.log` |
-| Hub over HTTPS (phone, desktop, other machines) | `tailscale serve` (wynn is the tailscale operator, so no sudo is needed) | `https://forge.tailb10092.ts.net` → `127.0.0.1:4790` |
+| Hub over HTTPS (desktop app, other machines) | `tailscale serve` (wynn is the tailscale operator, so no sudo is needed) | `https://forge.tailb10092.ts.net` → `127.0.0.1:4790` |
 | fleetd's own T3 on forge | `fleetd-t3.service` | `127.0.0.1:3774`, home `~/.fleetd/t3` |
 | fleetd node on forge | `fleetd-node.service` | home `~/.fleetd/node`, log `~/.fleetd/logs/node.log` |
 | fleetd's Claude config and login | | `~/.fleetd/claude`, `~/.fleetd/t3.env` (0600) |
@@ -87,15 +87,14 @@ ssh forge 'systemctl --user reset-failed fleetd-t3-fleetdlab.service 2>/dev/null
 ```sh
 ssh forge
 # a clean copy of fleetd at a known commit, built once
-git clone https://github.com/wynn-dev/fleetd ~/opt/fleetd && cd ~/opt/fleetd && git checkout 9260d10
+git clone https://github.com/unlaboredlabs/fleetd ~/opt/fleetd && cd ~/opt/fleetd
 corepack enable --install-directory ~/.local/bin pnpm 2>/dev/null || true
 pnpm install --frozen-lockfile && pnpm build
 alias fleetd="node $HOME/opt/fleetd/apps/cli/dist/bin.js"
 
-# hub as a user service on 127.0.0.1:4790; the pairing link will use the HTTPS name
+# hub as a user service on 127.0.0.1:4790, reached at the HTTPS name
 fleetd init --listen 127.0.0.1:4790 --url https://forge.tailb10092.ts.net \
-  --git-identity "wynn-dev <66362261+wynn-dev@users.noreply.github.com>" --name phone
-# init prints a one-time phone pairing link (15 min). Note it but don't send it yet; step 5 makes a fresh one.
+  --git-identity "wynn-dev <66362261+wynn-dev@users.noreply.github.com>"
 
 # publish the hub over HTTPS on the tailnet only (not Funnel, not public)
 tailscale serve --bg --https=443 http://127.0.0.1:4790
@@ -160,7 +159,7 @@ Then, through that MCP:
 2. `fleetd hub key revoke <setup-admin keyId>`.
 3. `projects_list` → note the `projectId` of cliproxyapi-console on `forge`.
 4. `lead_start {machineId: "forge", projectId}`. The default lead is `claude-opus-5-5` at effort high.
-5. `doctor_list {rerun: true}`. Everything should be ok except push, which needs step 5. `hub/claude_login`
+5. `doctor_list {rerun: true}`. Everything should be ok. `hub/claude_login`
    must be ok: it means the hub's router and retro can reach Claude through the `claude` login in
    `~/.claude/settings.json`.
 
@@ -178,7 +177,7 @@ Prerequisites:
 - **Tailscale** on the Mac, logged in to the same tailnet.
 
 ```sh
-git clone https://github.com/wynn-dev/fleetd ~/src/fleetd && cd ~/src/fleetd && git checkout 9260d10
+git clone https://github.com/unlaboredlabs/fleetd ~/src/fleetd && cd ~/src/fleetd
 app/macos-bundle.sh                               # builds release (several minutes the first time) into app/target/release/fleetd.app
 # make a key for this device on forge, printed once:
 ssh forge 'node ~/opt/fleetd/apps/cli/dist/bin.js hub key create --human --name mac'
@@ -197,16 +196,6 @@ secrets, which the app seals to the target machine's key before sending. While i
 raise a macOS notification, at most one per 20 minutes and only money/irreversible ones during quiet hours. Clicking
 one opens the inbox. Notifications need the `fleetd.app` bundle; the bare binary runs without them.
 
-## Step 5: pair the phone (Wynn, about 2 min)
-
-1. Adri runs `fleetd hub device add --name iphone --url https://forge.tailb10092.ts.net` on forge and sends Wynn
-   the link. It works once, within 15 min.
-2. On the iPhone, with Tailscale connected, Wynn opens the link in Safari and taps Share → Add to Home Screen.
-3. He opens fleetd from the home screen. iOS only allows push for home-screen web apps.
-4. He taps **Enable push** and allows notifications.
-
-The device now appears in `fleetd hub key list` as a human key.
-
 ## The first workstream
 
 Use a small, real defect in cliproxyapi-console, e.g. `intake_submit {text: "fix: <one line>"}`. The hub's router
@@ -221,7 +210,7 @@ Watch the full loop:
 5. The train merges after CI.
 6. The lead claims done, and fleetd's checks pass.
 
-## Step 6: rollback (about 5 min, from forge)
+## Step 5: rollback (about 5 min, from forge)
 
 ```sh
 alias fleetd="node $HOME/opt/fleetd/apps/cli/dist/bin.js"
@@ -237,12 +226,11 @@ systemctl --user is-active t3code.service                     # still active, ne
 
 Elsewhere:
 - **Mac:** delete `~/src/fleetd`, and the Keychain item via the app's "Disconnect and forget key".
-- **Phone:** remove the home-screen app.
 - **GitHub:** delete the cliproxyapi-console ruleset if you added one. PRs fleetd opened stay as normal PRs.
 
 ## What to watch in the first days
 
-- **The doctor.** It's in the phone app and the desktop Machines screen. Anything red has one fix action or an
+- **The doctor.** It's on the desktop app's Machines screen. Anything red has one fix action or an
   exact command.
 - **The weekly cap.** fleetd agents and the live leads draw from the same proxy, so keep `cap_set` low (8) until
   real usage is known.
@@ -262,8 +250,8 @@ Elsewhere:
 
 ## Untested before first use
 
-- **Push to a real phone.** iOS web push from a real Apple push service has never run. The lab used a mock
-  endpoint.
+- **Desktop notifications on a real Mac.** CI builds and signs the `fleetd.app` bundle, but no notification has been
+  shown on a Mac yet; the lab checks the `attention` events and quiet windows they come from.
 - **The desktop app on a Mac against a live hub.** It is built in CI on macOS and benched on Linux only. Mac and
   GPU speed numbers are still pending (`app/bench/MAC-RUN.md`).
 - **`machine add` against a real second machine.** It was tested as same-user emulation on forge.

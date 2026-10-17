@@ -38,7 +38,6 @@ import * as Train from "./train/Train.ts";
 import * as TrainGitHub from "./train/TrainGitHub.ts";
 import * as TrainGate from "./reviews/trainGate.ts";
 import * as PrHeads from "./valuebar/PrHeads.ts";
-import * as Push from "./push/Push.ts";
 import * as ValueBar from "./valuebar/ValueBar.ts";
 import * as Webhooks from "./webhooks/Webhooks.ts";
 import * as WriteQueue from "./queue/WriteQueue.ts";
@@ -178,8 +177,6 @@ export const hubLayer = (home: string, options: HubOptions) =>
         Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
         Layer.provideMerge(layerMachines),
-        // Below the approvals, so it already follows events when they reopen approvals a restart left unrun.
-        Layer.provideMerge(Push.layer(home)),
         // Wakes sit above the leads layer: a firing waits while the usage layer holds its thread. A deleted
         // project's asks, tasks and workstreams end above tasks and the ledger.
         Layer.provideMerge(Layer.mergeAll(HumanDigests.layer, Wakes.layer, ProjectRemovals.layer, layerRetro(home, options.routerModel))),

@@ -567,7 +567,7 @@ describe("leadCommand", () => {
 });
 
 describe("change commands", () => {
-  const PR = "https://github.com/wynn-dev/fleetd-testbed/pull/4";
+  const PR = "https://github.com/unlaboredlabs/fleetd-testbed/pull/4";
 
   it("parses change enqueue with --pr or a positional URL, and change status", () => {
     expect(parseLeadArgs(["change", "enqueue", "--pr", PR, "--task", "T2", "--serves", "done:1", "--tier", "M"])).toEqual({
@@ -590,7 +590,7 @@ describe("change commands", () => {
       change: {
         changeId: "X3" as never,
         projectRef: { machineId: "lab-a", projectId: "p1" } as never,
-        repo: "wynn-dev/fleetd-testbed",
+        repo: "unlaboredlabs/fleetd-testbed",
         prNumber: 4,
         prUrl: PR,
         branch: "fleetd/T2-beta",
@@ -609,7 +609,7 @@ describe("change commands", () => {
     });
     expect(out).toBe(
       [
-        "X3 wynn-dev/fleetd-testbed#4 needs_rebase (tier M, serves done:1, by T2)",
+        "X3 unlaboredlabs/fleetd-testbed#4 needs_rebase (tier M, serves done:1, by T2)",
         `  ${PR} at ${SHA.slice(0, 12)}`,
         `  reviews: T5 0 blocking at ${SHA.slice(0, 12)}`,
         "  > conflicts with origin/main in alpha.md",

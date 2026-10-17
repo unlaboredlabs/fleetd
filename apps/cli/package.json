@@ -7,7 +7,7 @@
     "fleetd": "./dist/bin.js"
   },
   "scripts": {
-    "build": "rolldown src/bin.ts --file dist/bin.js --platform node --format esm && cp ../hub/src/leads/prompt-v*.md ../hub/src/intake/router-prompt.md ../hub/src/retro/retro-prompt.md dist/ && mkdir -p dist/playbooks && cp ../../playbooks/*.md dist/playbooks/ && rm -rf dist/pwa && cp -r ../pwa/dist dist/pwa",
+    "build": "rolldown src/bin.ts --file dist/bin.js --platform node --format esm && cp ../hub/src/leads/prompt-v*.md ../hub/src/intake/router-prompt.md ../hub/src/retro/retro-prompt.md dist/ && mkdir -p dist/playbooks && cp ../../playbooks/*.md dist/playbooks/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -19,7 +19,6 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@fleetd/pwa": "workspace:*",
     "libsodium-wrappers": "0.8.4",
     "rolldown": "1.2.14"
   }

@@ -1,6 +1,5 @@
 import { PROTOCOL_VERSION } from "@fleetd/contracts";
 import pkg from "../package.json" with { type: "json" };
-import { HUB_DEVICE_USAGE, hubDevice } from "./hub-device.ts";
 import { HUB_KEY_USAGE, hubKey } from "./hub-key.ts";
 import { HUB_START_USAGE, hubStart } from "./hub-start.ts";
 import { HUB_TOKEN_USAGE, hubToken } from "./hub-token.ts";
@@ -26,7 +25,7 @@ commands:
 setting up (on the hub machine):
 ${SETUP_USAGE}${MACHINE_USAGE}
 running by hand:
-${HUB_START_USAGE}${HUB_KEY_USAGE}${HUB_TOKEN_USAGE}${HUB_DEVICE_USAGE}${NODE_USAGE}${LISTEN_USAGE}${RETRO_USAGE}
+${HUB_START_USAGE}${HUB_KEY_USAGE}${HUB_TOKEN_USAGE}${NODE_USAGE}${LISTEN_USAGE}${RETRO_USAGE}
 lead-side commands (run by a lead or task inside a project workspace):
 ${LEAD_USAGE}`;
 
@@ -45,7 +44,6 @@ export const run = (argv: readonly string[]): CliResult => {
     case "hub":
       if (argv[1] === "key") return hubKey(argv.slice(2));
       if (argv[1] === "token") return hubToken(argv.slice(2));
-      if (argv[1] === "device") return hubDevice(argv.slice(2));
       return { code: 2, stdout: "", stderr: `fleetd: unknown hub command '${argv[1] ?? ""}'\n\n${USAGE}` };
     default:
       return { code: 2, stdout: "", stderr: `fleetd: unknown command '${command}'\n\n${USAGE}` };
