@@ -108,6 +108,7 @@ impl Sweep {
                 "at": iso_ms(now_ms(self.clock.as_ref())),
                 "type": "machine.offline",
                 "machineId": machine.machine_id,
+                "attention": "loud",
                 "summary": format!(
                     "{} is still offline with {n} running thread{}; their runs are not being watched",
                     machine.machine_id,
