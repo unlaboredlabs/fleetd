@@ -3,8 +3,8 @@
 //! TS spec: apps/hub/src/tasks/render.ts.
 use std::sync::LazyLock;
 
-use fleetd_contracts::ledger::Brief;
-use fleetd_contracts::tasks::{Task, TaskKind, TaskResult, TaskResultStatus, TaskState};
+use fleetd_contracts::Brief;
+use fleetd_contracts::{Task, TaskKind, TaskResult, TaskResultStatus, TaskState};
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
@@ -102,6 +102,10 @@ pub struct PromptInput<'a> {
     /// Write tasks: their branch and the branch it starts from.
     pub branch: Option<&'a str>,
     pub base_branch: Option<&'a str>,
+}
+
+pub fn effort_str(effort: fleetd_contracts::Effort) -> String {
+    serde_json::to_value(effort).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
 }
 
 fn kind_str(kind: TaskKind) -> &'static str {
@@ -248,7 +252,7 @@ pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String 
 /// One digest line per task: running and idle, then queued with reasons, then those that ended since `since`.
 pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
-    let model = |t: &Task| format!("{}/{}", t.model.as_str(), t.effort.as_str());
+    let model = |t: &Task| format!("{}/{}", t.model.as_str(), effort_str(t.effort));
     let mut out = Vec::new();
     for t in tasks.iter().filter(|t| matches!(t.state, TaskState::Running | TaskState::Idle)) {
         let what = if t.state == TaskState::Idle { "idle, waiting for input" } else { "running" };

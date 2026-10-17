@@ -1,8 +1,8 @@
 //! Task rows: the Task as JSON in `data`, plus the columns queries filter on. TS spec: apps/hub/src/tasks/TaskRecords.ts.
 use std::collections::HashSet;
 
-use fleetd_contracts::ids::{ProjectRef, ThreadRef};
-use fleetd_contracts::tasks::{Task, TaskCounts, TaskId, TaskState};
+use fleetd_contracts::{ProjectRef, ThreadRef};
+use fleetd_contracts::{Task, TaskCounts, TaskId, TaskState};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::TaskFilter;

@@ -1,6 +1,6 @@
 //! The slot board's rules, without I/O: the service in `mod.rs` persists what `take_ops` hands it and feeds it
 //! thread events. TS spec: apps/hub/src/slots/Slots.ts.
-use fleetd_contracts::ids::{ProjectRef, ThreadId};
+use fleetd_contracts::{ProjectRef, ThreadId};
 
 /// Queue order: lead turns, then reviews, then write and read tasks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -250,7 +250,7 @@ impl Board {
     }
 
     /// The holder's slot follows the thread from now on.
-    pub fn bind(&mut self, holder: &str, machine_id: &fleetd_contracts::ids::MachineId, thread_id: &ThreadId) {
+    pub fn bind(&mut self, holder: &str, machine_id: &fleetd_contracts::MachineId, thread_id: &ThreadId) {
         if let Some(i) = self.idx(holder)
             && self.claims[i].project_ref.machine_id == *machine_id
         {
@@ -367,7 +367,7 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
-    use fleetd_contracts::ids::{MachineId, ProjectId};
+    use fleetd_contracts::{MachineId, ProjectId};
 
     use super::super::lead_holder;
     use super::*;
