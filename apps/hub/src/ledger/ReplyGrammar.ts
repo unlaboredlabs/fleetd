@@ -233,8 +233,8 @@ export type Resolution =
 
 /**
  * Checks `plan` against the batch's items and turns it into actions. An item is open when its ask is open and
- * still in this batch. "recs fine" skips open items with no recommendation (do-asks); every other mismatch
- * refuses the whole reply.
+ * still in this batch. "recs fine" skips open items with no recommendation (do-asks) and approve and secret asks;
+ * every other mismatch refuses the whole reply.
  */
 export const resolvePlan = (
   plan: ReplyPlan,
@@ -249,6 +249,17 @@ export const resolvePlan = (
   const act = (number: number, ask: Ask, verb: Verb, note: string | undefined, fromRest: boolean) => {
     const answer = (value: string) =>
       actions.push(note === undefined ? { kind: "answer", number, ask, value } : { kind: "answer", number, ask, value, note });
+    // A stored command or a secret is never settled in bulk: "recs fine" and "all <answer>" pass over them.
+    if (fromRest && (ask.kind === "approve" || ask.kind === "secret")) return;
+    if (ask.kind === "secret" && verb.kind !== "reject" && verb.kind !== "later") {
+      hints.push(`Item ${number} asks for a secret: enter it in the fleetd app, which seals it to its machine. Never put a secret in a reply.`);
+      return;
+    }
+    if (ask.kind === "approve" && verb.kind !== "reject" && verb.kind !== "later") {
+      if (verb.kind === "accept") return answer("go");
+      hints.push(`Item ${number} runs a stored command: reply "${number} go" to run it or "${number} no" to refuse it.`);
+      return;
+    }
     switch (verb.kind) {
       case "accept":
         if (ask.recommendation === undefined) {

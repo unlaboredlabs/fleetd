@@ -35,6 +35,19 @@ export class AnswerSink extends Context.Service<
   { readonly onAnswered: (projectRef: ProjectRef, answers: ReadonlyArray<Answer>) => Effect.Effect<void> }
 >()("fleetd/ledger/AnswerSink") {}
 
+/**
+ * Answers whose lead wake waits for the hub to act on them first: an approve ask's "go" (the node runs the command,
+ * and the result goes with the answer) and a do ask's "done" with a verify check (passing it goes with the answer).
+ */
+export const followedUp = (answer: Answer) =>
+  answer.outcome === "answered" &&
+  ((answer.ask.kind === "approve" && answer.value === "go") || (answer.ask.kind === "do" && answer.ask.verify !== undefined && answer.value === "done"));
+
+/** Kinds only a person may answer: the hub acts on these answers, so an agent's reply must not stand in for a human. */
+const HUMAN_ONLY: ReadonlySet<Ask["kind"]> = new Set(["secret", "approve", "do"]);
+const HUMAN_ONLY_FIX =
+  "Answer it from a paired device (the fleetd phone or desktop app) or with a --human key; agent keys cannot enter secrets, approve commands or tick checklists.";
+
 /** Drops answers; for tests and until the lead-wake code is wired. */
 export const layerAnswerSinkNoop = Layer.succeed(AnswerSink, AnswerSink.of({ onAnswered: () => Effect.void }));
 
@@ -48,10 +61,13 @@ export interface ReplyInput {
   readonly allows?: (projectRef?: ProjectRef) => boolean;
 }
 
-/** `inbox_reply`: applies a terse human reply to a batch. */
+/**
+ * `inbox_reply`: applies a terse human reply to a batch. A reply that does not apply comes back with a hint; only an
+ * agent answering a secret, approve or do ask fails, with `forbidden`.
+ */
 export class Inbox extends Context.Service<
   Inbox,
-  { readonly reply: (input: ReplyInput, actor: Actor) => Effect.Effect<InboxReplyOutput> }
+  { readonly reply: (input: ReplyInput, actor: Actor) => Effect.Effect<InboxReplyOutput, LedgerError> }
 >()("fleetd/ledger/Inbox") {}
 
 type InboxReplyOutput = typeof InboxReplyOutputSchema.Type;
@@ -135,6 +151,14 @@ const make = Effect.gen(function* () {
             fix: "Answer only the items of your own machines, or ask the hub admin for an operate grant there.",
           });
         }
+        const handsOn = actions.find((action) => action.kind !== "later" && HUMAN_ONLY.has(action.ask.kind));
+        if (handsOn && actor.source !== "human") {
+          throw new LedgerError({
+            code: "forbidden",
+            message: `Item ${handsOn.number} is ${handsOn.ask.kind === "approve" ? "an" : "a"} ${handsOn.ask.kind} ask, which only a person may answer.`,
+            fix: HUMAN_ONLY_FIX,
+          });
+        }
         for (const action of actions) applyAction(action, stored.n);
         repo.closeIfDone(stored.n);
       }
@@ -203,6 +227,8 @@ const make = Effect.gen(function* () {
       const result = yield* Effect.result(apply(input, actor, now));
       if (result._tag === "Failure") {
         const error = result.failure;
+        // Every other refusal is a hint the caller can act on; an agent standing in for a person is an error.
+        if (error.fix === HUMAN_ONLY_FIX) return yield* error;
         const hint = error.fix === undefined ? error.message : `${error.message} ${error.fix}`;
         return { parsed: false, applied: [], hint } satisfies InboxReplyOutput;
       }

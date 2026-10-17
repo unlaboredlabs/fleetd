@@ -33,7 +33,7 @@ import * as HumanDigests from "../digests/HumanDigests.ts";
 import * as Intake from "../intake/Intake.ts";
 import { IntakeRouter } from "../intake/Router.ts";
 import * as LeadsLayer from "../leads/layer.ts";
-import { Asks } from "../ledger/Asks.ts";
+import { type AskInput, Asks } from "../ledger/Asks.ts";
 import { ThreadWorkspace } from "../executor/ThreadWorkspace.ts";
 import * as Leases from "../leases/Leases.ts";
 import * as Policy from "../leases/Policy.ts";
@@ -46,7 +46,8 @@ import * as Receipts from "../receipts/Receipts.ts";
 import * as JudgeHook from "../valuebar/JudgeHook.ts";
 import * as PrHeads from "../valuebar/PrHeads.ts";
 import * as ValueBar from "../valuebar/ValueBar.ts";
-import { NodeCommands } from "../checks/NodeCommands.ts";
+import * as Approvals from "../approvals/Approvals.ts";
+import { NodeCommands, type GatedOutcome, type SecretOutcome, unlinked } from "../checks/NodeCommands.ts";
 import * as ReviewGate from "../train/ReviewGate.ts";
 import * as ChangeRecords from "../train/ChangeRecords.ts";
 import * as Train from "../train/Train.ts";
@@ -162,7 +163,7 @@ export const makeTestHub = () => {
         // No node answers: tasks fall back to T3's checkpoint paths for their area check.
         Layer.succeed(
           NodeCommands,
-          NodeCommands.of({ run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }), attach: () => Effect.void, resolve: () => Effect.void }),
+          NodeCommands.of({ run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }), deliverSecret: unlinked, runGated: unlinked, attach: () => Effect.void, resolve: () => Effect.void }),
         ),
         Layer.succeed(
           ThreadWorkspace,
@@ -189,13 +190,33 @@ export const makeTestHub = () => {
         TrainGitHub.layer(() => Effect.succeed({ exitCode: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" })),
         Layer.succeed(
           NodeCommands,
-          NodeCommands.of({ run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }), attach: () => Effect.void, resolve: () => Effect.void }),
+          NodeCommands.of({ run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }), deliverSecret: unlinked, runGated: unlinked, attach: () => Effect.void, resolve: () => Effect.void }),
         ),
       ),
     ),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain).pipe(
+  // The nodes' side of secrets and approved commands: every frame is recorded, and the reply is the test's to set.
+  const nodeFrames: Array<{ readonly machineId: MachineId; readonly t: "secret_deliver" | "gated_run"; readonly input: unknown }> = [];
+  let secretReply: (machineId: MachineId) => SecretOutcome | "offline" = () => ({ fingerprint: "ab12cd34" });
+  let gatedReply: (machineId: MachineId) => GatedOutcome | "offline" = () => ({ exitCode: 0, outputTail: "", timedOut: false });
+  const answered = <A>(machineId: MachineId, reply: A | "offline") => (reply === "offline" ? unlinked(machineId) : Effect.succeed(reply));
+  const layerApprovals = Approvals.layer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        NodeCommands,
+        NodeCommands.of({
+          run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }),
+          deliverSecret: (machineId, input) => Effect.suspend(() => (nodeFrames.push({ machineId, t: "secret_deliver", input }), answered(machineId, secretReply(machineId)))),
+          runGated: (machineId, input) => Effect.suspend(() => (nodeFrames.push({ machineId, t: "gated_run", input }), answered(machineId, gatedReply(machineId)))),
+          attach: () => Effect.void,
+          resolve: () => Effect.void,
+        }),
+      ),
+    ),
+  );
+
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),
@@ -234,6 +255,10 @@ export const makeTestHub = () => {
       }
     },
     calls,
+    /** secret_deliver and gated_run requests the hub sent to nodes. */
+    nodeFrames,
+    setSecretReply: (reply: typeof secretReply) => void (secretReply = reply),
+    setGatedReply: (reply: typeof gatedReply) => void (gatedReply = reply),
     /** Webhook POSTs the hub made; every one is answered 200. */
     posts,
     /** Resolves once the hub has made `count` webhook POSTs in total. */
@@ -259,6 +284,9 @@ export const makeTestHub = () => {
           r.ensureTrain(repo, { machineId: machineId as MachineId, projectId: projectId as ProjectId }, Date.parse(AT)),
         ),
       ),
+    /** Any ask, as its lead would file it. */
+    createAsk: (input: AskInput) =>
+      run(Effect.flatMap(Asks, (asks) => asks.create(input, `lead:${input.projectRef?.machineId}/${input.projectRef?.projectId}`))),
     /** `fleetd ask` from the lead of a project: a product decide with a recommendation. */
     fileAsk: (machineId: string, projectId: string, key: string, recommendation: string) =>
       run(

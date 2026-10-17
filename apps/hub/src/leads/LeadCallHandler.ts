@@ -2,6 +2,7 @@
 // The caller is already attributed to a project by its cwd; every call acts only within that project.
 import type { Change, LeadCallResult, ProjectRef, WorkstreamId } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
+import { Approvals } from "../approvals/Approvals.ts";
 import { Claims } from "../checks/Claims.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
@@ -45,6 +46,7 @@ export const make = Effect.gen(function* () {
   const claims = yield* Claims;
   const valueBar = yield* ValueBar;
   const train = yield* Train;
+  const approvals = yield* Approvals;
 
   /** A workstream named in a call must be one of the caller's own. */
   const ownWorkstream = (ref: ProjectRef, workstreamId: WorkstreamId) =>
@@ -77,13 +79,11 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const ref = caller.projectRef;
       switch (call.op) {
-        // Answered once secrets and approvals are wired here (M8a).
-        case "gated_run":
-          return yield* refused({
-            code: "forbidden",
-            message: "fleetd gated run is not available on this hub yet.",
-            fix: "Ask the human with fleetd ask --kind do and the exact command as a step.",
-          });
+        case "gated_run": {
+          const { op: _, workstreamId, ...input } = call;
+          const own = workstreamId === undefined ? undefined : yield* ownWorkstream(ref, workstreamId);
+          return yield* approvals.gatedRun(ref, caller.by, { ...input, ...(own === undefined ? {} : { workstreamId: own }) });
+        }
         case "change_enqueue": {
           const { op: _, ...input } = call;
           const change = yield* train.enqueue(caller, input);
@@ -103,13 +103,6 @@ export const make = Effect.gen(function* () {
             ...(call.amend === undefined ? {} : { amend: call.amend }),
           });
         case "ask": {
-          if (call.kind === "secret") {
-            return yield* refused({
-              code: "forbidden",
-              message: "Secret asks are not available on this hub yet.",
-              fix: "Ask the human with fleetd ask --kind do to put the secret in place, without sending its value.",
-            });
-          }
           const workstreamId = call.workstreamId === undefined ? undefined : yield* ownWorkstream(ref, call.workstreamId);
           const outcome = yield* asks.create(
             {
@@ -122,6 +115,9 @@ export const make = Effect.gen(function* () {
               ...(call.recommendation === undefined ? {} : { recommendation: call.recommendation }),
               ...(call.options === undefined ? {} : { options: call.options }),
               ...(call.steps === undefined ? {} : { steps: call.steps }),
+              ...(call.verify === undefined ? {} : { verify: call.verify }),
+              ...(call.sink === undefined ? {} : { sink: call.sink }),
+              ...(call.envName === undefined ? {} : { envName: call.envName }),
               blocks: call.blocks,
               proceededOnRec: call.proceededOnRec,
             },
@@ -206,7 +202,13 @@ export const make = Effect.gen(function* () {
           });
         }
       }
-    }).pipe(Effect.catchTags({ LeadError: (e) => Effect.fail(refused(e)), LedgerError: (e) => Effect.fail(refused(e)) }));
+    }).pipe(
+      Effect.catchTags({
+        LeadError: (e) => Effect.fail(refused(e)),
+        LedgerError: (e) => Effect.fail(refused(e)),
+        ApprovalRefused: (e) => Effect.fail(refused(e)),
+      }),
+    );
 
   return { handle } satisfies LeadCallHandler;
 });

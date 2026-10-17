@@ -5,7 +5,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
-import { NodeCommands } from "../checks/NodeCommands.ts";
+import { NodeCommands, unlinked } from "../checks/NodeCommands.ts";
 import * as Executors from "../executor/Executors.ts";
 import * as Incidents from "../incidents/Incidents.ts";
 import { type ThreadChanges, ThreadWorkspace } from "../executor/ThreadWorkspace.ts";
@@ -105,6 +105,8 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
         const paths = branchDiffs.get(input.argv.at(-1) ?? "");
         return paths === undefined ? { exitCode: 128, outputTail: "fatal: bad revision", timedOut: false } : { exitCode: 0, outputTail: `${paths.join("\n")}\n`, timedOut: false };
       }),
+    deliverSecret: unlinked,
+    runGated: unlinked,
     attach: () => Effect.void,
     resolve: () => Effect.void,
   });

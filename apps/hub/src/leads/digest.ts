@@ -100,7 +100,9 @@ const askLine = (a: Ask) => {
 const answerLine = ({ ask, outcome, value, decision }: Answer) =>
   outcome === "withdrawn"
     ? `- ${ask.askId} ${ask.key}: dropped by the human; do not pursue it`
-    : `- ${ask.askId} ${ask.key} → ${oneLine(value ?? decision?.value ?? "", 300)}${decision === undefined ? "" : ` (${decision.decisionId})`}`;
+    : `- ${ask.askId} ${ask.key} → ${oneLine(value ?? decision?.value ?? "", 300)}${decision === undefined ? "" : ` (${decision.decisionId})`}${
+        ask.evidence === undefined ? "" : `; ${oneLine(ask.evidence, 600)}`
+      }`;
 
 const decisionLine = (d: Decision) => `- ${d.decisionId} ${d.key} = ${oneLine(d.value, 200)} (${scopeLabel(d)}, ${d.source})`;
 

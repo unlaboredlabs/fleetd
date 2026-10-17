@@ -48,7 +48,9 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   asks_list:
     "The questions waiting for the human, grouped in numbered batches (state defaults to open; batchId picks one batch). Item numbers are fixed per batch: answer them with inbox_reply.",
   inbox_reply:
-    "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Each answer becomes a Decision and wakes its lead. Unparseable text changes nothing and returns a hint.",
+    "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Each answer becomes a Decision and wakes its lead. Unparseable text changes nothing and returns a hint. Approve asks take only \"<n> go\" (the node runs the stored command) or \"<n> no\"; secret, approve and do asks take answers from human keys only.",
+  secret_submit:
+    "Human keys only. Enter a secret ask's value sealed in the browser with libsodium crypto_box_seal to the sink machine's boxPubKey (fleetd_status machines). The hub relays it to that node, which writes the sink (0600) and returns the sha256 fingerprint prefix; the ask closes with it. Refused with machine_offline when the node is down: nothing is queued.",
   decisions_search: "Full-text search over active decisions (key, value, why), best match first; scope narrows to global, a project or a workstream.",
   decisions_record:
     "Record a decision (key = lowercase dotted slug) at global, project or workstream scope; it supersedes the active one with the same key and scope, so leads never ask it again. A project's lead is woken with it. Global decisions need an operate grant on all machines.",
