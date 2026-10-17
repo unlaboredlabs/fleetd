@@ -1,6 +1,6 @@
 // The playbooks a workstream can follow: fleetd's bundled ones with the user's overrides in `<hub home>/playbooks/`,
-// read at start and again when the retro writes an override. A workstream pins `name@sha` at creation and the pinned text is kept, so a later edit of the
-// file never changes the rules of a workstream already under way.
+// read at start and again when the retro writes an override. A workstream pins `name@sha` at creation and the pinned
+// text is kept, so a later edit of the file never changes the rules of a workstream already under way.
 import fs from "node:fs";
 import path from "node:path";
 import type { PlaybookName, PlaybookRef } from "@fleetd/contracts";
