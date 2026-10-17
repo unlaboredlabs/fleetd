@@ -10,7 +10,7 @@ fails when what a visit loads up front (page, app, service worker, manifest) is 
 
 ## Pairing and the device key
 
-`fleetd hub device add --name phone` prints a link ending in `#pair=<token>`. Opening it sends the token in a
+`fleetd hub device add --name phone --url <hub url>` prints a link ending in `#pair=<token>`. Opening it sends the token in a
 `device_pair` frame; the hub answers with a new human key, which the app keeps in IndexedDB and uses to authenticate
 from then on. The token is removed from the address bar at once. A link can also be pasted on the pairing screen.
 

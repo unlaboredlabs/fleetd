@@ -10,6 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { LEAD_PROMPT_VERSION } from "../leads/prompt.ts";
 import { type Body, CLI, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
 import { providerLog } from "./m5Tasks.ts";
 
@@ -131,7 +132,7 @@ export async function m7Train(lab: Lab) {
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    ok(`lead ${leadThread} started on prompt v3`);
+    ok(`lead ${leadThread} started on prompt ${LEAD_PROMPT_VERSION}`);
 
     // Two workstreams, briefs registered from the shell as the lead would, before the intent wakes fire.
     const workstream = async (text: string, brief: Body) => {

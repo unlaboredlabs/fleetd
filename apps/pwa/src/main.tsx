@@ -87,7 +87,7 @@ const Pairing = ({ note, onToken }: { note: string | undefined; onToken: (token:
       <h1>fleetd</h1>
       {note !== undefined && <p class="bad">{note}</p>}
       <p>
-        Pair this device: on the hub run <code>fleetd hub device add --name phone</code> and open the link it prints here. Links last 15
+        Pair this device: on the hub run <code>fleetd hub device add --name phone --url {location.origin}</code> and open the link it prints here. Links last 15
         minutes and work once.
       </p>
       <form

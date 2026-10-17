@@ -5,7 +5,7 @@ import * as Queue from "effect/Queue";
 import { describe, expect, it } from "vitest";
 import * as Auth from "../auth/Auth.ts";
 import { CheckRunner } from "../checks/CheckRunner.ts";
-import { type GatedOutcome, NodeCommands, type SecretOutcome, unlinked } from "../checks/NodeCommands.ts";
+import { type GatedOutcome, NodeCommandError, NodeCommands, type SecretOutcome, unlinked } from "../checks/NodeCommands.ts";
 import { HUMAN, LEAD, makeKit, REF, reply } from "../leads/testKit.ts";
 import { Asks } from "../ledger/Asks.ts";
 import * as EventLog from "../store/EventLog.ts";
@@ -38,10 +38,15 @@ const setup = () => {
   const node = {
     frames: [] as Array<{ readonly t: string; readonly input: unknown }>,
     secret: (): SecretOutcome | "offline" => ({ fingerprint: "ab12cd34" }),
-    gated: (): GatedOutcome | "offline" => ({ exitCode: 0, outputTail: "deployed\n", timedOut: false }),
+    gated: (): GatedOutcome | "offline" | "lost" => ({ exitCode: 0, outputTail: "deployed\n", timedOut: false }),
     verify: (): "pass" | "fail" => "pass",
   };
-  const reply = <A>(machineId: MachineId, value: A | "offline") => (value === "offline" ? unlinked(machineId) : Effect.succeed(value));
+  const reply = <A>(machineId: MachineId, value: A | "offline" | "lost") =>
+    value === "offline"
+      ? unlinked(machineId)
+      : value === "lost"
+        ? Effect.fail(new NodeCommandError({ machineId, reason: "lost", message: `the link to ${machineId}'s node dropped while the command ran` }))
+        : Effect.succeed(value);
   const fakes = Layer.mergeAll(
     Auth.layer,
     Layer.succeed(LeadWakes, LeadWakes.of({ trigger: (_ref, t) => Queue.offer(woken, t).pipe(Effect.asVoid), digest: () => Effect.succeed("") })),
@@ -130,6 +135,71 @@ describe("gated runs", () => {
         const ask = (yield* (yield* Asks).get(filed.askId))!;
         expect(ask).toMatchObject({ state: "open", batchId: "B2", evidence: expect.stringContaining("node was offline") });
         expect(ask.answer).toBeUndefined();
+      }),
+    );
+  });
+
+  it("puts a lost result back in front of the human as unknown, never as done", async () => {
+    const { kit, node, run } = setup();
+    node.gated = () => "lost";
+    await run(
+      Effect.gen(function* () {
+        yield* kit.addProject(REF);
+        const filed = yield* (yield* Approvals).gatedRun(REF, LEAD.by, { argv: ["true"], class: "irreversible", reason: "deploy", timeoutSec: 60 });
+        const cursor = yield* head;
+        yield* reply("1 go");
+        expect((yield* next(cursor, "ask.created")).data).toMatchObject({ askId: filed.askId, reopened: true });
+        expect(yield* (yield* Asks).get(filed.askId)).toMatchObject({ state: "open", evidence: expect.stringMatching(/^result unknown: .*check on lab-a whether it ran/u) });
+        expect((yield* next(cursor, "gated.ran")).data).toMatchObject({ askId: filed.askId, ran: false });
+      }),
+    );
+  });
+
+  it("on hub start, reopens approvals answered go that never ran or never reported back", async () => {
+    const { kit, run } = setup();
+    await run(
+      Effect.gen(function* () {
+        yield* kit.addProject(REF);
+        const asks = yield* Asks;
+        // What a hub that stopped at each point leaves behind: answered but never started, started, and finished.
+        const answered = (evidence: string | undefined) =>
+          Effect.gen(function* () {
+            const { ask } = yield* asks.create(
+              {
+                projectRef: REF,
+                kind: "approve",
+                key: "gated.new" as DecisionKey,
+                class: "credential",
+                text: "rotate",
+                gated: { argv: ["true"], cwd: "/w/p1", class: "credential", reason: "rotate", timeoutSec: 60 },
+                blocks: "nothing",
+                proceededOnRec: false,
+              },
+              LEAD.by,
+            );
+            return yield* asks.update(ask.askId, (a) => ({
+              ...a,
+              state: "answered",
+              answer: { value: "go", by: HUMAN.by, at: "2026-10-17T10:00:00.000Z", raw: "1 go" },
+              ...(evidence === undefined ? {} : { evidence }),
+            }));
+          });
+        const never = yield* answered(undefined);
+        const midRun = yield* answered("running on lab-a, approved by human:phone");
+        const done = yield* answered("exit 0 on lab-a, approved by human:phone");
+        const cursor = yield* head;
+
+        // A second hub start over the same records (the first instance started before they existed).
+        yield* Effect.scoped(Layer.build(Layer.fresh(ApprovalsLayer)));
+
+        expect(yield* asks.get(never.askId)).toMatchObject({ state: "open", evidence: "not run: hub restarted before execution; answer again to run" });
+        expect(yield* asks.get(midRun.askId)).toMatchObject({ state: "open", evidence: expect.stringMatching(/^result unknown: the hub restarted while it ran on lab-a/u) });
+        expect(yield* asks.get(done.askId)).toMatchObject({ state: "answered" });
+        const reopened = (yield* (yield* EventLog.EventLog).wait({ cursor, types: ["ask.created"], timeoutSec: 0 })).events.map((e) => e.data);
+        expect(reopened).toEqual([
+          expect.objectContaining({ askId: never.askId, reopened: true }),
+          expect.objectContaining({ askId: midRun.askId, reopened: true }),
+        ]);
       }),
     );
   });
