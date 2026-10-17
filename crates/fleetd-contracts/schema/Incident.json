@@ -1,0 +1,102 @@
+{
+  "$defs": {
+    "Incident": {
+      "description": "Recorded by the hub, never by an agent.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "class": {
+          "$ref": "#/$defs/IncidentClass"
+        },
+        "evidence": {
+          "description": "Plain-language lines: claim ids with their failing checks, ratios, SHAs.",
+          "items": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "incidentId": {
+          "$ref": "#/$defs/IncidentId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "incidentId",
+        "class",
+        "projectRef",
+        "evidence",
+        "at"
+      ],
+      "type": "object"
+    },
+    "IncidentClass": {
+      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `re_ask`, a human was\nasked about a key that already had an active Decision; `override`, a human replaced a lead's Decision with another\nvalue; `playbook_reverted`, a retro wording change missed its metric and was rolled back.",
+      "enum": [
+        "false_claim",
+        "estimate_miss",
+        "polish_loop",
+        "misfiled_ask",
+        "out_of_area",
+        "stall",
+        "policy_bypass",
+        "re_ask",
+        "override",
+        "playbook_reverted"
+      ],
+      "type": "string"
+    },
+    "IncidentId": {
+      "pattern": "^I[1-9][0-9]*$",
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "TaskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Incident",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

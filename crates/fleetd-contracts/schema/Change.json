@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "Change": {
+      "properties": {
+        "branch": {
+          "description": "The PR's head branch.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "lastError": {
+          "description": "The refusal fix, conflicting paths, or failing check names.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "mergedSha": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "The squash commit on the base; set on merge."
+        },
+        "patchId": {
+          "$ref": "#/$defs/PatchId"
+        },
+        "position": {
+          "description": "0-based index into its train's queue; absent when not queued.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "prUrl": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "reviews": {
+          "items": {
+            "$ref": "#/$defs/ChangeReview"
+          },
+          "type": "array"
+        },
+        "serves": {
+          "$ref": "#/$defs/Serves"
+        },
+        "state": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "The write task that opened it; absent when the lead enqueued a PR no task wrote."
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier",
+          "description": "From the workstream's brief; may be raised, never lowered."
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "changeId",
+        "projectRef",
+        "repo",
+        "prNumber",
+        "prUrl",
+        "branch",
+        "workstreamId",
+        "serves",
+        "tier",
+        "headSha",
+        "state",
+        "reviews",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "ChangeId": {
+      "pattern": "^X[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ChangeReview": {
+      "description": "One review verdict, valid for exactly this patch. A clean rebase that keeps the patch id keeps it valid.",
+      "properties": {
+        "blocking": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nonBlocking": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "patchId": {
+          "$ref": "#/$defs/PatchId"
+        },
+        "prHeadSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        }
+      },
+      "required": [
+        "taskId",
+        "prHeadSha",
+        "patchId",
+        "blocking",
+        "nonBlocking"
+      ],
+      "type": "object"
+    },
+    "ChangeState": {
+      "enum": [
+        "queued",
+        "reviewing",
+        "ready",
+        "rebasing",
+        "ci",
+        "merging",
+        "merged",
+        "needs_rebase",
+        "ci_failed",
+        "refused",
+        "abandoned"
+      ],
+      "type": "string"
+    },
+    "CommitSha": {
+      "description": "Full lowercase hex commit SHA, 40 or 64 characters",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "GitHubPrUrl": {
+      "description": "https://github.com/<owner>/<name>/pull/<n>",
+      "pattern": "^https://github\\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})/pull/([1-9][0-9]*)$",
+      "type": "string"
+    },
+    "GitHubRepo": {
+      "description": "GitHub repository as owner/name",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})$",
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "PatchId": {
+      "description": "Full lowercase hex patch id, 40 or 64 characters",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "Serves": {
+      "type": "string"
+    },
+    "TaskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+    },
+    "Tier": {
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ],
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Change",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

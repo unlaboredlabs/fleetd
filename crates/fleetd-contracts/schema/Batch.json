@@ -1,0 +1,68 @@
+{
+  "$defs": {
+    "AskId": {
+      "pattern": "^A[1-9][0-9]*$",
+      "type": "string"
+    },
+    "Batch": {
+      "properties": {
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/BatchItem"
+          },
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/BatchState"
+        }
+      },
+      "required": [
+        "batchId",
+        "createdAt",
+        "items",
+        "state"
+      ],
+      "type": "object"
+    },
+    "BatchId": {
+      "pattern": "^B[1-9][0-9]*$",
+      "type": "string"
+    },
+    "BatchItem": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "askId"
+      ],
+      "type": "object"
+    },
+    "BatchState": {
+      "enum": [
+        "open",
+        "closed"
+      ],
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Batch",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

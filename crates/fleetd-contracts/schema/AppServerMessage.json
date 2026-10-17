@@ -1,0 +1,666 @@
+{
+  "$defs": {
+    "AppError": {
+      "description": "A `call` failed, or (without `id`) the session did.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "fix": {
+          "type": "string"
+        },
+        "id": {
+          "description": "Present when this answers a `call`.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "AppServerMessage": {
+      "oneOf": [
+        {
+          "description": "Sent once the key is accepted.",
+          "properties": {
+            "protocol": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "t": {
+              "const": "ready",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "protocol"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/FleetStatus",
+          "description": "Answer to `snapshot`: the fleetd_status data.",
+          "properties": {
+            "t": {
+              "const": "snapshot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/HubEvent",
+          "properties": {
+            "t": {
+              "const": "event",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A `call` succeeded; `output` is the tool's output.",
+          "properties": {
+            "id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "output": true,
+            "t": {
+              "const": "result",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "id",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AppError",
+          "properties": {
+            "t": {
+              "const": "error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Attention": {
+      "description": "Whether an event needs the human now, set by the hub when it emits the event. \"loud\": notify, but hold it through\nquiet hours; \"urgent\": notify even during quiet hours (money and irreversible). Absent: the inbox and the digest\nare enough.",
+      "enum": [
+        "loud",
+        "urgent"
+      ],
+      "type": "string"
+    },
+    "BoxPublicKey": {
+      "type": "string"
+    },
+    "ErrorCode": {
+      "enum": [
+        "machine_offline",
+        "not_found",
+        "forbidden",
+        "invalid",
+        "t3_error"
+      ],
+      "type": "string"
+    },
+    "EventSeq": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FleetStatus": {
+      "properties": {
+        "attention": {
+          "description": "Latest failed, waiting and usage-limited events, and PRs the merge train sent back to their authors.",
+          "items": {
+            "$ref": "#/$defs/HubEvent"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "cursor": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/Machine"
+          },
+          "type": "array"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectSummary"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "slots": {
+          "$ref": "#/$defs/SlotState",
+          "description": "Absent until the hub runs the slot board (M5)."
+        }
+      },
+      "required": [
+        "machines",
+        "projects",
+        "attention",
+        "cursor"
+      ],
+      "type": "object"
+    },
+    "HubEvent": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "attention": {
+          "$ref": "#/$defs/Attention"
+        },
+        "data": {
+          "description": "At most 2 KB of JSON; the hub trims before emitting."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "seq": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "Hub-global and monotonic."
+        },
+        "summary": {
+          "description": "Plain language.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "type": {
+          "$ref": "#/$defs/HubEventType"
+        }
+      },
+      "required": [
+        "seq",
+        "at",
+        "type",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "HubEventType": {
+      "oneOf": [
+        {
+          "enum": [
+            "machine.online",
+            "machine.offline",
+            "machine.degraded",
+            "thread.started",
+            "thread.completed",
+            "thread.failed",
+            "thread.interrupted",
+            "thread.usage_limited",
+            "wake.fired",
+            "workstream.created",
+            "workstream.state",
+            "ask.created",
+            "batch.ready",
+            "decision.recorded",
+            "lead.started",
+            "lead.woken",
+            "task.started",
+            "task.completed",
+            "task.failed",
+            "task.cancelled",
+            "claim.passed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "project.removed",
+          "description": "T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
+          "type": "string"
+        },
+        {
+          "const": "thread.waiting",
+          "description": "Needs approval or user input.",
+          "type": "string"
+        },
+        {
+          "const": "thread.stalled",
+          "description": "No progress past the stall threshold; the hub interrupts and nudges once.",
+          "type": "string"
+        },
+        {
+          "const": "wake.missed",
+          "description": "A wake missed while the hub was down, with catchUp \"skip\".",
+          "type": "string"
+        },
+        {
+          "const": "write.delivered",
+          "description": "A queued write to an offline machine was delivered when it came back.",
+          "type": "string"
+        },
+        {
+          "const": "write.expired",
+          "description": "A queued write outlived its TTL and was dropped.",
+          "type": "string"
+        },
+        {
+          "const": "webhook.failing",
+          "description": "A webhook subscription has been failing for over an hour.",
+          "type": "string"
+        },
+        {
+          "const": "workstream.running",
+          "description": "The brief was frozen; `data.briefHash`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.auto",
+          "description": "An ask was answered from the decision log and never reached a batch.",
+          "type": "string"
+        },
+        {
+          "const": "digest.ready",
+          "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
+          "type": "string"
+        },
+        {
+          "const": "task.queued",
+          "description": "`data.queuedReason`.",
+          "type": "string"
+        },
+        {
+          "const": "task.out_of_area",
+          "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "lease.stale",
+          "description": "A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.",
+          "type": "string"
+        },
+        {
+          "const": "claim.failed",
+          "description": "A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`.",
+          "type": "string"
+        },
+        {
+          "const": "workstream.done",
+          "description": "Every done-when check passed. `data.workstreamId`.",
+          "type": "string"
+        },
+        {
+          "const": "review.verdict",
+          "description": "`data.taskId`, `data.prHeadSha`, `data.blocking`.",
+          "type": "string"
+        },
+        {
+          "const": "incident.recorded",
+          "description": "`data.incidentId`, `data.class`.",
+          "type": "string"
+        },
+        {
+          "const": "change.queued",
+          "description": "`data.changeId`, `data.repo`, `data.prNumber`.",
+          "type": "string"
+        },
+        {
+          "const": "change.ready",
+          "description": "Its tier's reviews are satisfied for the current patch id. `data.changeId`.",
+          "type": "string"
+        },
+        {
+          "const": "change.needs_rebase",
+          "description": "The rebase conflicted; `data.changeId`, `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "change.ci_failed",
+          "description": "`data.changeId`, `data.checks` (failing check names), `data.logUrl`.",
+          "type": "string"
+        },
+        {
+          "const": "pr.merged",
+          "description": "`data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`.",
+          "type": "string"
+        },
+        {
+          "const": "train.frozen",
+          "description": "`data.repo`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "train.resumed",
+          "description": "`data.repo`.",
+          "type": "string"
+        },
+        {
+          "const": "change.refused",
+          "description": "Refused at enqueue; `data.prUrl`, `data.fix`.",
+          "type": "string"
+        },
+        {
+          "const": "intake.routed",
+          "description": "Where an intent went; `data.workstreamId` or `data.askId`, `data.template`, `data.reason`, `data.playbook`.",
+          "type": "string"
+        },
+        {
+          "const": "research.verdict",
+          "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
+          "type": "string"
+        },
+        {
+          "const": "usage.breaker",
+          "description": "M4: a machine's login hit the same limit on several threads, or its proxy has no account; dispatch there pauses.",
+          "type": "string"
+        },
+        {
+          "const": "usage.resumed",
+          "description": "M4: parked threads were sent \"continue\" at their reset or on usage_resume; `data.breakerCleared`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.secret_saved",
+          "description": "M8: the node wrote a secret's sink. `data.askId`, `data.fingerprint`, `data.by` (the human who submitted it).",
+          "type": "string"
+        },
+        {
+          "const": "gated.ran",
+          "description": "M8: the node ran an approved command. `data.askId`, `data.exitCode`, `data.timedOut`, `data.by` (the approver).",
+          "type": "string"
+        },
+        {
+          "const": "doctor.changed",
+          "description": "M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).",
+          "type": "string"
+        },
+        {
+          "const": "retro.ran",
+          "description": "M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).",
+          "type": "string"
+        },
+        {
+          "const": "playbook.changed",
+          "description": "M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.",
+          "type": "string"
+        },
+        {
+          "const": "playbook.reverted",
+          "description": "M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "playbook.kept",
+          "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
+          "type": "string"
+        }
+      ]
+    },
+    "Machine": {
+      "properties": {
+        "boxPubKey": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
+        },
+        "degradedReason": {
+          "description": "Plain language, set while status is \"degraded\".",
+          "type": "string"
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nodeVersion": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/MachineStatus"
+        },
+        "t3": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineT3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null until the node has reported a reachable T3."
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "tags",
+        "status",
+        "lastSeenAt",
+        "t3",
+        "nodeVersion"
+      ],
+      "type": "object"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "MachineStatus": {
+      "enum": [
+        "online",
+        "offline",
+        "degraded"
+      ],
+      "type": "string"
+    },
+    "MachineT3": {
+      "properties": {
+        "protocol": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "protocol"
+      ],
+      "type": "object"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectSummary": {
+      "properties": {
+        "lastActivityAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "threads": {
+          "$ref": "#/$defs/ThreadCounts"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "workspaceRoot",
+        "threads",
+        "lastActivityAt"
+      ],
+      "type": "object"
+    },
+    "SlotState": {
+      "properties": {
+        "cap": {
+          "description": "Global cap on running turns.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perProject": {
+          "items": {
+            "$ref": "#/$defs/SlotStatePerProject"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "queued": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reservedBand": {
+          "description": "Slots of the cap only lead turns may take.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "used": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cap",
+        "used",
+        "queued",
+        "reservedBand",
+        "perProject"
+      ],
+      "type": "object"
+    },
+    "SlotStatePerProject": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "share": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "used": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectRef",
+        "share",
+        "used"
+      ],
+      "type": "object"
+    },
+    "ThreadCounts": {
+      "properties": {
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idle": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waiting": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "running",
+        "waiting",
+        "idle",
+        "failed"
+      ],
+      "type": "object"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/AppServerMessage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

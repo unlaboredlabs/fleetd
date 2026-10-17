@@ -34,6 +34,20 @@ jobs:
       - name: Lead prompt ships beside the CLI bundle
         run: test -s apps/cli/dist/prompt-v4.md
 
+  rust-crates:
+    # The root Cargo workspace (crates/*); the app under app/ is still its own workspace, built by `rust` below.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
+
   rust:
     strategy:
       matrix:

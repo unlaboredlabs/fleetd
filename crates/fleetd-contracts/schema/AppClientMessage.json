@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "AppClientMessage": {
+      "oneOf": [
+        {
+          "properties": {
+            "key": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "t": {
+              "const": "auth",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "key"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "t": {
+              "const": "snapshot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Stream HubEvents after `cursor` as they happen.",
+          "properties": {
+            "cursor": {
+              "$ref": "#/$defs/EventSeq"
+            },
+            "t": {
+              "const": "events",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "cursor"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Call one MCP tool with the session's key: same tools, grants and limits as /mcp. `input` is the tool's input;\nanswered by a `result` or an `error` carrying the same `id`.",
+          "properties": {
+            "id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "input": true,
+            "t": {
+              "const": "call",
+              "type": "string"
+            },
+            "tool": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "id",
+            "tool",
+            "input"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EventSeq": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$ref": "#/$defs/AppClientMessage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,51 @@
+# The product workspace. The GPUI app under app/ stays its own workspace until it moves in.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+exclude = ["app"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+fleetd-contracts = { path = "crates/fleetd-contracts" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = { version = "3", default-features = false, features = ["macros"] }
+schemars = "1"
+regex = "1"
+url = "2"
+
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.37", features = ["bundled-full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = "0.10"
+croner = "2"
+crypto_box = { version = "0.9", features = ["seal"] }
+ed25519-dalek = "2"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+zeroize = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

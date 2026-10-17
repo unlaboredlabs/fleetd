@@ -1,0 +1,285 @@
+{
+  "$defs": {
+    "Attention": {
+      "description": "Whether an event needs the human now, set by the hub when it emits the event. \"loud\": notify, but hold it through\nquiet hours; \"urgent\": notify even during quiet hours (money and irreversible). Absent: the inbox and the digest\nare enough.",
+      "enum": [
+        "loud",
+        "urgent"
+      ],
+      "type": "string"
+    },
+    "EventSeq": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "HubEvent": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "attention": {
+          "$ref": "#/$defs/Attention"
+        },
+        "data": {
+          "description": "At most 2 KB of JSON; the hub trims before emitting."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "seq": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "Hub-global and monotonic."
+        },
+        "summary": {
+          "description": "Plain language.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "type": {
+          "$ref": "#/$defs/HubEventType"
+        }
+      },
+      "required": [
+        "seq",
+        "at",
+        "type",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "HubEventType": {
+      "oneOf": [
+        {
+          "enum": [
+            "machine.online",
+            "machine.offline",
+            "machine.degraded",
+            "thread.started",
+            "thread.completed",
+            "thread.failed",
+            "thread.interrupted",
+            "thread.usage_limited",
+            "wake.fired",
+            "workstream.created",
+            "workstream.state",
+            "ask.created",
+            "batch.ready",
+            "decision.recorded",
+            "lead.started",
+            "lead.woken",
+            "task.started",
+            "task.completed",
+            "task.failed",
+            "task.cancelled",
+            "claim.passed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "project.removed",
+          "description": "T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
+          "type": "string"
+        },
+        {
+          "const": "thread.waiting",
+          "description": "Needs approval or user input.",
+          "type": "string"
+        },
+        {
+          "const": "thread.stalled",
+          "description": "No progress past the stall threshold; the hub interrupts and nudges once.",
+          "type": "string"
+        },
+        {
+          "const": "wake.missed",
+          "description": "A wake missed while the hub was down, with catchUp \"skip\".",
+          "type": "string"
+        },
+        {
+          "const": "write.delivered",
+          "description": "A queued write to an offline machine was delivered when it came back.",
+          "type": "string"
+        },
+        {
+          "const": "write.expired",
+          "description": "A queued write outlived its TTL and was dropped.",
+          "type": "string"
+        },
+        {
+          "const": "webhook.failing",
+          "description": "A webhook subscription has been failing for over an hour.",
+          "type": "string"
+        },
+        {
+          "const": "workstream.running",
+          "description": "The brief was frozen; `data.briefHash`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.auto",
+          "description": "An ask was answered from the decision log and never reached a batch.",
+          "type": "string"
+        },
+        {
+          "const": "digest.ready",
+          "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
+          "type": "string"
+        },
+        {
+          "const": "task.queued",
+          "description": "`data.queuedReason`.",
+          "type": "string"
+        },
+        {
+          "const": "task.out_of_area",
+          "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "lease.stale",
+          "description": "A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.",
+          "type": "string"
+        },
+        {
+          "const": "claim.failed",
+          "description": "A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`.",
+          "type": "string"
+        },
+        {
+          "const": "workstream.done",
+          "description": "Every done-when check passed. `data.workstreamId`.",
+          "type": "string"
+        },
+        {
+          "const": "review.verdict",
+          "description": "`data.taskId`, `data.prHeadSha`, `data.blocking`.",
+          "type": "string"
+        },
+        {
+          "const": "incident.recorded",
+          "description": "`data.incidentId`, `data.class`.",
+          "type": "string"
+        },
+        {
+          "const": "change.queued",
+          "description": "`data.changeId`, `data.repo`, `data.prNumber`.",
+          "type": "string"
+        },
+        {
+          "const": "change.ready",
+          "description": "Its tier's reviews are satisfied for the current patch id. `data.changeId`.",
+          "type": "string"
+        },
+        {
+          "const": "change.needs_rebase",
+          "description": "The rebase conflicted; `data.changeId`, `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "change.ci_failed",
+          "description": "`data.changeId`, `data.checks` (failing check names), `data.logUrl`.",
+          "type": "string"
+        },
+        {
+          "const": "pr.merged",
+          "description": "`data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`.",
+          "type": "string"
+        },
+        {
+          "const": "train.frozen",
+          "description": "`data.repo`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "train.resumed",
+          "description": "`data.repo`.",
+          "type": "string"
+        },
+        {
+          "const": "change.refused",
+          "description": "Refused at enqueue; `data.prUrl`, `data.fix`.",
+          "type": "string"
+        },
+        {
+          "const": "intake.routed",
+          "description": "Where an intent went; `data.workstreamId` or `data.askId`, `data.template`, `data.reason`, `data.playbook`.",
+          "type": "string"
+        },
+        {
+          "const": "research.verdict",
+          "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
+          "type": "string"
+        },
+        {
+          "const": "usage.breaker",
+          "description": "M4: a machine's login hit the same limit on several threads, or its proxy has no account; dispatch there pauses.",
+          "type": "string"
+        },
+        {
+          "const": "usage.resumed",
+          "description": "M4: parked threads were sent \"continue\" at their reset or on usage_resume; `data.breakerCleared`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.secret_saved",
+          "description": "M8: the node wrote a secret's sink. `data.askId`, `data.fingerprint`, `data.by` (the human who submitted it).",
+          "type": "string"
+        },
+        {
+          "const": "gated.ran",
+          "description": "M8: the node ran an approved command. `data.askId`, `data.exitCode`, `data.timedOut`, `data.by` (the approver).",
+          "type": "string"
+        },
+        {
+          "const": "doctor.changed",
+          "description": "M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).",
+          "type": "string"
+        },
+        {
+          "const": "retro.ran",
+          "description": "M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).",
+          "type": "string"
+        },
+        {
+          "const": "playbook.changed",
+          "description": "M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.",
+          "type": "string"
+        },
+        {
+          "const": "playbook.reverted",
+          "description": "M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "playbook.kept",
+          "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
+          "type": "string"
+        }
+      ]
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/HubEvent",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

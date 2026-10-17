@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "BoxPublicKey": {
+      "type": "string"
+    },
+    "Machine": {
+      "properties": {
+        "boxPubKey": {
+          "$ref": "#/$defs/BoxPublicKey",
+          "description": "M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no\nsecrets."
+        },
+        "degradedReason": {
+          "description": "Plain language, set while status is \"degraded\".",
+          "type": "string"
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nodeVersion": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/MachineStatus"
+        },
+        "t3": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineT3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null until the node has reported a reachable T3."
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "tags",
+        "status",
+        "lastSeenAt",
+        "t3",
+        "nodeVersion"
+      ],
+      "type": "object"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "MachineStatus": {
+      "enum": [
+        "online",
+        "offline",
+        "degraded"
+      ],
+      "type": "string"
+    },
+    "MachineT3": {
+      "properties": {
+        "protocol": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "protocol"
+      ],
+      "type": "object"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Machine",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
