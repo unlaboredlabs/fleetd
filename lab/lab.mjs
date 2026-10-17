@@ -72,6 +72,8 @@ function seedSettings(i) {
   const settings = fs.existsSync(settingsPath)
     ? JSON.parse(fs.readFileSync(settingsPath, "utf8"))
     : { enableProviderUpdateChecks: false };
+  // fleetd parks a limited thread and resumes it at the reset itself (M4); T3 must not resume it too.
+  settings.autoResumeLimitedThreads = false;
   settings.providerInstances = {
     ...settings.providerInstances,
     fleetd: {

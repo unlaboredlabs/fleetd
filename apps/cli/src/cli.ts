@@ -6,6 +6,8 @@ import { HUB_TOKEN_USAGE, hubToken } from "./hub-token.ts";
 import { LEAD_USAGE } from "./lead.ts";
 import { LISTEN_USAGE, listenCommand } from "./listen.ts";
 import { NODE_USAGE, nodeCommand } from "./node.ts";
+import { SETUP_USAGE, setupCommand } from "./setup/init.ts";
+import { MACHINE_USAGE, machineCommand } from "./setup/machine.ts";
 
 export interface CliResult {
   readonly code: number;
@@ -18,6 +20,10 @@ const USAGE = `usage: fleetd <command>
 commands:
   version    print the fleetd version and protocol
   help       show this message
+
+setting up (on the hub machine):
+${SETUP_USAGE}${MACHINE_USAGE}
+running by hand:
 ${HUB_START_USAGE}${HUB_KEY_USAGE}${HUB_TOKEN_USAGE}${NODE_USAGE}${LISTEN_USAGE}
 lead-side commands (run by a lead or task inside a project workspace):
 ${LEAD_USAGE}`;
@@ -43,8 +49,10 @@ export const run = (argv: readonly string[]): CliResult => {
   }
 };
 
-/** Commands that keep running (`node …`, `hub start`, `listen`); `undefined` when argv is not one of them. */
+/** Commands that keep running (`node …`, `hub start`, `listen`) or wait on other processes (setup); `undefined` for the rest. */
 export const runLongRunning = (argv: readonly string[]): Promise<number> | undefined => {
+  if (argv[0] === "init" || argv[0] === "uninstall") return setupCommand(argv[0], argv.slice(1));
+  if (argv[0] === "machine") return machineCommand(argv.slice(1));
   if (argv[0] === "node") return nodeCommand(argv.slice(1));
   if (argv[0] === "listen") return listenCommand(argv.slice(1));
   if (argv[0] === "hub" && argv[1] === "start") return hubStart(argv.slice(2));

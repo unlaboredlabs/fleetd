@@ -48,6 +48,8 @@ export class Auth extends Context.Service<
     /** Burns the token and records `pubKey` as the machine's node key. */
     readonly consumeEnrollToken: (token: string, machineId: MachineId, pubKey: string) => Effect.Effect<void, Unauthorized>;
     readonly nodePubKey: (machineId: MachineId) => Effect.Effect<string | undefined>;
+    /** Forgets the machine's node key, so its node is refused from its next link on; false if it had none. */
+    readonly revokeNode: (machineId: MachineId) => Effect.Effect<boolean>;
   }
 >()("fleetd/auth/Auth") {}
 
@@ -123,6 +125,7 @@ const make = Effect.gen(function* () {
       "INSERT INTO node_keys (machine_id, pub_key) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key",
     ),
     nodeKeyGet: db.prepare("SELECT pub_key FROM node_keys WHERE machine_id = ?"),
+    nodeKeyDelete: db.prepare("DELETE FROM node_keys WHERE machine_id = ?"),
   };
 
   const createKey = (name: string, grants: ReadonlyArray<Grant>, kind: KeyKind = "agent") =>
@@ -221,6 +224,7 @@ const make = Effect.gen(function* () {
         const row = sql.nodeKeyGet.get(machineId);
         return row ? String(row.pub_key) : undefined;
       }),
+    revokeNode: (machineId) => Effect.sync(() => sql.nodeKeyDelete.run(machineId).changes > 0),
   });
 });
 
