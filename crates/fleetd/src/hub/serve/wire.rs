@@ -51,10 +51,57 @@ impl LeadCallHandler for LedgerCalls {
     }
 }
 
+fn stopping() -> McpToolError {
+    McpToolError::new(
+        fleetd_contracts::mcp::ErrorCode::T3Error,
+        "the hub is stopping",
+    )
+}
+
+/// TS LeadCallHandler's `claim_done` and `review_verdict`, answered by checks and the value bar.
+struct CheckCalls(Weak<Hub>);
+
+impl LeadCallHandler for CheckCalls {
+    fn handle(&self, caller: LeadCaller, call: LeadCall) -> LeadCallFuture {
+        use fleetd_contracts::lead_calls::LeadCallResult;
+        let hub = self.0.upgrade();
+        Box::pin(async move {
+            let hub = hub.ok_or_else(stopping)?;
+            let caller = crate::hub::valuebar::Caller {
+                project_ref: caller.project_ref,
+                by: caller.by,
+            };
+            match call {
+                LeadCall::ClaimDone(c) => {
+                    crate::hub::checks::tools::lead_claim_done(&hub, &caller, &c.workstream_id)
+                        .await
+                        .map(LeadCallResult::ClaimDone)
+                }
+                LeadCall::ReviewVerdict(v) => {
+                    crate::hub::checks::tools::lead_review_verdict(&hub, &caller, v)
+                        .await
+                        .map(LeadCallResult::ReviewVerdict)
+                }
+                other => Err(McpToolError::new(
+                    fleetd_contracts::mcp::ErrorCode::Invalid,
+                    format!(
+                        "{} is not a checks call",
+                        crate::hub::link::lead_calls::op_of(&other)
+                    ),
+                )),
+            }
+        })
+    }
+}
+
 fn register_ledger_calls(hub: &Arc<Hub>) {
     let calls: Arc<dyn LeadCallHandler> = Arc::new(LedgerCalls(Arc::downgrade(hub)));
     for op in ["ask", "ask_withdraw", "decide", "decisions_search"] {
         hub.lead_calls.register(op, Arc::clone(&calls));
+    }
+    let checks: Arc<dyn LeadCallHandler> = Arc::new(CheckCalls(Arc::downgrade(hub)));
+    for op in ["claim_done", "review_verdict"] {
+        hub.lead_calls.register(op, Arc::clone(&checks));
     }
 }
 
