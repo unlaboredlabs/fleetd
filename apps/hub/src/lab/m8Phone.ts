@@ -19,15 +19,19 @@ import { decryptPayload } from "../push/webPush.ts";
 import { type Body, CLI, cli, HUB_PORT, LAB, type Lab, MODEL, RUN, scrubbedEnv } from "./harness.ts";
 
 const MACHINE = "lab-a";
-const TLS_PORT = HUB_PORT + 1;
-const PUSH_PORT = HUB_PORT + 2;
-const CDP_PORT = HUB_PORT + 3;
 const CHROME =
   process.env.FLEETD_LAB_CHROME ?? path.join(os.homedir(), ".cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell");
 /** Shared libraries the headless shell needs that this box lacks, extracted from .debs (no system installs). */
 const CHROME_LIBS = ["chrome-libs/root", "sysroot"].map((d) => path.join(LAB, d, "usr/lib/x86_64-linux-gnu")).join(":");
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
+
+/** Listens on an OS-assigned loopback port (so nothing else in the lab range can clash) and returns it. */
+const listen = (server: net.Server) =>
+  new Promise<number>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve((server.address() as net.AddressInfo).port));
+  });
 
 /** A lab CA and a localhost certificate it signs, made with openssl; returns the chain and the CA's SPKI pin. */
 const labTls = (dir: string) => {
@@ -184,10 +188,10 @@ export async function m8Phone(lab: Lab) {
       client.on("error", () => upstream.destroy());
       upstream.on("error", () => client.destroy());
     });
-    await new Promise<void>((resolve) => terminator.listen(TLS_PORT, "127.0.0.1", resolve));
+    const TLS_PORT = await listen(terminator);
     cleanup.push(() => new Promise<void>((resolve) => terminator.close(() => resolve())));
     const push = mockPushService();
-    await new Promise<void>((resolve) => push.server.listen(PUSH_PORT, "127.0.0.1", resolve));
+    const PUSH_PORT = await listen(push.server);
     cleanup.push(() => new Promise<void>((resolve) => push.server.close(() => resolve())));
     ok(`TLS terminator https://localhost:${TLS_PORT} -> hub :${HUB_PORT} (lab CA pin ${certs.pin.slice(0, 12)}…); mock push service on :${PUSH_PORT}`);
 
@@ -195,7 +199,8 @@ export async function m8Phone(lab: Lab) {
     const chrome: ChildProcess = spawn(
       CHROME,
       [
-        `--remote-debugging-port=${CDP_PORT}`,
+        // Chromium picks the port and writes it to DevToolsActivePort in the profile.
+        "--remote-debugging-port=0",
         `--user-data-dir=${path.join(lab.dir, "chrome-profile")}`,
         `--ignore-certificate-errors-spki-list=${certs.pin}`,
         "--no-sandbox",
@@ -214,8 +219,10 @@ export async function m8Phone(lab: Lab) {
       lab.log(`stopped chrome-headless-shell pid=${chrome.pid}`);
       fs.rmSync(path.join(lab.dir, "chrome-profile"), { recursive: true, force: true });
     });
+    const activePort = path.join(lab.dir, "chrome-profile", "DevToolsActivePort");
     const target = await lab.until("Chromium's DevTools endpoint", 30_000, async () => {
-      const pages = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`).then((r) => r.json() as Promise<Array<Body>>, () => undefined);
+      const cdpPort = fs.existsSync(activePort) ? fs.readFileSync(activePort, "utf8").split("\n")[0] : undefined;
+      const pages = cdpPort ? await fetch(`http://127.0.0.1:${cdpPort}/json/list`).then((r) => r.json() as Promise<Array<Body>>, () => undefined) : undefined;
       if (pages === undefined) await new Promise((r) => setTimeout(r, 200));
       return pages?.find((p) => p.type === "page");
     });
