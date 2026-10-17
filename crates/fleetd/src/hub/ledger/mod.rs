@@ -26,7 +26,7 @@ pub use inbox::{
 pub use repo::{
     AskFilter, DecisionFilter, RecordInput, StoredBatch, ask_n, batch_n, decision_n, fts_query,
 };
-pub use tools::{WorkstreamLookup, register, register_lead_calls};
+pub use tools::{WorkstreamLookup, lead_call, register};
 
 use std::sync::Arc;
 

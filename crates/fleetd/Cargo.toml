@@ -42,8 +42,6 @@ axum = { workspace = true }
 
 # attention
 chrono-tz = { workspace = true }
-# ledger
-rusqlite = { workspace = true }
 regex = { workspace = true }
 
 [dev-dependencies]

@@ -27,7 +27,6 @@ use crate::hub::api::{
     Caller, Hub, Registry, ToolError, allows, allows_everywhere, cap, is_human, require,
     unknown_project,
 };
-use crate::hub::link::{LeadCallHandler, LeadCallRefused, LeadCaller, LeadCalls};
 
 const ASKS_LIMIT: usize = 100;
 const BATCHES_LIMIT: usize = 20;
@@ -54,14 +53,6 @@ fn code(code: LedgerCode) -> ErrorCode {
 fn refusal(error: LedgerError) -> ToolError {
     ToolError {
         code: code(error.code),
-        message: error.message,
-        fix: error.fix,
-    }
-}
-
-fn refused(error: LedgerError) -> LeadCallRefused {
-    LeadCallRefused {
-        code: error.code.as_str().to_string(),
         message: error.message,
         fix: error.fix,
     }
@@ -269,196 +260,160 @@ pub fn register(tools: &mut Registry) {
     });
 }
 
-/// The ledger's lead calls; `register_lead_calls(&hub.lead_calls, hub.clone())` from serve.
-pub fn register_lead_calls(calls: &LeadCalls, hub: Arc<Hub>) {
-    let handler: Arc<dyn LeadCallHandler> = Arc::new(LedgerLeadCalls { hub });
-    for op in ["ask", "ask_withdraw", "decide", "decisions_search"] {
-        calls.register(op, handler.clone());
-    }
-}
-
-struct LedgerLeadCalls {
-    hub: Arc<Hub>,
-}
-
-impl LedgerLeadCalls {
-    /// A workstream named in a call must be one of the caller's own.
-    fn own_workstream(
-        &self,
-        project_ref: &ProjectRef,
-        workstream_id: &WorkstreamId,
-    ) -> Result<WorkstreamId, LeadCallRefused> {
-        match workstream_project(&self.hub, workstream_id) {
-            Some(r) if &r == project_ref => Ok(workstream_id.clone()),
-            _ => Err(LeadCallRefused {
-                code: "not_found".into(),
-                message: format!("There is no workstream {workstream_id} in your project."),
-                fix: Some(
-                    "Use a workstream id from the digest at the top of your last wake.".into(),
-                ),
-            }),
-        }
-    }
-
-    /// `fleetd decide` without --workstream: the project's only open workstream, else the caller must say.
-    fn decide_workstream(
-        &self,
-        project_ref: &ProjectRef,
-        workstream_id: Option<&WorkstreamId>,
-    ) -> Result<WorkstreamId, LeadCallRefused> {
-        if let Some(workstream_id) = workstream_id {
-            return self.own_workstream(project_ref, workstream_id);
-        }
-        let open = self
-            .hub
-            .decisions
-            .workstreams()
-            .map(|lookup| lookup.open_in(project_ref, 2))
-            .unwrap_or_default();
-        if let [only] = open.as_slice() {
-            return Ok(only.clone());
-        }
-        Err(LeadCallRefused {
-            code: "invalid".into(),
-            message: if open.is_empty() {
-                "Your project has no open workstream to scope this decision to.".into()
-            } else {
-                "Your project has several open workstreams.".into()
-            },
-            fix: Some("Pass --workstream W<n> from your digest, or --scope project for a project-wide decision.".into()),
-        })
-    }
-
-    fn handle_now(
-        &self,
-        caller: LeadCaller,
-        call: LeadCall,
-    ) -> Result<LeadCallResult, LeadCallRefused> {
-        let r = caller.project_ref.clone();
-        match call {
-            LeadCall::Ask(call) => {
-                let workstream_id = call
-                    .workstream_id
-                    .as_ref()
-                    .map(|w| self.own_workstream(&r, w))
-                    .transpose()?;
-                let outcome = self
-                    .hub
-                    .asks
-                    .create(
-                        &AskInput {
-                            project_ref: Some(r),
-                            workstream_id,
-                            kind: call.kind.into(),
-                            key: call.key,
-                            class: call.class.to_string(),
-                            text: call.text,
-                            recommendation: call.recommendation,
-                            options: call.options,
-                            steps: call.steps,
-                            verify: call.verify,
-                            sink: call.sink,
-                            env_name: call.env_name,
-                            gated: None,
-                            blocks: call.blocks,
-                            proceeded_on_rec: call.proceeded_on_rec,
-                        },
-                        &caller.by,
-                    )
-                    .map_err(refused)?;
-                Ok(LeadCallResult::Ask(AskResult {
-                    state: if outcome.state == OutcomeState::Auto {
-                        AskState::Auto
-                    } else {
-                        AskState::Open
-                    },
-                    ask_id: outcome.ask.ask_id,
-                    decision: outcome.decision,
-                    attached: outcome.attached,
-                    candidates: outcome
-                        .candidates
-                        .map(|c| List::unchecked(c.into_iter().take(5).collect())),
-                    next: None,
-                }))
-            }
-            LeadCall::AskWithdraw(call) => {
-                let ask = self
-                    .hub
-                    .asks
-                    .withdraw(&call.ask_id, call.r#use.as_ref(), Some(&r), None)
-                    .map_err(refused)?;
-                Ok(LeadCallResult::AskWithdraw(AskWithdrawResult {
-                    ask_id: ask.ask_id,
-                    state: ask.state,
-                    next: None,
-                }))
-            }
-            LeadCall::Decide(call) => {
-                let scope = if call.scope == DecideScope::Project {
-                    DecisionScope::Project {
-                        project_ref: r.clone(),
-                    }
+/// The ledger's lead-side calls (`ask`, `ask_withdraw`, `decide`, `decisions_search`) for a caller already attributed
+/// to `project_ref` by its cwd, with `by` = `lead:<machineId>/<projectId>`. TS `LeadCallHandler.ts`; the link area's
+/// `LeadCalls` registry routes those four ops here and maps a refusal onto `LeadCallRefused` (`code.as_str()`,
+/// `message`, `fix`).
+pub fn lead_call(
+    hub: &Hub,
+    project_ref: &ProjectRef,
+    by: &str,
+    call: LeadCall,
+) -> Result<LeadCallResult, LedgerError> {
+    let r = project_ref.clone();
+    match call {
+        LeadCall::Ask(call) => {
+            let workstream_id = call
+                .workstream_id
+                .as_ref()
+                .map(|w| own_workstream(hub, &r, w))
+                .transpose()?;
+            let outcome = hub.asks.create(
+                &AskInput {
+                    project_ref: Some(r),
+                    workstream_id,
+                    kind: call.kind.into(),
+                    key: call.key,
+                    class: call.class.to_string(),
+                    text: call.text,
+                    recommendation: call.recommendation,
+                    options: call.options,
+                    steps: call.steps,
+                    verify: call.verify,
+                    sink: call.sink,
+                    env_name: call.env_name,
+                    gated: None,
+                    blocks: call.blocks,
+                    proceeded_on_rec: call.proceeded_on_rec,
+                },
+                by,
+            )?;
+            Ok(LeadCallResult::Ask(AskResult {
+                state: if outcome.state == OutcomeState::Auto {
+                    AskState::Auto
                 } else {
-                    DecisionScope::Workstream {
-                        workstream_id: self.decide_workstream(&r, call.workstream_id.as_ref())?,
-                    }
-                };
-                let decision = self
-                    .hub
-                    .decisions
-                    .record(
-                        RecordInput {
-                            key: call.key,
-                            scope,
-                            value: call.value.to_string(),
-                            why: call.why.as_deref().map(String::from),
-                            ask_id: None,
-                            project_ref: Some(r),
-                        },
-                        &Actor {
-                            source: DecisionSource::Lead,
-                            by: caller.by.clone(),
-                        },
-                    )
-                    .map_err(refused)?;
-                Ok(LeadCallResult::Decide(DecideResult {
-                    decision,
-                    next: None,
-                }))
-            }
-            LeadCall::DecisionsSearch(call) => {
-                let decisions = self
-                    .hub
-                    .decisions
-                    .search(
-                        &call.query,
-                        &DecisionFilter {
-                            chain: Some(super::Chain {
-                                project_ref: r,
-                                workstream_id: None,
-                            }),
-                            limit: Some(SEARCH_LIMIT),
-                            ..Default::default()
-                        },
-                    )
-                    .map_err(refused)?;
-                Ok(LeadCallResult::DecisionsSearch(DecisionsSearchResult {
-                    decisions: List::unchecked(decisions),
-                    next: None,
-                }))
-            }
-            other => Err(LeadCallRefused {
-                code: "invalid".into(),
-                message: format!("The ledger does not handle {other:?}."),
-                fix: None,
-            }),
+                    AskState::Open
+                },
+                ask_id: outcome.ask.ask_id,
+                decision: outcome.decision,
+                attached: outcome.attached,
+                candidates: outcome
+                    .candidates
+                    .map(|c| List::unchecked(c.into_iter().take(5).collect())),
+                next: None,
+            }))
         }
+        LeadCall::AskWithdraw(call) => {
+            let ask = hub
+                .asks
+                .withdraw(&call.ask_id, call.r#use.as_ref(), Some(&r), None)?;
+            Ok(LeadCallResult::AskWithdraw(AskWithdrawResult {
+                ask_id: ask.ask_id,
+                state: ask.state,
+                next: None,
+            }))
+        }
+        LeadCall::Decide(call) => {
+            let scope = if call.scope == DecideScope::Project {
+                DecisionScope::Project {
+                    project_ref: r.clone(),
+                }
+            } else {
+                DecisionScope::Workstream {
+                    workstream_id: decide_workstream(hub, &r, call.workstream_id.as_ref())?,
+                }
+            };
+            let decision = hub.decisions.record(
+                RecordInput {
+                    key: call.key,
+                    scope,
+                    value: call.value.to_string(),
+                    why: call.why.as_deref().map(String::from),
+                    ask_id: None,
+                    project_ref: Some(r),
+                },
+                &Actor {
+                    source: DecisionSource::Lead,
+                    by: by.to_string(),
+                },
+            )?;
+            Ok(LeadCallResult::Decide(DecideResult {
+                decision,
+                next: None,
+            }))
+        }
+        LeadCall::DecisionsSearch(call) => {
+            let decisions = hub.decisions.search(
+                &call.query,
+                &DecisionFilter {
+                    chain: Some(super::Chain {
+                        project_ref: r,
+                        workstream_id: None,
+                    }),
+                    limit: Some(SEARCH_LIMIT),
+                    ..Default::default()
+                },
+            )?;
+            Ok(LeadCallResult::DecisionsSearch(DecisionsSearchResult {
+                decisions: List::unchecked(decisions),
+                next: None,
+            }))
+        }
+        _ => Err(LedgerError::invalid(
+            "The ledger handles only ask, ask_withdraw, decide and decisions_search.",
+        )),
     }
 }
 
-impl LeadCallHandler for LedgerLeadCalls {
-    fn handle(&self, caller: LeadCaller, call: LeadCall) -> crate::hub::link::LeadCallFuture {
-        let result = self.handle_now(caller, call);
-        Box::pin(async move { result })
+/// A workstream named in a call must be one of the caller's own.
+fn own_workstream(
+    hub: &Hub,
+    project_ref: &ProjectRef,
+    workstream_id: &WorkstreamId,
+) -> Result<WorkstreamId, LedgerError> {
+    match workstream_project(hub, workstream_id) {
+        Some(r) if &r == project_ref => Ok(workstream_id.clone()),
+        _ => Err(LedgerError {
+            code: LedgerCode::NotFound,
+            message: format!("There is no workstream {workstream_id} in your project."),
+            fix: Some("Use a workstream id from the digest at the top of your last wake.".into()),
+        }),
     }
+}
+
+/// `fleetd decide` without --workstream: the project's only open workstream, else the caller must say.
+fn decide_workstream(
+    hub: &Hub,
+    project_ref: &ProjectRef,
+    workstream_id: Option<&WorkstreamId>,
+) -> Result<WorkstreamId, LedgerError> {
+    if let Some(workstream_id) = workstream_id {
+        return own_workstream(hub, project_ref, workstream_id);
+    }
+    let open = hub
+        .decisions
+        .workstreams()
+        .map(|lookup| lookup.open_in(project_ref, 2))
+        .unwrap_or_default();
+    if let [only] = open.as_slice() {
+        return Ok(only.clone());
+    }
+    Err(LedgerError::invalid_fix(
+        if open.is_empty() {
+            "Your project has no open workstream to scope this decision to."
+        } else {
+            "Your project has several open workstreams."
+        },
+        "Pass --workstream W<n> from your digest, or --scope project for a project-wide decision.",
+    ))
 }

@@ -4,7 +4,9 @@
 use crate::clock::{Clock, SystemClock};
 use crate::hub::api::{self, Hub, HubConfig, Listen, Registry, Shutdown};
 use crate::hub::auth::Auth;
+use crate::hub::digests::HumanDigests;
 use crate::hub::http;
+use crate::hub::ledger::{Asks, Decisions, Inbox};
 use crate::hub::store::{EventLog, HubDb, HubStore, resolve_hub_home};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -214,6 +216,16 @@ pub fn build_on(
     let store = Arc::new(HubStore::new(db.clone()));
     let events = Arc::new(EventLog::new(db.clone(), clock.clone())?);
     let auth = Arc::new(Auth::new(db.clone(), clock.clone()));
+    let decisions = Arc::new(Decisions::new(db.clone(), events.clone(), clock.clone()));
+    let asks = Arc::new(Asks::new(db.clone(), events.clone(), clock.clone()));
+    let inbox = Arc::new(Inbox::new(db.clone(), events.clone(), clock.clone()));
+    let digests = Arc::new(HumanDigests::new(
+        asks.clone(),
+        decisions.clone(),
+        store.clone(),
+        events.clone(),
+        clock.clone(),
+    ));
     Ok(Arc::new(Hub {
         config,
         clock,
@@ -222,14 +234,28 @@ pub fn build_on(
         store,
         events,
         auth,
+        decisions,
+        asks,
+        inbox,
+        digests,
     }))
 }
 
 /// Every area's long-running loop, one tokio task each; they stop with `hub.shutdown` (and are aborted after the
 /// server returns). Areas add theirs here.
 pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>> {
-    let (_hub, _tools) = (hub, tools);
-    Vec::new()
+    let _tools = tools;
+    let mut loops = Vec::new();
+    if let Err(error) = hub.asks.start() {
+        tracing::error!(%error, "re-arming the collecting batch failed");
+    }
+    let shutdown = hub.shutdown.clone();
+    loops.push(tokio::spawn(
+        hub.digests
+            .clone()
+            .run(async move { shutdown.wait().await }),
+    ));
+    loops
 }
 
 #[cfg(test)]
