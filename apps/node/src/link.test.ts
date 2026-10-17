@@ -8,6 +8,7 @@ import * as Socket from "effect/socket/Socket";
 import { TestClock } from "effect/testing";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadOrCreateIdentity } from "./identity.ts";
+import { makeLeadRelay } from "./LeadCalls.ts";
 import { type RunNodeOptions, runNode, T3Unreachable } from "./link.ts";
 import { T3Sessions } from "./T3Sessions.ts";
 
@@ -68,7 +69,7 @@ const runTest = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
   );
 
 const startNode = (
-  options: Partial<Pick<RunNodeOptions, "enrollToken" | "onEnrolled" | "t3Info" | "t3Restart">> & {
+  options: Partial<Pick<RunNodeOptions, "enrollToken" | "onEnrolled" | "t3Info" | "t3Restart" | "leadCalls">> & {
     readonly t3Sessions?: Layer.Layer<T3Sessions>;
   } = {},
 ) =>
@@ -264,6 +265,37 @@ describe("node link", () => {
         expect(frames.map((frame) => (frame.t === "t3state" ? frame.state : frame.t))).toEqual(["hb", "down", "restarting", "up"]);
         expect(yield* link.next).toMatchObject({ t: "t3session", bearer: "bearer-2" });
         expect(mints).toBe(2);
+      }),
+    ));
+
+  it("relays a lead call once the hub welcomes it, and routes the hub's answer back to the caller", () =>
+    runTest(
+      Effect.gen(function* () {
+        const leadCalls = yield* makeLeadRelay();
+        const { dials } = yield* startNode({ leadCalls });
+        const call = {
+          t: "lead_call",
+          id: "cli-7",
+          cwd: "/src/api",
+          call: { op: "decisions_search", query: "health" },
+        } as const;
+        // Placed before the link is up: it waits for the welcome rather than failing.
+        const pending = yield* Effect.forkChild(leadCalls.call(call));
+
+        const link = yield* Queue.take(dials);
+        yield* link.send({ t: "challenge", nonce: "n" });
+        yield* link.next;
+        yield* link.send(welcome);
+        const frames = [yield* link.next, yield* link.next];
+        const forwarded = frames.find((frame) => frame.t === "lead_call");
+        expect(forwarded).toEqual({ ...call, id: "lc-1" });
+
+        yield* link.send({ t: "lead_result", id: "lc-1", result: { op: "decisions_search", decisions: [], next: "ask it" } });
+        expect(yield* Fiber.join(pending)).toEqual({
+          t: "lead_result",
+          id: "cli-7",
+          result: { op: "decisions_search", decisions: [], next: "ask it" },
+        });
       }),
     ));
 });

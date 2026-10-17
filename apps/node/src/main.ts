@@ -4,6 +4,7 @@ import * as Socket from "effect/socket/Socket";
 import pkg from "../package.json" with { type: "json" };
 import { defaultNodeHome, type NodeConfig, readConfig, writeConfig } from "./config.ts";
 import { loadOrCreateIdentity } from "./identity.ts";
+import { leadSocketPath, makeLeadRelay, serveLeadSocket } from "./LeadCalls.ts";
 import { fetchT3Info, linkUrl, runNode } from "./link.ts";
 import * as T3Sessions from "./T3Sessions.ts";
 import { restartCommand } from "./T3Supervisor.ts";
@@ -38,11 +39,14 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
     yield* Effect.logInfo("fleetd node starting").pipe(
       Effect.annotateLogs({ machineId: config.machineId, hub: config.hub, t3Url: config.t3Url }),
     );
+    const leadCalls = yield* makeLeadRelay();
+    yield* serveLeadSocket(leadSocketPath(home), leadCalls.call);
     return yield* runNode({
       settings: { machineId: config.machineId, name: config.name, tags: config.tags, nodeVersion: pkg.version, t3Url: config.t3Url },
       identity,
       dial: Socket.makeWebSocket(linkUrl(config.hub)).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal)),
       t3Info: fetchT3Info(config.t3Url),
+      leadCalls,
       ...(config.t3RestartCmd === undefined ? {} : { t3Restart: restartCommand(config.t3RestartCmd) }),
       ...(enrollToken === undefined
         ? {}
@@ -52,8 +56,8 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
               Effect.andThen(Effect.logInfo("enrolled with the hub; later starts use `fleetd node run`")),
             ),
           }),
-    }).pipe(Effect.scoped, Effect.provide(T3Sessions.layerCli({ t3Cmd: config.t3Cmd, t3Home: config.t3Home })));
-  });
+    });
+  }).pipe(Effect.scoped, Effect.provide(T3Sessions.layerCli({ t3Cmd: config.t3Cmd, t3Home: config.t3Home })));
 
 /** `fleetd node join`: creates the node key and config, enrolls with the one-time token, then keeps the link up. */
 export const join = (input: JoinInput) =>

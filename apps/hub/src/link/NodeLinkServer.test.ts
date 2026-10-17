@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign } from "node:crypto";
-import { type HubToNode, MachineId, NodeLinkClose, PROTOCOL_VERSION } from "@fleetd/contracts";
+import { type HubToNode, MachineId, NodeLinkClose, PROTOCOL_VERSION, ProjectId, type ProjectSummary } from "@fleetd/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -16,6 +16,7 @@ import * as Auth from "../auth/Auth.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
+import { type LeadCaller, type LeadCallHandler, LeadCallRefused } from "./LeadCalls.ts";
 import { type LinkExecutors, make } from "./NodeLinkServer.ts";
 
 const LAB_A = MachineId.make("lab-a");
@@ -76,7 +77,7 @@ const hello = (id: ReturnType<typeof identity>, nonce: string, extra: Record<str
 });
 
 /** Real store, event log and auth on an in-memory database; only W2's executors are faked. */
-const harness = (options: { readonly attachFails?: boolean } = {}) =>
+const harness = (options: { readonly attachFails?: boolean; readonly leadCalls?: LeadCallHandler } = {}) =>
   Effect.gen(function* () {
     const store = yield* HubStore.HubStore;
     const eventLog = yield* EventLog.EventLog;
@@ -90,9 +91,14 @@ const harness = (options: { readonly attachFails?: boolean } = {}) =>
           : Effect.sync(() => attached.push({ machineId, ...session })),
       detach: (machineId) => Effect.sync(() => detached.push(machineId)),
     };
-    const server = yield* make({ hubId: "hub-test", executors });
+    const server = yield* make({
+      hubId: "hub-test",
+      executors,
+      ...(options.leadCalls === undefined ? {} : { leadCalls: options.leadCalls }),
+    });
     return {
       server,
+      store,
       auth,
       attached,
       detached,
@@ -446,6 +452,69 @@ describe("NodeLinkServer T3 state", () => {
         expect(yield* h.status).toBe("offline");
         expect((yield* h.machine)?.degradedReason).toBeUndefined();
         expect(yield* h.eventTypes).toEqual(["machine.degraded", "machine.online", "machine.degraded", "machine.offline"]);
+      }),
+    ));
+
+  it("attributes a forwarded lead call to the project its cwd is in and refuses one from outside every project", () =>
+    runTest(
+      Effect.gen(function* () {
+        const seen: Array<LeadCaller> = [];
+        // In-memory stand-in for the ledger: answers status_set, refuses everything else.
+        const leadCalls: LeadCallHandler = {
+          handle: (caller, call) =>
+            call.op === "status_set"
+              ? Effect.sync(() => {
+                  seen.push(caller);
+                  return { op: "status_set" as const, workstreamId: call.workstreamId!, next: "carry on" };
+                })
+              : Effect.fail(new LeadCallRefused({ code: "invalid", message: `no ${call.op} here`, fix: "do not" })),
+        };
+        const h = yield* harness({ leadCalls });
+        const id = identity();
+        yield* h.enroll(id.pubKey);
+        const project = (projectId: string, workspaceRoot: string): ProjectSummary => ({
+          machineId: LAB_A,
+          projectId: ProjectId.make(projectId),
+          title: projectId,
+          workspaceRoot,
+          threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
+          lastActivityAt: "2026-10-17T10:00:00.000Z",
+        });
+        yield* h.store.projects.upsertMany(LAB_A, [project("p-api", "/src/api"), project("p-web", "/src/web")]);
+        yield* h.store.projects.upsertMany(MachineId.make("lab-b"), [project("p-other", "/src/other")]);
+
+        const link = yield* connect(h.server);
+        yield* link.node.send(hello(id, link.nonce));
+        expect((yield* link.node.next).t).toBe("welcome");
+
+        const status = { op: "status_set", text: "health endpoint half done", workstreamId: "W3" };
+        yield* link.node.send({ t: "lead_call", id: "n1", cwd: "/src/api/.worktrees/w3", call: status });
+        expect(yield* link.node.next).toEqual({
+          t: "lead_result",
+          id: "n1",
+          result: { op: "status_set", workstreamId: "W3", next: "carry on" },
+        });
+        expect(seen).toEqual([{ projectRef: { machineId: "lab-a", projectId: "p-api" }, by: "lead:lab-a/p-api", cwd: "/src/api/.worktrees/w3" }]);
+
+        // Another machine's project does not count for this node.
+        yield* link.node.send({ t: "lead_call", id: "n2", cwd: "/src/other", call: status });
+        expect(yield* link.node.next).toMatchObject({
+          t: "lead_result",
+          id: "n2",
+          error: {
+            code: "forbidden",
+            message: "/src/other is not inside any project workspace on lab-a",
+            fix: "run fleetd from the project's workspace or a worktree under it (/src/api, /src/web)",
+          },
+        });
+
+        yield* link.node.send({ t: "lead_call", id: "n3", cwd: "/src/web", call: { op: "decisions_search", query: "health" } });
+        expect(yield* link.node.next).toEqual({
+          t: "lead_result",
+          id: "n3",
+          error: { code: "invalid", message: "no decisions_search here", fix: "do not" },
+        });
+        expect(yield* h.status).toBe("online");
       }),
     ));
 });
