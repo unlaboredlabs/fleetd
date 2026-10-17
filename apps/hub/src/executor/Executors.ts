@@ -44,6 +44,7 @@ import {
   withAssistantText,
 } from "./ShellMapper.ts";
 import { connect, type T3Client } from "./T3Connection.ts";
+import { openTool, ThreadWatch } from "./ThreadWatch.ts";
 import {
   actionsOf,
   activeRunId,
@@ -120,6 +121,10 @@ interface Watch {
   readonly view: ThreadView;
   readonly ready: Deferred.Deferred<void, T3RequestFailed>;
   lastUsedMs: number;
+  /** Any frame but "synchronized" counts as progress; starts at the stream's opening. */
+  lastFrameMs: number;
+  /** Followed by the watchdog: stays open however long nobody reads it. */
+  pinned: boolean;
 }
 
 interface Machine {
@@ -149,13 +154,13 @@ const make = Effect.gen(function* () {
     return live === undefined ? Effect.fail(new MachineNotConnected({ machineId })) : Effect.succeed(live);
   };
 
-  /** Drops a watch once nobody has read it for WATCH_IDLE_MS. */
+  /** Drops a watch once it is unpinned and nobody has read it for WATCH_IDLE_MS. */
   const idleDrop = (watch: Watch) =>
     Effect.gen(function* () {
       while (true) {
         const idle = (yield* Clock.currentTimeMillis) - watch.lastUsedMs;
-        if (idle >= WATCH_IDLE_MS) return;
-        yield* Effect.sleep(Duration.millis(WATCH_IDLE_MS - idle));
+        if (idle >= WATCH_IDLE_MS && !watch.pinned) return;
+        yield* Effect.sleep(Duration.millis(watch.pinned ? WATCH_IDLE_MS : WATCH_IDLE_MS - idle));
       }
     });
 
@@ -167,14 +172,15 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       let watch = machine.watches.get(threadId);
       if (watch === undefined) {
-        const w: Watch = { view: emptyView(), ready: Deferred.makeUnsafe(), lastUsedMs: now };
+        const w: Watch = { view: emptyView(), ready: Deferred.makeUnsafe(), lastUsedMs: now, lastFrameMs: now, pinned: false };
         watch = w;
         machine.watches.set(threadId, w);
         yield* live.client[M.subscribeThread]({ threadId: T3ThreadId.make(threadId), acceptBoundedSnapshot: true }).pipe(
           Stream.runForEach((item) =>
-            Effect.suspend(() => {
+            Effect.gen(function* () {
+              if (item.kind !== "synchronized") w.lastFrameMs = yield* Clock.currentTimeMillis;
               applyThreadItem(w.view, item);
-              return w.view.ready ? Deferred.succeed(w.ready, undefined) : Effect.void;
+              if (w.view.ready) yield* Deferred.succeed(w.ready, undefined);
             }),
           ),
           Effect.raceFirst(idleDrop(w)),
@@ -244,8 +250,8 @@ const make = Effect.gen(function* () {
         const summary = withAssistantText(tracked.summary, latestAssistantText(v.value));
         if (summary === tracked.summary) continue;
         machine.shell.threads.set(t.threadId, { ...tracked, summary });
-        const lastSequence = upserts.get(t.threadId)?.lastSequence;
-        upserts.set(t.threadId, lastSequence === undefined ? summary : { ...summary, lastSequence });
+        // Keeps the row's lastSequence and run fields, if this item set them.
+        upserts.set(t.threadId, { ...upserts.get(t.threadId), ...summary });
       }
       for (const t of upserts.values()) yield* store.threads.upsert(t);
       if (applied.projects.length > 0) yield* store.projects.upsertMany(machineId, applied.projects);
@@ -420,16 +426,64 @@ const make = Effect.gen(function* () {
       });
     });
 
-  return Executors.of({
-    attach,
-    detach,
-    isConnected: (machineId) => Effect.sync(() => machines.get(machineId)?.live !== undefined),
-    launch,
-    send,
-    interrupt,
-    tail,
-    actions,
+  const watch = ThreadWatch.of({
+    running: () =>
+      Effect.sync(() =>
+        [...machines].flatMap(([machineId, machine]) =>
+          machine.live === undefined
+            ? []
+            : [...machine.shell.threads].flatMap(([threadId, t]) => {
+                const runId = t.activeRunId ?? t.runId;
+                return t.summary.status === "running" && runId != null
+                  ? [{ ref: { machineId: machineId as MachineId, threadId: ThreadId.make(threadId) }, runId }]
+                  : [];
+              }),
+        ),
+      ),
+    latestRun: (ref) =>
+      Effect.sync(() => {
+        const t = machines.get(ref.machineId)?.shell.threads.get(ref.threadId);
+        return t === undefined ? undefined : { runId: t.activeRunId ?? t.runId ?? null, running: t.summary.status === "running" };
+      }),
+    follow: (ref) =>
+      Effect.gen(function* () {
+        yield* view(ref.machineId, ref.threadId);
+        const w = machines.get(ref.machineId)?.watches.get(ref.threadId);
+        if (w !== undefined) w.pinned = true;
+      }),
+    release: (ref) =>
+      Effect.gen(function* () {
+        const w = machines.get(ref.machineId)?.watches.get(ref.threadId);
+        if (w === undefined) return;
+        w.pinned = false;
+        w.lastUsedMs = yield* Clock.currentTimeMillis;
+      }),
+    progress: (ref) =>
+      Effect.sync(() => {
+        const machine = machines.get(ref.machineId);
+        const w = machine?.watches.get(ref.threadId);
+        if (w === undefined || !w.view.ready) return undefined;
+        const tool = openTool(w.view, machine?.shell.threads.get(ref.threadId)?.activeRunId ?? undefined);
+        return tool === undefined ? { lastFrameMs: w.lastFrameMs } : { lastFrameMs: w.lastFrameMs, tool };
+      }),
   });
+
+  return {
+    executors: Executors.of({
+      attach,
+      detach,
+      isConnected: (machineId) => Effect.sync(() => machines.get(machineId)?.live !== undefined),
+      launch,
+      send,
+      interrupt,
+      tail,
+      actions,
+    }),
+    watch,
+  };
 });
 
-export const layer = Layer.effect(Executors, make);
+/** Provides Executors and the ThreadWatch the watchdog follows running threads through. */
+export const layer = Layer.effectContext(
+  Effect.map(make, ({ executors, watch }) => Context.make(Executors, executors).pipe(Context.add(ThreadWatch, watch))),
+);

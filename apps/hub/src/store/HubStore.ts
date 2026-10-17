@@ -14,7 +14,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as HubDb from "./HubDb.ts";
 
-export type StoredThread = ThreadSummary & { readonly lastSequence?: number };
+export type StoredThread = ThreadSummary & {
+  readonly lastSequence?: number;
+  /** T3's latest run id when this row was written. */
+  readonly lastRunId?: string;
+  /** That run's phase: a ThreadStatus, or "usage_limited". */
+  readonly lastRunStatus?: string;
+};
 
 /** Caches of what the hub has seen of each machine. Reads return what was written; staleness is the reader's call. */
 export class HubStore extends Context.Service<
@@ -38,9 +44,11 @@ export class HubStore extends Context.Service<
       readonly get: (ref: ProjectRef) => Effect.Effect<ProjectSummary | undefined>;
     };
     readonly threads: {
-      /** An absent `lastSequence` keeps the stored one. */
+      /** An absent `lastSequence`, `lastRunId` or `lastRunStatus` keeps the stored one. */
       readonly upsert: (thread: StoredThread) => Effect.Effect<void>;
       readonly get: (ref: ThreadRef) => Effect.Effect<StoredThread | undefined>;
+      /** Threads whose last known status is "running", on every machine. */
+      readonly listRunning: () => Effect.Effect<ReadonlyArray<ThreadSummary>>;
       /** Newest progress first. */
       readonly listByProject: (ref: ProjectRef, limit: number) => Effect.Effect<ReadonlyArray<ThreadSummary>>;
     };
@@ -85,12 +93,18 @@ const make = Effect.gen(function* () {
     ),
     projectGet: db.prepare("SELECT data FROM projects WHERE machine_id = ? AND project_id = ?"),
     threadUpsert: db.prepare(
-      `INSERT INTO threads (machine_id, thread_id, project_id, last_progress_at, last_sequence, data) VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO threads (machine_id, thread_id, project_id, last_progress_at, last_sequence, last_run_id, last_run_status, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (machine_id, thread_id) DO UPDATE SET
          project_id = excluded.project_id, last_progress_at = excluded.last_progress_at,
-         last_sequence = COALESCE(excluded.last_sequence, threads.last_sequence), data = excluded.data`,
+         last_sequence = COALESCE(excluded.last_sequence, threads.last_sequence),
+         last_run_id = COALESCE(excluded.last_run_id, threads.last_run_id),
+         last_run_status = COALESCE(excluded.last_run_status, threads.last_run_status), data = excluded.data`,
     ),
-    threadGet: db.prepare("SELECT data, last_sequence FROM threads WHERE machine_id = ? AND thread_id = ?"),
+    threadGet: db.prepare(
+      "SELECT data, last_sequence, last_run_id, last_run_status FROM threads WHERE machine_id = ? AND thread_id = ?",
+    ),
+    threadsRunning: db.prepare("SELECT data FROM threads WHERE json_extract(data, '$.status') = 'running'"),
     threadsByProject: db.prepare(
       "SELECT data FROM threads WHERE machine_id = ? AND project_id = ? ORDER BY last_progress_at DESC LIMIT ?",
     ),
@@ -156,7 +170,7 @@ const make = Effect.gen(function* () {
         }),
     },
     threads: {
-      upsert: ({ lastSequence, ...thread }) =>
+      upsert: ({ lastSequence, lastRunId, lastRunStatus, ...thread }) =>
         Effect.sync(() => {
           sql.threadUpsert.run(
             thread.machineId,
@@ -164,6 +178,8 @@ const make = Effect.gen(function* () {
             thread.projectId,
             thread.lastProgressAt,
             lastSequence ?? null,
+            lastRunId ?? null,
+            lastRunStatus ?? null,
             encodeThread(thread),
           );
         }),
@@ -171,9 +187,14 @@ const make = Effect.gen(function* () {
         Effect.sync(() => {
           const row = sql.threadGet.get(ref.machineId, ref.threadId);
           if (!row) return undefined;
-          const thread: StoredThread = decodeThread(String(row.data));
-          return row.last_sequence === null ? thread : { ...thread, lastSequence: Number(row.last_sequence) };
+          return {
+            ...decodeThread(String(row.data)),
+            ...(row.last_sequence === null ? {} : { lastSequence: Number(row.last_sequence) }),
+            ...(row.last_run_id === null ? {} : { lastRunId: String(row.last_run_id) }),
+            ...(row.last_run_status === null ? {} : { lastRunStatus: String(row.last_run_status) }),
+          } satisfies StoredThread;
         }),
+      listRunning: () => Effect.sync(() => sql.threadsRunning.all().map((row) => decodeThread(String(row.data)))),
       listByProject: (ref, limit) =>
         Effect.sync(() =>
           sql.threadsByProject.all(ref.machineId, ref.projectId, limit).map((row) => decodeThread(String(row.data))),

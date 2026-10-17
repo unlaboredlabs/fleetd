@@ -4,12 +4,16 @@ import { OrchestrationV2ShellStreamItem } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 import { backoffMs } from "./Executors.ts";
+import type { StoredThread } from "../store/HubStore.ts";
 import {
+  type Applied,
   type ApplyContext,
   applyShellItem,
   emptyShellState,
+  phase,
   projectSummary,
   type ShellState,
+  type Transition,
   transition,
   transitionEvent,
 } from "./ShellMapper.ts";
@@ -138,15 +142,46 @@ describe("resume", () => {
     });
   });
 
-  it("after a hub restart, a snapshot is diffed against the stored summaries", () => {
+  it("after a hub restart, a snapshot is diffed against rows stored before run tracking", () => {
     const before = beforeTurns();
     const stored = new Map([...before.threads].map(([id, t]) => [id, t.summary]));
     const { events } = run(reset.items, emptyShellState(), ctx({ stored }));
-    // The stored summaries carry no run id, so run 3 of `a` (completed -> completed) is not visible here.
+    // Such rows carry no run id, so run 3 of `a` (completed -> completed) is not visible here.
     expect(events.sort()).toEqual([
       ["thread.failed", "d"],
       ["thread.interrupted", "c"],
     ]);
+  });
+
+  it("after a hub restart, runs that ended while it was down are reported late, by run id", () => {
+    const before = beforeTurns();
+    const stored = new Map(
+      [...before.threads].map(([id, t]) => [id, { ...t.summary, lastRunId: t.runId!, lastRunStatus: phase(t.summary) }]),
+    );
+    const state = emptyShellState();
+    const applied = reset.items.map((item: Item) => applyShellItem(state, item, ctx({ stored })));
+    const transitions = applied.flatMap((x: Applied) => x.transitions);
+    expect(transitions.map((t: Transition) => [t.type, t.threadId, t.late]).sort()).toEqual(
+      [
+        ["thread.completed", a, true], // run 3 of `a`: same phase, new run id
+        ["thread.failed", d, true],
+        ["thread.interrupted", c, true],
+      ].sort(),
+    );
+    const completed = transitions.find((t: Transition) => t.threadId === a)!;
+    const event = transitionEvent(completed, state.threads.get(a)!, machineId);
+    expect(event.data).toMatchObject({ status: "completed", late: true, runId: state.threads.get(a)!.runId });
+    // Every changed row is written back with its run, so the next restart diffs against it.
+    expect(applied.flatMap((x: Applied) => x.threads).findLast((t: StoredThread) => t.threadId === a)).toMatchObject({
+      lastRunId: state.threads.get(a)!.runId,
+      lastRunStatus: "completed",
+    });
+  });
+
+  it("a hub restart with nothing new emits nothing", () => {
+    const after = run(live.items, emptyShellState(), ctx({ baseline: true })).state;
+    const stored = new Map([...after.threads].map(([id, t]) => [id, { ...t.summary, lastRunId: t.runId!, lastRunStatus: phase(t.summary) }]));
+    expect(run(reset.items, emptyShellState(), ctx({ stored })).events).toEqual([]);
   });
 });
 

@@ -48,6 +48,8 @@ export const emptyShellState = (): ShellState => ({
 export interface Transition {
   readonly type: HubEventType;
   readonly threadId: ThreadId;
+  /** The run ended while the hub was down: found by diffing a snapshot against the stored row. */
+  readonly late?: true;
 }
 
 export interface Applied {
@@ -125,7 +127,7 @@ export const toThreadSummary = (
 };
 
 type Phase = ThreadStatus | "usage_limited";
-const phase = (s: ThreadSummary): Phase =>
+export const phase = (s: ThreadSummary): Phase =>
   s.status === "failed" && s.lastError?.class === "usage_limit" ? "usage_limited" : s.status;
 
 const EVENT_FOR: Partial<Record<Phase, HubEventType>> = {
@@ -151,6 +153,8 @@ export const transition = (
   if (from === "waiting" && to === "running" && !newRun) return undefined;
   return EVENT_FOR[to];
 };
+
+const TERMINAL = new Set<HubEventType>(["thread.completed", "thread.failed", "thread.interrupted", "thread.usage_limited"]);
 
 const sameSummary = (a: ThreadSummary, b: ThreadSummary) =>
   JSON.stringify({ ...a, asOf: "" }) === JSON.stringify({ ...b, asOf: "" });
@@ -181,11 +185,14 @@ export const applyShellItem = (state: ShellState, item: OrchestrationV2ShellStre
     if (state.cursor === undefined || seq > state.cursor) state.cursor = cursor = seq;
   };
 
-  /** `quietIfNew`: a thread seen for the first time produces no event (a baseline snapshot). */
-  const upsertThread = (shell: OrchestrationV2ThreadShell, sequence: number | undefined, quietIfNew: boolean) => {
+  /**
+   * `quietIfNew`: a thread seen for the first time produces no event (a baseline snapshot).
+   * `restart`: the first snapshot in this hub process, diffed against what an earlier one stored.
+   */
+  const upsertThread = (shell: OrchestrationV2ThreadShell, sequence: number | undefined, quietIfNew: boolean, restart = false) => {
     const known = state.threads.get(shell.id);
     const stored = known === undefined ? ctx.stored.get(shell.id) : undefined;
-    const prev = known ?? (stored ? { summary: stored, runId: undefined } : undefined);
+    const prev = known ?? (stored ? { summary: stored, runId: stored.lastRunId } : undefined);
     const summary = toThreadSummary(ctx.machineId, shell, prev?.summary, ctx.now);
     const next: TrackedThread = {
       summary,
@@ -196,11 +203,22 @@ export const applyShellItem = (state: ShellState, item: OrchestrationV2ShellStre
     state.threads.set(shell.id, next);
     if (known && known.summary.projectId !== summary.projectId) touched.add(known.summary.projectId);
     touched.add(summary.projectId);
-    if (prev === undefined || !sameSummary(prev.summary, summary)) {
-      threads.push(sequence === undefined ? summary : { ...summary, lastSequence: sequence });
+    const runStatus = phase(summary);
+    const runChanged = stored !== undefined && (stored.lastRunId !== (next.runId ?? undefined) || stored.lastRunStatus !== runStatus);
+    if (prev === undefined || runChanged || prev.runId !== next.runId || !sameSummary(prev.summary, summary)) {
+      threads.push({
+        ...summary,
+        ...(sequence === undefined ? {} : { lastSequence: sequence }),
+        ...(next.runId == null ? {} : { lastRunId: next.runId }),
+        lastRunStatus: runStatus,
+      });
     }
     const type = quietIfNew && prev === undefined ? undefined : transition(prev, next);
-    if (type !== undefined) transitions.push({ type, threadId: summary.threadId });
+    if (type !== undefined) {
+      // Anything a restart snapshot reveals happened while the hub was down.
+      const late = restart && known === undefined && TERMINAL.has(type);
+      transitions.push({ type, threadId: summary.threadId, ...(late ? { late: true } : {}) });
+    }
   };
 
   const dropThread = (threadId: string) => {
@@ -223,10 +241,11 @@ export const applyShellItem = (state: ShellState, item: OrchestrationV2ShellStre
       // projects and no threads, and its sequence can be ahead of a replay that follows it.
       if (item.resolvedRepositoryIdentityRoots !== undefined) break;
       const baseline = ctx.baseline && !state.complete;
+      const restart = !ctx.baseline && !state.complete;
       const present = new Set<string>(snap.threads.map((t) => t.id));
       for (const id of state.threads.keys()) if (!present.has(id)) dropThread(id);
       for (const id of state.projects.keys()) if (!snap.projects.some((p) => p.id === id)) state.projects.delete(id);
-      for (const shell of snap.threads) upsertThread(shell, undefined, baseline);
+      for (const shell of snap.threads) upsertThread(shell, undefined, baseline, restart);
       state.complete = true;
       advance(snap.snapshotSequence);
       break;
@@ -296,6 +315,7 @@ export const transitionEvent = (
     data: {
       status: s.status,
       ...(thread.runId ? { runId: thread.runId } : {}),
+      ...(t.late ? { late: true } : {}),
       ...(s.lastError && t.type !== "thread.completed" ? { error: { class: s.lastError.class, message: s.lastError.message.slice(0, 500) } } : {}),
       ...(s.usageLimitResetAt ? { usageLimitResetAt: s.usageLimitResetAt } : {}),
     },
