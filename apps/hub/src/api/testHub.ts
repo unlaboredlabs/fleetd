@@ -47,6 +47,8 @@ import * as JudgeHook from "../valuebar/JudgeHook.ts";
 import * as PrHeads from "../valuebar/PrHeads.ts";
 import * as ValueBar from "../valuebar/ValueBar.ts";
 import * as Approvals from "../approvals/Approvals.ts";
+import * as GitHub from "../checks/GitHub.ts";
+import * as FinishAll from "../playbooks/FinishAll.ts";
 import { NodeCommands, type GatedOutcome, type SecretOutcome, unlinked } from "../checks/NodeCommands.ts";
 import * as ReviewGate from "../train/ReviewGate.ts";
 import * as ChangeRecords from "../train/ChangeRecords.ts";
@@ -216,7 +218,20 @@ export const makeTestHub = () => {
     ),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals).pipe(
+  // Finish-all's inventory sees a checkout without a GitHub origin and no TODO markers.
+  const layerFinishAll = FinishAll.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        GitHub.layer(() => Effect.succeed({ exitCode: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" })),
+        Layer.succeed(
+          NodeCommands,
+          NodeCommands.of({ run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }), deliverSecret: unlinked, runGated: unlinked, attach: () => Effect.void, resolve: () => Effect.void }),
+        ),
+      ),
+    ),
+  );
+
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),

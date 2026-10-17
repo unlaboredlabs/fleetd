@@ -18,6 +18,8 @@ import {
   IntakeText,
   Lead,
   PlaybookName,
+  PlaybookRef,
+  Serves,
   Workstream,
   WorkstreamId,
   WorkstreamState,
@@ -273,6 +275,34 @@ export const WorkstreamGetOutput = Schema.Struct({
   ...resultFields,
 });
 
+// workstream_spawn: what a finish-all lead's `fleetd workstream spawn` does, for an outside orchestrator.
+export const WorkstreamSpawnInput = Schema.Struct({
+  machineId: MachineId,
+  projectId: ProjectId,
+  text: IntakeText,
+  serves: Serves,
+  template: Schema.optionalKey(PlaybookName),
+});
+export const WorkstreamSpawnOutput = Schema.Struct({
+  workstreamId: WorkstreamId,
+  /** The project's open finish-all workstream it is a child of. */
+  parent: WorkstreamId,
+  playbook: Schema.optionalKey(PlaybookRef),
+  ...resultFields,
+});
+
+// inventory: what a finish-all lead's `fleetd inventory` returns.
+export const InventoryInput = Schema.Struct({ machineId: MachineId, projectId: ProjectId });
+export const InventoryOutput = Schema.Struct({
+  /** The ranked list, one item per line. */
+  text: Schema.String,
+  /** Items with a value source that no open child serves yet. */
+  spawnable: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** The project's finish-all workstream went (or stayed) idle: nothing left with a value source. */
+  idle: Schema.Boolean,
+  ...resultFields,
+});
+
 // asks_list
 export const AsksListInput = Schema.Struct({
   state: AskState.pipe(Schema.withDecodingDefaultKey(Effect.succeed("open" as const))),
@@ -512,6 +542,8 @@ export const McpTools = {
   intake_submit: { scope: "operate", input: IntakeSubmitInput, output: IntakeSubmitOutput },
   workstream_list: { scope: "read", input: WorkstreamListInput, output: WorkstreamListOutput },
   workstream_get: { scope: "read", input: WorkstreamGetInput, output: WorkstreamGetOutput },
+  workstream_spawn: { scope: "operate", input: WorkstreamSpawnInput, output: WorkstreamSpawnOutput },
+  inventory: { scope: "read", input: InventoryInput, output: InventoryOutput },
   asks_list: { scope: "read", input: AsksListInput, output: AsksListOutput },
   inbox_reply: { scope: "operate", input: InboxReplyInput, output: InboxReplyOutput },
   decisions_search: { scope: "read", input: DecisionsSearchInput, output: DecisionsSearchOutput },

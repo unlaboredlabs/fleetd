@@ -45,6 +45,10 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   workstream_list: "Workstreams newest first, filtered by machineId, projectId and state (limit defaults to 50).",
   workstream_get:
     "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, its ETA (raw estimate × the tier's measured ratio) and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
+  workstream_spawn:
+    "Start one child workstream of the project's open finish-all workstream, for exactly one item with a value source: serves is issue:#<n> (or issue:<url>) for an open issue, defect:<one line> for a failing check or error you saw, or done:<n> for the finish-all's done-when check n. Use a serves value from inventory; never invent work. Refused when the project has no open finish-all workstream, when an open child already serves it, or past the policy's finishAll.maxChildren open children. template (bugfix, feature, research) defaults to bugfix for defect: and feature otherwise. The child starts as a draft and its lead writes the brief.",
+  inventory:
+    "A project's open work, ranked as plain text: failing done-when checks first, then open GitHub issues (oldest first), then open asks and TODO/FIXME counts, which never become children. Each item with a value source shows its serves value and the child already working on it, if any. spawnable counts the unserved ones. When the finish-all workstream has no open child and nothing left to start, it goes idle (idle: true) and this says so.",
   asks_list:
     "The questions waiting for the human, grouped in numbered batches (state defaults to open; batchId picks one batch). Item numbers are fixed per batch: answer them with inbox_reply.",
   inbox_reply:
