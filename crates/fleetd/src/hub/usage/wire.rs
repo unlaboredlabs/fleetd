@@ -112,23 +112,65 @@ impl UsageOwners for OpsPorts {
     }
 }
 
-// PORT(queue): WriteQueue::send.
 impl UsageQueue for OpsPorts {
-    fn send(
-        &self,
-        _thread: &ThreadRef,
-        _message: &str,
-        _id: &str,
-    ) -> BoxFut<'_, Result<(), String>> {
-        Box::pin(async { Err("the write queue is not wired".to_string()) })
+    fn send(&self, thread: &ThreadRef, message: &str, id: &str) -> BoxFut<'_, Result<(), String>> {
+        let target: Option<fleetd_contracts::ids::ThreadRef> = convert(thread);
+        let (message, id) = (message.to_owned(), id.to_owned());
+        Box::pin(async move {
+            let target = target.ok_or("not a thread ref")?;
+            self.hub()
+                .queue
+                .send(&target, &message, &id, None)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
     }
 }
 
-// PORT(executor): server.getConfig's provider status and env names, and the T3 URL.
+fn machine(m: &str) -> Option<fleetd_contracts::ids::MachineId> {
+    convert(&m)
+}
+
 impl UsageSource for OpsPorts {
     fn read(&self, machine_id: &str) -> BoxFut<'_, Result<UsageReading, String>> {
-        let m = machine_id.to_string();
-        Box::pin(async move { Err(format!("{m}'s T3 is not wired")) })
+        let m = machine(machine_id);
+        Box::pin(async move {
+            let m = m.ok_or("not a machine id")?;
+            let hub = self.hub();
+            let config = hub
+                .executors
+                .server_config(&m)
+                .await
+                .map_err(|e| e.to_string())?;
+            let fleetd_instance = crate::hub::doctor::checks::FLEETD_INSTANCE;
+            let fleetd = config
+                .providers
+                .iter()
+                .find(|p| p.instance_id == fleetd_instance);
+            let env: Vec<String> = config
+                .settings
+                .provider_instances
+                .as_ref()
+                .and_then(|i| i.get(fleetd_instance))
+                .and_then(|i| i.environment.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|v| v.name)
+                .collect();
+            let names: Vec<&str> = env.iter().map(String::as_str).collect();
+            Ok(UsageReading {
+                login: super::source::login_kind_of(
+                    fleetd.and_then(|p| p.auth.kind.as_deref()),
+                    fleetd.map(|p| p.auth.status.as_str()),
+                    &names,
+                ),
+                logs_dir: Some(config.observability.logs_directory_path.clone()),
+                local: super::source::is_loopback_url(
+                    &hub.executors.t3_url(&m).unwrap_or_default(),
+                ),
+            })
+        })
     }
 }
 
@@ -161,12 +203,18 @@ impl DoctorFleet for OpsPorts {
                 .unwrap_or_default()
         })
     }
-    // PORT(executor): Executors::is_connected / await_live.
-    fn connected(&self, _machine_id: &str) -> BoxFut<'_, bool> {
-        Box::pin(async { false })
+    fn connected(&self, machine_id: &str) -> BoxFut<'_, bool> {
+        let m = machine(machine_id);
+        Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
     }
-    fn await_live(&self, _machine_id: &str) -> BoxFut<'_, ()> {
-        Box::pin(async {})
+    fn await_live(&self, machine_id: &str) -> BoxFut<'_, ()> {
+        let m = machine(machine_id);
+        Box::pin(async move {
+            match m {
+                Some(m) => self.hub().executors.await_live(&m).await,
+                None => std::future::pending().await,
+            }
+        })
     }
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus> {
         let m = machine_id.to_string();
@@ -177,29 +225,87 @@ impl DoctorFleet for OpsPorts {
                 .await
         })
     }
-    // PORT(link): NodeCommands::run_action.
     fn node_action(
         &self,
         machine_id: &str,
-        _action: &str,
+        action: &str,
     ) -> BoxFut<'_, Result<ActionOutcome, String>> {
-        let m = machine_id.to_string();
-        Box::pin(async move { Err(format!("{m}'s node is not linked to the hub")) })
+        let m = machine(machine_id);
+        let kind: Option<fleetd_contracts::node_link::NodeActionKind> = convert(&action);
+        Box::pin(async move {
+            let (m, kind) = (
+                m.ok_or("not a machine id")?,
+                kind.ok_or("not a node action")?,
+            );
+            let result = self
+                .hub()
+                .node_commands
+                .run_action(&m, kind)
+                .await
+                .map_err(|e| e.message)?;
+            Ok(ActionOutcome {
+                ok: result.ok,
+                message: result.message.to_string(),
+                probe: result.probe.as_ref().and_then(convert),
+            })
+        })
     }
 }
 
-// PORT(executor): settings_read / settings_update.
+fn settings_json(s: &t3_wire::types::ServerSettings) -> Value {
+    serde_json::json!({
+        "providerInstances": s.provider_instances.clone().unwrap_or_default(),
+        "autoResumeLimitedThreads": s.auto_resume_limited_threads.unwrap_or(false),
+    })
+}
+
 impl T3Settings for OpsPorts {
-    fn read(&self, _machine_id: &str) -> BoxFut<'_, Result<Value, String>> {
-        Box::pin(async { unwired("T3 settings") })
+    fn read(&self, machine_id: &str) -> BoxFut<'_, Result<Value, String>> {
+        let m = machine(machine_id);
+        Box::pin(async move {
+            let s = self
+                .hub()
+                .executors
+                .settings_read(&m.ok_or("not a machine id")?)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(settings_json(&s))
+        })
     }
     fn update(
         &self,
-        _machine_id: &str,
-        _patch: Value,
-        _m: Option<Value>,
+        machine_id: &str,
+        patch: Value,
+        mutation: Option<Value>,
     ) -> BoxFut<'_, Result<Value, String>> {
-        Box::pin(async { unwired("T3 settings") })
+        let m = machine(machine_id);
+        Box::pin(async move {
+            use t3_wire::types::{
+                ProviderInstanceMutation, ProviderInstanceUpsert, SettingsPatch,
+                UpdateSettingsInput,
+            };
+            let provider_instance_mutation = match mutation {
+                None => None,
+                Some(v) => Some(ProviderInstanceMutation::Upsert(ProviderInstanceUpsert {
+                    instance_id: v["instanceId"].as_str().unwrap_or_default().to_string(),
+                    instance: serde_json::from_value(v["instance"].clone())
+                        .map_err(|e| e.to_string())?,
+                })),
+            };
+            let input = UpdateSettingsInput {
+                patch: SettingsPatch {
+                    auto_resume_limited_threads: patch["autoResumeLimitedThreads"].as_bool(),
+                },
+                provider_instance_mutation,
+            };
+            let s = self
+                .hub()
+                .executors
+                .settings_update(&m.ok_or("not a machine id")?, &input)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(settings_json(&s))
+        })
     }
 }
 
@@ -392,6 +498,28 @@ impl RetroWork for OpsPorts {
     }
 }
 
+/// Wakes wait while usage holds the thread (TS Wakes over Usage.hold / whenClear).
+impl crate::hub::queue::ports::UsageHold for super::Usage {
+    fn hold(
+        &self,
+        target: &fleetd_contracts::ids::ThreadRef,
+    ) -> crate::hub::queue::ports::BoxFuture<'_, Option<String>> {
+        let r: Option<ThreadRef> = convert(target);
+        Box::pin(async move { super::Usage::hold(self, &r?) })
+    }
+    fn when_clear(
+        &self,
+        target: &fleetd_contracts::ids::ThreadRef,
+    ) -> crate::hub::queue::ports::BoxFuture<'_, ()> {
+        let r: Option<ThreadRef> = convert(target);
+        Box::pin(async move {
+            if let Some(r) = r {
+                super::Usage::when_clear(self, &r).await;
+            }
+        })
+    }
+}
+
 /// The four ops services over one set of ports, for `serve::build_on`.
 pub struct Ops {
     pub ports: Arc<OpsPorts>,
@@ -447,6 +575,10 @@ pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::C
 /// and the doctor's 15-minute run.
 pub fn start(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
     hub.ops.bind(hub);
+    // TS FleetApi: no new turn goes into a login fleetd knows is exhausted.
+    hub.executors.hooks.gate_launch(Arc::new(|hub, machine_id| {
+        Box::pin(async move { hub.usage.gate(machine_id.as_str()) })
+    }));
     let (usage, approvals, retro, doctor, stop) = (
         hub.usage.clone(),
         hub.approvals.clone(),

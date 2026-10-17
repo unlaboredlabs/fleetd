@@ -505,11 +505,11 @@ mod tests {
         let mut data = json!({ "error": { "class": class, "message": message } });
         let limit =
             crate::hub::usage::classify::classify_limit(&crate::hub::usage::classify::LimitInput {
-                error_class: Some(class.into()),
-                message: message.into(),
-                reset_at: reset.map(iso),
-                at: iso(at_ms),
-                model: Some("claude-opus-5-5".into()),
+                error_class: Some(class),
+                message,
+                reset_at: reset.map(iso).as_deref(),
+                at: &iso(at_ms),
+                model: Some("claude-opus-5-5"),
             })
             .unwrap();
         for (k, v) in crate::hub::usage::classify::limit_data(&limit) {

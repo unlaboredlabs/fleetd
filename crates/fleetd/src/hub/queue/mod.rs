@@ -17,6 +17,7 @@ use tokio::task::JoinHandle;
 use crate::clock::Clock;
 use crate::hub::api::{Hub, HubConfig};
 use crate::hub::store::{EventLog, HubDb, NewEvent};
+use crate::hub::sweep::{SweepCheck, WAKE_OVERDUE_MS};
 use crate::hub::wakes::schedule::iso;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
@@ -117,26 +118,26 @@ impl WriteQueue {
         })
     }
 
-    /// The hub's queue: `--queue-ttl` sets the TTL. Until the executor lands its writer is `Offline`, so every
-    /// write waits here.
+    /// The hub's queue over the executor: `--queue-ttl` sets the TTL, and `thread_send` goes through it.
     pub fn from_config(
         config: &HubConfig,
         db: &Arc<HubDb>,
         events: &Arc<EventLog>,
         clock: &Arc<dyn Clock>,
+        executors: &Arc<crate::hub::executor::Executors>,
     ) -> Arc<Self> {
         let ttl = config
             .queue_ttl_sec
             .map_or(DEFAULT_TTL, Duration::from_secs);
-        // PORT: executor (#54) passes `Executors` here (impl ThreadWriter) and calls
-        // `executors.set_offline_writer(queue)` (impl OfflineWriter for WriteQueue) so thread_send queues.
-        Self::new(
+        let queue = Self::new(
             db.clone(),
-            Arc::new(ports::Offline),
+            executors.clone(),
             events.clone(),
             clock.clone(),
             ttl,
-        )
+        );
+        executors.set_offline_writer(Arc::new(ports::QueueWriter(queue.clone())));
+        queue
     }
 
     pub fn is_connected(&self, machine_id: &MachineId) -> bool {
@@ -458,8 +459,23 @@ impl WriteQueue {
 
 /// Starts the queue, wakes and webhooks loops and stops them when the hub shuts down.
 pub fn start_loops(hub: &Arc<Hub>) -> JoinHandle<()> {
-    // PORT: sweep (#54) registers, in this order, `webhooks.check_failing()` and
-    // `wakes.sweep_overdue(WAKE_OVERDUE_MS)` with `hub.sweep.register(SweepCheck { .. })`.
+    // TS order: the sweep's built-in webhooks check right after its own, then main.ts's overdue wakes.
+    let webhooks = hub.webhooks.clone();
+    hub.sweep.register(SweepCheck {
+        name: "webhooks".into(),
+        run: Arc::new(move || {
+            webhooks.check_failing();
+            Box::pin(async { Ok(()) })
+        }),
+    });
+    let wakes = hub.wakes.clone();
+    hub.sweep.register(SweepCheck {
+        name: "wakes".into(),
+        run: Arc::new(move || {
+            wakes.sweep_overdue(Duration::from_millis(WAKE_OVERDUE_MS));
+            Box::pin(async { Ok(()) })
+        }),
+    });
     hub.queue.start();
     hub.wakes.start();
     hub.webhooks.start();
