@@ -22,6 +22,7 @@ import * as Auth from "../auth/Auth.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Executors from "../executor/Executors.ts";
+import * as Webhooks from "../webhooks/Webhooks.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -44,6 +45,9 @@ export const IMPLEMENTED_TOOLS = [
   "thread_launch",
   "thread_send",
   "thread_interrupt",
+  "subscription_set",
+  "subscription_list",
+  "subscription_delete",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
@@ -121,6 +125,7 @@ const make = Effect.gen(function* () {
   const events = yield* EventLog.EventLog;
   const auth = yield* Auth.Auth;
   const executors = yield* Executors.Executors;
+  const webhooks = yield* Webhooks.Webhooks;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -292,6 +297,30 @@ const make = Effect.gen(function* () {
       yield* require(caller, "operate", input.machineId);
       yield* requireConnected(input.machineId);
       yield* executors.interrupt(input, input.clientRequestId).pipe(Effect.mapError(fromExecutor));
+      return { ok: true as const };
+    }),
+
+    subscription_set: Effect.fnUntraced(function* (caller, input) {
+      if (input.machines !== "*") for (const machineId of input.machines) yield* require(caller, "read", machineId);
+      const created = yield* webhooks.create(caller, input);
+      return {
+        ...created,
+        next: "Store the secret now; it is never shown again. Verify each POST's webhook-signature header with it (Standard Webhooks).",
+      };
+    }),
+
+    subscription_list: Effect.fnUntraced(function* (caller) {
+      return { subscriptions: yield* webhooks.list(caller) };
+    }),
+
+    subscription_delete: Effect.fnUntraced(function* (caller, input) {
+      if (!(yield* webhooks.remove(caller, input.subscriptionId))) {
+        return yield* new ToolError({
+          code: "not_found",
+          message: `No subscription ${input.subscriptionId} for this key.`,
+          fix: "Call subscription_list to see this key's subscriptions.",
+        });
+      }
       return { ok: true as const };
     }),
   };

@@ -50,7 +50,20 @@ const MIGRATIONS: ReadonlyArray<string> = [
     hash TEXT PRIMARY KEY, machine_id TEXT NOT NULL, expires_ms INTEGER NOT NULL, used_ms INTEGER
   );
   `,
+  // Webhook subscriptions. `secret` is sealed with the key in <home>/webhook.key; `last_delivered_seq` is the
+  // delivery cursor; `failing_reported` marks that this failing spell already emitted webhook.failing.
+  `
+  CREATE TABLE subscriptions (
+    subscription_id TEXT PRIMARY KEY, created_by TEXT NOT NULL, client_request_id TEXT NOT NULL, url TEXT NOT NULL,
+    types TEXT NOT NULL, machines TEXT NOT NULL, secret TEXT NOT NULL, state TEXT NOT NULL, created_ms INTEGER NOT NULL,
+    last_delivered_seq INTEGER NOT NULL, failing_since_ms INTEGER, failing_reported INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (created_by, client_request_id)
+  );
+  `,
 ];
+
+/** The `user_version` of a fully migrated database. */
+export const SCHEMA_VERSION = MIGRATIONS.length;
 
 /** Runs `fn` in a write transaction, so a concurrent writer (the CLI next to a running hub) waits instead of interleaving. */
 export const transaction = <A>(db: DatabaseSync, fn: () => A): A => {

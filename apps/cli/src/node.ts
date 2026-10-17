@@ -32,7 +32,10 @@ const usage = (message: string) => {
   return 2;
 };
 
-/** Runs until SIGINT/SIGTERM (exit 0) or a failure the node cannot retry past (exit 1). */
+/**
+ * Runs until SIGINT/SIGTERM (exit 0) or a failure the node cannot retry past (exit 1). A program that ends with a
+ * number exits with it.
+ */
 export const runUntilSignal = async (program: Effect.Effect<unknown, { readonly message: string }>) => {
   const fiber = Effect.runFork(program);
   const stop = () => Effect.runFork(Fiber.interrupt(fiber));
@@ -41,7 +44,8 @@ export const runUntilSignal = async (program: Effect.Effect<unknown, { readonly 
   const exit = await Effect.runPromise(Fiber.await(fiber));
   process.off("SIGINT", stop);
   process.off("SIGTERM", stop);
-  if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return 0;
+  if (Exit.isSuccess(exit)) return typeof exit.value === "number" ? exit.value : 0;
+  if (Cause.hasInterruptsOnly(exit.cause)) return 0;
   const error = Cause.squash(exit.cause);
   process.stderr.write(`fleetd: ${error instanceof Error || (typeof error === "object" && error !== null && "message" in error) ? (error as { message: string }).message : String(error)}\n`);
   return 1;

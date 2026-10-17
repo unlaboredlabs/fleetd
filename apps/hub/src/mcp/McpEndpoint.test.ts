@@ -90,10 +90,14 @@ describe("MCP endpoint auth", () => {
     await expect(call(client, "fleetd_status")).rejects.toThrow(/401|revoked/);
   });
 
-  it("lists the nine tools with object input schemas", async () => {
+  it("lists the implemented tools with object input schemas", async () => {
     const { tools } = await (await (await fleet()).as("reader")).listTools();
     expect(tools.map((t) => t.name).toSorted()).toEqual(
-      ["actions_list", "events_wait", "fleetd_status", "project_get", "projects_list", "thread_interrupt", "thread_launch", "thread_send", "thread_tail"],
+      [
+        "actions_list", "events_wait", "fleetd_status", "project_get", "projects_list",
+        "subscription_delete", "subscription_list", "subscription_set",
+        "thread_interrupt", "thread_launch", "thread_send", "thread_tail",
+      ],
     );
     for (const tool of tools) expect(tool.inputSchema.type).toBe("object");
     expect(tools.find((t) => t.name === "thread_tail")!.inputSchema.required).toEqual(["machineId", "threadId"]);
@@ -232,6 +236,33 @@ describe("events_wait", () => {
     const status = (await call(await as("admin"), "fleetd_status")).body;
     expect(status.cursor).toBe(13);
     expect(status.attention.map((e: { seq: number }) => e.seq)).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+});
+
+describe("webhook subscriptions", () => {
+  it("returns the secret once, refuses non-http URLs, and delivers from a subscription made over MCP", async () => {
+    const { hub, as } = await fleet();
+    const client = await as("aOnly");
+    const refused = await call(client, "subscription_set", { url: "file:///etc/passwd", clientRequestId: "s0" });
+    expect(refused).toMatchObject({ isError: true, body: { code: "invalid" } });
+    expect((await call(client, "subscription_set", { url: "https://x.test/h", machines: ["lab-b"], clientRequestId: "s1" })).body).toMatchObject({
+      code: "forbidden",
+    });
+
+    const set = await call(client, "subscription_set", { url: "https://x.test/h", types: ["machine.offline"], clientRequestId: "s2" });
+    expect(set.body).toMatchObject({ subscriptionId: expect.stringMatching(/^sub_/u), secret: expect.stringMatching(/^whsec_/u) });
+    const listed = (await call(client, "subscription_list")).body;
+    expect(listed.subscriptions).toEqual([
+      { subscriptionId: set.body.subscriptionId, kind: "webhook", url: "https://x.test/h", types: ["machine.offline"], machines: "*", createdBy: expect.any(String), state: "active", lastDeliveredSeq: 0 },
+    ]);
+    expect(JSON.stringify(listed)).not.toContain(set.body.secret);
+
+    await hub.append({ at: AT, type: "machine.offline", machineId: "lab-a" as MachineId, summary: "lab-a went offline" });
+    await hub.posted(1);
+    expect(JSON.parse(hub.posts[0]!.body)).toMatchObject({ seq: 1, type: "machine.offline" });
+
+    expect((await call(client, "subscription_delete", { subscriptionId: set.body.subscriptionId })).body).toEqual({ ok: true });
+    expect((await call(client, "subscription_delete", { subscriptionId: set.body.subscriptionId })).body).toMatchObject({ code: "not_found" });
   });
 });
 

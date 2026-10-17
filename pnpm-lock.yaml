@@ -50,6 +50,9 @@ importers:
       '@fleetd/node':
         specifier: workspace:*
         version: link:../node
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.6.7)
       effect:
         specifier: 'catalog:'
         version: 4.0.5

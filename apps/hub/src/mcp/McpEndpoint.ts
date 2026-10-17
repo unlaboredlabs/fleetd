@@ -27,6 +27,10 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
     "Start a new thread in a project with an explicit model and effort. runtimeMode defaults to full-access. Refused with machine_offline when the machine is offline.",
   thread_send: "Send a message to a thread, waking it if idle. Refused with machine_offline when the machine is offline.",
   thread_interrupt: "Interrupt a thread's running turn. Refused with machine_offline when the machine is offline.",
+  subscription_set:
+    "Push hub events to an http(s) URL as signed Standard Webhooks POSTs (body: the HubEvent JSON), in seq order, retried until a 2xx. Filter by types and machines (default all). Returns the signing secret once.",
+  subscription_list: "This key's webhook subscriptions (all of them for an admin key) with their delivery cursor and failing state. Secrets are never returned.",
+  subscription_delete: "Delete a webhook subscription; delivery stops at once.",
 };
 
 /** MCP requires an object root, so the empty input becomes an empty object schema and refs go to $defs. */

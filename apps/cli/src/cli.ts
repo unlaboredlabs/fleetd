@@ -3,6 +3,7 @@ import pkg from "../package.json" with { type: "json" };
 import { HUB_KEY_USAGE, hubKey } from "./hub-key.ts";
 import { HUB_START_USAGE, hubStart } from "./hub-start.ts";
 import { HUB_TOKEN_USAGE, hubToken } from "./hub-token.ts";
+import { LISTEN_USAGE, listenCommand } from "./listen.ts";
 import { NODE_USAGE, nodeCommand } from "./node.ts";
 
 export interface CliResult {
@@ -16,7 +17,7 @@ const USAGE = `usage: fleetd <command>
 commands:
   version    print the fleetd version and protocol
   help       show this message
-${HUB_START_USAGE}${HUB_KEY_USAGE}${HUB_TOKEN_USAGE}${NODE_USAGE}`;
+${HUB_START_USAGE}${HUB_KEY_USAGE}${HUB_TOKEN_USAGE}${NODE_USAGE}${LISTEN_USAGE}`;
 
 export const run = (argv: readonly string[]): CliResult => {
   const [command] = argv;
@@ -39,9 +40,10 @@ export const run = (argv: readonly string[]): CliResult => {
   }
 };
 
-/** Commands that keep running (`node …`, `hub start`); `undefined` when argv is not one of them. */
+/** Commands that keep running (`node …`, `hub start`, `listen`); `undefined` when argv is not one of them. */
 export const runLongRunning = (argv: readonly string[]): Promise<number> | undefined => {
   if (argv[0] === "node") return nodeCommand(argv.slice(1));
+  if (argv[0] === "listen") return listenCommand(argv.slice(1));
   if (argv[0] === "hub" && argv[1] === "start") return hubStart(argv.slice(2));
   return undefined;
 };

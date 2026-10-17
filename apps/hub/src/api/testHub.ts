@@ -11,6 +11,7 @@ import type {
   ThreadSummary,
   ThreadTailOutput,
 } from "@fleetd/contracts";
+import crypto from "node:crypto";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,6 +21,8 @@ import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Executors from "../executor/Executors.ts";
 import * as NodeLinkServer from "../link/NodeLinkServer.ts";
+import * as SecretBox from "../webhooks/SecretBox.ts";
+import * as Webhooks from "../webhooks/Webhooks.ts";
 
 export const AT = "2026-10-17T10:00:00.000Z";
 
@@ -103,13 +106,33 @@ export const makeTestHub = () => {
     }),
   ).pipe(Layer.provide(EventLog.layer));
 
-  const layer = Layer.mergeAll(
-    HubStore.layer,
-    layerWatchedEvents,
-    Auth.layer,
-    Layer.succeed(Executors.Executors, executors),
-    Layer.succeed(NodeLinkServer.NodeLinkServer, NodeLinkServer.NodeLinkServer.of({ handle: () => Effect.void })),
-  ).pipe(Layer.provideMerge(HubDb.layerMemory));
+  const posts: Array<Webhooks.WebhookRequest> = [];
+  const postWatchers: Array<{ count: number; resolve: () => void }> = [];
+  const layerWebhooks = Layer.effect(
+    Webhooks.Webhooks,
+    Webhooks.make({
+      box: SecretBox.fromKey(crypto.randomBytes(32)),
+      post: (request) =>
+        Effect.sync(() => {
+          posts.push(request);
+          for (const w of postWatchers.filter((w) => posts.length >= w.count)) w.resolve();
+          return 200;
+        }),
+    }),
+  );
+
+  const layer = layerWebhooks.pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        HubStore.layer,
+        layerWatchedEvents,
+        Auth.layer,
+        Layer.succeed(Executors.Executors, executors),
+        Layer.succeed(NodeLinkServer.NodeLinkServer, NodeLinkServer.NodeLinkServer.of({ handle: () => Effect.void })),
+      ),
+    ),
+    Layer.provideMerge(HubDb.layerMemory),
+  );
 
   /** Set once the hub's layer is built, so seeding runs against the same database the server reads. */
   let context: Context.Context<HubStore.HubStore | EventLog.EventLog | Auth.Auth> | undefined;
@@ -123,6 +146,10 @@ export const makeTestHub = () => {
     bind: (built: Context.Context<HubStore.HubStore | EventLog.EventLog | Auth.Auth>) => void (context = built),
     connected,
     calls,
+    /** Webhook POSTs the hub made; every one is answered 200. */
+    posts,
+    /** Resolves once the hub has made `count` webhook POSTs in total. */
+    posted: (count: number) => new Promise<void>((resolve) => (posts.length >= count ? resolve() : postWatchers.push({ count, resolve }))),
     setTail: (value: typeof ThreadTailOutput.Type) => void (tail = value),
     setActions: (value: ReadonlyArray<ActionItem>) => void (actions = value),
     /** Resolves once the event log has been waited on `count` times in total. */

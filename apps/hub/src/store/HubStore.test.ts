@@ -142,8 +142,8 @@ describe("HubDb", () => {
     });
     const once = () =>
       Effect.runPromise(appendOne.pipe(Effect.provide(EventLog.layer.pipe(Layer.provideMerge(HubDb.layer(home))))));
-    expect(await once()).toEqual({ seq: 1, mode: "wal", version: 1 });
-    expect(await once()).toEqual({ seq: 2, mode: "wal", version: 1 });
+    expect(await once()).toEqual({ seq: 1, mode: "wal", version: HubDb.SCHEMA_VERSION });
+    expect(await once()).toEqual({ seq: 2, mode: "wal", version: HubDb.SCHEMA_VERSION });
     expect(fs.statSync(home).mode & 0o777).toBe(0o700);
   });
 });

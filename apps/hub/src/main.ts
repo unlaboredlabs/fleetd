@@ -11,6 +11,7 @@ import * as NodeLinkServer from "./link/NodeLinkServer.ts";
 import * as EventLog from "./store/EventLog.ts";
 import * as HubDb from "./store/HubDb.ts";
 import * as HubStore from "./store/HubStore.ts";
+import * as Webhooks from "./webhooks/Webhooks.ts";
 
 export interface HubOptions {
   /** Absent means the default, `~/.fleetd/hub`. */
@@ -59,6 +60,7 @@ export const hubLayer = (home: string, listen: HubOptions["listen"]) =>
     Layer.provide(
       AppSocket.layer.pipe(
         Layer.provideMerge(FleetApi.layer),
+        Layer.provideMerge(Webhooks.layer(home)),
         Layer.provideMerge(layerMachines),
         Layer.provideMerge(Layer.mergeAll(HubStore.layer, EventLog.layer, Auth.layer)),
         Layer.provide(HubDb.layer(home)),
