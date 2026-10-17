@@ -56,7 +56,10 @@ type GhReply = { readonly exitCode: number; readonly stdout: string; readonly st
 const ok = (body: unknown): GhReply => ({ exitCode: 0, stdout: JSON.stringify(body), stderr: "" });
 const httpError = (status: number, message: string): GhReply => ({ exitCode: 1, stdout: JSON.stringify({ message, status: String(status) }), stderr: `gh: ${message} (HTTP ${status})\n` });
 
-export const makeTrainKit = () => {
+type GateLayer<Gate> = Layer.Layer<Gate | ReviewGate, never, ChangeRecords.ChangeRecords | NodeCommands | Layer.Success<ReturnType<typeof makeKit>["layer"]>>;
+
+/** `gate` replaces the recording fake (tier S ready, the rest pending) with a real gate on the kit's own services. */
+export const makeTrainKit = <Gate = ReviewGate>(options: { readonly gate?: GateLayer<Gate> } = {}) => {
   const tasksKit = makeKit();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-train-"));
   const origin = path.join(dir, "origin.git");
@@ -155,14 +158,8 @@ export const makeTrainKit = () => {
   });
 
   const layer = Train.layer({ autoRun: false, bypassEvery: 0, worktreeFor: () => path.join(dir, "train-wt") }).pipe(
-    Layer.provideMerge(
-      Layer.mergeAll(
-        ChangeRecords.layer,
-        TrainGitHub.layer(gh),
-        Layer.succeed(NodeCommands, localCommands(GIT_ENV)),
-        Layer.succeed(ReviewGate, gate),
-      ),
-    ),
+    Layer.provideMerge(options.gate ?? (Layer.succeed(ReviewGate, gate) as GateLayer<Gate>)),
+    Layer.provideMerge(Layer.mergeAll(ChangeRecords.layer, TrainGitHub.layer(gh), Layer.succeed(NodeCommands, localCommands(GIT_ENV)))),
     Layer.provideMerge(tasksKit.layer),
   );
 
@@ -219,7 +216,7 @@ export const makeTrainKit = () => {
   };
 };
 
-export type TrainKit = ReturnType<typeof makeTrainKit>;
+export type TrainKit = ReturnType<typeof makeTrainKit<ReviewGate>>;
 
 export const runTrainKit = <A, E>(kit: TrainKit, effect: Effect.Effect<A, E, Layer.Success<TrainKit["layer"]>>) =>
   Effect.runPromise(Effect.scoped(Effect.provide(effect, kit.layer))).finally(kit.cleanup);
