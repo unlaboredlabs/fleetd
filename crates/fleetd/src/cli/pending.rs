@@ -153,9 +153,11 @@ pub mod node {
 }
 
 pub mod serve {
-    /// `fleetd hub start|serve`: the hub parses its own flags; the exit code once it stops.
-    pub async fn run(_argv: &[String]) -> u8 {
+    use std::process::ExitCode;
+
+    /// `fleetd hub start|serve`: parses its own flags and runs its own runtime until a signal.
+    pub fn hub_start(_argv: &[String]) -> ExitCode {
         eprintln!("fleetd: this fleetd build has no hub yet");
-        1
+        ExitCode::from(1)
     }
 }

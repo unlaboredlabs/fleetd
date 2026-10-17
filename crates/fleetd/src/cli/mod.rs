@@ -112,13 +112,12 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
-/// Commands that keep running (`node …`, `hub start`, `listen`) or wait on other processes (setup, `retro run`).
+/// Commands that keep running (`node …`, `listen`) or wait on other processes (setup, `retro run`, `update`).
 fn is_long_running(argv: &[String]) -> bool {
-    match argv.first().map(String::as_str) {
-        Some("init" | "uninstall" | "machine" | "node" | "listen" | "retro" | "update") => true,
-        Some("hub") => matches!(argv.get(1).map(String::as_str), Some("start" | "serve")),
-        _ => false,
-    }
+    matches!(
+        argv.first().map(String::as_str),
+        Some("init" | "uninstall" | "machine" | "node" | "listen" | "retro" | "update")
+    )
 }
 
 async fn run_long_running(argv: &[String]) -> u8 {
@@ -129,8 +128,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "node" => node::node_command(rest).await,
         "listen" => listen::listen_command(rest).await,
         "retro" => retro::retro_command(rest).await,
-        "update" => update_command(rest).await,
-        _ => node::hub_start(&argv[2..]).await,
+        _ => update_command(rest).await,
     }
 }
 
@@ -163,6 +161,11 @@ async fn update_command(argv: &[String]) -> u8 {
 
 pub fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(String::as_str) == Some("hub")
+        && matches!(argv.get(1).map(String::as_str), Some("start" | "serve"))
+    {
+        return node::hub_start(&argv[2..]);
+    }
     if is_long_running(&argv) {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

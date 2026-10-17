@@ -124,7 +124,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
 }
 
 /// `fleetd hub start|serve [--home <dir>] [--listen <host:port>] …`: runs the hub in the foreground until a signal.
-/// The hub parses its own flags and prints its own usage, so the CLI hands it the rest of the argv as given.
-pub async fn hub_start(argv: &[String]) -> u8 {
-    super::pending::serve::run(argv).await
+/// The hub parses its own flags, prints its own usage and runs its own runtime, so it gets the argv as given.
+pub fn hub_start(argv: &[String]) -> std::process::ExitCode {
+    super::pending::serve::hub_start(argv)
 }
