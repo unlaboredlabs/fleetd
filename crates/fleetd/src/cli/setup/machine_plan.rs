@@ -6,11 +6,23 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::ordered_json::{Json, Object};
 use super::state::{GitIdentity, git_identity_env};
 use super::t3_settings::apply_fleetd_settings;
 use super::units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, q, render_unit, unit_path};
 
 pub const DEFAULT_T3_PORT: u16 = 3774;
+/// The node.json fields `machine add` sets, in the node's own key order; the rest (cmdRoots) are the user's.
+const NODE_CONFIG_OWNED: [&str; 8] = [
+    "hub",
+    "machineId",
+    "name",
+    "tags",
+    "t3Home",
+    "t3Url",
+    "t3Cmd",
+    "t3RestartCmd",
+];
 const MIN_NODE_MAJOR: u32 = 24;
 
 /// Where fleetd puts things on a machine, under the SSH user's home.
@@ -520,19 +532,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     });
     let enrolls = !input.hub_has_node_key || !enrolled;
     // Field by field, so key order in the file does not matter; cmdRoots is the user's to set and is kept.
-    let owned = |c: &Value| {
-        [
-            "hub",
-            "machineId",
-            "name",
-            "tags",
-            "t3Home",
-            "t3Url",
-            "t3Cmd",
-            "t3RestartCmd",
-        ]
-        .map(|k| c.get(k).cloned().unwrap_or(Value::Null))
-    };
+    let owned = |c: &Value| NODE_CONFIG_OWNED.map(|k| c.get(k).cloned().unwrap_or(Value::Null));
     let node_config_change = !enrolls
         && existing_node
             .as_ref()
@@ -577,15 +577,16 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             writes: None,
         });
     } else if node_config_change {
-        let mut config = desired_node.clone();
-        if let Some(roots) = existing_node.as_ref().and_then(|node| node.get("cmdRoots")) {
-            config["cmdRoots"] = roots.clone();
+        // `{ ...desired, ...cmdRoots, enrolled: true }`, in that key order.
+        let mut config = Object::default();
+        for key in NODE_CONFIG_OWNED {
+            config.insert(key, Json::from(desired_node[key].clone()));
         }
-        config["enrolled"] = Value::Bool(true);
-        let text = format!(
-            "{}\n",
-            serde_json::to_string_pretty(&config).expect("JSON serializes")
-        );
+        if let Some(roots) = existing_node.as_ref().and_then(|node| node.get("cmdRoots")) {
+            config.insert("cmdRoots", Json::from(roots.clone()));
+        }
+        config.insert("enrolled", Json::Bool(true));
+        let text = format!("{}\n", Json::Object(config).pretty());
         steps.push(write_file(
             "update the node's settings",
             &l.node_config,
