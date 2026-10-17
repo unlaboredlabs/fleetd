@@ -1,9 +1,8 @@
 //! The ops areas' ports over the real hub: one `OpsPorts` per hub, built empty in `serve::build_on` (before the
 //! `Hub` exists) and bound to it in `serve::start_loops`. Every method reads the other areas through `Hub`.
 use super::ports::{self, BoxFut, HubEvent, NewEvent, ThreadRef, WaitInput, WaitPage};
-use super::service::{UsageOwners, UsageQueue};
+use super::service::UsageQueue;
 use super::source::{UsageReading, UsageSource};
-use super::state::{Owner, ParkedThread};
 use crate::hub::api::Hub;
 use crate::hub::store;
 use serde_json::Value;
@@ -12,6 +11,8 @@ use std::sync::{Arc, OnceLock, Weak};
 #[derive(Default)]
 pub struct OpsPorts {
     hub: OnceLock<Weak<Hub>>,
+    /// The retro's claude runner, built on first use (it needs the hub's home and router model).
+    pub(super) retro_runner: OnceLock<crate::hub::intake::router::OneShot>,
 }
 
 impl OpsPorts {
@@ -102,16 +103,6 @@ impl ports::EventLog for OpsPorts {
     }
 }
 
-// PORT(tasks, leads): TaskRecords::by_thread / get and LeadRecords::leads list.
-impl UsageOwners for OpsPorts {
-    fn owner_of(&self, _thread: &ThreadRef) -> BoxFut<'_, Option<Owner>> {
-        Box::pin(async { None })
-    }
-    fn still_parked(&self, _parked: &ParkedThread) -> BoxFut<'_, bool> {
-        Box::pin(async { false })
-    }
-}
-
 impl UsageQueue for OpsPorts {
     fn send(&self, thread: &ThreadRef, message: &str, id: &str) -> BoxFut<'_, Result<(), String>> {
         let target: Option<fleetd_contracts::ids::ThreadRef> = convert(thread);
@@ -177,17 +168,9 @@ impl UsageSource for OpsPorts {
 use crate::hub::doctor::checks::MachineView;
 use crate::hub::doctor::service::ActionOutcome;
 use crate::hub::doctor::{DoctorFleet, T3Settings};
-use crate::hub::retro::metrics::RetroWork;
 use crate::hub::retro::records::SqlRunner;
-use crate::hub::retro::service::{RetroLedger, RetroPlaybooks, RetroRunner};
-use crate::hub::retro::types::OrchestratorRun;
-use crate::hub::retro::validate::PlaybookParser;
 use crate::hub::usage::service::UsageStatus;
 use serde_json::Map;
-
-fn unwired<T>(what: &str) -> Result<T, String> {
-    Err(format!("{what} is not wired"))
-}
 
 impl DoctorFleet for OpsPorts {
     fn machines(&self) -> BoxFut<'_, Vec<MachineView>> {
@@ -314,90 +297,6 @@ impl SqlRunner for OpsPorts {
             .db
             .with(|c| f(c).map_err(store::StoreError::from))
             .map_err(|e| e.to_string())
-    }
-}
-
-// PORT(intake): the router's one-shot claude runner with RUN_TIMEOUT_MS.
-impl RetroRunner for OpsPorts {
-    fn ask(&self, _prompt: String) -> BoxFut<'_, (Option<String>, OrchestratorRun)> {
-        Box::pin(async {
-            let run = OrchestratorRun {
-                kind: "orchestrator".into(),
-                model: "claude-haiku-5-5".into(),
-                duration_ms: 0,
-                ok: false,
-                input_tokens: None,
-                output_tokens: None,
-                error: Some("the claude runner is not wired".into()),
-            };
-            (None, run)
-        })
-    }
-}
-
-struct NoParser;
-impl PlaybookParser for NoParser {
-    fn parse(&self, _t: &str, place: &str, _e: Option<&str>) -> Result<Map<String, Value>, String> {
-        Err(format!(
-            "playbook {place} cannot be read: playbooks are not wired"
-        ))
-    }
-}
-
-// PORT(playbooks): Playbooks current / override / set_override and parse_playbook.
-impl RetroPlaybooks for OpsPorts {
-    fn current(&self, name: &str) -> (String, String) {
-        (String::new(), format!("{name}@unknown"))
-    }
-    fn override_text(&self, _name: &str) -> Option<String> {
-        None
-    }
-    fn set_override(&self, _name: &str, _text: Option<&str>) -> Result<String, String> {
-        unwired("playbooks")
-    }
-    fn parser(&self) -> &dyn PlaybookParser {
-        &NoParser
-    }
-}
-
-// PORT(ledger, incidents): global decisions, asks and incidents.
-impl RetroLedger for OpsPorts {
-    fn global_value(&self, _key: &str) -> BoxFut<'_, Option<String>> {
-        Box::pin(async { None })
-    }
-    fn decision_value(&self, _id: &str) -> BoxFut<'_, Option<String>> {
-        Box::pin(async { None })
-    }
-    fn ask_state(&self, _id: &str) -> BoxFut<'_, Option<(String, Option<String>)>> {
-        Box::pin(async { None })
-    }
-    fn create_ask(&self, _input: Value, _by: &str) -> BoxFut<'_, Result<String, String>> {
-        Box::pin(async { unwired("the ledger") })
-    }
-    fn incident(&self, _id: &str) -> BoxFut<'_, Option<Value>> {
-        Box::pin(async { None })
-    }
-    fn incident_count(&self, _class: &str, _since: i64) -> BoxFut<'_, u64> {
-        Box::pin(async { 0 })
-    }
-    fn record_incident(&self, _input: Value) -> BoxFut<'_, ()> {
-        Box::pin(async {})
-    }
-}
-
-// PORT(incidents, leads, tasks).
-impl RetroWork for OpsPorts {
-    fn incidents(&self, _from: i64, _to: Option<i64>, _limit: usize) -> BoxFut<'_, Vec<Value>> {
-        Box::pin(async { Vec::new() })
-    }
-    fn workstream_playbook(&self, _id: &str) -> BoxFut<'_, Option<String>> {
-        Box::pin(async { None })
-    }
-    fn done_workstreams(&self, _limit: usize) -> BoxFut<'_, Vec<(String, Option<String>, String)>> {
-        Box::pin(async { Vec::new() })
-    }
-    fn task_spans(&self, _id: &str) -> BoxFut<'_, Vec<(Option<String>, Option<String>)>> {
-        Box::pin(async { Vec::new() })
     }
 }
 
