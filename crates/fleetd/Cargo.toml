@@ -54,8 +54,6 @@ serde_yaml_ng = { workspace = true }
 unicode-normalization = { workspace = true }
 
 # hub: leads, intake, playbooks
-regex = { workspace = true }
-rusqlite = { workspace = true }
 serde_path_to_error = { workspace = true }
 serde_yaml_ng = { workspace = true }
 sha1 = { workspace = true }
