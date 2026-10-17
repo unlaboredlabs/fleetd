@@ -1,6 +1,8 @@
+import os from "node:os";
 import { HubToNode, type MachineId, NodeLinkClose, type NodeToHub, PROTOCOL_VERSION, ProtocolVersion } from "@fleetd/contracts";
 import { Clock, Data, Deferred, Duration, Effect, Exit, Option, Random, Redacted, Schema, type Scope, Stream } from "effect";
 import * as Socket from "effect/socket/Socket";
+import { runCmdCheck } from "./CmdCheck.ts";
 import type { NodeIdentity } from "./identity.ts";
 import type { LeadRelay } from "./LeadCalls.ts";
 import { makeSessionKeeper, type SessionKeeper, type SessionKeeperOptions } from "./SessionKeeper.ts";
@@ -77,6 +79,7 @@ const runLinkOnce = (
     readonly enrollToken: string | undefined;
     readonly onWelcome: Effect.Effect<void>;
     readonly leadCalls: LeadRelay | undefined;
+    readonly cmdRoots: ReadonlyArray<string>;
   },
 ) =>
   Effect.gen(function* () {
@@ -173,6 +176,8 @@ const runLinkOnce = (
     while (true) {
       const frame = yield* next(silenceTimeout, "frame");
       if (frame.t === "lead_result" && deps.leadCalls !== undefined) yield* deps.leadCalls.resolve(frame);
+      // Off the frame loop, and ended with the link: a lost link kills the command, and the hub fails its wait.
+      if (frame.t === "cmd_check") yield* runCmdCheck(frame, deps.cmdRoots).pipe(Effect.flatMap(send), Effect.ignore, Effect.forkScoped);
     }
   }).pipe(
     Effect.catchTags({
@@ -203,6 +208,8 @@ export interface RunNodeOptions {
   readonly sessions?: SessionKeeperOptions;
   /** Relays lead-side CLI calls over each welcomed link. */
   readonly leadCalls?: LeadRelay;
+  /** Directories `cmd_check` may run in (and below). Default: the user's home directory. */
+  readonly cmdRoots?: ReadonlyArray<string>;
 }
 
 /** Reconnect delay: 1 s doubling to 30 s, ±20% jitter. Resets after each welcome. */
@@ -230,6 +237,7 @@ export const runNode = Effect.fn("runNode")(function* (options: RunNodeOptions) 
         t3,
         enrollToken,
         leadCalls: options.leadCalls,
+        cmdRoots: options.cmdRoots ?? [os.homedir()],
         onWelcome: Effect.suspend(() => {
           attempt = 0;
           if (enrollToken === undefined) return Effect.void;

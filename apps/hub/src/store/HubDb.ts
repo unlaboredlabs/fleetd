@@ -175,6 +175,15 @@ const MIGRATIONS: ReadonlyArray<string> = [
   );
   CREATE INDEX estimates_done_by_tier ON estimates (tier, done_ms DESC) WHERE done_ms IS NOT NULL;
   `,
+  // M6 claims. A row is numbered when the claim starts; `outcome` and `data` (the Claim) are set when its checks end,
+  // so a claim superseded or cut off by a restart stays NULL and is never listed.
+  `
+  CREATE TABLE claims (
+    n INTEGER PRIMARY KEY AUTOINCREMENT, workstream_id TEXT NOT NULL, machine_id TEXT NOT NULL, project_id TEXT NOT NULL,
+    outcome TEXT, data TEXT
+  );
+  CREATE INDEX claims_by_workstream ON claims (workstream_id, n DESC);
+  `,
 ];
 
 /** The `user_version` of a fully migrated database. */

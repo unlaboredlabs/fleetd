@@ -18,6 +18,8 @@ export const NodeConfig = Schema.Struct({
   t3Cmd: Schema.Array(Schema.String),
   /** argv that restarts T3 after it fails its health checks. Absent: the node reports T3 down but never restarts it. */
   t3RestartCmd: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** Directories the hub's `cmd` checks may run in (and below). Absent: the user's home directory. */
+  cmdRoots: Schema.optionalKey(Schema.Array(Schema.String)),
   /** True once the hub has accepted this node's key. */
   enrolled: Schema.Boolean,
 });

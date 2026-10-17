@@ -1,6 +1,6 @@
 // Wakes to a lead: triggers for one lead are debounced and coalesced into a single message, which starts with
 // the code-rendered digest and then says why the lead was woken.
-import type { Decision, DecisionScope, ProjectRef, TaskId, TaskResult, ThreadRef, WorkstreamId } from "@fleetd/contracts";
+import type { CheckResult, ClaimId, Decision, DecisionScope, ProjectRef, TaskId, TaskResult, ThreadRef, WorkstreamId } from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -8,6 +8,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
+import { claimFailedLines, claimPassedLine } from "../checks/render.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
@@ -29,7 +30,11 @@ export type Trigger =
   /** A decision the human recorded that touches the lead's project. */
   | { readonly kind: "decision"; readonly decision: Decision }
   /** A task ended; its result goes into the wake inline. */
-  | { readonly kind: "task_result"; readonly taskId: TaskId; readonly title: string; readonly result: TaskResult };
+  | { readonly kind: "task_result"; readonly taskId: TaskId; readonly title: string; readonly result: TaskResult }
+  /** A claim had checks that did not pass; each one's evidence goes into the wake inline. */
+  | { readonly kind: "claim_failed"; readonly claimId: ClaimId; readonly workstreamId: WorkstreamId; readonly failures: ReadonlyArray<CheckResult> }
+  /** A claim passed after its `claim done` call had already returned. */
+  | { readonly kind: "claim_passed"; readonly claimId: ClaimId; readonly workstreamId: WorkstreamId };
 
 export class LeadWakes extends Context.Service<
   LeadWakes,
@@ -62,6 +67,10 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
       lines.push(`- ${who} recorded ${d.decisionId}: ${d.key} = ${quote(d.value)} (${scopeText(d.scope)}). Follow it.`);
     } else if (t.kind === "task_result") {
       lines.push(taskResultLines(t));
+    } else if (t.kind === "claim_failed") {
+      lines.push(claimFailedLines(t));
+    } else if (t.kind === "claim_passed") {
+      lines.push(claimPassedLine(t));
     }
   }
   const answers = triggers.filter((t) => t.kind === "answer").length;

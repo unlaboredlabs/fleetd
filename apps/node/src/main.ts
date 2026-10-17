@@ -47,6 +47,7 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
       dial: Socket.makeWebSocket(linkUrl(config.hub)).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal)),
       t3Info: fetchT3Info(config.t3Url),
       leadCalls,
+      ...(config.cmdRoots === undefined ? {} : { cmdRoots: config.cmdRoots }),
       ...(config.t3RestartCmd === undefined ? {} : { t3Restart: restartCommand(config.t3RestartCmd) }),
       ...(enrollToken === undefined
         ? {}
