@@ -11,6 +11,9 @@
       "type": "string",
       "format": "date-time"
     },
+    "BoxPublicKey": {
+      "type": "string"
+    },
     "Machine": {
       "type": "object",
       "properties": {
@@ -67,6 +70,9 @@
         },
         "degradedReason": {
           "type": "string"
+        },
+        "boxPubKey": {
+          "$ref": "#/$defs/BoxPublicKey"
         }
       },
       "required": [

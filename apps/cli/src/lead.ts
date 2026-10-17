@@ -567,6 +567,11 @@ export const formatResult = (result: LeadCallResult): string => {
       lines.push(...changeLines(result.change));
       next = "don't merge it yourself; the train merges and the outcome arrives in a wake.";
       break;
+    // Placeholder line until `gated run` lands (M8c).
+    case "gated_run":
+      lines.push(`${result.askId} ${result.state}: waiting for a human to approve the command.`);
+      next = "carry on with other work; the result arrives in a wake.";
+      break;
   }
   return `${lines.join("\n")}\nNext: ${result.next ?? next}\n`;
 };

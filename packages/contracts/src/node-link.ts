@@ -2,6 +2,8 @@ import { Schema } from "effect";
 import { ProtocolVersion } from "./hello.ts";
 import { MachineId, Timestamp } from "./ids.ts";
 import { LeadCallFrame, LeadResultFrame } from "./lead-calls.ts";
+import { AskId, DecisionKey, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv } from "./ledger.ts";
+import { BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink } from "./secrets.ts";
 
 // Node link: WebSocket JSON, one message per frame, discriminated by "t".
 // Hub sends `challenge` first; node answers `hello` signed over that nonce; hub replies `welcome`.
@@ -47,6 +49,8 @@ export const NodeHello = Schema.Struct({
   sig: Schema.NonEmptyString,
   /** One-time token from `fleetd hub token create`; sent only until the hub has registered `pubKey`. */
   enrollToken: Schema.optionalKey(Schema.NonEmptyString),
+  /** M8: the X25519 key browsers seal this machine's secrets to. Absent on nodes from before M8, which take no secrets. */
+  boxPubKey: Schema.optionalKey(BoxPublicKey),
 });
 export type NodeHello = typeof NodeHello.Type;
 
@@ -104,10 +108,75 @@ export const CmdResult = Schema.Struct({
 });
 export type CmdResult = typeof CmdResult.Type;
 
-export const NodeToHub = Schema.Union([NodeHello, NodeT3Session, NodeT3State, Heartbeat, LeadCallFrame, CmdResult]).pipe(
-  Schema.toTaggedUnion("t"),
+const FrameError = Schema.NonEmptyString.check(Schema.isMaxLength(500));
+
+/** Hub -> node: a secret sealed in the browser to this node's `boxPubKey`; the hub never sees the plaintext. */
+export const SecretDeliver = Schema.Struct({
+  t: Schema.tag("secret_deliver"),
+  id: Schema.NonEmptyString,
+  /** On this machine. */
+  sink: SecretSink,
+  sealed: SealedSecret,
+  /** The ask's key; `secretEnv` entries name the secret by it. */
+  secretKey: DecisionKey,
+});
+export type SecretDeliver = typeof SecretDeliver.Type;
+
+/** Node -> hub, one per `secret_deliver`: the sink was written (0600) and the buffer wiped, or why not. */
+export const SecretResult = Schema.Struct({
+  t: Schema.tag("secret_result"),
+  id: Schema.NonEmptyString,
+  fingerprint: Schema.optionalKey(SecretFingerprint),
+  /** Plain language, never the value: a sink outside the command roots, a box that does not open, a write error. */
+  error: Schema.optionalKey(FrameError),
+}).check(
+  Schema.makeFilter((frame) => (frame.fingerprint === undefined) !== (frame.error === undefined), {
+    expected: "exactly one of fingerprint and error",
+  }),
 );
+export type SecretResult = typeof SecretResult.Type;
+
+/** Hub -> node: run an approved ask's stored command, confined like a `cmd_check`. */
+export const GatedRun = Schema.Struct({
+  t: Schema.tag("gated_run"),
+  id: Schema.NonEmptyString,
+  askId: AskId,
+  argv: GatedArgv,
+  /** The spec's cwd, or the project workspace when it has none: the node never picks one itself. */
+  cwd: GatedCwd,
+  timeoutSec: GatedTimeoutSec,
+  /** Read from the node's own sinks and scrubbed from the output. */
+  secretEnv: Schema.optionalKey(SecretEnv),
+});
+export type GatedRun = typeof GatedRun.Type;
+
+/** Node -> hub, one per `gated_run`. */
+export const GatedResult = Schema.Struct({
+  t: Schema.tag("gated_result"),
+  id: Schema.NonEmptyString,
+  /** Null when the process did not exit on its own: it timed out, was killed by a signal, or could not start. */
+  exitCode: Schema.NullOr(Schema.Int),
+  /** Last 2000 characters of stdout and stderr interleaved, with every injected secret value scrubbed. */
+  outputTail: Schema.String.check(Schema.isMaxLength(2000)),
+  timedOut: Schema.Boolean,
+  /** Why it did not run: a cwd outside the command roots, a missing secret, a start error. */
+  error: Schema.optionalKey(FrameError),
+});
+export type GatedResult = typeof GatedResult.Type;
+
+export const NodeToHub = Schema.Union([
+  NodeHello,
+  NodeT3Session,
+  NodeT3State,
+  Heartbeat,
+  LeadCallFrame,
+  CmdResult,
+  SecretResult,
+  GatedResult,
+]).pipe(Schema.toTaggedUnion("t"));
 export type NodeToHub = typeof NodeToHub.Type;
 
-export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat, LeadResultFrame, CmdCheck]).pipe(Schema.toTaggedUnion("t"));
+export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat, LeadResultFrame, CmdCheck, SecretDeliver, GatedRun]).pipe(
+  Schema.toTaggedUnion("t"),
+);
 export type HubToNode = typeof HubToNode.Type;

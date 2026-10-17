@@ -62,7 +62,10 @@
         "intake.routed",
         "research.verdict",
         "usage.breaker",
-        "usage.resumed"
+        "usage.resumed",
+        "ask.secret_saved",
+        "gated.ran",
+        "push.sent"
       ]
     },
     "MachineId": {

@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { MachineId, ProjectRef, ThreadId, Timestamp } from "./ids.ts";
+import { SecretFingerprint, SecretSink } from "./secrets.ts";
 import { isHttpUrl } from "./subscriptions.ts";
 import { UsageParked } from "./usage.ts";
 
@@ -291,7 +292,11 @@ export type Decision = typeof Decision.Type;
 
 // Asks
 
-export const AskKind = Schema.Literals(["decide", "do"]);
+/**
+ * decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the
+ * browser seals to the sink's node. approve: a stored command the node runs after a human tap (`fleetd gated run`).
+ */
+export const AskKind = Schema.Literals(["decide", "do", "secret", "approve"]);
 export type AskKind = typeof AskKind.Type;
 
 export const AskClass = Schema.Literals(["product", "money", "credential", "irreversible"]);
@@ -328,14 +333,72 @@ export const AskBlocks = Schema.Union([Schema.Literal("nothing"), text(200)]);
 export const AskOptions = list(DecisionValue, 6);
 export const AskSteps = list(Step, 20);
 
-/** A decide needs a recommendation and a do needs at least one step. */
+// Approve asks (M8): a command the node runs from these stored bytes, only after a human answers "go".
+
+export const GatedClass = Schema.Literals(["irreversible", "money", "credential"]);
+export type GatedClass = typeof GatedClass.Type;
+
+/** A process environment variable name. */
+export const EnvName = Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u)).annotate({ identifier: "EnvName" });
+
+/** `--secret-env NAME=<secret key>`: the node reads the value from that secret's sink; it never crosses the hub. */
+export const SecretEnv = list(Schema.Struct({ name: EnvName, secretKey: DecisionKey }), 20).check(
+  Schema.makeFilter((entries) => {
+    const names = entries.map((entry) => entry.name);
+    return new Set(names).size === names.length ? undefined : "each env name at most once";
+  }),
+);
+
+/** The node runs at most 30 minutes. */
+export const GATED_MAX_TIMEOUT_SEC = 1800;
+export const GatedTimeoutSec = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: GATED_MAX_TIMEOUT_SEC }));
+
+/** argv only, no shell unless argv itself invokes one; at most 64 entries like a `cmd` check. */
+export const GatedArgv = list(Schema.String, 64).check(Schema.isMinLength(1));
+
+/** Absolute; absent means the project workspace. The node refuses a cwd outside its command roots. */
+export const GatedCwd = Schema.String.check(Schema.isMaxLength(1000), Schema.isPattern(/^\//u));
+
+/** Stored with the approve ask and never changed: the human approves exactly these bytes. */
+export const GatedRunSpec = Schema.Struct({
+  argv: GatedArgv,
+  cwd: Schema.optionalKey(GatedCwd),
+  class: GatedClass,
+  reason: text(500),
+  secretEnv: Schema.optionalKey(SecretEnv),
+  timeoutSec: GatedTimeoutSec,
+}).annotate({ identifier: "GatedRunSpec" });
+export type GatedRunSpec = typeof GatedRunSpec.Type;
+
+/**
+ * Each kind's required field, and no field of another kind: decide needs a recommendation, do at least one step,
+ * secret a sink, approve its gated run with the ask's class.
+ */
 export const askKindRule = Schema.makeFilter(
-  (ask: { readonly kind: AskKind; readonly recommendation?: string; readonly steps?: ReadonlyArray<unknown> }) => {
+  (ask: {
+    readonly kind: AskKind;
+    readonly class?: string;
+    readonly recommendation?: string;
+    readonly steps?: ReadonlyArray<unknown>;
+    readonly sink?: string;
+    readonly fingerprint?: string;
+    readonly gated?: GatedRunSpec;
+    readonly verify?: unknown;
+  }) => {
     if (ask.kind === "decide" && ask.recommendation === undefined) {
       return { path: ["recommendation"], issue: "a decide ask needs a recommendation" };
     }
     if (ask.kind === "do" && (ask.steps === undefined || ask.steps.length === 0)) {
       return { path: ["steps"], issue: "a do ask needs at least one step" };
+    }
+    if (ask.kind === "secret" && ask.sink === undefined) return { path: ["sink"], issue: "a secret ask needs a sink" };
+    if (ask.kind === "approve" && ask.gated === undefined) return { path: ["gated"], issue: "an approve ask needs its gated run" };
+    const only = { sink: "secret", fingerprint: "secret", gated: "approve", verify: "do" } as const;
+    for (const [field, kind] of Object.entries(only) as Array<[keyof typeof only, AskKind]>) {
+      if (ask[field] !== undefined && ask.kind !== kind) return { path: [field], issue: `only a ${kind} ask has ${field}` };
+    }
+    if (ask.gated !== undefined && ask.class !== undefined && ask.gated.class !== ask.class) {
+      return { path: ["class"], issue: "an approve ask's class is its gated run's class" };
     }
     return undefined;
   },
@@ -365,6 +428,16 @@ export const Ask = Schema.Struct({
   recommendation: Schema.optionalKey(DecisionValue),
   /** Required for do. */
   steps: Schema.optionalKey(AskSteps),
+  /** do: the check the hub runs once the human ticks it done; a failure reopens the ask with the evidence. */
+  verify: Schema.optionalKey(CheckSpec),
+  /** Required for secret. */
+  sink: Schema.optionalKey(SecretSink),
+  /** secret: set when the node has written the sink. */
+  fingerprint: Schema.optionalKey(SecretFingerprint),
+  /** Required for approve; immutable once the ask exists. */
+  gated: Schema.optionalKey(GatedRunSpec),
+  /** What closed or reopened it: "fingerprint ab12cd34", a gated run's exit code and output tail, a failed verify. */
+  evidence: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2000))),
   blocks: AskBlocks,
   /** The lead carried on with the recommendation; the answer confirms or overrides it. */
   proceededOnRec: Schema.Boolean,
