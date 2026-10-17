@@ -371,6 +371,11 @@ mod tests {
             .trim()
             .parse()
             .unwrap();
+        // The signal is delivered at once, but the orphaned child is reaped asynchronously by init.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !dead(pid) && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
         assert!(dead(pid));
     }
 }
