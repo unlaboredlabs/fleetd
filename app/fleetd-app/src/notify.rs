@@ -3,7 +3,8 @@
 //! "+N more", and inside the hub's quiet windows only urgent items. No clock and no I/O, so it is
 //! unit-tested; the shell posts what [`Notifier::due`] returns.
 
-use crate::protocol::{Attention, AttentionPolicyOutput, HubEvent};
+use fleetd_contracts::events::{Attention, HubEvent, HubEventType};
+use fleetd_contracts::mcp::AttentionPolicyOutput;
 
 /// When the hub's attention_policy can't be read (an older hub): the hub's own defaults, minus quiet hours.
 const FALLBACK_COALESCE_MS: i64 = 20 * 60_000;
@@ -25,8 +26,8 @@ impl Policy {
     pub fn from_output(out: &AttentionPolicyOutput) -> Self {
         let ms = |iso: &str| unix_secs(iso).map(|s| s * 1000);
         Policy {
-            coalesce_ms: out.coalesce_sec as i64 * 1000,
-            quiet: out.quiet.iter().filter_map(|w| Some((ms(&w.from)?, ms(&w.to)?))).collect(),
+            coalesce_ms: out.coalesce_sec.get() * 1000,
+            quiet: out.quiet.iter().filter_map(|w| Some((ms(w.from.as_str())?, ms(w.to.as_str())?))).collect(),
         }
     }
 
@@ -62,9 +63,7 @@ impl Notifier {
     /// Queues an event the hub marked for attention; others are ignored.
     pub fn push(&mut self, event: &HubEvent, asks_sent: u64) {
         let Some(attention) = event.attention else { return };
-        let ask_id = (event.kind == "ask.created")
-            .then(|| event.data.as_ref()?.get("askId")?.as_str().map(str::to_string))
-            .flatten();
+        let ask_id = (event.r#type == HubEventType::AskCreated).then(|| event.data.as_ref()?.get("askId")?.as_str().map(str::to_string)).flatten();
         self.pending.push(Pending { line: one_line(&event.summary, 140), urgent: attention == Attention::Urgent, ask_id, asks_sent });
     }
 
@@ -117,17 +116,10 @@ mod tests {
     const T0: i64 = 1_792_231_200_000; // 2026-10-17T10:00:00Z
 
     fn event(summary: &str, attention: Option<Attention>, ask: Option<&str>) -> HubEvent {
-        HubEvent {
-            seq: 1,
-            at: "2026-10-17T10:00:00.000Z".into(),
-            kind: if ask.is_some() { "ask.created" } else { "usage.breaker" }.into(),
-            machine_id: None,
-            project_id: None,
-            thread_id: None,
-            summary: summary.into(),
-            data: ask.map(|id| json!({ "askId": id })),
-            attention,
-        }
+        serde_json::from_value(json!({ "seq": 1, "at": "2026-10-17T10:00:00.000Z",
+            "type": if ask.is_some() { "ask.created" } else { "usage.breaker" }, "summary": summary,
+            "data": ask.map(|id| json!({ "askId": id })), "attention": attention }))
+        .unwrap()
     }
 
     fn open(_: &str, _: u64) -> bool {

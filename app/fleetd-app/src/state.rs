@@ -8,18 +8,56 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
+use fleetd_contracts::app::{AppCallId, AppClientMessage, AppServerMessage};
+use fleetd_contracts::doctor::{DoctorCheck, DoctorCheckId};
+use fleetd_contracts::events::{HubEvent, HubEventType};
+use fleetd_contracts::ids::{MachineId, ProjectId};
+use fleetd_contracts::ledger::{Ask, AskId, AskState, Batch, BatchId, BatchState, Lead, LeadState, Workstream};
+use fleetd_contracts::mcp::{
+    AsksListInput, AsksListOutput, AttentionPolicyInput, AttentionPolicyOutput, DoctorFixInput, DoctorFixOutput, DoctorListInput, DoctorListOutput,
+    FleetStatus, InboxReplyInput, InboxReplyOutput, McpToolName, ProjectGetInput, ProjectGetOutput, SecretSubmitInput, SecretSubmitOutput, TailItem,
+    ThreadTailInput, ThreadTailOutput,
+};
+use fleetd_contracts::model::{Machine, MachineStatus, ProjectOutcome, ProjectSummary, ThreadStatus, ThreadSummary};
+use fleetd_contracts::prim::{Int, IntOr, Text};
+use fleetd_contracts::secrets::{SealedSecret, parse_secret_sink};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::client::Incoming;
 use crate::notify::{Notification, Notifier, Policy};
-use crate::protocol::*;
+
+/// A tool the app calls: its input type, wire name and output type.
+trait Tool: Serialize {
+    const NAME: McpToolName;
+    type Output: DeserializeOwned;
+}
+
+macro_rules! tools {
+    ($($input:ident => $output:ident, $name:ident;)*) => {
+        $(impl Tool for $input {
+            const NAME: McpToolName = McpToolName::$name;
+            type Output = $output;
+        })*
+    };
+}
+
+tools! {
+    ProjectGetInput => ProjectGetOutput, ProjectGet;
+    ThreadTailInput => ThreadTailOutput, ThreadTail;
+    AsksListInput => AsksListOutput, AsksList;
+    InboxReplyInput => InboxReplyOutput, InboxReply;
+    SecretSubmitInput => SecretSubmitOutput, SecretSubmit;
+    AttentionPolicyInput => AttentionPolicyOutput, AttentionPolicy;
+    DoctorListInput => DoctorListOutput, DoctorList;
+    DoctorFixInput => DoctorFixOutput, DoctorFix;
+}
 
 /// (machineId, projectId)
 pub type ProjectKey = (String, String);
 
 /// Messages in the lead log tail.
-pub const TAIL_N: u32 = 50;
+pub const TAIL_N: i64 = 50;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Purpose {
@@ -29,9 +67,12 @@ enum Purpose {
     Reply,
     Doctor,
     DoctorRerun,
-    DoctorFix(String),
+    DoctorFix(DoctorCheckId),
     /// `saved` is what the echo says on success, e.g. "STRIPE_KEY saved on lab-a".
-    Secret { ask_id: String, saved: String },
+    Secret {
+        ask_id: String,
+        saved: String,
+    },
     Policy,
 }
 
@@ -57,7 +98,7 @@ pub struct ProjectRow {
 
 impl ProjectRow {
     pub fn key(&self) -> ProjectKey {
-        (self.summary.machine_id.clone(), self.summary.project_id.clone())
+        (self.summary.machine_id.to_string(), self.summary.project_id.to_string())
     }
 
     pub fn lead(&self) -> Option<&Lead> {
@@ -70,7 +111,7 @@ impl ProjectRow {
     }
 
     pub fn workstreams(&self) -> &[Workstream] {
-        self.outcome.as_ref().and_then(|o| o.workstreams.as_deref()).unwrap_or(&[])
+        self.outcome.as_ref().and_then(|o| o.workstreams.as_ref()).map_or(&[], |w| w.as_slice())
     }
 
     /// The newest workstream status line, else the lead thread's latest line.
@@ -78,7 +119,7 @@ impl ProjectRow {
         let from_workstream = self
             .workstreams()
             .iter()
-            .filter_map(|w| Some((w.headline_at.as_deref()?, w.headline.as_deref()?)))
+            .filter_map(|w| Some((w.headline_at.as_ref()?.as_str(), w.headline.as_ref()?.as_str())))
             .max_by(|a, b| a.0.cmp(b.0))
             .map(|(_, h)| h);
         from_workstream.or_else(|| self.lead_thread().map(|t| t.headline.as_str()).filter(|h| !h.is_empty()))
@@ -108,14 +149,14 @@ pub struct Echo {
 #[derive(Default)]
 pub struct Doctor {
     pub checks: Vec<DoctorCheck>,
-    pub checked_at: Option<String>,
+    pub checked_at: Option<fleetd_contracts::ids::Timestamp>,
     pub error: Option<String>,
 }
 
 /// One numbered inbox line.
 pub struct InboxItem<'a> {
-    pub batch_id: &'a str,
-    pub number: u32,
+    pub batch_id: &'a BatchId,
+    pub number: i64,
     pub ask: &'a Ask,
 }
 
@@ -175,7 +216,7 @@ impl Default for State {
     }
 }
 
-type Out = Vec<ClientMessage>;
+type Out = Vec<AppClientMessage>;
 
 impl State {
     pub fn apply(&mut self, incoming: Incoming) -> Out {
@@ -185,7 +226,7 @@ impl State {
                 self.conn = Conn::Live;
                 self.notice = None;
                 self.snapshot_pending = true;
-                vec![ClientMessage::Snapshot]
+                vec![AppClientMessage::Snapshot {}]
             }
             Incoming::Disconnected { reason, retry_in } => {
                 self.reset_calls();
@@ -212,12 +253,12 @@ impl State {
     /// Open asks of open batches: newest batch first, then by number.
     pub fn inbox(&self) -> Vec<InboxItem<'_>> {
         let mut out = Vec::new();
-        for batch in self.batches.iter().filter(|b| b.state == "open") {
+        for batch in self.batches.iter().filter(|b| b.state == BatchState::Open) {
             let mut items: Vec<_> = batch.items.iter().collect();
             items.sort_by_key(|i| i.number);
             for item in items {
-                if let Some(ask) = self.asks.get(&item.ask_id).filter(|a| a.state == AskState::Open) {
-                    out.push(InboxItem { batch_id: &batch.batch_id, number: item.number, ask });
+                if let Some(ask) = self.asks.get(item.ask_id.as_str()).filter(|a| a.state == AskState::Open) {
+                    out.push(InboxItem { batch_id: &batch.batch_id, number: item.number.get(), ask });
                 }
             }
         }
@@ -236,12 +277,15 @@ impl State {
     }
 
     /// Sends a terse reply such as "1 go 2 nvm"; `batch_id` pins it to one batch.
-    pub fn reply(&mut self, raw: &str, batch_id: Option<&str>) -> Out {
+    pub fn reply(&mut self, raw: &str, batch_id: Option<&BatchId>) -> Out {
         if !self.live_or_echo("Not connected to the hub; the reply was not sent.") {
             return Vec::new();
         }
-        let input = InboxReplyInput { raw: raw.to_string(), batch_id: batch_id.map(str::to_string) };
-        vec![self.call(Purpose::Reply, &input)]
+        let raw = match Text::new(raw) {
+            Ok(raw) => raw,
+            Err(e) => return self.refuse(format!("The reply was not sent: {e}.")),
+        };
+        vec![self.call(Purpose::Reply, &InboxReplyInput { raw, batch_id: batch_id.cloned() })]
     }
 
     /// The Machines screen opened: list the doctor's checks.
@@ -260,30 +304,23 @@ impl State {
     }
 
     /// Runs a check's auto fix; the answer replaces that check.
-    pub fn fix_doctor(&mut self, check_id: &str) -> Out {
+    pub fn fix_doctor(&mut self, check_id: &DoctorCheckId) -> Out {
         if self.doctor_fixing(check_id) || !self.live_or_echo("Not connected to the hub; the fix was not run.") {
             return Vec::new();
         }
-        vec![self.call(Purpose::DoctorFix(check_id.to_string()), &DoctorFixInput { check_id: check_id.to_string() })]
+        vec![self.call(Purpose::DoctorFix(check_id.clone()), &DoctorFixInput { check_id: check_id.clone() })]
     }
 
     /// The machine a secret ask's sink is on and its box key, or why it can't take the secret now.
     pub fn secret_target(&self, ask: &Ask) -> Result<(String, String), String> {
-        // `env:<machine>:/…` or `file:<machine>:/…`
-        let machine_id = ask
-            .sink
-            .as_deref()
-            .and_then(|sink| sink.strip_prefix("env:").or_else(|| sink.strip_prefix("file:")))
-            .and_then(|rest| rest.split_once(":/"))
-            .map(|(machine, _)| machine)
-            .filter(|m| !m.is_empty() && m.len() <= 32 && m.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'));
-        let Some(machine_id) = machine_id else { return Err("This ask has no valid sink.".into()) };
+        let Some(sink) = ask.sink.as_deref().and_then(parse_secret_sink) else { return Err("This ask has no valid sink.".into()) };
+        let machine_id = sink.machine_id.as_str();
         let Some(machine) = self.machine(machine_id) else { return Err(format!("The hub doesn't know machine {machine_id}.")) };
         let Some(key) = &machine.box_pub_key else { return Err(format!("{machine_id} takes no secrets: its node has no box key yet.")) };
         if machine.status == MachineStatus::Offline {
             return Err(format!("{machine_id} is offline. Try again when it is online."));
         }
-        Ok((machine_id.to_string(), key.clone()))
+        Ok((machine_id.to_string(), key.to_string()))
     }
 
     /// Sends a value sealed to the sink machine (see `seal`); the echo shows the node's fingerprint.
@@ -291,9 +328,13 @@ impl State {
         if self.secret_submitting(ask_id) || !self.live_or_echo("Not connected to the hub; the secret was not sent.") {
             return Vec::new();
         }
+        let input = match (AskId::new(ask_id), SealedSecret::new(sealed)) {
+            (Ok(ask_id), Ok(sealed)) => SecretSubmitInput { ask_id, sealed },
+            (Err(e), _) | (_, Err(e)) => return self.refuse(format!("The secret was not sent: {e}.")),
+        };
         let key = self.asks.get(ask_id).map_or("The secret", |a| a.key.as_str());
         let purpose = Purpose::Secret { ask_id: ask_id.to_string(), saved: format!("{key} saved on {machine_id}") };
-        vec![self.call(purpose, &SecretSubmitInput { ask_id: ask_id.to_string(), sealed })]
+        vec![self.call(purpose, &input)]
     }
 
     pub fn secret_submitting(&self, ask_id: &str) -> bool {
@@ -311,8 +352,14 @@ impl State {
         self.pending.values().any(|p| *p == Purpose::DoctorRerun)
     }
 
-    pub fn doctor_fixing(&self, check_id: &str) -> bool {
+    pub fn doctor_fixing(&self, check_id: &DoctorCheckId) -> bool {
         self.pending.values().any(|p| matches!(p, Purpose::DoctorFix(id) if id == check_id))
+    }
+
+    /// Shows why a user action was not sent.
+    fn refuse(&mut self, text: String) -> Out {
+        self.echo = Some(Echo { text, ok: false });
+        Vec::new()
     }
 
     fn live_or_echo(&mut self, offline: &str) -> bool {
@@ -343,18 +390,18 @@ impl State {
         self.dirty.clear();
     }
 
-    fn call<I: Tool + Serialize>(&mut self, purpose: Purpose, input: &I) -> ClientMessage {
+    fn call<I: Tool>(&mut self, purpose: Purpose, input: &I) -> AppClientMessage {
         self.next_id += 1;
         let id = format!("c{}", self.next_id);
         self.pending.insert(id.clone(), purpose.clone());
         if !purpose.one_shot() {
             self.inflight.insert(purpose);
         }
-        ClientMessage::Call { id, tool: I::NAME.into(), input: serde_json::to_value(input).unwrap() }
+        AppClientMessage::Call { id: AppCallId::unchecked(id), tool: Text::unchecked(I::NAME.as_str()), input: serde_json::to_value(input).unwrap() }
     }
 
     /// A refetch: sent now, or once more after the in-flight one lands.
-    fn refetch<I: Tool + Serialize>(&mut self, purpose: Purpose, input: &I) -> Option<ClientMessage> {
+    fn refetch<I: Tool>(&mut self, purpose: Purpose, input: &I) -> Option<AppClientMessage> {
         if self.conn != Conn::Live {
             return None;
         }
@@ -365,42 +412,44 @@ impl State {
         Some(self.call(purpose, input))
     }
 
-    fn request_asks(&mut self) -> Option<ClientMessage> {
-        let call = self.refetch(Purpose::Asks, &AsksListInput { state: Some(AskState::Open), batch_id: None });
+    fn request_asks(&mut self) -> Option<AppClientMessage> {
+        let call = self.refetch(Purpose::Asks, &AsksListInput { state: AskState::Open, batch_id: None });
         if call.is_some() {
             self.asks_sent += 1;
         }
         call
     }
 
-    fn request_policy(&mut self) -> Option<ClientMessage> {
+    fn request_policy(&mut self) -> Option<AppClientMessage> {
         self.refetch(Purpose::Policy, &AttentionPolicyInput {})
     }
 
-    fn request_project(&mut self, key: &ProjectKey) -> Option<ClientMessage> {
-        self.refetch(Purpose::Project(key.clone()), &ProjectGetInput { machine_id: key.0.clone(), project_id: key.1.clone() })
+    fn request_project(&mut self, key: &ProjectKey) -> Option<AppClientMessage> {
+        // The key came from a decoded ProjectSummary.
+        let input = ProjectGetInput { machine_id: MachineId::unchecked(&key.0), project_id: ProjectId::unchecked(&key.1) };
+        self.refetch(Purpose::Project(key.clone()), &input)
     }
 
-    fn request_tail(&mut self) -> Option<ClientMessage> {
+    fn request_tail(&mut self) -> Option<AppClientMessage> {
         let key = self.detail.as_ref()?.key.clone();
         let thread_id = self.project(&key)?.lead()?.thread_id.clone();
-        let input = ThreadTailInput { machine_id: key.0.clone(), thread_id, n: Some(TAIL_N), kinds: None };
+        let input = ThreadTailInput { machine_id: MachineId::unchecked(&key.0), thread_id, n: IntOr(Int::unchecked(TAIL_N)), kinds: None };
         self.refetch(Purpose::Tail(key), &input)
     }
 
-    fn request_doctor(&mut self) -> Option<ClientMessage> {
+    fn request_doctor(&mut self) -> Option<AppClientMessage> {
         self.refetch(Purpose::Doctor, &DoctorListInput { machine_id: None, rerun: None })
     }
 
-    fn request_snapshot(&mut self) -> Option<ClientMessage> {
+    fn request_snapshot(&mut self) -> Option<AppClientMessage> {
         if self.conn != Conn::Live || self.snapshot_pending {
             return None;
         }
         self.snapshot_pending = true;
-        Some(ClientMessage::Snapshot)
+        Some(AppClientMessage::Snapshot {})
     }
 
-    fn redo(&mut self, purpose: Purpose) -> Option<ClientMessage> {
+    fn redo(&mut self, purpose: Purpose) -> Option<AppClientMessage> {
         match purpose {
             Purpose::Asks => self.request_asks(),
             Purpose::Project(key) => self.request_project(&key),
@@ -411,26 +460,26 @@ impl State {
         }
     }
 
-    fn on_message(&mut self, message: ServerMessage) -> Out {
+    fn on_message(&mut self, message: AppServerMessage) -> Out {
         match message {
-            ServerMessage::Ready(_) => Vec::new(),
-            ServerMessage::Snapshot(status) => self.on_snapshot(status),
-            ServerMessage::Event(event) => self.on_event(&event),
-            ServerMessage::Result(result) => {
-                let Some(purpose) = self.pending.remove(&result.id) else { return Vec::new() };
+            AppServerMessage::Ready { .. } => Vec::new(),
+            AppServerMessage::Snapshot(status) => self.on_snapshot(status),
+            AppServerMessage::Event(event) => self.on_event(&event),
+            AppServerMessage::Result { id, output } => {
+                let Some(purpose) = self.pending.remove(id.as_str()) else { return Vec::new() };
                 self.inflight.remove(&purpose);
-                let mut out = self.on_result(&purpose, result.output);
+                let mut out = self.on_result(&purpose, output);
                 if self.dirty.remove(&purpose) {
                     out.extend(self.redo(purpose));
                 }
                 out
             }
-            ServerMessage::Error(error) => {
+            AppServerMessage::Error(error) => {
                 let text = match &error.fix {
                     Some(fix) => format!("{} {fix}", error.message),
                     None => error.message.clone(),
                 };
-                let Some(purpose) = error.id.as_ref().and_then(|id| self.pending.remove(id)) else {
+                let Some(purpose) = error.id.as_ref().and_then(|id| self.pending.remove(id.as_str())) else {
                     if error.id.is_none() {
                         self.notice = Some(text);
                     }
@@ -449,20 +498,20 @@ impl State {
         let mut out = Vec::new();
         if !self.streaming {
             self.streaming = true;
-            out.push(ClientMessage::Events { cursor: status.cursor });
+            out.push(AppClientMessage::Events { cursor: status.cursor });
         }
         let mut old: HashMap<ProjectKey, ProjectRow> = self.projects.drain(..).map(|r| (r.key(), r)).collect();
         self.projects = status
             .projects
             .into_iter()
             .map(|summary| {
-                let key = (summary.machine_id.clone(), summary.project_id.clone());
+                let key = (summary.machine_id.to_string(), summary.project_id.to_string());
                 let (outcome, error) = old.remove(&key).map_or((None, None), |r| (r.outcome, r.error));
                 ProjectRow { summary, outcome, error }
             })
             .collect();
         self.machines = status.machines;
-        self.attention = status.attention;
+        self.attention = status.attention.into_iter().collect();
         let keys: Vec<ProjectKey> = self.projects.iter().map(ProjectRow::key).collect();
         out.extend(keys.iter().filter_map(|k| self.request_project(k)));
         out.extend(self.request_asks());
@@ -475,26 +524,26 @@ impl State {
 
     fn on_event(&mut self, event: &HubEvent) -> Out {
         let mut out = Vec::new();
-        let kind = event.kind.as_str();
+        let kind = event.r#type.as_str();
         if kind.starts_with("machine.") {
             out.extend(self.request_snapshot());
         }
-        if kind == "doctor.changed" && self.doctor.is_some() {
+        if event.r#type == HubEventType::DoctorChanged && self.doctor.is_some() {
             out.extend(self.request_doctor());
         }
         let asks_before = self.asks_sent;
-        if kind.starts_with("ask.") || matches!(kind, "batch.ready" | "decision.recorded" | "gated.ran") {
+        if kind.starts_with("ask.") || matches!(event.r#type, HubEventType::BatchReady | HubEventType::DecisionRecorded | HubEventType::GatedRan) {
             out.extend(self.request_asks());
         }
         // policy.quiet_hours or policy.tz may have changed.
-        if kind == "decision.recorded" && self.policy.is_some() {
+        if event.r#type == HubEventType::DecisionRecorded && self.policy.is_some() {
             out.extend(self.request_policy());
         }
         // A fetch sent just now for this event can say whether its ask was answered; one already in flight can't.
         self.notifier.push(event, asks_before);
         let project_scoped = ["workstream.", "lead.", "thread."].iter().any(|p| kind.starts_with(p));
         if let (true, Some(machine_id), Some(project_id)) = (project_scoped, &event.machine_id, &event.project_id) {
-            let key = (machine_id.clone(), project_id.clone());
+            let key = (machine_id.to_string(), project_id.to_string());
             if self.project(&key).is_some() {
                 out.extend(self.request_project(&key));
             } else {
@@ -503,7 +552,7 @@ impl State {
         }
         if kind.starts_with("thread.") {
             let lead_thread = self.detail.as_ref().and_then(|d| self.project(&d.key)).and_then(|r| r.lead()).map(|l| l.thread_id.as_str());
-            if lead_thread.is_some() && lead_thread == event.thread_id.as_deref() {
+            if lead_thread.is_some() && lead_thread == event.thread_id.as_ref().map(|t| t.as_str()) {
                 out.extend(self.request_tail());
             }
         }
@@ -515,14 +564,14 @@ impl State {
             Purpose::Asks => match parse::<AsksListOutput>(output) {
                 Ok(list) => {
                     self.asks_seen = self.asks_sent;
-                    self.batches = list.batches;
-                    self.asks = list.asks.into_iter().map(|a| (a.ask_id.clone(), a)).collect();
+                    self.batches = list.batches.into_iter().collect();
+                    self.asks = list.asks.into_iter().map(|a| (a.ask_id.to_string(), a)).collect();
                     self.asks_error = None;
                 }
                 Err(e) => self.asks_error = Some(e),
             },
             Purpose::Project(key) => {
-                let parsed = parse::<ProjectOutcome>(output);
+                let parsed = parse::<ProjectGetOutput>(output);
                 let Some(row) = self.projects.iter_mut().find(|r| &r.key() == key) else { return Vec::new() };
                 match parsed {
                     Ok(outcome) => {
@@ -541,7 +590,7 @@ impl State {
                 if let Some(detail) = self.detail.as_mut().filter(|d| &d.key == key) {
                     match parsed {
                         Ok(tail) => {
-                            let mut items = tail.items;
+                            let mut items: Vec<TailItem> = tail.items.into_iter().collect();
                             items.reverse();
                             if items != detail.tail {
                                 detail.tail = items;
@@ -565,7 +614,7 @@ impl State {
                 let doctor = self.doctor.get_or_insert_with(Doctor::default);
                 match parse::<DoctorListOutput>(output) {
                     Ok(list) => {
-                        doctor.checks = list.checks;
+                        doctor.checks = list.checks.into_iter().collect();
                         doctor.checked_at = Some(list.checked_at);
                         doctor.error = None;
                     }
@@ -625,9 +674,20 @@ fn parse<T: DeserializeOwned>(output: serde_json::Value) -> Result<T, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fleetd_contracts::app::AppError;
+    use fleetd_contracts::doctor::DoctorStatus;
+    use fleetd_contracts::events::Attention;
+    use fleetd_contracts::ids::EventSeq;
+    use fleetd_contracts::mcp::ErrorCode;
     use serde_json::{Value, json};
 
     const AT: &str = "2026-10-17T10:00:00.000Z";
+    /// Standard base64 of 32 bytes, as a node's box key is.
+    const BOX_KEY: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+    fn sealed() -> String {
+        format!("{}==", "A".repeat(86))
+    }
 
     fn project_json(m: &str, p: &str) -> Value {
         json!({ "machineId": m, "projectId": p, "title": p, "workspaceRoot": format!("/w/{p}"),
@@ -642,31 +702,44 @@ mod tests {
     }
 
     fn result(id: &str, output: Value) -> Incoming {
-        Incoming::Message(ServerMessage::Result(CallResult { id: id.into(), output }))
+        Incoming::Message(AppServerMessage::Result { id: AppCallId::new(id).unwrap(), output })
+    }
+
+    fn error(id: &str, code: ErrorCode, message: &str, fix: Option<&str>) -> Incoming {
+        let id = Some(AppCallId::new(id).unwrap());
+        Incoming::Message(AppServerMessage::Error(AppError { id, code, message: message.into(), fix: fix.map(Into::into) }))
+    }
+
+    fn hub_event(event: Value) -> Incoming {
+        Incoming::Message(AppServerMessage::Event(serde_json::from_value(event).unwrap()))
     }
 
     fn event(kind: &str, project: Option<&str>, thread: Option<&str>) -> Incoming {
-        Incoming::Message(ServerMessage::Event(HubEvent {
-            seq: 9,
-            at: AT.into(),
-            kind: kind.into(),
-            machine_id: project.or(thread).map(|_| "lab-a".into()),
-            project_id: project.map(Into::into),
-            thread_id: thread.map(Into::into),
-            summary: kind.into(),
-            data: None,
-            attention: None,
-        }))
+        let mut e = json!({ "seq": 9, "at": AT, "type": kind, "summary": kind });
+        if project.or(thread).is_some() {
+            e["machineId"] = json!("lab-a");
+        }
+        if let Some(p) = project {
+            e["projectId"] = json!(p);
+        }
+        if let Some(t) = thread {
+            e["threadId"] = json!(t);
+        }
+        hub_event(e)
     }
 
     /// (id, tool) of each call in `out`.
-    fn calls(out: &[ClientMessage]) -> Vec<(String, String)> {
+    fn calls(out: &[AppClientMessage]) -> Vec<(String, String)> {
         out.iter()
             .filter_map(|m| match m {
-                ClientMessage::Call { id, tool, .. } => Some((id.clone(), tool.clone())),
+                AppClientMessage::Call { id, tool, .. } => Some((id.to_string(), tool.to_string())),
                 _ => None,
             })
             .collect()
+    }
+
+    fn check_id(id: &str) -> DoctorCheckId {
+        DoctorCheckId::new(id).unwrap()
     }
 
     fn outcome(p: &str, lead_thread: Option<&str>, lead_state: &str) -> Value {
@@ -703,9 +776,9 @@ mod tests {
     #[test]
     fn connect_takes_a_snapshot_then_streams_and_fetches() {
         let mut s = State::default();
-        assert_eq!(s.apply(Incoming::Ready), vec![ClientMessage::Snapshot]);
+        assert_eq!(s.apply(Incoming::Ready), vec![AppClientMessage::Snapshot {}]);
         let out = s.apply(snapshot(&[("lab-a", "p1"), ("lab-a", "p2")], 41));
-        assert_eq!(out[0], ClientMessage::Events { cursor: 41 });
+        assert_eq!(out[0], AppClientMessage::Events { cursor: EventSeq::new(41).unwrap() });
         let tools: Vec<String> = calls(&out).into_iter().map(|(_, t)| t).collect();
         assert_eq!(tools, ["project_get", "project_get", "asks_list", "attention_policy"]);
         assert_eq!(s.projects.len(), 2);
@@ -738,11 +811,11 @@ mod tests {
         let out = s.apply(event("workstream.created", Some("p2"), None));
         assert_eq!(s.pending.values().collect::<Vec<_>>(), [&Purpose::Project(("lab-a".into(), "p2".into()))]);
         assert_eq!(calls(&out).len(), 1);
-        assert_eq!(s.apply(event("lead.started", Some("p9"), None)), vec![ClientMessage::Snapshot]);
+        assert_eq!(s.apply(event("lead.started", Some("p9"), None)), vec![AppClientMessage::Snapshot {}]);
         // Only one snapshot in flight; a second one doesn't restart the event stream.
         assert!(s.apply(event("machine.offline", None, None)).is_empty());
         let out = s.apply(snapshot(&[("lab-a", "p1"), ("lab-a", "p2"), ("lab-a", "p9")], 50));
-        assert!(!out.iter().any(|m| matches!(m, ClientMessage::Events { .. })));
+        assert!(!out.iter().any(|m| matches!(m, AppClientMessage::Events { .. })));
         assert_eq!(s.projects.len(), 3);
         assert!(s.project(&("lab-a".into(), "p1".into())).unwrap().outcome.is_some(), "known outcomes survive a resnapshot");
     }
@@ -767,21 +840,21 @@ mod tests {
         let batches = json!([{ "batchId": "B1", "createdAt": AT, "state": "open",
             "items": [{ "number": 2, "askId": "A2" }, { "number": 1, "askId": "A1" }, { "number": 3, "askId": "A3" }] }]);
         s.apply(result(&id, json!({ "batches": batches, "asks": [ask("A1", 1, "open"), ask("A2", 2, "answered"), ask("A3", 3, "open")] })));
-        let items: Vec<(u32, &str)> = s.inbox().iter().map(|i| (i.number, i.ask.ask_id.as_str())).collect();
+        let items: Vec<(i64, &str)> = s.inbox().iter().map(|i| (i.number, i.ask.ask_id.as_str())).collect();
         assert_eq!(items, [(1, "A1"), (3, "A3")]);
     }
 
     #[test]
     fn reply_sends_inbox_reply_and_shows_the_echo_or_hint() {
         let mut s = synced();
-        let out = s.reply("1 go", Some("B1"));
-        let ClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
+        let out = s.reply("1 go", Some(&BatchId::new("B1").unwrap()));
+        let AppClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
         assert_eq!((tool.as_str(), input), ("inbox_reply", &json!({ "raw": "1 go", "batchId": "B1" })));
         let refresh = calls(&s.apply(result(id, json!({ "parsed": true, "echo": "Logged: 1 → /healthz (D1)", "applied": [] }))));
         assert_eq!(s.echo, Some(Echo { text: "Logged: 1 → /healthz (D1)".into(), ok: true }));
         assert_eq!(refresh[0].1, "asks_list");
 
-        let ClientMessage::Call { id, .. } = &s.reply("purple", None)[0] else { panic!() };
+        let AppClientMessage::Call { id, .. } = &s.reply("purple", None)[0] else { panic!() };
         s.apply(result(id, json!({ "parsed": false, "applied": [], "hint": "Start with an item number." })));
         assert_eq!(s.echo, Some(Echo { text: "Start with an item number.".into(), ok: false }));
     }
@@ -790,12 +863,7 @@ mod tests {
     fn call_errors_land_where_the_call_was_for() {
         let mut s = synced();
         let id = calls(&s.apply(event("ask.created", None, None)))[0].0.clone();
-        s.apply(Incoming::Message(ServerMessage::Error(ErrorFrame {
-            id: Some(id),
-            code: ErrorCode::NotFound,
-            message: "No tool asks_list.".into(),
-            fix: Some("Upgrade the hub.".into()),
-        })));
+        s.apply(error(&id, ErrorCode::NotFound, "No tool asks_list.", Some("Upgrade the hub.")));
         assert_eq!(s.asks_error.as_deref(), Some("No tool asks_list. Upgrade the hub."));
         assert!(s.inflight.is_empty());
     }
@@ -813,7 +881,7 @@ mod tests {
                            { "kind": "message", "at": AT, "role": "user", "text": "oldest" }]);
         s.apply(result(tail_id, json!({ "items": items, "thread": thread })));
         let detail = s.detail.as_ref().unwrap();
-        assert!(matches!(&detail.tail[0], TailItem::Message { text, .. } if text == "oldest"));
+        assert!(matches!(&detail.tail[0], TailItem::Message(m) if m.text == "oldest"));
         assert_eq!(detail.version, 1);
 
         assert!(calls(&s.apply(event("thread.completed", None, Some("other")))).is_empty());
@@ -826,9 +894,16 @@ mod tests {
         let mut s = synced();
         let key: ProjectKey = ("lab-a".into(), "p1".into());
         for (id, _) in calls(&s.open_project(key.clone())) {
-            s.apply(result(&id, if s.pending[&id] == Purpose::Tail(key.clone()) { json!({ "items": [], "thread": {
+            s.apply(result(
+                &id,
+                if s.pending[&id] == Purpose::Tail(key.clone()) {
+                    json!({ "items": [], "thread": {
                 "machineId": "lab-a", "threadId": "lead-1", "projectId": "p1", "title": "lead", "status": "idle", "headline": "",
-                "latestMessageTail": "", "lastProgressAt": AT, "stale": false, "asOf": AT } }) } else { outcome("p1", Some("lead-1"), "idle") }));
+                "latestMessageTail": "", "lastProgressAt": AT, "stale": false, "asOf": AT } })
+                } else {
+                    outcome("p1", Some("lead-1"), "idle")
+                },
+            ));
         }
         assert!(s.poll(0).is_empty());
         let id = calls(&s.apply(event("lead.woken", Some("p1"), None)))[0].0.clone();
@@ -850,7 +925,7 @@ mod tests {
         let mut s = synced();
         assert!(s.apply(event("doctor.changed", None, None)).is_empty(), "nothing to refresh before the screen opened");
         let out = s.open_doctor();
-        let ClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
+        let AppClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
         assert_eq!((tool.as_str(), input), ("doctor_list", &json!({})));
         s.apply(result(id, json!({ "checks": [check("hub/gh_auth", "ok", None)], "checkedAt": AT })));
         assert_eq!(s.doctor.as_ref().unwrap().checks.len(), 1);
@@ -861,7 +936,7 @@ mod tests {
         let again = calls(&s.apply(result(&refresh[0].0, json!({ "checks": [], "checkedAt": AT }))));
         assert_eq!(again.iter().map(|c| c.1.as_str()).collect::<Vec<_>>(), ["doctor_list"]);
 
-        let ClientMessage::Call { input, .. } = &s.rerun_doctor()[0] else { panic!() };
+        let AppClientMessage::Call { input, .. } = &s.rerun_doctor()[0] else { panic!() };
         assert_eq!(input, &json!({ "rerun": true }));
     }
 
@@ -872,25 +947,23 @@ mod tests {
         let auto = json!({ "kind": "auto", "label": "Restart T3" });
         s.apply(result(&id, json!({ "checks": [check("hub/gh_auth", "ok", None), check("lab-a/t3", "fail", Some(auto))], "checkedAt": AT })));
 
-        let out = s.fix_doctor("lab-a/t3");
-        let ClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
+        let out = s.fix_doctor(&check_id("lab-a/t3"));
+        let AppClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
         assert_eq!((tool.as_str(), input), ("doctor_fix", &json!({ "checkId": "lab-a/t3" })));
-        assert!(s.doctor_fixing("lab-a/t3"));
-        assert!(s.fix_doctor("lab-a/t3").is_empty(), "one fix at a time per check");
+        assert!(s.doctor_fixing(&check_id("lab-a/t3")));
+        assert!(s.fix_doctor(&check_id("lab-a/t3")).is_empty(), "one fix at a time per check");
         s.apply(result(id, json!({ "ran": "Restarted T3 on lab-a.", "check": check("lab-a/t3", "ok", None) })));
         let checks = &s.doctor.as_ref().unwrap().checks;
-        assert_eq!(checks.iter().map(|c| (c.id.as_str(), c.status)).collect::<Vec<_>>(), [("hub/gh_auth", DoctorStatus::Ok), ("lab-a/t3", DoctorStatus::Ok)]);
+        assert_eq!(
+            checks.iter().map(|c| (c.id.as_str(), c.status)).collect::<Vec<_>>(),
+            [("hub/gh_auth", DoctorStatus::Ok), ("lab-a/t3", DoctorStatus::Ok)]
+        );
         assert_eq!(s.echo, Some(Echo { text: "Restarted T3 on lab-a.".into(), ok: true }));
 
-        let ClientMessage::Call { id, .. } = &s.fix_doctor("hub/gh_auth")[0] else { panic!() };
-        s.apply(Incoming::Message(ServerMessage::Error(ErrorFrame {
-            id: Some(id.clone()),
-            code: ErrorCode::Invalid,
-            message: "This fix is manual.".into(),
-            fix: Some("Run gh auth login on the hub.".into()),
-        })));
+        let AppClientMessage::Call { id, .. } = &s.fix_doctor(&check_id("hub/gh_auth"))[0] else { panic!() };
+        s.apply(error(id, ErrorCode::Invalid, "This fix is manual.", Some("Run gh auth login on the hub.")));
         assert_eq!(s.echo, Some(Echo { text: "This fix is manual. Run gh auth login on the hub.".into(), ok: false }));
-        assert!(!s.doctor_fixing("hub/gh_auth"));
+        assert!(!s.doctor_fixing(&check_id("hub/gh_auth")));
     }
 
     fn machine_json(id: &str, status: &str, box_key: Option<&str>) -> Value {
@@ -903,7 +976,7 @@ mod tests {
 
     fn secret_ask(id: &str, sink: &str) -> Ask {
         serde_json::from_value(json!({ "askId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "kind": "secret",
-            "key": "STRIPE_KEY", "class": "credential", "text": "Stripe key?", "sink": sink, "blocks": "the deploy",
+            "key": "stripe.key", "class": "credential", "text": "Stripe key?", "sink": sink, "blocks": "the deploy",
             "proceededOnRec": false, "state": "open", "batchId": "B1", "number": 1, "createdAt": AT }))
         .unwrap()
     }
@@ -911,36 +984,34 @@ mod tests {
     #[test]
     fn a_secret_goes_to_its_sink_machine_only_when_that_machine_can_take_it() {
         let mut s = synced();
-        let machines = [machine_json("lab-a", "online", Some("a2V5")), machine_json("lab-b", "online", None), machine_json("lab-c", "offline", Some("a2V5"))];
+        let machines =
+            [machine_json("lab-a", "online", Some(BOX_KEY)), machine_json("lab-b", "online", None), machine_json("lab-c", "offline", Some(BOX_KEY))];
         s.machines = machines.iter().map(|m| serde_json::from_value(m.clone()).unwrap()).collect();
-        assert_eq!(s.secret_target(&secret_ask("A1", "env:lab-a:/w/p1/.env")), Ok(("lab-a".into(), "a2V5".into())));
+        assert_eq!(s.secret_target(&secret_ask("A1", "env:lab-a:/w/p1/.env")), Ok(("lab-a".into(), BOX_KEY.into())));
         assert_eq!(s.secret_target(&secret_ask("A1", "file:lab-a:/home/x/key")).unwrap().0, "lab-a");
         assert!(s.secret_target(&secret_ask("A1", "env:lab-b:/w/.env")).unwrap_err().contains("no box key"));
         assert!(s.secret_target(&secret_ask("A1", "env:lab-c:/w/.env")).unwrap_err().contains("offline"));
         assert!(s.secret_target(&secret_ask("A1", "env:lab-z:/w/.env")).unwrap_err().contains("doesn't know"));
-        assert!(s.secret_target(&secret_ask("A1", "keychain")).unwrap_err().contains("no valid sink"));
+        // The contract refuses a secret ask without a sink; the app still won't guess one.
+        let no_sink = Ask { sink: None, ..secret_ask("A1", "env:lab-a:/w/.env") };
+        assert!(s.secret_target(&no_sink).unwrap_err().contains("no valid sink"));
     }
 
     #[test]
     fn submit_secret_sends_the_sealed_value_and_echoes_the_fingerprint() {
         let mut s = synced();
         s.asks.insert("A1".into(), secret_ask("A1", "env:lab-a:/w/p1/.env"));
-        let out = s.submit_secret("A1", "lab-a", "c2VhbGVk".into());
-        let ClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
-        assert_eq!((tool.as_str(), input), ("secret_submit", &json!({ "askId": "A1", "sealed": "c2VhbGVk" })));
+        let out = s.submit_secret("A1", "lab-a", sealed());
+        let AppClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
+        assert_eq!((tool.as_str(), input), ("secret_submit", &json!({ "askId": "A1", "sealed": sealed() })));
         assert!(s.secret_submitting("A1"));
-        assert!(s.submit_secret("A1", "lab-a", "again".into()).is_empty(), "one submit at a time");
+        assert!(s.submit_secret("A1", "lab-a", sealed()).is_empty(), "one submit at a time");
         let refresh = calls(&s.apply(result(id, json!({ "askId": "A1", "fingerprint": "0a1b2c3d" }))));
-        assert_eq!(s.echo, Some(Echo { text: "STRIPE_KEY saved on lab-a, fingerprint 0a1b2c3d".into(), ok: true }));
+        assert_eq!(s.echo, Some(Echo { text: "stripe.key saved on lab-a, fingerprint 0a1b2c3d".into(), ok: true }));
         assert_eq!(refresh[0].1, "asks_list");
 
-        let ClientMessage::Call { id, .. } = &s.submit_secret("A1", "lab-a", "c2VhbGVk".into())[0] else { panic!() };
-        s.apply(Incoming::Message(ServerMessage::Error(ErrorFrame {
-            id: Some(id.clone()),
-            code: ErrorCode::MachineOffline,
-            message: "lab-a's node did not take the secret.".into(),
-            fix: None,
-        })));
+        let AppClientMessage::Call { id, .. } = &s.submit_secret("A1", "lab-a", sealed())[0] else { panic!() };
+        s.apply(error(id, ErrorCode::MachineOffline, "lab-a's node did not take the secret.", None));
         assert_eq!(s.echo, Some(Echo { text: "lab-a's node did not take the secret.".into(), ok: false }));
     }
 
@@ -955,17 +1026,11 @@ mod tests {
     }
 
     fn loud(kind: &str, summary: &str, ask: Option<&str>, attention: Attention) -> Incoming {
-        Incoming::Message(ServerMessage::Event(HubEvent {
-            seq: 10,
-            at: AT.into(),
-            kind: kind.into(),
-            machine_id: None,
-            project_id: None,
-            thread_id: None,
-            summary: summary.into(),
-            data: ask.map(|id| json!({ "askId": id })),
-            attention: Some(attention),
-        }))
+        let mut e = json!({ "seq": 10, "at": AT, "type": kind, "summary": summary, "attention": attention });
+        if let Some(id) = ask {
+            e["data"] = json!({ "askId": id });
+        }
+        hub_event(e)
     }
 
     const NOW: i64 = 1_792_231_200_000;
@@ -1010,7 +1075,7 @@ mod tests {
         s.apply(Incoming::Ready);
         let out = s.apply(snapshot(&[], 0));
         let policy = calls(&out).into_iter().find(|c| c.1 == "attention_policy").unwrap();
-        s.apply(Incoming::Message(ServerMessage::Error(ErrorFrame { id: Some(policy.0), code: ErrorCode::NotFound, message: "No tool attention_policy.".into(), fix: None })));
+        s.apply(error(&policy.0, ErrorCode::NotFound, "No tool attention_policy.", None));
         assert_eq!(s.policy, Some(Policy::fallback()));
     }
 

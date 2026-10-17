@@ -9,7 +9,7 @@
 # sysroot (app/bench/linux-sysroot.sh) with Mesa lavapipe unless FLEETD_VK_ICD names another driver.
 # macOS: see app/bench/MAC-RUN.md.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 RUNS=10
 features=()
@@ -31,10 +31,10 @@ trap cleanup EXIT
 if [ "$os" = Linux ]; then
   if ! pkg-config --exists xkbcommon-x11 fontconfig 2>/dev/null; then
     FLEETD_SYSROOT="${FLEETD_SYSROOT:-$HOME/src/fleetd-lab/sysroot}"
-    [ -x "$FLEETD_SYSROOT/usr/bin/Xvfb-fleetd" ] || bench/linux-sysroot.sh "$FLEETD_SYSROOT" >&2
+    [ -x "$FLEETD_SYSROOT/usr/bin/Xvfb-fleetd" ] || app/bench/linux-sysroot.sh "$FLEETD_SYSROOT" >&2
     export FLEETD_SYSROOT
     # shellcheck source=app/bench/linux-env.sh disable=SC1091
-    source bench/linux-env.sh
+    source app/bench/linux-env.sh
     keep+=(LD_LIBRARY_PATH VK_ICD_FILENAMES)
   fi
 fi
@@ -45,7 +45,7 @@ cargo build --release --locked -p fleetd-bench >&2
 
 if [ "$os" = Linux ]; then
   if [ -z "${DISPLAY:-}" ] || [ "${FLEETD_HEADLESS:-0}" = 1 ]; then
-    : "${FLEETD_SYSROOT:?headless runs need the sysroot Xvfb; run bench/linux-sysroot.sh}"
+    : "${FLEETD_SYSROOT:?headless runs need the sysroot Xvfb; run app/bench/linux-sysroot.sh}"
     # Xvfb-fleetd looks for xkbcomp in /tmp/xk (see linux-sysroot.sh). Refuse a directory we don't own.
     mkdir -m 700 /tmp/xk 2>/dev/null || true
     [ -O /tmp/xk ] || { echo "/tmp/xk is not owned by $USER" >&2; exit 1; }

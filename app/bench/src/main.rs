@@ -65,10 +65,7 @@ fn main() {
                 cold_start(&args.app, &[]).0
             })
             .collect();
-        row(
-            &format!("Cold start, binary + {} mapped files evicted from page cache ({} runs)", mapped.len(), args.runs),
-            med_p90(&evicted, "ms"),
-        );
+        row(&format!("Cold start, binary + {} mapped files evicted from page cache ({} runs)", mapped.len(), args.runs), med_p90(&evicted, "ms"));
     }
     let _ = mapped;
 
@@ -80,7 +77,10 @@ fn main() {
         match keys_external(&args.app) {
             Ok((in_app, external)) => {
                 row(&format!("Input latency in-app, key handler -> echo frame presented ({} XTEST keys)", in_app.len()), med_p90(&in_app, "ms"));
-                row(&format!("Input latency external, XTEST send -> echo pixels readable from X ({} keys)", external.len()), med_p90(&external, "ms"));
+                row(
+                    &format!("Input latency external, XTEST send -> echo pixels readable from X ({} keys)", external.len()),
+                    med_p90(&external, "ms"),
+                );
             }
             Err(e) => row("Input latency external (XTEST)", format!("failed: {e}")),
         }
@@ -130,10 +130,10 @@ impl Run {
         let (tx, lines) = mpsc::channel();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if let Some(rest) = line.strip_prefix("FLEETD_BENCH ") {
-                    if tx.send(rest.to_string()).is_err() {
-                        return;
-                    }
+                if let Some(rest) = line.strip_prefix("FLEETD_BENCH ")
+                    && tx.send(rest.to_string()).is_err()
+                {
+                    return;
                 }
             }
         });

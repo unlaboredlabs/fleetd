@@ -162,6 +162,38 @@ Against the M8 section above:
   62.2 fps, worst frame 28.3 ms (earlier sections: 23.5-27.1 ms). The bench screen doesn't draw the inbox, and the
   notification check runs once per hub frame and every 3 s, so we read all of it as run-to-run noise.
 
+## Linux (forge): the app on fleetd-contracts, software-rendered
+
+The app builds in the root Cargo workspace and reads the hub's frames through the `fleetd-contracts` types, instead of
+its own copy of them. Same bench as the section above.
+
+**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T21:48Z, fleetd 807b5c2, gpui zed v1.24.2 (fb69067).
+
+| Metric | Value |
+|---|---|
+| Binary size (release, stripped) | 27.0 MiB |
+| Idle RSS, empty log, 10 s after first frame | 126.8 MiB |
+| Idle RSS, 20k-line log loaded, 10 s after first frame | 132.6 MiB |
+| RSS, 20k-line log + streaming 50 lines/s, after 10 s | 145.1 MiB |
+| Cold start, exec -> first frame presented, warm cache (10 runs) | median 70.2 ms, p90 70.8 ms, max 72.1 ms |
+|   of which: exec -> first frame draw starts | median 50.2 ms, p90 51.5 ms, max 51.7 ms |
+| Cold start, binary + 36 mapped files evicted from page cache (10 runs) | median 217.2 ms, p90 219.3 ms, max 219.8 ms |
+| Input latency in-app, key handler -> echo frame presented (200 keys, gpui dispatch) | median 10.7 ms, p90 16.2 ms, max 23.2 ms |
+| Input latency in-app, key handler -> echo frame presented (200 XTEST keys) | median 11.6 ms, p90 14.6 ms, max 22.9 ms |
+| Input latency external, XTEST send -> echo pixels readable from X (200 keys) | median 13.7 ms, p90 16.5 ms, max 31.8 ms |
+| Scroll 20k-line log for 5 s: presented frames/s | 61.8 |
+| Scroll 20k-line log for 5 s: worst frame interval | 27.5 ms |
+
+Against the section above:
+- +0.3 MiB binary: fleetd-contracts brings regex, url and chrono-tz's zone table, which the app links even though it
+  only reads the wire types.
+- Idle RSS: +0.8 / +0.7 / +1.5 MiB. Earlier sections span 143.6-147.7 MiB for the streaming row, so this is within noise.
+- Cold start median: -0.6 ms (warm), +2.5 ms (evicted; earlier sections span 212.4-215.2 ms).
+- Input latency medians: -0.1 / -0.6 / -0.1 ms.
+- Scroll: 61.8 fps, worst frame 27.5 ms.
+- Decoding happens only when a hub frame arrives, which the bench screen doesn't do, so we read every difference as
+  run-to-run noise.
+
 ## Linux (forge): GPU (RADV)
 
 Pending: `wynn` is not in the `render`/`video` groups yet (`getent group render` shows no members). Once

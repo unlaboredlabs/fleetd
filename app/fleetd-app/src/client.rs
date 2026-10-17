@@ -1,5 +1,5 @@
 //! The hub connection: one WebSocket to `/app`, reconnected with backoff. Frames go to the app as
-//! [`Incoming`]; the app's [`ClientMessage`]s go out on the socket. Every (re)connect starts with `auth`,
+//! [`Incoming`]; the app's [`AppClientMessage`]s go out on the socket. Every (re)connect starts with `auth`,
 //! and the app state resyncs from a fresh snapshot, so nothing is replayed across connections.
 
 use std::sync::{Arc, OnceLock};
@@ -12,7 +12,8 @@ use futures::{FutureExt, StreamExt, select};
 use futures_rustls::rustls::{self, pki_types::ServerName};
 use rustls_platform_verifier::BuilderVerifierExt;
 
-use crate::protocol::{ClientMessage, ServerMessage};
+use fleetd_contracts::app::{AppClientMessage, AppServerMessage};
+use fleetd_contracts::prim::NonEmpty;
 
 /// The hub's close code for a refused key.
 const CLOSE_UNAUTHORIZED: u16 = 4401;
@@ -22,10 +23,13 @@ pub enum Incoming {
     /// The key was accepted on a new connection.
     Ready,
     /// The connection dropped; the client is retrying after `retry_in`.
-    Disconnected { reason: String, retry_in: Duration },
+    Disconnected {
+        reason: String,
+        retry_in: Duration,
+    },
     /// The hub refused the key. The client has stopped.
     Unauthorized(String),
-    Message(ServerMessage),
+    Message(AppServerMessage),
 }
 
 /// Delay before reconnect attempt `attempt` (0-based): 0.5 s doubling to a 30 s cap.
@@ -89,17 +93,17 @@ pub struct Session {
 
 impl Session {
     pub fn on_text(&mut self, text: &str) -> Step {
-        let Ok(message) = serde_json::from_str::<ServerMessage>(text) else {
-            // A frame type this build doesn't know (a newer hub): skip it.
+        let Ok(message) = serde_json::from_str::<AppServerMessage>(text) else {
+            // A frame this build can't read (a newer hub): skip it.
             return Step::Ignore;
         };
         match message {
-            ServerMessage::Ready(_) => {
+            AppServerMessage::Ready { .. } => {
                 self.ready = true;
                 Step::Forward(Incoming::Ready)
             }
             // Before ready, an error can only be about the key.
-            ServerMessage::Error(e) if !self.ready && e.id.is_none() => Step::Refused(e.message),
+            AppServerMessage::Error(e) if !self.ready && e.id.is_none() => Step::Refused(e.message),
             other => Step::Forward(Incoming::Message(other)),
         }
     }
@@ -110,7 +114,7 @@ impl Session {
 }
 
 /// Runs until the key is refused or `outgoing` closes (the app dropped the connection).
-pub async fn run(url: String, key: String, mut outgoing: UnboundedReceiver<ClientMessage>, incoming: UnboundedSender<Incoming>) {
+pub async fn run(url: String, key: String, mut outgoing: UnboundedReceiver<AppClientMessage>, incoming: UnboundedSender<Incoming>) {
     let mut attempt = 0;
     loop {
         let reason = match connect_once(&url, &key, &mut outgoing, &incoming).await {
@@ -143,12 +147,7 @@ enum Ended {
     Dropped { reason: String, was_ready: bool },
 }
 
-async fn connect_once(
-    url: &str,
-    key: &str,
-    outgoing: &mut UnboundedReceiver<ClientMessage>,
-    incoming: &UnboundedSender<Incoming>,
-) -> Ended {
+async fn connect_once(url: &str, key: &str, outgoing: &mut UnboundedReceiver<AppClientMessage>, incoming: &UnboundedSender<Incoming>) -> Ended {
     let dropped = |reason: String, was_ready| Ended::Dropped { reason, was_ready };
     let hub = match app_url(url) {
         Ok(v) => v,
@@ -170,7 +169,11 @@ async fn connect_once(
         Ok((ws, _)) => ws,
         Err(e) => return dropped(format!("WebSocket handshake with {} failed: {e}", hub.url), false),
     };
-    let auth = serde_json::to_string(&ClientMessage::Auth { key: key.to_string() }).unwrap();
+    let key = match NonEmpty::new(key) {
+        Ok(key) => key,
+        Err(_) => return Ended::Refused("The key is empty.".into()),
+    };
+    let auth = serde_json::to_string(&AppClientMessage::Auth { key }).unwrap();
     if let Err(e) = ws.send(Message::text(auth)).await {
         return dropped(e.to_string(), false);
     }
@@ -289,16 +292,17 @@ mod tests {
     fn frames_after_ready_are_forwarded() {
         let mut s = Session::default();
         assert_eq!(s.on_text(r#"{"t":"ready","protocol":1}"#), Step::Forward(Incoming::Ready));
-        let Step::Forward(Incoming::Message(ServerMessage::Error(e))) =
+        let Step::Forward(Incoming::Message(AppServerMessage::Error(e))) =
             s.on_text(r#"{"t":"error","id":"c3","code":"forbidden","message":"This key lacks the operate role."}"#)
         else {
             panic!("call errors are forwarded");
         };
         assert_eq!(e.id.as_deref(), Some("c3"));
-        let Step::Forward(Incoming::Message(ServerMessage::Result(r))) = s.on_text(r#"{"t":"result","id":"c4","output":{"ok":true}}"#) else {
+        let Step::Forward(Incoming::Message(AppServerMessage::Result { output, .. })) = s.on_text(r#"{"t":"result","id":"c4","output":{"ok":true}}"#)
+        else {
             panic!("results are forwarded");
         };
-        assert_eq!(r.output["ok"], true);
+        assert_eq!(output["ok"], true);
     }
 
     #[test]
