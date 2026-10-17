@@ -17,6 +17,7 @@ import path from "node:path";
 import tls from "node:tls";
 import { decryptPayload } from "../push/webPush.ts";
 import { type Body, CLI, cli, HUB_PORT, LAB, type Lab, MODEL, RUN, scrubbedEnv } from "./harness.ts";
+import { TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const CHROME =
@@ -144,7 +145,8 @@ export async function m8Phone(lab: Lab) {
   const { callTool, check, ok } = lab;
   check(fs.existsSync(CHROME), `chrome-headless-shell at ${CHROME} (set FLEETD_LAB_CHROME to another one)`);
   await lab.waitLive(MACHINE);
-  const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE)?.projectId as string;
+  // The hub keeps m7's deleted testbed project in its list; this scenario uses lab-a's own repo.
+  const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot !== TESTBED)?.projectId as string;
   check(projectId, `${MACHINE} has a project`);
   const ref = { machineId: MACHINE, projectId };
   const root = (await callTool("project_get", ref)).body.project.workspaceRoot as string;
