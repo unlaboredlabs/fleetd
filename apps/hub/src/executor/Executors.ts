@@ -96,6 +96,8 @@ export class Executors extends Context.Service<
     /** Drops the connection. The machine's shell state is kept, so a later attach resumes from its cursor. */
     readonly detach: (machineId: MachineId) => Effect.Effect<void>;
     readonly isConnected: (machineId: MachineId) => Effect.Effect<boolean>;
+    /** Returns once the machine has a live T3 connection, at once if it has one now. */
+    readonly awaitLive: (machineId: MachineId) => Effect.Effect<void>;
     readonly launch: (machineId: MachineId, input: LaunchInput) => Effect.Effect<{ readonly threadId: ThreadId }, ExecutorError>;
     readonly send: (
       ref: ThreadRef,
@@ -147,6 +149,8 @@ const make = Effect.gen(function* () {
   const events = yield* EventLog.EventLog;
   const layerScope = yield* Effect.scope;
   const machines = new Map<string, Machine>();
+  /** Completed when the machine next goes live. */
+  const liveWaiters = new Map<string, Deferred.Deferred<void>>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
   const liveOf = (machineId: MachineId) => {
@@ -278,6 +282,9 @@ const make = Effect.gen(function* () {
             if (machine.live === undefined) {
               machine.live = { client, scope };
               onLive();
+              const waiter = liveWaiters.get(machineId);
+              liveWaiters.delete(machineId);
+              if (waiter !== undefined) Deferred.doneUnsafe(waiter, Effect.void);
             }
             return handleShellItem(machineId, machine, item, baseline);
           }),
@@ -473,6 +480,16 @@ const make = Effect.gen(function* () {
       attach,
       detach,
       isConnected: (machineId) => Effect.sync(() => machines.get(machineId)?.live !== undefined),
+      awaitLive: (machineId) =>
+        Effect.suspend(() => {
+          if (machines.get(machineId)?.live !== undefined) return Effect.void;
+          let waiter = liveWaiters.get(machineId);
+          if (waiter === undefined) {
+            waiter = Deferred.makeUnsafe<void>();
+            liveWaiters.set(machineId, waiter);
+          }
+          return Deferred.await(waiter);
+        }),
       launch,
       send,
       interrupt,

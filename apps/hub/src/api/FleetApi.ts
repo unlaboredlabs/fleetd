@@ -23,6 +23,8 @@ import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Executors from "../executor/Executors.ts";
 import * as Webhooks from "../webhooks/Webhooks.ts";
+import * as WriteQueue from "../queue/WriteQueue.ts";
+import * as Wakes from "../wakes/Wakes.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -48,10 +50,13 @@ export const IMPLEMENTED_TOOLS = [
   "subscription_set",
   "subscription_list",
   "subscription_delete",
+  "wake_set",
+  "wake_list",
+  "wake_cancel",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
-export const LIMITS = { projects: 50, attention: 10, outcomeThreads: 20, tailText: 2000 } as const;
+export const LIMITS = { projects: 50, attention: 10, outcomeThreads: 20, tailText: 2000, wakes: 200 } as const;
 const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited"];
 /** How far back fleetd_status looks for attention events. */
 const ATTENTION_LOOKBACK = 1000;
@@ -126,6 +131,8 @@ const make = Effect.gen(function* () {
   const auth = yield* Auth.Auth;
   const executors = yield* Executors.Executors;
   const webhooks = yield* Webhooks.Webhooks;
+  const writes = yield* WriteQueue.WriteQueue;
+  const wakes = yield* Wakes.Wakes;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -149,6 +156,17 @@ const make = Effect.gen(function* () {
   const requireConnected = Effect.fnUntraced(function* (machineId: MachineId) {
     if (!(yield* executors.isConnected(machineId))) return yield* offline(machineId);
   });
+
+  /** A write that may wait in the queue needs a target the hub has seen, since T3 can't vouch for it offline. */
+  const requireKnownThread = Effect.fnUntraced(function* (ref: ThreadRef) {
+    if ((yield* store.machines.get(ref.machineId)) === undefined) return yield* unknownMachine(ref.machineId);
+    if ((yield* store.threads.get(ref)) === undefined && !(yield* executors.isConnected(ref.machineId))) {
+      return yield* unknownThread(ref);
+    }
+  });
+
+  const unknownWake = (wakeId: string) =>
+    new ToolError({ code: "not_found", message: `No wake ${wakeId}.`, fix: "Call wake_list to see wakes." });
 
   /** The latest attention events the caller may see, oldest first, scanned forward from a bounded lookback. */
   const attention = Effect.fnUntraced(function* (caller: AgentKeyInfo, head: number) {
@@ -286,11 +304,14 @@ const make = Effect.gen(function* () {
 
     thread_send: Effect.fnUntraced(function* (caller, input) {
       yield* require(caller, "operate", input.machineId);
-      yield* requireConnected(input.machineId);
-      const sent = yield* executors
-        .send(input, input.message, input.clientRequestId)
-        .pipe(Effect.mapError(fromExecutor));
-      return { ...sent, next: "Call events_wait to wait for the thread to finish." };
+      yield* requireKnownThread(input);
+      const sent = yield* writes.send(input, input.message, input.clientRequestId).pipe(Effect.mapError(fromExecutor));
+      return {
+        ...sent,
+        next: sent.queued
+          ? `${input.machineId} is offline: the message is queued until ${sent.queuedUntil}. Wait for write.delivered or write.expired with events_wait.`
+          : "Call events_wait to wait for the thread to finish.",
+      };
     }),
 
     thread_interrupt: Effect.fnUntraced(function* (caller, input) {
@@ -321,6 +342,41 @@ const make = Effect.gen(function* () {
           fix: "Call subscription_list to see this key's subscriptions.",
         });
       }
+      return { ok: true as const };
+    }),
+
+    wake_set: Effect.fnUntraced(function* (caller, input) {
+      yield* require(caller, "operate", input.target.machineId);
+      yield* requireKnownThread(input.target);
+      const set = yield* wakes.set({ ...input, createdBy: caller.keyId }).pipe(
+        Effect.mapError(
+          (error) =>
+            new ToolError({
+              code: "invalid",
+              message: `Invalid schedule: ${error.message}`,
+              fix: "Use at (ISO time, future), every (everySec >= 60) or a 5-field cron, with an IANA tz such as Europe/London.",
+            }),
+        ),
+      );
+      return { ...set, next: `Call events_wait with types ["wake.fired"] to see it fire, or wake_cancel with wakeId ${set.wakeId}.` };
+    }),
+
+    wake_list: Effect.fnUntraced(function* (caller, input) {
+      if (input.machineId !== undefined) yield* require(caller, "read", input.machineId);
+      const all = (yield* wakes.list(input)).filter((w) => auth.allows(caller, "read", w.target.machineId));
+      const shown = cap(all, LIMITS.wakes);
+      return {
+        wakes: shown.items,
+        ...withTruncated(shown.truncated),
+        ...(shown.truncated ? { next: "Narrow the list with machineId, threadId or state." } : {}),
+      };
+    }),
+
+    wake_cancel: Effect.fnUntraced(function* (caller, input) {
+      const wake = yield* wakes.get(input.wakeId);
+      if (wake === undefined || !auth.allows(caller, "read", wake.target.machineId)) return yield* unknownWake(input.wakeId);
+      yield* require(caller, "operate", wake.target.machineId);
+      yield* wakes.cancel(input.wakeId);
       return { ok: true as const };
     }),
   };

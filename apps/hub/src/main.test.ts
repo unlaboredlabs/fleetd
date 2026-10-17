@@ -14,5 +14,7 @@ describe("hub start arguments", () => {
     for (const bad of ["nope", "host:", "host:0", "host:65536", "host:12ab"]) expect(parseListen(bad)).toBeUndefined();
     expect(parseHubArgs(["--listen", "x:y"])).toEqual({ error: "--listen must be host:port, got 'x:y'" });
     expect(parseHubArgs(["--nope"])).toHaveProperty("error");
+    expect(parseHubArgs(["--queue-ttl", "1.5"])).toHaveProperty("error");
+    expect(parseHubArgs(["--queue-ttl", "40"])).toMatchObject({ queueTtlSec: 40 });
   });
 });
