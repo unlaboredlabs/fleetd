@@ -199,7 +199,9 @@
         "train.resumed",
         "change.refused",
         "intake.routed",
-        "research.verdict"
+        "research.verdict",
+        "usage.breaker",
+        "usage.resumed"
       ]
     },
     "ThreadId": {
@@ -399,6 +401,33 @@
       ],
       "additionalProperties": true
     },
+    "UsageClass": {
+      "type": "string",
+      "enum": [
+        "usage_limit",
+        "rate_limit",
+        "pool_exhausted"
+      ]
+    },
+    "UsageParked": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "resumeAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "class",
+        "since"
+      ],
+      "additionalProperties": true
+    },
     "Lead": {
       "type": "object",
       "properties": {
@@ -441,6 +470,9 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked"
         }
       },
       "required": [
@@ -1177,6 +1209,9 @@
         "worktreePath": {
           "type": "string",
           "pattern": "^\\/"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked"
         },
         "attempt": {
           "type": "integer",
@@ -2137,6 +2172,119 @@
         "createdAt",
         "items",
         "state"
+      ],
+      "additionalProperties": true
+    },
+    "LoginKind": {
+      "type": "string",
+      "enum": [
+        "subscription",
+        "api_key",
+        "custom_base_url",
+        "unknown"
+      ]
+    },
+    "UsageBreaker": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "closed",
+            "open"
+          ]
+        },
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "ProbeCounter": {
+      "type": "object",
+      "properties": {
+        "observable": {
+          "type": "boolean"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "observable"
+      ],
+      "additionalProperties": true
+    },
+    "UsageStatus": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "login": {
+          "$ref": "#/$defs/LoginKind"
+        },
+        "breaker": {
+          "$ref": "#/$defs/UsageBreaker"
+        },
+        "parked": {
+          "type": "object",
+          "properties": {
+            "leads": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tasks": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "leads",
+            "tasks"
+          ],
+          "additionalProperties": true
+        },
+        "lastEvents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HubEvent"
+          },
+          "maxItems": 10
+        },
+        "probes": {
+          "$ref": "#/$defs/ProbeCounter"
+        }
+      },
+      "required": [
+        "machineId",
+        "login",
+        "breaker",
+        "parked",
+        "lastEvents",
+        "probes"
       ],
       "additionalProperties": true
     },
@@ -3224,6 +3372,9 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "parked": {
+              "$ref": "#/$defs/UsageParked"
+            },
             "next": {
               "type": "string"
             },
@@ -3311,6 +3462,9 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "parked": {
+              "$ref": "#/$defs/UsageParked"
             },
             "next": {
               "type": "string"
@@ -3898,6 +4052,72 @@
           ],
           "additionalProperties": true
         },
+        "usage_status.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            }
+          },
+          "additionalProperties": true
+        },
+        "usage_status.output": {
+          "type": "object",
+          "properties": {
+            "machines": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UsageStatus"
+              }
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "machines"
+          ],
+          "additionalProperties": true
+        },
+        "usage_resume.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            }
+          },
+          "required": [
+            "machineId"
+          ],
+          "additionalProperties": true
+        },
+        "usage_resume.output": {
+          "type": "object",
+          "properties": {
+            "resumed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "status": {
+              "$ref": "#/$defs/UsageStatus"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "resumed",
+            "status"
+          ],
+          "additionalProperties": true
+        },
         "claims_list.input": {
           "type": "object",
           "properties": {
@@ -4216,6 +4436,10 @@
         "task_get.output",
         "cap_set.input",
         "cap_set.output",
+        "usage_status.input",
+        "usage_status.output",
+        "usage_resume.input",
+        "usage_resume.output",
         "claims_list.input",
         "claims_list.output",
         "incidents_list.input",

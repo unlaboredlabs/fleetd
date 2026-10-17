@@ -7,18 +7,21 @@ import * as Decisions from "../ledger/Decisions.ts";
 import * as Inbox from "../ledger/Inbox.ts";
 import * as LedgerRepo from "../ledger/LedgerRepo.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
+import * as Usage from "../usage/Usage.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 import * as Leads from "./Leads.ts";
 import * as LeadWakes from "./LeadWakes.ts";
 import * as Workstreams from "./Workstreams.ts";
 
 /**
- * Leads, Workstreams, LeadWakes, TaskRecords and the ledger's AnswerSink, with the claim records, estimates and
+ * Leads, Workstreams, LeadWakes, TaskRecords, Usage and the ledger's AnswerSink, with the claim records, estimates and
  * incidents the lead digest shows. Needs HubDb, HubStore, EventLog, Executors, WriteQueue, Asks and Decisions.
  */
 export const layer = (options: Leads.LeadsOptions = {}) =>
   Layer.mergeAll(Leads.layer(options), Workstreams.layer, LeadWakes.layerAnswerSink).pipe(
     Layer.provideMerge(LeadWakes.layer()),
+    // M4 usage: parks and paces lead and task threads; LeadWakes, Leads and Tasks consult it.
+    Layer.provideMerge(Usage.layer),
     Layer.provideMerge(Layer.merge(Estimates.layer, ClaimRecords.layer)),
     Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, TaskRecords.layer, Incidents.layer)),
   );

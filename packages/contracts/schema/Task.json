@@ -32,6 +32,37 @@
       "type": "string",
       "minLength": 1
     },
+    "UsageClass": {
+      "type": "string",
+      "enum": [
+        "usage_limit",
+        "rate_limit",
+        "pool_exhausted"
+      ]
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "UsageParked": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "resumeAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "class",
+        "since"
+      ],
+      "additionalProperties": true
+    },
     "Receipts": {
       "type": "object",
       "properties": {
@@ -63,10 +94,6 @@
         "toolCalls"
       ],
       "additionalProperties": true
-    },
-    "Timestamp": {
-      "type": "string",
-      "format": "date-time"
     },
     "TaskResult": {
       "type": "object",
@@ -232,6 +259,9 @@
         "worktreePath": {
           "type": "string",
           "pattern": "^\\/"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked"
         },
         "attempt": {
           "type": "integer",

@@ -164,6 +164,33 @@
       ],
       "additionalProperties": true
     },
+    "UsageClass": {
+      "type": "string",
+      "enum": [
+        "usage_limit",
+        "rate_limit",
+        "pool_exhausted"
+      ]
+    },
+    "UsageParked": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "resumeAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "class",
+        "since"
+      ],
+      "additionalProperties": true
+    },
     "Lead": {
       "type": "object",
       "properties": {
@@ -206,6 +233,9 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked"
         }
       },
       "required": [
@@ -942,6 +972,9 @@
         "worktreePath": {
           "type": "string",
           "pattern": "^\\/"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked"
         },
         "attempt": {
           "type": "integer",

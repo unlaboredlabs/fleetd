@@ -230,6 +230,22 @@ contract! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub last_wake_at: Option<String>,
         pub session_generation: u64,
+        /// M4: the lead thread hit a usage limit and waits for its reset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub parked: Option<UsageParked>,
+    }
+}
+
+literals! {
+    pub enum UsageClass { UsageLimit = "usage_limit", RateLimit = "rate_limit", PoolExhausted = "pool_exhausted" }
+}
+
+contract! {
+    pub struct UsageParked {
+        pub class: UsageClass,
+        pub since: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub resume_at: Option<String>,
     }
 }
 

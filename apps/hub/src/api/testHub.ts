@@ -38,6 +38,7 @@ import * as Policy from "../leases/Policy.ts";
 import * as Slots from "../slots/Slots.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Tasks from "../tasks/Tasks.ts";
+import { UsageSource } from "../usage/UsageSource.ts";
 import * as Incidents from "../incidents/Incidents.ts";
 import * as Receipts from "../receipts/Receipts.ts";
 import * as JudgeHook from "../valuebar/JudgeHook.ts";
@@ -173,6 +174,8 @@ export const makeTestHub = () => {
         layerWatchedEvents,
         Auth.layer,
         Layer.succeed(Executors.Executors, executors),
+        // A lab-style machine: a subscription login, its T3 on another host, so no trace file is read.
+        Layer.succeed(UsageSource, UsageSource.of({ read: () => Effect.succeed({ login: "subscription", local: false }) })),
         Layer.succeed(NodeLinkServer.NodeLinkServer, NodeLinkServer.NodeLinkServer.of({ handle: () => Effect.void })),
       ),
     ),

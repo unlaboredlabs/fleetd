@@ -59,6 +59,10 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   task_get: "One task: its model and effort, areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
   cap_set:
     "Admin: set the global cap on running turns (1-1000) and/or one project's share of it (0-1000). Applies at once; queued tasks start as soon as they fit. Returns the slot board.",
+  usage_status:
+    "Per machine: the fleetd Claude login kind (subscription, api_key, custom_base_url; from T3's provider status, never credentials), the usage breaker (open/closed, until when, its plain message), parked lead and task counts, the latest limit events, and the probe counter of direct usage API calls seen in T3's trace file, which must be 0.",
+  usage_resume:
+    "Close a machine's usage breaker and send \"continue\" to every lead and task parked there (lead, then reviews, then writers); queued tasks start as slots allow. Use it after fixing your proxy or once the login has capacity.",
   claims_list:
     "Claims (a lead's `fleetd claim done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
   incidents_list:

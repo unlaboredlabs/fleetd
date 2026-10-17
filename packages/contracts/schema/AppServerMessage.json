@@ -199,7 +199,9 @@
         "train.resumed",
         "change.refused",
         "intake.routed",
-        "research.verdict"
+        "research.verdict",
+        "usage.breaker",
+        "usage.resumed"
       ]
     },
     "ThreadId": {

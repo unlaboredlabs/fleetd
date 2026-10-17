@@ -9,6 +9,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Executors from "../executor/Executors.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
+import * as Usage from "../usage/Usage.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 import { fromExecutor, LeadError } from "./LeadError.ts";
 import * as LeadWakes from "./LeadWakes.ts";
@@ -59,15 +60,19 @@ export const make = (options: LeadsOptions = {}) =>
     const events = yield* EventLog.EventLog;
     const executors = yield* Executors.Executors;
     const wakes = yield* LeadWakes.LeadWakes;
+    const usage = yield* Usage.Usage;
     const template = options.prompt ?? readLeadPrompt();
     // Serializes start and restart, so two concurrent calls for one project launch one thread.
     const lock = Semaphore.makeUnsafe(1);
 
     const withState = (lead: LeadRecords.StoredLead) =>
-      Effect.map(
-        store.threads.get({ machineId: lead.projectRef.machineId, threadId: lead.threadId }),
-        (thread): Lead => ({ ...lead, state: leadState(thread) }),
-      );
+      Effect.gen(function* () {
+        const ref = { machineId: lead.projectRef.machineId, threadId: lead.threadId };
+        const thread = yield* store.threads.get(ref);
+        // M4 usage: a lead whose thread hit a limit shows it is parked and until when.
+        const parked = yield* usage.parkedOf(ref);
+        return { ...lead, state: leadState(thread), ...(parked === undefined ? {} : { parked }) } satisfies Lead;
+      });
 
     const projectOf = (ref: ProjectRef) =>
       Effect.flatMap(store.projects.get(ref), (project) =>
@@ -84,6 +89,15 @@ export const make = (options: LeadsOptions = {}) =>
 
     const launch = (ref: ProjectRef, project: ProjectSummary, sessionGeneration: number) =>
       Effect.gen(function* () {
+        // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
+        const paused = yield* usage.gate(ref.machineId);
+        if (paused !== undefined) {
+          return yield* new LeadError({
+            code: "invalid",
+            message: `The lead was not started: ${paused}.`,
+            fix: "Wait for the reset, or run usage_resume once the login has capacity again.",
+          });
+        }
         const settings = yield* records.settings.get(ref);
         const model = settings.model ?? options.model ?? DEFAULT_LEAD_MODEL;
         const effort = settings.effort ?? options.effort ?? DEFAULT_LEAD_EFFORT;

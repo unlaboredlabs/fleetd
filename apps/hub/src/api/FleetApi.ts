@@ -42,6 +42,8 @@ import { Inbox } from "../ledger/Inbox.ts";
 import * as Slots from "../slots/Slots.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Tasks from "../tasks/Tasks.ts";
+import * as Usage from "../usage/Usage.ts";
+import { UsageSource } from "../usage/UsageSource.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -83,6 +85,8 @@ export const IMPLEMENTED_TOOLS = [
   "tasks_list",
   "task_get",
   "cap_set",
+  "usage_status",
+  "usage_resume",
   "claims_list",
   "incidents_list",
 ] as const satisfies ReadonlyArray<McpToolName>;
@@ -103,7 +107,7 @@ export const LIMITS = {
   outcomeThreadScan: 200,
   workstreamClaims: 20,
 } as const;
-const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited"];
+const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited", "usage.breaker"];
 /** How far back fleetd_status looks for attention events. */
 const ATTENTION_LOOKBACK = 1000;
 
@@ -201,6 +205,8 @@ const make = Effect.gen(function* () {
   const claims = yield* ClaimRecords.ClaimRecords;
   const estimates = yield* Estimates.Estimates;
   const incidents = yield* Incidents.Incidents;
+  const usage = yield* Usage.Usage;
+  const usageSource = yield* UsageSource;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -745,6 +751,36 @@ const make = Effect.gen(function* () {
         ...(input.share === undefined ? {} : { share: input.share }),
       });
       return { slots: board, next: "Applied now: queued tasks start as soon as they fit. fleetd_status shows the board." };
+    }),
+
+    usage_status: Effect.fnUntraced(function* (caller, input) {
+      if (input.machineId !== undefined) {
+        yield* require(caller, "read", input.machineId);
+        if ((yield* store.machines.get(input.machineId)) === undefined) return yield* unknownMachine(input.machineId);
+      }
+      const machines = (yield* store.machines.list()).filter(
+        (m) => auth.allows(caller, "read", m.machineId) && (input.machineId === undefined || m.machineId === input.machineId),
+      );
+      const statuses = yield* Effect.forEach(machines, (m) => usage.status(m.machineId, usageSource.read(m.machineId)));
+      const open = statuses.filter((s) => s.breaker.state === "open").map((s) => s.machineId);
+      return {
+        machines: statuses,
+        next:
+          open.length === 0
+            ? "No login is paused. fleetd never calls a usage API; probes.count must stay 0."
+            : `Paused: ${open.join(", ")}. It lifts at the reset, or run usage_resume once the login has capacity.`,
+      };
+    }),
+
+    usage_resume: Effect.fnUntraced(function* (caller, input) {
+      yield* require(caller, "operate", input.machineId);
+      if ((yield* store.machines.get(input.machineId)) === undefined) return yield* unknownMachine(input.machineId);
+      const { resumed } = yield* usage.resume(input.machineId, caller.name);
+      return {
+        resumed,
+        status: yield* usage.status(input.machineId, usageSource.read(input.machineId)),
+        next: "Queued tasks start as slots allow. If the limit is still there, the breaker trips again on the next failures.",
+      };
     }),
 
     digest_get: Effect.fnUntraced(function* (caller) {
