@@ -3,16 +3,17 @@ import * as Asks from "../ledger/Asks.ts";
 import * as Decisions from "../ledger/Decisions.ts";
 import * as Inbox from "../ledger/Inbox.ts";
 import * as LedgerRepo from "../ledger/LedgerRepo.ts";
+import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 import * as Leads from "./Leads.ts";
 import * as LeadWakes from "./LeadWakes.ts";
 import * as Workstreams from "./Workstreams.ts";
 
-/** Leads, Workstreams, LeadWakes and the ledger's AnswerSink. Needs HubDb, HubStore, EventLog, Executors, Asks and Decisions. */
+/** Leads, Workstreams, LeadWakes, TaskRecords and the ledger's AnswerSink. Needs HubDb, HubStore, EventLog, Executors, Asks and Decisions. */
 export const layer = (options: Leads.LeadsOptions = {}) =>
   Layer.mergeAll(Leads.layer(options), Workstreams.layer, LeadWakes.layerAnswerSink).pipe(
     Layer.provideMerge(LeadWakes.layer()),
-    Layer.provideMerge(LeadRecords.layer),
+    Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, TaskRecords.layer)),
   );
 
 /**

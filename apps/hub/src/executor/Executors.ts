@@ -16,6 +16,7 @@ import {
   MessageId,
   ORCHESTRATION_V2_WS_METHODS as M,
   type OrchestrationV2ShellStreamItem,
+  type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ProjectId as T3ProjectId,
   ProviderInstanceId,
   ThreadId as T3ThreadId,
@@ -47,6 +48,7 @@ import {
 import { connect, type T3Client } from "./T3Connection.ts";
 import { openTool, ThreadWatch } from "./ThreadWatch.ts";
 import { WorkspaceFiles } from "./WorkspaceFiles.ts";
+import { ThreadWorkspace } from "./ThreadWorkspace.ts";
 import {
   actionsOf,
   activeRunId,
@@ -88,6 +90,10 @@ export class T3RequestFailed extends Schema.TaggedError<T3RequestFailed>()("T3Re
 
 export type ExecutorError = MachineNotConnected | ThreadNotFound | T3RequestFailed;
 type LaunchInput = typeof ThreadLaunchInput.Type;
+export interface LaunchOptions {
+  /** Default: the project root. Tasks launch writers in a new worktree on their own branch. */
+  readonly workspace?: OrchestrationV2ThreadLaunchWorkspaceStrategy;
+}
 type TailOutput = typeof ThreadTailOutput.Type;
 
 export class Executors extends Context.Service<
@@ -100,7 +106,11 @@ export class Executors extends Context.Service<
     readonly isConnected: (machineId: MachineId) => Effect.Effect<boolean>;
     /** Returns once the machine has a live T3 connection, at once if it has one now. */
     readonly awaitLive: (machineId: MachineId) => Effect.Effect<void>;
-    readonly launch: (machineId: MachineId, input: LaunchInput) => Effect.Effect<{ readonly threadId: ThreadId }, ExecutorError>;
+    readonly launch: (
+      machineId: MachineId,
+      input: LaunchInput,
+      options?: LaunchOptions,
+    ) => Effect.Effect<{ readonly threadId: ThreadId }, ExecutorError>;
     readonly send: (
       ref: ThreadRef,
       message: string,
@@ -345,7 +355,7 @@ const make = Effect.gen(function* () {
       return machine === undefined ? Effect.void : stop(machine);
     });
 
-  const launch: Executors["Service"]["launch"] = (machineId, input) =>
+  const launch: Executors["Service"]["launch"] = (machineId, input, options) =>
     Effect.gen(function* () {
       const { client } = yield* liveOf(machineId);
       const title = input.title?.trim() || input.prompt.trim().split("\n", 1)[0]!.slice(0, 80);
@@ -359,7 +369,7 @@ const make = Effect.gen(function* () {
         modelSelection: { instanceId: ProviderInstanceId.make("fleetd"), model: input.model, options: [{ id: "effort", value: input.effort }] },
         runtimeMode: input.runtimeMode,
         interactionMode: "default",
-        workspaceStrategy: { type: "root" },
+        workspaceStrategy: options?.workspace ?? { type: "root" },
         initialMessage: { text: input.prompt, attachments: [] },
       }).pipe(Effect.mapError((cause) => new T3RequestFailed({ machineId, operation: "launch", cause })));
       return { threadId: ThreadId.make(result.threadId) };
@@ -496,8 +506,41 @@ const make = Effect.gen(function* () {
       }),
   });
 
+  const readFailed = (machineId: MachineId) => (cause: unknown) => new T3RequestFailed({ machineId, operation: "read", cause });
+
+  const workspace = ThreadWorkspace.of({
+    defaultBranch: (machineId, cwd) =>
+      Effect.gen(function* () {
+        const { client } = yield* liveOf(machineId);
+        const { refs } = yield* client[WS_METHODS.vcsListRefs]({ cwd, refKind: "local", limit: 200 }).pipe(
+          Effect.mapError(readFailed(machineId)),
+        );
+        const local = refs.filter((r) => r.isRemote !== true);
+        const ref = local.find((r) => r.isDefault) ?? local.find((r) => r.current);
+        if (ref === undefined) return yield* new T3RequestFailed({ machineId, operation: "read", cause: `no local branch at ${cwd}` });
+        return ref.name;
+      }),
+    changes: (ref) =>
+      Effect.gen(function* () {
+        const { client } = yield* liveOf(ref.machineId);
+        const p = yield* client[M.getThreadProjection]({ threadId: T3ThreadId.make(ref.threadId) }).pipe(
+          Effect.mapError(readFailed(ref.machineId)),
+        );
+        const paths = [...new Set(p.checkpoints.flatMap((c) => c.files.map((f) => f.path)))].sort();
+        const urls = [...(p.thread.pullRequests ?? []).filter((l) => l.source !== "stack-dismissed").map((l) => l.url)];
+        if (p.thread.linkedPullRequest) urls.push(p.thread.linkedPullRequest.url);
+        return {
+          ...(p.thread.branch === null ? {} : { branch: p.thread.branch }),
+          ...(p.thread.worktreePath === null ? {} : { worktreePath: p.thread.worktreePath }),
+          paths,
+          pullRequestUrls: [...new Set(urls)],
+        };
+      }),
+  });
+
   return {
     files,
+    workspace,
     executors: Executors.of({
       attach,
       detach,
@@ -522,9 +565,13 @@ const make = Effect.gen(function* () {
   };
 });
 
-/** Provides Executors, the ThreadWatch the watchdog follows running threads through, and WorkspaceFiles. */
+/** Provides Executors, the ThreadWatch the watchdog follows running threads through, WorkspaceFiles, and ThreadWorkspace for tasks. */
 export const layer = Layer.effectContext(
-  Effect.map(make, ({ executors, watch, files }) =>
-    Context.make(Executors, executors).pipe(Context.add(ThreadWatch, watch), Context.add(WorkspaceFiles, files)),
+  Effect.map(make, ({ executors, watch, files, workspace }) =>
+    Context.make(Executors, executors).pipe(
+      Context.add(ThreadWatch, watch),
+      Context.add(WorkspaceFiles, files),
+      Context.add(ThreadWorkspace, workspace),
+    ),
   ),
 );
