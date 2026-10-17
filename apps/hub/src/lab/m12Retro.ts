@@ -15,7 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Incidents from "../incidents/Incidents.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
-import { type Body, callToolWith, check, claudeLoginEnv, CLI, cli, LAB, log, ok, scrubbedEnv, startCli, stopAll, until } from "./harness.ts";
+import { type Body, callToolWith, check, CLI, cli, LAB, log, ok, scrubbedEnv, startCli, stopAll, until } from "./harness.ts";
 
 const PORT = Number(process.env.FLEETD_LAB_M12_PORT ?? 4797);
 const URL_ = `http://127.0.0.1:${PORT}`;
@@ -52,7 +52,7 @@ async function main() {
   const keyFile = path.join(HOME, "admin.key");
   fs.writeFileSync(keyFile, `${key}\n`, { mode: 0o600 });
 
-  startCli("hub-m12", ["hub", "start", "--home", HOME, "--listen", `127.0.0.1:${PORT}`], claudeLoginEnv());
+  startCli("hub-m12", ["hub", "start", "--home", HOME, "--listen", `127.0.0.1:${PORT}`]);
   await until("hub /healthz", 30_000, async () => {
     try {
       return (await fetch(`${URL_}/healthz`)).ok ? true : undefined;

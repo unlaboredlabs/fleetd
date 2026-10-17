@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
 import { ghRunner, type GhRunner } from "../checks/GitHub.ts";
+import { claudeRunner } from "../intake/Router.ts";
 import { NodeActions } from "../checks/NodeCommands.ts";
 import { Executors } from "../executor/Executors.ts";
 import { FLEETD_INSTANCE } from "../executor/ProviderList.ts";
@@ -61,6 +62,8 @@ export interface DoctorDeps {
   readonly usage: (machineId: MachineId) => Effect.Effect<UsageStatus>;
   readonly actions: NodeActions["Service"];
   readonly gh: GhRunner;
+  /** `claude <args>` in the router's environment. */
+  readonly claude: GhRunner;
   /** Push subscriptions the hub keeps; undefined when it keeps none at all (no push store). */
   readonly pushDevices: Effect.Effect<number | undefined>;
   /** GET `url`/healthz with a short timeout. */
@@ -95,10 +98,11 @@ export const make = (deps: DoctorDeps) =>
       const config = deps.config();
       const self = `${selfUrl(deps.listen)}/healthz`;
       const publicUrl = config.config.url;
-      const [reachable, gh, devices, https] = yield* Effect.all(
+      const [reachable, gh, claude, devices, https] = yield* Effect.all(
         [
           deps.health(selfUrl(deps.listen)),
           deps.gh(["auth", "status"]).pipe(Effect.catch((error) => Effect.succeed(error))),
+          deps.claude(["auth", "status", "--json"]).pipe(Effect.catch((error) => Effect.succeed(error))),
           deps.pushDevices,
           publicUrl?.startsWith("https://") && config.problem === undefined ? deps.health(publicUrl.replace(/\/+$/u, "")) : Effect.succeed(undefined),
         ],
@@ -107,6 +111,7 @@ export const make = (deps: DoctorDeps) =>
       return [
         Checks.hubReachable(self, reachable, restartCommand("hub", { ...deps.hubPlatform, unitSuffix: config.config.unitSuffix ?? "" })),
         Checks.ghAuth(gh),
+        Checks.claudeLogin(claude),
         Checks.pushConfigured(devices, publicUrl),
         Checks.httpsReachable(config, deps.listen.port, https),
       ];
@@ -318,6 +323,7 @@ export const layer = (options: { readonly home: string; readonly listen: DoctorD
         usage: (machineId) => usage.status(machineId, usageSource.read(machineId)),
         actions: yield* NodeActions,
         gh: ghRunner,
+        claude: claudeRunner,
         pushDevices: pushDevicesOf(db),
         health: fetchHealth,
         append: events.append,

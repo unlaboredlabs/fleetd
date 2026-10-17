@@ -55,17 +55,16 @@ describe("judgeAnswer", () => {
 });
 
 describe("IntakeRouter", () => {
-  it("runs claude -p once with its own config dir, the hub's login env and no CLAUDE* session variables", async () => {
+  it("runs claude -p once with the user's own login, the hub's login env and no CLAUDE* session variables", async () => {
     const { outcome, calls } = await route([result(toA)]);
     expect(outcome.result).toEqual(toA);
     expect(outcome.runs).toEqual([{ kind: "orchestrator", model: "claude-haiku-5-5", durationMs: expect.any(Number), ok: true, inputTokens: 120, outputTokens: 30 }]);
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
-    expect(call.args).toEqual(["-p", "--output-format", "json", "--model", "claude-haiku-5-5", "--tools", "", "--strict-mcp-config", "--no-session-persistence"]);
-    expect(call.env.CLAUDE_CONFIG_DIR).toMatch(/\/hub\/claude-router$/u);
+    expect(call.args).toEqual(["-p", "--output-format", "json", "--model", "claude-haiku-5-5", "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--safe-mode"]);
     expect(call.env.ANTHROPIC_BASE_URL).toBe("http://proxy.invalid");
     expect(call.env.ANTHROPIC_AUTH_TOKEN).toBe("test-token");
-    expect(Object.keys(call.env).filter((k) => k.startsWith("CLAUDE"))).toEqual(["CLAUDE_CONFIG_DIR"]);
+    expect(Object.keys(call.env).filter((k) => k.startsWith("CLAUDE"))).toEqual([]);
     expect(call.prompt).toContain(TEXT);
     expect(call.prompt).toContain('"title":"repo-b"');
   });

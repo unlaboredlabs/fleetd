@@ -1,5 +1,5 @@
 // A stand-in `claude` executable for router tests: first on PATH, it records each call (args, environment, prompt
-// on stdin) in the router's config dir and prints the next canned reply. No model is ever called.
+// on stdin) next to itself and prints the next canned reply. No model is ever called.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,7 +18,7 @@ export interface Call {
 const SCRIPT = `#!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
-const dir = process.env.CLAUDE_CONFIG_DIR;
+const dir = path.join(__dirname, "..", "calls");
 let prompt = "";
 process.stdin.on("data", (d) => (prompt += d));
 process.stdin.on("end", () => {
@@ -46,11 +46,12 @@ export const makeFakeClaude = (replies: ReadonlyArray<Reply>) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-router-"));
   const bin = path.join(root, "bin");
   const home = path.join(root, "hub");
-  const configDir = path.join(home, "claude-router");
+  const callsDir = path.join(root, "calls");
   fs.mkdirSync(bin);
-  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(callsDir);
+  fs.mkdirSync(home);
   fs.writeFileSync(path.join(bin, "claude"), SCRIPT, { mode: 0o755 });
-  fs.writeFileSync(path.join(configDir, "replies.json"), JSON.stringify(replies));
+  fs.writeFileSync(path.join(callsDir, "replies.json"), JSON.stringify(replies));
   return {
     home,
     /** The hub's environment as the router sees it, with session variables it must drop. */
@@ -65,10 +66,10 @@ export const makeFakeClaude = (replies: ReadonlyArray<Reply>) => {
     },
     calls: (): ReadonlyArray<Call> =>
       fs
-        .readdirSync(configDir)
+        .readdirSync(callsDir)
         .filter((f) => f.startsWith("call-"))
         .sort((a, b) => Number(a.slice(5, -5)) - Number(b.slice(5, -5)))
-        .map((f) => JSON.parse(fs.readFileSync(path.join(configDir, f), "utf8")) as Call),
+        .map((f) => JSON.parse(fs.readFileSync(path.join(callsDir, f), "utf8")) as Call),
     cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
   };
 };

@@ -157,7 +157,7 @@ const layerTasks = Tasks.layer.pipe(
 
 /**
  * The retro, with the incident detectors that read the event log. Its one `claude -p` turn per run goes through the
- * intake router's isolated runner and model.
+ * intake router's claude runner and model.
  */
 const layerRetro = (home: string, model: string | undefined) =>
   Layer.merge(Retro.layer, Detectors.layer).pipe(

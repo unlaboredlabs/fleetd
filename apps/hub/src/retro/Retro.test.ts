@@ -360,7 +360,7 @@ describe("retro", () => {
     );
   });
 
-  it("runs its turn through the router's isolated claude runner", async () => {
+  it("runs its turn through the router's claude runner", async () => {
     const fake = makeFakeClaude([result(answer(change({ diff: WORDING })))]);
     cleanups.push(fake.cleanup);
     const t = setup([], Retro.layerRunner({ home: fake.home, env: fake.env }));
@@ -373,9 +373,8 @@ describe("retro", () => {
       }),
     );
     const [call] = fake.calls();
-    expect(call!.args).toEqual(["-p", "--output-format", "json", "--model", "claude-haiku-5-5", "--tools", "", "--strict-mcp-config", "--no-session-persistence"]);
-    expect(call!.env.CLAUDE_CONFIG_DIR).toMatch(/\/hub\/claude-router$/u);
-    expect(Object.keys(call!.env).filter((k) => k.startsWith("CLAUDE"))).toEqual(["CLAUDE_CONFIG_DIR"]);
+    expect(call!.args).toEqual(["-p", "--output-format", "json", "--model", "claude-haiku-5-5", "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--safe-mode"]);
+    expect(Object.keys(call!.env).filter((k) => k.startsWith("CLAUDE"))).toEqual([]);
     expect(call!.prompt).toContain('"id":"I1","class":"false_claim"');
   });
 });

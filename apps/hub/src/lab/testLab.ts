@@ -12,7 +12,6 @@ import {
   type Body,
   callToolWith,
   check,
-  claudeLoginEnv,
   CLI,
   cli,
   HUB_PORT,
@@ -110,7 +109,8 @@ const linkLeadShell = () => {
 
 // The intake router runs `claude -p` on the hub, so the hub gets the same login variables lab/lab.mjs gives T3.
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
-  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], { ...claudeLoginEnv(), ...env });
+  // Like an installed hub, it finds Claude through the user's own login, not variables passed in.
+  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
   await until("hub /healthz", 30_000, async () => {
     try {
       return (await fetch(`${HUB_URL}/healthz`)).ok ? true : undefined;
