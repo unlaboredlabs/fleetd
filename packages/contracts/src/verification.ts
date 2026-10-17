@@ -80,7 +80,8 @@ export const Eta = Schema.Struct({
 }).annotate({ identifier: "Eta" });
 export type Eta = typeof Eta.Type;
 
-export const IncidentClass = Schema.Literals(["false_claim", "estimate_miss", "polish_loop", "misfiled_ask", "out_of_area", "stall"]);
+/** `policy_bypass`: a PR on a watched repo was merged by something other than the train. */
+export const IncidentClass = Schema.Literals(["false_claim", "estimate_miss", "polish_loop", "misfiled_ask", "out_of_area", "stall", "policy_bypass"]);
 export type IncidentClass = typeof IncidentClass.Type;
 
 /** Recorded by the hub, never by an agent. */

@@ -50,7 +50,15 @@
         "claim.passed",
         "workstream.done",
         "review.verdict",
-        "incident.recorded"
+        "incident.recorded",
+        "change.queued",
+        "change.ready",
+        "change.needs_rebase",
+        "change.ci_failed",
+        "pr.merged",
+        "train.frozen",
+        "train.resumed",
+        "change.refused"
       ]
     },
     "MachineId": {

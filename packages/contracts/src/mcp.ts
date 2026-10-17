@@ -25,6 +25,7 @@ import { Effort } from "./effort.ts";
 import { ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary } from "./model.ts";
 import { SlotState, Task, TaskId, TaskState } from "./tasks.ts";
 import { Claim, Eta, Incident, IncidentClass } from "./verification.ts";
+import { Change, ChangeState, GitHubRepo, TrainState } from "./train.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
 import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
 
@@ -371,6 +372,31 @@ export const IncidentsListOutput = Schema.Struct({
   ...resultFields,
 });
 
+// changes_list
+export const ChangesListInput = Schema.Struct({
+  projectRef: Schema.optionalKey(ProjectRef),
+  repo: Schema.optionalKey(GitHubRepo),
+  state: Schema.optionalKey(ChangeState),
+  limit: intDefault(1, 100, 50),
+});
+export const ChangesListOutput = Schema.Struct({
+  /** Newest first. */
+  changes: Schema.Array(Change).check(Schema.isMaxLength(100)),
+  ...resultFields,
+});
+
+// train_get
+export const TrainGetInput = Schema.Struct({ repo: GitHubRepo });
+export const TrainGetOutput = Schema.Struct({ train: TrainState, ...resultFields });
+
+// train_freeze: records or retires the repo's `policy.freeze.<repo>` decision.
+export const TrainFreezeInput = Schema.Struct({
+  repo: GitHubRepo,
+  frozen: Schema.Boolean,
+  reason: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
+});
+export const TrainFreezeOutput = Schema.Struct({ train: TrainState, ...resultFields });
+
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
   fleetd_status: { scope: "read", input: FleetdStatusInput, output: FleetdStatusOutput },
@@ -403,6 +429,9 @@ export const McpTools = {
   cap_set: { scope: "admin", input: CapSetInput, output: CapSetOutput },
   claims_list: { scope: "read", input: ClaimsListInput, output: ClaimsListOutput },
   incidents_list: { scope: "read", input: IncidentsListInput, output: IncidentsListOutput },
+  changes_list: { scope: "read", input: ChangesListInput, output: ChangesListOutput },
+  train_get: { scope: "read", input: TrainGetInput, output: TrainGetOutput },
+  train_freeze: { scope: "operate", input: TrainFreezeInput, output: TrainFreezeOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;
 export type McpToolName = keyof typeof McpTools;
 

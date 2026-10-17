@@ -8,6 +8,7 @@ import {
   AppServerMessage,
   Ask,
   Batch,
+  Change,
   Claim,
   Decision,
   HubEvent,
@@ -20,6 +21,7 @@ import {
   SlotState,
   Task,
   ThreadSummary,
+  TrainState,
   Workstream,
 } from "../src/index.ts";
 
@@ -42,6 +44,8 @@ const appFacing = {
   SlotState,
   Claim,
   Incident,
+  Change,
+  TrainState,
   // Every tool's input and output, keyed "<tool>.input" / "<tool>.output", for clients of the app call frame.
   McpTools: Schema.Struct(
     Object.fromEntries(

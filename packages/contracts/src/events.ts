@@ -55,6 +55,22 @@ export const HubEventType = Schema.Literals([
   "review.verdict",
   /** `data.incidentId`, `data.class`. */
   "incident.recorded",
+  /** `data.changeId`, `data.repo`, `data.prNumber`. */
+  "change.queued",
+  /** Its tier's reviews are satisfied for the current patch id. `data.changeId`. */
+  "change.ready",
+  /** The rebase conflicted; `data.changeId`, `data.paths`. */
+  "change.needs_rebase",
+  /** `data.changeId`, `data.checks` (failing check names), `data.logUrl`. */
+  "change.ci_failed",
+  /** `data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`. */
+  "pr.merged",
+  /** `data.repo`, `data.reason`. */
+  "train.frozen",
+  /** `data.repo`. */
+  "train.resumed",
+  /** Refused at enqueue; `data.prUrl`, `data.fix`. */
+  "change.refused",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

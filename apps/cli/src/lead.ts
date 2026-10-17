@@ -470,6 +470,12 @@ export const formatResult = (result: LeadCallResult): string => {
       lines.push(`Verdict for ${result.verdict.taskId} at ${result.verdict.prHeadSha.slice(0, 12)}: ${result.verdict.blocking} blocking`);
       next = "stop here; this review is finished.";
       break;
+    // Placeholder lines until `change enqueue` and `change status` land (M7c).
+    case "change_enqueue":
+    case "change_status":
+      lines.push(`${result.change.changeId} ${result.change.repo}#${result.change.prNumber}: ${result.change.state}${result.change.lastError === undefined ? "" : ` (${result.change.lastError})`}`);
+      next = "don't merge it yourself; the train merges and the outcome arrives in a wake.";
+      break;
   }
   return `${lines.join("\n")}\nNext: ${result.next ?? next}\n`;
 };

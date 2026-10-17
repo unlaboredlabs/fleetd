@@ -55,6 +55,14 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const ref = caller.projectRef;
       switch (call.op) {
+        // Answered once the merge train is wired here (M7c).
+        case "change_enqueue":
+        case "change_status":
+          return yield* refused({
+            code: "forbidden",
+            message: `fleetd ${call.op.replace("_", " ")} is not available on this hub yet.`,
+            fix: "Carry on without it and mention it in your next status line.",
+          });
         case "brief_create":
           return yield* workstreams.briefCreate(ref, {
             workstreamId: call.workstreamId,

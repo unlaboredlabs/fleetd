@@ -189,7 +189,15 @@
         "claim.passed",
         "workstream.done",
         "review.verdict",
-        "incident.recorded"
+        "incident.recorded",
+        "change.queued",
+        "change.ready",
+        "change.needs_rebase",
+        "change.ci_failed",
+        "pr.merged",
+        "train.frozen",
+        "train.resumed",
+        "change.refused"
       ]
     },
     "ThreadId": {
@@ -2004,7 +2012,8 @@
             "polish_loop",
             "misfiled_ask",
             "out_of_area",
-            "stall"
+            "stall",
+            "policy_bypass"
           ]
         },
         "projectRef": {
@@ -2048,6 +2057,206 @@
         "projectRef",
         "evidence",
         "at"
+      ],
+      "additionalProperties": true
+    },
+    "GitHubRepo": {
+      "type": "string",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})\\/([A-Za-z0-9._-]{1,100})$"
+    },
+    "ChangeId": {
+      "type": "string",
+      "pattern": "^X[1-9][0-9]*$"
+    },
+    "GitHubPrUrl": {
+      "type": "string",
+      "pattern": "^https:\\/\\/github\\.com\\/([A-Za-z0-9][A-Za-z0-9-]{0,38}\\/[A-Za-z0-9._-]{1,100})\\/pull\\/([1-9][0-9]*)$"
+    },
+    "CommitSha": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "description": "Full lowercase hex commit SHA, 40 or 64 characters"
+    },
+    "PatchId": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "description": "Full lowercase hex patch id, 40 or 64 characters"
+    },
+    "ChangeReview": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "prHeadSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "patchId": {
+          "$ref": "#/$defs/PatchId"
+        },
+        "blocking": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nonBlocking": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "taskId",
+        "prHeadSha",
+        "patchId",
+        "blocking",
+        "nonBlocking"
+      ],
+      "additionalProperties": true
+    },
+    "Change": {
+      "type": "object",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "prNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "prUrl": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "serves": {
+          "$ref": "#/$defs/Serves"
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "S",
+            "M",
+            "L"
+          ]
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "patchId": {
+          "$ref": "#/$defs/PatchId"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "reviewing",
+            "ready",
+            "rebasing",
+            "ci",
+            "merging",
+            "merged",
+            "needs_rebase",
+            "ci_failed",
+            "refused",
+            "abandoned"
+          ]
+        },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangeReview"
+          }
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "lastError": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "mergedSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "changeId",
+        "projectRef",
+        "repo",
+        "prNumber",
+        "prUrl",
+        "branch",
+        "workstreamId",
+        "serves",
+        "tier",
+        "headSha",
+        "state",
+        "reviews",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": true
+    },
+    "TrainState": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "frozen": {
+          "type": "boolean"
+        },
+        "head": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChangeId"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "repo",
+        "frozen",
+        "queue"
       ],
       "additionalProperties": true
     },
@@ -3622,7 +3831,8 @@
                 "polish_loop",
                 "misfiled_ask",
                 "out_of_area",
-                "stall"
+                "stall",
+                "policy_bypass"
               ]
             },
             "limit": {
@@ -3652,6 +3862,143 @@
           },
           "required": [
             "incidents"
+          ],
+          "additionalProperties": true
+        },
+        "changes_list.input": {
+          "type": "object",
+          "properties": {
+            "projectRef": {
+              "type": "object",
+              "properties": {
+                "machineId": {
+                  "$ref": "#/$defs/MachineId"
+                },
+                "projectId": {
+                  "$ref": "#/$defs/ProjectId"
+                }
+              },
+              "required": [
+                "machineId",
+                "projectId"
+              ],
+              "additionalProperties": true
+            },
+            "repo": {
+              "$ref": "#/$defs/GitHubRepo"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "reviewing",
+                "ready",
+                "rebasing",
+                "ci",
+                "merging",
+                "merged",
+                "needs_rebase",
+                "ci_failed",
+                "refused",
+                "abandoned"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": true
+        },
+        "changes_list.output": {
+          "type": "object",
+          "properties": {
+            "changes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Change"
+              },
+              "maxItems": 100
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "changes"
+          ],
+          "additionalProperties": true
+        },
+        "train_get.input": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "$ref": "#/$defs/GitHubRepo"
+            }
+          },
+          "required": [
+            "repo"
+          ],
+          "additionalProperties": true
+        },
+        "train_get.output": {
+          "type": "object",
+          "properties": {
+            "train": {
+              "$ref": "#/$defs/TrainState"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "train"
+          ],
+          "additionalProperties": true
+        },
+        "train_freeze.input": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "$ref": "#/$defs/GitHubRepo"
+            },
+            "frozen": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "repo",
+            "frozen"
+          ],
+          "additionalProperties": true
+        },
+        "train_freeze.output": {
+          "type": "object",
+          "properties": {
+            "train": {
+              "$ref": "#/$defs/TrainState"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "train"
           ],
           "additionalProperties": true
         }
@@ -3716,7 +4063,13 @@
         "claims_list.input",
         "claims_list.output",
         "incidents_list.input",
-        "incidents_list.output"
+        "incidents_list.output",
+        "changes_list.input",
+        "changes_list.output",
+        "train_get.input",
+        "train_get.output",
+        "train_freeze.input",
+        "train_freeze.output"
       ],
       "additionalProperties": true
     }
