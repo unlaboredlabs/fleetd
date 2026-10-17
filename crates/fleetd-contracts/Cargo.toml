@@ -12,6 +12,7 @@ serde_with.workspace = true
 schemars.workspace = true
 regex.workspace = true
 url.workspace = true
+chrono-tz = { workspace = true, features = ["case-insensitive"] }
 
 [lints]
 workspace = true

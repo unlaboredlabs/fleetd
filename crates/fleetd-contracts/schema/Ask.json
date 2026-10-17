@@ -156,7 +156,7 @@
       "type": "string"
     },
     "AskKind": {
-      "description": "decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the\nbrowser seals to the sink's node. approve: a stored command the node runs after a human tap.",
+      "description": "decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the\ndesktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.",
       "enum": [
         "decide",
         "do",

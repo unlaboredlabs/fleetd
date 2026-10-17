@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use crate::app::{AppClientMessage, AppServerMessage};
 use crate::events::HubEvent;
 use crate::ledger::{Ask, Batch, Decision, Lead, Workstream};
+use crate::mcp::McpToolName;
 use crate::model::{Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::tasks::{SlotState, Task};
 use crate::train::{Change, TrainState};
@@ -19,16 +20,33 @@ pub const META_SCHEMA: &str = "https://json-schema.org/draft/2020-12/schema";
 
 /// One schema document with the root type under `$defs/<name>`.
 pub fn document<T: JsonSchema>(name: &str) -> Value {
-    let root = SchemaSettings::draft2020_12()
-        .into_generator()
-        .into_root_schema_for::<T>();
-    let Value::Object(mut root) = root.to_value() else {
+    document_with(name, |generator| T::json_schema(generator))
+}
+
+/// Every tool's input and output, keyed "<tool>.input" / "<tool>.output", for clients of the app call frame.
+pub fn mcp_tools_document() -> Value {
+    document_with("McpTools", |generator| {
+        let mut properties = Map::new();
+        for tool in McpToolName::ALL {
+            let input = tool.input_schema(generator).to_value();
+            properties.insert(format!("{}.input", tool.as_str()), input);
+            let output = tool.output_schema(generator).to_value();
+            properties.insert(format!("{}.output", tool.as_str()), output);
+        }
+        let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();
+        schemars::json_schema!({ "type": "object", "properties": properties, "required": required })
+    })
+}
+
+fn document_with(
+    name: &str,
+    root: impl FnOnce(&mut schemars::SchemaGenerator) -> schemars::Schema,
+) -> Value {
+    let mut generator = SchemaSettings::draft2020_12().into_generator();
+    let Value::Object(mut root) = root(&mut generator).to_value() else {
         unreachable!("a root schema is an object")
     };
-    let mut defs = match root.remove("$defs") {
-        Some(Value::Object(defs)) => defs,
-        _ => Map::new(),
-    };
+    let mut defs: Map<String, Value> = generator.take_definitions(true).into_iter().collect();
     strip_optional_nulls(&mut root);
     for def in defs.values_mut() {
         if let Value::Object(def) = def {
@@ -129,6 +147,7 @@ pub fn json_schemas() -> BTreeMap<&'static str, Value> {
         Change,
         TrainState,
     );
+    out.insert("McpTools", mcp_tools_document());
     out
 }
 
