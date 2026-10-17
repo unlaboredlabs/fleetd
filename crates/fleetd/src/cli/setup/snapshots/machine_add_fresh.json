@@ -1,0 +1,51 @@
+[
+  {
+    "title": "create fleetd's directories",
+    "command": "mkdir -p /home/wynn/.fleetd/node /home/wynn/.fleetd/claude /home/wynn/.fleetd/logs /home/wynn/.local/share/fleetd/bin /home/wynn/.local/share/fleetd/npm && chmod 700 /home/wynn/.fleetd"
+  },
+  {
+    "title": "install fleetd 0.0.0",
+    "command": "mkdir -p /home/wynn/.local/share/fleetd/bin && cat > /home/wynn/.local/share/fleetd/bin/fleetd.fleetd-tmp && chmod 755 /home/wynn/.local/share/fleetd/bin/fleetd.fleetd-tmp && mv /home/wynn/.local/share/fleetd/bin/fleetd.fleetd-tmp /home/wynn/.local/share/fleetd/bin/fleetd && rm -rf /home/wynn/.local/share/fleetd/cli",
+    "stdin": "binary"
+  },
+  {
+    "title": "install T3 0.1.1-nightly.20261017.3238 from npm",
+    "command": "PATH=/usr/bin:\"$PATH\" npm_config_cache=/home/wynn/.npm /usr/bin/npm install --global --prefix /home/wynn/.local/share/fleetd/npm --no-fund --no-audit --loglevel=error t3@0.1.1-nightly.20261017.3238 && T3CODE_HOME=/home/wynn/.fleetd/t3 /usr/bin/node /home/wynn/.local/share/fleetd/npm/bin/t3 --version"
+  },
+  {
+    "title": "configure the fleetd Claude instance in T3's settings",
+    "command": "mkdir -p /home/wynn/.fleetd/t3/userdata && cat > /home/wynn/.fleetd/t3/userdata/settings.json.fleetd-tmp && chmod 600 /home/wynn/.fleetd/t3/userdata/settings.json.fleetd-tmp && mv /home/wynn/.fleetd/t3/userdata/settings.json.fleetd-tmp /home/wynn/.fleetd/t3/userdata/settings.json",
+    "stdin": "text"
+  },
+  {
+    "title": "create the fleetd instance's Claude login file (empty, 0600)",
+    "command": "[ -e /home/wynn/.fleetd/t3.env ] || (umask 077 && : > /home/wynn/.fleetd/t3.env)"
+  },
+  {
+    "title": "write the T3 service",
+    "command": "mkdir -p /home/wynn/.config/systemd/user && cat > /home/wynn/.config/systemd/user/fleetd-t3.service.fleetd-tmp && chmod 644 /home/wynn/.config/systemd/user/fleetd-t3.service.fleetd-tmp && mv /home/wynn/.config/systemd/user/fleetd-t3.service.fleetd-tmp /home/wynn/.config/systemd/user/fleetd-t3.service",
+    "stdin": "text"
+  },
+  {
+    "title": "write the node service",
+    "command": "mkdir -p /home/wynn/.config/systemd/user && cat > /home/wynn/.config/systemd/user/fleetd-node.service.fleetd-tmp && chmod 644 /home/wynn/.config/systemd/user/fleetd-node.service.fleetd-tmp && mv /home/wynn/.config/systemd/user/fleetd-node.service.fleetd-tmp /home/wynn/.config/systemd/user/fleetd-node.service",
+    "stdin": "text"
+  },
+  {
+    "title": "(re)start T3",
+    "command": "XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable fleetd-t3.service && XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart fleetd-t3.service"
+  },
+  {
+    "title": "wait for T3 to answer",
+    "command": "/usr/bin/node -e 'const u=process.argv[1]+\"/.well-known/t3/environment\";const end=Date.now()+180000;(async()=>{for(;;){try{const r=await fetch(u);if(r.ok){console.log((await r.json()).serverVersion);return}}catch{}if(Date.now()>end){console.error(\"T3 did not answer at \"+u+\" within 3 min\");process.exit(1)}await new Promise(r=>setTimeout(r,1000))}})()' http://127.0.0.1:3774"
+  },
+  {
+    "title": "enroll the node with a one-time token (sent on stdin)",
+    "command": "/home/wynn/.local/share/fleetd/bin/fleetd node join --hub https://forge.example.ts.net --token-file - --machine mac-mini --t3-home /home/wynn/.fleetd/t3 --t3-url http://127.0.0.1:3774 --t3-cmd '/usr/bin/env T3CODE_HOME=/home/wynn/.fleetd/t3 /usr/bin/node /home/wynn/.local/share/fleetd/npm/bin/t3' --t3-restart-cmd '/usr/bin/env XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart fleetd-t3.service' --tags macos,xcode --home /home/wynn/.fleetd/node --enroll-only",
+    "stdin": "enrollToken"
+  },
+  {
+    "title": "(re)start the node",
+    "command": "XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable fleetd-node.service && XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart fleetd-node.service"
+  }
+]

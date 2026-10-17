@@ -1,0 +1,19 @@
+[Unit]
+Description=fleetd node
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory="/home/a b"
+Environment="HOME=/home/a b"
+Environment=PATH=/usr/bin:/a&b
+EnvironmentFile=-"/home/a b/.fleetd/t3.env"
+ExecStart="/home/a b/.local/share/fleetd/bin/fleetd" node run --home "/home/a b/.fleetd/node" 100%% $$HOME
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/a b/.fleetd/logs/node.log
+StandardError=append:/home/a b/.fleetd/logs/node.log
+
+[Install]
+WantedBy=default.target

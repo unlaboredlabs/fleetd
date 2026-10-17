@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>sh.fleetd.node-fleetdlab</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>[ -f '/home/a b/.fleetd/t3.env' ] &amp;&amp; set -a &amp;&amp; . '/home/a b/.fleetd/t3.env' &amp;&amp; set +a; exec "$@"</string>
+    <string>sh</string>
+    <string>/home/a b/.local/share/fleetd/bin/fleetd</string>
+    <string>node</string>
+    <string>run</string>
+    <string>--home</string>
+    <string>/home/a b/.fleetd/node</string>
+    <string>100%</string>
+    <string>$HOME</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/home/a b</string>
+    <key>PATH</key>
+    <string>/usr/bin:/a&amp;b</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>/home/a b</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardOutPath</key>
+  <string>/home/a b/.fleetd/logs/node.log</string>
+  <key>StandardErrorPath</key>
+  <string>/home/a b/.fleetd/logs/node.log</string>
+</dict>
+</plist>
