@@ -6,5 +6,7 @@ pub mod service;
 pub mod source;
 pub mod state;
 pub mod time;
+pub mod tools;
+pub mod wire;
 
 pub use service::{Usage, UsageDeps, UsageStatus};

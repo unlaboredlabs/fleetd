@@ -271,6 +271,8 @@ pub fn build_on(
     )?;
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let hub = Arc::new(Hub {
+    let ops = crate::hub::usage::wire::build(&config, clock.clone());
+    Ok(Arc::new(Hub {
         config,
         clock,
         shutdown: Shutdown::default(),
@@ -300,6 +302,12 @@ pub fn build_on(
     });
     checks.ports.bind(&hub);
     Ok(hub)
+        ops: ops.ports,
+        usage: ops.usage,
+        doctor: ops.doctor,
+        retro: ops.retro,
+        approvals: ops.approvals,
+    }))
 }
 
 /// Every area's long-running loop, one tokio task each; they stop with `hub.shutdown` (and are aborted after the
@@ -321,6 +329,9 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::checks::start_loops(hub));
+    let (_hub, _tools) = (hub, tools);
+    let mut loops = Vec::new();
+    loops.extend(crate::hub::usage::wire::start(hub));
     loops
 }
 

@@ -6,6 +6,8 @@
 //! - do with verify: once ticked done, the hub runs the check; a failure reopens the ask with the evidence.
 //!
 //! TS spec: apps/hub/src/approvals/Approvals.ts. Asks travel as their wire JSON (`Ask` in contracts/ledger).
+pub mod tools;
+
 use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, system_ms};

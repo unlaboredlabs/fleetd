@@ -4,6 +4,7 @@ pub mod digest;
 pub mod metrics;
 pub mod records;
 pub mod service;
+pub mod tools;
 pub mod types;
 pub mod validate;
 

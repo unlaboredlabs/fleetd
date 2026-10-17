@@ -42,7 +42,6 @@ zeroize = { workspace = true }
 # hub framework
 axum = { workspace = true }
 # usage, doctor, retro, approvals
-rusqlite = { workspace = true }
 url = { workspace = true }
 
 # attention, wakes
