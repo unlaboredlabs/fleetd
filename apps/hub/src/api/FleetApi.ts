@@ -33,6 +33,20 @@ export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
 export type ToolInput<N extends McpToolName> = (typeof McpTools)[N]["input"]["Type"];
 export type ToolOutput<N extends McpToolName> = (typeof McpTools)[N]["output"]["Type"];
 
+/** Tools the hub serves today. A tool in the contracts table is listed here once its handler exists. */
+export const IMPLEMENTED_TOOLS = [
+  "fleetd_status",
+  "projects_list",
+  "project_get",
+  "thread_tail",
+  "actions_list",
+  "events_wait",
+  "thread_launch",
+  "thread_send",
+  "thread_interrupt",
+] as const satisfies ReadonlyArray<McpToolName>;
+export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
+
 export const LIMITS = { projects: 50, attention: 10, outcomeThreads: 20, tailText: 2000 } as const;
 const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited"];
 /** How far back fleetd_status looks for attention events. */
@@ -45,7 +59,7 @@ const ATTENTION_LOOKBACK = 1000;
 export class FleetApi extends Context.Service<
   FleetApi,
   {
-    readonly call: <N extends McpToolName>(
+    readonly call: <N extends ImplementedTool>(
       caller: AgentKeyInfo,
       tool: N,
       input: ToolInput<N>,
@@ -143,7 +157,7 @@ const make = Effect.gen(function* () {
     }
   });
 
-  const handlers: { readonly [N in McpToolName]: (caller: AgentKeyInfo, input: ToolInput<N>) => Effect.Effect<ToolOutput<N>, ToolError> } = {
+  const handlers: { readonly [N in ImplementedTool]: (caller: AgentKeyInfo, input: ToolInput<N>) => Effect.Effect<ToolOutput<N>, ToolError> } = {
     fleetd_status: Effect.fnUntraced(function* (caller) {
       const cursor = yield* events.head();
       const machines = (yield* store.machines.list()).filter((m: Machine) => auth.allows(caller, "read", m.machineId));

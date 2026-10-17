@@ -1,4 +1,4 @@
-import { McpTools, type AgentKeyInfo, type McpToolError, type McpToolName } from "@fleetd/contracts";
+import { McpTools, type AgentKeyInfo, type McpToolError } from "@fleetd/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,7 +12,7 @@ import * as Auth from "../auth/Auth.ts";
 /** The verified agent key behind the current MCP request. */
 export class Caller extends Context.Service<Caller, AgentKeyInfo>()("fleetd/hub/mcp/Caller") {}
 
-const DESCRIPTIONS: { readonly [N in McpToolName]: string } = {
+const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   fleetd_status:
     "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events, and the events cursor. Start here.",
   projects_list: "Projects across machines, optionally filtered by machineId or a title/path query.",
@@ -79,7 +79,7 @@ const layerAuth = HttpRouter.middleware<{ provides: Caller }>()(
 const registerTools = Effect.gen(function* () {
   const server = yield* McpServer.McpServer;
   const api = yield* FleetApi.FleetApi;
-  for (const name of Object.keys(McpTools) as Array<McpToolName>) {
+  for (const name of FleetApi.IMPLEMENTED_TOOLS) {
     const tool = McpTools[name];
     const decode = Schema.decodeUnknownEffect(tool.input as Schema.Codec<FleetApi.ToolInput<typeof name>, unknown>);
     yield* server.addTool({
