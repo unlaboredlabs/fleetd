@@ -36,7 +36,9 @@ tokio-tungstenite = { workspace = true }
 tracing-subscriber = { workspace = true }
 zeroize = { workspace = true }
 
+# attention
+chrono-tz = { workspace = true }
+regex = { workspace = true }
+
 [dev-dependencies]
 tempfile = "3"
-regex = { workspace = true }
-chrono-tz = { workspace = true }
