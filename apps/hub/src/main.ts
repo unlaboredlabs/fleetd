@@ -20,6 +20,7 @@ import * as Estimates from "./estimates/Estimates.ts";
 import * as Executors from "./executor/Executors.ts";
 import * as LeadCallHandler from "./leads/LeadCallHandler.ts";
 import * as LeadsLayer from "./leads/layer.ts";
+import * as ProjectRemovals from "./leads/ProjectRemovals.ts";
 import * as Leases from "./leases/Leases.ts";
 import * as Policy from "./leases/Policy.ts";
 import * as NodeLinkServer from "./link/NodeLinkServer.ts";
@@ -161,8 +162,9 @@ export const hubLayer = (home: string, options: HubOptions) =>
         Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
         Layer.provideMerge(layerMachines),
-        // Wakes sit above the leads layer: a firing waits while the usage layer holds its thread.
-        Layer.provideMerge(Layer.merge(HumanDigests.layer, Wakes.layer)),
+        // Wakes sit above the leads layer: a firing waits while the usage layer holds its thread. A deleted
+        // project's asks, tasks and workstreams end above tasks and the ledger.
+        Layer.provideMerge(Layer.mergeAll(HumanDigests.layer, Wakes.layer, ProjectRemovals.layer)),
         Layer.provideMerge(layerTasks),
         // Leads and the ledger; lead wakes go out through the write queue below.
         Layer.provideMerge(LeadsLayer.layerWithLedger({ playbookOverrides: path.join(home, "playbooks") })),

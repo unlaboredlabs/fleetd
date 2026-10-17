@@ -5,6 +5,8 @@ export const HubEventType = Schema.Literals([
   "machine.online",
   "machine.offline",
   "machine.degraded",
+  /** T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`. */
+  "project.removed",
   "thread.started",
   "thread.completed",
   "thread.failed",

@@ -42,6 +42,7 @@ import * as Workstreams from "../leads/Workstreams.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { Inbox } from "../ledger/Inbox.ts";
+import { FinishAll } from "../playbooks/FinishAll.ts";
 import * as Slots from "../slots/Slots.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Tasks from "../tasks/Tasks.ts";
@@ -83,6 +84,8 @@ export const IMPLEMENTED_TOOLS = [
   "intake_submit",
   "workstream_list",
   "workstream_get",
+  "workstream_spawn",
+  "inventory",
   "asks_list",
   "inbox_reply",
   "secret_submit",
@@ -237,6 +240,7 @@ const make = Effect.gen(function* () {
   const train = yield* Train;
   const changeRecords = yield* ChangeRecords;
   const approvals = yield* Approvals;
+  const finishAll = yield* FinishAll;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -618,6 +622,38 @@ const make = Effect.gen(function* () {
             : workstream.state === "done"
               ? `Done: its latest claim passed every done-when check (claims_list with workstreamId ${workstream.workstreamId}).`
               : "Open asks are answered with asks_list and inbox_reply.",
+      };
+    }),
+
+    // The finish-all lead's own calls, for an outside orchestrator: same service, same limits, recorded as this key.
+    workstream_spawn: Effect.fnUntraced(function* (caller, input) {
+      yield* require(caller, "operate", input.machineId);
+      const ref = { machineId: input.machineId, projectId: input.projectId };
+      if ((yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
+      const spawned = yield* finishAll
+        .spawn(
+          { projectRef: ref, by: caller.keyId, channel: "mcp" },
+          { text: input.text, serves: input.serves, ...(input.template === undefined ? {} : { template: input.template }) },
+        )
+        .pipe(Effect.mapError(refusal));
+      return {
+        ...spawned,
+        next: `${spawned.workstreamId} is a draft child of ${spawned.parent}; its lead writes the brief. Watch it with workstream_get or events_wait (workstream.running, workstream.done).`,
+      };
+    }),
+
+    inventory: Effect.fnUntraced(function* (caller, input) {
+      yield* require(caller, "read", input.machineId);
+      const ref = { machineId: input.machineId, projectId: input.projectId };
+      if ((yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
+      const listed = yield* finishAll.inventory({ projectRef: ref, by: caller.keyId }).pipe(Effect.mapError(refusal));
+      return {
+        ...listed,
+        next: listed.idle
+          ? "Nothing is left with a value source: the finish-all workstream is idle."
+          : listed.spawnable > 0
+            ? "Start a child for an unserved item with workstream_spawn, passing its serves value; that needs the project's open finish-all workstream (intake_submit \"finish: ...\" starts one)."
+            : "Every item with a value source is in progress; wait for workstream.done with events_wait.",
       };
     }),
 

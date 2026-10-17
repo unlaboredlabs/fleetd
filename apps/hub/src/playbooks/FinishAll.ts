@@ -2,7 +2,7 @@
 // per item with a value source (`fleetd workstream spawn`), at most the policy's `finishAll.maxChildren` open at once.
 // When it has no open child and nothing it could start, its workstream goes idle: that is the finish line.
 import crypto from "node:crypto";
-import type { PlaybookName, PlaybookRef, ProjectRef, Workstream, WorkstreamId } from "@fleetd/contracts";
+import type { IntakeChannel, PlaybookName, PlaybookRef, ProjectRef, Workstream, WorkstreamId } from "@fleetd/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -37,6 +37,8 @@ import {
 export interface Caller {
   readonly projectRef: ProjectRef;
   readonly by: string;
+  /** Where a spawned child's intent came from; absent means the project's lead. */
+  readonly channel?: IntakeChannel;
 }
 
 export class FinishAll extends Context.Service<
@@ -114,7 +116,7 @@ export const make = Effect.gen(function* () {
         ref,
         text: input.text,
         clientRequestId: crypto.randomUUID(),
-        channel: "lead",
+        channel: caller.channel ?? "lead",
         by: caller.by,
         template,
         parent: { workstreamId: parent.workstreamId, serves: input.serves },

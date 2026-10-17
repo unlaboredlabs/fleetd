@@ -482,6 +482,38 @@ describe("M3 tools", () => {
   });
 });
 
+describe("finish-all tools", () => {
+  it("inventories a project for read keys and spawns children for operate keys, under the lead's limits, recorded as the key", async () => {
+    const { keys, as } = await fleet();
+    const client = await as("aOnly");
+    const ref = { machineId: "lab-a", projectId: "p-lab-a" };
+    expect((await call(await as("reader"), "workstream_spawn", { ...ref, text: "fix it", serves: "issue:#3" })).body.code).toBe("forbidden");
+    expect((await call(client, "inventory", { machineId: "lab-b", projectId: "p-lab-b" })).body.code).toBe("forbidden");
+    expect((await call(client, "workstream_spawn", { ...ref, text: "fix it", serves: "issue:#3" })).body).toMatchObject({
+      code: "invalid",
+      message: "Your project has no open finish-all workstream; only one spawns child workstreams.",
+    });
+
+    await call(client, "intake_submit", { ...ref, text: "finish: everything open", template: "finish-all", clientRequestId: "f1" });
+    const listed = (await call(await as("reader"), "inventory", ref)).body;
+    // Nothing with a value source here: the finish-all goes idle, and a spawn brings it back.
+    expect(listed).toMatchObject({ spawnable: 0, idle: true });
+    expect(listed.text).toContain("finish-all W1 has 0 of at most 5 open children");
+
+    const spawned = (await call(client, "workstream_spawn", { ...ref, text: "Fix the login redirect loop", serves: "issue:#3" })).body;
+    expect(spawned).toMatchObject({ workstreamId: "W2", parent: "W1", playbook: expect.stringMatching(/^feature@/u) });
+    expect((await call(client, "workstream_get", { workstreamId: "W2" })).body.workstream).toMatchObject({
+      parent: { workstreamId: "W1", serves: "issue:#3" },
+      source: { channel: "mcp", by: keys.aOnly.keyId },
+    });
+    expect((await call(client, "workstream_spawn", { ...ref, text: "again", serves: "issue:#3" })).body.message).toBe("W2 already serves issue:#3.");
+    for (const n of [1, 2, 3, 4]) expect((await call(client, "workstream_spawn", { ...ref, text: `defect ${n}`, serves: `defect:bug ${n}` })).isError).toBe(false);
+    expect((await call(client, "workstream_spawn", { ...ref, text: "one more", serves: "defect:bug 5" })).body.message).toBe(
+      "W1 already has 5 open children, the most finishAll.maxChildren allows (5).",
+    );
+  });
+});
+
 describe("M5 tools", () => {
   const task = (machineId: string, projectId: string, over: Record<string, unknown> = {}) =>
     ({

@@ -127,4 +127,22 @@ describe("Leads", () => {
       expect(prompt).toContain(needle);
     }
   });
+
+  it("reads a lead as stopped once T3 deleted its project", async () => {
+    const kit = makeKit();
+    await runKit(
+      kit,
+      Effect.gen(function* () {
+        yield* kit.addProject(REF, "Demo");
+        const l = yield* leads;
+        const store = yield* HubStore.HubStore;
+        yield* l.start(REF);
+        yield* store.threads.upsert(threadRow("t1", "completed"));
+        expect((yield* l.get(REF))?.state).toBe("idle");
+        yield* store.projects.remove(REF);
+        expect((yield* l.get(REF))?.state).toBe("stopped");
+        expect(yield* store.threads.get({ machineId: REF.machineId, threadId: "t1" as ThreadId })).toBeUndefined();
+      }),
+    );
+  });
 });

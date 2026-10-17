@@ -99,10 +99,13 @@ export class Asks extends Context.Service<
      * never ran): its answer's decision is retired and it joins the collecting batch like a new ask.
      */
     readonly reopen: (askId: AskId, evidence: string) => Effect.Effect<Ask, LedgerError>;
-    /** `fleetd ask withdraw A7 [--use D3]`. With `projectRef`, refuses asks of other projects. */
+    /**
+     * `fleetd ask withdraw A7 [--use D3]`. With `projectRef`, refuses asks of other projects. A `reason` is recorded as
+     * the hub's answer, for withdrawals no one asked for (the project was deleted).
+     */
     readonly withdraw: (
       askId: AskId,
-      options?: { readonly use?: DecisionId; readonly projectRef?: ProjectRef },
+      options?: { readonly use?: DecisionId; readonly projectRef?: ProjectRef; readonly reason?: string },
     ) => Effect.Effect<Ask, LedgerError>;
     readonly get: (askId: AskId) => Effect.Effect<Ask | undefined>;
     /** By batch, then number; asks outside any batch last. */
@@ -313,8 +316,8 @@ const make = Effect.gen(function* () {
       }
     });
 
-  const withdraw = (askId: AskId, options: { readonly use?: DecisionId; readonly projectRef?: ProjectRef } = {}) =>
-    write(repo, () => {
+  const withdraw = (askId: AskId, options: { readonly use?: DecisionId; readonly projectRef?: ProjectRef; readonly reason?: string } = {}) =>
+    Effect.flatMap(Clock.currentTimeMillis, (now) => write(repo, () => {
       const row = repo.getAskRow(askId);
       if (!row || (options.projectRef && projectKey(options.projectRef) !== askProjectKey(row.ask.projectRef))) {
         throw notFound(`No ask ${askId} in this project.`);
@@ -328,11 +331,12 @@ const make = Effect.gen(function* () {
         ...row.ask,
         state: "withdrawn",
         ...(options.use === undefined ? {} : { decisionId: options.use }),
+        ...(options.reason === undefined ? {} : { answer: { value: options.reason, by: "hub", at: isoAt(now), raw: "" } }),
       };
       repo.putAsk(withdrawn);
       if (withdrawn.batchId) repo.closeIfDone(batchN(withdrawn.batchId)!);
       return withdrawn;
-    });
+    }));
 
   const update: Asks["Service"]["update"] = (askId, change) =>
     write(repo, () => {

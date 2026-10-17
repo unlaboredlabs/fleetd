@@ -162,6 +162,7 @@
         "machine.online",
         "machine.offline",
         "machine.degraded",
+        "project.removed",
         "thread.started",
         "thread.completed",
         "thread.failed",
@@ -3779,6 +3780,110 @@
           ],
           "additionalProperties": true
         },
+        "workstream_spawn.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "serves": {
+              "$ref": "#/$defs/Serves"
+            },
+            "template": {
+              "type": "string",
+              "enum": [
+                "bugfix",
+                "feature",
+                "research",
+                "finish-all"
+              ]
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId",
+            "text",
+            "serves"
+          ],
+          "additionalProperties": true
+        },
+        "workstream_spawn.output": {
+          "type": "object",
+          "properties": {
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            },
+            "parent": {
+              "$ref": "#/$defs/WorkstreamId"
+            },
+            "playbook": {
+              "$ref": "#/$defs/PlaybookRef"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "workstreamId",
+            "parent"
+          ],
+          "additionalProperties": true
+        },
+        "inventory.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "inventory.output": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "spawnable": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idle": {
+              "type": "boolean"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "text",
+            "spawnable",
+            "idle"
+          ],
+          "additionalProperties": true
+        },
         "asks_list.input": {
           "type": "object",
           "properties": {
@@ -4702,6 +4807,10 @@
         "workstream_list.output",
         "workstream_get.input",
         "workstream_get.output",
+        "workstream_spawn.input",
+        "workstream_spawn.output",
+        "inventory.input",
+        "inventory.output",
         "asks_list.input",
         "asks_list.output",
         "inbox_reply.input",

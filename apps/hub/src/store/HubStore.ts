@@ -42,6 +42,8 @@ export class HubStore extends Context.Service<
         readonly query?: string;
       }) => Effect.Effect<ReadonlyArray<ProjectSummary>>;
       readonly get: (ref: ProjectRef) => Effect.Effect<ProjectSummary | undefined>;
+      /** Drops the project and its cached threads, once T3 no longer has it. */
+      readonly remove: (ref: ProjectRef) => Effect.Effect<void>;
     };
     readonly threads: {
       /** An absent `lastSequence`, `lastRunId` or `lastRunStatus` keeps the stored one. */
@@ -92,6 +94,8 @@ const make = Effect.gen(function* () {
        ORDER BY last_activity_at DESC`,
     ),
     projectGet: db.prepare("SELECT data FROM projects WHERE machine_id = ? AND project_id = ?"),
+    projectDelete: db.prepare("DELETE FROM projects WHERE machine_id = ? AND project_id = ?"),
+    projectThreadsDelete: db.prepare("DELETE FROM threads WHERE machine_id = ? AND project_id = ?"),
     threadUpsert: db.prepare(
       `INSERT INTO threads (machine_id, thread_id, project_id, last_progress_at, last_sequence, last_run_id, last_run_status, data)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -168,6 +172,13 @@ const make = Effect.gen(function* () {
           const row = sql.projectGet.get(ref.machineId, ref.projectId);
           return row ? decodeProject(String(row.data)) : undefined;
         }),
+      remove: (ref) =>
+        Effect.sync(() =>
+          HubDb.transaction(db, () => {
+            sql.projectDelete.run(ref.machineId, ref.projectId);
+            sql.projectThreadsDelete.run(ref.machineId, ref.projectId);
+          }),
+        ),
     },
     threads: {
       upsert: ({ lastSequence, lastRunId, lastRunStatus, ...thread }) =>

@@ -282,6 +282,17 @@ export const applyShellItem = (state: ShellState, item: OrchestrationV2ShellStre
   return { threads, projects, transitions, cursor };
 };
 
+/**
+ * Cached projects T3 no longer has, given the state after `item` was applied: the one a `project.removed` names, or
+ * after a full snapshot every cached one it left out. The cache is read from the store, not memory, so a project
+ * deleted while the hub was down is found by the first snapshot after its restart.
+ */
+export const removedProjects = (state: ShellState, item: OrchestrationV2ShellStreamItem, cached: ReadonlyArray<string>): ReadonlyArray<string> => {
+  if (item.kind === "project.removed") return cached.filter((id) => id === item.projectId);
+  if (item.kind === "snapshot" && item.resolvedRepositoryIdentityRoots === undefined) return cached.filter((id) => !state.projects.has(id));
+  return [];
+};
+
 const VERB: Record<string, string> = {
   "thread.started": "started",
   "thread.completed": "completed",

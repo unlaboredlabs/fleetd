@@ -12,6 +12,7 @@ import {
   emptyShellState,
   phase,
   projectSummary,
+  removedProjects,
   type ShellState,
   type Transition,
   transition,
@@ -182,6 +183,28 @@ describe("resume", () => {
     const after = run(live.items, emptyShellState(), ctx({ baseline: true })).state;
     const stored = new Map([...after.threads].map(([id, t]) => [id, { ...t.summary, lastRunId: t.runId!, lastRunStatus: phase(t.summary) }]));
     expect(run(reset.items, emptyShellState(), ctx({ stored })).events).toEqual([]);
+  });
+});
+
+describe("deleted projects", () => {
+  const full = live.items.find((i: Item) => i.kind === "snapshot" && i.resolvedRepositoryIdentityRoots === undefined) as Item;
+  const known = full.kind === "snapshot" ? full.snapshot.projects.map((p) => p.id as string) : [];
+
+  it("a full snapshot after a restart drops cached projects T3 no longer lists", () => {
+    const state = emptyShellState();
+    applyShellItem(state, full, ctx());
+    expect(known.length).toBeGreaterThan(0);
+    expect(removedProjects(state, full, [...known, "gone"])).toEqual(["gone"]);
+    expect(removedProjects(state, full, known)).toEqual([]);
+  });
+
+  it("project.removed drops that project; a metadata-only snapshot drops nothing", () => {
+    const state = beforeTurns();
+    const removed = { kind: "project.removed", sequence: 999, projectId: known[0] } as Item;
+    applyShellItem(state, removed, ctx());
+    expect(removedProjects(state, removed, [...known, "other"])).toEqual([known[0]]);
+    const metadata = replay.items[0] as Item;
+    expect(removedProjects(state, metadata, [...known, "other"])).toEqual([]);
   });
 });
 
