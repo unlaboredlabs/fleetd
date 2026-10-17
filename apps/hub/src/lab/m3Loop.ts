@@ -56,12 +56,17 @@ export async function m3Loop(lab: Lab) {
   ok(`lead_start ${MACHINE}/${projectId} (${MODEL}, low) -> thread ${threadId}, state ${started.body.state}`);
   const again = (await callTool("lead_start", ref)).body;
   check(again.threadId === threadId, `a second lead_start returns the same lead: ${JSON.stringify(again)}`);
-  const firstMessage = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body.items as Array<Body>;
-  check(
-    firstMessage.some((i) => i.role === "user" && i.text.startsWith("You are the lead of project")),
-    "the lead's first message is the v0 lead prompt (read from beside the bundled CLI)",
-  );
+  const leadStarted = await lab.waitEvent("lead.started", 10_000, { cursor, machineId: MACHINE, types: ["lead.started"] });
+  check(leadStarted.event.data?.prompt === "v0", `lead.started names prompt v0: ${JSON.stringify(leadStarted.event)}`);
   cursor = await turnDone(threadId, cursor, "start");
+  // thread_tail keeps a long message's end: the prompt's last command line, then the digest.
+  const firstTail = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body;
+  check(
+    (firstTail.items as Array<Body> | undefined)?.some(
+      (i) => i.role === "user" && i.text.includes("`fleetd decisions search") && i.text.includes("# fleetd digest:"),
+    ),
+    `the lead's first message is the v0 prompt (read from beside the bundled CLI) plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
+  );
   const outcome = (await callTool("project_get", ref)).body;
   check(outcome.lead?.threadId === threadId && outcome.lead.state === "idle", `project_get lead: ${JSON.stringify(outcome.lead)}`);
   ok(`project_get: lead {threadId: ${outcome.lead.threadId}, state: ${outcome.lead.state}}`);
@@ -104,11 +109,13 @@ export async function m3Loop(lab: Lab) {
   });
   cursor = await turnDone(threadId, answerWake.event.seq, "answer wake");
   const wakes = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 20, kinds: ["message"] })).body.items as Array<Body>;
+  // A long wake shows only its end here, so look for the decision line and the trigger line rather than the top.
+  const answerMessage = wakes.find((i) => i.role === "user" && i.text.includes("settled 1 of your asks"));
   check(
-    wakes.some((i) => i.role === "user" && i.text.includes("api.health.path → /healthz (D1)")),
-    "the answer wake carries the answer inline",
+    answerMessage !== undefined && /api\.health\.path (→|=) \/healthz/u.test(answerMessage.text),
+    `the answer wake carries the answer inline: ${JSON.stringify(wakes).slice(0, 800)}`,
   );
-  ok("the answer wake carried 'api.health.path → /healthz (D1)' inline");
+  ok("the answer wake carried api.health.path = /healthz (D1) inline");
 
   // 4. Asking the same key again is answered from the log; a naming question is refused.
   await send(
