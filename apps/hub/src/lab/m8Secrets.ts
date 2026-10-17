@@ -27,9 +27,9 @@ import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
-import { CLI, LAB, scrubbedEnv } from "./harness.ts";
+import { fleetdCommand, LAB, scrubbedEnv, slotPort } from "./harness.ts";
 
-const PORT = Number(process.env.FLEETD_LAB_M8_PORT ?? 4783);
+const PORT = Number(process.env.FLEETD_LAB_M8_PORT ?? slotPort(4783));
 const DIR = path.join(LAB, `m8a-secrets-${PORT}`);
 const MACHINE = "lab-m8a" as MachineId;
 const REF = { machineId: MACHINE, projectId: "m8a" as ProjectId };
@@ -115,9 +115,8 @@ const program = Effect.gen(function* () {
   const nodeLog = path.join(DIR, "node.log");
   const out = fs.openSync(nodeLog, "a");
   const node = spawn(
-    process.execPath,
-    [
-      CLI, "node", "join",
+    ...fleetdCommand([
+      "node", "join",
       "--hub", `http://127.0.0.1:${PORT}`,
       "--token", token,
       "--machine", MACHINE,
@@ -125,7 +124,7 @@ const program = Effect.gen(function* () {
       // Nothing listens here: the node links as degraded, which secrets and approved commands do not mind.
       "--t3-url", `http://127.0.0.1:${PORT + 1}`,
       "--home", path.join(DIR, "node"),
-    ],
+    ]),
     { env: scrubbedEnv(), stdio: ["ignore", out, out] },
   );
   say(`started fleetd node pid=${node.pid}`);

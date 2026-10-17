@@ -10,7 +10,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, CLI, cli, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -90,7 +90,7 @@ export async function m5Tasks(lab: Lab) {
 
   // `fleetd` as the lead's shell runs it: in the project's workspace, through lab-a's node socket.
   const fleetd = (...args: Array<string>) => {
-    const out = spawnSync(process.execPath, [CLI, ...args], {
+    const out = spawnSync(...fleetdCommand(args), {
       cwd: root,
       encoding: "utf8",
       env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },

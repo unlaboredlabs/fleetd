@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { LEAD_PROMPT_VERSION } from "../leads/prompt.ts";
-import { type Body, CLI, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
+import { type Body, fleetdCommand, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
 import { providerLog } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
@@ -98,7 +98,7 @@ export const removeTestbedProject = async (lab: Pick<Lab, "mintT3Bearer" | "mach
 export async function m7Train(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
-  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run node scripts/testbed.ts)`);
+  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run node scripts/testbed.ts --clone ${TESTBED})`);
   cleanTestbed();
   prepareCheckout();
   ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked .fleetd/policy.yaml (alpha, beta, gamma, ci); no fleetd/* branches on ${REPO}`);
@@ -118,7 +118,7 @@ export async function m7Train(lab: Lab) {
     ok(`T3 project ${projectId} on ${MACHINE} at ${TESTBED}`);
 
     const fleetd = (...args: Array<string>) => {
-      const out = spawnSync(process.execPath, [CLI, ...args], {
+      const out = spawnSync(...fleetdCommand(args), {
         cwd: TESTBED,
         encoding: "utf8",
         env: { ...scrubbedEnv(), PWD: TESTBED, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },

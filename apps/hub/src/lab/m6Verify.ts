@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, CLI, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
+import { type Body, fleetdCommand, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
 import { git, prepareRepo, providerLog } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
@@ -36,7 +36,7 @@ export async function m6Verify(lab: Lab) {
   ok(`${root}: ${FILE} is not on main`);
 
   const fleetd = (...args: Array<string>) => {
-    const out = spawnSync(process.execPath, [CLI, ...args], {
+    const out = spawnSync(...fleetdCommand(args), {
       cwd: root,
       encoding: "utf8",
       env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },

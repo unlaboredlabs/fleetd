@@ -8,7 +8,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { FINISH_ALL_IDLE } from "../playbooks/finishAllRules.ts";
-import { type Body, CLI, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
+import { type Body, fleetdCommand, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
 import { removeTestbedProject, t3, TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -20,13 +20,13 @@ const QUIET = "Lab run: the harness does the work for this intent; reply to each
 const shell = (cwd: string) => {
   const env = { ...scrubbedEnv(), PWD: cwd, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) };
   const run = (...args: Array<string>) => {
-    const out = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env });
+    const out = spawnSync(...fleetdCommand(args), { cwd, encoding: "utf8", env });
     return { code: out.status, stdout: out.stdout, stderr: out.stderr };
   };
   /** The same call in the background, for one that waits on something the harness does next. */
   const start = (...args: Array<string>) =>
     new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-      const child = spawn(process.execPath, [CLI, ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(...fleetdCommand(args), { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
       child.stdout.on("data", (d) => (stdout += String(d)));

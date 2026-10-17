@@ -10,21 +10,44 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { T3_PIN } from "../t3.ts";
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-export const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
+const LAB_ROOT = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
+/**
+ * FLEETD_LAB_SLOT=<n> (0-9, default 0) is an independent lab that can run beside the others. Slot 0 is the lab root
+ * itself, slot n lives in <root>/slot-<n> (T3 homes, Claude config dirs, test repos, run dirs, lock), and every lab port
+ * is the slot-0 port + 20 * n. The slot-0 ports, 4711/4712 (T3 lab-a/lab-b), 4781 (cmd check), 4783 (m8 secrets), 4784
+ * (hub unit), 4795 (hub), 4796 (degraded/watchdog hub) and 4797 (m12), all differ mod 20, so slots 0-9 never collide
+ * and stay within 4711-4977. lab/lab.mjs applies the same scheme. The pinned T3 source worktree is shared read-only.
+ */
+export const SLOT = Number(process.env.FLEETD_LAB_SLOT ?? 0);
+if (!Number.isInteger(SLOT) || SLOT < 0 || SLOT > 9) throw new Error(`FLEETD_LAB_SLOT must be 0-9, got ${process.env.FLEETD_LAB_SLOT}`);
+export const LAB = SLOT === 0 ? LAB_ROOT : path.join(LAB_ROOT, `slot-${SLOT}`);
+export const slotPort = (slot0Port: number) => slot0Port + 20 * SLOT;
 /** T3 from source at the pin (lab/lab.mjs runs the same checkout). */
-export const T3_SRC = process.env.T3_SRC ?? path.join(LAB, `t3-src-${T3_PIN.slice(0, 10)}`);
-export const HUB_PORT = Number(process.env.FLEETD_LAB_HUB_PORT ?? 4795);
+export const T3_SRC = process.env.T3_SRC ?? path.join(LAB_ROOT, `t3-src-${T3_PIN.slice(0, 10)}`);
+export const HUB_PORT = Number(process.env.FLEETD_LAB_HUB_PORT ?? slotPort(4795));
 export const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
 /** Per hub port, so two runs on different ports never delete each other's state. */
 export const RUN = process.env.FLEETD_LAB_RUN ?? path.join(LAB, `e2e-${HUB_PORT}`);
 /** The bundled CLI (`pnpm test:lab` builds it first), so the lab exercises what ships, lead prompt included. */
 export const CLI = path.join(REPO, "apps/cli/dist/bin.js");
+/**
+ * The command for one fleetd invocation. FLEETD_BIN (default the bundled CLI) is the fleetd under test; FLEETD_HUB_BIN,
+ * FLEETD_NODE_BIN and FLEETD_CLI_BIN override it for `hub …`, `node …` and everything else, for mixed runs such as a
+ * Rust node beside the TS hub. A .js/.mjs/.cjs/.ts bin runs under this node; any other bin is executed directly.
+ */
+export const fleetdCommand = (args: ReadonlyArray<string>): [string, Array<string>] => {
+  const own = args[0] === "hub" ? process.env.FLEETD_HUB_BIN : args[0] === "node" ? process.env.FLEETD_NODE_BIN : process.env.FLEETD_CLI_BIN;
+  const given = own ?? process.env.FLEETD_BIN ?? CLI;
+  // Some callers spawn with another cwd, so a relative path is resolved here.
+  const bin = given.includes("/") ? path.resolve(given) : given;
+  return /\.[cm]?[jt]s$/u.test(bin) ? [process.execPath, [bin, ...args]] : [bin, [...args]];
+};
 export const MODEL = "claude-haiku-5-5";
 /** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
 export const QUEUE_TTL_SEC = 40;
 export const MACHINES = [
-  { id: "lab-a", t3Home: path.join(LAB, "home-a"), t3Url: "http://127.0.0.1:4711" },
-  { id: "lab-b", t3Home: path.join(LAB, "home-b"), t3Url: "http://127.0.0.1:4712" },
+  { id: "lab-a", t3Home: path.join(LAB, "home-a"), t3Url: `http://127.0.0.1:${slotPort(4711)}` },
+  { id: "lab-b", t3Home: path.join(LAB, "home-b"), t3Url: `http://127.0.0.1:${slotPort(4712)}` },
 ] as const;
 export type LabMachine = (typeof MACHINES)[number]["id"];
 
@@ -62,7 +85,7 @@ export async function until<A>(what: string, ms: number, probe: () => Promise<A 
 }
 
 export const cli = (...args: Array<string>) =>
-  execFileSync(process.execPath, [CLI, ...args], { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync(...fleetdCommand(args), { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
 /** Mints a 1 h session on a lab T3 with its own CLI, as the node would. */
 export const mintT3Bearer = (machine: { readonly t3Home: string }) =>
@@ -76,8 +99,12 @@ export const mintT3Bearer = (machine: { readonly t3Home: string }) =>
     .at(-1)!
     .trim();
 
+/** What lab/lab.mjs needs to find this slot's lab, for the processes that run it. */
+export const labEnv = (): Record<string, string> =>
+  Object.fromEntries(["FLEETD_LAB", "FLEETD_LAB_SLOT", "T3_SRC"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));
+
 export const lab = (command: "up" | "down", instance: string) =>
-  execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, instance], { env: scrubbedEnv(), encoding: "utf8" });
+  execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, instance], { env: { ...scrubbedEnv(), ...labEnv() }, encoding: "utf8" });
 
 const started: Array<{ name: string; child: ChildProcess }> = [];
 
@@ -85,7 +112,7 @@ const started: Array<{ name: string; child: ChildProcess }> = [];
 export const startCli = (name: string, args: Array<string>, env: Record<string, string> = {}) => {
   fs.mkdirSync(path.join(RUN, "logs"), { recursive: true });
   const out = fs.openSync(path.join(RUN, "logs", `${name}.log`), "a");
-  const child = spawn(process.execPath, [CLI, ...args], { env: { ...scrubbedEnv(), ...env }, stdio: ["ignore", out, out] });
+  const child = spawn(...fleetdCommand(args), { env: { ...scrubbedEnv(), ...env }, stdio: ["ignore", out, out] });
   started.push({ name, child });
   log(`started ${name} pid=${child.pid}`);
   return child;

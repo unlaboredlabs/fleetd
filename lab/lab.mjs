@@ -5,23 +5,28 @@
 // Safety: never touches ~/.t3. Stops processes only by the PID recorded at spawn, after checking that
 // the PID still runs our lab server (cmdline contains this instance's --base-dir).
 import { spawn, execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import pin from "../vendor/t3/pin.json" with { type: "json" };
 
-const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
-// A detached worktree of a T3 checkout at the pinned commit, the commit setup's npm build comes from:
+const LAB_ROOT = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
+// FLEETD_LAB_SLOT=<n> (0-9): its own dir and ports, the scheme documented on SLOT in apps/hub/src/lab/harness.ts.
+const SLOT = Number(process.env.FLEETD_LAB_SLOT ?? 0);
+if (!Number.isInteger(SLOT) || SLOT < 0 || SLOT > 9) throw new Error(`FLEETD_LAB_SLOT must be 0-9, got ${process.env.FLEETD_LAB_SLOT}`);
+const LAB = SLOT === 0 ? LAB_ROOT : path.join(LAB_ROOT, `slot-${SLOT}`);
+// A detached worktree of a T3 checkout at the pinned commit, the commit setup's npm build comes from, shared by all slots:
 //   git -C <t3 checkout> worktree add --detach <lab>/t3-src-<first 10 of the commit> <commit> && (cd there && vp i)
-const T3_SRC = process.env.T3_SRC ?? path.join(LAB, `t3-src-${pin.commit.slice(0, 10)}`);
+const T3_SRC = process.env.T3_SRC ?? path.join(LAB_ROOT, `t3-src-${pin.commit.slice(0, 10)}`);
 const HOST = "127.0.0.1";
 
 // lab-a's "fleetd" Claude instance denies every T3 tool (the wildcard form DESIGN §3.2 calls for) and Claude's
 // native subagent tools, Task and Workflow, so every fan-out is a fleetd task in a fleetd slot. T3 keeps one value
 // per launch flag, so all of them go in one comma-separated list. lab-b is the control with no launch args.
 const INSTANCES = [
-  { name: "lab-a", port: 4711, launchArgs: "--disallowedTools mcp__t3-code__*,Task,Workflow" },
-  { name: "lab-b", port: 4712, launchArgs: "" },
+  { name: "lab-a", port: 4711 + 20 * SLOT, launchArgs: "--disallowedTools mcp__t3-code__*,Task,Workflow" },
+  { name: "lab-b", port: 4712 + 20 * SLOT, launchArgs: "" },
 ];
 
 const suffix = (name) => name.slice(-1);
@@ -54,7 +59,7 @@ function scrubbedEnv(i) {
   }
   return {
     ...keep,
-    // Leads run `fleetd` from their shell: test:lab writes LAB/bin/fleetd (the built CLI) and points
+    // Leads run `fleetd` from their shell: test:lab writes LAB/bin/fleetd (the fleetd under test) and points
     // LAB/sock/<instance>.sock at that run's node socket.
     PATH: [path.join(LAB, "bin"), keep.PATH].filter(Boolean).join(":"),
     FLEETD_NODE_SOCK: path.join(LAB, "sock", `${i.name}.sock`),
@@ -165,7 +170,30 @@ async function up(i) {
       return false;
     }
   }, 90_000, `${i.name} on :${i.port}`);
+  await seedProject(i);
   console.log(`${i.name}: up pid=${child.pid} http://${HOST}:${i.port} home=${homeDir(i)}`);
+}
+
+/** A new home (a new slot) gets its test repo as the project the scenarios expect; `serve` does not bootstrap one. */
+async function seedProject(i) {
+  const bearer = execFileSync(
+    process.execPath,
+    [path.join(T3_SRC, "apps/server/src/bin.ts"), "auth", "session", "issue", "--base-dir", homeDir(i), "--ttl", "5m", "--label", "fleetd-lab", "--token-only"],
+    { env: scrubbedEnv(i), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  ).trim().split("\n").at(-1).trim();
+  const api = async (method, route, body) => {
+    const response = await fetch(`http://${HOST}:${i.port}${route}`, {
+      method,
+      headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    if (!response.ok) throw new Error(`${i.name}: T3 ${method} ${route}: HTTP ${response.status} ${(await response.text()).slice(0, 300)}`);
+    return response.json();
+  };
+  if ((await api("GET", "/api/projects")).projects.length > 0) return;
+  await api("POST", "/api/projects/mutate", {
+    type: "project.create", commandId: randomUUID(), projectId: randomUUID(), title: path.basename(repoDir(i)), workspaceRoot: repoDir(i),
+  });
 }
 
 /** SIGTERM (graceful) by recorded PID; SIGKILL after 20 s. `signal: "SIGKILL"` simulates a crash. */

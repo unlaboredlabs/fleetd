@@ -15,9 +15,9 @@ import * as Layer from "effect/Layer";
 import * as Incidents from "../incidents/Incidents.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
-import { type Body, callToolWith, check, CLI, cli, LAB, log, ok, scrubbedEnv, startCli, stopAll, until } from "./harness.ts";
+import { type Body, callToolWith, check, CLI, cli, fleetdCommand, LAB, log, ok, scrubbedEnv, slotPort, startCli, stopAll, until } from "./harness.ts";
 
-const PORT = Number(process.env.FLEETD_LAB_M12_PORT ?? 4797);
+const PORT = Number(process.env.FLEETD_LAB_M12_PORT ?? slotPort(4797));
 const URL_ = `http://127.0.0.1:${PORT}`;
 const HOME = path.join(LAB, `m12-retro-${PORT}`);
 const REF = { machineId: "lab-a" as MachineId, projectId: "p-demo" as ProjectId };
@@ -43,7 +43,7 @@ const seed = () =>
   );
 
 async function main() {
-  check(fs.existsSync(CLI), `the built CLI at ${CLI} (run pnpm --filter fleetd build first)`);
+  check(process.env.FLEETD_BIN !== undefined || fs.existsSync(CLI), `the built CLI at ${CLI} (run pnpm --filter fleetd build first)`);
   fs.rmSync(HOME, { recursive: true, force: true });
   await seed();
   ok(`seeded ${HISTORY.length} incidents into ${HOME}`);
@@ -65,7 +65,7 @@ async function main() {
 
   // The one real turn.
   const started = Date.now();
-  const out = execFileSync(process.execPath, [CLI, "retro", "run", "--hub", URL_, "--key-file", keyFile, "--advise", "--window", "14d"], {
+  const out = execFileSync(...fleetdCommand(["retro", "run", "--hub", URL_, "--key-file", keyFile, "--advise", "--window", "14d"]), {
     env: scrubbedEnv(),
     encoding: "utf8",
   });
