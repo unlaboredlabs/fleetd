@@ -45,23 +45,33 @@ impl HubDb {
         conn.execute_batch("PRAGMA busy_timeout = 5000")?;
         let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
         conn.execute_batch("PRAGMA synchronous = NORMAL")?;
-        let db = Self { conn: Mutex::new(conn) };
+        let db = Self {
+            conn: Mutex::new(conn),
+        };
         db.migrate()?;
         Ok(Arc::new(db))
     }
 
     fn lock(&self) -> MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.conn
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Runs `f` on the connection, outside any explicit transaction.
-    pub fn with<R>(&self, f: impl FnOnce(&Connection) -> Result<R, StoreError>) -> Result<R, StoreError> {
+    pub fn with<R>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<R, StoreError>,
+    ) -> Result<R, StoreError> {
         f(&self.lock())
     }
 
     /// Runs `f` in a write transaction (`BEGIN IMMEDIATE`), so a concurrent writer (the CLI next to a running hub)
     /// waits instead of interleaving. Rolls back when `f` fails.
-    pub fn transaction<R>(&self, f: impl FnOnce(&Connection) -> Result<R, StoreError>) -> Result<R, StoreError> {
+    pub fn transaction<R>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<R, StoreError>,
+    ) -> Result<R, StoreError> {
         let mut conn = self.lock();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let result = f(&tx)?;
@@ -78,7 +88,9 @@ impl HubDb {
             self.transaction(|conn| {
                 // Re-read inside the lock: another process may have migrated while we waited.
                 let current = user_version(conn)? as usize;
-                let Some(next) = MIGRATIONS.get(current) else { return Ok(()) };
+                let Some(next) = MIGRATIONS.get(current) else {
+                    return Ok(());
+                };
                 conn.execute_batch(next)?;
                 conn.execute_batch(&format!("PRAGMA user_version = {}", current + 1))?;
                 Ok(())
@@ -97,7 +109,9 @@ fn resolve(p: &Path) -> PathBuf {
     let joined = if p.is_absolute() {
         p.to_path_buf()
     } else {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")).join(p)
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("/"))
+            .join(p)
     };
     let mut out = PathBuf::new();
     for component in joined.components() {

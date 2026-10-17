@@ -1,6 +1,8 @@
 use super::{HubDb, StoreError, now_ms};
 use crate::clock::Clock;
-use fleetd_contracts::{HubEvent, HubEventType, MachineId, ProjectId, ThreadId, Timestamp};
+use fleetd_contracts::events::{Attention, HubEvent, HubEventType};
+use fleetd_contracts::ids::{EventSeq, MachineId, ProjectId, ThreadId, Timestamp};
+use fleetd_contracts::prim::{Count, Text};
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -29,19 +31,23 @@ pub struct NewEvent {
     pub summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
+    /// Set by the emitter (TS apps/hub/src/attention); stored and returned as given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attention: Option<Attention>,
 }
 
 impl NewEvent {
-    fn with_seq(self, seq: u64) -> HubEvent {
+    fn with_seq(self, seq: i64) -> HubEvent {
         HubEvent {
-            seq,
+            seq: EventSeq(Count::unchecked(seq)),
             at: self.at,
             r#type: self.r#type,
             machine_id: self.machine_id,
             project_id: self.project_id,
             thread_id: self.thread_id,
-            summary: self.summary,
+            summary: Text::unchecked(self.summary),
             data: self.data,
+            attention: self.attention,
         }
     }
 }
@@ -49,7 +55,7 @@ impl NewEvent {
 #[derive(Debug, Clone, Default)]
 pub struct WaitInput {
     /// Absent means start at the current end.
-    pub cursor: Option<u64>,
+    pub cursor: Option<i64>,
     pub types: Option<Vec<HubEventType>>,
     pub machine_id: Option<MachineId>,
     pub timeout_sec: u64,
@@ -59,7 +65,7 @@ pub struct WaitInput {
 pub struct WaitResult {
     pub events: Vec<HubEvent>,
     /// Pass back as the next `cursor`; it moves past events the filters skipped.
-    pub cursor: u64,
+    pub cursor: i64,
     /// More matching events are already waiting.
     pub more: bool,
 }
@@ -97,7 +103,7 @@ pub struct EventLog {
     clock: Arc<dyn Clock>,
     state: Mutex<State>,
     /// The head seq, updated under the db lock on every append; waiters subscribe before reading.
-    head: watch::Sender<u64>,
+    head: watch::Sender<i64>,
 }
 
 impl EventLog {
@@ -105,25 +111,31 @@ impl EventLog {
     pub fn new(db: Arc<HubDb>, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
         let now = now_ms(clock.as_ref());
         let head = db.with(|conn| {
-            conn.prepare_cached("DELETE FROM events WHERE created_ms < ?")?.execute([now - RETENTION_MS])?;
+            conn.prepare_cached("DELETE FROM events WHERE created_ms < ?")?
+                .execute([now - RETENTION_MS])?;
             // AUTOINCREMENT keeps this past retention deletes, so seq never goes backwards.
             let seq: Option<i64> = conn
                 .prepare_cached("SELECT seq FROM sqlite_sequence WHERE name = 'events'")?
                 .query_row([], |row| row.get(0))
                 .optional()?;
-            Ok(seq.unwrap_or(0) as u64)
+            Ok(seq.unwrap_or(0))
         })?;
-        Ok(Self { db, clock, state: Mutex::new(State { last_prune_ms: now }), head: watch::Sender::new(head) })
+        Ok(Self {
+            db,
+            clock,
+            state: Mutex::new(State { last_prune_ms: now }),
+            head: watch::Sender::new(head),
+        })
     }
 
     /// Seq of the newest event ever appended; 0 for none.
-    pub fn head(&self) -> u64 {
+    pub fn head(&self) -> i64 {
         *self.head.borrow()
     }
 
     /// Changes to the head seq: `changed()` resolves after each append. Mark the current value seen before reading a
     /// page so no append is missed.
-    pub fn subscribe(&self) -> watch::Receiver<u64> {
+    pub fn subscribe(&self) -> watch::Receiver<i64> {
         self.head.subscribe()
     }
 
@@ -146,18 +158,23 @@ impl EventLog {
             let seq: i64 = conn
                 .prepare_cached("INSERT INTO events (created_ms, type, machine_id, data) VALUES (?, ?, ?, ?) RETURNING seq")?
                 .query_row(
-                    params![now, type_name(trimmed.r#type)?, trimmed.machine_id.as_ref().map(|m| &m.0), stored],
+                    params![now, type_name(trimmed.r#type)?, trimmed.machine_id.as_ref().map(MachineId::as_str), stored],
                     |row| row.get(0),
                 )?;
             // Still under the db lock, so a reader never sees a head behind the rows it read.
-            self.head.send_replace(seq as u64);
-            Ok(seq as u64)
+            self.head.send_replace(seq);
+            Ok(seq)
         })?;
         Ok(trimmed.with_seq(seq))
     }
 
     /// One page after `after`, with the cursor to resume from. Reads rows and head under one lock.
-    pub fn page(&self, after: u64, types: Option<&[HubEventType]>, machine_id: Option<&MachineId>) -> Result<WaitResult, StoreError> {
+    pub fn page(
+        &self,
+        after: i64,
+        types: Option<&[HubEventType]>,
+        machine_id: Option<&MachineId>,
+    ) -> Result<WaitResult, StoreError> {
         let types = types.map(serde_json::to_string).transpose()?;
         self.db.with(|conn| {
             let mut stmt = conn.prepare_cached(
@@ -169,9 +186,9 @@ impl EventLog {
             )?;
             let rows = stmt.query_map(
                 named_params! {
-                    "$after": after as i64,
+                    "$after": after,
                     "$types": types,
-                    "$machine": machine_id.map(|m| &m.0),
+                    "$machine": machine_id.map(MachineId::as_str),
                     "$limit": (PAGE + 1) as i64,
                 },
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
@@ -184,12 +201,20 @@ impl EventLog {
                     more = true;
                     break;
                 }
-                events.push(serde_json::from_str::<NewEvent>(&data)?.with_seq(seq as u64));
+                events.push(serde_json::from_str::<NewEvent>(&data)?.with_seq(seq));
             }
             let head = *self.head.borrow();
             // Without more, every event up to head was looked at, matching or not.
-            let cursor = if more { events[PAGE - 1].seq } else { after.max(head) };
-            Ok(WaitResult { events, cursor, more })
+            let cursor = if more {
+                events[PAGE - 1].seq.get()
+            } else {
+                after.max(head)
+            };
+            Ok(WaitResult {
+                events,
+                cursor,
+                more,
+            })
         })
     }
 

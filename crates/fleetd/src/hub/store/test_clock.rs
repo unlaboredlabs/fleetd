@@ -17,7 +17,12 @@ struct Inner {
 
 impl ManualClock {
     pub(crate) fn at(now_ms: u64) -> Arc<Self> {
-        Arc::new(Self { inner: Mutex::new(Inner { now_ms, sleepers: Vec::new() }) })
+        Arc::new(Self {
+            inner: Mutex::new(Inner {
+                now_ms,
+                sleepers: Vec::new(),
+            }),
+        })
     }
 
     /// Moves time forward and wakes every sleeper that is now due.
@@ -25,7 +30,9 @@ impl ManualClock {
         let mut inner = self.inner.lock().unwrap();
         inner.now_ms += by.as_millis() as u64;
         let now = inner.now_ms;
-        let (due, pending) = std::mem::take(&mut inner.sleepers).into_iter().partition(|(at, _)| *at <= now);
+        let (due, pending) = std::mem::take(&mut inner.sleepers)
+            .into_iter()
+            .partition(|(at, _)| *at <= now);
         inner.sleepers = pending;
         for (_, wake) in due {
             let _ = wake.send(());

@@ -230,4 +230,11 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   );
   CREATE INDEX retro_proposals_by_state ON retro_proposals (state, due_ms);
   "#,
+    // The phone web app is gone, and with it device pairing links and Web Push. Its push.sent events go too: the
+    // event type no longer exists, so they would not decode.
+    r#"
+  DROP TABLE pair_tokens;
+  DROP TABLE push_subscriptions;
+  DELETE FROM events WHERE type = 'push.sent';
+  "#,
 ];

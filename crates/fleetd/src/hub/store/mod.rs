@@ -21,7 +21,10 @@ use std::time::UNIX_EPOCH;
 
 /// Milliseconds since the Unix epoch on `clock`, like Effect's `Clock.currentTimeMillis`.
 pub fn now_ms(clock: &dyn Clock) -> i64 {
-    clock.now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
+    clock
+        .now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64)
 }
 
 /// `new Date(ms).toISOString()`: `YYYY-MM-DDTHH:MM:SS.mmmZ`, UTC.

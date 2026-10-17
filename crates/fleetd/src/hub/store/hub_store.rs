@@ -1,5 +1,6 @@
 use super::{HubDb, StoreError};
-use fleetd_contracts::{Machine, MachineId, MachineStatus, ProjectRef, ProjectSummary, ThreadRef, ThreadSummary, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
+use fleetd_contracts::model::{Machine, MachineStatus, ProjectSummary, ThreadSummary};
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -49,13 +50,17 @@ fn escape_like(s: &str) -> String {
     out
 }
 
-const MACHINE_UPSERT: &str =
-    "INSERT INTO machines (machine_id, data) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET data = excluded.data";
+const MACHINE_UPSERT: &str = "INSERT INTO machines (machine_id, data) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET data = excluded.data";
 const MACHINE_GET: &str = "SELECT data FROM machines WHERE machine_id = ?";
 
-fn get_machine(conn: &rusqlite::Connection, machine_id: &MachineId) -> Result<Option<Machine>, StoreError> {
-    let data: Option<String> =
-        conn.prepare_cached(MACHINE_GET)?.query_row([&machine_id.0], |row| row.get(0)).optional()?;
+fn get_machine(
+    conn: &rusqlite::Connection,
+    machine_id: &MachineId,
+) -> Result<Option<Machine>, StoreError> {
+    let data: Option<String> = conn
+        .prepare_cached(MACHINE_GET)?
+        .query_row([&machine_id.as_str()], |row| row.get(0))
+        .optional()?;
     data.map(decode).transpose()
 }
 
@@ -65,15 +70,19 @@ impl HubStore {
     }
 
     /// `pub_key`, when given, replaces the machine's node key.
-    pub fn machine_upsert(&self, machine: &Machine, pub_key: Option<&str>) -> Result<(), StoreError> {
+    pub fn machine_upsert(
+        &self,
+        machine: &Machine,
+        pub_key: Option<&str>,
+    ) -> Result<(), StoreError> {
         let data = serde_json::to_string(machine)?;
         self.db.transaction(|conn| {
-            conn.prepare_cached(MACHINE_UPSERT)?.execute(params![machine.machine_id.0, data])?;
+            conn.prepare_cached(MACHINE_UPSERT)?.execute(params![machine.machine_id.as_str(), data])?;
             if let Some(pub_key) = pub_key {
                 conn.prepare_cached(
                     "INSERT INTO node_keys (machine_id, pub_key) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key",
                 )?
-                .execute(params![machine.machine_id.0, pub_key])?;
+                .execute(params![machine.machine_id.as_str(), pub_key])?;
             }
             Ok(())
         })
@@ -84,18 +93,25 @@ impl HubStore {
     }
 
     pub fn machines_list(&self) -> Result<Vec<Machine>, StoreError> {
-        self.db.with(|conn| decode_all(
-                conn,
-                "SELECT data FROM machines ORDER BY machine_id", []))
+        self.db
+            .with(|conn| decode_all(conn, "SELECT data FROM machines ORDER BY machine_id", []))
     }
 
     /// Sets the status and `lastSeenAt = at`. A no-op for an unknown machine.
-    pub fn machine_set_status(&self, machine_id: &MachineId, status: MachineStatus, at: &Timestamp) -> Result<(), StoreError> {
+    pub fn machine_set_status(
+        &self,
+        machine_id: &MachineId,
+        status: MachineStatus,
+        at: &Timestamp,
+    ) -> Result<(), StoreError> {
         self.db.transaction(|conn| {
             if let Some(mut machine) = get_machine(conn, machine_id)? {
                 machine.status = status;
                 machine.last_seen_at = at.clone();
-                conn.prepare_cached(MACHINE_UPSERT)?.execute(params![machine_id.0, serde_json::to_string(&machine)?])?;
+                conn.prepare_cached(MACHINE_UPSERT)?.execute(params![
+                    machine_id.as_str(),
+                    serde_json::to_string(&machine)?
+                ])?;
             }
             Ok(())
         })
@@ -104,12 +120,17 @@ impl HubStore {
     /// Drops the machine's record (`fleetd machine remove`); its projects and threads stay cached.
     pub fn machine_remove(&self, machine_id: &MachineId) -> Result<(), StoreError> {
         self.db.with(|conn| {
-            conn.prepare_cached("DELETE FROM machines WHERE machine_id = ?")?.execute([&machine_id.0])?;
+            conn.prepare_cached("DELETE FROM machines WHERE machine_id = ?")?
+                .execute([&machine_id.as_str()])?;
             Ok(())
         })
     }
 
-    pub fn projects_upsert_many(&self, machine_id: &MachineId, projects: &[ProjectSummary]) -> Result<(), StoreError> {
+    pub fn projects_upsert_many(
+        &self,
+        machine_id: &MachineId,
+        projects: &[ProjectSummary],
+    ) -> Result<(), StoreError> {
         self.db.transaction(|conn| {
             let mut stmt = conn.prepare_cached(
                 "INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, ?, ?, ?)
@@ -119,10 +140,10 @@ impl HubStore {
             for project in projects {
                 let row = ProjectSummary { machine_id: machine_id.clone(), ..project.clone() };
                 stmt.execute(params![
-                    machine_id.0,
-                    row.project_id.0,
+                    machine_id.as_str(),
+                    row.project_id.as_str(),
                     format!("{}\n{}", row.title, row.workspace_root),
-                    row.last_activity_at,
+                    row.last_activity_at.as_str(),
                     serde_json::to_string(&row)?,
                 ])?;
             }
@@ -131,15 +152,21 @@ impl HubStore {
     }
 
     /// Newest activity first. `query` matches title or workspace root, case-insensitively.
-    pub fn projects_list(&self, machine_id: Option<&MachineId>, query: Option<&str>) -> Result<Vec<ProjectSummary>, StoreError> {
-        let query = query.filter(|q| !q.is_empty()).map(|q| format!("%{}%", escape_like(q)));
+    pub fn projects_list(
+        &self,
+        machine_id: Option<&MachineId>,
+        query: Option<&str>,
+    ) -> Result<Vec<ProjectSummary>, StoreError> {
+        let query = query
+            .filter(|q| !q.is_empty())
+            .map(|q| format!("%{}%", escape_like(q)));
         self.db.with(|conn| {
             decode_all(
                 conn,
                 r"SELECT data FROM projects
        WHERE ($machine IS NULL OR machine_id = $machine) AND ($query IS NULL OR search LIKE $query ESCAPE '\')
        ORDER BY last_activity_at DESC",
-                named_params! { "$machine": machine_id.map(|m| &m.0), "$query": query },
+                named_params! { "$machine": machine_id.map(MachineId::as_str), "$query": query },
             )
         })
     }
@@ -147,8 +174,13 @@ impl HubStore {
     pub fn project_get(&self, r: &ProjectRef) -> Result<Option<ProjectSummary>, StoreError> {
         self.db.with(|conn| {
             let data: Option<String> = conn
-                .prepare_cached("SELECT data FROM projects WHERE machine_id = ? AND project_id = ?")?
-                .query_row(params![r.machine_id.0, r.project_id.0], |row| row.get(0))
+                .prepare_cached(
+                    "SELECT data FROM projects WHERE machine_id = ? AND project_id = ?",
+                )?
+                .query_row(
+                    params![r.machine_id.as_str(), r.project_id.as_str()],
+                    |row| row.get(0),
+                )
                 .optional()?;
             data.map(decode).transpose()
         })
@@ -158,9 +190,9 @@ impl HubStore {
     pub fn project_remove(&self, r: &ProjectRef) -> Result<(), StoreError> {
         self.db.transaction(|conn| {
             conn.prepare_cached("DELETE FROM projects WHERE machine_id = ? AND project_id = ?")?
-                .execute(params![r.machine_id.0, r.project_id.0])?;
+                .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
             conn.prepare_cached("DELETE FROM threads WHERE machine_id = ? AND project_id = ?")?
-                .execute(params![r.machine_id.0, r.project_id.0])?;
+                .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
             Ok(())
         })
     }
@@ -180,10 +212,10 @@ impl HubStore {
          last_run_status = COALESCE(excluded.last_run_status, threads.last_run_status), data = excluded.data",
             )?
             .execute(params![
-                thread.machine_id.0,
-                thread.thread_id.0,
-                thread.project_id.0,
-                thread.last_progress_at,
+                thread.machine_id.as_str(),
+                thread.thread_id.as_str(),
+                thread.project_id.as_str(),
+                thread.last_progress_at.as_str(),
                 stored.last_sequence,
                 stored.last_run_id,
                 stored.last_run_status,
@@ -199,7 +231,7 @@ impl HubStore {
                 .prepare_cached(
                     "SELECT data, last_sequence, last_run_id, last_run_status FROM threads WHERE machine_id = ? AND thread_id = ?",
                 )?
-                .query_row(params![r.machine_id.0, r.thread_id.0], |row| {
+                .query_row(params![r.machine_id.as_str(), r.thread_id.as_str()], |row| {
                     Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
                 })
                 .optional()?;
@@ -222,12 +254,16 @@ impl HubStore {
     }
 
     /// Newest progress first.
-    pub fn threads_by_project(&self, r: &ProjectRef, limit: i64) -> Result<Vec<ThreadSummary>, StoreError> {
+    pub fn threads_by_project(
+        &self,
+        r: &ProjectRef,
+        limit: i64,
+    ) -> Result<Vec<ThreadSummary>, StoreError> {
         self.db.with(|conn| {
             decode_all(
                 conn,
                 "SELECT data FROM threads WHERE machine_id = ? AND project_id = ? ORDER BY last_progress_at DESC LIMIT ?",
-                params![r.machine_id.0, r.project_id.0, limit],
+                params![r.machine_id.as_str(), r.project_id.as_str(), limit],
             )
         })
     }
@@ -237,7 +273,7 @@ impl HubStore {
         self.db.with(|conn| {
             Ok(conn
                 .prepare_cached("SELECT seq FROM shell_cursors WHERE machine_id = ?")?
-                .query_row([&machine_id.0], |row| row.get(0))
+                .query_row([&machine_id.as_str()], |row| row.get(0))
                 .optional()?)
         })
     }
@@ -247,7 +283,7 @@ impl HubStore {
             conn.prepare_cached(
                 "INSERT INTO shell_cursors (machine_id, seq) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET seq = excluded.seq",
             )?
-            .execute(params![machine_id.0, seq])?;
+            .execute(params![machine_id.as_str(), seq])?;
             Ok(())
         })
     }

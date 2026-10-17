@@ -7,13 +7,17 @@ mod tests;
 
 use crate::clock::Clock;
 use crate::hub::store::{HubDb, StoreError, iso_ms, now_ms};
-use fleetd_contracts::{AgentKeyInfo, ErrorCode, Grant, GrantMachines, KeyKind, MachineId, Role};
+use fleetd_contracts::auth::{AgentKeyInfo, AgentKeyPrefix, Grant, GrantMachines, KeyKind, Role};
+use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::mcp::ErrorCode;
+use fleetd_contracts::prim::Text;
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
-const CREATE_KEY_FIX: &str = "create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`";
+const CREATE_KEY_FIX: &str =
+    "create a key with `fleetd hub key create --name <name> --role <role> --machines '*'`";
 const KEY_PREFIX: &str = "fld_";
 const ENROLL_PREFIX: &str = "fle_";
 const LAST_USED_EVERY_MS: i64 = 60_000;
@@ -83,7 +87,10 @@ fn secret(prefix: &str) -> String {
 }
 
 fn sha256(s: &str) -> String {
-    Sha256::digest(s.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(s.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `^fld_[a-z2-7]{52}$`
@@ -98,7 +105,11 @@ fn strip_bearer(bearer: &str) -> &str {
         Some(scheme) if scheme.eq_ignore_ascii_case("bearer") => {
             let after = &bearer[6..];
             let stripped = after.trim_start();
-            if stripped.len() < after.len() { stripped } else { bearer }
+            if stripped.len() < after.len() {
+                stripped
+            } else {
+                bearer
+            }
         }
         _ => bearer,
     };
@@ -124,7 +135,8 @@ struct KeyRow {
     revoked_ms: Option<i64>,
 }
 
-const KEY_COLUMNS: &str = "key_id, name, kind, prefix, grants, created_ms, last_used_ms, revoked_ms";
+const KEY_COLUMNS: &str =
+    "key_id, name, kind, prefix, grants, created_ms, last_used_ms, revoked_ms";
 
 impl KeyRow {
     fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
@@ -142,14 +154,14 @@ impl KeyRow {
 
     fn info(&self) -> Result<AgentKeyInfo, StoreError> {
         Ok(AgentKeyInfo {
-            key_id: self.key_id.clone(),
+            key_id: Text::unchecked(self.key_id.clone()),
             name: self.name.clone(),
             kind: (self.kind == "human").then_some(KeyKind::Human),
-            prefix: self.prefix.clone(),
+            prefix: AgentKeyPrefix::unchecked(self.prefix.clone()),
             grants: serde_json::from_str(&self.grants)?,
-            created_at: iso_ms(self.created_ms),
-            last_used_at: self.last_used_ms.map(iso_ms),
-            revoked_at: self.revoked_ms.map(iso_ms),
+            created_at: iso_ms(self.created_ms).into(),
+            last_used_at: self.last_used_ms.map(|ms| iso_ms(ms).into()),
+            revoked_at: self.revoked_ms.map(|ms| iso_ms(ms).into()),
         })
     }
 }
@@ -162,7 +174,7 @@ pub fn allows(info: &AgentKeyInfo, role: Role, machine_id: Option<&MachineId>) -
             rank(grant.role) >= rank(role)
                 && match (machine_id, &grant.machines) {
                     (None, _) | (_, GrantMachines::All(_)) => true,
-                    (Some(id), GrantMachines::Some(ids)) => ids.contains(id),
+                    (Some(id), GrantMachines::Only(ids)) => ids.contains(id),
                 }
         })
 }
@@ -181,13 +193,23 @@ impl Auth {
         now_ms(self.clock.as_ref())
     }
 
-    pub fn create_key(&self, name: &str, grants: &[Grant], kind: KeyKind) -> Result<CreatedKey, StoreError> {
+    pub fn create_key(
+        &self,
+        name: &str,
+        grants: &[Grant],
+        kind: KeyKind,
+    ) -> Result<CreatedKey, StoreError> {
         let now = self.now();
         let key = secret(KEY_PREFIX);
         let row = KeyRow {
             key_id: format!("key_{}", base32(&rand::random::<[u8; 5]>())),
             name: name.to_owned(),
-            kind: if kind == KeyKind::Human { "human" } else { "agent" }.to_owned(),
+            kind: if kind == KeyKind::Human {
+                "human"
+            } else {
+                "agent"
+            }
+            .to_owned(),
             prefix: key[..KEY_PREFIX.len() + 6].to_owned(),
             grants: serde_json::to_string(grants)?,
             created_ms: now,
@@ -209,7 +231,10 @@ impl Auth {
             })?;
             Ok(())
         })?;
-        Ok(CreatedKey { info: row.info()?, key })
+        Ok(CreatedKey {
+            info: row.info()?,
+            key,
+        })
     }
 
     /// Accepts `fld_…` or `Bearer fld_…`. Revocation is seen on the next call.
@@ -225,19 +250,31 @@ impl Auth {
         }
         let row = self.db.with(|conn| {
             Ok(conn
-                .prepare_cached(&format!("SELECT {KEY_COLUMNS} FROM agent_keys WHERE hash = ?"))?
+                .prepare_cached(&format!(
+                    "SELECT {KEY_COLUMNS} FROM agent_keys WHERE hash = ?"
+                ))?
                 .query_row([sha256(key)], KeyRow::read)
                 .optional()?)
         })?;
-        let forbidden = |message: String| Unauthorized { code: ErrorCode::Forbidden, message, fix: Some(CREATE_KEY_FIX.into()) };
-        let Some(mut row) = row else { return Err(forbidden("unknown agent key".into()).into()) };
+        let forbidden = |message: String| Unauthorized {
+            code: ErrorCode::Forbidden,
+            message,
+            fix: Some(CREATE_KEY_FIX.into()),
+        };
+        let Some(mut row) = row else {
+            return Err(forbidden("unknown agent key".into()).into());
+        };
         if row.revoked_ms.is_some() {
             return Err(forbidden(format!("agent key {} was revoked", row.prefix)).into());
         }
         let now = self.now();
-        if row.last_used_ms.is_none_or(|last| now - last >= LAST_USED_EVERY_MS) {
+        if row
+            .last_used_ms
+            .is_none_or(|last| now - last >= LAST_USED_EVERY_MS)
+        {
             self.db.with(|conn| {
-                conn.prepare_cached("UPDATE agent_keys SET last_used_ms = ? WHERE key_id = ?")?.execute(params![now, row.key_id])?;
+                conn.prepare_cached("UPDATE agent_keys SET last_used_ms = ? WHERE key_id = ?")?
+                    .execute(params![now, row.key_id])?;
                 Ok(())
             })?;
             row.last_used_ms = Some(now);
@@ -250,19 +287,27 @@ impl Auth {
         let now = self.now();
         let changed = self.db.with(|conn| {
             Ok(conn
-                .prepare_cached("UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?")?
+                .prepare_cached(
+                    "UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?",
+                )?
                 .execute(params![now, key_id])?)
         })?;
         if changed == 0 {
-            return Err(AuthError::KeyNotFound { key_id: key_id.to_owned() });
+            return Err(AuthError::KeyNotFound {
+                key_id: key_id.to_owned(),
+            });
         }
         Ok(())
     }
 
     pub fn list(&self) -> Result<Vec<AgentKeyInfo>, StoreError> {
         let rows = self.db.with(|conn| {
-            let mut stmt = conn.prepare_cached(&format!("SELECT {KEY_COLUMNS} FROM agent_keys ORDER BY created_ms, key_id"))?;
-            let rows = stmt.query_map([], KeyRow::read)?.collect::<Result<Vec<_>, _>>()?;
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT {KEY_COLUMNS} FROM agent_keys ORDER BY created_ms, key_id"
+            ))?;
+            let rows = stmt
+                .query_map([], KeyRow::read)?
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })?;
         rows.iter().map(KeyRow::info).collect()
@@ -277,15 +322,25 @@ impl Auth {
         let expires = self.now() + ENROLL_TTL_MS;
         let token = secret(ENROLL_PREFIX);
         self.db.with(|conn| {
-            conn.prepare_cached("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)")?
-                .execute(params![sha256(&token), machine_id.0, expires])?;
+            conn.prepare_cached(
+                "INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)",
+            )?
+            .execute(params![sha256(&token), machine_id.as_str(), expires])?;
             Ok(())
         })?;
-        Ok(EnrollToken { token, expires_at: iso_ms(expires) })
+        Ok(EnrollToken {
+            token,
+            expires_at: iso_ms(expires),
+        })
     }
 
     /// Burns the token and records `pub_key` as the machine's node key.
-    pub fn consume_enroll_token(&self, token: &str, machine_id: &MachineId, pub_key: &str) -> Result<(), AuthError> {
+    pub fn consume_enroll_token(
+        &self,
+        token: &str,
+        machine_id: &MachineId,
+        pub_key: &str,
+    ) -> Result<(), AuthError> {
         let now = self.now();
         let hash = sha256(token);
         let burned = self.db.transaction(|conn| {
@@ -294,14 +349,14 @@ impl Auth {
                 .prepare_cached(
                     "UPDATE enroll_tokens SET used_ms = $now WHERE hash = $hash AND machine_id = $machine AND used_ms IS NULL AND expires_ms > $now",
                 )?
-                .execute(named_params! { "$now": now, "$hash": hash, "$machine": machine_id.0 })?;
+                .execute(named_params! { "$now": now, "$hash": hash, "$machine": machine_id.as_str() })?;
             if changed == 0 {
                 return Ok(false);
             }
             conn.prepare_cached(
                 "INSERT INTO node_keys (machine_id, pub_key) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key",
             )?
-            .execute(params![machine_id.0, pub_key])?;
+            .execute(params![machine_id.as_str(), pub_key])?;
             Ok(true)
         })?;
         if burned {
@@ -309,7 +364,9 @@ impl Auth {
         }
         let row: Option<(String, i64, Option<i64>)> = self.db.with(|conn| {
             Ok(conn
-                .prepare_cached("SELECT machine_id, expires_ms, used_ms FROM enroll_tokens WHERE hash = ?")?
+                .prepare_cached(
+                    "SELECT machine_id, expires_ms, used_ms FROM enroll_tokens WHERE hash = ?",
+                )?
                 .query_row([&hash], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
                 .optional()?)
         })?;
@@ -317,14 +374,17 @@ impl Auth {
             None => "unknown enrollment token".to_owned(),
             Some((_, _, Some(_))) => "enrollment token was already used".to_owned(),
             Some((_, expires, None)) if expires <= now => "enrollment token expired".to_owned(),
-            Some((machine, _, None)) => format!("enrollment token is for machine {machine}, not {}", machine_id.0),
+            Some((machine, _, None)) => format!(
+                "enrollment token is for machine {machine}, not {}",
+                machine_id.as_str()
+            ),
         };
         Err(Unauthorized {
             code: ErrorCode::Forbidden,
             message: why,
             fix: Some(format!(
                 "on the hub, run `fleetd hub token create --machine {}` and join again within 15 minutes",
-                machine_id.0
+                machine_id.as_str()
             )),
         }
         .into())
@@ -334,13 +394,18 @@ impl Auth {
         self.db.with(|conn| {
             Ok(conn
                 .prepare_cached("SELECT pub_key FROM node_keys WHERE machine_id = ?")?
-                .query_row([&machine_id.0], |row| row.get(0))
+                .query_row([&machine_id.as_str()], |row| row.get(0))
                 .optional()?)
         })
     }
 
     /// Forgets the machine's node key, so its node is refused from its next link on; false if it had none.
     pub fn revoke_node(&self, machine_id: &MachineId) -> Result<bool, StoreError> {
-        self.db.with(|conn| Ok(conn.prepare_cached("DELETE FROM node_keys WHERE machine_id = ?")?.execute([&machine_id.0])? > 0))
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached("DELETE FROM node_keys WHERE machine_id = ?")?
+                .execute([&machine_id.as_str()])?
+                > 0)
+        })
     }
 }
