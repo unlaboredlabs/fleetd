@@ -8,6 +8,8 @@ import * as FleetApi from "./api/FleetApi.ts";
 import * as HttpApp from "./api/HttpApp.ts";
 import * as Auth from "./auth/Auth.ts";
 import * as HumanDigests from "./digests/HumanDigests.ts";
+import * as Judges from "./checks/Judges.ts";
+import * as NodeCommands from "./checks/NodeCommands.ts";
 import * as Estimates from "./estimates/Estimates.ts";
 import * as Executors from "./executor/Executors.ts";
 import * as Incidents from "./incidents/Incidents.ts";
@@ -22,7 +24,6 @@ import * as HubDb from "./store/HubDb.ts";
 import * as HubStore from "./store/HubStore.ts";
 import * as Slots from "./slots/Slots.ts";
 import * as Tasks from "./tasks/Tasks.ts";
-import * as JudgeHook from "./valuebar/JudgeHook.ts";
 import * as PrHeads from "./valuebar/PrHeads.ts";
 import * as ValueBar from "./valuebar/ValueBar.ts";
 import * as Webhooks from "./webhooks/Webhooks.ts";
@@ -78,9 +79,10 @@ const layerMachines = Layer.effect(
       hubId: `fleetd-${os.hostname()}`,
       executors: yield* Executors.Executors,
       leadCalls: yield* LeadCallHandler.make,
+      commands: yield* NodeCommands.NodeCommands,
     });
   }),
-);
+).pipe(Layer.provideMerge(NodeCommands.layer));
 
 /** The sweep's overdue-wakes check; the wake scheduler does the firing. */
 const layerWakeSweep = Layer.effectDiscard(
@@ -93,7 +95,7 @@ const layerWakeSweep = Layer.effectDiscard(
 
 /**
  * Tasks with the slot board, area leases, the repo policy file read through each machine's T3, and the value bar
- * with receipts, incidents and estimates. M6c routes verdicts and judges; until then the judge hook does nothing.
+ * with receipts, incidents and estimates; recorded verdicts complete waiting judges.
  */
 const layerTasks = Tasks.layer.pipe(
   Layer.provideMerge(
@@ -106,7 +108,9 @@ const layerTasks = Tasks.layer.pipe(
       Estimates.layerStartOnRunning.pipe(Layer.provideMerge(Estimates.layer)),
     ),
   ),
-  Layer.provideMerge(Layer.mergeAll(Incidents.layer, PrHeads.layerGh, JudgeHook.layerNoop)),
+  Layer.provideMerge(
+    Layer.mergeAll(Incidents.layer, PrHeads.layerGh, Judges.layerJudgeHook.pipe(Layer.provideMerge(Judges.layerVerdicts))),
+  ),
 );
 
 /** The whole hub over the database in `home` (already resolved by `HubDb.resolveHubHome`). */
