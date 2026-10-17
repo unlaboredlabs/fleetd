@@ -140,6 +140,10 @@ contract! { pub struct T3Info { pub version: String, pub protocol: i64 } }
 contract! { pub struct ThreadCounts { pub running: u64, pub waiting: u64, pub idle: u64, pub failed: u64 } }
 
 contract! {
+    pub struct TaskCounts { pub queued: u64, pub running: u64, pub idle: u64, pub done: u64, pub failed: u64, pub cancelled: u64 }
+}
+
+contract! {
     pub struct ProjectSummary {
         pub machine_id: String,
         pub project_id: String,
@@ -197,6 +201,11 @@ contract! {
         pub lead: Option<Lead>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub workstreams: Option<Vec<Workstream>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub task_counts: Option<TaskCounts>,
+        /// Task records as the hub sends them; the app does not show tasks yet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub tasks: Option<Vec<Value>>,
         pub stale: bool,
         pub as_of: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
