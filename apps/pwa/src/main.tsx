@@ -1,6 +1,7 @@
-import type { Ask, AsksListOutput, FleetStatus, InboxReplyOutput, Machine, SecretSubmitOutput, Step, UsageStatusOutput, UsageStatus } from "@fleetd/contracts";
+import type { Ask, AsksListOutput, DoctorCheck, DoctorFixOutput, DoctorListOutput, FleetStatus, InboxReplyOutput, Machine, SecretSubmitOutput, Step, UsageStatusOutput, UsageStatus } from "@fleetd/contracts";
 import { Fragment, render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { doctorOrder, doctorTitle, withFixed } from "./doctor.ts";
 import { connectHub, type Hub } from "./hub.ts";
 import {
   approvalRows,
@@ -111,6 +112,8 @@ const Inbox = ({ start, onRefused }: { start: { key: string } | { pairToken: str
   const [echo, setEcho] = useState<Echo | undefined>();
   const [busy, setBusy] = useState(false);
   const [hub, setHub] = useState<Hub | undefined>();
+  /** Bumped on doctor.changed; the Doctor section refetches when it is open. */
+  const [doctorTick, setDoctorTick] = useState(0);
 
   useEffect(() => {
     let streaming = false;
@@ -145,6 +148,7 @@ const Inbox = ({ start, onRefused }: { start: { key: string } | { pairToken: str
         if (event.type.startsWith("machine.")) live.snapshot();
         if (refreshesAsks(event.type)) void fetchAsks();
         if (event.type.startsWith("usage.")) void fetchUsage();
+        if (event.type === "doctor.changed") setDoctorTick((n) => n + 1);
       },
       paired: (key, keyId) => void saveKey({ key, keyId }),
       refused: onRefused,
@@ -201,6 +205,7 @@ const Inbox = ({ start, onRefused }: { start: { key: string } | { pairToken: str
             </Fragment>
           );
         })}
+        {hub !== undefined && conn === "live" && <Doctor hub={hub} tick={doctorTick} />}
       </main>
       <ReplyBox disabled={busy || conn !== "live"} onSend={reply} />
     </>
@@ -333,6 +338,76 @@ const SecretEntry = ({ ask, machines, hub, onSaved }: { ask: Ask; machines: Read
       <p class="muted">Encrypted here to {target.ok ? target.machineId : "the machine"}'s key; the hub never sees it.</p>
       {state.error !== undefined && <p class="bad">{state.error}</p>}
     </form>
+  );
+};
+
+/** The hub's setup checks, fetched when opened; Fix runs a check's automatic fix (doctor_fix). */
+const Doctor = ({ hub, tick }: { hub: Hub; tick: number }) => {
+  const [open, setOpen] = useState(false);
+  const [checks, setChecks] = useState<ReadonlyArray<DoctorCheck> | undefined>();
+  const [note, setNote] = useState<Echo | undefined>();
+  const [busy, setBusy] = useState<string | undefined>();
+  const load = async (rerun: boolean) => {
+    if (rerun) setBusy("rerun");
+    try {
+      setChecks((await hub.call<typeof DoctorListOutput.Type>("doctor_list", rerun ? { rerun: true } : {})).checks);
+    } catch (error) {
+      setNote({ ok: false, text: message(error) });
+    } finally {
+      if (rerun) setBusy(undefined);
+    }
+  };
+  useEffect(() => {
+    if (open) void load(false);
+  }, [open, tick]);
+  const fix = async (checkId: string) => {
+    setBusy(checkId);
+    setNote(undefined);
+    try {
+      const out = await hub.call<typeof DoctorFixOutput.Type>("doctor_fix", { checkId });
+      setChecks((now) => (now === undefined ? now : withFixed(now, out.check)));
+      setNote({ ok: out.check.status === "ok", text: `${out.ran}. ${out.next ?? ""}`.trim() });
+    } catch (error) {
+      setNote({ ok: false, text: message(error) });
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  return (
+    <details class="doctor" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>{doctorTitle(checks)}</summary>
+      {note !== undefined && <p class={note.ok ? "good" : "bad"}>{note.text}</p>}
+      {checks === undefined && open && <p class="muted">Checking…</p>}
+      {checks !== undefined &&
+        doctorOrder(checks).map((check) => (
+          <div key={check.id} class="check">
+            <span class={`dot ${check.status}`} title={check.status} />
+            <div>
+              <code>{check.id}</code> {check.message}
+              {check.fix !== undefined && check.status !== "ok" && (
+                <div class="muted">
+                  {check.fix.label}
+                  {check.fix.command !== undefined && (
+                    <div class="cmd">
+                      <code>{check.fix.command}</code>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {check.fix?.kind === "auto" && check.status !== "ok" && (
+              <button class="go" disabled={busy !== undefined} onClick={() => void fix(check.id)}>
+                {busy === check.id ? "Fixing…" : "Fix"}
+              </button>
+            )}
+          </div>
+        ))}
+      {open && (
+        <button class="plain" disabled={busy !== undefined} onClick={() => void load(true)}>
+          {busy === "rerun" ? "Checking…" : "Check again"}
+        </button>
+      )}
+    </details>
   );
 };
 

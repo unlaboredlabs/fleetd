@@ -26,6 +26,16 @@ enum Purpose {
     Project(ProjectKey),
     Tail(ProjectKey),
     Reply,
+    Doctor,
+    DoctorRerun,
+    DoctorFix(String),
+}
+
+impl Purpose {
+    /// One-shot user actions: never coalesced, never redone.
+    fn one_shot(&self) -> bool {
+        matches!(self, Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -90,6 +100,14 @@ pub struct Echo {
     pub ok: bool,
 }
 
+/// The setup checks, once the Machines screen has asked for them.
+#[derive(Default)]
+pub struct Doctor {
+    pub checks: Vec<DoctorCheck>,
+    pub checked_at: Option<String>,
+    pub error: Option<String>,
+}
+
 /// One numbered inbox line.
 pub struct InboxItem<'a> {
     pub batch_id: &'a str,
@@ -107,6 +125,8 @@ pub struct State {
     pub asks_error: Option<String>,
     pub echo: Option<Echo>,
     pub detail: Option<Detail>,
+    /// None until first opened; from then on kept fresh on `doctor.changed`.
+    pub doctor: Option<Doctor>,
     /// A hub error not tied to one call.
     pub notice: Option<String>,
     streaming: bool,
@@ -129,6 +149,7 @@ impl Default for State {
             asks_error: None,
             echo: None,
             detail: None,
+            doctor: None,
             notice: None,
             streaming: false,
             snapshot_pending: false,
@@ -202,12 +223,49 @@ impl State {
 
     /// Sends a terse reply such as "1 go 2 nvm"; `batch_id` pins it to one batch.
     pub fn reply(&mut self, raw: &str, batch_id: Option<&str>) -> Out {
-        if self.conn != Conn::Live {
-            self.echo = Some(Echo { text: "Not connected to the hub; the reply was not sent.".into(), ok: false });
+        if !self.live_or_echo("Not connected to the hub; the reply was not sent.") {
             return Vec::new();
         }
         let input = InboxReplyInput { raw: raw.to_string(), batch_id: batch_id.map(str::to_string) };
         vec![self.call(Purpose::Reply, &input)]
+    }
+
+    /// The Machines screen opened: list the doctor's checks.
+    pub fn open_doctor(&mut self) -> Out {
+        self.doctor.get_or_insert_with(Doctor::default);
+        self.request_doctor().into_iter().collect()
+    }
+
+    /// Runs every check now (takes the hub a few seconds).
+    pub fn rerun_doctor(&mut self) -> Out {
+        if self.doctor_rerunning() || !self.live_or_echo("Not connected to the hub; the checks were not re-run.") {
+            return Vec::new();
+        }
+        self.doctor.get_or_insert_with(Doctor::default);
+        vec![self.call(Purpose::DoctorRerun, &DoctorListInput { machine_id: None, rerun: Some(true) })]
+    }
+
+    /// Runs a check's auto fix; the answer replaces that check.
+    pub fn fix_doctor(&mut self, check_id: &str) -> Out {
+        if self.doctor_fixing(check_id) || !self.live_or_echo("Not connected to the hub; the fix was not run.") {
+            return Vec::new();
+        }
+        vec![self.call(Purpose::DoctorFix(check_id.to_string()), &DoctorFixInput { check_id: check_id.to_string() })]
+    }
+
+    pub fn doctor_rerunning(&self) -> bool {
+        self.pending.values().any(|p| *p == Purpose::DoctorRerun)
+    }
+
+    pub fn doctor_fixing(&self, check_id: &str) -> bool {
+        self.pending.values().any(|p| matches!(p, Purpose::DoctorFix(id) if id == check_id))
+    }
+
+    fn live_or_echo(&mut self, offline: &str) -> bool {
+        if self.conn != Conn::Live {
+            self.echo = Some(Echo { text: offline.into(), ok: false });
+        }
+        self.conn == Conn::Live
     }
 
     /// Periodic: keeps the open project's lead log fresh while the lead is at work.
@@ -230,7 +288,7 @@ impl State {
         self.next_id += 1;
         let id = format!("c{}", self.next_id);
         self.pending.insert(id.clone(), purpose.clone());
-        if purpose != Purpose::Reply {
+        if !purpose.one_shot() {
             self.inflight.insert(purpose);
         }
         ClientMessage::Call { id, tool: I::NAME.into(), input: serde_json::to_value(input).unwrap() }
@@ -263,6 +321,10 @@ impl State {
         self.refetch(Purpose::Tail(key), &input)
     }
 
+    fn request_doctor(&mut self) -> Option<ClientMessage> {
+        self.refetch(Purpose::Doctor, &DoctorListInput { machine_id: None, rerun: None })
+    }
+
     fn request_snapshot(&mut self) -> Option<ClientMessage> {
         if self.conn != Conn::Live || self.snapshot_pending {
             return None;
@@ -276,7 +338,8 @@ impl State {
             Purpose::Asks => self.request_asks(),
             Purpose::Project(key) => self.request_project(&key),
             Purpose::Tail(_) => self.request_tail(),
-            Purpose::Reply => None,
+            Purpose::Doctor => self.request_doctor(),
+            Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) => None,
         }
     }
 
@@ -335,6 +398,9 @@ impl State {
         let keys: Vec<ProjectKey> = self.projects.iter().map(ProjectRow::key).collect();
         out.extend(keys.iter().filter_map(|k| self.request_project(k)));
         out.extend(self.request_asks());
+        if self.doctor.is_some() {
+            out.extend(self.request_doctor());
+        }
         out
     }
 
@@ -343,6 +409,9 @@ impl State {
         let kind = event.kind.as_str();
         if kind.starts_with("machine.") {
             out.extend(self.request_snapshot());
+        }
+        if kind == "doctor.changed" && self.doctor.is_some() {
+            out.extend(self.request_doctor());
         }
         if matches!(kind, "ask.created" | "ask.auto" | "batch.ready" | "decision.recorded") {
             out.extend(self.request_asks());
@@ -415,6 +484,28 @@ impl State {
                 }
                 return self.request_asks().into_iter().collect();
             }
+            Purpose::Doctor | Purpose::DoctorRerun => {
+                let doctor = self.doctor.get_or_insert_with(Doctor::default);
+                match parse::<DoctorListOutput>(output) {
+                    Ok(list) => {
+                        doctor.checks = list.checks;
+                        doctor.checked_at = Some(list.checked_at);
+                        doctor.error = None;
+                    }
+                    Err(e) => doctor.error = Some(e),
+                }
+            }
+            Purpose::DoctorFix(_) => match parse::<DoctorFixOutput>(output) {
+                Ok(fixed) => {
+                    let doctor = self.doctor.get_or_insert_with(Doctor::default);
+                    match doctor.checks.iter_mut().find(|c| c.id == fixed.check.id) {
+                        Some(check) => *check = fixed.check,
+                        None => doctor.checks.push(fixed.check),
+                    }
+                    self.echo = Some(Echo { text: fixed.ran, ok: true });
+                }
+                Err(e) => self.echo = Some(Echo { text: e, ok: false }),
+            },
         }
         Vec::new()
     }
@@ -432,7 +523,8 @@ impl State {
                     detail.tail_error = Some(text);
                 }
             }
-            Purpose::Reply => self.echo = Some(Echo { text, ok: false }),
+            Purpose::Doctor | Purpose::DoctorRerun => self.doctor.get_or_insert_with(Doctor::default).error = Some(text),
+            Purpose::Reply | Purpose::DoctorFix(_) => self.echo = Some(Echo { text, ok: false }),
         }
     }
 }
@@ -652,6 +744,62 @@ mod tests {
         s.apply(result(&id, outcome("p1", Some("lead-1"), "working")));
         // The project refresh already asked for the tail; a poll meanwhile doesn't double it.
         assert!(s.poll().is_empty());
+    }
+
+    fn check(id: &str, status: &str, fix: Option<Value>) -> Value {
+        let mut c = json!({ "id": id, "scope": "hub", "status": status, "message": format!("{id} is {status}") });
+        if let Some(fix) = fix {
+            c["fix"] = fix;
+        }
+        c
+    }
+
+    #[test]
+    fn doctor_loads_on_open_and_refreshes_on_doctor_changed() {
+        let mut s = synced();
+        assert!(s.apply(event("doctor.changed", None, None)).is_empty(), "nothing to refresh before the screen opened");
+        let out = s.open_doctor();
+        let ClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
+        assert_eq!((tool.as_str(), input), ("doctor_list", &json!({})));
+        s.apply(result(id, json!({ "checks": [check("hub/gh_auth", "ok", None)], "checkedAt": AT })));
+        assert_eq!(s.doctor.as_ref().unwrap().checks.len(), 1);
+
+        let refresh = calls(&s.apply(event("doctor.changed", None, None)));
+        assert_eq!(refresh.iter().map(|c| c.1.as_str()).collect::<Vec<_>>(), ["doctor_list"]);
+        assert!(s.apply(event("doctor.changed", None, None)).is_empty(), "coalesced while in flight");
+        let again = calls(&s.apply(result(&refresh[0].0, json!({ "checks": [], "checkedAt": AT }))));
+        assert_eq!(again.iter().map(|c| c.1.as_str()).collect::<Vec<_>>(), ["doctor_list"]);
+
+        let ClientMessage::Call { input, .. } = &s.rerun_doctor()[0] else { panic!() };
+        assert_eq!(input, &json!({ "rerun": true }));
+    }
+
+    #[test]
+    fn a_doctor_fix_replaces_its_check_and_echoes_what_ran() {
+        let mut s = synced();
+        let id = calls(&s.open_doctor())[0].0.clone();
+        let auto = json!({ "kind": "auto", "label": "Restart T3" });
+        s.apply(result(&id, json!({ "checks": [check("hub/gh_auth", "ok", None), check("lab-a/t3", "fail", Some(auto))], "checkedAt": AT })));
+
+        let out = s.fix_doctor("lab-a/t3");
+        let ClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
+        assert_eq!((tool.as_str(), input), ("doctor_fix", &json!({ "checkId": "lab-a/t3" })));
+        assert!(s.doctor_fixing("lab-a/t3"));
+        assert!(s.fix_doctor("lab-a/t3").is_empty(), "one fix at a time per check");
+        s.apply(result(id, json!({ "ran": "Restarted T3 on lab-a.", "check": check("lab-a/t3", "ok", None) })));
+        let checks = &s.doctor.as_ref().unwrap().checks;
+        assert_eq!(checks.iter().map(|c| (c.id.as_str(), c.status)).collect::<Vec<_>>(), [("hub/gh_auth", DoctorStatus::Ok), ("lab-a/t3", DoctorStatus::Ok)]);
+        assert_eq!(s.echo, Some(Echo { text: "Restarted T3 on lab-a.".into(), ok: true }));
+
+        let ClientMessage::Call { id, .. } = &s.fix_doctor("hub/gh_auth")[0] else { panic!() };
+        s.apply(Incoming::Message(ServerMessage::Error(ErrorFrame {
+            id: Some(id.clone()),
+            code: ErrorCode::Invalid,
+            message: "This fix is manual.".into(),
+            fix: Some("Run gh auth login on the hub.".into()),
+        })));
+        assert_eq!(s.echo, Some(Echo { text: "This fix is manual. Run gh auth login on the hub.".into(), ok: false }));
+        assert!(!s.doctor_fixing("hub/gh_auth"));
     }
 
     #[test]

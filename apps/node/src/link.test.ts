@@ -69,7 +69,7 @@ const runTest = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
   );
 
 const startNode = (
-  options: Partial<Pick<RunNodeOptions, "enrollToken" | "onEnrolled" | "t3Info" | "t3Restart" | "leadCalls">> & {
+  options: Partial<Pick<RunNodeOptions, "enrollToken" | "onEnrolled" | "t3Info" | "t3Restart" | "leadCalls" | "probe">> & {
     readonly t3Sessions?: Layer.Layer<T3Sessions>;
   } = {},
 ) =>
@@ -296,6 +296,41 @@ describe("node link", () => {
           id: "cli-7",
           result: { op: "decisions_search", decisions: [], next: "ask it" },
         });
+      }),
+    ));
+  it("answers the doctor's actions: a fresh session, a refused restart without a command, and a probe", () =>
+    runTest(
+      Effect.gen(function* () {
+        let mints = 0;
+        const { dials } = yield* startNode({
+          probe: Effect.succeed({ gitEmail: "1+wynn@users.noreply.github.com", diskPath: "/home/lab", diskFreeBytes: 6e9 }),
+          t3Sessions: Layer.succeed(T3Sessions)({
+            mint: Effect.sync(() => ({ sessionId: `s-${++mints}`, bearer: Redacted.make(`bearer-${mints}`), expiresAt: "later" })),
+            revoke: () => Effect.void,
+          }),
+        });
+        const link = yield* Queue.take(dials);
+        yield* link.send({ t: "challenge", nonce: "n" });
+        yield* link.next;
+        yield* link.send(welcome);
+        expect(yield* link.next).toMatchObject({ t: "t3session", bearer: "bearer-1" });
+
+        yield* link.send({ t: "node_action", id: "a1", action: "remint_session" });
+        expect(yield* link.next).toMatchObject({ t: "t3session", bearer: "bearer-2" });
+        expect(yield* link.next).toEqual({ t: "node_action_result", id: "a1", ok: true, message: "minted a fresh T3 session and sent it to the hub" });
+
+        yield* link.send({ t: "node_action", id: "a2", action: "restart_t3" });
+        expect(yield* link.next).toMatchObject({ t: "node_action_result", id: "a2", ok: false });
+
+        yield* link.send({ t: "node_action", id: "a3", action: "probe" });
+        expect(yield* link.next).toEqual({
+          t: "node_action_result",
+          id: "a3",
+          ok: true,
+          message: "probed",
+          probe: { gitEmail: "1+wynn@users.noreply.github.com", diskPath: "/home/lab", diskFreeBytes: 6e9 },
+        });
+        expect(mints).toBe(2);
       }),
     ));
 });

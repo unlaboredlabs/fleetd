@@ -2,7 +2,7 @@
 // `cmd` checks use it now; the merge train reuses it for git operations, hence timeouts up to 30 minutes. M8 adds
 // sealed secrets (`secret_deliver` / `secret_result`) and approved commands (`gated_run` / `gated_result`).
 import { randomUUID } from "node:crypto";
-import type { CmdCheck, CmdResult, GatedResult, GatedRun, MachineId, SecretDeliver, SecretResult } from "@fleetd/contracts";
+import type { CmdCheck, CmdResult, GatedResult, GatedRun, MachineId, NodeAction, NodeActionResult, SecretDeliver, SecretResult } from "@fleetd/contracts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
@@ -30,8 +30,9 @@ export type SecretOutcome = Omit<SecretResult, "t" | "id">;
 export type GatedOutcome = Omit<GatedResult, "t" | "id">;
 
 /** What the hub sends a node and what comes back, matched by id. */
-export type NodeRequest = CmdCheck | SecretDeliver | GatedRun;
-export type NodeReply = CmdResult | SecretResult | GatedResult;
+export type NodeRequest = CmdCheck | SecretDeliver | GatedRun | NodeAction;
+export type NodeReply = CmdResult | SecretResult | GatedResult | NodeActionResult;
+export type ActionOutcome = Omit<NodeActionResult, "t" | "id">;
 
 /** How long the hub waits for a node to write a secret. */
 const SECRET_REPLY = Duration.seconds(30);
@@ -57,6 +58,22 @@ export class NodeCommands extends Context.Service<
   }
 >()("fleetd/checks/NodeCommands") {}
 
+/**
+ * The doctor's node actions (M11): re-mint the hub's T3 session, restart T3 with the node's own restart command, or
+ * probe its commit email and free disk. Sent over the same links as NodeCommands, from the same layer.
+ */
+export class NodeActions extends Context.Service<
+  NodeActions,
+  { readonly run: (machineId: MachineId, action: NodeAction["action"]) => Effect.Effect<ActionOutcome, NodeCommandError> }
+>()("fleetd/checks/NodeActions") {}
+
+/** Each action's wait: the node caps its restart command at 3 min and its re-mint at 30 s. */
+const ACTION_WAIT: Record<NodeAction["action"], Duration.Duration> = {
+  probe: Duration.seconds(30),
+  remint_session: Duration.seconds(45),
+  restart_t3: Duration.seconds(210),
+};
+
 interface Pending {
   readonly machineId: MachineId;
   readonly linkId: number;
@@ -65,9 +82,9 @@ interface Pending {
   readonly done: Deferred.Deferred<NodeReply, NodeCommandError>;
 }
 
-const REPLY_OF = { cmd_check: "cmd_result", secret_deliver: "secret_result", gated_run: "gated_result" } as const;
+const REPLY_OF = { cmd_check: "cmd_result", secret_deliver: "secret_result", gated_run: "gated_result", node_action: "node_action_result" } as const;
 
-export const make = Effect.sync(() => {
+const makeBoth = Effect.sync(() => {
   const links = new Map<MachineId, { readonly id: number; readonly send: (frame: NodeRequest) => Effect.Effect<void> }>();
   const pending = new Map<string, Pending>();
   let nextLinkId = 0;
@@ -149,10 +166,17 @@ export const make = Effect.sync(() => {
   const runGated: NodeCommands["Service"]["runGated"] = (machineId, input) =>
     request<GatedResult>(machineId, (id) => ({ t: "gated_run", id, ...input }), Duration.sum(Duration.seconds(input.timeoutSec), REPLY_GRACE));
 
-  return NodeCommands.of({ run, deliverSecret, runGated, attach, resolve });
+  const actions = NodeActions.of({
+    run: (machineId, action) => request<NodeActionResult>(machineId, (id) => ({ t: "node_action", id, action }), ACTION_WAIT[action]),
+  });
+
+  return { commands: NodeCommands.of({ run, deliverSecret, runGated, attach, resolve }), actions };
 });
 
-export const layer = Layer.effect(NodeCommands, make);
+export const make = Effect.map(makeBoth, (both) => both.commands);
+
+/** NodeCommands and the doctor's NodeActions over the same node links. */
+export const layer = Layer.effectContext(Effect.map(makeBoth, ({ commands, actions }) => Context.make(NodeCommands, commands).pipe(Context.add(NodeActions, actions))));
 
 /** For fakes that only run commands: no secret reaches, and no approved command runs on, any machine. */
 export const unlinked = (machineId: MachineId) =>

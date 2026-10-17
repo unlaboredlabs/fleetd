@@ -5,6 +5,7 @@ import * as Socket from "effect/socket/Socket";
 import { runCmdCheck } from "./CmdCheck.ts";
 import type { NodeBoxKey, NodeIdentity } from "./identity.ts";
 import type { LeadRelay } from "./LeadCalls.ts";
+import { type NodeActionDeps, probeHost, runNodeAction } from "./NodeActions.ts";
 import { deliverSecret, runGated } from "./Secrets.ts";
 import { makeSessionKeeper, type SessionKeeper, type SessionKeeperOptions } from "./SessionKeeper.ts";
 import { makeT3Supervisor, type T3RestartFailed, type T3State, type T3Supervisor } from "./T3Supervisor.ts";
@@ -82,6 +83,7 @@ const runLinkOnce = (
     readonly leadCalls: LeadRelay | undefined;
     readonly cmdRoots: ReadonlyArray<string>;
     readonly secrets: NodeSecrets | undefined;
+    readonly actions: NodeActionDeps;
   },
 ) =>
   Effect.gen(function* () {
@@ -190,6 +192,7 @@ const runLinkOnce = (
       // Synchronous and short: written and wiped before the next frame is read.
       if (frame.t === "secret_deliver") yield* send(deliverSecret(frame, secrets)).pipe(Effect.ignore);
       if (frame.t === "gated_run") yield* runGated(frame, secrets).pipe(Effect.flatMap(send), Effect.ignore, Effect.forkScoped);
+      if (frame.t === "node_action") yield* runNodeAction(frame, deps.actions).pipe(Effect.flatMap(send), Effect.ignore, Effect.forkScoped);
     }
   }).pipe(
     Effect.catchTags({
@@ -224,6 +227,8 @@ export interface RunNodeOptions {
   readonly cmdRoots?: ReadonlyArray<string>;
   /** Sealed secrets: absent, the hello carries no box key and the node refuses every `secret_deliver`. */
   readonly secrets?: NodeSecrets;
+  /** The doctor's probe; default: this user's git email and the free space under the home directory. */
+  readonly probe?: NodeActionDeps["probe"];
 }
 
 export interface NodeSecrets {
@@ -259,6 +264,11 @@ export const runNode = Effect.fn("runNode")(function* (options: RunNodeOptions) 
         leadCalls: options.leadCalls,
         cmdRoots: options.cmdRoots ?? [os.homedir()],
         secrets: options.secrets,
+        actions: {
+          remint: keeper.remintNow,
+          ...(options.t3Restart === undefined ? {} : { restart: options.t3Restart }),
+          probe: options.probe ?? probeHost(),
+        },
         onWelcome: Effect.suspend(() => {
           attempt = 0;
           if (enrollToken === undefined) return Effect.void;

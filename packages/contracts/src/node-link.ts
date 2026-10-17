@@ -166,6 +166,38 @@ export const GatedResult = Schema.Struct({
 });
 export type GatedResult = typeof GatedResult.Type;
 
+/**
+ * Hub -> node, M11 doctor: `remint_session` mints a fresh T3 session for the hub now; `restart_t3` runs the node's
+ * own T3 restart command (none configured: refused); `probe` reads the commit email the node's services use and the
+ * free space on the filesystem holding its home directory.
+ */
+export const NodeAction = Schema.Struct({
+  t: Schema.tag("node_action"),
+  id: Schema.NonEmptyString,
+  action: Schema.Literals(["remint_session", "restart_t3", "probe"]),
+});
+export type NodeAction = typeof NodeAction.Type;
+
+/** Node -> hub, one per `node_action`. */
+export const NodeActionResult = Schema.Struct({
+  t: Schema.tag("node_action_result"),
+  id: Schema.NonEmptyString,
+  ok: Schema.Boolean,
+  /** Plain language: what happened, or why it did not. */
+  message: Schema.String.check(Schema.isMaxLength(500)),
+  /** `probe` only. */
+  probe: Schema.optionalKey(
+    Schema.Struct({
+      /** The node's GIT_AUTHOR_EMAIL (setup puts the identity in the T3 and node units), else `git config --global user.email`; absent when neither is set. */
+      gitEmail: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(320))),
+      gitEmailFrom: Schema.optionalKey(Schema.Literals(["env", "git_config"])),
+      diskPath: Schema.String,
+      diskFreeBytes: Schema.Number,
+    }),
+  ),
+});
+export type NodeActionResult = typeof NodeActionResult.Type;
+
 export const NodeToHub = Schema.Union([
   NodeHello,
   NodeT3Session,
@@ -175,10 +207,11 @@ export const NodeToHub = Schema.Union([
   CmdResult,
   SecretResult,
   GatedResult,
+  NodeActionResult,
 ]).pipe(Schema.toTaggedUnion("t"));
 export type NodeToHub = typeof NodeToHub.Type;
 
-export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat, LeadResultFrame, CmdCheck, SecretDeliver, GatedRun]).pipe(
+export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat, LeadResultFrame, CmdCheck, SecretDeliver, GatedRun, NodeAction]).pipe(
   Schema.toTaggedUnion("t"),
 );
 export type HubToNode = typeof HubToNode.Type;

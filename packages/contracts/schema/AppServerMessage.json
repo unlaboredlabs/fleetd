@@ -211,7 +211,8 @@
         "usage.resumed",
         "ask.secret_saved",
         "gated.ran",
-        "push.sent"
+        "push.sent",
+        "doctor.changed"
       ]
     },
     "ThreadId": {

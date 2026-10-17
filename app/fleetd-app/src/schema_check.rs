@@ -165,6 +165,8 @@ fn tool_inputs_and_outputs_match_the_contracts() {
     tool_io!("thread_tail", ThreadTailInput, ThreadTailOutput);
     tool_io!("asks_list", AsksListInput, AsksListOutput);
     tool_io!("inbox_reply", InboxReplyInput, InboxReplyOutput);
+    tool_io!("doctor_list", DoctorListInput, DoctorListOutput);
+    tool_io!("doctor_fix", DoctorFixInput, DoctorFixOutput);
 }
 
 #[test]

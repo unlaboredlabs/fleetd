@@ -53,6 +53,7 @@ import { WorkspaceFiles } from "./WorkspaceFiles.ts";
 import { effortOption, FLEETD_INSTANCE, ProviderList, routeModel, toInstance } from "./ProviderList.ts";
 import { isLoopbackUrl, loginKindOf, UsageSource } from "../usage/UsageSource.ts";
 import { ThreadWorkspace } from "./ThreadWorkspace.ts";
+import { T3Settings } from "../doctor/T3Settings.ts";
 import {
   actionsOf,
   activeRunId,
@@ -85,7 +86,7 @@ export class ThreadNotFound extends Schema.TaggedError<ThreadNotFound>()("Thread
 
 export class T3RequestFailed extends Schema.TaggedError<T3RequestFailed>()("T3RequestFailed", {
   machineId: Schema.String,
-  operation: Schema.Literals(["launch", "send", "interrupt", "read"]),
+  operation: Schema.Literals(["launch", "send", "interrupt", "read", "configure"]),
   cause: Schema.Defect(),
 }) {
   override get message(): string {
@@ -610,11 +611,27 @@ const make = Effect.gen(function* () {
       }),
   });
 
+  // M11 doctor: reads and re-applies the fleetd instance's settings.
+  const settings = T3Settings.of({
+    read: (machineId) =>
+      Effect.flatMap(liveOf(machineId), ({ client }) =>
+        client[WS_METHODS.serverGetSettings]({}).pipe(Effect.timeout(READ_TIMEOUT), Effect.mapError(readFailed(machineId))),
+      ),
+    update: (machineId, update) =>
+      Effect.flatMap(liveOf(machineId), ({ client }) =>
+        client[WS_METHODS.serverUpdateSettings](update).pipe(
+          Effect.timeout(READ_TIMEOUT),
+          Effect.mapError((cause) => new T3RequestFailed({ machineId, operation: "configure", cause })),
+        ),
+      ),
+  });
+
   return {
     files,
     workspace,
     providers,
     usageSource,
+    settings,
     executors: Executors.of({
       attach,
       detach,
@@ -641,16 +658,17 @@ const make = Effect.gen(function* () {
 
 /**
  * Provides Executors, the ThreadWatch the watchdog follows running threads through, WorkspaceFiles, ThreadWorkspace for
- * tasks, each machine's ProviderList, and the UsageSource behind usage_status.
+ * tasks, each machine's ProviderList, the UsageSource behind usage_status, and the doctor's T3Settings.
  */
 export const layer = Layer.effectContext(
-  Effect.map(make, ({ executors, watch, files, workspace, providers, usageSource }) =>
+  Effect.map(make, ({ executors, watch, files, workspace, providers, usageSource, settings }) =>
     Context.make(Executors, executors).pipe(
       Context.add(ThreadWatch, watch),
       Context.add(WorkspaceFiles, files),
       Context.add(ThreadWorkspace, workspace),
       Context.add(ProviderList, providers),
       Context.add(UsageSource, usageSource),
+      Context.add(T3Settings, settings),
     ),
   ),
 );

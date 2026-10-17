@@ -4,7 +4,7 @@ use std::fmt::Write;
 
 use serde_json::{Value, json};
 
-use crate::state::{Conn, Detail, ProjectRow, State};
+use crate::state::{Conn, Detail, Doctor, ProjectRow, State};
 
 pub struct Rng(u64);
 
@@ -91,6 +91,15 @@ pub fn fixture_state() -> State {
     }
     state.batches = vec![from(json!({ "batchId": "B1", "createdAt": AT, "state": "open",
         "items": [{ "number": 1, "askId": "A1" }, { "number": 2, "askId": "A2" }, { "number": 3, "askId": "A3" }] }))];
+    let checks = json!([
+        { "id": "hub/gh_auth", "scope": "hub", "status": "ok", "message": "gh is logged in as wynn-dev." },
+        { "id": "forge/disk", "scope": "machine", "machineId": "forge", "status": "warn", "message": "12 GB free on /home (under 20 GB)." },
+        { "id": "mac/t3", "scope": "machine", "machineId": "mac", "status": "fail", "message": "T3 restarted 3 times in 10 min.",
+          "fix": { "kind": "auto", "label": "Restart T3 on mac" } },
+        { "id": "mac/claude_auth", "scope": "machine", "machineId": "mac", "status": "unknown", "message": "Couldn't ask: the machine is degraded.",
+          "fix": { "kind": "manual", "label": "Log in to Claude on mac", "command": "claude /login" } },
+    ]);
+    state.doctor = Some(Doctor { checks: from(checks), checked_at: Some(AT.into()), error: None });
     state.detail = Some(Detail { key: ("forge".into(), PROJECTS[0].into()), tail: Vec::new(), tail_error: None, version: 0 });
     state
 }

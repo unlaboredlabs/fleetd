@@ -261,6 +261,10 @@ impl Shell {
         if screen != Screen::Project {
             self.state.close_project();
         }
+        if screen == Screen::Machines && self.screen != Screen::Machines {
+            let out = self.state.open_doctor();
+            self.send(out);
+        }
         self.screen = screen;
         self.selected = 0;
     }
@@ -815,7 +819,7 @@ impl Shell {
             )
     }
 
-    fn machines_screen(&self) -> AnyElement {
+    fn machines_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut list = div().id("machines").flex_1().min_h_0().overflow_y_scroll().flex().flex_col();
         if self.state.machines.is_empty() {
             list = list.child(div().p_3().child(muted("No machines have joined this hub yet (fleetd machine add).")));
@@ -850,7 +854,66 @@ impl Shell {
                     .child(muted(ago(&m.last_seen_at))),
             );
         }
+        list = list.child(self.doctor_section(cx));
         div().flex_1().flex().flex_col().min_w_0().child(header("Machines", String::new())).child(list).into_any_element()
+    }
+
+    fn doctor_section(&self, cx: &mut Context<Self>) -> Div {
+        let doctor = self.state.doctor.as_ref();
+        let rerunning = self.state.doctor_rerunning();
+        let checked = match doctor.and_then(|d| d.checked_at.as_deref()) {
+            Some(at) => format!("checked {}", ago(at)),
+            None => "checking…".into(),
+        };
+        let rerun = button("doctor-rerun", if rerunning { "Re-running…" } else { "Re-run" }, cx.listener(|this, _, _, cx| {
+            let out = this.state.rerun_doctor();
+            this.send(out);
+            cx.notify();
+        }));
+        let mut section = div()
+            .p_3()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .border_t_1()
+            .border_color(rgb(Theme::BORDER))
+            .child(div().flex().gap_3().items_center().child("Doctor").child(muted(checked)).child(div().flex_1()).child(rerun));
+        if let Some(e) = doctor.and_then(|d| d.error.clone()) {
+            section = section.child(div().text_color(rgb(Theme::RED)).whitespace_normal().child(e));
+        }
+        for check in doctor.map(|d| d.checks.as_slice()).unwrap_or_default() {
+            let color = match check.status {
+                DoctorStatus::Ok => Theme::GREEN,
+                DoctorStatus::Warn => Theme::YELLOW,
+                DoctorStatus::Fail => Theme::RED,
+                _ => Theme::MUTED,
+            };
+            let mut row = div()
+                .flex()
+                .gap_3()
+                .items_start()
+                .child(div().text_color(rgb(color)).child("●"))
+                .child(div().w(px(180.)).flex_none().font_family(MONO_FONT).text_size(px(12.)).child(check.id.clone()))
+                .child(div().flex_1().min_w_0().whitespace_normal().child(check.message.clone()));
+            if let Some(fix) = &check.fix {
+                let mut fix_col = div().w(px(320.)).flex_none().flex().flex_col().gap_1().child(muted(fix.label.clone()));
+                if let Some(command) = fix.command.as_ref().filter(|_| fix.kind == DoctorFixKind::Manual) {
+                    fix_col = fix_col.child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()));
+                }
+                if fix.kind == DoctorFixKind::Auto {
+                    let id = check.id.clone();
+                    let label = if self.state.doctor_fixing(&id) { "Fixing…" } else { "Fix" };
+                    fix_col = fix_col.child(div().flex().child(button(SharedString::from(format!("fix-{id}")), label, cx.listener(move |this, _, _, cx| {
+                        let out = this.state.fix_doctor(&id);
+                        this.send(out);
+                        cx.notify();
+                    }))));
+                }
+                row = row.child(fix_col);
+            }
+            section = section.child(row);
+        }
+        section
     }
 
     fn reply_bar(&self, window: &Window) -> impl IntoElement {
@@ -936,7 +999,7 @@ impl Render for Shell {
             Screen::Inbox => self.inbox_screen(cx),
             Screen::Projects => self.projects_screen(cx),
             Screen::Project => self.project_screen(window, cx),
-            Screen::Machines => self.machines_screen(),
+            Screen::Machines => self.machines_screen(cx),
         };
         let banner = self.note.clone().or_else(|| self.state.notice.clone());
         let main = div()

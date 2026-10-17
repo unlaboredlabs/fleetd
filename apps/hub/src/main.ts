@@ -9,6 +9,7 @@ import * as Approvals from "./approvals/Approvals.ts";
 import * as FleetApi from "./api/FleetApi.ts";
 import * as HttpApp from "./api/HttpApp.ts";
 import * as Auth from "./auth/Auth.ts";
+import * as Doctor from "./doctor/Doctor.ts";
 import * as HumanDigests from "./digests/HumanDigests.ts";
 import * as Intake from "./intake/Intake.ts";
 import * as IntakeRouter from "./intake/Router.ts";
@@ -156,6 +157,8 @@ export const hubLayer = (home: string, options: HubOptions) =>
     Layer.provide(
       AppSocket.layer.pipe(
         Layer.provideMerge(FleetApi.layer),
+        // The doctor reads machines, T3 settings, usage and node probes, and registers with the sweep below it.
+        Layer.provideMerge(Doctor.layer({ home, listen: options.listen })),
         Layer.provideMerge(Intake.layer.pipe(Layer.provide(IntakeRouter.layer({ home, ...(options.routerModel === undefined ? {} : { model: options.routerModel }) })))),
         Layer.provideMerge(Layer.merge(layerWakeSweep, Leases.layerSweep)),
         // The sweep reports failing webhooks, so it sits above them.

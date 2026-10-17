@@ -1,4 +1,4 @@
-import { Deferred, Duration, Effect, Option, Schedule, Stream, SubscriptionRef } from "effect";
+import { Deferred, Duration, Effect, Option, Queue, Schedule, Stream, SubscriptionRef } from "effect";
 import { type T3Session, T3Sessions } from "./T3Sessions.ts";
 
 /** A minted session plus a signal the link completes once the hub has been sent it. */
@@ -28,6 +28,8 @@ export const makeSessionKeeper = Effect.fn("SessionKeeper.make")(function* (opti
   const remintAfter = Duration.fromInputUnsafe(options.remintAfter ?? "45 minutes");
   const revokeGrace = Duration.fromInputUnsafe(options.revokeGrace ?? "30 seconds");
   const current = yield* SubscriptionRef.make<Option.Option<KeptSession>>(Option.none());
+  /** remintNow requests, each completed once its session has reached the hub. */
+  const kicks = yield* Queue.unbounded<Deferred.Deferred<void>>();
 
   const mint = t3.mint.pipe(
     Effect.tapError((error) =>
@@ -64,11 +66,24 @@ export const makeSessionKeeper = Effect.fn("SessionKeeper.make")(function* (opti
       yield* SubscriptionRef.set(current, Option.some(next));
       if (kept !== undefined) yield* Effect.forkScoped(revokeAfterSwitch(kept, next));
       kept = next;
-      yield* Effect.raceFirst(Effect.sleep(remintAfter), awaitDown);
+      // Requests made while this one was minting are answered by it.
+      const answered = yield* Queue.clear(kicks);
+      if (answered.length > 0) {
+        yield* Deferred.await(next.delivered).pipe(Effect.andThen(Effect.forEach(answered, (d) => Deferred.succeed(d, undefined))), Effect.forkScoped);
+      }
+      const kicked = yield* Effect.raceFirst(Effect.raceFirst(Effect.sleep(remintAfter), awaitDown).pipe(Effect.as(undefined)), Queue.take(kicks));
+      // Back in line, so the next mint answers it with the others.
+      if (kicked !== undefined) yield* Queue.offer(kicks, kicked);
     }
   }).pipe(Effect.forkScoped);
 
   return {
+    /** Mints a fresh session now (once T3 is up) and returns once the hub has been sent it. */
+    remintNow: Effect.gen(function* () {
+      const done = yield* Deferred.make<void>();
+      yield* Queue.offer(kicks, done);
+      yield* Deferred.await(done);
+    }),
     /** The current session first (once one exists), then each replacement. */
     sessions: SubscriptionRef.changes(current).pipe(
       Stream.filter(Option.isSome),

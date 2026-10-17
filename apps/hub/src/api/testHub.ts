@@ -20,6 +20,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Auth from "../auth/Auth.ts";
+import { Doctor, DoctorRefused } from "../doctor/Doctor.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
@@ -232,6 +233,25 @@ export const makeTestHub = () => {
     ),
   );
 
+  // The doctor's results are fixed: lab-a has an automatic fix (recorded in doctorFixes), lab-b a manual one.
+  const doctorFixes: Array<string> = [];
+  const doctorChecks = [
+    { id: "hub/gh_auth", scope: "hub", status: "ok", message: "gh is logged in on the hub." },
+    { id: "lab-a/online", scope: "machine", machineId: "lab-a" as MachineId, status: "fail", message: "lab-a is degraded: T3 is down.", fix: { kind: "auto", label: "Restart T3 on lab-a" } },
+    { id: "lab-b/disk", scope: "machine", machineId: "lab-b" as MachineId, status: "fail", message: "1.0 GB free.", fix: { kind: "manual", label: "Free disk space", command: "df -h /home/lab" } },
+  ] as const;
+  const layerDoctor = Layer.succeed(
+    Doctor,
+    Doctor.of({
+      list: () => Effect.succeed({ checks: doctorChecks, checkedAt: AT }),
+      fix: (checkId) =>
+        checkId === "lab-a/online"
+          ? Effect.sync(() => (doctorFixes.push(checkId), { ran: "restarted T3", check: { ...doctorChecks[1], status: "ok" as const, message: "lab-a is online." } }))
+          : Effect.fail(new DoctorRefused({ code: "invalid", message: `${checkId} needs a person.`, fix: "df -h /home/lab" })),
+      runIfDue: Effect.void,
+    }),
+  );
+
   const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll, ProjectRemovals.layer).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
@@ -245,6 +265,7 @@ export const makeTestHub = () => {
         // A lab-style machine: a subscription login, its T3 on another host, so no trace file is read.
         Layer.succeed(UsageSource, UsageSource.of({ read: () => Effect.succeed({ login: "subscription", local: false }) })),
         Layer.succeed(NodeLinkServer.NodeLinkServer, NodeLinkServer.NodeLinkServer.of({ handle: () => Effect.void })),
+        layerDoctor,
       ),
     ),
     Layer.provideMerge(HubDb.layerMemory),
@@ -322,5 +343,7 @@ export const makeTestHub = () => {
           ),
         ),
       ),
+    /** Check ids doctor_fix ran a fix for. */
+    doctorFixes,
   };
 };
