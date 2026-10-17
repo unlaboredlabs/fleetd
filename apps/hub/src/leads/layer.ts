@@ -13,7 +13,6 @@ import * as ChangeRecords from "../train/ChangeRecords.ts";
 import * as Usage from "../usage/Usage.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 import * as Leads from "./Leads.ts";
-import * as ProjectRemovals from "./ProjectRemovals.ts";
 import * as LeadWakes from "./LeadWakes.ts";
 import * as Workstreams from "./Workstreams.ts";
 
@@ -35,11 +34,11 @@ export const layer = (options: Leads.LeadsOptions = {}) =>
 /**
  * The leads layer together with the ledger. Inbox needs the AnswerSink that leads provide, and leads need Asks
  * and Decisions, so the ledger is built in two halves over one repo instead of with `Ledger.layer`. Includes the
- * wakes for decisions recorded outside the inbox, and stops a project's open workstreams when T3 deletes it.
+ * wakes for decisions recorded outside the inbox.
  * Needs HubDb, HubStore, EventLog, Executors and WriteQueue.
  */
 export const layerWithLedger = (options: Leads.LeadsOptions = {}) =>
-  Layer.mergeAll(Inbox.layer, LeadWakes.layerDecisionWakes, ProjectRemovals.layer).pipe(
+  Layer.merge(Inbox.layer, LeadWakes.layerDecisionWakes).pipe(
     Layer.provideMerge(layer(options)),
     Layer.provideMerge(Layer.mergeAll(Asks.layer, Decisions.layer)),
     Layer.provideMerge(LedgerRepo.layer),

@@ -49,6 +49,7 @@ import * as ValueBar from "../valuebar/ValueBar.ts";
 import * as Approvals from "../approvals/Approvals.ts";
 import * as GitHub from "../checks/GitHub.ts";
 import * as FinishAll from "../playbooks/FinishAll.ts";
+import * as ProjectRemovals from "../leads/ProjectRemovals.ts";
 import { NodeCommands, type GatedOutcome, type SecretOutcome, unlinked } from "../checks/NodeCommands.ts";
 import * as ReviewGate from "../train/ReviewGate.ts";
 import * as ChangeRecords from "../train/ChangeRecords.ts";
@@ -231,7 +232,7 @@ export const makeTestHub = () => {
     ),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll).pipe(
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll, ProjectRemovals.layer).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),

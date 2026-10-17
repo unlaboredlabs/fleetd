@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Leads from "./Leads.ts";
-import * as Workstreams from "./Workstreams.ts";
 import { readLeadPrompt } from "./prompt.ts";
 import { makeKit, REF, runKit } from "./testKit.ts";
 
@@ -129,28 +128,18 @@ describe("Leads", () => {
     }
   });
 
-  it("when T3 deletes the project, its open workstreams stop with the reason and its lead reads as stopped", async () => {
+  it("reads a lead as stopped once T3 deleted its project", async () => {
     const kit = makeKit();
     await runKit(
       kit,
       Effect.gen(function* () {
         yield* kit.addProject(REF, "Demo");
         const l = yield* leads;
-        const workstreams = yield* Workstreams.Workstreams;
         const store = yield* HubStore.HubStore;
-        const events = yield* EventLog.EventLog;
         yield* l.start(REF);
         yield* store.threads.upsert(threadRow("t1", "completed"));
-        const { workstreamId } = yield* workstreams.intake({ ref: REF, text: "add a /health endpoint", clientRequestId: "r1", channel: "app", by: "human" });
-
-        // What the executor does on a project.removed shell item or a snapshot without the project.
-        const cursor = yield* events.head();
+        expect((yield* l.get(REF))?.state).toBe("idle");
         yield* store.projects.remove(REF);
-        yield* events.append({ at: "1970-01-01T00:00:00.000Z", type: "project.removed", machineId: REF.machineId, projectId: REF.projectId, summary: 'Project "Demo" on lab-a was deleted in T3' });
-
-        const stopped = yield* events.wait({ cursor, types: ["workstream.state"], timeoutSec: 3600 });
-        expect(stopped.events.map((e) => e.summary)).toEqual([`${workstreamId} is stopped: its project was deleted in T3`]);
-        expect(yield* workstreams.get(workstreamId)).toMatchObject({ state: "stopped", headline: "Stopped: its project was deleted in T3." });
         expect((yield* l.get(REF))?.state).toBe("stopped");
         expect(yield* store.threads.get({ machineId: REF.machineId, threadId: "t1" as ThreadId })).toBeUndefined();
       }),
