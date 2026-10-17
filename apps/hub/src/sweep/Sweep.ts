@@ -1,7 +1,7 @@
 // The safety-net sweep: every 5 min, deterministic, no LLM. Built in: re-open streams for running threads
-// that lost theirs, and report each machine that is offline with running threads, once per offline spell.
-// Other areas add their own checks with `register` (overdue wakes, failing webhooks); each check is
-// isolated, so one failing does not stop the rest.
+// that lost theirs, report each machine that is offline with running threads (once per offline spell),
+// and webhook subscriptions failing for over an hour. Other areas add checks with `register` (overdue
+// wakes); each check is isolated, so one failing does not stop the rest.
 import type { MachineId } from "@fleetd/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -12,12 +12,11 @@ import * as Layer from "effect/Layer";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { Watchdog } from "../watchdog/Watchdog.ts";
+import { Webhooks } from "../webhooks/Webhooks.ts";
 
 export const SWEEP_EVERY_MS = 5 * 60_000;
 /** A wake this far past its time is fired by the sweep, per its catch-up rule. */
 export const WAKE_OVERDUE_MS = 2 * 60_000;
-/** A subscription failing this long gets a `webhook.failing` event. */
-export const WEBHOOK_FAILING_MS = 60 * 60_000;
 
 export interface SweepCheck {
   /** For logs. */
@@ -45,6 +44,7 @@ export const make = (everyMs: number) =>
     const store = yield* HubStore.HubStore;
     const events = yield* EventLog.EventLog;
     const watchdog = yield* Watchdog;
+    const webhooks = yield* Webhooks;
     const checks: Array<SweepCheck> = [];
     /** Offline machines already reported, by the lastSeenAt of their offline spell. */
     const reported = new Map<MachineId, string>();
@@ -82,11 +82,14 @@ export const make = (everyMs: number) =>
       }),
     };
 
+    // The delivery loop reports failing subscriptions too; checkFailing emits once per failing spell.
+    const failingWebhooks: SweepCheck = { name: "webhooks", run: webhooks.checkFailing() };
+
     // Suspended, so checks registered after the loop started are included.
     const runOnce = () =>
       Effect.suspend(() =>
         Effect.forEach(
-          [resubscribe, offlineWithRunning, ...checks],
+          [resubscribe, offlineWithRunning, failingWebhooks, ...checks],
           (check) =>
             check.run.pipe(
               Effect.catchCause((cause) =>
@@ -102,5 +105,5 @@ export const make = (everyMs: number) =>
     return Sweep.of({ register: (check) => Effect.sync(() => void checks.push(check)), runOnce });
   });
 
-/** The sweep, every `everyMs` (default 5 min). Needs Watchdog, HubStore and EventLog. */
+/** The sweep, every `everyMs` (default 5 min). Needs Watchdog, Webhooks, HubStore and EventLog. */
 export const layer = (everyMs: number = SWEEP_EVERY_MS) => Layer.effect(Sweep, make(everyMs));

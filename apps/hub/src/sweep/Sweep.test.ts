@@ -7,6 +7,7 @@ import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { Watchdog } from "../watchdog/Watchdog.ts";
+import { Webhooks } from "../webhooks/Webhooks.ts";
 import * as SweepModule from "./Sweep.ts";
 import { Sweep } from "./Sweep.ts";
 
@@ -33,18 +34,19 @@ const thread = (machineId: string, threadId: string, status: "running" | "comple
   asOf: AT,
 });
 
-const run = (body: (resubscribes: { count: number }) => Effect.Effect<void, never, Sweep | HubStore.HubStore | EventLog.EventLog>) => {
-  const resubscribes = { count: 0 };
+const run = (body: (counts: { resubscribe: number; webhooks: number }) => Effect.Effect<void, never, Sweep | HubStore.HubStore | EventLog.EventLog>) => {
+  const counts = { resubscribe: 0, webhooks: 0 };
   const watchdog = Watchdog.of({
     check: () => Effect.void,
-    resubscribe: () => Effect.sync(() => ++resubscribes.count),
+    resubscribe: () => Effect.sync(() => ++counts.resubscribe),
   });
-  const deps = Layer.mergeAll(Layer.succeed(Watchdog, watchdog), EventLog.layer, HubStore.layer).pipe(
+  const webhooks = { checkFailing: () => Effect.sync(() => void counts.webhooks++) } as unknown as Webhooks["Service"];
+  const deps = Layer.mergeAll(Layer.succeed(Watchdog, watchdog), Layer.succeed(Webhooks, webhooks), EventLog.layer, HubStore.layer).pipe(
     Layer.provideMerge(HubDb.layerMemory),
     Layer.provideMerge(TestClock.layer()),
   );
   return Effect.runPromise(
-    body(resubscribes).pipe(Effect.provide(SweepModule.layer()), Effect.provide(deps), Effect.scoped),
+    body(counts).pipe(Effect.provide(SweepModule.layer()), Effect.provide(deps), Effect.scoped),
   );
 };
 
@@ -54,19 +56,19 @@ const types = Effect.gen(function* () {
 });
 
 describe("sweep", () => {
-  it("runs every 5 minutes: re-subscribes, then each registered check, isolating failures", () =>
-    run((resubscribes) =>
+  it("runs every 5 minutes: re-subscribes, checks webhooks, then each registered check, isolating failures", () =>
+    run((counts) =>
       Effect.gen(function* () {
         const sweep = yield* Sweep;
         const ran: Array<string> = [];
         yield* sweep.register({ name: "boom", run: Effect.fail("nope") });
         yield* sweep.register({ name: "wakes", run: Effect.sync(() => void ran.push("wakes")) });
         yield* TestClock.adjust("4 minutes");
-        expect([resubscribes.count, ran]).toEqual([0, []]);
+        expect([counts.resubscribe, counts.webhooks, ran]).toEqual([0, 0, []]);
         yield* TestClock.adjust("1 minute");
-        expect([resubscribes.count, ran]).toEqual([1, ["wakes"]]);
+        expect([counts.resubscribe, counts.webhooks, ran]).toEqual([1, 1, ["wakes"]]);
         yield* TestClock.adjust("10 minutes");
-        expect([resubscribes.count, ran]).toEqual([3, ["wakes", "wakes", "wakes"]]);
+        expect([counts.resubscribe, counts.webhooks, ran]).toEqual([3, 3, ["wakes", "wakes", "wakes"]]);
       }),
     ));
 
