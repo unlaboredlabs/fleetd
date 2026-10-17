@@ -29,12 +29,15 @@ export const NodeHello = Schema.Struct({
   tags: Schema.Array(Schema.String),
   nodeVersion: Schema.String,
   protocol: ProtocolVersion,
-  t3: Schema.Struct({
-    /** Loopback or tailnet URL the hub can reach. */
-    url: Schema.String,
-    version: Schema.String,
-    protocol: Schema.Int,
-  }),
+  /** Absent when T3 is down at node start; the hub shows the machine as degraded. */
+  t3: Schema.optionalKey(
+    Schema.Struct({
+      /** Loopback or tailnet URL the hub can reach. */
+      url: Schema.String,
+      version: Schema.String,
+      protocol: Schema.Int,
+    }),
+  ),
   /** ed25519 public key, base64. */
   pubKey: Schema.NonEmptyString,
   /** Signature over the hub's challenge nonce (its UTF-8 bytes), base64. */
@@ -60,11 +63,20 @@ export const NodeT3Session = Schema.Struct({
 });
 export type NodeT3Session = typeof NodeT3Session.Type;
 
+/** The node's view of its local T3, sent when it changes. */
+export const NodeT3State = Schema.Struct({
+  t: Schema.tag("t3state"),
+  state: Schema.Literals(["up", "down", "restarting"]),
+  reason: Schema.optionalKey(Schema.String),
+  at: Timestamp,
+});
+export type NodeT3State = typeof NodeT3State.Type;
+
 /** Both directions every 15 s; a link silent for 45 s is offline. */
 export const Heartbeat = Schema.Struct({ t: Schema.tag("hb"), at: Timestamp });
 export type Heartbeat = typeof Heartbeat.Type;
 
-export const NodeToHub = Schema.Union([NodeHello, NodeT3Session, Heartbeat]).pipe(Schema.toTaggedUnion("t"));
+export const NodeToHub = Schema.Union([NodeHello, NodeT3Session, NodeT3State, Heartbeat]).pipe(Schema.toTaggedUnion("t"));
 export type NodeToHub = typeof NodeToHub.Type;
 
 export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat]).pipe(Schema.toTaggedUnion("t"));

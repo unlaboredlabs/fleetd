@@ -64,6 +64,9 @@
         },
         "nodeVersion": {
           "type": "string"
+        },
+        "degradedReason": {
+          "type": "string"
         }
       },
       "required": [

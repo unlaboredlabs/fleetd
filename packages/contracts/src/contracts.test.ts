@@ -9,9 +9,14 @@ import {
   MachineId,
   NodeToHub,
   ProjectOutcome,
+  SubscriptionSetInput,
   ThreadLaunchInput,
   ThreadSummary,
   ThreadTailInput,
+  TimeZone,
+  WakeSchedule,
+  WakeSetInput,
+  WebhookUrl,
 } from "./index.ts";
 
 const accepts = (schema: Schema.Top, value: unknown) => Schema.decodeUnknownResult(schema as Schema.Codec<unknown>)(value)._tag === "Success";
@@ -51,7 +56,9 @@ describe("node link", () => {
       sig: "c2ln",
       enrollToken: "tok",
     },
+    { t: "hello", machineId: "lab-c", name: "Lab C", tags: [], nodeVersion: "0.0.0", protocol: 1, pubKey: "cHVi", sig: "c2ln" },
     { t: "t3session", bearer: "b", expiresAt: at },
+    { t: "t3state", state: "down", reason: "healthz failed 3 times", at },
     { t: "hb", at },
   ];
   const fromHub = [
@@ -130,6 +137,45 @@ describe("tool input defaults and bounds", () => {
   it("rejects values past their maximum", () => {
     expect(accepts(ThreadTailInput, { ...ref, n: 51 })).toBe(false);
     expect(accepts(EventsWaitInput, { timeoutSec: 51 })).toBe(false);
+  });
+});
+
+describe("wakes", () => {
+  const target = { machineId: "forge", threadId: "t1" };
+
+  it("accepts IANA zones and refuses offsets and unknown names", () => {
+    for (const tz of ["UTC", "Europe/London", "America/New_York", "Etc/GMT+5"]) expect(accepts(TimeZone, tz), tz).toBe(true);
+    for (const tz of ["", "+01:00", "-05:00", "Mars/Olympus", "GMT+25", 3]) expect(accepts(TimeZone, tz), String(tz)).toBe(false);
+  });
+
+  it("requires every-schedules of at least 60 s", () => {
+    expect(accepts(WakeSchedule, { kind: "every", everySec: 60 })).toBe(true);
+    expect(accepts(WakeSchedule, { kind: "every", everySec: 59 })).toBe(false);
+    expect(accepts(WakeSchedule, { kind: "every", everySec: 60.5 })).toBe(false);
+    expect(accepts(WakeSchedule, { kind: "cron", cron: "0 9 * * 1-5", tz: "Nope/Nowhere" })).toBe(false);
+  });
+
+  it("caps the message at 4000 and fills once and catchUp", () => {
+    const set = { target, schedule: { kind: "at", at, tz: "UTC" }, message: "x".repeat(4000), clientRequestId: "r1" };
+    const decoded = Schema.decodeUnknownSync(WakeSetInput)(set);
+    expect([decoded.once, decoded.catchUp]).toEqual([true, "fire_once"]);
+    expect(accepts(WakeSetInput, { ...set, message: "x".repeat(4001) })).toBe(false);
+    expect(accepts(WakeSetInput, { ...set, message: "" })).toBe(false);
+  });
+});
+
+describe("subscriptions", () => {
+  it("accepts only absolute http(s) URLs", () => {
+    for (const url of ["http://127.0.0.1:4790/hook", "https://example.com/x?y=1"]) expect(accepts(WebhookUrl, url), url).toBe(true);
+    for (const url of ["file:///etc/passwd", "ftp://example.com", "javascript:alert(1)", "/relative", "example.com", ""]) {
+      expect(accepts(WebhookUrl, url), url).toBe(false);
+    }
+  });
+
+  it("defaults types and machines to everything", () => {
+    const decoded = Schema.decodeUnknownSync(SubscriptionSetInput)({ url: "https://example.com", clientRequestId: "r1" });
+    expect([decoded.types, decoded.machines]).toEqual(["*", "*"]);
+    expect(accepts(SubscriptionSetInput, { url: "https://example.com", types: ["nope"], clientRequestId: "r1" })).toBe(false);
   });
 });
 

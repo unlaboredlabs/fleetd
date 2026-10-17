@@ -12,6 +12,17 @@ export const HubEventType = Schema.Literals([
   /** Needs approval or user input. */
   "thread.waiting",
   "thread.usage_limited",
+  /** No progress past the stall threshold; the hub interrupts and nudges once. */
+  "thread.stalled",
+  "wake.fired",
+  /** A wake missed while the hub was down, with catchUp "skip". */
+  "wake.missed",
+  /** A queued write to an offline machine was delivered when it came back. */
+  "write.delivered",
+  /** A queued write outlived its TTL and was dropped. */
+  "write.expired",
+  /** A webhook subscription has been failing for over an hour. */
+  "webhook.failing",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 
@@ -29,3 +40,15 @@ export const HubEvent = Schema.Struct({
   data: Schema.optionalKey(Schema.Unknown),
 }).annotate({ identifier: "HubEvent" });
 export type HubEvent = typeof HubEvent.Type;
+
+export const ThreadEventReason = Schema.Literals(["stalled", "t3", "usage_limit", "interrupted"]);
+export type ThreadEventReason = typeof ThreadEventReason.Type;
+
+/** Fields `HubEvent.data` may carry on `thread.*` events, alongside whatever else the hub adds. */
+export const ThreadEventData = Schema.Struct({
+  runId: Schema.optionalKey(Schema.String),
+  /** The run ended while the hub was down and this event was emitted on its return. */
+  late: Schema.optionalKey(Schema.Boolean),
+  reason: Schema.optionalKey(ThreadEventReason),
+}).annotate({ identifier: "ThreadEventData" });
+export type ThreadEventData = typeof ThreadEventData.Type;
