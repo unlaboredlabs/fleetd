@@ -322,6 +322,9 @@ describe("claim and review commands", () => {
     );
     expect(parseLeadArgs(verdict)).toBe("--sha is required");
     expect(parseLeadArgs(["claim", "done"])).toBe("--workstream is required");
+    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--areas", "docs", "--prompt", "y"])).toBe(
+      "a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>",
+    );
     expect(parseLeadArgs(["claim", "W1"])).toBe("expected fleetd claim done --workstream <W>");
   });
 

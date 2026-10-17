@@ -50,7 +50,7 @@ describe("thread tail", () => {
 
   it("filters by kind", () => {
     const { rows } = tailOf(fromSnapshot(), 10, ["action"]);
-    expect(rows.map((r) => (r.kind === "action" ? r.action.summary : r.kind))).toEqual(["false", "echo hi", "Preparing workspace"]);
+    expect(rows.map((r) => (r.kind === "action" ? r.action.summary : r.kind))).toEqual(["false", "echo hi"]);
   });
 
   it("reads the latest assistant text, for the headline", () => {
@@ -71,7 +71,7 @@ describe("actions", () => {
   it("knows which command outputs the bounded snapshot withheld", () => {
     const view = fromSnapshot();
     const ids = actionsOf(view, 50).map((a) => a.id);
-    expect(omittedOutputs(view, ids)).toHaveLength(3);
+    expect(omittedOutputs(view, ids)).toHaveLength(2);
     expect(omittedOutputs(withFullOutputs(), ids)).toEqual([]);
   });
 
@@ -79,9 +79,9 @@ describe("actions", () => {
     expect(actionsOf(withFullOutputs(), 50).map((a) => a.action)).toMatchObject([
       { kind: "command", summary: "false", status: "failed", failed: true, exitCode: 1, outputTail: "Error: Exit code 1" },
       { kind: "command", summary: "echo hi", status: "completed", failed: false, outputTail: "hi" },
-      // T3's own workspace step is the one command item that carries a numeric exit code.
-      { kind: "command", summary: "Preparing workspace", status: "completed", failed: false, exitCode: 0 },
     ]);
+    // T3's own workspace step is recorded as a command item too, but the agent never ran it.
+    expect([...withFullOutputs().items.values()].some((i) => i.type === "command_execution" && i.input === "Preparing workspace")).toBe(true);
     expect(actionsOf(withFullOutputs(), 50)[1]!.action).not.toHaveProperty("exitCode");
   });
 

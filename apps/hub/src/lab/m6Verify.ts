@@ -1,10 +1,11 @@
 // M6 "done when" 1-5 on lab-a: done is fleetd's call. A workstream whose only done-when check is a node-run
-// `test -f docs/x.md` fails its first claim (the lead is woken with the exit code and output), passes once a writer's
-// branch with the file is merged into the project's checkout, and records actual vs estimate. A tool-less task that
-// says "tests pass" reaches the lead as unverified; a writer without --serves and a verdict from a non-review task are
-// refused. The same-SHA review rule needs a real PR head from GitHub, so it is covered by a unit test instead
-// (tasks/LeadTaskCalls.test.ts) until M7's testbed. Every `fleetd` call runs from the harness in the project's
-// workspace, as the lead's shell would, so only wakes and the two tasks cost turns (haiku, low).
+// `test -f docs/x.md` fails its first claim, and the lead is woken with the exit code and output. The writer that
+// fixes it (the lead's own, else the harness's) is merged into the project's checkout as it ends, so the next claim,
+// the lead's or the harness's, passes and records actual vs estimate. A tool-less task that says "tests pass" reaches
+// the lead as unverified; a writer without --serves and a verdict from a non-review task are refused. The same-SHA
+// review rule needs a real PR head from GitHub, so a unit test covers it (tasks/LeadTaskCalls.test.ts) until M7's
+// testbed. The harness's `fleetd` calls run in the project's workspace, as the lead's shell would, so they cost no
+// turns; wakes and tasks are haiku at low effort.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -23,7 +24,7 @@ export async function m6Verify(lab: Lab) {
   const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE)?.projectId as string;
   check(projectId, `${MACHINE} has a project`);
   const ref = { machineId: MACHINE, projectId };
-  let outcome = (await callTool("project_get", ref)).body;
+  const outcome = (await callTool("project_get", ref)).body;
   const root = outcome.project.workspaceRoot as string;
   const home = lab.machines.find((m) => m.id === MACHINE)!.t3Home;
   // Run alone, task numbers restart at T1, so old fleetd/* branches must go; after m5 they belong to this run.
@@ -62,7 +63,7 @@ export async function m6Verify(lab: Lab) {
   let cursor = await lab.cursor();
   const intake = await callTool("intake_submit", {
     ...ref,
-    text: "M6 lab run: add docs/x.md. The brief is registered for you. In every wake about this workstream run no commands: reply with one short line and stop.",
+    text: "M6 lab run: add docs/x.md. Its brief is already registered; keep every reply to one short line.",
     clientRequestId: randomUUID(),
   });
   check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
@@ -105,26 +106,39 @@ export async function m6Verify(lab: Lab) {
 
   // 3. A writer without --serves is refused with the fix text.
   const unserved = fleetd("task", "spawn", "--workstream", w, "--title", "x", "--areas", "docs", "--prompt", "y");
-  check(unserved.code === 3 && unserved.stderr.includes("say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>"), `spawn without --serves: ${JSON.stringify(unserved)}`);
-  ok(`3. task spawn --kind write without --serves refused (exit 3): ${unserved.stderr.trim().replace(/\n/gu, " | ")}`);
+  // The CLI refuses it before the hub would (exit 2, usage); the hub's own refusal is unit-tested in LeadTaskCalls.test.ts.
+  const refusal = unserved.stderr.split("\n")[0]!;
+  check(unserved.code === 2 && refusal === "fleetd: a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>", `spawn without --serves: ${JSON.stringify(unserved)}`);
+  ok(`3. task spawn (kind write) without --serves refused (exit ${unserved.code}): ${refusal}`);
 
-  // A writer creates the file on its branch; a tool-less reader claims "tests pass".
+  // The fix: a lead given the failing evidence spawns a `--serves done:0` writer itself; if it did not, the harness does.
   const spawn = (args: Array<string>) => {
     const out = fleetd("task", "spawn", "--workstream", w, "--model", MODEL, "--effort", "low", ...args);
     const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
     check(out.code === 0 && taskId, `task spawn ${args.join(" ")}: ${JSON.stringify(out)}`);
     return taskId!;
   };
-  const writer = spawn(["--title", "add x", "--areas", "docs", "--serves", "done:0", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
+  const own = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.workstreamId === w);
+  const leadWriter = own.find((t) => t.kind === "write" && t.serves === "done:0");
+  const writer = leadWriter?.taskId ?? spawn(["--title", "add x", "--areas", "docs", "--serves", "done:0", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
+  ok(`writer ${writer}: ${leadWriter === undefined ? "spawned by the harness (the lead spawned none)" : `spawned by the lead after the failed claim ("${leadWriter.title}", serves done:0)`}`);
+  // A tool-less reader that says "tests pass".
   const reader = spawn([
     "--title", "say tests pass", "--kind", "read",
     "--prompt", "Do not run any command or use any tool. Reply with exactly these two words and nothing else: tests pass",
   ]);
-  ok(`spawned ${writer} (write, serves done:0) and ${reader} (read, no tools)`);
-  for (const id of [writer, reader]) {
-    const ended = await lab.waitEvent(`${id} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === id });
-    check(ended.event.type === "task.completed", `${id} completed: ${ended.event.summary}`);
-  }
+  ok(`spawned ${reader} (read, no tools)`);
+
+  // 1b. The writer's branch reaches the default branch in the project's checkout as soon as it ends, before the
+  // lead's result wake (10 s debounce), so a lead that claims again in that wake sees the file.
+  const writerEnd = await lab.waitEvent(`${writer} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === writer });
+  check(writerEnd.event.type === "task.completed", `${writer} completed: ${writerEnd.event.summary}`);
+  const branch = (await task(writer)).branch as string;
+  git(root, "merge", "-q", "--no-edit", branch);
+  check(fs.existsSync(path.join(root, FILE)), `${FILE} is on main after merging ${branch}`);
+  ok(`merged ${branch} into main in ${root}`);
+  const readerEnd = await lab.waitEvent(`${reader} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === reader });
+  check(readerEnd.event.type === "task.completed", `${reader} completed: ${readerEnd.event.summary}`);
 
   // 2. The reader ran nothing but says "tests pass": delivered with its receipts as unverified.
   const readerTask = await task(reader);
@@ -138,7 +152,6 @@ export async function m6Verify(lab: Lab) {
     const text = providerLog(home, leadThread);
     const at = text.indexOf(`- ${reader} completed`);
     unverifiedDelivered ||= at >= 0 && text.slice(at, at + 300).includes("receipts: 0 commands run — claims unverified");
-    if (unverifiedDelivered && text.includes(`- ${writer} completed`)) break;
   }
   check(unverifiedDelivered, `the lead got ${reader} with "receipts: 0 commands run — claims unverified"`);
   ok(`2. ${reader} ("${readerTask.result.tail}") reached the lead as "receipts: 0 commands run — claims unverified"`);
@@ -148,16 +161,17 @@ export async function m6Verify(lab: Lab) {
   check(notReview.code === 3 && notReview.stderr.includes("only review tasks record verdicts"), `review verdict from a read task: ${JSON.stringify(notReview)}`);
   ok(`4. (CLI path) review verdict from ${reader} refused: ${notReview.stderr.trim().split("\n")[0]}; the same-SHA refusal is unit-tested (tasks/LeadTaskCalls.test.ts)`);
 
-  // 1b. The writer's branch reaches the default branch in the project's checkout, and the second claim passes.
-  const branch = (await task(writer)).branch as string;
-  git(root, "merge", "-q", "--no-edit", branch);
-  check(fs.existsSync(path.join(root, FILE)), `${FILE} is on main after merging ${branch}`);
-  ok(`merged ${branch} into main in ${root}`);
-  const second = fleetd("claim", "done", "--workstream", w);
-  const secondClaim = new RegExp(`^(C\\d+) on ${w} passed`, "mu").exec(second.stdout)?.[1];
-  check(second.code === 0 && secondClaim !== undefined && second.stdout.includes("✓ done:0 cmd: pass, exit 0"), `second claim passes: ${JSON.stringify(second)}`);
+  // 1b. The second claim passes: the lead's own in its result wake, or the harness's if the lead did not claim.
+  const stateNow = (await callTool("workstream_get", { workstreamId: w })).body.workstream.state;
+  if (stateNow === "done") {
+    ok(`1. the lead ran fleetd claim done itself after ${writer}'s result, and it passed`);
+  } else {
+    const second = fleetd("claim", "done", "--workstream", w);
+    check(second.code === 0 && new RegExp(`^C\\d+ on ${w} passed`, "mu").test(second.stdout) && second.stdout.includes("✓ done:0 cmd: pass, exit 0"), `second claim passes: ${JSON.stringify(second)}`);
+    ok(`1. the harness claimed again (the lead had not; ${w} was ${stateNow}): ${second.stdout.split("\n")[0]}`);
+  }
   const doneEvent = await lab.waitEvent("workstream.done", 10_000, { cursor, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
-  ok(`1. second claim (exit 0): ${second.stdout.split("\n")[0]}; ${doneEvent.event.type}: ${doneEvent.event.summary}`);
+  ok(`1. ${doneEvent.event.type}: ${doneEvent.event.summary}`);
   const late = fleetd("task", "spawn", "--workstream", w, "--title", "more", "--areas", "docs", "--serves", "done:0", "--prompt", "y");
   check(late.code === 3 && late.stderr.includes(`${w} is done; open a new intent if there's more to do`), `write spawn on a done workstream: ${JSON.stringify(late)}`);
   ok(`a write spawn on done ${w} is refused: ${late.stderr.trim().split("\n")[0]}`);
@@ -170,10 +184,11 @@ export async function m6Verify(lab: Lab) {
     got.eta?.rawMinutes === 1 && typeof got.eta.calibratedMinutes === "number" && typeof got.eta.ratio === "number" && typeof got.eta.samples === "number",
     `workstream_get eta: ${JSON.stringify(got.eta)}`,
   );
-  check((got.claims as Array<Body>).map((c) => `${c.claimId}:${c.outcome}`).join(",") === `${secondClaim}:pass,${firstClaim}:fail`, `workstream_get claims: ${JSON.stringify(got.claims)}`);
-  ok(`5. ${w} done: actual ${actual.actualMinutes} min vs raw 1 (ratio at start ${actual.ratioAtStart}); workstream_get eta ${JSON.stringify(got.eta)}, claims ${got.claims.length}`);
+  const claims = got.claims as Array<Body>;
+  check(claims[0]?.outcome === "pass" && claims.at(-1)?.claimId === firstClaim && claims.at(-1)?.outcome === "fail", `workstream_get claims: ${JSON.stringify(claims)}`);
+  ok(`5. ${w} done: actual ${actual.actualMinutes} min vs raw 1 (ratio at start ${actual.ratioAtStart}); workstream_get eta ${JSON.stringify(got.eta)}, claims ${claims.map((c) => `${c.claimId} ${c.outcome}`).join(", ")}`);
   const listed = (await callTool("claims_list", { workstreamId: w })).body;
-  check(listed.claims?.length === 2, `claims_list: ${JSON.stringify(listed)}`);
+  check(listed.claims?.length === claims.length, `claims_list: ${JSON.stringify(listed)}`);
   const incidents = (await callTool("incidents_list", { projectRef: ref, workstreamId: w })).body.incidents as Array<Body>;
   const missed = actual.actualMinutes > 2;
   check(missed === incidents.some((i) => i.class === "estimate_miss"), `an estimate_miss incident exactly when actual > 2 x raw: ${JSON.stringify(incidents)}`);
@@ -182,8 +197,9 @@ export async function m6Verify(lab: Lab) {
   check(digest.includes(`Done: ${w} `) && digest.includes("· ✓ 1 of 1 checks"), `the human digest shows the done workstream with its checked ✓: ${digest}`);
   ok(`human digest: ${digest.split("\n").find((l) => l.startsWith(`Done: ${w} `))}`);
 
-  // Turns this scenario cost: every lead run that ended since it started, plus the two tasks.
-  outcome = (await callTool("project_get", ref)).body;
+  // Turns this scenario cost: every lead run that ended since it started, plus its tasks' runs.
+  const tasks = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.workstreamId === w);
+  const taskTurns = tasks.reduce((n, t) => n + (t.attempt as number), 0);
   let turns = 0;
   for (let c = scenarioStart; ; ) {
     const page = (await callTool("events_wait", { cursor: c, machineId: MACHINE, types: ENDED, timeoutSec: 0 })).body;
@@ -191,5 +207,6 @@ export async function m6Verify(lab: Lab) {
     if (!page.more) break;
     c = page.cursor;
   }
-  ok(`M6 used ${turns} lead turns + 2 task turns = ${turns + 2} claude turns (${MODEL}, effort low)`);
+  ok(`M6 used ${turns} lead turns + ${taskTurns} task turns (${tasks.map((t) => t.taskId).join(", ")}) = ${turns + taskTurns} claude turns (${MODEL}, effort low)`);
+  check(turns + taskTurns <= 12, `M6 stays within 12 claude turns (${turns + taskTurns})`);
 }

@@ -11,6 +11,7 @@ import {
   type LeadCallResult,
   LeadResultFrame,
   NODE_SOCKET_PATH,
+  SERVES_FIX,
   type Task,
 } from "@fleetd/contracts";
 import * as Cause from "effect/Cause";
@@ -215,6 +216,8 @@ export const parseLeadArgs = (
           if (wrong !== undefined) return wrong;
           for (const flag of ["workstream", "title", "prompt"] as const) if (v[flag] === undefined) return `--${flag} is required`;
           if (v.estimate !== undefined && !/^\d+(\.\d+)?$/u.test(v.estimate)) return `--estimate is minutes, got '${v.estimate}'`;
+          // The contract refuses it too, but this says it in one plain line.
+          if ((v.kind ?? "write") === "write" && v.serves === undefined) return `a write task needs --serves: ${SERVES_FIX}`;
           raw = definedOnly({
             op: "task_spawn",
             workstreamId: v.workstream,
