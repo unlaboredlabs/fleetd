@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
+import { Approvals } from "../approvals/Approvals.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { DECIDE_YOURSELF } from "../ledger/Asks.ts";
 import { leadBy } from "../link/LeadCalls.ts";
@@ -56,12 +57,16 @@ const noTrain = Train.of({
   step: () => Effect.succeed(false),
 });
 
+// Gated runs and secrets are covered in approvals/Approvals.test.ts.
+const noApprovals = Approvals.of({ submitSecret: () => Effect.die("no approvals in this kit"), gatedRun: () => Effect.die("no approvals in this kit") });
+
 const setup = Effect.gen(function* () {
   const handler = yield* LeadCallHandler.make.pipe(
     Effect.provideService(Tasks, noTasks),
     Effect.provideService(Claims, noClaims),
     Effect.provideService(ValueBar, noValueBar),
     Effect.provideService(Train, noTrain),
+    Effect.provideService(Approvals, noApprovals),
   );
   const call = (c: LeadCall) => handler.handle(caller, c);
   return { call, refused: (c: LeadCall) => Effect.flip(call(c)) };

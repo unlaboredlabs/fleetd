@@ -1,3 +1,4 @@
+import { Approvals } from "../approvals/Approvals.ts";
 import type { LeadCall, MachineId, ProjectId } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
@@ -18,6 +19,7 @@ describe("change lead calls", () => {
         const workstreamId = yield* kit.setup;
         const handler = yield* LeadCallHandler.make.pipe(
           Effect.provideService(Claims, Claims.of({ claimDone: () => Effect.die("no claims here"), get: () => Effect.succeed(undefined), list: () => Effect.succeed([]) })),
+          Effect.provideService(Approvals, Approvals.of({ submitSecret: () => Effect.die("no approvals here"), gatedRun: () => Effect.die("no approvals here") })),
         );
         const call = (c: Record<string, unknown>, who = caller) => handler.handle(who, c as LeadCall);
 

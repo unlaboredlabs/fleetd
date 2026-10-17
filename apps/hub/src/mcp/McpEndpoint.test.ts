@@ -1,4 +1,4 @@
-import type { HubEventType, MachineId, ThreadId } from "@fleetd/contracts";
+import type { DecisionKey, HubEventType, MachineId, ProjectId, ThreadId } from "@fleetd/contracts";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -403,6 +403,45 @@ describe("M3 tools", () => {
     expect((await call(client, "intake_submit", { text: "@p-lab-b fix: typo", clientRequestId: "i3" })).body.code).toBe("not_found");
     expect((await call(client, "intake_submit", { text: "tidy the docs", clientRequestId: "i4" })).body).toMatchObject({ askId: "A1" });
     expect((await call(client, "asks_list")).body.asks).toMatchObject([{ askId: "A1", key: expect.stringMatching(/^intake\.route\./u), options: ["p-lab-a on lab-a"] }]);
+  });
+
+  it("takes secrets and approvals only from human keys, and relays a sealed secret without keeping it", async () => {
+    const { hub, url, as } = await fleet();
+    await hub.addMachine({ ...machine("lab-a"), boxPubKey: Buffer.alloc(32, 7).toString("base64") });
+    const projectRef = { machineId: "lab-a" as MachineId, projectId: "p-lab-a" as ProjectId };
+    await hub.createAsk({
+      projectRef,
+      kind: "secret",
+      key: "stripe.test_key" as DecisionKey,
+      class: "credential",
+      text: "Need the Stripe test key",
+      sink: "env:lab-a:/w/p-lab-a/.env",
+      blocks: "nothing",
+      proceededOnRec: false,
+    });
+    const human = await connect(url, (await hub.addKey("phone", [{ role: "operate", machines: "*" }], "human")).key);
+    const agent = await as("aOnly");
+    const sealed = Buffer.alloc(80, 3).toString("base64");
+
+    expect(await call(agent, "secret_submit", { askId: "A1", sealed })).toMatchObject({ isError: true, body: { code: "forbidden", fix: expect.stringContaining("--human key") } });
+    expect(await call(human, "secret_submit", { askId: "A1", sealed })).toMatchObject({ isError: false, body: { askId: "A1", fingerprint: "ab12cd34" } });
+    expect(hub.nodeFrames).toEqual([{ machineId: "lab-a", t: "secret_deliver", input: { sink: "env:lab-a:/w/p-lab-a/.env", sealed, secretKey: "stripe.test_key" } }]);
+    const asks = (await call(human, "asks_list", { state: "answered" })).body.asks;
+    expect(asks).toMatchObject([{ askId: "A1", fingerprint: "ab12cd34", evidence: "fingerprint ab12cd34" }]);
+    expect(JSON.stringify(asks)).not.toContain(sealed);
+
+    await hub.createAsk({
+      projectRef,
+      kind: "do",
+      key: "dns.cutover" as DecisionKey,
+      class: "irreversible",
+      text: "Point the DNS",
+      steps: [{ text: "Change the A record", where: "browser" }],
+      blocks: "the cutover",
+      proceededOnRec: false,
+    });
+    expect(await call(agent, "inbox_reply", { raw: "1 done" })).toMatchObject({ isError: true, body: { code: "forbidden", fix: expect.stringContaining("--human key") } });
+    expect((await call(human, "inbox_reply", { raw: "1 done" })).body).toMatchObject({ parsed: true, applied: [{ source: "human" }] });
   });
 
   it("shows and answers only asks on the key's machines, recording the key as the decision's author", async () => {

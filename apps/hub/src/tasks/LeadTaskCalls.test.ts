@@ -1,3 +1,4 @@
+import { Approvals } from "../approvals/Approvals.ts";
 import { type CheckSpec, type LeadCall, type MachineId, type ProjectId, SERVES_FIX } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
@@ -9,6 +10,7 @@ import { REF } from "./testKit.ts";
 
 // Change calls are covered in train/LeadChangeCalls.test.ts, over the real train.
 const handlerOf = LeadCallHandler.make.pipe(
+  Effect.provideService(Approvals, Approvals.of({ submitSecret: () => Effect.die("no approvals here"), gatedRun: () => Effect.die("no approvals here") })),
   Effect.provideService(
     Train,
     Train.of({

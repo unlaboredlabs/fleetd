@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
+    "libsodium-wrappers": "0.8.4",
     "rolldown": "1.2.14"
   }
 }

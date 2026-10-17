@@ -381,6 +381,7 @@ export const askKindRule = Schema.makeFilter(
     readonly recommendation?: string;
     readonly steps?: ReadonlyArray<unknown>;
     readonly sink?: string;
+    readonly envName?: string;
     readonly fingerprint?: string;
     readonly gated?: GatedRunSpec;
     readonly verify?: unknown;
@@ -393,9 +394,12 @@ export const askKindRule = Schema.makeFilter(
     }
     if (ask.kind === "secret" && ask.sink === undefined) return { path: ["sink"], issue: "a secret ask needs a sink" };
     if (ask.kind === "approve" && ask.gated === undefined) return { path: ["gated"], issue: "an approve ask needs its gated run" };
-    const only = { sink: "secret", fingerprint: "secret", gated: "approve", verify: "do" } as const;
+    const only = { sink: "secret", envName: "secret", fingerprint: "secret", gated: "approve", verify: "do" } as const;
     for (const [field, kind] of Object.entries(only) as Array<[keyof typeof only, AskKind]>) {
       if (ask[field] !== undefined && ask.kind !== kind) return { path: [field], issue: `only a ${kind} ask has ${field}` };
+    }
+    if (ask.envName !== undefined && ask.sink !== undefined && !ask.sink.startsWith("env:")) {
+      return { path: ["envName"], issue: "only an env: sink has an env name" };
     }
     if (ask.gated !== undefined && ask.class !== undefined && ask.gated.class !== ask.class) {
       return { path: ["class"], issue: "an approve ask's class is its gated run's class" };
@@ -432,6 +436,8 @@ export const Ask = Schema.Struct({
   verify: Schema.optionalKey(CheckSpec),
   /** Required for secret. */
   sink: Schema.optionalKey(SecretSink),
+  /** secret with an env: sink: the variable it writes, when not the one its key names (`secretEnvName`). */
+  envName: Schema.optionalKey(EnvName),
   /** secret: set when the node has written the sink. */
   fingerprint: Schema.optionalKey(SecretFingerprint),
   /** Required for approve; immutable once the ask exists. */

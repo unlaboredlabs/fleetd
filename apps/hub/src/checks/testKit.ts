@@ -9,7 +9,7 @@ import { makeKit, REF } from "../tasks/testKit.ts";
 import type { GhRunner } from "./GitHub.ts";
 import * as Judges from "./Judges.ts";
 import * as ChecksLayer from "./layer.ts";
-import { type CommandInput, type CommandOutcome, NodeCommandError, NodeCommands } from "./NodeCommands.ts";
+import { type CommandInput, type CommandOutcome, NodeCommandError, NodeCommands, unlinked } from "./NodeCommands.ts";
 
 export { REF };
 
@@ -33,6 +33,8 @@ export const makeChecksKit = () => {
           ? Effect.fail(new NodeCommandError({ machineId, reason: "offline", message: `${machineId}'s node is not linked to the hub` }))
           : Effect.succeed(out);
       }),
+    deliverSecret: unlinked,
+    runGated: unlinked,
     attach: () => Effect.void,
     resolve: () => Effect.void,
   });

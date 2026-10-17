@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as AppSocket from "./api/AppSocket.ts";
+import * as Approvals from "./approvals/Approvals.ts";
 import * as FleetApi from "./api/FleetApi.ts";
 import * as HttpApp from "./api/HttpApp.ts";
 import * as Auth from "./auth/Auth.ts";
@@ -99,8 +100,9 @@ const layerTrain = TrainGate.layerBindTrain.pipe(
 );
 
 /**
- * Node links; lead-side `fleetd` calls they forward are answered over the ledger, leads, tasks, claims and the train.
- * Claims and the train run commands on the nodes through the same NodeCommands the links answer.
+ * Node links; lead-side `fleetd` calls they forward are answered over the ledger, leads, tasks, claims, the train and
+ * approvals. Claims, the train, sealed secrets and approved commands reach the nodes through the same NodeCommands
+ * the links answer; ticked checklists are re-checked by the claims' check runner.
  */
 const layerMachines = Layer.effect(
   NodeLinkServer.NodeLinkServer,
@@ -112,7 +114,11 @@ const layerMachines = Layer.effect(
       commands: yield* NodeCommands.NodeCommands,
     });
   }),
-).pipe(Layer.provideMerge(layerTrain), Layer.provideMerge(ChecksLayer.layer()));
+).pipe(
+  Layer.provideMerge(Layer.merge(Approvals.layer, Approvals.layerChecklists)),
+  Layer.provideMerge(layerTrain),
+  Layer.provideMerge(ChecksLayer.layer()),
+);
 
 /** The sweep's overdue-wakes check; the wake scheduler does the firing. */
 const layerWakeSweep = Layer.effectDiscard(

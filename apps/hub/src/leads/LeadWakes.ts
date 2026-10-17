@@ -26,7 +26,7 @@ import { etaText } from "../estimates/calibration.ts";
 import * as Estimates from "../estimates/Estimates.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
-import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
+import { type Answer, AnswerSink, followedUp } from "../ledger/Inbox.ts";
 import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as EventLog from "../store/EventLog.ts";
@@ -283,12 +283,16 @@ export const make = (options: LeadWakesOptions = {}) =>
 
 export const layer = (options: LeadWakesOptions = {}) => Layer.effect(LeadWakes, make(options));
 
-/** The ledger's AnswerSink: each applied answer becomes a trigger for its project's lead. */
+/**
+ * The ledger's AnswerSink: each applied answer becomes a trigger for its project's lead. An approved command or a
+ * checklist with a verify check reaches the lead later, from the approvals follow-up, with its outcome.
+ */
 export const layerAnswerSink = Layer.effect(
   AnswerSink,
   Effect.map(LeadWakes, (wakes) =>
     AnswerSink.of({
-      onAnswered: (ref, answers) => Effect.forEach(answers, (answer) => wakes.trigger(ref, { kind: "answer", answer }), { discard: true }),
+      onAnswered: (ref, answers) =>
+        Effect.forEach(answers, (answer) => (followedUp(answer) ? Effect.void : wakes.trigger(ref, { kind: "answer", answer })), { discard: true }),
     }),
   ),
 );

@@ -155,6 +155,7 @@ const makeRepo = (db: DatabaseSync) => {
        VALUES (?, ?, ?, ?, ?, NULL, ?, '') RETURNING n`,
     ),
     askSet: db.prepare("UPDATE asks SET data = ?, state = ?, batch_n = ? WHERE n = ?"),
+    askSetKey: db.prepare("UPDATE asks SET key = ? WHERE n = ?"),
     askGet: db.prepare("SELECT data, filed_by FROM asks WHERE n = ?"),
     askOpenSame: db.prepare("SELECT data FROM asks WHERE project_key = ? AND key = ? AND state = 'open' LIMIT 1"),
     askList: db.prepare(
@@ -284,10 +285,14 @@ const makeRepo = (db: DatabaseSync) => {
   const putAsk = (ask: Ask) =>
     sql.askSet.run(encodeAsk(ask), ask.state, ask.batchId === undefined ? null : batchN(ask.batchId)!, askN(ask.askId)!);
 
-  /** Inserts an ask; `build` receives the new id and returns the record to store. */
+  /**
+   * Inserts an ask; `build` receives the new id and returns the record to store. The key column follows the built
+   * ask's key, for asks whose key names their own id (`gated.a7`).
+   */
   const insertAsk = (projectRef: ProjectRef | undefined, key: string, workstreamId: string | undefined, filedBy: string, nowMs: number, build: (askId: AskId) => Ask): Ask => {
     const n = Number(sql.askInsert.get(askProjectKey(projectRef), workstreamId ?? null, key, "open", filedBy, nowMs)?.n);
     const ask = build(AskId.make(`A${n}`));
+    if (ask.key !== key) sql.askSetKey.run(ask.key, n);
     putAsk(ask);
     return ask;
   };

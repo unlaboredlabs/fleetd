@@ -24,6 +24,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
+import { Approvals } from "../approvals/Approvals.ts";
 import * as Auth from "../auth/Auth.ts";
 import * as ClaimRecords from "../checks/ClaimRecords.ts";
 import * as Estimates from "../estimates/Estimates.ts";
@@ -84,6 +85,7 @@ export const IMPLEMENTED_TOOLS = [
   "workstream_get",
   "asks_list",
   "inbox_reply",
+  "secret_submit",
   "decisions_search",
   "decisions_record",
   "digest_get",
@@ -234,6 +236,7 @@ const make = Effect.gen(function* () {
   const usageSource = yield* UsageSource;
   const train = yield* Train;
   const changeRecords = yield* ChangeRecords;
+  const approvals = yield* Approvals;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -759,9 +762,11 @@ const make = Effect.gen(function* () {
           allows: (ref) => (ref === undefined ? allowsEverywhere(caller, "operate") : auth.allows(caller, "operate", ref.machineId)),
         },
         actorOf(caller),
-      );
+      ).pipe(Effect.mapError(refusal));
       return result.parsed ? { ...result, next: "Each answer is a Decision now and reaches its lead in its next wake." } : result;
     }),
+
+    secret_submit: (caller, input) => approvals.submitSecret(caller, input).pipe(Effect.mapError(refusal)),
 
     decisions_search: Effect.fnUntraced(function* (caller, input) {
       const scoped = input.scope === undefined ? undefined : yield* decisionProject(input.scope);

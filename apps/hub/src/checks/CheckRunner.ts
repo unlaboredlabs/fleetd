@@ -7,7 +7,9 @@ import {
   type CheckResult,
   type CheckSpec,
   type ClaimId,
+  type ProjectRef,
   type Workstream,
+  type WorkstreamId,
 } from "@fleetd/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -32,9 +34,22 @@ export interface CheckContext {
   readonly claimId: ClaimId;
 }
 
+/** What a check outside a claim runs against: the project, and the workstream whose PRs it may look at. */
+export interface CheckScope {
+  readonly projectRef: ProjectRef;
+  readonly workstreamId?: WorkstreamId;
+}
+
+/** A do ask's verify check: one fleetd runs itself, never a judge or another human ask. */
+export type VerifySpec = Exclude<CheckSpec, { type: "judge" | "human" }>;
+
 export class CheckRunner extends Context.Service<
   CheckRunner,
-  { readonly run: (ctx: CheckContext, checkIndex: number, spec: CheckSpec) => Effect.Effect<CheckResult> }
+  {
+    readonly run: (ctx: CheckContext, checkIndex: number, spec: CheckSpec) => Effect.Effect<CheckResult>;
+    /** A do ask's `verify` check, once the human ticked it done. */
+    readonly verify: (scope: CheckScope, spec: VerifySpec) => Effect.Effect<Pick<CheckResult, "result" | "evidence">>;
+  }
 >()("fleetd/checks/CheckRunner") {}
 
 export const ranByOf = (spec: CheckSpec): CheckResult["ranBy"] =>
@@ -113,7 +128,7 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const cmd = (w: Workstream, spec: Extract<CheckSpec, { type: "cmd" }>) =>
+  const cmd = (w: CheckScope, spec: Extract<CheckSpec, { type: "cmd" }>) =>
     Effect.gen(function* () {
       const home = w.projectRef.machineId;
       if (spec.machineId !== home) {
@@ -153,8 +168,8 @@ export const make = Effect.gen(function* () {
     );
 
   /** PR numbers in `repo` that the workstream's tasks opened, newest first. */
-  const workstreamPrs = (w: Workstream, repo: string) =>
-    Effect.map(tasks.list({ ref: w.projectRef, workstreamId: w.workstreamId, limit: 50 }), (list) => {
+  const workstreamPrs = (w: CheckScope, repo: string) =>
+    Effect.map(w.workstreamId === undefined ? Effect.succeed([]) : tasks.list({ ref: w.projectRef, workstreamId: w.workstreamId, limit: 50 }), (list) => {
       const numbers: Array<number> = [];
       for (const t of list) {
         const m = PULL_URL.exec(t.result?.prUrl ?? "");
@@ -164,7 +179,7 @@ export const make = Effect.gen(function* () {
     });
 
   /** The commit CI is judged on: the merge commit of the workstream's newest merged PR, else the default branch's head. */
-  const targetRef = (w: Workstream, repo: string) =>
+  const targetRef = (w: CheckScope, repo: string) =>
     Effect.gen(function* () {
       const [newest] = yield* workstreamPrs(w, repo);
       if (newest !== undefined) {
@@ -181,11 +196,11 @@ export const make = Effect.gen(function* () {
       `repos/${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=100${name === undefined ? "" : `&check_name=${encodeURIComponent(name)}`}`,
     ).pipe(Effect.map(({ check_runs }) => latestByName(check_runs)));
 
-  const prMerged = (w: Workstream, spec: Extract<CheckSpec, { type: "pr_merged" }>) =>
+  const prMerged = (w: CheckScope, spec: Extract<CheckSpec, { type: "pr_merged" }>) =>
     Effect.gen(function* () {
       const pr = spec.pr ?? (yield* workstreamPrs(w, spec.repo))[0];
       if (pr === undefined) {
-        return verdict("error", `no PR to check: the check names none and no task of ${w.workstreamId} opened a PR in ${spec.repo}`);
+        return verdict("error", `no PR to check: the check names none and no task of ${w.workstreamId ?? "this ask's workstream"} opened a PR in ${spec.repo}`);
       }
       const pull = yield* api(Pull, `repos/${spec.repo}/pulls/${pr}`);
       return pull.merged
@@ -193,7 +208,7 @@ export const make = Effect.gen(function* () {
         : verdict("fail", `${spec.repo}#${pr} is ${pull.state}, not merged`);
     }).pipe(Effect.catchTag("GhError", (e) => Effect.succeed(ghError(e))));
 
-  const ciGreen = (w: Workstream, spec: Extract<CheckSpec, { type: "ci_green" }>) =>
+  const ciGreen = (w: CheckScope, spec: Extract<CheckSpec, { type: "ci_green" }>) =>
     Effect.gen(function* () {
       const target = spec.ref === undefined ? yield* targetRef(w, spec.repo) : { ref: spec.ref, label: spec.ref };
       const runs = yield* checkRuns(spec.repo, target.ref);
@@ -207,7 +222,7 @@ export const make = Effect.gen(function* () {
           );
     }).pipe(Effect.catchTag("GhError", (e) => Effect.succeed(ghError(e))));
 
-  const test = (w: Workstream, spec: Extract<CheckSpec, { type: "test" }>) =>
+  const test = (w: CheckScope, spec: Extract<CheckSpec, { type: "test" }>) =>
     Effect.gen(function* () {
       const target = yield* targetRef(w, spec.repo);
       const [run] = yield* checkRuns(spec.repo, target.ref, spec.testId);
@@ -291,7 +306,26 @@ export const make = Effect.gen(function* () {
       } satisfies CheckResult;
     });
 
-  return CheckRunner.of({ run });
+  const verify: CheckRunner["Service"]["verify"] = (scope, spec) =>
+    Effect.map(
+      (() => {
+        switch (spec.type) {
+          case "cmd":
+            return cmd(scope, spec);
+          case "http":
+            return http(spec);
+          case "pr_merged":
+            return prMerged(scope, spec);
+          case "ci_green":
+            return ciGreen(scope, spec);
+          case "test":
+            return test(scope, spec);
+        }
+      })(),
+      (outcome) => ({ result: outcome.result, evidence: outcome.evidence.slice(0, EVIDENCE_MAX) }),
+    );
+
+  return CheckRunner.of({ run, verify });
 });
 
 /** fetch() wraps the useful part ("ECONNREFUSED ...") in `cause`. */

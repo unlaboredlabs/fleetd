@@ -3,7 +3,7 @@
 // check; the hub itself always goes through the node.
 import { execFile } from "node:child_process";
 import * as Effect from "effect/Effect";
-import { NodeCommands } from "../checks/NodeCommands.ts";
+import { NodeCommands, unlinked } from "../checks/NodeCommands.ts";
 
 const TAIL = 2000;
 
@@ -19,6 +19,8 @@ export const localCommands = (env: NodeJS.ProcessEnv) =>
           resume(Effect.succeed({ exitCode: null, outputTail: `could not run ${command}: ${error.message}`.slice(-TAIL), timedOut: error.killed === true }));
         });
       }),
+    deliverSecret: unlinked,
+    runGated: unlinked,
     attach: () => Effect.void,
     resolve: () => Effect.void,
   });

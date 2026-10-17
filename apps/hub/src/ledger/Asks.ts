@@ -1,8 +1,12 @@
 import {
   AskClass,
+  DecisionKey,
   StepCommand,
   UNROUTED_ASK_PREFIX,
+  secretEnvName,
   type Ask,
+  type CheckSpec,
+  type GatedRunSpec,
   type AskId,
   type AskKind,
   type AskState,
@@ -10,7 +14,6 @@ import {
   type BatchId,
   type Decision,
   type DecisionId,
-  type DecisionKey,
   type HubEvent,
   type ProjectRef,
   type Step,
@@ -55,6 +58,13 @@ export interface AskInput {
   readonly recommendation?: string;
   readonly options?: ReadonlyArray<string>;
   readonly steps?: ReadonlyArray<Step>;
+  /** do: re-checked once the human ticks it done. */
+  readonly verify?: CheckSpec;
+  /** secret: where the node writes it. */
+  readonly sink?: string;
+  readonly envName?: string;
+  /** approve: the stored command; its key is always `gated.<askId>`. */
+  readonly gated?: GatedRunSpec;
   readonly blocks: string;
   readonly proceededOnRec: boolean;
 }
@@ -82,6 +92,13 @@ export class Asks extends Context.Service<
   {
     /** The ask path: filter, key auto-resolve, dedupe, create with candidates, then batch. `by` is the filer. */
     readonly create: (input: AskInput, by: string) => Effect.Effect<AskOutcome, LedgerError>;
+    /** Rewrites one ask in place (evidence, a saved secret's fingerprint) and closes its batch once nothing in it is open. */
+    readonly update: (askId: AskId, change: (ask: Ask) => Ask) => Effect.Effect<Ask, LedgerError>;
+    /**
+     * Puts an answered ask back in front of the human with `evidence` saying why (a failed verify, a command that
+     * never ran): its answer's decision is retired and it joins the collecting batch like a new ask.
+     */
+    readonly reopen: (askId: AskId, evidence: string) => Effect.Effect<Ask, LedgerError>;
     /** `fleetd ask withdraw A7 [--use D3]`. With `projectRef`, refuses asks of other projects. */
     readonly withdraw: (
       askId: AskId,
@@ -115,6 +132,22 @@ export const validateAsk = (input: AskInput): LedgerError | undefined => {
   }
   if (input.kind === "decide" && (input.recommendation === undefined || input.recommendation.trim() === "")) {
     return invalid("A decide ask needs a recommendation.", "Add --rec with what you would choose.");
+  }
+  if (input.kind === "secret") {
+    if (input.sink === undefined) return invalid("A secret ask needs a sink.", "Add --sink env:<machine>:<path> or file:<machine>:<path>.");
+    if (input.class === "product") return invalid("A secret is not a product call.", "File it with --class credential.");
+    if (input.sink.startsWith("env:") && input.envName === undefined && secretEnvName(input.key) === undefined) {
+      return invalid(`The key ${input.key} names no valid environment variable.`, "Add --env-name with the variable the env file should hold.");
+    }
+  }
+  if (input.kind === "approve" && (input.gated === undefined || input.gated.class !== input.class)) {
+    return invalid("An approve ask needs its stored command, with the same class.", "Use `fleetd gated run`.");
+  }
+  if (input.verify !== undefined && (input.kind !== "do" || input.verify.type === "judge" || input.verify.type === "human")) {
+    return invalid(
+      "Only a do ask has --verify, and it must be a check fleetd runs itself (cmd, http, pr_merged, ci_green or test).",
+      "Drop --verify, or give a cmd or http check that shows the step is done.",
+    );
   }
   if (input.kind === "do") {
     if (input.steps === undefined || input.steps.length === 0) {
@@ -182,6 +215,32 @@ const make = Effect.gen(function* () {
         readonly publishedNow: boolean;
       };
 
+  /** A new or reopened ask joins the collecting batch; an urgent one publishes it at once. Inside a write. */
+  const placed = (fresh: Ask, candidates: ReadonlyArray<Decision>, now: number): Created => {
+    const { ask, batch } = repo.addToCollecting(fresh, now);
+    const publishedNow = isUrgent(ask) && repo.publishBatch(batch.n, now);
+    return { tag: "new", ask, candidates, batch: repo.getBatch(batch.n)!, publishedNow };
+  };
+
+  /** After the commit: the ask's event, then the batch published now or on its quiet window. */
+  const announce = (created: Extract<Created, { tag: "new" }>, now: number, summary: string, extra: Record<string, unknown> = {}) =>
+    Effect.gen(function* () {
+      const { ask } = created;
+      yield* events.append({
+        at: isoAt(now),
+        type: "ask.created",
+        ...projectFields(ask.projectRef),
+        summary: summary.slice(0, 200),
+        data: { askId: ask.askId, key: ask.key, class: ask.class, kind: ask.kind, batchId: ask.batchId, number: ask.number, ...extra },
+      });
+      if (created.publishedNow) {
+        yield* FiberHandle.clear(timer);
+        yield* events.append(batchReadyEvent(created.batch, now));
+      } else {
+        yield* schedule(created.batch.n, QUIET_WINDOW_MS);
+      }
+    });
+
   const create = (input: AskInput, by: string) =>
     Effect.gen(function* () {
       const refused = validateAsk(input);
@@ -201,11 +260,23 @@ const make = Effect.gen(function* () {
           ...(input.options ? { options: input.options } : {}),
           ...(input.recommendation === undefined ? {} : { recommendation: input.recommendation }),
           ...(input.steps ? { steps: input.steps } : {}),
+          ...(input.verify === undefined ? {} : { verify: input.verify }),
+          ...(input.sink === undefined ? {} : { sink: input.sink }),
+          ...(input.envName === undefined ? {} : { envName: input.envName }),
+          ...(input.gated === undefined ? {} : { gated: input.gated }),
           blocks: input.blocks,
           proceededOnRec: input.proceededOnRec,
           state,
           createdAt: isoAt(now),
         });
+        // Each approve ask is its own question: a stored command is never answered from the log or merged with another.
+        if (input.kind === "approve") {
+          const fresh = repo.insertAsk(input.projectRef, input.key, input.workstreamId, by, now, (askId) => ({
+            ...base(askId, "open"),
+            key: DecisionKey.make(`gated.${askId.toLowerCase()}`),
+          }));
+          return placed(fresh, [], now);
+        }
         // An unrouted ask has no project to look decisions up in, so it is always asked.
         const decision = chain && repo.resolve(input.key, chain);
         if (decision) {
@@ -218,10 +289,7 @@ const make = Effect.gen(function* () {
         const existing = repo.openAskWithKey(input.projectRef, input.key);
         if (existing) return { tag: "attached", ask: existing };
         const fresh = repo.insertAsk(input.projectRef, input.key, input.workstreamId, by, now, (askId) => base(askId, "open"));
-        const { ask, batch } = repo.addToCollecting(fresh, now);
-        const publishedNow = isUrgent(ask) && repo.publishBatch(batch.n, now);
-        const candidates = chain ? repo.searchDecisions(`${input.key} ${input.text}`, { chain, limit: 5 }) : [];
-        return { tag: "new", ask, candidates, batch: repo.getBatch(batch.n)!, publishedNow };
+        return placed(fresh, chain ? repo.searchDecisions(`${input.key} ${input.text}`, { chain, limit: 5 }) : [], now);
       });
 
       switch (created.tag) {
@@ -239,19 +307,7 @@ const make = Effect.gen(function* () {
           return { state: "open", ask: created.ask, attached: true } satisfies AskOutcome;
         case "new": {
           const { ask } = created;
-          yield* events.append({
-            at: isoAt(now),
-            type: "ask.created",
-            ...projectFields(input.projectRef),
-            summary: `${ask.askId} [${ask.class}] ${ask.key}: ${ask.text}`,
-            data: { askId: ask.askId, key: ask.key, class: ask.class, batchId: ask.batchId, number: ask.number },
-          });
-          if (created.publishedNow) {
-            yield* FiberHandle.clear(timer);
-            yield* events.append(batchReadyEvent(created.batch, now));
-          } else {
-            yield* schedule(created.batch.n, QUIET_WINDOW_MS);
-          }
+          yield* announce(created, now, `${ask.askId} [${ask.class}] ${ask.key}: ${ask.text}`);
           return { state: "open", ask, candidates: created.candidates } satisfies AskOutcome;
         }
       }
@@ -278,8 +334,37 @@ const make = Effect.gen(function* () {
       return withdrawn;
     });
 
+  const update: Asks["Service"]["update"] = (askId, change) =>
+    write(repo, () => {
+      const row = repo.getAskRow(askId);
+      if (!row) throw notFound(`No ask ${askId}.`);
+      const next = change(row.ask);
+      repo.putAsk(next);
+      if (next.batchId) repo.closeIfDone(batchN(next.batchId)!);
+      return next;
+    });
+
+  const reopen: Asks["Service"]["reopen"] = (askId, evidence) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const created = yield* write(repo, () => {
+        const row = repo.getAskRow(askId);
+        if (!row) throw notFound(`No ask ${askId}.`);
+        if (row.ask.state !== "answered") throw invalid(`${askId} is ${row.ask.state}, not answered.`);
+        const { answer: _, decisionId, ...rest } = row.ask;
+        // Its answer no longer holds: a later ask with the same key must reach the human again.
+        if (decisionId !== undefined && repo.getDecision(decisionId)?.state === "active") repo.retireDecision(decisionId);
+        return placed({ ...rest, state: "open", evidence: evidence.slice(0, 2000) }, [], now);
+      });
+      if (created.tag !== "new") return created.ask;
+      yield* announce(created, now, `${askId} reopened: ${evidence.split("\n")[0]}`, { reopened: true });
+      return created.ask;
+    });
+
   return Asks.of({
     create,
+    update,
+    reopen,
     withdraw,
     get: (askId) => Effect.sync(() => repo.getAskRow(askId)?.ask),
     list: (filter) => Effect.sync(() => repo.listAsks(filter)),

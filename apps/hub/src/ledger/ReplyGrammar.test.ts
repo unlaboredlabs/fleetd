@@ -177,4 +177,38 @@ describe("resolvePlan", () => {
   it("all <verb> applies to every open item not mentioned", () => {
     expect(summary("1 go all later", batch)).toEqual(["1=rec1", "2:later", "3:later"]);
   });
+
+  describe("approve and secret asks", () => {
+    const { recommendation: _a, ...approve } = ask(4, {
+      kind: "approve",
+      class: "irreversible",
+      gated: { argv: ["sh", "-c", "deploy"], cwd: "/w/p1", class: "irreversible", reason: "prod deploy", timeoutSec: 1800 },
+    });
+    const { recommendation: _s, ...secret } = ask(5, { kind: "secret", class: "credential", sink: "env:lab-a:/w/p1/.env" });
+    const gated = [ask(1), approve, secret];
+
+    it("takes go to run an approve ask and no or nvm to refuse it", () => {
+      expect(summary("4 go", gated)).toEqual(["4=go"]);
+      expect(summary("4 yes", gated)).toEqual(["4=go"]);
+      expect(summary("4 no", gated)).toEqual(["4=no"]);
+      expect(summary("4 nvm", gated)).toEqual(["4=no"]);
+      expect(summary("4 later", gated)).toEqual(["4:later"]);
+    });
+
+    it("never approves or answers a secret in bulk", () => {
+      expect(summary("recs fine", gated)).toEqual(["1=rec1"]);
+      expect(summary("all go", gated)).toEqual(["1=rec1"]);
+      expect(summary("all no", gated)).toEqual(["1:withdraw"]);
+    });
+
+    it("refuses anything else for them, and never takes a secret's value", () => {
+      expect(summary("4: go ahead", gated)).toMatch(/"4 go" to run it or "4 no"/u);
+      expect(summary("4 a", gated)).toMatch(/stored command/u);
+      expect(summary("4 done", gated)).toMatch(/stored command/u);
+      expect(summary("5: not-a-real-secret-123", gated)).toMatch(/Never put a secret in a reply/u);
+      expect(summary("5: not-a-real-secret-123", gated)).not.toMatch(/not-a-real-secret-123/u);
+      expect(summary("5 go", gated)).toMatch(/asks for a secret/u);
+      expect(summary("5 no", gated)).toEqual(["5=no"]);
+    });
+  });
 });

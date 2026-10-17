@@ -1764,14 +1764,14 @@
     "SecretSink": {
       "type": "string"
     },
+    "EnvName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+    },
     "SecretFingerprint": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}$",
       "description": "8 lowercase hex characters: the sha256 prefix of the plaintext"
-    },
-    "EnvName": {
-      "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
     },
     "GatedRunSpec": {
       "type": "object",
@@ -1921,6 +1921,9 @@
         },
         "sink": {
           "$ref": "#/$defs/SecretSink"
+        },
+        "envName": {
+          "$ref": "#/$defs/EnvName"
         },
         "fingerprint": {
           "$ref": "#/$defs/SecretFingerprint"
