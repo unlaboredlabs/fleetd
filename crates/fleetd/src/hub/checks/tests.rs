@@ -1,16 +1,24 @@
 //! The claim flow on a real in-memory database and event log, with a fake node and fake other areas.
 //! TS spec: apps/hub/src/checks/Claims.test.ts.
-use super::ports::{BoxFuture, ClaimWake, HumanAsk, HumanAskFiled, JudgeSpawn, PlaybookLimits, Ports, Refusal};
+use super::ports::{
+    BoxFuture, ClaimWake, HumanAsk, HumanAskFiled, JudgeSpawn, PlaybookLimits, Ports, Refusal,
+};
 use super::render::claim_failed_lines;
 use super::*;
 use crate::clock::{Clock, SystemClock};
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentFilter, Incidents};
+use crate::hub::link::commands::{AttachedLink, NodeCommands};
 use crate::hub::store::{EventLog, HubDb, WaitInput};
-use fleetd_contracts::{
-    ActionItem, AskId, Brief, CheckOutcome, CheckSpec, ClaimOutcome, HubEventType, IncidentClass, MachineId, MetricValues,
-    PlaybookRef, ProjectId, ProjectRef, RanBy, Task, TaskId, ThreadRef, Tier, Workstream, WorkstreamId, WorkstreamState,
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+use fleetd_contracts::ledger::{
+    AskId, MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
+use fleetd_contracts::model::ActionItem;
+use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+use fleetd_contracts::tasks::{Task, TaskId};
+use fleetd_contracts::verification::{CheckOutcome, CheckResultRanBy, ClaimOutcome, IncidentClass};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -18,39 +26,32 @@ use std::sync::{Arc, Mutex};
 const LEAD_BY: &str = "lead:lab-a/p1";
 
 fn project() -> ProjectRef {
-    ProjectRef { machine_id: MachineId("lab-a".into()), project_id: ProjectId("p1".into()) }
+    serde_json::from_value(json!({ "machineId": "lab-a", "projectId": "p1" })).unwrap()
 }
 
 fn w1() -> WorkstreamId {
-    WorkstreamId("W1".into())
+    WorkstreamId::unchecked("W1")
 }
 
-fn doc_check() -> CheckSpec {
-    CheckSpec::Cmd { machine_id: MachineId("lab-a".into()), argv: vec!["test".into(), "-f".into(), "docs/x.md".into()], expect_exit: 0 }
+fn doc_check() -> Value {
+    json!({ "type": "cmd", "machineId": "lab-a", "argv": ["test", "-f", "docs/x.md"], "expectExit": 0 })
 }
 
-fn workstream(id: &str, done_when: Option<Vec<CheckSpec>>) -> Workstream {
-    Workstream {
-        workstream_id: WorkstreamId(id.into()),
-        project_ref: project(),
-        title: "docs".into(),
-        brief: done_when.map(|done_when| Brief {
-            goal: "g".into(),
-            why: "y".into(),
-            pointers: vec![],
-            constraints: vec![],
-            done_when,
-            tier: Tier::S,
-            estimate: None,
-            baseline: None,
-            metric: None,
-        }),
-        state: WorkstreamState::Running,
-        estimate_actual: None,
-        playbook: None,
-        created_at: "2026-10-17T10:00:00.000Z".into(),
-        updated_at: "2026-10-17T10:00:00.000Z".into(),
+/// A running workstream in lab-a/p1; `done_when` None is a draft without a brief.
+fn workstream(id: &str, done_when: Option<Vec<Value>>) -> Workstream {
+    let mut w = json!({
+        "workstreamId": id,
+        "projectRef": { "machineId": "lab-a", "projectId": "p1" },
+        "title": "docs",
+        "source": { "text": "write docs", "channel": "app", "by": "human", "at": "2026-10-17T10:00:00.000Z" },
+        "state": "running",
+        "createdAt": "2026-10-17T10:00:00.000Z",
+        "updatedAt": "2026-10-17T10:00:00.000Z",
+    });
+    if let Some(done_when) = done_when {
+        w["brief"] = json!({ "goal": "g", "why": "y", "pointers": [], "constraints": [], "tier": "S", "doneWhen": done_when });
     }
+    serde_json::from_value(w).unwrap()
 }
 
 #[derive(Default)]
@@ -64,7 +65,10 @@ impl Ports for Fake {
         self.workstreams.lock().unwrap().get(id).cloned()
     }
     fn put_workstream(&self, w: &Workstream) {
-        self.workstreams.lock().unwrap().insert(w.workstream_id.clone(), w.clone());
+        self.workstreams
+            .lock()
+            .unwrap()
+            .insert(w.workstream_id.clone(), w.clone());
     }
     fn wake(&self, _: &ProjectRef, wake: ClaimWake) {
         self.wakes.lock().unwrap().push(wake);
@@ -75,7 +79,11 @@ impl Ports for Fake {
     fn playbook_limits(&self, _: &PlaybookRef) -> Option<PlaybookLimits> {
         None
     }
-    fn research_verdict<'a>(&'a self, _: &'a WorkstreamId, _: MetricValues) -> BoxFuture<'a, Result<String, Refusal>> {
+    fn research_verdict<'a>(
+        &'a self,
+        _: &'a WorkstreamId,
+        _: MetricValues,
+    ) -> BoxFuture<'a, Result<String, Refusal>> {
         Box::pin(async { Err(Refusal::invalid("no research here", None)) })
     }
     fn task(&self, _: &TaskId) -> Option<Task> {
@@ -93,7 +101,11 @@ impl Ports for Fake {
     fn ask_answer(&self, _: &AskId) -> Option<String> {
         None
     }
-    fn thread_actions<'a>(&'a self, _: &'a ThreadRef, _: usize) -> BoxFuture<'a, Result<Vec<ActionItem>, String>> {
+    fn thread_actions<'a>(
+        &'a self,
+        _: &'a ThreadRef,
+        _: usize,
+    ) -> BoxFuture<'a, Result<Vec<ActionItem>, String>> {
         Box::pin(async { Ok(vec![]) })
     }
 }
@@ -106,7 +118,7 @@ struct Kit {
     /// What the fake node answers to every `cmd_check`: exit code and output tail.
     node: Arc<Mutex<(i64, String)>>,
     commands: Arc<Mutex<Vec<Value>>>,
-    _link: LinkGuard,
+    _link: AttachedLink,
 }
 
 fn kit(workstreams: Vec<Workstream>) -> Kit {
@@ -119,26 +131,41 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
     }
     let dyn_ports: Arc<dyn Ports> = ports.clone();
     let incidents = Arc::new(Incidents::new(db.clone(), events.clone(), clock.clone()));
-    let estimates = Arc::new(Estimates::new(db.clone(), dyn_ports.clone(), incidents.clone(), clock.clone()));
-    let commands = NodeCommands::new();
+    let estimates = Arc::new(Estimates::new(
+        db.clone(),
+        dyn_ports.clone(),
+        incidents.clone(),
+        clock.clone(),
+    ));
+    let commands = Arc::new(NodeCommands::default());
     let node = Arc::new(Mutex::new((0, String::new())));
     let sent = Arc::new(Mutex::new(Vec::new()));
-    let link = {
-        let (weak, node, sent) = (Arc::downgrade(&commands), node.clone(), sent.clone());
-        commands.attach(
-            MachineId("lab-a".into()),
-            Arc::new(move |frame: Value| {
+    let lab_a = MachineId::unchecked("lab-a");
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HubToNode>();
+    let link = commands.attach(&lab_a, tx);
+    {
+        // The fake node: answers every cmd_check with the exit code and tail set by the test.
+        let (commands, node, sent) = (commands.clone(), node.clone(), sent.clone());
+        tokio::spawn(async move {
+            while let Some(frame) = rx.recv().await {
+                let frame = serde_json::to_value(&frame).unwrap();
                 sent.lock().unwrap().push(frame.clone());
                 let (code, tail) = node.lock().unwrap().clone();
                 let reply = json!({ "t": "cmd_result", "id": frame["id"], "exitCode": code, "outputTail": tail, "timedOut": false });
-                weak.upgrade().unwrap().resolve(&MachineId("lab-a".into()), &reply);
-                true
-            }),
-        )
-    };
+                commands.resolve(&lab_a, serde_json::from_value::<NodeToHub>(reply).unwrap());
+            }
+        });
+    }
     let verdicts = Arc::new(JudgeVerdicts::default());
     let judges = Arc::new(Judges::new(dyn_ports.clone(), events.clone(), verdicts));
-    let runner = Arc::new(CheckRunner::new(commands, Arc::new(GitHub::new(Arc::new(GhCli))), judges, dyn_ports.clone(), events.clone(), clock.clone()));
+    let runner = Arc::new(CheckRunner::new(
+        commands,
+        Arc::new(GitHub::new(Arc::new(GhCli))),
+        judges,
+        dyn_ports.clone(),
+        events.clone(),
+        clock.clone(),
+    ));
     let claims = Arc::new(Claims::new(
         Arc::new(ClaimRecords::new(db.clone())),
         runner,
@@ -149,7 +176,15 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
         clock,
         INLINE_WAIT,
     ));
-    Kit { claims, ports, events, incidents, node, commands: sent, _link: link }
+    Kit {
+        claims,
+        ports,
+        events,
+        incidents,
+        node,
+        commands: sent,
+        _link: link,
+    }
 }
 
 impl Kit {
@@ -160,8 +195,26 @@ impl Kit {
         self.ports.workstream(&w1()).unwrap().state
     }
     async fn events_of(&self, types: &[HubEventType]) -> Vec<(HubEventType, String, Value)> {
-        let page = self.events.wait(WaitInput { cursor: Some(0), types: Some(types.to_vec()), machine_id: None, timeout_sec: 0 }).await.unwrap();
-        page.events.into_iter().map(|e| (e.r#type, e.summary, e.data.unwrap_or(Value::Null))).collect()
+        let page = self
+            .events
+            .wait(WaitInput {
+                cursor: Some(0),
+                types: Some(types.to_vec()),
+                machine_id: None,
+                timeout_sec: 0,
+            })
+            .await
+            .unwrap();
+        page.events
+            .into_iter()
+            .map(|e| {
+                (
+                    e.r#type,
+                    e.summary.as_str().to_owned(),
+                    e.data.unwrap_or(Value::Null),
+                )
+            })
+            .collect()
     }
 }
 
@@ -171,19 +224,41 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
     k.set_node(1, "checked /w/p1\n");
 
     let failed = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
-    assert_eq!((failed.claim_id.as_str(), failed.state), ("C1", WorkstreamState::Verifying));
+    assert_eq!(
+        (failed.claim_id.as_str(), failed.state),
+        ("C1", WorkstreamState::Verifying)
+    );
     let claim = failed.claim.as_ref().unwrap();
-    assert_eq!((claim.by.as_str(), claim.outcome), (LEAD_BY, ClaimOutcome::Fail));
+    assert_eq!(
+        (claim.by.as_str(), claim.outcome),
+        (LEAD_BY, ClaimOutcome::Fail)
+    );
     let r = &claim.results[0];
-    assert_eq!((r.check_index, r.result, r.exit_code, r.ran_by), (0, CheckOutcome::Fail, Some(1), RanBy::Node));
-    assert!(failed.next.contains("done:0 did not pass"), "{}", failed.next);
+    assert_eq!(
+        (r.check_index.get(), r.result, r.exit_code, r.ran_by),
+        (0, CheckOutcome::Fail, Some(1), CheckResultRanBy::Node)
+    );
+    assert!(
+        failed.next.contains("done:0 did not pass"),
+        "{}",
+        failed.next
+    );
     assert_eq!(k.state(), WorkstreamState::Verifying);
     assert_eq!(k.commands.lock().unwrap()[0]["cwd"], "/w/p1");
-    let lifecycle = [HubEventType::WorkstreamState, HubEventType::ClaimFailed, HubEventType::ClaimPassed, HubEventType::WorkstreamDone];
+    let lifecycle = [
+        HubEventType::WorkstreamState,
+        HubEventType::ClaimFailed,
+        HubEventType::ClaimPassed,
+        HubEventType::WorkstreamDone,
+    ];
     assert_eq!(
         k.events_of(&lifecycle).await,
         vec![
-            (HubEventType::WorkstreamState, "W1 is verifying (C1)".into(), json!({ "workstreamId": "W1", "state": "verifying", "claimId": "C1" })),
+            (
+                HubEventType::WorkstreamState,
+                "W1 is verifying (C1)".into(),
+                json!({ "workstreamId": "W1", "state": "verifying", "claimId": "C1" })
+            ),
             (
                 HubEventType::ClaimFailed,
                 "C1 on W1 failed: 1 of 1 checks did not pass".into(),
@@ -192,7 +267,16 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
         ]
     );
     let wakes = k.ports.wakes.lock().unwrap().clone();
-    let [ClaimWake::Failed { claim_id, workstream_id, failures }] = wakes.as_slice() else { panic!("one claim_failed wake: {wakes:?}") };
+    let [
+        ClaimWake::Failed {
+            claim_id,
+            workstream_id,
+            failures,
+        },
+    ] = wakes.as_slice()
+    else {
+        panic!("one claim_failed wake: {wakes:?}")
+    };
     assert_eq!(
         claim_failed_lines(claim_id, workstream_id, failures),
         [
@@ -207,22 +291,53 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
 
     k.set_node(0, "");
     let passed = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
-    assert_eq!((passed.claim_id.as_str(), passed.state), ("C2", WorkstreamState::Done));
+    assert_eq!(
+        (passed.claim_id.as_str(), passed.state),
+        ("C2", WorkstreamState::Done)
+    );
     let claim = passed.claim.as_ref().unwrap();
-    assert_eq!((claim.outcome, claim.results[0].result, claim.results[0].exit_code), (ClaimOutcome::Pass, CheckOutcome::Pass, Some(0)));
+    assert_eq!(
+        (
+            claim.outcome,
+            claim.results[0].result,
+            claim.results[0].exit_code
+        ),
+        (ClaimOutcome::Pass, CheckOutcome::Pass, Some(0))
+    );
     assert_eq!(k.state(), WorkstreamState::Done);
-    let ends: Vec<_> = k.events_of(&[HubEventType::ClaimPassed, HubEventType::WorkstreamDone]).await.into_iter().map(|e| e.0).collect();
-    assert_eq!(ends, [HubEventType::ClaimPassed, HubEventType::WorkstreamDone]);
+    let ends: Vec<_> = k
+        .events_of(&[HubEventType::ClaimPassed, HubEventType::WorkstreamDone])
+        .await
+        .into_iter()
+        .map(|e| e.0)
+        .collect();
+    assert_eq!(
+        ends,
+        [HubEventType::ClaimPassed, HubEventType::WorkstreamDone]
+    );
     let listed: Vec<_> = k
         .claims
-        .list(&ClaimFilter { workstream_id: Some(w1()), limit: 10, ..Default::default() })
+        .list(&ClaimFilter {
+            workstream_id: Some(w1()),
+            limit: 10,
+            ..Default::default()
+        })
         .unwrap()
         .into_iter()
-        .map(|c| (c.claim_id.0, c.outcome))
+        .map(|c| (c.claim_id.as_str().to_owned(), c.outcome))
         .collect();
-    assert_eq!(listed, [("C2".into(), ClaimOutcome::Pass), ("C1".into(), ClaimOutcome::Fail)]);
+    assert_eq!(
+        listed,
+        [
+            ("C2".into(), ClaimOutcome::Pass),
+            ("C1".into(), ClaimOutcome::Fail)
+        ]
+    );
     let again = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap_err();
-    assert_eq!((again.code, again.message.as_str()), ("invalid", "W1 is already done."));
+    assert_eq!(
+        (again.code, again.message.as_str()),
+        ("invalid", "W1 is already done.")
+    );
 }
 
 #[tokio::test]
@@ -238,10 +353,24 @@ async fn records_one_false_claim_incident_at_the_third_failed_claim() {
     let recorded = incidents();
     assert_eq!(recorded.len(), 1);
     let i = &recorded[0];
-    assert_eq!((i.incident_id.as_str(), i.class, &i.project_ref, i.workstream_id.as_ref()), ("I1", IncidentClass::FalseClaim, &project(), Some(&w1())));
+    assert_eq!(
+        (
+            i.incident_id.as_str(),
+            i.class,
+            &i.project_ref,
+            i.workstream_id.as_ref()
+        ),
+        ("I1", IncidentClass::FalseClaim, &project(), Some(&w1()))
+    );
     let expected: Vec<String> =
         (1..=3).map(|n| format!("C{n} failed: done:0 fail (exit 1): `test -f docs/x.md` in /w/p1 exited 1 (expected 0)")).collect();
-    assert_eq!(i.evidence, expected);
+    assert_eq!(
+        i.evidence
+            .iter()
+            .map(|l| l.as_str().to_owned())
+            .collect::<Vec<_>>(),
+        expected
+    );
     k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
     assert_eq!(incidents().len(), 1);
     assert_eq!(k.state(), WorkstreamState::Verifying);
@@ -249,27 +378,78 @@ async fn records_one_false_claim_incident_at_the_third_failed_claim() {
 
 #[tokio::test]
 async fn asks_no_one_once_an_automatic_check_failed() {
-    let k = kit(vec![workstream("W1", Some(vec![doc_check(), CheckSpec::Human { question: "Does the page read well?".into() }]))]);
+    let k = kit(vec![workstream(
+        "W1",
+        Some(vec![
+            doc_check(),
+            json!({ "type": "human", "question": "Does the page read well?" }),
+        ]),
+    )]);
     k.set_node(1, "");
     // The fake panics if a human ask is filed.
     let skipped = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
     let r = &skipped.claim.unwrap().results[1];
-    assert_eq!((r.result, r.ran_by), (CheckOutcome::Error, RanBy::Human));
-    assert_eq!(r.evidence, "not run: a judge or the human is asked only once every earlier check passes");
+    assert_eq!(
+        (r.result, r.ran_by),
+        (CheckOutcome::Error, CheckResultRanBy::Human)
+    );
+    assert_eq!(
+        r.evidence.as_str(),
+        "not run: a judge or the human is asked only once every earlier check passes"
+    );
 }
 
 #[tokio::test]
 async fn refuses_drafts_other_projects_and_unknown_workstreams() {
     let mut finish_all = workstream("W3", Some(vec![doc_check()]));
     finish_all.state = WorkstreamState::Idle;
-    finish_all.playbook = Some(PlaybookRef(format!("finish-all@{}", "a".repeat(40))));
-    let k = kit(vec![workstream("W1", Some(vec![doc_check()])), workstream("W2", None), finish_all]);
-    let draft = k.claims.claim_done(&WorkstreamId("W2".into()), LEAD_BY, None).await.unwrap_err();
-    assert_eq!((draft.code, draft.message.as_str()), ("invalid", "W2 has no frozen brief, so it has no done-when checks to run."));
-    let other = ProjectRef { machine_id: MachineId("lab-b".into()), project_id: ProjectId("p9".into()) };
-    assert_eq!(k.claims.claim_done(&w1(), "lead:lab-b/p9", Some(&other)).await.unwrap_err().code, "not_found");
-    assert_eq!(k.claims.claim_done(&WorkstreamId("W99".into()), LEAD_BY, None).await.unwrap_err().code, "not_found");
-    let idle = k.claims.claim_done(&WorkstreamId("W3".into()), LEAD_BY, None).await.unwrap_err();
-    assert_eq!(idle.message, "W3 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done.");
+    finish_all.playbook = Some(PlaybookRef::unchecked(format!(
+        "finish-all@{}",
+        "a".repeat(40)
+    )));
+    let k = kit(vec![
+        workstream("W1", Some(vec![doc_check()])),
+        workstream("W2", None),
+        finish_all,
+    ]);
+    let draft = k
+        .claims
+        .claim_done(&WorkstreamId::unchecked("W2"), LEAD_BY, None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        (draft.code, draft.message.as_str()),
+        (
+            "invalid",
+            "W2 has no frozen brief, so it has no done-when checks to run."
+        )
+    );
+    let other: ProjectRef =
+        serde_json::from_value(json!({ "machineId": "lab-b", "projectId": "p9" })).unwrap();
+    assert_eq!(
+        k.claims
+            .claim_done(&w1(), "lead:lab-b/p9", Some(&other))
+            .await
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+    assert_eq!(
+        k.claims
+            .claim_done(&WorkstreamId::unchecked("W99"), LEAD_BY, None)
+            .await
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+    let idle = k
+        .claims
+        .claim_done(&WorkstreamId::unchecked("W3"), LEAD_BY, None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        idle.message,
+        "W3 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done."
+    );
     assert!(k.commands.lock().unwrap().is_empty());
 }

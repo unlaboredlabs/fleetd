@@ -17,9 +17,12 @@ pub trait PrHeads: Send + Sync + 'static {
     fn head_sha<'a>(&'a self, pr_url: &'a str) -> BoxFuture<'a, Result<String, PrHeadError>>;
 }
 
-static PULLS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^https?://github\.com/([^/\s]+)/([^/\s]+)/pulls?/(\d+)/?(?:[?#].*)?$").expect("pulls regex"));
-static SHA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$").expect("sha regex"));
+static PULLS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^https?://github\.com/([^/\s]+)/([^/\s]+)/pulls?/(\d+)/?(?:[?#].*)?$")
+        .expect("pulls regex")
+});
+static SHA: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$").expect("sha regex"));
 
 /// `repos/<owner>/<repo>/pulls/<n>` for a github.com PR URL.
 pub fn pulls_path(pr_url: &str) -> Option<String> {
@@ -35,14 +38,28 @@ pub struct GhPrHeads {
 impl PrHeads for GhPrHeads {
     fn head_sha<'a>(&'a self, pr: &'a str) -> BoxFuture<'a, Result<String, PrHeadError>> {
         Box::pin(async move {
-            let fail = |message: String| PrHeadError { pr: pr.to_owned(), message: crate::hub::checks::utf16_prefix(&message, 500).to_owned() };
-            let Some(path) = pulls_path(pr) else { return Err(PrHeadError { pr: pr.to_owned(), message: "not a github.com pull request URL".into() }) };
-            let args = vec!["api".into(), path.clone(), "--jq".into(), ".head.sha".into()];
-            let out = match tokio::time::timeout(Duration::from_secs(15), self.runner.run(args)).await {
-                Err(_) => return Err(fail(format!("gh api {path}: timed out"))),
-                Ok(Err(e)) => return Err(fail(format!("gh api {path}: {}", e.0))),
-                Ok(Ok(out)) => out,
+            let fail = |message: String| PrHeadError {
+                pr: pr.to_owned(),
+                message: crate::hub::checks::utf16_prefix(&message, 500).to_owned(),
             };
+            let Some(path) = pulls_path(pr) else {
+                return Err(PrHeadError {
+                    pr: pr.to_owned(),
+                    message: "not a github.com pull request URL".into(),
+                });
+            };
+            let args = vec![
+                "api".into(),
+                path.clone(),
+                "--jq".into(),
+                ".head.sha".into(),
+            ];
+            let out =
+                match tokio::time::timeout(Duration::from_secs(15), self.runner.run(args)).await {
+                    Err(_) => return Err(fail(format!("gh api {path}: timed out"))),
+                    Ok(Err(e)) => return Err(fail(format!("gh api {path}: {}", e.0))),
+                    Ok(Ok(out)) => out,
+                };
             let sha = out.stdout.trim().to_lowercase();
             if out.exit_code != 0 || !SHA.is_match(&sha) {
                 let stderr = out.stderr.trim();
@@ -51,7 +68,10 @@ impl PrHeads for GhPrHeads {
                 } else if out.exit_code != 0 {
                     format!("Command failed: gh api {path} --jq .head.sha")
                 } else {
-                    format!("unexpected output: {}", crate::hub::checks::utf16_prefix(&sha, 80))
+                    format!(
+                        "unexpected output: {}",
+                        crate::hub::checks::utf16_prefix(&sha, 80)
+                    )
                 };
                 return Err(fail(format!("gh api {path}: {reason}")));
             }
@@ -66,8 +86,17 @@ mod tests {
 
     #[test]
     fn rest_path_of_a_github_pr_only() {
-        assert_eq!(pulls_path("https://github.com/wynn-dev/lab/pull/7").as_deref(), Some("repos/wynn-dev/lab/pulls/7"));
-        assert_eq!(pulls_path("https://github.com/wynn-dev/lab/pull/7/files"), None);
-        assert_eq!(pulls_path("https://gitlab.com/o/r/-/merge_requests/3"), None);
+        assert_eq!(
+            pulls_path("https://github.com/wynn-dev/lab/pull/7").as_deref(),
+            Some("repos/wynn-dev/lab/pulls/7")
+        );
+        assert_eq!(
+            pulls_path("https://github.com/wynn-dev/lab/pull/7/files"),
+            None
+        );
+        assert_eq!(
+            pulls_path("https://gitlab.com/o/r/-/merge_requests/3"),
+            None
+        );
     }
 }

@@ -3,7 +3,13 @@
 //! TS spec: apps/hub/src/incidents/Incidents.ts.
 use crate::clock::Clock;
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
-use fleetd_contracts::{HubEventType, Incident, IncidentClass, IncidentId, ProjectRef, TaskId, WorkstreamId};
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ids::Timestamp;
+use fleetd_contracts::ledger::WorkstreamId;
+use fleetd_contracts::prim::{List, Text};
+use fleetd_contracts::tasks::TaskId;
+use fleetd_contracts::verification::{Incident, IncidentClass, IncidentId};
 use rusqlite::{OptionalExtension, named_params};
 use std::sync::Arc;
 
@@ -35,7 +41,11 @@ const WHERE: &str = "($machine IS NULL OR (machine_id = $machine AND project_id 
 
 /// An evidence line as the contract takes it: non-empty, at most 2000 UTF-16 units.
 fn line(text: &str) -> String {
-    let flat = if text.trim().is_empty() { "(empty)" } else { text };
+    let flat = if text.trim().is_empty() {
+        "(empty)"
+    } else {
+        text
+    };
     if flat.encode_utf16().count() <= 2000 {
         return flat.to_owned();
     }
@@ -82,27 +92,32 @@ impl Incidents {
                     |row| row.get(0),
                 )?;
             let incident = Incident {
-                incident_id: IncidentId(format!("I{n}")),
+                incident_id: IncidentId::unchecked(format!("I{n}")),
                 class: input.class,
                 project_ref: input.project_ref.clone(),
                 workstream_id: input.workstream_id.clone(),
                 task_id: input.task_id.clone(),
-                evidence: input.evidence.iter().take(20).map(|l| line(l)).collect(),
-                at: at.clone(),
+                evidence: List::unchecked(input.evidence.iter().take(20).map(|l| Text::unchecked(line(l))).collect()),
+                at: Timestamp(at.clone()),
             };
             conn.prepare_cached("UPDATE incidents SET data = ? WHERE n = ?")?.execute(rusqlite::params![serde_json::to_string(&incident)?, n])?;
             Ok(incident)
         })?;
-        let mut data = serde_json::json!({ "incidentId": incident.incident_id, "class": incident.class });
+        let mut data =
+            serde_json::json!({ "incidentId": incident.incident_id, "class": incident.class });
         if let Some(w) = &incident.workstream_id {
             data["workstreamId"] = serde_json::json!(w);
         }
         if let Some(t) = &incident.task_id {
             data["taskId"] = serde_json::json!(t);
         }
-        let on = incident.workstream_id.as_ref().map(|w| format!(" on {w}")).unwrap_or_default();
+        let on = incident
+            .workstream_id
+            .as_ref()
+            .map(|w| format!(" on {w}"))
+            .unwrap_or_default();
         self.events.append(NewEvent {
-            at,
+            at: Timestamp(at),
             r#type: HubEventType::IncidentRecorded,
             machine_id: Some(incident.project_ref.machine_id.clone()),
             project_id: Some(incident.project_ref.project_id.clone()),
@@ -111,7 +126,7 @@ impl Incidents {
                 "{} {}{on}: {}",
                 incident.incident_id,
                 class_name(incident.class),
-                incident.evidence.first().map(String::as_str).unwrap_or("")
+                incident.evidence.first().map(|l| l.as_str()).unwrap_or("")
             ),
             data: Some(data),
         })?;
@@ -119,10 +134,18 @@ impl Incidents {
     }
 
     pub fn get(&self, incident_id: &IncidentId) -> Result<Option<Incident>, StoreError> {
-        let Some(n) = incident_id.as_str().strip_prefix('I').and_then(|n| n.parse::<i64>().ok()) else { return Ok(None) };
+        let Some(n) = incident_id
+            .as_str()
+            .strip_prefix('I')
+            .and_then(|n| n.parse::<i64>().ok())
+        else {
+            return Ok(None);
+        };
         self.db.with(|conn| {
-            let data: Option<String> =
-                conn.prepare_cached("SELECT data FROM incidents WHERE n = ?")?.query_row([n], |row| row.get(0)).optional()?;
+            let data: Option<String> = conn
+                .prepare_cached("SELECT data FROM incidents WHERE n = ?")?
+                .query_row([n], |row| row.get(0))
+                .optional()?;
             Ok(data.map(|d| serde_json::from_str(&d)).transpose()?)
         })
     }
@@ -183,8 +206,14 @@ struct Params {
 impl Params {
     fn of(f: &IncidentFilter) -> Self {
         Self {
-            machine: f.project_ref.as_ref().map(|r| r.machine_id.as_str().to_owned()),
-            project: f.project_ref.as_ref().map(|r| r.project_id.as_str().to_owned()),
+            machine: f
+                .project_ref
+                .as_ref()
+                .map(|r| r.machine_id.as_str().to_owned()),
+            project: f
+                .project_ref
+                .as_ref()
+                .map(|r| r.project_id.as_str().to_owned()),
             workstream: f.workstream_id.as_ref().map(|w| w.as_str().to_owned()),
             class: f.class.map(class_name),
             since: f.since_ms.map(iso_ms),
@@ -212,12 +241,19 @@ impl Incidents {
         allows: &dyn Fn(&ProjectRef) -> bool,
     ) -> Result<IncidentsListed, StoreError> {
         let scoped = filter.project_ref.is_some();
-        let mut all: Vec<Incident> =
-            self.list(&filter, if scoped { limit + 1 } else { 1000 })?.into_iter().filter(|i| allows(&i.project_ref)).collect();
+        let mut all: Vec<Incident> = self
+            .list(&filter, if scoped { limit + 1 } else { 1000 })?
+            .into_iter()
+            .filter(|i| allows(&i.project_ref))
+            .collect();
         let truncated = all.len() > limit;
         all.truncate(limit);
         let since_ms = now_ms(self.clock.as_ref()) - i64::from(window_days) * 86_400_000;
-        let window = IncidentFilter { since_ms: Some(since_ms), until_ms: None, ..filter };
+        let window = IncidentFilter {
+            since_ms: Some(since_ms),
+            until_ms: None,
+            ..filter
+        };
         let mut tally: Vec<(IncidentClass, u64)> = Vec::new();
         for i in self.list(&window, 10_000)? {
             if !allows(&i.project_ref) {
@@ -229,7 +265,15 @@ impl Incidents {
             }
         }
         // TS sorts by count, then class name (localeCompare; the names are lowercase ASCII).
-        tally.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| class_name(a.0).cmp(&class_name(b.0))));
-        Ok(IncidentsListed { incidents: all, truncated, counts: tally, counts_since: iso_ms(since_ms) })
+        tally.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| class_name(a.0).cmp(&class_name(b.0)))
+        });
+        Ok(IncidentsListed {
+            incidents: all,
+            truncated,
+            counts: tally,
+            counts_since: iso_ms(since_ms),
+        })
     }
 }

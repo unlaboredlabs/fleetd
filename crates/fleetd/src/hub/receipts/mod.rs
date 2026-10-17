@@ -4,7 +4,8 @@ pub mod count;
 
 use crate::hub::checks::ports::Ports;
 use count::{claims_unverified, count_receipts};
-use fleetd_contracts::{Receipts as ReceiptsData, TaskId, TaskResult, ThreadRef};
+use fleetd_contracts::ids::ThreadRef;
+use fleetd_contracts::tasks::{Receipts as ReceiptsData, TaskId, TaskResult};
 use std::sync::Arc;
 
 pub use count::receipts_line;
@@ -43,7 +44,11 @@ impl Receipts {
             None => result,
             Some(receipts) => {
                 let unverified = claims_unverified(&result.tail, &receipts);
-                TaskResult { receipts: Some(receipts), claims_unverified: Some(unverified), ..result }
+                TaskResult {
+                    receipts: Some(receipts),
+                    claims_unverified: Some(unverified),
+                    ..result
+                }
             }
         }
     }

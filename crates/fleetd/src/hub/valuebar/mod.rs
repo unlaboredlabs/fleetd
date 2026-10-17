@@ -10,7 +10,11 @@ use crate::hub::checks::JudgeVerdicts;
 use crate::hub::checks::ports::{Ports, Refusal};
 use crate::hub::incidents::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
-use fleetd_contracts::{HubEventType, IncidentClass, ProjectRef, ReviewVerdict, TaskKind, Workstream};
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ledger::Workstream;
+use fleetd_contracts::tasks::TaskKind;
+use fleetd_contracts::verification::{IncidentClass, ReviewVerdict};
 use pr_heads::PrHeads;
 use rules::{PrVerdict, SpawnRequest, pr_key, review_refusal, write_refusal};
 use std::sync::Arc;
@@ -36,7 +40,11 @@ fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
 }
 
 fn internal(e: StoreError) -> Refusal {
-    Refusal { code: "internal", message: e.to_string(), fix: None }
+    Refusal {
+        code: "internal",
+        message: e.to_string(),
+        fix: None,
+    }
 }
 
 fn kind_name(kind: TaskKind) -> &'static str {
@@ -67,7 +75,15 @@ impl ValueBar {
         judges: Arc<JudgeVerdicts>,
         clock: Arc<dyn Clock>,
     ) -> Self {
-        Self { db, events, ports, incidents, pr_heads, judges, clock }
+        Self {
+            db,
+            events,
+            ports,
+            incidents,
+            pr_heads,
+            judges,
+            clock,
+        }
     }
 
     /// This PR's verdicts, newest first: enough for both rules (any clean verdict on the head, and the last two).
@@ -80,11 +96,24 @@ impl ValueBar {
     }
 
     /// Refuses a spawn the value bar rules out. A polish loop is also recorded as an incident.
-    pub async fn check_spawn(&self, caller: &Caller, request: &SpawnRequest, workstream: &Workstream) -> Result<(), Refusal> {
+    pub async fn check_spawn(
+        &self,
+        caller: &Caller,
+        request: &SpawnRequest,
+        workstream: &Workstream,
+    ) -> Result<(), Refusal> {
         if let Some(write) = write_refusal(request, workstream) {
-            return Err(Refusal { code: "invalid", message: write.message, fix: write.fix });
+            return Err(Refusal {
+                code: "invalid",
+                message: write.message,
+                fix: write.fix,
+            });
         }
-        let pr = if request.kind == TaskKind::Review { request.pr.as_deref() } else { None };
+        let pr = if request.kind == TaskKind::Review {
+            request.pr.as_deref()
+        } else {
+            None
+        };
         let verdicts = match pr {
             Some(pr) => self.verdicts_for(pr).map_err(internal)?,
             None => vec![],
@@ -101,8 +130,16 @@ impl ValueBar {
             _ => None,
         };
         // The pinned playbook caps review rounds.
-        let max_rounds = workstream.playbook.as_ref().and_then(|p| self.ports.playbook_limits(p)).map(|l| l.max_review_rounds);
-        let Some(review) = review_refusal(request, &caller.by, head.as_deref(), &verdicts, max_rounds) else { return Ok(()) };
+        let max_rounds = workstream
+            .playbook
+            .as_ref()
+            .and_then(|p| self.ports.playbook_limits(p))
+            .map(|l| l.max_review_rounds);
+        let Some(review) =
+            review_refusal(request, &caller.by, head.as_deref(), &verdicts, max_rounds)
+        else {
+            return Ok(());
+        };
         if let Some(lines) = review.polish_loop {
             self.incidents
                 .record(IncidentInput {
@@ -114,24 +151,56 @@ impl ValueBar {
                 })
                 .map_err(internal)?;
         }
-        Err(Refusal { code: "invalid", message: review.message, fix: review.fix })
+        Err(Refusal {
+            code: "invalid",
+            message: review.message,
+            fix: review.fix,
+        })
     }
 
     /// `fleetd review verdict`: stores it against the task's PR, emits `review.verdict` and completes a waiting judge
     /// check. The judge of a research workstream must report `metricValues`, and gets the computed verdict back as text.
-    pub async fn record_verdict(&self, caller: &Caller, verdict: ReviewVerdict) -> Result<RecordedVerdict, Refusal> {
-        let Some(task) = self.ports.task(&verdict.task_id).filter(|t| same_project(&t.project_ref, &caller.project_ref)) else {
-            return Err(Refusal::not_found(format!("No task {} in this project.", verdict.task_id), Some("Pass --task with your own task id.")));
+    pub async fn record_verdict(
+        &self,
+        caller: &Caller,
+        verdict: ReviewVerdict,
+    ) -> Result<RecordedVerdict, Refusal> {
+        let Some(task) = self
+            .ports
+            .task(&verdict.task_id)
+            .filter(|t| same_project(&t.project_ref, &caller.project_ref))
+        else {
+            return Err(Refusal::not_found(
+                format!("No task {} in this project.", verdict.task_id),
+                Some("Pass --task with your own task id."),
+            ));
         };
         if task.kind != TaskKind::Review {
-            return Err(Refusal::invalid(format!("{} is a {} task; only review tasks record verdicts.", task.task_id, kind_name(task.kind)), None));
+            return Err(Refusal::invalid(
+                format!(
+                    "{} is a {} task; only review tasks record verdicts.",
+                    task.task_id,
+                    kind_name(task.kind)
+                ),
+                None,
+            ));
         }
         // Hub-spawned judges review criteria, not a PR, so they are the review tasks without one.
-        let judged = if task.pr.is_none() { self.ports.workstream(&task.workstream_id) } else { None };
-        let is_research = judged.as_ref().and_then(|w| w.playbook.as_ref()).is_some_and(|p| p.as_str().starts_with("research@"));
+        let judged = if task.pr.is_none() {
+            self.ports.workstream(&task.workstream_id)
+        } else {
+            None
+        };
+        let is_research = judged
+            .as_ref()
+            .and_then(|w| w.playbook.as_ref())
+            .is_some_and(|p| p.as_str().starts_with("research@"));
         if verdict.metric_values.is_some() && !is_research {
             return Err(Refusal::invalid(
-                format!("{} is not the judge of a research workstream; only those report --baseline and --candidate.", task.task_id),
+                format!(
+                    "{} is not the judge of a research workstream; only those report --baseline and --candidate.",
+                    task.task_id
+                ),
                 Some("Leave out --baseline and --candidate."),
             ));
         }
@@ -142,8 +211,13 @@ impl ValueBar {
                 .and_then(|b| b.metric.as_ref())
                 .map_or_else(|| "the brief's metric".to_owned(), |m| format!("\"{m}\""));
             return Err(Refusal::invalid(
-                format!("{} judges research workstream {}, so its verdict must carry the measured numbers.", task.task_id, task.workstream_id),
-                Some(&format!("Rerun with --baseline <n> --candidate <n>: {metric} measured for the baseline and for the candidate.")),
+                format!(
+                    "{} judges research workstream {}, so its verdict must carry the measured numbers.",
+                    task.task_id, task.workstream_id
+                ),
+                Some(&format!(
+                    "Rerun with --baseline <n> --candidate <n>: {metric} measured for the baseline and for the candidate."
+                )),
             ));
         }
         let now = now_ms(self.clock.as_ref());
@@ -154,8 +228,8 @@ impl ValueBar {
                     .execute(rusqlite::params![
                         task.task_id.as_str(),
                         task.pr.as_deref().map(pr_key),
-                        verdict.pr_head_sha,
-                        verdict.blocking,
+                        verdict.pr_head_sha.as_str(),
+                        verdict.blocking.get(),
                         now,
                         data
                     ])?;
@@ -174,7 +248,7 @@ impl ValueBar {
         }
         self.events
             .append(NewEvent {
-                at: iso_ms(now),
+                at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
                 r#type: HubEventType::ReviewVerdict,
                 machine_id: Some(task.project_ref.machine_id.clone()),
                 project_id: Some(task.project_ref.project_id.clone()),
@@ -182,7 +256,10 @@ impl ValueBar {
                 summary: format!(
                     "{} review verdict at {}: {} blocking, {} non-blocking",
                     task.task_id,
-                    verdict.pr_head_sha.get(..12).unwrap_or(&verdict.pr_head_sha),
+                    verdict
+                        .pr_head_sha
+                        .get(..12)
+                        .unwrap_or(&verdict.pr_head_sha),
                     verdict.blocking,
                     verdict.non_blocking
                 ),
@@ -190,8 +267,12 @@ impl ValueBar {
             })
             .map_err(internal)?;
         // Before the judge check resolves, so the claim that follows finds the workstream already done with its outcome.
-        let research = match (is_research, verdict.metric_values) {
-            (true, Some(values)) => Some(self.ports.research_verdict(&task.workstream_id, values).await?),
+        let research = match (is_research, verdict.metric_values.clone()) {
+            (true, Some(values)) => Some(
+                self.ports
+                    .research_verdict(&task.workstream_id, values)
+                    .await?,
+            ),
             _ => None,
         };
         self.judges.complete(&verdict).await;

@@ -9,7 +9,10 @@ use crate::hub::checks::ports::Ports;
 use crate::hub::incidents::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, HubDb, StoreError, WaitInput, now_ms};
 use calibration::{Calibration, MISS_RATIO, WINDOW, calibrate, eta_of, round1};
-use fleetd_contracts::{EstimateActual, Eta, HubEventType, IncidentClass, Tier, Workstream, WorkstreamId};
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ledger::{Tier, Workstream, WorkstreamEstimateActual, WorkstreamId};
+use fleetd_contracts::prim::{NonNegative, PositiveNumber};
+use fleetd_contracts::verification::{Eta, IncidentClass};
 use rusqlite::OptionalExtension;
 use std::sync::Arc;
 
@@ -32,7 +35,11 @@ fn tier_name(tier: Tier) -> &'static str {
 
 /// JS `String(n)` for the evidence lines: integers without ".0".
 fn num(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < 1e15 { format!("{}", n as i64) } else { format!("{n}") }
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        format!("{}", n as i64)
+    } else {
+        format!("{n}")
+    }
 }
 
 struct Row {
@@ -44,8 +51,18 @@ struct Row {
 }
 
 impl Estimates {
-    pub fn new(db: Arc<HubDb>, ports: Arc<dyn Ports>, incidents: Arc<Incidents>, clock: Arc<dyn Clock>) -> Self {
-        Self { db, ports, incidents, clock }
+    pub fn new(
+        db: Arc<HubDb>,
+        ports: Arc<dyn Ports>,
+        incidents: Arc<Incidents>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            db,
+            ports,
+            incidents,
+            clock,
+        }
     }
 
     fn row(&self, id: &WorkstreamId) -> Result<Option<Row>, StoreError> {
@@ -60,8 +77,16 @@ impl Estimates {
     }
 
     /// Below MIN_SAMPLES the workstream's pinned playbook supplies the prior.
-    fn calibration_of(&self, tier: Tier, workstream: &Workstream) -> Result<Calibration, StoreError> {
-        let prior = workstream.playbook.as_ref().and_then(|p| self.ports.playbook_limits(p)).map(|l| l.estimate_prior);
+    fn calibration_of(
+        &self,
+        tier: Tier,
+        workstream: &Workstream,
+    ) -> Result<Calibration, StoreError> {
+        let prior = workstream
+            .playbook
+            .as_ref()
+            .and_then(|p| self.ports.playbook_limits(p))
+            .map(|l| l.estimate_prior);
         let ratios = self.db.with(|conn| {
             let mut stmt = conn.prepare_cached(
                 "SELECT actual_minutes / raw_minutes AS ratio FROM estimates
@@ -78,7 +103,7 @@ impl Estimates {
         Ok(calibrate(&ratios, prior))
     }
 
-    fn put_estimate_actual(&self, id: &WorkstreamId, actual: EstimateActual) {
+    fn put_estimate_actual(&self, id: &WorkstreamId, actual: WorkstreamEstimateActual) {
         if let Some(mut w) = self.ports.workstream(id) {
             w.estimate_actual = Some(actual);
             self.ports.put_workstream(&w);
@@ -88,9 +113,15 @@ impl Estimates {
     /// Saves the tier's current ratio as `ratioAtStart` and starts the clock. Once per workstream; no-op without a
     /// raw estimate.
     pub fn record_start(&self, id: &WorkstreamId) -> Result<(), StoreError> {
-        let Some(workstream) = self.ports.workstream(id) else { return Ok(()) };
-        let Some(brief) = &workstream.brief else { return Ok(()) };
-        let Some(estimate) = &brief.estimate else { return Ok(()) };
+        let Some(workstream) = self.ports.workstream(id) else {
+            return Ok(());
+        };
+        let Some(brief) = &workstream.brief else {
+            return Ok(());
+        };
+        let Some(estimate) = &brief.estimate else {
+            return Ok(());
+        };
         if self.row(id)?.is_some() {
             return Ok(());
         }
@@ -100,17 +131,25 @@ impl Estimates {
             conn.prepare_cached(
                 "INSERT OR IGNORE INTO estimates (workstream_id, tier, raw_minutes, ratio_at_start, started_ms) VALUES (?, ?, ?, ?, ?)",
             )?
-            .execute(rusqlite::params![id.as_str(), tier_name(brief.tier), estimate.raw_minutes, ratio, now])?;
+            .execute(rusqlite::params![id.as_str(), tier_name(brief.tier), estimate.raw_minutes.get(), ratio, now])?;
             Ok(())
         })?;
-        self.put_estimate_actual(id, EstimateActual { actual_minutes: None, ratio_at_start: ratio });
+        self.put_estimate_actual(
+            id,
+            WorkstreamEstimateActual {
+                actual_minutes: None,
+                ratio_at_start: PositiveNumber::unchecked(ratio),
+            },
+        );
         Ok(())
     }
 
     /// Stores `actualMinutes`, records `estimate_miss` past 2x the raw. Once per workstream; no-op if it never started
     /// the clock.
     pub fn record_done(&self, id: &WorkstreamId) -> Result<(), StoreError> {
-        let Some(row) = self.row(id)? else { return Ok(()) };
+        let Some(row) = self.row(id)? else {
+            return Ok(());
+        };
         if row.done_ms.is_some() {
             return Ok(());
         }
@@ -121,12 +160,20 @@ impl Estimates {
                 .execute(rusqlite::params![now, actual_minutes, id.as_str()])?;
             Ok(())
         })?;
-        self.put_estimate_actual(id, EstimateActual { actual_minutes: Some(actual_minutes), ratio_at_start: row.ratio_at_start });
+        self.put_estimate_actual(
+            id,
+            WorkstreamEstimateActual {
+                actual_minutes: Some(NonNegative::unchecked(actual_minutes)),
+                ratio_at_start: PositiveNumber::unchecked(row.ratio_at_start),
+            },
+        );
         let raw = row.raw_minutes;
         if raw <= 0.0 || actual_minutes / raw <= MISS_RATIO {
             return Ok(());
         }
-        let Some(workstream) = self.ports.workstream(id) else { return Ok(()) };
+        let Some(workstream) = self.ports.workstream(id) else {
+            return Ok(());
+        };
         self.incidents.record(IncidentInput {
             class: IncidentClass::EstimateMiss,
             project_ref: workstream.project_ref,
@@ -153,9 +200,16 @@ impl Estimates {
 
     /// None without a raw estimate in the brief.
     pub fn eta(&self, workstream: &Workstream) -> Result<Option<Eta>, StoreError> {
-        let Some(brief) = &workstream.brief else { return Ok(None) };
-        let Some(estimate) = &brief.estimate else { return Ok(None) };
-        Ok(Some(eta_of(estimate.raw_minutes, &self.calibration_of(brief.tier, workstream)?)))
+        let Some(brief) = &workstream.brief else {
+            return Ok(None);
+        };
+        let Some(estimate) = &brief.estimate else {
+            return Ok(None);
+        };
+        Ok(Some(eta_of(
+            estimate.raw_minutes.get(),
+            &self.calibration_of(brief.tier, workstream)?,
+        )))
     }
 
     /// Starts the clock on every `workstream.running` event from the hub's start on. Runs until the hub stops.
@@ -163,7 +217,12 @@ impl Estimates {
         let mut cursor = events.head();
         loop {
             let page = match events
-                .wait(WaitInput { cursor: Some(cursor), types: Some(vec![HubEventType::WorkstreamRunning]), machine_id: None, timeout_sec: 3600 })
+                .wait(WaitInput {
+                    cursor: Some(cursor),
+                    types: Some(vec![HubEventType::WorkstreamRunning]),
+                    machine_id: None,
+                    timeout_sec: 3600,
+                })
                 .await
             {
                 Ok(page) => page,
@@ -175,8 +234,15 @@ impl Estimates {
             };
             cursor = page.cursor;
             for event in page.events {
-                let Some(id) = event.data.as_ref().and_then(|d| d.get("workstreamId")).and_then(|v| v.as_str()) else { continue };
-                if let Err(error) = self.record_start(&WorkstreamId(id.to_owned())) {
+                let Some(id) = event
+                    .data
+                    .as_ref()
+                    .and_then(|d| d.get("workstreamId"))
+                    .and_then(|v| v.as_str())
+                else {
+                    continue;
+                };
+                if let Err(error) = self.record_start(&WorkstreamId::unchecked(id)) {
                     tracing::warn!(workstream_id = id, %error, "estimate start not recorded");
                 }
             }

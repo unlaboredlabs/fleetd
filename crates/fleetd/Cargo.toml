@@ -50,6 +50,9 @@ url = { workspace = true }
 hmac = { workspace = true }
 aes-gcm = { workspace = true }
 
+# checks, receipts, value bar, estimates and incidents
+url = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"

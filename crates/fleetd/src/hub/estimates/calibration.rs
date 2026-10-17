@@ -1,6 +1,7 @@
 //! Estimate calibration: a tier's measured actual/raw ratio and the ETA it gives a raw estimate. Pure.
 //! TS spec: apps/hub/src/estimates/calibration.ts.
-use fleetd_contracts::Eta;
+use fleetd_contracts::prim::{Count, NonNegative, PositiveNumber};
+use fleetd_contracts::verification::Eta;
 
 /// The ratio used until a tier has MIN_SAMPLES done workstreams (DESIGN §6: leads are ~5x optimistic).
 pub const PRIOR_RATIO: f64 = 5.0;
@@ -21,7 +22,11 @@ pub struct Calibration {
 
 fn median(sorted: &[f64]) -> f64 {
     let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 1 { sorted[mid] } else { (sorted[mid - 1] + sorted[mid]) / 2.0 }
+    if sorted.len() % 2 == 1 {
+        sorted[mid]
+    } else {
+        (sorted[mid - 1] + sorted[mid]) / 2.0
+    }
 }
 
 /// Nearest-rank percentile.
@@ -33,11 +38,20 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 /// `ratios` are actual/raw of the tier's latest done workstreams, newest first; only the first WINDOW count.
 /// Non-positive and non-finite ones are dropped. `prior` is the pinned playbook's estimatePrior, if any.
 pub fn calibrate(ratios: &[f64], prior: Option<f64>) -> Calibration {
-    let mut sorted: Vec<f64> = ratios.iter().take(WINDOW).copied().filter(|r| r.is_finite() && *r > 0.0).collect();
+    let mut sorted: Vec<f64> = ratios
+        .iter()
+        .take(WINDOW)
+        .copied()
+        .filter(|r| r.is_finite() && *r > 0.0)
+        .collect();
     sorted.sort_by(f64::total_cmp);
     let samples = sorted.len() as u32;
     if samples < MIN_SAMPLES {
-        return Calibration { ratio: prior.unwrap_or(PRIOR_RATIO), samples, p80_ratio: None };
+        return Calibration {
+            ratio: prior.unwrap_or(PRIOR_RATIO),
+            samples,
+            p80_ratio: None,
+        };
     }
     Calibration {
         ratio: median(&sorted),
@@ -57,11 +71,13 @@ pub(crate) fn round1(n: f64) -> f64 {
 
 pub fn eta_of(raw_minutes: f64, c: &Calibration) -> Eta {
     Eta {
-        raw_minutes,
-        calibrated_minutes: round1(raw_minutes * c.ratio),
-        ratio: js_round(c.ratio * 100.0) / 100.0,
-        samples: c.samples,
-        p80_minutes: c.p80_ratio.map(|p| round1(raw_minutes * p)),
+        raw_minutes: NonNegative::unchecked(raw_minutes),
+        calibrated_minutes: NonNegative::unchecked(round1(raw_minutes * c.ratio)),
+        ratio: PositiveNumber::unchecked(js_round(c.ratio * 100.0) / 100.0),
+        samples: Count::unchecked(i64::from(c.samples)),
+        p80_minutes: c
+            .p80_ratio
+            .map(|p| NonNegative::unchecked(round1(raw_minutes * p))),
     }
 }
 
@@ -70,29 +86,40 @@ fn duration(minutes: f64) -> String {
     if m < 60 {
         return format!("{m}m");
     }
-    let rest = if m % 60 == 0 { String::new() } else { format!("{:02}m", m % 60) };
+    let rest = if m % 60 == 0 {
+        String::new()
+    } else {
+        format!("{:02}m", m % 60)
+    };
     format!("{}h{rest}", m / 60)
 }
 
 /// JS number formatting for the ratio: integers without ".0".
 fn js_number(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < 1e15 { format!("{}", n as i64) } else { format!("{n}") }
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        format!("{}", n as i64)
+    } else {
+        format!("{n}")
+    }
 }
 
 /// One line for digests, e.g. "eta 3h20m (raw 40m × 5, prior, 2 of 5 samples)" or
 /// "eta 1h (raw 30m × 2, 12 samples; p80 1h30m)".
 pub fn eta_text(eta: &Eta) -> String {
-    let basis = if eta.samples < MIN_SAMPLES {
+    let basis = if eta.samples.get() < i64::from(MIN_SAMPLES) {
         format!("prior, {} of {MIN_SAMPLES} samples", eta.samples)
     } else {
         format!("{} samples", eta.samples)
     };
-    let p80 = eta.p80_minutes.map(|p| format!("; p80 {}", duration(p))).unwrap_or_default();
+    let p80 = eta
+        .p80_minutes
+        .map(|p| format!("; p80 {}", duration(p.get())))
+        .unwrap_or_default();
     format!(
         "eta {} (raw {} × {}, {basis}{p80})",
-        duration(eta.calibrated_minutes),
-        duration(eta.raw_minutes),
-        js_number(eta.ratio)
+        duration(eta.calibrated_minutes.get()),
+        duration(eta.raw_minutes.get()),
+        js_number(eta.ratio.get())
     )
 }
 
@@ -101,16 +128,32 @@ mod tests {
     use super::*;
 
     fn cal(ratio: f64, samples: u32, p80_ratio: Option<f64>) -> Calibration {
-        Calibration { ratio, samples, p80_ratio }
+        Calibration {
+            ratio,
+            samples,
+            p80_ratio,
+        }
     }
 
     #[test]
     fn calibrate_table() {
         let cases: &[(&str, Vec<f64>, Calibration)] = &[
             ("no samples: the 5.0 prior", vec![], cal(5.0, 0, None)),
-            ("4 samples: still the prior", vec![1.0, 1.0, 1.0, 1.0], cal(5.0, 4, None)),
-            ("5 samples: the median", vec![3.0, 1.0, 2.0, 5.0, 4.0], cal(3.0, 5, None)),
-            ("6 samples: the mean of the middle two", vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], cal(3.5, 6, None)),
+            (
+                "4 samples: still the prior",
+                vec![1.0, 1.0, 1.0, 1.0],
+                cal(5.0, 4, None),
+            ),
+            (
+                "5 samples: the median",
+                vec![3.0, 1.0, 2.0, 5.0, 4.0],
+                cal(3.0, 5, None),
+            ),
+            (
+                "6 samples: the mean of the middle two",
+                vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                cal(3.5, 6, None),
+            ),
             (
                 "10 samples: p80 by nearest rank",
                 vec![10.0, 1.0, 9.0, 2.0, 8.0, 3.0, 7.0, 4.0, 6.0, 5.0],
@@ -142,15 +185,28 @@ mod tests {
 
     #[test]
     fn eta_scales_and_reads() {
+        use serde_json::json;
         let prior = eta_of(40.0, &cal(5.0, 2, None));
-        assert_eq!(prior, Eta { raw_minutes: 40.0, calibrated_minutes: 200.0, ratio: 5.0, samples: 2, p80_minutes: None });
+        assert_eq!(
+            serde_json::to_value(&prior).unwrap(),
+            json!({ "rawMinutes": 40, "calibratedMinutes": 200, "ratio": 5, "samples": 2 })
+        );
         let measured = eta_of(30.0, &cal(2.0, 12, Some(3.0)));
         assert_eq!(
-            measured,
-            Eta { raw_minutes: 30.0, calibrated_minutes: 60.0, ratio: 2.0, samples: 12, p80_minutes: Some(90.0) }
+            serde_json::to_value(&measured).unwrap(),
+            json!({ "rawMinutes": 30, "calibratedMinutes": 60, "ratio": 2, "samples": 12, "p80Minutes": 90 })
         );
-        assert_eq!(eta_text(&prior), "eta 3h20m (raw 40m × 5, prior, 2 of 5 samples)");
-        assert_eq!(eta_text(&measured), "eta 1h (raw 30m × 2, 12 samples; p80 1h30m)");
-        assert_eq!(eta_text(&eta_of(60.0, &cal(1.75, 10, Some(2.0)))), "eta 1h45m (raw 1h × 1.75, 10 samples; p80 2h)");
+        assert_eq!(
+            eta_text(&prior),
+            "eta 3h20m (raw 40m × 5, prior, 2 of 5 samples)"
+        );
+        assert_eq!(
+            eta_text(&measured),
+            "eta 1h (raw 30m × 2, 12 samples; p80 1h30m)"
+        );
+        assert_eq!(
+            eta_text(&eta_of(60.0, &cal(1.75, 10, Some(2.0)))),
+            "eta 1h45m (raw 1h × 1.75, 10 samples; p80 2h)"
+        );
     }
 }

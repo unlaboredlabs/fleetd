@@ -7,7 +7,9 @@ use super::ports::{Ports, Refusal};
 use super::records::ClaimFilter;
 use crate::hub::incidents::{IncidentFilter, Incidents};
 use crate::hub::valuebar::{Caller, ValueBar};
-use fleetd_contracts::{Claim, ClaimOutcome, IncidentClass, MachineId, ProjectRef, ReviewVerdict, WorkstreamId};
+use fleetd_contracts::ids::{MachineId, ProjectRef};
+use fleetd_contracts::ledger::WorkstreamId;
+use fleetd_contracts::verification::{Claim, ClaimOutcome, IncidentClass, ReviewVerdict};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -30,11 +32,19 @@ pub fn forbidden_read(machine_id: &MachineId) -> ToolRefusal {
 }
 
 fn unknown_workstream(id: &WorkstreamId) -> ToolRefusal {
-    ToolRefusal { code: "not_found", message: format!("No workstream {id}."), fix: Some("Call workstream_list to see workstreams.".into()) }
+    ToolRefusal {
+        code: "not_found",
+        message: format!("No workstream {id}."),
+        fix: Some("Call workstream_list to see workstreams.".into()),
+    }
 }
 
 fn internal(e: impl std::fmt::Display) -> ToolRefusal {
-    ToolRefusal { code: "internal", message: e.to_string(), fix: None }
+    ToolRefusal {
+        code: "internal",
+        message: e.to_string(),
+        fix: None,
+    }
 }
 
 fn default_limit() -> usize {
@@ -105,7 +115,11 @@ pub fn claims_list(
         }
         let machine = machine_of
             .entry(claim.workstream_id.clone())
-            .or_insert_with(|| ports.workstream(&claim.workstream_id).map(|w| w.project_ref.machine_id))
+            .or_insert_with(|| {
+                ports
+                    .workstream(&claim.workstream_id)
+                    .map(|w| w.project_ref.machine_id)
+            })
             .clone();
         if machine.is_some_and(|m| allows(&m)) {
             all.push(claim);
@@ -125,7 +139,11 @@ pub fn claims_list(
     Ok(out)
 }
 
-pub fn incidents_list(incidents: &Incidents, input: IncidentsListInput, allows: &dyn Fn(&MachineId) -> bool) -> Result<Value, ToolRefusal> {
+pub fn incidents_list(
+    incidents: &Incidents,
+    input: IncidentsListInput,
+    allows: &dyn Fn(&MachineId) -> bool,
+) -> Result<Value, ToolRefusal> {
     if let Some(r) = &input.project_ref
         && !allows(&r.machine_id)
     {
@@ -138,8 +156,16 @@ pub fn incidents_list(incidents: &Incidents, input: IncidentsListInput, allows: 
         since_ms: None,
         until_ms: None,
     };
-    let listed = incidents.list_for_tool(filter, input.limit, input.window_days, &|r| allows(&r.machine_id)).map_err(internal)?;
-    let counts: Vec<Value> = listed.counts.iter().map(|(class, count)| json!({ "class": class, "count": count })).collect();
+    let listed = incidents
+        .list_for_tool(filter, input.limit, input.window_days, &|r| {
+            allows(&r.machine_id)
+        })
+        .map_err(internal)?;
+    let counts: Vec<Value> = listed
+        .counts
+        .iter()
+        .map(|(class, count)| json!({ "class": class, "count": count }))
+        .collect();
     let mut out = json!({ "incidents": listed.incidents, "counts": counts, "countsSince": listed.counts_since });
     if listed.truncated {
         out["truncated"] = json!(true);
@@ -149,17 +175,31 @@ pub fn incidents_list(incidents: &Incidents, input: IncidentsListInput, allows: 
 }
 
 /// Lead call `claim_done`: the result frame's body (`op` included).
-pub async fn lead_claim_done(claims: &Arc<Claims>, caller: &Caller, workstream_id: &WorkstreamId) -> Result<Value, Refusal> {
-    let outcome = claims.claim_done(workstream_id, &caller.by, Some(&caller.project_ref)).await?;
-    let mut out = serde_json::to_value(&outcome).map_err(|e| Refusal { code: "internal", message: e.to_string(), fix: None })?;
+pub async fn lead_claim_done(
+    claims: &Arc<Claims>,
+    caller: &Caller,
+    workstream_id: &WorkstreamId,
+) -> Result<Value, Refusal> {
+    let outcome = claims
+        .claim_done(workstream_id, &caller.by, Some(&caller.project_ref))
+        .await?;
+    let mut out = serde_json::to_value(&outcome).map_err(|e| Refusal {
+        code: "internal",
+        message: e.to_string(),
+        fix: None,
+    })?;
     out["op"] = json!("claim_done");
     Ok(out)
 }
 
 /// Lead call `review_verdict`: records it and says how the reviewer ends.
-pub async fn lead_review_verdict(value_bar: &ValueBar, caller: &Caller, verdict: ReviewVerdict) -> Result<Value, Refusal> {
+pub async fn lead_review_verdict(
+    value_bar: &ValueBar,
+    caller: &Caller,
+    verdict: ReviewVerdict,
+) -> Result<Value, Refusal> {
     let recorded = value_bar.record_verdict(caller, verdict).await?;
-    let stop = if recorded.verdict.blocking == 0 {
+    let stop = if recorded.verdict.blocking.get() == 0 {
         "end with your one-paragraph result and stop; this commit will not be reviewed again."
     } else {
         "end with your one-paragraph result listing each blocking finding, then stop; the lead gets it."

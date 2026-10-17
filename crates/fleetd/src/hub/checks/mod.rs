@@ -1,13 +1,11 @@
 //! Checks runner and claims: `fleetd claim done` runs a workstream's frozen done-when checks, and only all of them
 //! passing makes it done. TS spec: apps/hub/src/checks/**.
 //!
-//! The hub holds `NodeCommands` (shared with the node link, the train, approvals and the doctor), `GitHub` (shared
-//! with the train, reviews, finish-all and the doctor), `JudgeVerdicts` (completed by the value bar), `CheckRunner`
-//! (also approvals' `verify`) and `Claims`.
+//! The hub holds `GitHub` (the `gh` CLI), `JudgeVerdicts` (completed by the value bar), `CheckRunner` (also approvals'
+//! `verify`) and `Claims`. `cmd` checks run through the link area's `NodeCommands`.
 pub mod claims;
 pub mod github;
 pub mod judges;
-pub mod node_commands;
 pub mod ports;
 pub mod records;
 pub mod render;
@@ -20,9 +18,13 @@ mod tests;
 pub use claims::{ClaimDoneOutcome, Claims, FALSE_CLAIM_AT, INLINE_WAIT};
 pub use github::{GH_AUTH_FIX, GhCli, GhError, GhErrorKind, GhRunner, GitHub};
 pub use judges::{JUDGE_BY, JudgeVerdicts, Judges};
-pub use node_commands::{CommandInput, CommandOutcome, LinkGuard, NodeAction, NodeCommandError, NodeCommands, NodeSend};
 pub use records::{ClaimFilter, ClaimRecords};
 pub use runner::{CLAIMS_BY, CheckRunner, CheckScope};
+
+/// Now on `clock`, as the contracts' ISO timestamp.
+pub(crate) fn now_ts(clock: &dyn crate::clock::Clock) -> fleetd_contracts::ids::Timestamp {
+    fleetd_contracts::ids::Timestamp(crate::hub::store::iso_ms(crate::hub::store::now_ms(clock)))
+}
 
 /// Length in UTF-16 code units, as JS counts `length`.
 pub(crate) fn units(s: &str) -> usize {

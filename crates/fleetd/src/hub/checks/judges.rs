@@ -4,7 +4,10 @@
 use super::ports::{JudgeSpawn, Ports, Refusal};
 use super::utf16_prefix;
 use crate::hub::store::{EventLog, WaitInput};
-use fleetd_contracts::{CheckOutcome, ClaimId, HubEventType, ReviewVerdict, Task, TaskId, TaskState, Workstream};
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ledger::Workstream;
+use fleetd_contracts::tasks::{Task, TaskId, TaskState};
+use fleetd_contracts::verification::{CheckOutcome, ClaimId, ReviewVerdict};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
@@ -71,7 +74,12 @@ pub fn artifact_lines(tasks: &[Task]) -> Vec<String> {
             if let Some(pr) = t.result.as_ref().and_then(|r| r.pr_url.as_ref()) {
                 refs.push(format!("PR {pr}"));
             }
-            if let Some(branch) = t.result.as_ref().and_then(|r| r.branch.as_ref()).or(t.branch.as_ref()) {
+            if let Some(branch) = t
+                .result
+                .as_ref()
+                .and_then(|r| r.branch.as_ref())
+                .or(t.branch.as_ref())
+            {
                 refs.push(format!("branch {branch}"));
             }
             (!refs.is_empty()).then(|| format!("- {}: {}", t.task_id, refs.join(", ")))
@@ -84,22 +92,36 @@ pub fn artifact_lines(tasks: &[Task]) -> Vec<String> {
 pub fn judge_prompt(input: &JudgeInput<'_>, artifacts: &[String]) -> String {
     let w = input.workstream;
     let brief = w.brief.as_ref();
-    let research = w.playbook.as_ref().is_some_and(|p| p.as_str().starts_with("research@"));
+    let research = w
+        .playbook
+        .as_ref()
+        .is_some_and(|p| p.as_str().starts_with("research@"));
     let mut lines = vec![
-        format!("Judge one done-when criterion of workstream {} (claim {}, check done:{}).", w.workstream_id, input.claim_id, input.check_index),
+        format!(
+            "Judge one done-when criterion of workstream {} (claim {}, check done:{}).",
+            w.workstream_id, input.claim_id, input.check_index
+        ),
         String::new(),
         "Criterion, frozen with the brief:".into(),
         input.criteria.to_owned(),
     ];
     // A research judge measures; the hub applies the frozen decision rule to its two numbers, so the rule is not shown.
     if research {
-        let metric = brief.and_then(|b| b.metric.as_deref()).unwrap_or("named in the criterion");
-        let baseline = brief.and_then(|b| b.baseline.as_deref()).unwrap_or("named in the criterion");
+        let metric = brief
+            .and_then(|b| b.metric.as_deref())
+            .unwrap_or("named in the criterion");
+        let baseline = brief
+            .and_then(|b| b.baseline.as_deref())
+            .unwrap_or("named in the criterion");
         lines.push(String::new());
         lines.push(format!("This is research. Measure the metric \"{metric}\" the same way for the baseline and for the candidate."));
         lines.push(format!("Baseline, frozen with the brief: {baseline}"));
     }
-    let metric_flags = if research { " --baseline <the baseline's number> --candidate <the candidate's number>" } else { "" };
+    let metric_flags = if research {
+        " --baseline <the baseline's number> --candidate <the candidate's number>"
+    } else {
+        ""
+    };
     lines.push(String::new());
     lines.push("Artifacts:".into());
     lines.extend(artifacts.iter().cloned());
@@ -112,7 +134,11 @@ pub fn judge_prompt(input: &JudgeInput<'_>, artifacts: &[String]) -> String {
 
 pub fn verdict_outcome(task_id: &TaskId, verdict: &ReviewVerdict) -> JudgeOutcome {
     JudgeOutcome {
-        result: if verdict.blocking == 0 { CheckOutcome::Pass } else { CheckOutcome::Fail },
+        result: if verdict.blocking.get() == 0 {
+            CheckOutcome::Pass
+        } else {
+            CheckOutcome::Fail
+        },
         evidence: utf16_prefix(
             &format!(
                 "judge {task_id} at {}: {} blocking, {} non-blocking. {}",
@@ -127,7 +153,11 @@ pub fn verdict_outcome(task_id: &TaskId, verdict: &ReviewVerdict) -> JudgeOutcom
     }
 }
 
-const ENDED: [HubEventType; 3] = [HubEventType::TaskCompleted, HubEventType::TaskFailed, HubEventType::TaskCancelled];
+const ENDED: [HubEventType; 3] = [
+    HubEventType::TaskCompleted,
+    HubEventType::TaskFailed,
+    HubEventType::TaskCancelled,
+];
 
 pub struct Judges {
     ports: Arc<dyn Ports>,
@@ -137,18 +167,38 @@ pub struct Judges {
 
 impl Judges {
     pub fn new(ports: Arc<dyn Ports>, events: Arc<EventLog>, verdicts: Arc<JudgeVerdicts>) -> Self {
-        Self { ports, events, verdicts }
+        Self {
+            ports,
+            events,
+            verdicts,
+        }
     }
 
     /// Resolves with the task's end state ("completed", "failed", "cancelled") from the event log.
     async fn ended(&self, cursor: u64, task_id: &TaskId) -> String {
         let mut after = cursor;
         loop {
-            let input = WaitInput { cursor: Some(after), types: Some(ENDED.to_vec()), machine_id: None, timeout_sec: 3600 };
-            let Ok(page) = self.events.wait(input).await else { continue };
+            let input = WaitInput {
+                cursor: Some(after),
+                types: Some(ENDED.to_vec()),
+                machine_id: None,
+                timeout_sec: 3600,
+            };
+            let Ok(page) = self.events.wait(input).await else {
+                continue;
+            };
             after = page.cursor;
-            if let Some(end) = page.events.iter().find(|e| e.data.as_ref().and_then(|d| d.get("taskId")).and_then(|v| v.as_str()) == Some(task_id.as_str())) {
-                let name = serde_json::to_value(end.r#type).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
+            if let Some(end) = page.events.iter().find(|e| {
+                e.data
+                    .as_ref()
+                    .and_then(|d| d.get("taskId"))
+                    .and_then(|v| v.as_str())
+                    == Some(task_id.as_str())
+            }) {
+                let name = serde_json::to_value(end.r#type)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default();
                 return name.trim_start_matches("task.").to_owned();
             }
         }
@@ -162,13 +212,23 @@ impl Judges {
         let spawn = JudgeSpawn {
             project_ref: w.project_ref.clone(),
             workstream_id: w.workstream_id.clone(),
-            title: format!("Judge {} done:{} for {}", w.workstream_id, input.check_index, input.claim_id),
+            title: format!(
+                "Judge {} done:{} for {}",
+                w.workstream_id, input.check_index, input.claim_id
+            ),
             prompt: judge_prompt(&input, &artifacts),
         };
         let (task, verdict) = match self.verdicts.register(self.ports.spawn_judge(spawn)).await {
             Ok(spawned) => spawned,
             Err(Refusal { message, .. }) => {
-                return JudgeOutcome { result: CheckOutcome::Error, evidence: utf16_prefix(&format!("could not start the judge task: {message}"), 2000).to_owned() };
+                return JudgeOutcome {
+                    result: CheckOutcome::Error,
+                    evidence: utf16_prefix(
+                        &format!("could not start the judge task: {message}"),
+                        2000,
+                    )
+                    .to_owned(),
+                };
             }
         };
         if task.state == TaskState::Failed {
@@ -176,7 +236,11 @@ impl Judges {
             let tail = task.result.as_ref().map(|r| r.tail.as_str()).unwrap_or("");
             return JudgeOutcome {
                 result: CheckOutcome::Error,
-                evidence: utf16_prefix(&format!("the judge task {} failed to start: {tail}", task.task_id), 2000).to_owned(),
+                evidence: utf16_prefix(
+                    &format!("the judge task {} failed to start: {tail}", task.task_id),
+                    2000,
+                )
+                .to_owned(),
             };
         }
         let outcome = tokio::select! {

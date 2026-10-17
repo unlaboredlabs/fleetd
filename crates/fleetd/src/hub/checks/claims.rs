@@ -1,6 +1,7 @@
 //! `claim done`: the lead only claims; the hub moves the workstream to verifying, runs its frozen done-when checks in
 //! index order, and only all of them passing makes it done. A failure wakes the lead with each failing check's
 //! evidence; the third failed claim on a workstream is a false-claim incident. TS spec: apps/hub/src/checks/Claims.ts.
+use super::now_ts;
 use super::ports::{ClaimWake, Ports, Refusal};
 use super::records::{ClaimFilter, ClaimRecords};
 use super::render::failed_claim_evidence;
@@ -8,10 +9,14 @@ use super::runner::{CheckContext, CheckRunner, ran_by_of};
 use crate::clock::Clock;
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentInput, Incidents};
-use crate::hub::store::{EventLog, NewEvent, StoreError, iso_ms, now_ms};
-use fleetd_contracts::{
-    Claim, ClaimId, ClaimOutcome, CheckOutcome, CheckResult, CheckSpec, HubEventType, IncidentClass, ProjectRef, Workstream,
-    WorkstreamId, WorkstreamState,
+use crate::hub::store::{EventLog, NewEvent, StoreError};
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ids::Timestamp;
+use fleetd_contracts::ledger::{CheckSpec, Workstream, WorkstreamId, WorkstreamState};
+use fleetd_contracts::prim::{Count, List, Text};
+use fleetd_contracts::verification::{
+    CheckOutcome, CheckResult, Claim, ClaimId, ClaimOutcome, IncidentClass,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -43,11 +48,18 @@ fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
 }
 
 fn store_refusal(e: StoreError) -> Refusal {
-    Refusal { code: "internal", message: e.to_string(), fix: None }
+    Refusal {
+        code: "internal",
+        message: e.to_string(),
+        fix: None,
+    }
 }
 
 fn state_name(s: WorkstreamState) -> String {
-    serde_json::to_value(s).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
+    serde_json::to_value(s)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 pub struct Claims {
@@ -77,7 +89,18 @@ impl Claims {
         clock: Arc<dyn Clock>,
         inline_wait: Duration,
     ) -> Self {
-        Self { records, runner, ports, events, estimates, incidents, clock, inline_wait, running: Mutex::default(), lock: Default::default() }
+        Self {
+            records,
+            runner,
+            ports,
+            events,
+            estimates,
+            incidents,
+            clock,
+            inline_wait,
+            running: Mutex::default(),
+            lock: Default::default(),
+        }
     }
 
     pub fn records(&self) -> &Arc<ClaimRecords> {
@@ -93,9 +116,15 @@ impl Claims {
         self.records.list(filter)
     }
 
-    fn emit(&self, w: &Workstream, r#type: HubEventType, summary: String, data: serde_json::Value) -> Result<(), StoreError> {
+    fn emit(
+        &self,
+        w: &Workstream,
+        r#type: HubEventType,
+        summary: String,
+        data: serde_json::Value,
+    ) -> Result<(), StoreError> {
         self.events.append(NewEvent {
-            at: iso_ms(now_ms(self.clock.as_ref())),
+            at: now_ts(self.clock.as_ref()),
             r#type,
             machine_id: Some(w.project_ref.machine_id.clone()),
             project_id: Some(w.project_ref.project_id.clone()),
@@ -108,24 +137,39 @@ impl Claims {
 
     async fn run_checks(&self, w: &Workstream, claim_id: &ClaimId) -> Vec<CheckResult> {
         let mut results: Vec<CheckResult> = Vec::new();
-        let done_when = w.brief.as_ref().map(|b| b.done_when.clone()).unwrap_or_default();
+        let done_when = w
+            .brief
+            .as_ref()
+            .map(|b| b.done_when.clone())
+            .unwrap_or_default();
         for (index, spec) in done_when.iter().enumerate() {
             let index = index as u32;
             // Only these are worth a judge's or the human's time once an earlier check failed.
             let asks_someone = matches!(spec, CheckSpec::Judge { .. } | CheckSpec::Human { .. });
             if asks_someone && results.iter().any(|r| r.result != CheckOutcome::Pass) {
                 results.push(CheckResult {
-                    check_index: index,
+                    check_index: Count::unchecked(i64::from(index)),
                     spec: spec.clone(),
                     result: CheckOutcome::Error,
-                    evidence: "not run: a judge or the human is asked only once every earlier check passes".into(),
+                    evidence: Text::unchecked("not run: a judge or the human is asked only once every earlier check passes"),
                     exit_code: None,
                     ran_by: ran_by_of(spec),
-                    at: iso_ms(now_ms(self.clock.as_ref())),
+                    at: now_ts(self.clock.as_ref()),
                 });
                 continue;
             }
-            results.push(self.runner.run(&CheckContext { workstream: w, claim_id }, index, spec).await);
+            results.push(
+                self.runner
+                    .run(
+                        &CheckContext {
+                            workstream: w,
+                            claim_id,
+                        },
+                        index,
+                        spec,
+                    )
+                    .await,
+            );
         }
         results
     }
@@ -134,7 +178,9 @@ impl Claims {
     /// the lock held and nothing awaited, so a superseding claim cannot cut it off halfway.
     fn conclude(&self, claim: &Claim) -> Result<(), StoreError> {
         self.records.finish(claim)?;
-        let Some(w) = self.ports.workstream(&claim.workstream_id) else { return Ok(()) };
+        let Some(w) = self.ports.workstream(&claim.workstream_id) else {
+            return Ok(());
+        };
         // A research judge's numbers already made it done, with its verdict.
         if w.state == WorkstreamState::Done {
             return Ok(());
@@ -144,7 +190,11 @@ impl Claims {
             if w.state != WorkstreamState::Verifying {
                 return Ok(());
             }
-            let done = Workstream { state: WorkstreamState::Done, updated_at: iso_ms(now_ms(self.clock.as_ref())), ..w.clone() };
+            let done = Workstream {
+                state: WorkstreamState::Done,
+                updated_at: now_ts(self.clock.as_ref()),
+                ..w.clone()
+            };
             self.ports.put_workstream(&done);
             self.emit(
                 &w,
@@ -160,18 +210,34 @@ impl Claims {
             )?;
             return self.estimates.record_done(&w.workstream_id);
         }
-        let failures: Vec<CheckResult> = claim.results.iter().filter(|r| r.result != CheckOutcome::Pass).cloned().collect();
+        let failures: Vec<CheckResult> = claim
+            .results
+            .iter()
+            .filter(|r| r.result != CheckOutcome::Pass)
+            .cloned()
+            .collect();
         self.emit(
             &w,
             HubEventType::ClaimFailed,
-            format!("{label} failed: {} of {} checks did not pass", failures.len(), claim.results.len()),
+            format!(
+                "{label} failed: {} of {} checks did not pass",
+                failures.len(),
+                claim.results.len()
+            ),
             serde_json::json!({
                 "claimId": claim.claim_id,
                 "workstreamId": w.workstream_id,
-                "failing": failures.iter().map(|r| r.check_index).collect::<Vec<_>>(),
+                "failing": failures.iter().map(|r| r.check_index.get()).collect::<Vec<_>>(),
             }),
         )?;
-        self.ports.wake(&w.project_ref, ClaimWake::Failed { claim_id: claim.claim_id.clone(), workstream_id: w.workstream_id.clone(), failures });
+        self.ports.wake(
+            &w.project_ref,
+            ClaimWake::Failed {
+                claim_id: claim.claim_id.clone(),
+                workstream_id: w.workstream_id.clone(),
+                failures,
+            },
+        );
         let failed = self.records.list(&ClaimFilter {
             workstream_id: Some(w.workstream_id.clone()),
             outcome: Some(ClaimOutcome::Fail),
@@ -184,16 +250,37 @@ impl Claims {
                 project_ref: w.project_ref.clone(),
                 workstream_id: Some(w.workstream_id.clone()),
                 task_id: None,
-                evidence: failed.iter().rev().map(|c| failed_claim_evidence(&c.claim_id, &c.results)).collect(),
+                evidence: failed
+                    .iter()
+                    .rev()
+                    .map(|c| failed_claim_evidence(&c.claim_id, &c.results))
+                    .collect(),
             })?;
         }
         Ok(())
     }
 
-    async fn run_claim(self: Arc<Self>, w: Workstream, claim_id: ClaimId, by: String, at: String) -> Claim {
+    async fn run_claim(
+        self: Arc<Self>,
+        w: Workstream,
+        claim_id: ClaimId,
+        by: String,
+        at: Timestamp,
+    ) -> Claim {
         let results = self.run_checks(&w, &claim_id).await;
-        let outcome = if results.iter().all(|r| r.result == CheckOutcome::Pass) { ClaimOutcome::Pass } else { ClaimOutcome::Fail };
-        let claim = Claim { claim_id, workstream_id: w.workstream_id.clone(), by, at, results, outcome };
+        let outcome = if results.iter().all(|r| r.result == CheckOutcome::Pass) {
+            ClaimOutcome::Pass
+        } else {
+            ClaimOutcome::Fail
+        };
+        let claim = Claim {
+            claim_id,
+            workstream_id: w.workstream_id.clone(),
+            by,
+            at,
+            results: List::unchecked(results),
+            outcome,
+        };
         // Waiting for the lock stays abortable, so a superseded claim gives way; once it holds it, it finishes.
         let _held = self.lock.lock().await;
         if let Err(error) = self.conclude(&claim) {
@@ -209,35 +296,68 @@ impl Claims {
         project_ref: Option<&ProjectRef>,
     ) -> Result<(ClaimId, JoinHandle<Claim>), Refusal> {
         let _held = self.lock.lock().await;
-        let not_found = || Refusal::not_found(format!("There is no workstream {workstream_id}."), Some("Use a workstream id from your digest."));
-        let Some(w) = self.ports.workstream(workstream_id) else { return Err(not_found()) };
+        let not_found = || {
+            Refusal::not_found(
+                format!("There is no workstream {workstream_id}."),
+                Some("Use a workstream id from your digest."),
+            )
+        };
+        let Some(w) = self.ports.workstream(workstream_id) else {
+            return Err(not_found());
+        };
         if project_ref.is_some_and(|r| !same_project(&w.project_ref, r)) {
             return Err(not_found());
         }
         match w.state {
             WorkstreamState::Done => {
-                return Err(Refusal::invalid(format!("{workstream_id} is already done."), Some("Open a new intent if there is more to do.")));
-            }
-            WorkstreamState::Idle if w.playbook.as_ref().is_some_and(|p| p.as_str().starts_with("finish-all@")) => {
                 return Err(Refusal::invalid(
-                    format!("{workstream_id} is idle: {FINISH_ALL_IDLE}. A finish-all run ends idle, not done."),
+                    format!("{workstream_id} is already done."),
+                    Some("Open a new intent if there is more to do."),
+                ));
+            }
+            WorkstreamState::Idle
+                if w.playbook
+                    .as_ref()
+                    .is_some_and(|p| p.as_str().starts_with("finish-all@")) =>
+            {
+                return Err(Refusal::invalid(
+                    format!(
+                        "{workstream_id} is idle: {FINISH_ALL_IDLE}. A finish-all run ends idle, not done."
+                    ),
                     Some("Nothing to claim. Run `fleetd inventory` again when new work comes in."),
                 ));
             }
             WorkstreamState::Stopped | WorkstreamState::Failed => {
-                return Err(Refusal::invalid(format!("{workstream_id} is {}; there is nothing to claim.", state_name(w.state)), None));
+                return Err(Refusal::invalid(
+                    format!(
+                        "{workstream_id} is {}; there is nothing to claim.",
+                        state_name(w.state)
+                    ),
+                    None,
+                ));
             }
             _ => {}
         }
         if w.brief.is_none() {
             return Err(Refusal::invalid(
-                format!("{workstream_id} has no frozen brief, so it has no done-when checks to run."),
-                Some(&format!("Register its brief with `fleetd brief create --workstream {workstream_id} --json '<Brief>'` first.")),
+                format!(
+                    "{workstream_id} has no frozen brief, so it has no done-when checks to run."
+                ),
+                Some(&format!(
+                    "Register its brief with `fleetd brief create --workstream {workstream_id} --json '<Brief>'` first."
+                )),
             ));
         }
-        let at = iso_ms(now_ms(self.clock.as_ref()));
-        let claim_id = self.records.start(workstream_id, &w.project_ref).map_err(store_refusal)?;
-        let verifying = Workstream { state: WorkstreamState::Verifying, updated_at: at.clone(), ..w.clone() };
+        let at = now_ts(self.clock.as_ref());
+        let claim_id = self
+            .records
+            .start(workstream_id, &w.project_ref)
+            .map_err(store_refusal)?;
+        let verifying = Workstream {
+            state: WorkstreamState::Verifying,
+            updated_at: at.clone(),
+            ..w.clone()
+        };
         if w.state != WorkstreamState::Verifying {
             self.ports.put_workstream(&verifying);
             self.emit(
@@ -248,9 +368,18 @@ impl Claims {
             )
             .map_err(store_refusal)?;
         }
-        let handle = tokio::spawn(self.clone().run_claim(verifying, claim_id.clone(), by.to_owned(), at));
+        let handle =
+            tokio::spawn(
+                self.clone()
+                    .run_claim(verifying, claim_id.clone(), by.to_owned(), at),
+            );
         // This claim supersedes one still running on the same workstream.
-        if let Some(previous) = self.running.lock().unwrap_or_else(|p| p.into_inner()).insert(workstream_id.clone(), handle.abort_handle()) {
+        if let Some(previous) = self
+            .running
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(workstream_id.clone(), handle.abort_handle())
+        {
             previous.abort();
         }
         Ok((claim_id, handle))
@@ -273,15 +402,34 @@ impl Claims {
             Some(Ok(claim)) => {
                 self.forget_running(workstream_id, &handle);
                 // As stored: a workstream stopped while its checks ran stays stopped.
-                let state = self.ports.workstream(workstream_id).map_or(WorkstreamState::Verifying, |w| w.state);
+                let state = self
+                    .ports
+                    .workstream(workstream_id)
+                    .map_or(WorkstreamState::Verifying, |w| w.state);
                 let next = if claim.outcome == ClaimOutcome::Pass {
-                    format!("{workstream_id} is {}: every check passed. Spawn nothing more for it.", state_name(state))
+                    format!(
+                        "{workstream_id} is {}: every check passed. Spawn nothing more for it.",
+                        state_name(state)
+                    )
                 } else {
-                    let failing: Vec<String> =
-                        claim.results.iter().filter(|r| r.result != CheckOutcome::Pass).map(|r| format!("done:{}", r.check_index)).collect();
-                    format!("{} did not pass; the evidence is in each result. Fix what failed, then claim again.", failing.join(", "))
+                    let failing: Vec<String> = claim
+                        .results
+                        .iter()
+                        .filter(|r| r.result != CheckOutcome::Pass)
+                        .map(|r| format!("done:{}", r.check_index.get()))
+                        .collect();
+                    format!(
+                        "{} did not pass; the evidence is in each result. Fix what failed, then claim again.",
+                        failing.join(", ")
+                    )
                 };
-                Ok(ClaimDoneOutcome { claim_id, workstream_id: workstream_id.clone(), state, claim: Some(claim), next })
+                Ok(ClaimDoneOutcome {
+                    claim_id,
+                    workstream_id: workstream_id.clone(),
+                    state,
+                    claim: Some(claim),
+                    next,
+                })
             }
             // Superseded by a newer claim before it finished.
             Some(Err(_)) => Ok(ClaimDoneOutcome {
@@ -303,7 +451,13 @@ impl Claims {
                         && let Some(w) = this.ports.workstream(&ws)
                         && w.state == WorkstreamState::Done
                     {
-                        this.ports.wake(&w.project_ref, ClaimWake::Passed { claim_id: id, workstream_id: ws });
+                        this.ports.wake(
+                            &w.project_ref,
+                            ClaimWake::Passed {
+                                claim_id: id,
+                                workstream_id: ws,
+                            },
+                        );
                     }
                 });
                 Ok(ClaimDoneOutcome {
@@ -321,7 +475,10 @@ impl Claims {
 
     fn forget_running(&self, workstream_id: &WorkstreamId, handle: &JoinHandle<Claim>) {
         let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
-        if running.get(workstream_id).is_some_and(|h| h.id() == handle.id()) {
+        if running
+            .get(workstream_id)
+            .is_some_and(|h| h.id() == handle.id())
+        {
             running.remove(workstream_id);
         }
     }

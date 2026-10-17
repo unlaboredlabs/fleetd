@@ -1,10 +1,11 @@
 //! What the checks, receipts, value bar, estimates and incidents areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
 //! Keeping it to this one seam means the claim flow and the value bar run their real logic under test.
-use fleetd_contracts::{
-    ActionItem, AskId, CheckResult, ClaimId, MetricValues, PlaybookRef, ProjectRef, Task, TaskId, ThreadRef, Workstream,
-    WorkstreamId,
-};
+use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::ledger::{AskId, MetricValues, PlaybookRef, Workstream, WorkstreamId};
+use fleetd_contracts::model::ActionItem;
+use fleetd_contracts::tasks::{Task, TaskId};
+use fleetd_contracts::verification::{CheckResult, ClaimId};
 use std::future::Future;
 use std::pin::Pin;
 
@@ -13,8 +14,15 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// The lead wakes a claim causes; the leads area renders them with `checks::render`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClaimWake {
-    Failed { claim_id: ClaimId, workstream_id: WorkstreamId, failures: Vec<CheckResult> },
-    Passed { claim_id: ClaimId, workstream_id: WorkstreamId },
+    Failed {
+        claim_id: ClaimId,
+        workstream_id: WorkstreamId,
+        failures: Vec<CheckResult>,
+    },
+    Passed {
+        claim_id: ClaimId,
+        workstream_id: WorkstreamId,
+    },
 }
 
 /// The pinned playbook's numbers the value bar and estimates read.
@@ -63,10 +71,18 @@ pub struct Refusal {
 
 impl Refusal {
     pub fn invalid(message: impl Into<String>, fix: Option<&str>) -> Self {
-        Self { code: "invalid", message: message.into(), fix: fix.map(str::to_owned) }
+        Self {
+            code: "invalid",
+            message: message.into(),
+            fix: fix.map(str::to_owned),
+        }
     }
     pub fn not_found(message: impl Into<String>, fix: Option<&str>) -> Self {
-        Self { code: "not_found", message: message.into(), fix: fix.map(str::to_owned) }
+        Self {
+            code: "not_found",
+            message: message.into(),
+            fix: fix.map(str::to_owned),
+        }
     }
 }
 
@@ -88,7 +104,11 @@ pub trait Ports: Send + Sync + 'static {
     // playbooks
     fn playbook_limits(&self, playbook: &PlaybookRef) -> Option<PlaybookLimits>;
     /// Research.recordVerdict: stores the computed research verdict and returns its text.
-    fn research_verdict<'a>(&'a self, workstream: &'a WorkstreamId, values: MetricValues) -> BoxFuture<'a, Result<String, Refusal>>;
+    fn research_verdict<'a>(
+        &'a self,
+        workstream: &'a WorkstreamId,
+        values: MetricValues,
+    ) -> BoxFuture<'a, Result<String, Refusal>>;
     // tasks
     fn task(&self, id: &TaskId) -> Option<Task>;
     /// The workstream's tasks, newest first.
@@ -98,5 +118,9 @@ pub trait Ports: Send + Sync + 'static {
     fn file_human_ask(&self, ask: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>>;
     fn ask_answer(&self, id: &AskId) -> Option<String>;
     // executor
-    fn thread_actions<'a>(&'a self, thread: &'a ThreadRef, max: usize) -> BoxFuture<'a, Result<Vec<ActionItem>, String>>;
+    fn thread_actions<'a>(
+        &'a self,
+        thread: &'a ThreadRef,
+        max: usize,
+    ) -> BoxFuture<'a, Result<Vec<ActionItem>, String>>;
 }

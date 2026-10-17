@@ -2,7 +2,9 @@
 //! end, so a claim superseded or cut off by a restart stays NULL and is never listed.
 //! TS spec: apps/hub/src/checks/ClaimRecords.ts.
 use crate::hub::store::{HubDb, StoreError};
-use fleetd_contracts::{Claim, ClaimId, ClaimOutcome, ProjectRef, WorkstreamId};
+use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ledger::WorkstreamId;
+use fleetd_contracts::verification::{Claim, ClaimId, ClaimOutcome};
 use rusqlite::{OptionalExtension, named_params};
 use std::sync::Arc;
 
@@ -22,7 +24,11 @@ fn outcome_name(o: ClaimOutcome) -> &'static str {
 }
 
 fn number_of(claim_id: &ClaimId) -> i64 {
-    claim_id.as_str().get(1..).and_then(|n| n.parse().ok()).unwrap_or(0)
+    claim_id
+        .as_str()
+        .get(1..)
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0)
 }
 
 pub struct ClaimRecords {
@@ -35,12 +41,16 @@ impl ClaimRecords {
     }
 
     /// Numbers a claim (`C<n>`) as it starts.
-    pub fn start(&self, workstream_id: &WorkstreamId, project: &ProjectRef) -> Result<ClaimId, StoreError> {
+    pub fn start(
+        &self,
+        workstream_id: &WorkstreamId,
+        project: &ProjectRef,
+    ) -> Result<ClaimId, StoreError> {
         self.db.with(|conn| {
             let n: i64 = conn
                 .prepare_cached("INSERT INTO claims (workstream_id, machine_id, project_id) VALUES (?, ?, ?) RETURNING n")?
                 .query_row([workstream_id.as_str(), project.machine_id.as_str(), project.project_id.as_str()], |r| r.get(0))?;
-            Ok(ClaimId(format!("C{n}")))
+            Ok(ClaimId::unchecked(format!("C{n}")))
         })
     }
 
@@ -49,7 +59,11 @@ impl ClaimRecords {
         let data = serde_json::to_string(claim)?;
         self.db.with(|conn| {
             conn.prepare_cached("UPDATE claims SET outcome = ?, data = ? WHERE n = ?")?
-                .execute(rusqlite::params![outcome_name(claim.outcome), data, number_of(&claim.claim_id)])?;
+                .execute(rusqlite::params![
+                    outcome_name(claim.outcome),
+                    data,
+                    number_of(&claim.claim_id)
+                ])?;
             Ok(())
         })
     }
