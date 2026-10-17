@@ -20,8 +20,8 @@ Every step below uses its own ports, directories and unit names, and step 5 remo
 | fleetd's own T3 on forge | `fleetd-t3.service` | `127.0.0.1:3774`, home `~/.fleetd/t3` |
 | fleetd node on forge | `fleetd-node.service` | home `~/.fleetd/node`, log `~/.fleetd/logs/node.log` |
 | fleetd's Claude config and login | | `~/.fleetd/claude`, `~/.fleetd/t3.env` (0600) |
-| fleetd binaries on the worker | | `~/.local/share/fleetd/{cli,bin,npm}` |
-| fleetd source the hub runs from | | `~/opt/fleetd` (a clean clone; not `~/src/fleetd`, which build agents rebuild) |
+| fleetd binary on the hub | installed by `fleetd.sh` | `~/.fleetd/bin/fleetd`, linked from `~/.local/bin/fleetd` (not a build from `~/src/fleetd`, which build agents rebuild) |
+| fleetd and T3 on the worker | copied and installed by `machine add` | `~/.local/share/fleetd/{bin,npm}` |
 | First project checkout | | `~/fleetd-work/cliproxyapi-console` (its own clone, not `~/src/cliproxyapi-console`) |
 
 ## Decision (2): give fleetd its own T3 on forge, don't adopt the live one
@@ -86,11 +86,9 @@ ssh forge 'systemctl --user reset-failed fleetd-t3-fleetdlab.service 2>/dev/null
 
 ```sh
 ssh forge
-# a clean copy of fleetd at a known commit, built once
-git clone https://github.com/unlaboredlabs/fleetd ~/opt/fleetd && cd ~/opt/fleetd
-corepack enable --install-directory ~/.local/bin pnpm 2>/dev/null || true
-pnpm install --frozen-lockfile && pnpm build
-alias fleetd="node $HOME/opt/fleetd/apps/cli/dist/bin.js"
+# the fleetd binary only (no app on a headless box), checksummed; ~/.local/bin must be on PATH
+curl -fsSL https://fleetd.sh | sh -s -- --no-app
+fleetd version
 
 # hub as a user service on 127.0.0.1:4790, reached at the HTTPS name
 fleetd init --listen 127.0.0.1:4790 --url https://forge.tailb10092.ts.net \
@@ -163,25 +161,19 @@ Then, through that MCP:
    must be ok: it means the hub's router and retro can reach Claude through the `claude` login in
    `~/.claude/settings.json`.
 
-Optional, and recommended once the first merge works: let only fleetd merge to this repo's `main`. Re-run
-`scripts/testbed.ts`'s ruleset step by hand against `wynn-dev/cliproxyapi-console`, or add a ruleset requiring
-the `fleetd/train` status. That also blocks merges from any other agent, so only do it while fleetd is the one
+Optional, and recommended once the first merge works: let only fleetd merge to this repo's `main` by adding a
+ruleset on `wynn-dev/cliproxyapi-console` that requires the `fleetd/train` status. That also blocks merges from any other agent, so only do it while fleetd is the one
 working on this repo.
 
-## Step 4: the desktop app on Wynn's Mac (Adri builds it; Wynn opens it)
+## Step 4: the desktop app on Wynn's Mac (Adri installs it; Wynn opens it)
 
-Prerequisites:
-- **Command Line Tools:** `xcode-select -p`; if missing, `xcode-select --install`. Full Xcode is not needed:
-  Metal shaders compile at runtime.
-- **Rust 1.98 or newer:** `rustc --version`; if missing, install rustup per user.
-- **Tailscale** on the Mac, logged in to the same tailnet.
+Prerequisite: **Tailscale** on the Mac, logged in to the same tailnet.
 
 ```sh
-git clone https://github.com/unlaboredlabs/fleetd ~/src/fleetd && cd ~/src/fleetd
-app/packaging/macos-bundle.sh                     # builds release (several minutes the first time) into target/release/fleetd.app
+curl -fsSL https://fleetd.sh | sh                 # the app into ~/Applications/fleetd.app, plus the fleetd CLI
 # make a key for this device on forge, printed once:
-ssh forge 'node ~/opt/fleetd/apps/cli/dist/bin.js hub key create --human --name mac'
-open target/release/fleetd.app
+ssh forge '~/.local/bin/fleetd hub key create --human --name mac'
+open ~/Applications/fleetd.app
 ```
 
 Wynn's part:
@@ -213,11 +205,11 @@ Watch the full loop:
 ## Step 5: rollback (about 5 min, from forge)
 
 ```sh
-alias fleetd="node $HOME/opt/fleetd/apps/cli/dist/bin.js"
 fleetd machine remove forge --purge-t3        # stops/removes fleetd-node + fleetd-t3, deletes ~/.fleetd/t3, ~/.fleetd/claude, t3.env, ~/.local/share/fleetd
 fleetd uninstall --purge                      # stops/removes fleetd-hub, deletes ~/.fleetd/hub
 tailscale serve --https=443 off
-rm -rf ~/opt/fleetd ~/fleetd-work ~/.fleetd
+curl -fsSL https://fleetd.sh | sh -s -- --uninstall   # removes the binary and its ~/.local/bin link
+rm -rf ~/fleetd-work ~/.fleetd
 # undo the self-SSH line added in step 2 (only if you added it):
 sed -i "\|$(cut -d' ' -f2 ~/.ssh/id_ed25519.pub)|d" ~/.ssh/authorized_keys
 systemctl --user list-units --all --no-legend | grep fleetd   # expect nothing
@@ -225,7 +217,8 @@ systemctl --user is-active t3code.service                     # still active, ne
 ```
 
 Elsewhere:
-- **Mac:** delete `~/src/fleetd`, and the Keychain item via the app's "Disconnect and forget key".
+- **Mac:** the Keychain item via the app's "Disconnect and forget key", then
+  `curl -fsSL https://fleetd.sh | sh -s -- --uninstall` (removes the app and the CLI).
 - **GitHub:** delete the cliproxyapi-console ruleset if you added one. PRs fleetd opened stay as normal PRs.
 
 ## What to watch in the first days
