@@ -36,7 +36,9 @@ export type Trigger =
   /** A claim passed after its `claim done` call had already returned. */
   | { readonly kind: "claim_passed"; readonly claimId: ClaimId; readonly workstreamId: WorkstreamId }
   /** A task's thread stopped to ask for input or approval; the question goes into the wake inline. */
-  | { readonly kind: "task_waiting"; readonly taskId: TaskId; readonly title: string; readonly question: string };
+  | { readonly kind: "task_waiting"; readonly taskId: TaskId; readonly title: string; readonly question: string }
+  /** M7 merge train: a merge, or a PR the train refused or gave up on, as one line. */
+  | { readonly kind: "train"; readonly line: string };
 
 export class LeadWakes extends Context.Service<
   LeadWakes,
@@ -75,6 +77,8 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
       lines.push(claimPassedLine(t));
     } else if (t.kind === "task_waiting") {
       lines.push(taskWaitingLines(t));
+    } else if (t.kind === "train") {
+      lines.push(`- ${t.line}`);
     }
   }
   const answers = triggers.filter((t) => t.kind === "answer").length;
