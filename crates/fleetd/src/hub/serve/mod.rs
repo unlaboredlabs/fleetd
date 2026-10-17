@@ -253,7 +253,8 @@ pub fn build_on(
         watchdog.clone(),
         clock.clone(),
     );
-    let queue = crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock);
+    let queue =
+        crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock, &executors);
     // PORT: usage (#63) replaces NoHold with its service.
     let wakes = crate::hub::wakes::Wakes::new(
         db.clone(),

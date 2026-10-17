@@ -8,6 +8,7 @@ use fleetd_contracts::auth::{AgentKeyInfo, Role};
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
 use rusqlite::Connection;
 
+use crate::hub::executor;
 use crate::hub::store::{EventLog, HubDb, NewEvent};
 
 pub use crate::hub::store::now_ms;
@@ -66,7 +67,6 @@ impl ExecutorError {
     }
 }
 
-// PORT: executor (#54) implements this for `Executors`.
 /// executor: `Executors::{is_connected, await_live, send}`.
 pub trait ThreadWriter: Send + Sync {
     fn is_connected(&self, machine_id: &MachineId) -> bool;
@@ -81,24 +81,106 @@ pub trait ThreadWriter: Send + Sync {
     ) -> BoxFuture<'_, Result<Option<String>, ExecutorError>>;
 }
 
-/// Until the executor lands: no machine is connected, so every write waits in the queue.
-pub struct Offline;
-
-impl ThreadWriter for Offline {
-    fn is_connected(&self, _: &MachineId) -> bool {
-        false
+impl From<executor::ExecutorError> for ExecutorError {
+    fn from(error: executor::ExecutorError) -> Self {
+        match error {
+            executor::ExecutorError::MachineNotConnected { machine_id } => {
+                Self::MachineNotConnected { machine_id }
+            }
+            executor::ExecutorError::ThreadNotFound {
+                machine_id,
+                thread_id,
+            } => Self::ThreadNotFound {
+                machine_id,
+                thread_id,
+            },
+            executor::ExecutorError::T3RequestFailed {
+                machine_id,
+                operation,
+                cause,
+            } => {
+                tracing::warn!(machine_id = %machine_id, cause = %cause, "T3 {} request failed", operation.as_str());
+                Self::T3RequestFailed {
+                    machine_id,
+                    operation: operation.as_str(),
+                }
+            }
+        }
     }
-    fn await_live(&self, _: &MachineId) -> BoxFuture<'_, ()> {
-        Box::pin(std::future::pending())
+}
+
+impl From<ExecutorError> for executor::ExecutorError {
+    fn from(error: ExecutorError) -> Self {
+        match error {
+            ExecutorError::MachineNotConnected { machine_id } => {
+                Self::MachineNotConnected { machine_id }
+            }
+            ExecutorError::ThreadNotFound {
+                machine_id,
+                thread_id,
+            } => Self::ThreadNotFound {
+                machine_id,
+                thread_id,
+            },
+            // The queue only sends, so the operation is always a send.
+            ExecutorError::T3RequestFailed { machine_id, .. } => Self::T3RequestFailed {
+                machine_id,
+                operation: executor::T3Operation::Send,
+                cause: String::new(),
+            },
+        }
+    }
+}
+
+impl ThreadWriter for executor::Executors {
+    fn is_connected(&self, machine_id: &MachineId) -> bool {
+        executor::Executors::is_connected(self, machine_id)
+    }
+    fn await_live(&self, machine_id: &MachineId) -> BoxFuture<'_, ()> {
+        let machine_id = machine_id.clone();
+        Box::pin(async move { executor::Executors::await_live(self, &machine_id).await })
     }
     fn send(
         &self,
         target: &ThreadRef,
-        _: &str,
-        _: &str,
+        message: &str,
+        client_request_id: &str,
     ) -> BoxFuture<'_, Result<Option<String>, ExecutorError>> {
-        let machine_id = target.machine_id.clone();
-        Box::pin(async move { Err(ExecutorError::MachineNotConnected { machine_id }) })
+        let (target, message, id) = (
+            target.clone(),
+            message.to_owned(),
+            client_request_id.to_owned(),
+        );
+        Box::pin(async move {
+            executor::Executors::send(self, &target, &message, &id)
+                .await
+                .map(|sent| sent.run_id)
+                .map_err(Into::into)
+        })
+    }
+}
+
+/// `thread_send` goes through the queue, as TS FleetApi's `writes.send`.
+pub struct QueueWriter(pub std::sync::Arc<super::WriteQueue>);
+
+impl executor::OfflineWriter for QueueWriter {
+    fn send<'a>(
+        &'a self,
+        thread_ref: &'a ThreadRef,
+        message: &'a str,
+        client_request_id: &'a str,
+    ) -> BoxFuture<'a, Result<executor::WriteOutcome, executor::ExecutorError>> {
+        Box::pin(async move {
+            self.0
+                .send(thread_ref, message, client_request_id, None)
+                .await
+                .map(|sent| executor::WriteOutcome {
+                    run_id: sent.run_id,
+                    queued: sent.queued,
+                    queued_until: sent.queued_until,
+                })
+                .map_err(Into::into)
+        })
     }
 }
 
