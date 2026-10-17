@@ -20,6 +20,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+# store
+rusqlite = { workspace = true }
 # node
 base64 = { workspace = true }
 chrono = { workspace = true }
