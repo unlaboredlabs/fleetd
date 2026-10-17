@@ -2,6 +2,7 @@ import type { Machine, MachineId } from "@fleetd/contracts";
 import type { ServerSettings } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 import * as Checks from "./checks.ts";
+import { T3_NPM_VERSION, T3_PIN } from "../t3.ts";
 
 const id = "lab-a" as MachineId;
 const machine = (patch: Partial<Machine> = {}): Machine => ({
@@ -10,7 +11,7 @@ const machine = (patch: Partial<Machine> = {}): Machine => ({
   tags: [],
   status: "online",
   lastSeenAt: "2026-10-17T10:00:00.000Z",
-  t3: { version: "0.1.1-nightly.20261017.3238", protocol: 2 },
+  t3: { version: T3_NPM_VERSION, protocol: 2 },
   nodeVersion: "0.0.0",
   ...patch,
 });
@@ -91,9 +92,12 @@ describe("machine checks", () => {
     expect(Checks.t3Version(machine(), undefined).check.status).toBe("ok");
     expect(Checks.t3Version(machine({ t3: { version: "0.1.0", protocol: 2 } }), undefined).check).toMatchObject({
       status: "fail",
-      message: "T3 0.1.0 runs on lab-a; setup installs 0.1.1-nightly.20261017.3238.",
+      message: `T3 0.1.0 runs on lab-a; setup installs ${T3_NPM_VERSION}.`,
     });
     expect(Checks.t3Version(machine({ t3: null }), undefined).check.status).toBe("unknown");
+    // From source, the node reports the checkout's commit; only the pinned one passes.
+    expect(Checks.t3Version(machine({ t3: { version: `0.1.0+${T3_PIN}`, protocol: 2 } }), undefined).check.status).toBe("ok");
+    expect(Checks.t3Version(machine({ t3: { version: "0.1.0+2fbd4318fc5b610c3e7fcfcbd5bbd80b73521d8f", protocol: 2 } }), undefined).check.status).toBe("fail");
   });
 
   it("needs at least 5 GB free", () => {

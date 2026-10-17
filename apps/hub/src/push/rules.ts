@@ -52,7 +52,10 @@ export interface QuietHours {
   readonly end: number;
 }
 
-/** `"23:00-08:00"`; undefined for anything else, which means no quiet hours. */
+/** DESIGN §4: the hours that apply while no `policy.quiet_hours` decision exists. */
+export const DEFAULT_QUIET_HOURS = "23:00-08:00";
+
+/** `"23:00-08:00"`; undefined for anything else (such as "off"), which means no quiet hours. */
 export const parseQuietHours = (value: string): QuietHours | undefined => {
   const match = /^\s*([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)\s*$/u.exec(value);
   if (match === null) return undefined;
@@ -60,6 +63,9 @@ export const parseQuietHours = (value: string): QuietHours | undefined => {
   const quiet = { start: h1 * 60 + m1, end: h2 * 60 + m2 };
   return quiet.start === quiet.end ? undefined : quiet;
 };
+
+/** The quiet hours a `policy.quiet_hours` decision sets, or the default when there is none. */
+export const quietHours = (decided: string | undefined) => parseQuietHours(decided ?? DEFAULT_QUIET_HOURS);
 
 const localMinutes = (nowMs: number, tz: string) => {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(nowMs);

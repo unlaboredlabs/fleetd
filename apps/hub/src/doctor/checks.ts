@@ -4,7 +4,7 @@
 import type { DoctorCheck, DoctorFix, DoctorStatus, Machine, MachineId, ProbeCounter, UsageBreaker } from "@fleetd/contracts";
 import type { ProviderInstanceConfig, ServerSettings } from "@t3tools/contracts";
 import { FLEETD_INSTANCE } from "../executor/ProviderList.ts";
-import { T3_NPM_VERSION } from "../t3.ts";
+import { T3_NPM_VERSION, T3_PIN } from "../t3.ts";
 import { type HubConfig, type MachineSetup, restartCommand } from "./config.ts";
 
 export type AutoAction = "restart_t3" | "remint_session" | "reapply_instance";
@@ -114,6 +114,10 @@ export const t3Version = (machine: Machine, setup: MachineSetup | undefined): En
   const id = machine.machineId;
   if (machine.t3 === null) return machineEntry(id, "t3_version", "unknown", `T3 on ${id} has not reported its version yet.`);
   if (machine.t3.version === T3_NPM_VERSION) return machineEntry(id, "t3_version", "ok", `T3 ${T3_NPM_VERSION}, the version setup installs.`);
+  // The node reports T3 run from a source checkout as `<package version>+<commit>`.
+  if (machine.t3.version.endsWith(`+${T3_PIN}`)) {
+    return machineEntry(id, "t3_version", "ok", `T3 from source at ${T3_PIN.slice(0, 10)}, the commit setup's ${T3_NPM_VERSION} is built from.`);
+  }
   return machineEntry(id, "t3_version", "fail", `T3 ${machine.t3.version} runs on ${id}; setup installs ${T3_NPM_VERSION}.`, setupAgain(id, setup));
 };
 

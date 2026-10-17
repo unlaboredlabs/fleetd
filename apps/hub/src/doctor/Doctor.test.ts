@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { ActionOutcome } from "../checks/NodeCommands.ts";
 import { DOCTOR_EVERY_MS, make, selfUrl } from "./Doctor.ts";
 import type { SettingsUpdate } from "./T3Settings.ts";
+import { T3_NPM_VERSION } from "../t3.ts";
 
 const AT = "2026-10-17T10:00:00.000Z";
 const ARGS = "--disallowedTools mcp__t3-code__*,Task,Workflow";
@@ -18,7 +19,7 @@ const machine = (id: string, patch: Partial<Machine> = {}): Machine => ({
   tags: [],
   status: "online",
   lastSeenAt: AT,
-  t3: { version: "0.1.1-nightly.20261017.3238", protocol: 2 },
+  t3: { version: T3_NPM_VERSION, protocol: 2 },
   nodeVersion: "0.0.0",
   ...patch,
 });

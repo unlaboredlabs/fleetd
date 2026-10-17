@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { T3_SRC } from "./harness.ts";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
@@ -102,7 +103,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
   const RUN = path.join(LAB, "e2e-degraded");
   const CLI = path.join(REPO, "apps/cli/src/bin.ts");
-  const T3_SRC = process.env.T3_SRC ?? path.join(LAB, "t3-src");
   if (path.resolve(LAB).startsWith(path.join(os.homedir(), ".t3"))) throw new Error("refusing: lab dir is inside ~/.t3");
   const scrubbedEnv = () =>
     Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));

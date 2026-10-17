@@ -1,5 +1,5 @@
 // Web Push to the human's paired devices: only loud items (push/rules.ts), at most one per 20 minutes with the rest
-// folded in as "+N more", held during `policy.quiet_hours` unless they are money or irreversible. Each push is one
+// folded in as "+N more", held during quiet hours (`policy.quiet_hours`, 23:00-08:00 by default) unless they are money or irreversible. Each push is one
 // line with no secret in it; `push.sent` records how many items and devices, never the text.
 import path from "node:path";
 import {
@@ -23,7 +23,7 @@ import { isoAt } from "../ledger/LedgerRepo.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
-import { type LoudItem, loudAsk, loudEvent, parseQuietHours, plan, pushLine, QUIET_HOURS_KEY, quietUntil } from "./rules.ts";
+import { type LoudItem, loudAsk, loudEvent, plan, pushLine, QUIET_HOURS_KEY, quietHours, quietUntil } from "./rules.ts";
 import { pushRequest, type PushRequest, type VapidKeys, vapidKeysFromFile } from "./webPush.ts";
 
 type PushSubscribeInput = typeof PushSubscribeInputSchema.Type;
@@ -107,8 +107,7 @@ export const make = (options: { readonly keys: VapidKeys; readonly post: PushPos
       Effect.map(decisions.list({ scope: { kind: "global" }, limit: 500 }), (global) => {
         const value = (key: string) => global.find((d) => d.key === key)?.value.trim();
         const tz = value(POLICY_TZ_KEY);
-        const quiet = value(QUIET_HOURS_KEY);
-        return quiet === undefined ? undefined : quietUntil(nowMs, tz !== undefined && isZone(tz) ? tz : hubZone(), parseQuietHours(quiet));
+        return quietUntil(nowMs, tz !== undefined && isZone(tz) ? tz : hubZone(), quietHours(value(QUIET_HOURS_KEY)));
       });
 
     /** An ask answered or withdrawn since it was queued no longer needs the human. */

@@ -7,10 +7,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { T3_PIN } from "../t3.ts";
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 export const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
-export const T3_SRC = process.env.T3_SRC ?? path.join(LAB, "t3-src");
+/** T3 from source at the pin (lab/lab.mjs runs the same checkout). */
+export const T3_SRC = process.env.T3_SRC ?? path.join(LAB, `t3-src-${T3_PIN.slice(0, 10)}`);
 export const HUB_PORT = Number(process.env.FLEETD_LAB_HUB_PORT ?? 4795);
 export const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
 /** Per hub port, so two runs on different ports never delete each other's state. */

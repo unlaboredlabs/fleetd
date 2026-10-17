@@ -8,10 +8,12 @@ import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import pin from "../vendor/t3/pin.json" with { type: "json" };
 
 const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
-const T3_SRC = process.env.T3_SRC ?? path.join(LAB, "t3-src");
-const T3_PIN = "2fbd4318fc";
+// A detached worktree of a T3 checkout at the pinned commit, the commit setup's npm build comes from:
+//   git -C <t3 checkout> worktree add --detach <lab>/t3-src-<first 10 of the commit> <commit> && (cd there && vp i)
+const T3_SRC = process.env.T3_SRC ?? path.join(LAB, `t3-src-${pin.commit.slice(0, 10)}`);
 const HOST = "127.0.0.1";
 
 // lab-a's "fleetd" Claude instance denies every T3 tool (the wildcard form DESIGN §3.2 calls for) and Claude's
@@ -195,8 +197,8 @@ function status(i) {
 }
 
 const [cmd, name] = process.argv.slice(2);
-const pinned = execFileSync("git", ["-C", T3_SRC, "rev-parse", "--short=10", "HEAD"], { encoding: "utf8" }).trim();
-if (pinned !== T3_PIN) throw new Error(`t3-src is at ${pinned}, expected ${T3_PIN}`);
+const head = execFileSync("git", ["-C", T3_SRC, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+if (head !== pin.commit) throw new Error(`${T3_SRC} is at ${head}, expected the pin ${pin.commit}`);
 const targets = name ? INSTANCES.filter((i) => i.name === name) : INSTANCES;
 if (targets.length === 0) throw new Error(`unknown instance ${name}`);
 if (cmd === "up") for (const i of targets) await up(i);

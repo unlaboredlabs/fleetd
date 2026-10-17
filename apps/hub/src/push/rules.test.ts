@@ -1,7 +1,7 @@
 import type { DecisionKey } from "@fleetd/contracts";
 import { describe, expect, it } from "vitest";
 import { ask } from "../leads/testKit.ts";
-import { COALESCE_MS, type LoudItem, loudAsk, parseQuietHours, plan, pushLine, quietUntil } from "./rules.ts";
+import { COALESCE_MS, type LoudItem, loudAsk, parseQuietHours, plan, pushLine, quietHours, quietUntil } from "./rules.ts";
 
 const item = (line: string, breaksQuiet = false): LoudItem => ({ line, breaksQuiet });
 const T0 = Date.parse("2026-10-17T12:00:00Z");
@@ -34,6 +34,12 @@ describe("loud asks", () => {
 });
 
 describe("quiet hours", () => {
+  it("are 23:00-08:00 until a policy.quiet_hours decision sets others or turns them off", () => {
+    expect(quietHours(undefined)).toEqual({ start: 1380, end: 480 });
+    expect(quietHours("01:30-02:00")).toEqual({ start: 90, end: 120 });
+    expect(quietHours("off")).toBeUndefined();
+  });
+
   it("parse HH:MM-HH:MM and nothing else", () => {
     expect(parseQuietHours("23:00-08:00")).toEqual({ start: 1380, end: 480 });
     expect(parseQuietHours(" 01:30 - 02:00 ")).toEqual({ start: 90, end: 120 });

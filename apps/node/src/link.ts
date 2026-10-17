@@ -1,4 +1,6 @@
+import { spawnSync } from "node:child_process";
 import os from "node:os";
+import path from "node:path";
 import { HubToNode, type MachineId, NodeLinkClose, type NodeToHub, PROTOCOL_VERSION, ProtocolVersion } from "@fleetd/contracts";
 import { Clock, Data, Deferred, Duration, Effect, Exit, Option, Random, Redacted, Schema, type Scope, Stream } from "effect";
 import * as Socket from "effect/socket/Socket";
@@ -49,15 +51,26 @@ export const linkUrl = (hub: string) => {
   return url.toString();
 };
 
-/** T3's version and orchestration protocol from its public environment descriptor. */
-export const fetchT3Info = (t3Url: string) =>
+/**
+ * The commit of the checkout `t3Cmd` runs T3 from source in (`<checkout>/apps/server/src/bin.ts`), else undefined. T3
+ * from source reports its package version whatever the commit, so the node adds the commit as semver build metadata.
+ */
+export const t3SourceCommit = (t3Cmd: ReadonlyArray<string>) => {
+  const bin = t3Cmd.find((arg) => arg.endsWith("/apps/server/src/bin.ts"));
+  if (bin === undefined) return undefined;
+  const head = spawnSync("git", ["-C", path.dirname(bin), "rev-parse", "HEAD"], { encoding: "utf8" });
+  return head.status === 0 ? head.stdout.trim() : undefined;
+};
+
+/** T3's version (plus `+<commit>` when run from source) and orchestration protocol from its public environment descriptor. */
+export const fetchT3Info = (t3Url: string, sourceCommit?: string) =>
   Effect.tryPromise({
     try: async (signal) => {
       const response = await fetch(new URL("/.well-known/t3/environment", t3Url), { signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)]) });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = (await response.json()) as { serverVersion?: unknown; orchestrationProtocolVersion?: unknown };
       return {
-        version: typeof body.serverVersion === "string" ? body.serverVersion : "unknown",
+        version: `${typeof body.serverVersion === "string" ? body.serverVersion : "unknown"}${sourceCommit === undefined ? "" : `+${sourceCommit}`}`,
         protocol: typeof body.orchestrationProtocolVersion === "number" ? body.orchestrationProtocolVersion : 0,
       } satisfies T3Info;
     },

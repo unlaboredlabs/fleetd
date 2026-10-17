@@ -1381,10 +1381,7 @@ const WsVcsListRefsRpc = Rpc.make(WS_METHODS.vcsListRefs, {
 });
 
 const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
-  // Clients cannot choose the folder: new worktrees go in the server's managed
-  // worktrees folder. `path` stays a required null because older servers
-  // require the key.
-  payload: Schema.Struct({ ...VcsCreateWorktreeInput.fields, path: Schema.Null }),
+  payload: VcsCreateWorktreeInput,
   success: VcsCreateWorktreeResult,
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
