@@ -140,11 +140,11 @@ pub struct Hub {
 pub fn registry() -> Registry {
     let mut tools = Registry::default();
     m1::register(&mut tools);
-    crate::hub::checks::tools::register(&mut tools);
     // Areas register here, after the M1 stubs so theirs replace them:
     crate::hub::ledger::register(&mut tools);
     crate::hub::executor::register(&mut tools);
     crate::hub::wakes::tools::register(&mut tools);
     crate::hub::webhooks::tools::register(&mut tools);
+    crate::hub::checks::tools::register(&mut tools);
     tools
 }

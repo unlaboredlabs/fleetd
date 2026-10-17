@@ -269,7 +269,6 @@ pub fn build_on(
         auth.clone(),
         clock.clone(),
     )?;
-    Ok(Arc::new(Hub {
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let hub = Arc::new(Hub {
         config,
@@ -292,7 +291,6 @@ pub fn build_on(
         queue,
         wakes,
         webhooks,
-    }))
         incidents: checks.incidents,
         estimates: checks.estimates,
         receipts: checks.receipts,
