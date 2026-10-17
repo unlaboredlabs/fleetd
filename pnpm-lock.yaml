@@ -57,6 +57,9 @@ importers:
         specifier: 'catalog:'
         version: 4.0.5
     devDependencies:
+      '@fleetd/pwa':
+        specifier: workspace:*
+        version: link:../pwa
       libsodium-wrappers:
         specifier: 0.8.4
         version: 0.8.4

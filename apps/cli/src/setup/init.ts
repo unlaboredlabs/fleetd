@@ -138,12 +138,8 @@ const initCommand = async (argv: ReadonlyArray<string>): Promise<number> => {
     say(`not installing a service; run the hub yourself with:\n  fleetd hub start --home ${home} --listen ${listenText}`);
   }
 
-  if (pairing === undefined) {
-    say("this hub build cannot pair devices yet; for the desktop app, create a device key with:\n  fleetd hub key create --human --name <device>");
-  } else {
-    say(`one-time pairing link for ${values.name ?? "phone"}, valid until ${pairing.expiresAt}. Open it on the device:`);
-    process.stdout.write(`${pairing.link}\n`);
-  }
+  say(`one-time pairing link for ${values.name ?? "phone"}, valid until ${pairing.expiresAt}. Open it on the device:`);
+  process.stdout.write(`${pairing.link}\n`);
   say("next: fleetd machine add <ssh-host> for each machine that runs agents");
   return 0;
 };

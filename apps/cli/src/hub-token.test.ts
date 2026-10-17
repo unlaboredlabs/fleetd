@@ -65,3 +65,31 @@ describe("fleetd node", () => {
     expect(runLongRunning(["hub", "key", "list"])).toBeUndefined();
   });
 });
+
+describe("fleetd hub device add", () => {
+  let home: string;
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-cli-"));
+  });
+  afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  it("prints a one-time pairing link whose key shows up as the named human device", async () => {
+    const added = run(["hub", "device", "add", "--name", "phone", "--url", "https://forge.example.ts.net/", "--home", home]);
+    expect(added.code).toBe(0);
+    const token = /^https:\/\/forge\.example\.ts\.net\/#pair=(flp_[a-z2-7]+)\n$/u.exec(added.stdout)?.[1];
+    expect(token).toBeDefined();
+    expect(added.stderr).toContain("one-time pairing link for phone");
+    const paired = await Effect.runPromise(
+      Effect.flatMap(Auth.Auth, (auth) => auth.consumePairToken(token!)).pipe(Effect.provide(Auth.layer.pipe(Layer.provide(HubDb.layer(home))))),
+    );
+    const listed = run(["hub", "key", "list", "--home", home]).stdout;
+    expect(listed).toContain(`${paired.info.keyId}\t${paired.info.prefix}\tphone (human)\toperate:*`);
+    expect(run(["hub", "key", "revoke", paired.info.keyId, "--home", home]).code).toBe(0);
+  });
+
+  it("needs a device name and the hub's URL, and warns when the URL is plain http off loopback", () => {
+    expect(run(["hub", "device", "add", "--url", "https://h", "--home", home]).stderr).toContain("--name is required");
+    expect(run(["hub", "device", "add", "--name", "phone", "--home", home]).stderr).toContain("--url is required");
+    expect(run(["hub", "device", "add", "--name", "phone", "--url", "http://forge:4790", "--home", home]).stderr).toContain("needs HTTPS");
+  });
+});

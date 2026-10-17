@@ -53,16 +53,10 @@ export const waitOnline = (machineId: MachineId, sinceMs: number, timeoutMs: num
     return false;
   });
 
-/**
- * A one-time device pairing link (`<url>/#pair=<token>`). Pairing tokens come with M8c's `Auth.createPairToken`;
- * on a hub without it this returns undefined and `fleetd init` says how to get a device key instead.
- */
+/** A one-time device pairing link (`<url>/#pair=<token>`), as `fleetd hub device add` prints it. */
 export const pairingLink = (name: string, url: string) =>
   Effect.gen(function* () {
-    const auth = yield* Auth.Auth;
-    if (!("createPairToken" in auth) || typeof auth.createPairToken !== "function") return undefined;
-    const create = auth.createPairToken as (name: string) => Effect.Effect<{ readonly token: string; readonly expiresAt: string }>;
-    const { token, expiresAt } = yield* create(name);
+    const { token, expiresAt } = yield* (yield* Auth.Auth).createPairToken(name);
     return { link: `${new URL(url).origin}/#pair=${token}`, expiresAt };
   });
 

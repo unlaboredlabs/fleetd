@@ -43,6 +43,11 @@ type GatedRunResult = typeof GatedRunResultSchema.Type;
 export class ApprovalRefused extends Data.TaggedError("ApprovalRefused")<McpToolError> {}
 
 const EVIDENCE_MAX = 2000;
+/** Evidence while an approved command runs; replaced by its result. */
+const RUNNING = "running on";
+/** How runApproved's recorded outcomes start: exit code, timeout, or the node's refusal. */
+const FINISHED = /^(exit |killed after |not run on )/u;
+export const NOT_RUN_AFTER_RESTART = "not run: hub restarted before execution; answer again to run";
 
 const HUMAN_ONLY_SECRET_FIX =
   "Enter it from a paired device (the fleetd phone or desktop app) or with a --human key; agent keys never handle secret values.";
@@ -232,6 +237,8 @@ const make = Effect.gen(function* () {
       const machineId = ref.machineId;
       const by = ask.answer.by;
       const cwd = spec.cwd ?? (yield* store.projects.get(ref))?.workspaceRoot;
+      // Marks it in flight, so a hub restart before the result arrives is reported as "result unknown", not "not run".
+      yield* asks.update(ask.askId, (current) => ({ ...current, evidence: `${RUNNING} ${machineId}, approved by ${by}` })).pipe(Effect.ignore);
       const ran = yield* Effect.result(
         cwd === undefined
           ? Effect.succeed({ exitCode: null, outputTail: "", timedOut: false, error: "the project has no workspace on record" })
@@ -258,7 +265,11 @@ const make = Effect.gen(function* () {
                 `${outcome.timedOut ? `killed after ${spec.timeoutSec} s` : `exit ${outcome.exitCode ?? "none (ended by a signal)"}`} on ${machineId}, approved by ${by}`,
                 outcome.outputTail,
               );
-      const done = yield* asks.update(ask.askId, (current) => ({ ...current, evidence })).pipe(Effect.orElseSucceed(() => ({ ...ask, evidence })));
+      // A link that dropped mid-run leaves the result unknown: back to the human, loud, to check before approving again.
+      const done =
+        outcome === undefined
+          ? yield* asks.reopen(ask.askId, evidence).pipe(Effect.orElseSucceed(() => ({ ...ask, evidence })))
+          : yield* asks.update(ask.askId, (current) => ({ ...current, evidence })).pipe(Effect.orElseSucceed(() => ({ ...ask, evidence })));
       yield* append({
         type: "gated.ran",
         ...projectFields(ref),
@@ -273,6 +284,19 @@ const make = Effect.gen(function* () {
       });
       yield* wakeWith(done, "go");
     });
+
+  // An approval the hub accepted but never finished before it stopped: never run late, but never silently lost.
+  for (const ask of yield* asks.list({ state: "answered", limit: Number.MAX_SAFE_INTEGER })) {
+    if (ask.kind !== "approve" || ask.answer?.value !== "go") continue;
+    const evidence = ask.evidence ?? "";
+    if (FINISHED.test(evidence)) continue;
+    const machineId = ask.projectRef?.machineId ?? "its machine";
+    // Anything else is evidence from before this "go" (an earlier reopen) or none: it never started.
+    const why = evidence.startsWith(RUNNING)
+      ? `result unknown: the hub restarted while it ran on ${machineId}; check on ${machineId} whether it ran before approving it again`
+      : NOT_RUN_AFTER_RESTART;
+    yield* asks.reopen(ask.askId, why).pipe(Effect.ignore);
+  }
 
   yield* followAnswers((ask) => (ask.kind === "approve" ? runApproved(ask) : Effect.void));
 

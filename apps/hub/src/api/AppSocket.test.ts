@@ -166,3 +166,39 @@ describe("app call frame", () => {
     expect(await app.call("fast", "projects_list", {})).toMatchObject({ t: "result", id: "fast", output: { projects: [{}, {}] } });
   });
 });
+
+describe("device pairing and push on /app", () => {
+  it("redeems a pairing link once for a human key that may subscribe to push; agents may not", async () => {
+    const { hub, url } = await fleet();
+    const token = await hub.pairToken("phone");
+
+    const app = await open(url);
+    app.send({ t: "device_pair", token: "flp_nope" });
+    expect(await app.take((f) => f.t === "error")).toMatchObject({ code: "forbidden", message: "unknown pairing link" });
+    app.send({ t: "device_pair", token });
+    const paired = await app.take((f) => f.t === "device_paired");
+    expect(paired).toMatchObject({ key: expect.stringMatching(/^fld_/u), keyId: expect.stringMatching(/^key_/u) });
+    expect(await app.auth(paired.key as string)).toMatchObject({ t: "ready" });
+    expect((await hub.listKeys()).find((k) => k.keyId === paired.keyId)).toMatchObject({ name: "phone", kind: "human", grants: [{ role: "operate", machines: "*" }] });
+
+    // The link works once.
+    const again = await open(url);
+    again.send({ t: "device_pair", token });
+    expect(await again.take((f) => f.t === "error")).toMatchObject({ code: "forbidden", message: "this pairing link was already used" });
+
+    const vapid = await app.call("v", "push_vapid_key", {});
+    expect(Buffer.from((vapid.output as { publicKey: string }).publicKey, "base64url")).toHaveLength(65);
+    const subscription = {
+      endpoint: "https://push.example.com/send/1",
+      keys: { p256dh: Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 1)]).toString("base64url"), auth: Buffer.alloc(16, 2).toString("base64url") },
+      deviceName: "phone",
+    };
+    expect(await app.call("s", "push_subscribe", subscription)).toMatchObject({ t: "result", output: { ok: true } });
+
+    const { key: agentKey } = await hub.addKey("adri", [{ role: "operate", machines: "*" }]);
+    const agent = await open(url);
+    await agent.auth(agentKey);
+    expect(await agent.call("s", "push_subscribe", subscription)).toMatchObject({ t: "error", code: "forbidden" });
+    expect(await app.call("u", "push_unsubscribe", { endpoint: subscription.endpoint })).toMatchObject({ output: { removed: true } });
+  });
+});

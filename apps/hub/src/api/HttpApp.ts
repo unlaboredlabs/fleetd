@@ -10,6 +10,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import pkg from "../../package.json" with { type: "json" };
 import * as McpEndpoint from "../mcp/McpEndpoint.ts";
 import * as AppSocket from "./AppSocket.ts";
+import * as Pwa from "./Pwa.ts";
 import * as NodeLinkServer from "../link/NodeLinkServer.ts";
 
 export const DEFAULT_LISTEN = { host: "127.0.0.1", port: 4790 } as const;
@@ -26,7 +27,7 @@ const webSocketRoute = (session: (socket: Socket.Socket) => Effect.Effect<void, 
     return HttpServerResponse.empty();
   });
 
-const layerRoutes = Layer.mergeAll(
+const layerRoutes = (pwaDir: string | undefined) => Layer.mergeAll(
   HttpRouter.add(
     "GET",
     "/healthz",
@@ -45,11 +46,15 @@ const layerRoutes = Layer.mergeAll(
     }),
   ),
   McpEndpoint.layer,
+  Pwa.layerRoutes(pwaDir),
 );
 
-/** The hub's HTTP server: /healthz, /mcp, /app and /node/link on one loopback port by default. */
-export const layer = (listen: { readonly host: string; readonly port: number }) =>
-  HttpRouter.serve(layerRoutes, { disableLogger: true }).pipe(
+/**
+ * The hub's HTTP server: /healthz, /mcp, /app, /node/link and the phone web app at / on one loopback port by
+ * default. `pwaDir` defaults to the built app beside the hub (Pwa.findPwaDir).
+ */
+export const layer = (listen: { readonly host: string; readonly port: number }, pwaDir: string | undefined = Pwa.findPwaDir()) =>
+  HttpRouter.serve(layerRoutes(pwaDir), { disableLogger: true }).pipe(
     Layer.provideMerge(
       NodeHttpServer.layer(NodeHttp.createServer, {
         host: listen.host,

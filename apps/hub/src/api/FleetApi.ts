@@ -25,6 +25,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { Approvals } from "../approvals/Approvals.ts";
+import { Push } from "../push/Push.ts";
 import * as Auth from "../auth/Auth.ts";
 import * as ClaimRecords from "../checks/ClaimRecords.ts";
 import * as Estimates from "../estimates/Estimates.ts";
@@ -90,6 +91,9 @@ export const IMPLEMENTED_TOOLS = [
   "asks_list",
   "inbox_reply",
   "secret_submit",
+  "push_subscribe",
+  "push_unsubscribe",
+  "push_vapid_key",
   "decisions_search",
   "decisions_record",
   "digest_get",
@@ -245,6 +249,7 @@ const make = Effect.gen(function* () {
   const approvals = yield* Approvals;
   const finishAll = yield* FinishAll;
   const doctor = yield* Doctor;
+  const push = yield* Push;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -807,6 +812,20 @@ const make = Effect.gen(function* () {
     }),
 
     secret_submit: (caller, input) => approvals.submitSecret(caller, input).pipe(Effect.mapError(refusal)),
+
+    push_vapid_key: () => Effect.map(push.vapidKey(), (publicKey) => ({ publicKey, next: "Pass it to PushManager.subscribe, then call push_subscribe with the subscription." })),
+
+    push_subscribe: (caller, input) =>
+      push.subscribe(caller, input).pipe(
+        Effect.mapError(refusal),
+        Effect.as({ ok: true as const, next: "This device gets a push for each loud item: at most one per 20 minutes, quiet hours from policy.quiet_hours." }),
+      ),
+
+    push_unsubscribe: (caller, input) =>
+      push.unsubscribe(caller, input.endpoint).pipe(
+        Effect.mapError(refusal),
+        Effect.map((removed) => ({ removed, ...(removed ? {} : { next: "No subscription had that endpoint; nothing to do." }) })),
+      ),
 
     decisions_search: Effect.fnUntraced(function* (caller, input) {
       const scoped = input.scope === undefined ? undefined : yield* decisionProject(input.scope);

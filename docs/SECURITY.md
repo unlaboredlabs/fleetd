@@ -9,6 +9,14 @@ fleetd is built for one person or a small team running their own fleet. This is 
   request.
 - **Nodes dial out.** A machine's `fleetd node` connects to the hub and proves itself with its own key pair, so no
   machine opens a port. Enrollment tokens are one-time and expire after 15 minutes.
+- **Devices pair with one-time links.** `fleetd hub device add --name phone --url <hub url>` prints a link that
+  works once within 15 minutes. The phone app keeps the human key it gets in that site's browser storage (see
+  `apps/pwa/README.md` for why it is not wrapped further); `fleetd hub key revoke` ends it. Only human keys answer
+  secret, approve and checklist asks, and only they get Web Push.
+- **Secrets never reach the hub in plain text.** The browser seals each value to the target node's key; the hub relays
+  the ciphertext without storing it and keeps only the fingerprint the node reports. An approved command runs exactly
+  as stored, after a person taps approve. Push messages are one line with no secret in them, and the phone app is
+  served with a same-origin Content-Security-Policy.
 - **Webhooks are signed.** Every POST carries a Standard Webhooks signature made with the subscription's secret,
   which is shown once and stored encrypted.
 - **The node socket trusts the node's OS user.** The `fleetd` CLI inside a lead reaches the hub through
