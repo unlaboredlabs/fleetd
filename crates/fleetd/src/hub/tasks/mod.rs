@@ -12,7 +12,7 @@ pub mod resolve;
 pub mod tools;
 
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
@@ -76,9 +76,6 @@ pub struct TaskDeps {
     pub leases: Arc<Leases>,
     pub policies: Arc<Policies>,
     pub leads: Arc<crate::hub::leads::Area>,
-    pub usage: Arc<dyn UsageGate>,
-    pub spawn_check: Arc<dyn SpawnCheck>,
-    pub receipts: Arc<dyn ResultReceipts>,
 }
 
 const THREAD_EVENTS: [HubEventType; 7] = [
@@ -224,6 +221,16 @@ pub struct Tasks {
     lock: tokio::sync::Mutex<()>,
     /// Machines a queued task waits on; one waiter each.
     awaiting: Mutex<HashSet<MachineId>>,
+    /// Set once in `hub/serve` by the areas that merge after tasks; unset passes through, as the TS hub did
+    /// before those milestones.
+    pub hooks: TaskHooks,
+}
+
+#[derive(Default)]
+pub struct TaskHooks {
+    pub usage: OnceLock<Arc<dyn UsageGate>>,
+    pub spawn_check: OnceLock<Arc<dyn SpawnCheck>>,
+    pub receipts: OnceLock<Arc<dyn ResultReceipts>>,
 }
 
 impl Tasks {
@@ -234,6 +241,7 @@ impl Tasks {
             d: deps,
             lock: tokio::sync::Mutex::new(()),
             awaiting: Mutex::new(HashSet::new()),
+            hooks: TaskHooks::default(),
         });
         let weak = Arc::downgrade(&tasks);
         tasks.d.slots.on_release(Arc::new(move || {
@@ -296,7 +304,7 @@ impl Tasks {
     }
 
     fn wake_result(&self, task: &Task, result: &TaskResult) {
-        let receipts = self.d.receipts.line(result);
+        let receipts = self.hooks.receipts.get().and_then(|r| r.line(result));
         let text = render::task_result_lines(
             task.task_id.as_str(),
             task.title.as_str(),
@@ -510,7 +518,7 @@ impl Tasks {
             return self.queue(stored, &offline);
         }
         // M4 usage: a paused login takes no new turns; usage.resumed runs the queue again.
-        if let Some(paused) = self.d.usage.gate(&r.machine_id) {
+        if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(&r.machine_id)) {
             return self.queue(stored, &paused);
         }
         let slot = self.d.slots.acquire(SlotRequest {
@@ -679,22 +687,19 @@ impl Tasks {
             .collect::<Vec<_>>()
             .join("\n\n");
         // M6 receipts: what the thread actually ran, counted from its items.
-        let result = self
-            .d
-            .receipts
-            .attach(
-                &thread_ref,
-                TaskResult {
-                    status,
-                    tail: Text::unchecked(tail_of(&tail, render::TAIL_MAX)),
-                    branch: branch.clone().map(NonEmpty::unchecked),
-                    pr_url: pr_url.map(PrUrl::unchecked),
-                    receipts: None,
-                    claims_unverified: None,
-                    at: Timestamp(at.clone()),
-                },
-            )
-            .await;
+        let result = TaskResult {
+            status,
+            tail: Text::unchecked(tail_of(&tail, render::TAIL_MAX)),
+            branch: branch.clone().map(NonEmpty::unchecked),
+            pr_url: pr_url.map(PrUrl::unchecked),
+            receipts: None,
+            claims_unverified: None,
+            at: Timestamp(at.clone()),
+        };
+        let result = match self.hooks.receipts.get() {
+            Some(receipts) => receipts.attach(&thread_ref, result).await,
+            None => result,
+        };
         let mut next = task.clone();
         next.state = if status == TaskResultStatus::Done {
             TaskState::Done
@@ -873,7 +878,13 @@ impl Tasks {
             HubEventType::ThreadUsageLimited => {
                 // M4 usage: parked, not failed. The board freed the slot, the leases stay, and the usage layer sends
                 // "continue" at the reset, which comes back here as thread.started.
-                if let Some(parked) = self.d.usage.parked_of(event).filter(|_| live) {
+                if let Some(parked) = self
+                    .hooks
+                    .usage
+                    .get()
+                    .and_then(|u| u.parked_of(event))
+                    .filter(|_| live)
+                {
                     let mut next = task.clone();
                     next.state = TaskState::Idle;
                     next.parked = Some(parked);
@@ -944,11 +955,12 @@ impl Tasks {
         let r = &caller.project_ref;
         // M6 value bar: serves, done workstreams and review rounds. Outside the lock, since it may ask GitHub for a
         // PR head, and before the closed-state check, so a done workstream gets its own refusal.
-        if let Some(ws) = self
-            .workstream(&input.workstream_id)
-            .filter(|w| same_project(&w.project_ref, r))
+        if let Some(check) = self.hooks.spawn_check.get()
+            && let Some(ws) = self
+                .workstream(&input.workstream_id)
+                .filter(|w| same_project(&w.project_ref, r))
         {
-            self.d.spawn_check.check_spawn(caller, &input, &ws).await?;
+            check.check_spawn(caller, &input, &ws).await?;
         }
         let _guard = self.lock.lock().await;
         let ws = match self.workstream(&input.workstream_id) {
