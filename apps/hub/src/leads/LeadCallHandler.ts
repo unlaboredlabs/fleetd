@@ -105,12 +105,12 @@ export const make = Effect.gen(function* () {
             text: call.text,
             ...(call.workstreamId === undefined ? {} : { workstreamId: call.workstreamId }),
           });
-        case "decisions_search":
-          return result({
-            op: "decisions_search",
-            decisions: yield* decisions.search(call.query, { chain: { projectRef: ref }, limit: SEARCH_LIMIT }),
-          });
       }
+      // Every other op returned above; ending here keeps the generator's return type free of `undefined`.
+      return result({
+        op: "decisions_search",
+        decisions: yield* decisions.search(call.query, { chain: { projectRef: ref }, limit: SEARCH_LIMIT }),
+      });
     }).pipe(Effect.catchTags({ LeadError: (e) => Effect.fail(refused(e)), LedgerError: (e) => Effect.fail(refused(e)) }));
 
   return { handle } satisfies LeadCallHandler;
