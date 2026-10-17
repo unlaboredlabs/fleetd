@@ -52,12 +52,13 @@ jobs:
           has_cli=false
           if [ -f crates/fleetd/Cargo.toml ]; then has_cli=true; fi
           # Nightly rebuilds the app only when it changed since the build the nightly release carries. Comparing
-          # with that build, not the previous push, means a cancelled run never drops an app change.
+          # with that build, not the previous push, means a cancelled run never drops an app change. Cargo.lock is
+          # left out on purpose: it changes on most merges. Ship a dependency bump with force-app or a tag.
           build_app=true
           if [ "$CHANNEL" = nightly ] && [ "$PUBLISH" = true ] && [ "$FORCE_APP" != true ]; then
             prev="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/nightly/release.json" 2>/dev/null | jq -r '.appCommit // empty' || true)"
             if [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null &&
-              git diff --quiet "$prev" HEAD -- app crates/fleetd-contracts Cargo.lock; then
+              git diff --quiet "$prev" HEAD -- app crates/fleetd-contracts; then
               build_app=false
             fi
             echo "app last built from: ${prev:-none}"
