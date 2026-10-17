@@ -6,16 +6,34 @@ import { JsonSchema, Schema } from "effect";
 import {
   AppClientMessage,
   AppServerMessage,
+  Ask,
+  Batch,
+  Decision,
   HubEvent,
+  Lead,
   Machine,
   ProjectOutcome,
   ProjectSummary,
   ThreadSummary,
+  Workstream,
 } from "../src/index.ts";
 
 export const schemaDir = fileURLToPath(new URL("../schema/", import.meta.url));
 
-const appFacing = { HubEvent, Machine, ProjectSummary, ThreadSummary, ProjectOutcome, AppClientMessage, AppServerMessage };
+const appFacing = {
+  HubEvent,
+  Machine,
+  ProjectSummary,
+  ThreadSummary,
+  ProjectOutcome,
+  AppClientMessage,
+  AppServerMessage,
+  Lead,
+  Workstream,
+  Ask,
+  Batch,
+  Decision,
+};
 
 /** File name -> file contents. */
 export function renderJsonSchemas(): Record<string, string> {

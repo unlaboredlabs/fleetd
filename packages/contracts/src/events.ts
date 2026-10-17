@@ -23,6 +23,19 @@ export const HubEventType = Schema.Literals([
   "write.expired",
   /** A webhook subscription has been failing for over an hour. */
   "webhook.failing",
+  "workstream.created",
+  /** The brief was frozen; `data.briefHash`. */
+  "workstream.running",
+  "workstream.state",
+  "ask.created",
+  /** An ask was answered from the decision log and never reached a batch. */
+  "ask.auto",
+  "batch.ready",
+  "decision.recorded",
+  "lead.started",
+  "lead.woken",
+  /** The human digest; its text is in `data`. */
+  "digest.ready",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

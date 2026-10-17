@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { MachineId, ProjectId, ThreadId, Timestamp } from "./ids.ts";
+import { Lead, Workstream } from "./ledger.ts";
 
 export const MachineStatus = Schema.Literals(["online", "offline", "degraded"]);
 export type MachineStatus = typeof MachineStatus.Type;
@@ -56,16 +57,20 @@ export const ThreadSummary = Schema.Struct({
 }).annotate({ identifier: "ThreadSummary" });
 export type ThreadSummary = typeof ThreadSummary.Type;
 
-/** The one-call project outcome, returned as-is by project_get. M3 adds lead and workstreams. */
+/** The one-call project outcome, returned as-is by project_get. */
 export const ProjectOutcome = Schema.Struct({
   project: ProjectSummary,
   /** Newest activity first. */
   threads: Schema.Array(ThreadSummary).check(Schema.isMaxLength(20)),
+  /** Absent until lead_start. */
+  lead: Schema.optionalKey(Lead),
+  /** Open workstreams (not done, stopped or failed), newest first. */
+  workstreams: Schema.optionalKey(Schema.Array(Workstream).check(Schema.isMaxLength(20))),
   stale: Schema.Boolean,
   asOf: Timestamp,
   /** Hint for the next call. */
   next: Schema.optionalKey(Schema.String),
-  /** True when `threads` was trimmed to its limit. */
+  /** True when `threads` or `workstreams` was trimmed to its limit. */
   truncated: Schema.optionalKey(Schema.Boolean),
 }).annotate({ identifier: "ProjectOutcome" });
 export type ProjectOutcome = typeof ProjectOutcome.Type;

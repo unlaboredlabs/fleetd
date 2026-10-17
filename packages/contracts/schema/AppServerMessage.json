@@ -167,7 +167,17 @@
         "wake.missed",
         "write.delivered",
         "write.expired",
-        "webhook.failing"
+        "webhook.failing",
+        "workstream.created",
+        "workstream.running",
+        "workstream.state",
+        "ask.created",
+        "ask.auto",
+        "batch.ready",
+        "decision.recorded",
+        "lead.started",
+        "lead.woken",
+        "digest.ready"
       ]
     },
     "ThreadId": {

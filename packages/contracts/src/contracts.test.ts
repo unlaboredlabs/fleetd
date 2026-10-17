@@ -60,11 +60,14 @@ describe("node link", () => {
     { t: "t3session", bearer: "b", expiresAt: at },
     { t: "t3state", state: "down", reason: "healthz failed 3 times", at },
     { t: "hb", at },
+    { t: "lead_call", id: "c1", cwd: "/w/p1", call: { op: "decisions_search", query: "health" } },
   ];
   const fromHub = [
     { t: "challenge", nonce: "n" },
     { t: "welcome", hubId: "hub", protocol: 1 },
     { t: "hb", at },
+    { t: "lead_result", id: "c1", result: { op: "decisions_search", decisions: [] } },
+    { t: "lead_result", id: "c2", error: { code: "forbidden", message: "not in a project workspace" } },
   ];
 
   it("round-trips every frame through JSON", () => {

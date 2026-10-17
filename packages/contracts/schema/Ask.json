@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Ask",
+  "$defs": {
+    "AskId": {
+      "type": "string",
+      "pattern": "^A[1-9][0-9]*$"
+    },
+    "MachineId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "description": "Machine slug, [a-z0-9-]{1,32}"
+    },
+    "ProjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "WorkstreamId": {
+      "type": "string",
+      "pattern": "^W[1-9][0-9]*$"
+    },
+    "DecisionKey": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80"
+    },
+    "Step": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "where": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "browser",
+                "phone"
+              ]
+            },
+            {
+              "$ref": "#/$defs/MachineId"
+            }
+          ]
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "expect": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "text",
+        "where"
+      ],
+      "additionalProperties": true
+    },
+    "BatchId": {
+      "type": "string",
+      "pattern": "^B[1-9][0-9]*$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "DecisionId": {
+      "type": "string",
+      "pattern": "^D[1-9][0-9]*$"
+    },
+    "Ask": {
+      "type": "object",
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "decide",
+            "do"
+          ]
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "class": {
+          "type": "string",
+          "enum": [
+            "product",
+            "money",
+            "credential",
+            "irreversible"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "maxItems": 6
+        },
+        "recommendation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "maxItems": 20
+        },
+        "blocks": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "nothing"
+              ]
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          ]
+        },
+        "proceededOnRec": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "auto",
+            "answered",
+            "defaulted",
+            "withdrawn"
+          ]
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "answer": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "raw": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "value",
+            "by",
+            "at",
+            "raw"
+          ],
+          "additionalProperties": true
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "askId",
+        "projectRef",
+        "kind",
+        "key",
+        "class",
+        "text",
+        "blocks",
+        "proceededOnRec",
+        "state",
+        "createdAt"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

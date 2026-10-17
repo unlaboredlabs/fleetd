@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { ProtocolVersion } from "./hello.ts";
 import { MachineId, Timestamp } from "./ids.ts";
+import { LeadCallFrame, LeadResultFrame } from "./lead-calls.ts";
 
 // Node link: WebSocket JSON, one message per frame, discriminated by "t".
 // Hub sends `challenge` first; node answers `hello` signed over that nonce; hub replies `welcome`.
@@ -76,8 +77,8 @@ export type NodeT3State = typeof NodeT3State.Type;
 export const Heartbeat = Schema.Struct({ t: Schema.tag("hb"), at: Timestamp });
 export type Heartbeat = typeof Heartbeat.Type;
 
-export const NodeToHub = Schema.Union([NodeHello, NodeT3Session, NodeT3State, Heartbeat]).pipe(Schema.toTaggedUnion("t"));
+export const NodeToHub = Schema.Union([NodeHello, NodeT3Session, NodeT3State, Heartbeat, LeadCallFrame]).pipe(Schema.toTaggedUnion("t"));
 export type NodeToHub = typeof NodeToHub.Type;
 
-export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat]).pipe(Schema.toTaggedUnion("t"));
+export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat, LeadResultFrame]).pipe(Schema.toTaggedUnion("t"));
 export type HubToNode = typeof HubToNode.Type;
