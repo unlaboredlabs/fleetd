@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 /// The store's `HubDb::with`, as a trait the retro holds: runs `f` on the hub's one connection.
 pub trait SqlRunner: Send + Sync {
-    fn run(&self, f: &mut dyn FnMut(&Connection) -> rusqlite::Result<()>) -> rusqlite::Result<()>;
+    fn run(&self, f: &mut dyn FnMut(&Connection) -> rusqlite::Result<()>) -> Result<(), String>;
 }
 
 fn q<R>(db: &dyn SqlRunner, f: impl FnOnce(&Connection) -> rusqlite::Result<R>) -> R {
