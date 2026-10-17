@@ -56,6 +56,7 @@ import {
   emptyView,
   latestAssistantText,
   omittedOutputs,
+  pendingQuestionText,
   tailOf,
   type ThreadView,
   toAction,
@@ -535,6 +536,14 @@ const make = Effect.gen(function* () {
           paths,
           pullRequestUrls: [...new Set(urls)],
         };
+      }),
+    pendingQuestion: (ref) =>
+      Effect.gen(function* () {
+        const { client } = yield* liveOf(ref.machineId);
+        const p = yield* client[M.getThreadProjection]({ threadId: T3ThreadId.make(ref.threadId) }).pipe(
+          Effect.mapError(readFailed(ref.machineId)),
+        );
+        return pendingQuestionText(p);
       }),
   });
 

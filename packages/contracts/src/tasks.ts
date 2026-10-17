@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { ProjectRef, ThreadRef, Timestamp } from "./ids.ts";
 import { Tier, WorkstreamId } from "./ledger.ts";
-import { Effort } from "./model.ts";
+import { Effort } from "./effort.ts";
 import { isHttpUrl } from "./subscriptions.ts";
 
 // M5 objects: fleetd-owned tasks, area leases, slots and the repo policy file.

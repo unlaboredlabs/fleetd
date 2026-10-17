@@ -10,6 +10,7 @@ import type {
   Machine,
   MachineId,
   ProjectSummary,
+  Task,
   ThreadId,
   ThreadSummary,
   ThreadTailOutput,
@@ -31,6 +32,12 @@ import * as Wakes from "../wakes/Wakes.ts";
 import * as HumanDigests from "../digests/HumanDigests.ts";
 import * as LeadsLayer from "../leads/layer.ts";
 import { Asks } from "../ledger/Asks.ts";
+import { ThreadWorkspace } from "../executor/ThreadWorkspace.ts";
+import * as Leases from "../leases/Leases.ts";
+import * as Policy from "../leases/Policy.ts";
+import * as Slots from "../slots/Slots.ts";
+import * as TaskRecords from "../tasks/TaskRecords.ts";
+import * as Tasks from "../tasks/Tasks.ts";
 
 export const AT = "2026-10-17T10:00:00.000Z";
 
@@ -132,7 +139,26 @@ export const makeTestHub = () => {
     }),
   );
 
+  // No policy file anywhere (one area "all"); worktrees start from main.
+  const layerTasks = Tasks.layer.pipe(
+    Layer.provideMerge(Layer.mergeAll(Slots.layer(), Leases.layer, Policy.layer)),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(Policy.PolicySource, Policy.PolicySource.of({ read: () => Effect.succeed(undefined) })),
+        Layer.succeed(
+          ThreadWorkspace,
+          ThreadWorkspace.of({
+            defaultBranch: () => Effect.succeed("main"),
+            changes: () => Effect.succeed({ paths: [], pullRequestUrls: [] }),
+            pendingQuestion: () => Effect.succeed(undefined),
+          }),
+        ),
+      ),
+    ),
+  );
+
   const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer).pipe(
+    Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),
     Layer.provideMerge(
@@ -147,7 +173,7 @@ export const makeTestHub = () => {
     Layer.provideMerge(HubDb.layerMemory),
   );
 
-  type Seeded = HubStore.HubStore | EventLog.EventLog | Auth.Auth | Asks;
+  type Seeded = HubStore.HubStore | EventLog.EventLog | Auth.Auth | Asks | TaskRecords.TaskRecords;
   /** Set once the hub's layer is built, so seeding runs against the same database the server reads. */
   let context: Context.Context<Seeded> | undefined;
   const run = <A>(effect: Effect.Effect<A, unknown, Seeded>) => {
@@ -184,6 +210,8 @@ export const makeTestHub = () => {
       run(Effect.flatMap(Auth.Auth, (a) => a.createKey(name, grants, kind))).then(({ key, info }) => ({ key, keyId: info.keyId })),
     revoke: (keyId: string) => run(Effect.flatMap(Auth.Auth, (a) => a.revoke(keyId))),
     append: (event: Omit<HubEvent, "seq">) => run(Effect.flatMap(EventLog.EventLog, (e) => e.append(event))),
+    /** A task record as Tasks would store it, without running anything. */
+    addTask: (task: Omit<Task, "taskId">) => run(Effect.flatMap(TaskRecords.TaskRecords, (r) => r.create(task))),
     /** `fleetd ask` from the lead of a project: a product decide with a recommendation. */
     fileAsk: (machineId: string, projectId: string, key: string, recommendation: string) =>
       run(

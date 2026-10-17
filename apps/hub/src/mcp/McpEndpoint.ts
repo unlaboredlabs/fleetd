@@ -14,10 +14,10 @@ export class Caller extends Context.Service<Caller, AgentKeyInfo>()("fleetd/hub/
 
 const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   fleetd_status:
-    "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events, and the events cursor. Start here.",
+    "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events, the slot board (cap, used, queued, per-project shares) and the events cursor. Start here.",
   projects_list: "Projects across machines, optionally filtered by machineId or a title/path query.",
   project_get:
-    "One project's outcome in one call: its summary and up to 20 threads (newest activity first) with status, headline and latest message. Marked stale when the machine is offline.",
+    "One project's outcome in one call: its summary, up to 20 threads (newest activity first) with status, headline and latest message, its lead and open workstreams, and task counts with the 20 newest tasks (task threads are not in the thread list). Marked stale when the machine is offline.",
   thread_tail:
     "A thread's newest messages and actions, newest first (n defaults to 10, max 50; kinds filters to message or action), plus its summary.",
   actions_list: "A thread's commands, file changes and tool calls, newest first (limit defaults to 50); failedOnly keeps failures.",
@@ -53,6 +53,11 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
     "Record a decision (key = lowercase dotted slug) at global, project or workstream scope; it supersedes the active one with the same key and scope, so leads never ask it again. A project's lead is woken with it. Global decisions need an operate grant on all machines.",
   digest_get:
     "The human digest now, as plain text: what needs you (numbered asks), what is running and done, and what leads decided without you. The same text goes out as digest.ready at 09:00 and 18:00 in policy.tz.",
+  tasks_list:
+    "Tasks (the subagent runs leads spawn with fleetd task spawn), newest first, optionally for one projectRef and state (queued, running, idle, done, failed, cancelled). Queued tasks say why; ended ones carry their result.",
+  task_get: "One task: its model and effort, areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
+  cap_set:
+    "Admin: set the global cap on running turns (1-1000) and/or one project's share of it (0-1000). Applies at once; queued tasks start as soon as they fit. Returns the slot board.",
 };
 
 /** MCP requires an object root, so the empty input becomes an empty object schema and refs go to $defs. */

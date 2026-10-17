@@ -11,10 +11,14 @@ import * as HumanDigests from "./digests/HumanDigests.ts";
 import * as Executors from "./executor/Executors.ts";
 import * as LeadCallHandler from "./leads/LeadCallHandler.ts";
 import * as LeadsLayer from "./leads/layer.ts";
+import * as Leases from "./leases/Leases.ts";
+import * as Policy from "./leases/Policy.ts";
 import * as NodeLinkServer from "./link/NodeLinkServer.ts";
 import * as EventLog from "./store/EventLog.ts";
 import * as HubDb from "./store/HubDb.ts";
 import * as HubStore from "./store/HubStore.ts";
+import * as Slots from "./slots/Slots.ts";
+import * as Tasks from "./tasks/Tasks.ts";
 import * as Webhooks from "./webhooks/Webhooks.ts";
 import * as WriteQueue from "./queue/WriteQueue.ts";
 import * as Sweep from "./sweep/Sweep.ts";
@@ -81,18 +85,24 @@ const layerWakeSweep = Layer.effectDiscard(
   }),
 );
 
+/** Tasks with the slot board, area leases and the repo policy file read through each machine's T3. */
+const layerTasks = Tasks.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(Slots.layer(), Leases.layer, Policy.layer.pipe(Layer.provide(Policy.layerSourceT3)))),
+);
+
 /** The whole hub over the database in `home` (already resolved by `HubDb.resolveHubHome`). */
 export const hubLayer = (home: string, options: HubOptions) =>
   HttpApp.layer(options.listen).pipe(
     Layer.provide(
       AppSocket.layer.pipe(
         Layer.provideMerge(FleetApi.layer),
-        Layer.provideMerge(layerWakeSweep),
+        Layer.provideMerge(Layer.merge(layerWakeSweep, Leases.layerSweep)),
         // The sweep reports failing webhooks, so it sits above them.
         Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
         Layer.provideMerge(layerMachines),
         Layer.provideMerge(HumanDigests.layer),
+        Layer.provideMerge(layerTasks),
         // Leads and the ledger; lead wakes go out through the write queue below.
         Layer.provideMerge(LeadsLayer.layerWithLedger()),
         Layer.provideMerge(Wakes.layer),

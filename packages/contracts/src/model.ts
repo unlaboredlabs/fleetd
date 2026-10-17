@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { MachineId, ProjectId, ThreadId, Timestamp } from "./ids.ts";
 import { Lead, Workstream } from "./ledger.ts";
+import { Task } from "./tasks.ts";
 
 export const MachineStatus = Schema.Literals(["online", "offline", "degraded"]);
 export type MachineStatus = typeof MachineStatus.Type;
@@ -23,6 +24,10 @@ const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 export const ThreadCounts = Schema.Struct({ running: Count, waiting: Count, idle: Count, failed: Count });
 export type ThreadCounts = typeof ThreadCounts.Type;
+
+/** A project's tasks by state, all time. */
+export const TaskCounts = Schema.Struct({ queued: Count, running: Count, idle: Count, done: Count, failed: Count, cancelled: Count });
+export type TaskCounts = typeof TaskCounts.Type;
 
 export const ProjectSummary = Schema.Struct({
   machineId: MachineId,
@@ -60,17 +65,21 @@ export type ThreadSummary = typeof ThreadSummary.Type;
 /** The one-call project outcome, returned as-is by project_get. */
 export const ProjectOutcome = Schema.Struct({
   project: ProjectSummary,
-  /** Newest activity first. */
+  /** Newest activity first. Task threads are left out; they show under `tasks`. */
   threads: Schema.Array(ThreadSummary).check(Schema.isMaxLength(20)),
   /** Absent until lead_start. */
   lead: Schema.optionalKey(Lead),
   /** Open workstreams (not done, stopped or failed), newest first. */
   workstreams: Schema.optionalKey(Schema.Array(Workstream).check(Schema.isMaxLength(20))),
+  /** Absent until the project has a task. */
+  taskCounts: Schema.optionalKey(TaskCounts),
+  /** Newest first. */
+  tasks: Schema.optionalKey(Schema.Array(Task).check(Schema.isMaxLength(20))),
   stale: Schema.Boolean,
   asOf: Timestamp,
   /** Hint for the next call. */
   next: Schema.optionalKey(Schema.String),
-  /** True when `threads` or `workstreams` was trimmed to its limit. */
+  /** True when `threads`, `workstreams` or `tasks` was trimmed to its limit. */
   truncated: Schema.optionalKey(Schema.Boolean),
 }).annotate({ identifier: "ProjectOutcome" });
 export type ProjectOutcome = typeof ProjectOutcome.Type;
@@ -87,9 +96,6 @@ export const ActionItem = Schema.Struct({
   failed: Schema.Boolean,
 }).annotate({ identifier: "ActionItem" });
 export type ActionItem = typeof ActionItem.Type;
-
-export const Effort = Schema.Literals(["low", "medium", "high", "max"]);
-export type Effort = typeof Effort.Type;
 
 export const RuntimeMode = Schema.Literals(["full-access", "approval-required"]);
 export type RuntimeMode = typeof RuntimeMode.Type;

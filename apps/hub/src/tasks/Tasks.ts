@@ -324,7 +324,19 @@ export const make = Effect.gen(function* () {
         }
         case "thread.waiting": {
           // The board frees the slot itself and takes it again if the run resumes; the leases stay.
-          if (task.state === "running") yield* records.put({ task: { ...task, state: "idle" } });
+          if (task.state !== "running") return;
+          yield* records.put({ task: { ...task, state: "idle" } });
+          // Nobody else answers a task's question, so its lead is woken with it.
+          const ref = task.threadRef!;
+          const asked = yield* workspace.pendingQuestion(ref).pipe(Effect.orElseSucceed(() => undefined));
+          const latest = (yield* store.threads.get(ref))?.latestMessageTail.trim();
+          const question = asked ?? (latest === undefined || latest === "" ? undefined : tailOf(latest, 1500));
+          yield* wakes.trigger(task.projectRef, {
+            kind: "task_waiting",
+            taskId: task.taskId,
+            title: task.title,
+            question: question ?? `(T3 did not say what it waits for; read it with thread_tail on ${ref.machineId}/${ref.threadId})`,
+          });
           return;
         }
         case "thread.completed":

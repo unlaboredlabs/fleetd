@@ -20,5 +20,7 @@ export class ThreadWorkspace extends Context.Service<
     /** The repo's default local branch at `cwd`, else its current branch. */
     readonly defaultBranch: (machineId: MachineId, cwd: string) => Effect.Effect<string, ExecutorError>;
     readonly changes: (ref: ThreadRef) => Effect.Effect<ThreadChanges, ExecutorError>;
+    /** What the thread is waiting on a human for, if anything: a question or an approval prompt. */
+    readonly pendingQuestion: (ref: ThreadRef) => Effect.Effect<string | undefined, ExecutorError>;
   }
 >()("fleetd/executor/ThreadWorkspace") {}

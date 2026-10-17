@@ -631,6 +631,205 @@
       ],
       "additionalProperties": true
     },
+    "TaskId": {
+      "type": "string",
+      "pattern": "^T[1-9][0-9]*$"
+    },
+    "AreaName": {
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40"
+    },
+    "TaskResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "tail": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prUrl": {
+          "type": "string"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "status",
+        "tail",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "Task": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "write",
+            "read",
+            "review"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "areas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AreaName"
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "max"
+          ]
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "S",
+            "M",
+            "L"
+          ]
+        },
+        "estimateMinutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "serves": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "idle",
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "queuedReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "threadRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            }
+          },
+          "required": [
+            "machineId",
+            "threadId"
+          ],
+          "additionalProperties": true
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worktreePath": {
+          "type": "string",
+          "pattern": "^\\/"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "result": {
+          "$ref": "#/$defs/TaskResult"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "taskId",
+        "projectRef",
+        "workstreamId",
+        "title",
+        "kind",
+        "prompt",
+        "areas",
+        "model",
+        "effort",
+        "state",
+        "attempt",
+        "createdAt"
+      ],
+      "additionalProperties": true
+    },
     "ProjectOutcome": {
       "type": "object",
       "properties": {
@@ -651,6 +850,57 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Workstream"
+          },
+          "maxItems": 20
+        },
+        "taskCounts": {
+          "type": "object",
+          "properties": {
+            "queued": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "running": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idle": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "done": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cancelled": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "queued",
+            "running",
+            "idle",
+            "done",
+            "failed",
+            "cancelled"
+          ],
+          "additionalProperties": true
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Task"
           },
           "maxItems": 20
         },

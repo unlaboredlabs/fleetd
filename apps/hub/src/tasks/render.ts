@@ -116,6 +116,15 @@ export const taskResultLines = (t: { readonly taskId: TaskId; readonly title: st
   return [head, ...(receipts === undefined ? [] : [`  ${receipts}`]), "  result:", ...tail, next].join("\n");
 };
 
+/** The "why you are woken" entry for a task waiting on input: its question, inline. */
+export const taskWaitingLines = (t: { readonly taskId: TaskId; readonly title: string; readonly question: string }): string =>
+  [
+    `- ${t.taskId} is waiting for input: ${oneLine(t.title, 80)}`,
+    "  question:",
+    ...t.question.trim().split("\n").map((l) => `  > ${l}`.trimEnd()),
+    `  next: answer it with \`fleetd task message ${t.taskId} "<answer>"\`, or \`fleetd task cancel ${t.taskId}\`. Ask the human only if it is a product, money, credential or irreversible call.`,
+  ].join("\n");
+
 const model = (t: Task) => `${t.model}/${t.effort}`;
 
 /** One digest line per task: running and idle, then queued with reasons, then those that ended since `since`. */

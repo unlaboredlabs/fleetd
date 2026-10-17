@@ -35,6 +35,9 @@ import * as Workstreams from "../leads/Workstreams.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { Inbox } from "../ledger/Inbox.ts";
+import * as Slots from "../slots/Slots.ts";
+import * as TaskRecords from "../tasks/TaskRecords.ts";
+import * as Tasks from "../tasks/Tasks.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -73,6 +76,9 @@ export const IMPLEMENTED_TOOLS = [
   "decisions_search",
   "decisions_record",
   "digest_get",
+  "tasks_list",
+  "task_get",
+  "cap_set",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
@@ -86,6 +92,9 @@ export const LIMITS = {
   workstreamAsks: 50,
   batches: 20,
   asks: 100,
+  outcomeTasks: 20,
+  /** Threads read to fill `outcomeThreads` once task threads are left out. */
+  outcomeThreadScan: 200,
 } as const;
 const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited"];
 /** How far back fleetd_status looks for attention events. */
@@ -159,6 +168,9 @@ const fromExecutor = (error: Executors.ExecutorError): ToolError => {
 const refusal = (error: { readonly code: ToolError["code"]; readonly message: string; readonly fix?: string }) =>
   new ToolError({ code: error.code, message: error.message, ...(error.fix === undefined ? {} : { fix: error.fix }) });
 
+const unknownTask = (taskId: string): ToolError =>
+  new ToolError({ code: "not_found", message: `No task ${taskId}.`, fix: "Call tasks_list to see tasks." });
+
 const unknownWorkstream = (workstreamId: string): ToolError =>
   new ToolError({ code: "not_found", message: `No workstream ${workstreamId}.`, fix: "Call workstream_list to see workstreams." });
 
@@ -176,6 +188,9 @@ const make = Effect.gen(function* () {
   const decisions = yield* Decisions;
   const inbox = yield* Inbox;
   const digests = yield* HumanDigests.HumanDigests;
+  const tasks = yield* Tasks.Tasks;
+  const taskRecords = yield* TaskRecords.TaskRecords;
+  const slots = yield* Slots.Slots;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -265,11 +280,13 @@ const make = Effect.gen(function* () {
         .filter((p) => auth.allows(caller, "read", p.machineId))
         .toSorted((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
       const shown = cap(projects, LIMITS.projects);
+      const board = yield* slots.state();
       return {
         machines,
         projects: shown.items,
         attention: yield* attention(caller, cursor),
         cursor,
+        slots: { ...board, perProject: board.perProject.filter((p) => auth.allows(caller, "read", p.projectRef.machineId)) },
         ...withTruncated(shown.truncated),
         next: `Call events_wait with cursor ${cursor} to wait for changes, or project_get for one project's outcome.`,
       };
@@ -291,17 +308,22 @@ const make = Effect.gen(function* () {
       const fresh = yield* freshness(input.machineId);
       const project = yield* store.projects.get(input);
       if (project === undefined) return yield* unknownProject(input);
-      const threads = cap(yield* store.threads.listByProject(input, LIMITS.outcomeThreads + 1), LIMITS.outcomeThreads);
+      // Task threads show only as tasks, never in the thread list.
+      const taskThreads = yield* taskRecords.threadIds(input);
+      const ownThreads = (yield* store.threads.listByProject(input, LIMITS.outcomeThreadScan)).filter((t) => !taskThreads.has(t.threadId));
+      const threads = cap(ownThreads, LIMITS.outcomeThreads);
       const lead = yield* leads.get(input);
       const open = cap(yield* workstreams.list({ ref: input, open: true, limit: LIMITS.outcomeWorkstreams + 1 }), LIMITS.outcomeWorkstreams);
+      const recent = cap(yield* tasks.list({ ref: input, limit: LIMITS.outcomeTasks + 1 }), LIMITS.outcomeTasks);
       return {
         project,
         threads: threads.items.map((t) => markStale(t, fresh)),
         ...(lead === undefined ? {} : { lead }),
         ...(open.items.length === 0 ? {} : { workstreams: open.items }),
+        ...(recent.items.length === 0 ? {} : { taskCounts: yield* taskRecords.counts(input), tasks: recent.items }),
         stale: fresh.stale,
         asOf: fresh.asOf,
-        ...withTruncated(threads.truncated ?? open.truncated),
+        ...withTruncated(threads.truncated ?? open.truncated ?? recent.truncated),
         next: fresh.stale
           ? `Cached as of ${fresh.asOf}: ${input.machineId} is offline.`
           : "Call thread_tail for a thread's latest messages and actions.",
@@ -610,6 +632,45 @@ const make = Effect.gen(function* () {
         decision,
         next: `${decision.decisionId} is active${decision.supersedes === undefined ? "" : ` and supersedes ${decision.supersedes}`}. Leads use it instead of asking; a project's lead is woken with it.`,
       };
+    }),
+
+    tasks_list: Effect.fnUntraced(function* (caller, input) {
+      if (input.projectRef !== undefined) yield* require(caller, "read", input.projectRef.machineId);
+      // Without a project, read wide and keep what the key may see.
+      const listed = (yield* tasks.list({
+        ...(input.projectRef === undefined ? {} : { ref: input.projectRef }),
+        ...(input.state === undefined ? {} : { state: input.state }),
+        limit: input.projectRef === undefined ? 1000 : input.limit + 1,
+      })).filter((t) => auth.allows(caller, "read", t.projectRef.machineId));
+      const shown = cap(listed, input.limit);
+      return {
+        tasks: shown.items,
+        ...withTruncated(shown.truncated),
+        next: shown.truncated ? "Narrow the list with projectRef or state." : "Call task_get for one task's result, or thread_tail on its threadRef for its transcript.",
+      };
+    }),
+
+    task_get: Effect.fnUntraced(function* (caller, input) {
+      const task = yield* tasks.get(input.taskId);
+      if (task === undefined || !auth.allows(caller, "read", task.projectRef.machineId)) return yield* unknownTask(input.taskId);
+      return {
+        task,
+        next:
+          task.threadRef === undefined
+            ? `${task.taskId} has not started${task.queuedReason === undefined ? "" : `: ${task.queuedReason}`}.`
+            : `Read its transcript with thread_tail (machineId ${task.threadRef.machineId}, threadId ${task.threadRef.threadId}).`,
+      };
+    }),
+
+    cap_set: Effect.fnUntraced(function* (_caller, input) {
+      if (input.share !== undefined && (yield* store.projects.get(input.share.projectRef)) === undefined) {
+        return yield* unknownProject(input.share.projectRef);
+      }
+      const board = yield* slots.setCap({
+        ...(input.cap === undefined ? {} : { cap: input.cap }),
+        ...(input.share === undefined ? {} : { share: input.share }),
+      });
+      return { slots: board, next: "Applied now: queued tasks start as soon as they fit. fleetd_status shows the board." };
     }),
 
     digest_get: Effect.fnUntraced(function* (caller) {

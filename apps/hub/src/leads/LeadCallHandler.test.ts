@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { Decisions } from "../ledger/Decisions.ts";
 import { DECIDE_YOURSELF } from "../ledger/Asks.ts";
 import { leadBy } from "../link/LeadCalls.ts";
+import { Tasks } from "../tasks/Tasks.ts";
 import * as LeadCallHandler from "./LeadCallHandler.ts";
 import * as Leads from "./Leads.ts";
 import * as Workstreams from "./Workstreams.ts";
@@ -31,8 +32,17 @@ const healthAsk = {
   proceededOnRec: true,
 } as LeadCall;
 
+// Task calls are covered in tasks/LeadTaskCalls.test.ts, over the real task service.
+const noTasks = Tasks.of({
+  spawn: () => Effect.die("no tasks in this kit"),
+  message: () => Effect.die("no tasks in this kit"),
+  cancel: () => Effect.die("no tasks in this kit"),
+  get: () => Effect.succeed(undefined),
+  list: () => Effect.succeed([]),
+});
+
 const setup = Effect.gen(function* () {
-  const handler = yield* LeadCallHandler.make;
+  const handler = yield* LeadCallHandler.make.pipe(Effect.provideService(Tasks, noTasks));
   const call = (c: LeadCall) => handler.handle(caller, c);
   return { call, refused: (c: LeadCall) => Effect.flip(call(c)) };
 });
@@ -136,7 +146,7 @@ describe("decision wakes", () => {
         expect(why).not.toContain("everywhere");
 
         // An inbox answer wakes through the AnswerSink only, so it is listed once.
-        yield* (yield* LeadCallHandler.make).handle(caller, healthAsk);
+        yield* (yield* setup).call(healthAsk);
         yield* reply("1 go", HUMAN);
         yield* Effect.repeat(Effect.yieldNow, { times: 20 });
         yield* TestClock.adjust(Duration.seconds(10));

@@ -1,4 +1,4 @@
-// One lead per project: a T3 thread on the project's machine, started with the v0 lead prompt plus the digest.
+// One lead per project: a T3 thread on the project's machine, started with the lead prompt plus the digest.
 import type { Effort, Lead, LeadState, ProjectRef, ProjectSummary, ThreadSummary } from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -18,7 +18,7 @@ export interface LeadsOptions {
   /** Hub-wide default model and effort; per-project settings override them. The lab sets haiku/low here. */
   readonly model?: string;
   readonly effort?: Effort;
-  /** The prompt template; defaults to prompt-v0.md read from beside this module. */
+  /** The prompt template; defaults to the current prompt-v<n>.md read from beside this module. */
   readonly prompt?: string;
 }
 

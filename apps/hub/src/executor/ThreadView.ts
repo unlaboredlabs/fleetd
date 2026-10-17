@@ -4,6 +4,7 @@ import type { ActionItem, TailItem } from "@fleetd/contracts";
 import type {
   OrchestrationV2ConversationMessage,
   OrchestrationV2Run,
+  OrchestrationV2RuntimeRequest,
   OrchestrationV2ThreadStreamItem,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
@@ -145,4 +146,36 @@ export const tailOf = (view: ThreadView, n: number, kinds?: ReadonlyArray<"messa
   }
   if (want("action")) for (const a of actionsOf(view, Number.MAX_SAFE_INTEGER)) rows.push({ id: a.id, kind: "action", at: a.at, action: a.action });
   return { rows: newestFirst(rows).slice(0, n), truncated };
+};
+
+const QUESTION_MAX = 1500;
+
+/**
+ * What a thread waiting on a human is asking, from its pending runtime request and the turn item that shows it:
+ * the questions of a user-input request (with their options), or an approval's prompt. Undefined when nothing is
+ * pending.
+ */
+export const pendingQuestionText = (thread: {
+  readonly runtimeRequests: ReadonlyArray<OrchestrationV2RuntimeRequest>;
+  readonly turnItems: ReadonlyArray<OrchestrationV2TurnItem>;
+}): string | undefined => {
+  const pending = thread.runtimeRequests.filter((r) => r.status === "pending").at(-1);
+  if (pending === undefined) return undefined;
+  const item = thread.turnItems.find(
+    (i) => (i.type === "user_input_request" || i.type === "approval_request") && i.requestId === pending.id,
+  );
+  let text: string;
+  if (item?.type === "user_input_request") {
+    text = item.questions
+      .map((q) => {
+        const options = q.options.map((o) => o.label).join(" | ");
+        return `${q.question}${options === "" ? "" : ` (options: ${options})`}`;
+      })
+      .join("\n");
+  } else if (item?.type === "approval_request") {
+    text = item.prompt ?? `approve a ${item.requestKind} request`;
+  } else {
+    text = `a pending ${pending.kind} request`;
+  }
+  return text.length > QUESTION_MAX ? `${text.slice(0, QUESTION_MAX - 1)}…` : text;
 };
