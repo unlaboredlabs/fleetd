@@ -104,9 +104,8 @@ fn internal(error: StoreError) -> TaskError {
     internal_error()
 }
 
-/// The task cases of TS LeadCallHandler. PORT: the link area's `LeadCalls` registers one handler for the ops
-/// `task_spawn`, `task_list`, `task_status`, `task_message` and `task_cancel` that calls this with the caller it
-/// attributed, and sends a refusal back in the same `{ code, message, fix }` shape.
+/// The task cases of TS LeadCallHandler: `wire::register_lead_calls` routes `task_spawn`, `task_list`,
+/// `task_status`, `task_message` and `task_cancel` here with the caller link attributed.
 pub async fn lead_call(
     tasks: &Arc<Tasks>,
     caller: &TaskCaller,

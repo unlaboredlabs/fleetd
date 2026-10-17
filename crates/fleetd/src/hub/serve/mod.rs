@@ -280,9 +280,9 @@ pub fn build_on(
         Arc::new(crate::hub::train::github::SystemGh),
         crate::hub::train::TrainOptions::default(),
     );
-    // PORT: executor, link and leads are not wired into tasks, slots and leases yet.
-    let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> =
-        Arc::new(crate::hub::tasks::ports::UnwiredPorts);
+    let hub_task_ports =
+        crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
+    let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> = hub_task_ports.clone();
     let lead_ports = task_ports.clone();
     let slots = crate::hub::slots::Slots::new(
         db.clone(),
@@ -375,6 +375,7 @@ pub fn build_on(
     train_host.bind(&hub);
     crate::hub::train::calls::register_lead_calls(&hub);
     crate::hub::checks::hub_ports::wire_misfiled(&hub);
+    crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     Ok(hub)
 }
 

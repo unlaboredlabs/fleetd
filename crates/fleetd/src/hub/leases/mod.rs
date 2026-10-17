@@ -156,8 +156,8 @@ impl Leases {
         })
     }
 
-    /// Emits `lease.stale` once for each lease held over 4 h. Returns how many it flagged. PORT: registered on the
-    /// 5-min sweep ("stale leases") once the sweep area is on main.
+    /// Emits `lease.stale` once for each lease held over 4 h. Returns how many it flagged. Registered on the
+    /// 5-min sweep as "stale leases" (`tasks::wire`).
     pub fn flag_stale(&self) -> Result<usize, StoreError> {
         let now = now_ms(self.clock.as_ref());
         let stale: Vec<Lease> = self.db.with(|db| {

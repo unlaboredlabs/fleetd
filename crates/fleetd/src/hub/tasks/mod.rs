@@ -11,6 +11,7 @@ pub mod records;
 pub mod render;
 pub mod resolve;
 pub mod tools;
+pub mod wire;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -65,7 +66,7 @@ pub struct TaskDeps {
     pub store: Arc<HubStore>,
     pub events: Arc<EventLog>,
     pub clock: Arc<dyn Clock>,
-    /// PORT: executor, link and leads (see `ports`).
+    /// The executor, node link and leads (see `ports`).
     pub ports: Arc<dyn TaskPorts>,
     pub slots: Arc<Slots>,
     pub leases: Arc<Leases>,
@@ -210,8 +211,7 @@ pub struct Tasks {
     lock: tokio::sync::Mutex<()>,
     /// Machines a queued task waits on; one waiter each.
     awaiting: Mutex<HashSet<MachineId>>,
-    /// PORT: set once in `hub/serve` by usage, valuebar and receipts; unset passes through, as the TS hub did
-    /// before those milestones.
+    /// Set once in `hub/serve` (`wire::wire`) to usage, the value bar and receipts; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
 }
@@ -1180,8 +1180,8 @@ impl Tasks {
 const LIVE_TASKS: [TaskState; 3] = [TaskState::Queued, TaskState::Running, TaskState::Idle];
 const SCAN_LIMIT: usize = 10_000;
 
-/// What leads read from tasks: digest lines, live tasks and cancels for removed projects. PORT: the leads area's
-/// TasksHook forwards to these.
+/// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads' TasksHook, set in
+/// `wire`).
 impl Tasks {
     pub fn digest_lines(
         &self,

@@ -199,7 +199,7 @@ pub trait PolicySource: Send + Sync {
 /// Reads the file from the project's workspace root through the machine's T3 (TS layerSourceT3).
 pub struct T3PolicySource {
     pub store: Arc<crate::hub::store::HubStore>,
-    /// PORT: WorkspaceFiles.read lives in the executor area.
+    /// WorkspaceFiles.read, over the executor.
     pub ports: Arc<dyn TaskPorts>,
 }
 
