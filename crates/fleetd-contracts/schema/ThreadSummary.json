@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ThreadError": {
+      "properties": {
+        "class": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "class",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "ThreadStatus": {
+      "enum": [
+        "running",
+        "waiting",
+        "idle",
+        "completed",
+        "failed",
+        "interrupted",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "ThreadSummary": {
+      "properties": {
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "effort": {
+          "description": "As reported by T3; not narrowed to Effort because T3 may report other levels.",
+          "type": "string"
+        },
+        "headline": {
+          "description": "First line of the latest visible assistant text.",
+          "maxLength": 280,
+          "type": "string"
+        },
+        "lastError": {
+          "$ref": "#/$defs/ThreadError"
+        },
+        "lastProgressAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "latestMessageTail": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/ThreadStatus"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "usageLimitResetAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "projectId",
+        "title",
+        "status",
+        "headline",
+        "latestMessageTail",
+        "lastProgressAt",
+        "stale",
+        "asOf"
+      ],
+      "type": "object"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/ThreadSummary",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

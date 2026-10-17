@@ -1,0 +1,294 @@
+{
+  "$defs": {
+    "CheckOutcome": {
+      "description": "`error` (the check could not run) counts as not passing.",
+      "enum": [
+        "pass",
+        "fail",
+        "error"
+      ],
+      "type": "string"
+    },
+    "CheckResult": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "checkIndex": {
+          "description": "0-based index into the brief's doneWhen.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "evidence": {
+          "description": "Output tail, HTTP status and body excerpt, verdict summary, or the fix when `error`.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "exitCode": {
+          "description": "Only for `cmd` checks, which the node runs.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "ranBy": {
+          "$ref": "#/$defs/CheckResultRanBy"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckOutcome"
+        },
+        "spec": {
+          "$ref": "#/$defs/CheckSpec"
+        }
+      },
+      "required": [
+        "checkIndex",
+        "spec",
+        "result",
+        "evidence",
+        "ranBy",
+        "at"
+      ],
+      "type": "object"
+    },
+    "CheckResultRanBy": {
+      "enum": [
+        "hub",
+        "node",
+        "judge",
+        "human"
+      ],
+      "type": "string"
+    },
+    "CheckSpec": {
+      "oneOf": [
+        {
+          "properties": {
+            "pr": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "pr_merged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "ref": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "ci_green",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "contains": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "type": {
+              "const": "http",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array"
+            },
+            "expectExit": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "type": {
+              "const": "cmd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "machineId",
+            "argv",
+            "expectExit"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "testId": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "test",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo",
+            "testId"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "criteria": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "judge",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "criteria"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "question": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "human",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "question"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Claim": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "\"lead:<machineId>/<projectId>\", an agent keyId or \"human\".",
+          "type": "string"
+        },
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ClaimOutcome",
+          "description": "`pass` only when every check passed."
+        },
+        "results": {
+          "description": "In check index order.",
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "claimId",
+        "workstreamId",
+        "by",
+        "at",
+        "results",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "ClaimId": {
+      "pattern": "^C[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ClaimOutcome": {
+      "enum": [
+        "pass",
+        "fail"
+      ],
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Claim",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

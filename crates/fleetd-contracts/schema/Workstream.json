@@ -1,0 +1,559 @@
+{
+  "$defs": {
+    "Brief": {
+      "properties": {
+        "baseline": {
+          "description": "Research: what the candidate is compared against, and how both are measured.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "budget": {
+          "$ref": "#/$defs/BriefBudget"
+        },
+        "constraints": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "decisionRule": {
+          "$ref": "#/$defs/DecisionRule",
+          "description": "Research: frozen with the brief, so the verdict can't move the goalposts."
+        },
+        "doneWhen": {
+          "description": "At least one; frozen with the brief.",
+          "items": {
+            "$ref": "#/$defs/CheckSpec"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "estimate": {
+          "$ref": "#/$defs/Estimate"
+        },
+        "goal": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "metric": {
+          "description": "Research: the one number the judge reports for baseline and candidate, e.g. \"p50 cold start in ms\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "pointers": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal",
+        "why",
+        "pointers",
+        "constraints",
+        "doneWhen",
+        "tier"
+      ],
+      "type": "object"
+    },
+    "BriefBudget": {
+      "properties": {
+        "agentHours": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "BriefHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "CheckSpec": {
+      "oneOf": [
+        {
+          "properties": {
+            "pr": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "pr_merged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "ref": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "ci_green",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "contains": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "type": {
+              "const": "http",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array"
+            },
+            "expectExit": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "type": {
+              "const": "cmd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "machineId",
+            "argv",
+            "expectExit"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "testId": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "test",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo",
+            "testId"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "criteria": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "judge",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "criteria"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "question": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "human",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "question"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DecisionRule": {
+      "description": "Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least\n`goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between.",
+      "properties": {
+        "better": {
+          "$ref": "#/$defs/DecisionRuleBetter"
+        },
+        "goAtLeast": {
+          "type": "number"
+        },
+        "stopBelow": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "better",
+        "goAtLeast",
+        "stopBelow"
+      ],
+      "type": "object"
+    },
+    "DecisionRuleBetter": {
+      "enum": [
+        "higher",
+        "lower"
+      ],
+      "type": "string"
+    },
+    "Estimate": {
+      "properties": {
+        "gates": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "rawMinutes": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "rawMinutes",
+        "gates"
+      ],
+      "type": "object"
+    },
+    "IntakeChannel": {
+      "enum": [
+        "app",
+        "phone",
+        "mcp",
+        "lead"
+      ],
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "MetricValues": {
+      "description": "The judge's reported numbers for the brief's metric.",
+      "properties": {
+        "baseline": {
+          "type": "number"
+        },
+        "candidate": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "baseline",
+        "candidate"
+      ],
+      "type": "object"
+    },
+    "PlaybookRef": {
+      "description": "<playbook name>@<full lowercase hex git blob SHA>",
+      "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ResearchOutcome": {
+      "description": "STOP is a success: the question was answered.",
+      "enum": [
+        "go",
+        "stop",
+        "inconclusive"
+      ],
+      "type": "string"
+    },
+    "ResearchVerdict": {
+      "description": "Computed by the hub, never reported by an agent; `outcome` always follows from `rule` and `metricValues`.",
+      "properties": {
+        "computedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "metricValues": {
+          "$ref": "#/$defs/MetricValues"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ResearchOutcome"
+        },
+        "rule": {
+          "$ref": "#/$defs/DecisionRule",
+          "description": "The brief's frozen rule."
+        }
+      },
+      "required": [
+        "outcome",
+        "metricValues",
+        "rule",
+        "computedAt"
+      ],
+      "type": "object"
+    },
+    "Serves": {
+      "type": "string"
+    },
+    "Tier": {
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ],
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "Workstream": {
+      "properties": {
+        "brief": {
+          "$ref": "#/$defs/Brief",
+          "description": "Absent while draft."
+        },
+        "briefHash": {
+          "$ref": "#/$defs/BriefHash"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "estimateActual": {
+          "$ref": "#/$defs/WorkstreamEstimateActual",
+          "description": "Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate."
+        },
+        "headline": {
+          "maxLength": 280,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "headlineAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ResearchOutcome",
+          "description": "Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed."
+        },
+        "parent": {
+          "$ref": "#/$defs/WorkstreamParent",
+          "description": "M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for."
+        },
+        "playbook": {
+          "$ref": "#/$defs/PlaybookRef",
+          "description": "Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "source": {
+          "$ref": "#/$defs/WorkstreamSource"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        },
+        "title": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "verdict": {
+          "$ref": "#/$defs/ResearchVerdict"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "projectRef",
+        "title",
+        "source",
+        "state",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "WorkstreamEstimateActual": {
+      "properties": {
+        "actualMinutes": {
+          "description": "Wall-clock minutes from running to done; set on done.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "ratioAtStart": {
+          "description": "The tier's calibration ratio when it started running.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "ratioAtStart"
+      ],
+      "type": "object"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    },
+    "WorkstreamParent": {
+      "properties": {
+        "serves": {
+          "$ref": "#/$defs/Serves"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "serves"
+      ],
+      "type": "object"
+    },
+    "WorkstreamSource": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "Who submitted it: an agent keyId, \"human\" or \"lead:<machineId>/<projectId>\".",
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/$defs/IntakeChannel"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "channel",
+        "by",
+        "at"
+      ],
+      "type": "object"
+    },
+    "WorkstreamState": {
+      "enum": [
+        "draft",
+        "running",
+        "converging",
+        "verifying",
+        "done",
+        "idle",
+        "stopped",
+        "failed"
+      ],
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Workstream",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

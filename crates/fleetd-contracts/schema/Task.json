@@ -1,0 +1,329 @@
+{
+  "$defs": {
+    "AreaName": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "type": "string"
+    },
+    "Effort": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "Receipts": {
+      "description": "Counted by the hub from the task's T3 items, never from its prose.",
+      "properties": {
+        "commands": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "commandsFailed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "filesChanged": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toolCalls": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "commands",
+        "commandsFailed",
+        "filesChanged",
+        "toolCalls"
+      ],
+      "type": "object"
+    },
+    "Serves": {
+      "type": "string"
+    },
+    "Task": {
+      "properties": {
+        "areas": {
+          "items": {
+            "$ref": "#/$defs/AreaName"
+          },
+          "maxItems": 20,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "attempt": {
+          "description": "1 for the first launch.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "branch": {
+          "description": "`fleetd/<taskId>-<slug>`; write tasks only.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort",
+          "description": "Always explicit; resolved at spawn."
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "estimateMinutes": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "kind": {
+          "$ref": "#/$defs/TaskKind"
+        },
+        "model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked",
+          "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
+        },
+        "pr": {
+          "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "prompt": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "qa": {
+          "description": "A review task spawned with `--qa`.",
+          "type": "boolean"
+        },
+        "queuedReason": {
+          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/TaskResult"
+        },
+        "serves": {
+          "$ref": "#/$defs/Serves",
+          "description": "Required at spawn for write tasks; optional here for tasks stored before M6."
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "tier": {
+          "$ref": "#/$defs/Tier"
+        },
+        "title": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "worktreePath": {
+          "pattern": "^/",
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "projectRef",
+        "workstreamId",
+        "title",
+        "kind",
+        "prompt",
+        "areas",
+        "model",
+        "effort",
+        "state",
+        "attempt",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "TaskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+    },
+    "TaskKind": {
+      "description": "Only write tasks get a worktree and leases.",
+      "enum": [
+        "write",
+        "read",
+        "review"
+      ],
+      "type": "string"
+    },
+    "TaskResult": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "branch": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "claimsUnverified": {
+          "description": "The tail claims success (\"tests pass\", \"fixed\", ...) while `receipts.commands` is 0. Absent before M6.",
+          "type": "boolean"
+        },
+        "prUrl": {
+          "type": "string"
+        },
+        "receipts": {
+          "$ref": "#/$defs/Receipts",
+          "description": "Absent on results stored before M6."
+        },
+        "status": {
+          "$ref": "#/$defs/TaskResultStatus"
+        },
+        "tail": {
+          "description": "The latest assistant message, trimmed to its last 2000 characters.",
+          "maxLength": 2000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "tail",
+        "at"
+      ],
+      "type": "object"
+    },
+    "TaskResultStatus": {
+      "enum": [
+        "done",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "TaskState": {
+      "enum": [
+        "queued",
+        "running",
+        "idle",
+        "done",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "ThreadRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "Tier": {
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ],
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "UsageClass": {
+      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy cooldown, with a reset. `rate_limit`: a 429.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
+      "enum": [
+        "usage_limit",
+        "rate_limit",
+        "pool_exhausted"
+      ],
+      "type": "string"
+    },
+    "UsageParked": {
+      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`.",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "resumeAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent for pool_exhausted: it resumes on usage_resume."
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "class",
+        "since"
+      ],
+      "type": "object"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Task",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

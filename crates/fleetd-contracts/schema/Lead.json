@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "Lead": {
+      "properties": {
+        "lastWakeAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "parked": {
+          "$ref": "#/$defs/UsageParked",
+          "description": "M4: the lead thread hit a usage limit; derived from the usage layer when read."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "sessionGeneration": {
+          "description": "Bumped by each lead_restart.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/LeadState"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+        }
+      },
+      "required": [
+        "projectRef",
+        "threadId",
+        "state",
+        "startedAt",
+        "sessionGeneration"
+      ],
+      "type": "object"
+    },
+    "LeadState": {
+      "enum": [
+        "starting",
+        "idle",
+        "working",
+        "stalled",
+        "stopped"
+      ],
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "UsageClass": {
+      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy cooldown, with a reset. `rate_limit`: a 429.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
+      "enum": [
+        "usage_limit",
+        "rate_limit",
+        "pool_exhausted"
+      ],
+      "type": "string"
+    },
+    "UsageParked": {
+      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`.",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "resumeAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent for pool_exhausted: it resumes on usage_resume."
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "class",
+        "since"
+      ],
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/Lead",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

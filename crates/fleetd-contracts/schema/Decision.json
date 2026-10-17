@@ -1,0 +1,169 @@
+{
+  "$defs": {
+    "AskId": {
+      "pattern": "^A[1-9][0-9]*$",
+      "type": "string"
+    },
+    "Decision": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId",
+          "description": "The ask this answers, when it came from one."
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "Who recorded it: the agent key name, \"lead:<machineId>/<projectId>\" or \"human:<device>\".",
+          "type": "string"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "scope": {
+          "$ref": "#/$defs/DecisionScope"
+        },
+        "source": {
+          "$ref": "#/$defs/DecisionSource"
+        },
+        "state": {
+          "$ref": "#/$defs/DecisionState"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/DecisionId",
+          "description": "The earlier active decision on the same key and scope that this one replaced."
+        },
+        "value": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "decisionId",
+        "key",
+        "scope",
+        "value",
+        "source",
+        "state",
+        "at"
+      ],
+      "type": "object"
+    },
+    "DecisionId": {
+      "pattern": "^D[1-9][0-9]*$",
+      "type": "string"
+    },
+    "DecisionKey": {
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "DecisionScope": {
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "global",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "project",
+              "type": "string"
+            },
+            "projectRef": {
+              "$ref": "#/$defs/ProjectRef"
+            }
+          },
+          "required": [
+            "kind",
+            "projectRef"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "workstream",
+              "type": "string"
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DecisionSource": {
+      "description": "Filled by the hub from the caller: a human device, an agent key, or a lead-side call.",
+      "enum": [
+        "human",
+        "lead",
+        "agent"
+      ],
+      "type": "string"
+    },
+    "DecisionState": {
+      "enum": [
+        "active",
+        "superseded",
+        "retired"
+      ],
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Decision",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

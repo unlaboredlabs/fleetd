@@ -1,0 +1,515 @@
+{
+  "$defs": {
+    "Ask": {
+      "properties": {
+        "answer": {
+          "$ref": "#/$defs/AskAnswer"
+        },
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "blocks": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "class": {
+          "$ref": "#/$defs/AskClass"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "envName": {
+          "$ref": "#/$defs/EnvName",
+          "description": "secret with an env: sink: the variable it writes, when not the one its key names (`secretEnvName`)."
+        },
+        "evidence": {
+          "description": "What closed or reopened it: \"fingerprint ab12cd34\", a gated run's exit code and output tail, a failed verify.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "secret: set when the node has written the sink."
+        },
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec",
+          "description": "Required for approve; immutable once the ask exists."
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "kind": {
+          "$ref": "#/$defs/AskKind"
+        },
+        "number": {
+          "description": "Fixed within its batch; never renumbered.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "options": {
+          "items": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "type": "array"
+        },
+        "proceededOnRec": {
+          "description": "The lead carried on with the recommendation; the answer confirms or overrides it.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Absent only on an `intake.route.*` ask: the human picks the project by answering it."
+        },
+        "recommendation": {
+          "description": "Required for decide.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sink": {
+          "$ref": "#/$defs/SecretSink",
+          "description": "Required for secret."
+        },
+        "state": {
+          "$ref": "#/$defs/AskState"
+        },
+        "steps": {
+          "description": "Required for do.",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "verify": {
+          "$ref": "#/$defs/CheckSpec",
+          "description": "do: the check the hub runs once the human ticks it done; a failure reopens the ask with the evidence."
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "askId",
+        "kind",
+        "key",
+        "class",
+        "text",
+        "blocks",
+        "proceededOnRec",
+        "state",
+        "createdAt"
+      ],
+      "type": "object"
+    },
+    "AskAnswer": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "type": "string"
+        },
+        "raw": {
+          "description": "The reply text it was parsed from.",
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "by",
+        "at",
+        "raw"
+      ],
+      "type": "object"
+    },
+    "AskClass": {
+      "enum": [
+        "product",
+        "money",
+        "credential",
+        "irreversible"
+      ],
+      "type": "string"
+    },
+    "AskId": {
+      "pattern": "^A[1-9][0-9]*$",
+      "type": "string"
+    },
+    "AskKind": {
+      "description": "decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the\nbrowser seals to the sink's node. approve: a stored command the node runs after a human tap.",
+      "enum": [
+        "decide",
+        "do",
+        "secret",
+        "approve"
+      ],
+      "type": "string"
+    },
+    "AskState": {
+      "enum": [
+        "open",
+        "auto",
+        "answered",
+        "defaulted",
+        "withdrawn"
+      ],
+      "type": "string"
+    },
+    "BatchId": {
+      "pattern": "^B[1-9][0-9]*$",
+      "type": "string"
+    },
+    "CheckSpec": {
+      "oneOf": [
+        {
+          "properties": {
+            "pr": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "pr_merged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "ref": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "ci_green",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "contains": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "type": {
+              "const": "http",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array"
+            },
+            "expectExit": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "type": {
+              "const": "cmd",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "machineId",
+            "argv",
+            "expectExit"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "testId": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "test",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "repo",
+            "testId"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "criteria": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "judge",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "criteria"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "question": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "human",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "question"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DecisionId": {
+      "pattern": "^D[1-9][0-9]*$",
+      "type": "string"
+    },
+    "DecisionKey": {
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "EnvName": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+      "type": "string"
+    },
+    "GatedClass": {
+      "enum": [
+        "irreversible",
+        "money",
+        "credential"
+      ],
+      "type": "string"
+    },
+    "GatedRunSpec": {
+      "description": "Stored with the approve ask and never changed: the human approves exactly these bytes.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "class": {
+          "$ref": "#/$defs/GatedClass"
+        },
+        "cwd": {
+          "pattern": "^/",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "secretEnv": {
+          "items": {
+            "$ref": "#/$defs/SecretEnvEntry"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "timeoutSec": {
+          "maximum": 1800,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "argv",
+        "class",
+        "reason",
+        "timeoutSec"
+      ],
+      "type": "object"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "SecretEnvEntry": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/EnvName"
+        },
+        "secretKey": {
+          "$ref": "#/$defs/DecisionKey"
+        }
+      },
+      "required": [
+        "name",
+        "secretKey"
+      ],
+      "type": "object"
+    },
+    "SecretFingerprint": {
+      "description": "8 lowercase hex characters: the sha256 prefix of the plaintext",
+      "pattern": "^[0-9a-f]{8}$",
+      "type": "string"
+    },
+    "SecretSink": {
+      "type": "string"
+    },
+    "Step": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "expect": {
+          "description": "What the human should see when the step worked.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "where": {
+          "$ref": "#/$defs/StepWhere"
+        }
+      },
+      "required": [
+        "text",
+        "where"
+      ],
+      "type": "object"
+    },
+    "StepPlace": {
+      "enum": [
+        "browser",
+        "phone"
+      ],
+      "type": "string"
+    },
+    "StepWhere": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StepPlace"
+        },
+        {
+          "$ref": "#/$defs/MachineId"
+        }
+      ],
+      "description": "A machineId, \"browser\" or \"phone\"."
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/Ask",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,45 @@
+{
+  "$defs": {
+    "ChangeId": {
+      "pattern": "^X[1-9][0-9]*$",
+      "type": "string"
+    },
+    "GitHubRepo": {
+      "description": "GitHub repository as owner/name",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})$",
+      "type": "string"
+    },
+    "TrainState": {
+      "description": "One serial train per repo.",
+      "properties": {
+        "frozen": {
+          "description": "Held by a `policy.freeze.<repo>` decision.",
+          "type": "boolean"
+        },
+        "head": {
+          "$ref": "#/$defs/ChangeId",
+          "description": "The Change being rebased, checked or merged now."
+        },
+        "queue": {
+          "description": "Waiting Changes in train order.",
+          "items": {
+            "$ref": "#/$defs/ChangeId"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "frozen",
+        "queue"
+      ],
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/TrainState",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
