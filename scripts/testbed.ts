@@ -1,4 +1,4 @@
-// Creates, idempotently, the private merge-train testbed `wynn-dev/fleetd-testbed` and clones it into the lab:
+// Creates, idempotently, the merge-train testbed `wynn-dev/fleetd-testbed` and clones it into the lab:
 // - a README and a GitHub Actions workflow `ci` whose one check, `ci`, fails iff a file `FAIL` exists at the root;
 // - squash merges only;
 // - a ruleset on main requiring the checks `ci` and `fleetd/train`, with no force-push and no deletion.
@@ -62,10 +62,12 @@ const git = (cwd: string, ...argv: string[]) => execFileSync("git", argv, { cwd,
 if (gh("repo", "view", repo, "--json", "name").ok) {
   console.log(`${repo} exists`);
 } else {
-  execFileSync("gh", ["repo", "create", repo, "--private", "--description", "fleetd merge train testbed (disposable)"], { stdio: "inherit" });
+  execFileSync("gh", ["repo", "create", repo, "--public", "--description", "fleetd merge train testbed (disposable)"], { stdio: "inherit" });
 }
 const visibility = (ghJson("api", `repos/${repo}`) as { visibility: string }).visibility;
-if (visibility !== "private") throw new Error(`${repo} is ${visibility}; the testbed must be private`);
+// Public since 2026-10-17 (owner's call) so GitHub enforces the ruleset on a free plan. It must hold nothing but
+// throwaway test content: no secrets, no personal data.
+if (visibility !== "public") console.warn(`${repo} is ${visibility}; GitHub enforces rulesets on free-plan repos only when public`);
 
 // 2. Squash merges only, branches deleted on merge.
 gh(
