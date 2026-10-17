@@ -221,8 +221,8 @@ export async function m5Tasks(lab: Lab) {
       match: (e) => (e.data?.triggers ?? []).includes("task_result"),
     });
     await spawnTurn;
-    const wakeTurn = leadTurnDone(wake.event.seq, "T1 result wake");
-    wakeTurn.catch(() => undefined);
+    // Read once the wake's turn is over, so the message is surely in the thread.
+    const afterWake = await leadTurnDone(wake.event.seq, "T1 result wake");
     const messages = (await callTool("thread_tail", { ...ref, threadId: leadThread, n: 20, kinds: ["message"] })).body.items as Array<Body>;
     const inline = messages.filter((m) => m.role === "user" && m.text.includes("- T1 completed: add file (branch fleetd/T1-add-file"));
     check(inline.length === 1 && /T1 completed[^\n]*\n {2}result:\n {2}> \S/u.test(inline[0]!.text), `one wake carries T1's result inline: ${JSON.stringify(messages).slice(0, 1500)}`);
@@ -247,7 +247,7 @@ export async function m5Tasks(lab: Lab) {
     ok(`4. task.out_of_area: ${outside.event.summary}`);
 
     // Every task ends, then the lead's wakes for them: each wake fires within WAKE_MAX_WAIT (60 s) of its trigger.
-    let after = await wakeTurn;
+    let after = afterWake;
     for (const id of [t2.taskId, t3.taskId, t4.taskId]) {
       const ended = await lab.waitEvent(`${id} ends`, 2 * TURN_MS, {
         cursor: t1Started.cursor,
