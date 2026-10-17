@@ -135,6 +135,87 @@ describe("parseLeadArgs", () => {
   });
 });
 
+describe("secret asks and gated runs", () => {
+  it("files a secret ask as a credential with its sink and optional env name", () => {
+    expect(
+      parseLeadArgs(["ask", "--kind", "secret", "--key", "stripe.test_key", "--sink", "env:lab-a:/srv/app/.env", "--text", "Need the Stripe test key"]),
+    ).toEqual({
+      op: "ask",
+      kind: "secret",
+      key: "stripe.test_key",
+      class: "credential",
+      text: "Need the Stripe test key",
+      sink: "env:lab-a:/srv/app/.env",
+      blocks: "nothing",
+      proceededOnRec: false,
+    });
+    expect(
+      parseLeadArgs(["ask", "--kind", "secret", "--key", "stripe.test_key", "--sink", "env:lab-a:/srv/app/.env", "--env-name", "STRIPE_KEY", "--class", "money", "--text", "t"]),
+    ).toMatchObject({ class: "money", envName: "STRIPE_KEY" });
+    expect(parseLeadArgs(["ask", "--kind", "secret", "--key", "a.b", "--text", "t"])).toBe("a secret ask needs --sink env:<machine>:<path> or file:<machine>:<path>");
+    expect(parseLeadArgs(["ask", "--kind", "secret", "--key", "a.b", "--sink", "env:lab-a:relative", "--text", "t"])).toMatch(/at \["sink"\]/u);
+    expect(parseLeadArgs(["ask", "--key", "a.b", "--text", "t", "--rec", "r"])).toBe("--class is required");
+  });
+
+  it("takes a do ask's verify check as JSON", () => {
+    const verify = { type: "http", url: "https://example.com/health", status: 200 };
+    const step = JSON.stringify({ text: "Point the DNS", where: "browser" });
+    expect(parseLeadArgs(["ask", "--kind", "do", "--key", "dns.cutover", "--class", "irreversible", "--text", "t", "--step", step, "--verify", JSON.stringify(verify)])).toMatchObject({
+      kind: "do",
+      verify,
+    });
+    expect(parseLeadArgs(["ask", "--kind", "do", "--key", "a.b", "--class", "product", "--text", "t", "--step", step, "--verify", "{"])).toMatch(/^--verify is not valid JSON/u);
+  });
+
+  it("builds a gated run with its exact argv, secrets by name and the 30-minute default", () => {
+    expect(
+      parseLeadArgs([
+        "gated",
+        "run",
+        "--class",
+        "irreversible",
+        "--argv",
+        '["sh","-c","echo deployed > /tmp/fleetd-gated-test"]',
+        "--reason",
+        "prod deploy test",
+        "--secret-env",
+        "STRIPE=stripe.test_key",
+        "--secret-env",
+        "TOKEN=gh.deploy-token",
+      ]),
+    ).toEqual({
+      op: "gated_run",
+      argv: ["sh", "-c", "echo deployed > /tmp/fleetd-gated-test"],
+      class: "irreversible",
+      reason: "prod deploy test",
+      secretEnv: [
+        { name: "STRIPE", secretKey: "stripe.test_key" },
+        { name: "TOKEN", secretKey: "gh.deploy-token" },
+      ],
+      timeoutSec: 1800,
+    });
+    const base = ["gated", "run", "--class", "money", "--reason", "r"];
+    expect(parseLeadArgs([...base, "--argv", '["true"]', "--cwd", "/srv/app", "--timeout", "60", "--workstream", "W2"])).toMatchObject({
+      cwd: "/srv/app",
+      timeoutSec: 60,
+      workstreamId: "W2",
+    });
+    expect(parseLeadArgs([...base, "--argv", "[true"])).toMatch(/^--argv is not valid JSON/u);
+    expect(parseLeadArgs([...base, "--argv", '"true"'])).toBe(`--argv is a JSON array of strings, e.g. '["sh","-c","echo hi"]'`);
+    expect(parseLeadArgs([...base, "--argv", '["true"]', "--secret-env", "NOEQUALS"])).toBe("--secret-env is NAME=<secret key>, got 'NOEQUALS'");
+    expect(parseLeadArgs([...base, "--argv", '["true"]', "--timeout", "1801"])).toMatch(/at \["timeoutSec"\]/u);
+    expect(parseLeadArgs(["gated", "run", "--class", "product", "--argv", '["true"]', "--reason", "r"])).toMatch(/at \["class"\]/u);
+    expect(parseLeadArgs(["gated", "run", "--argv", '["true"]', "--reason", "r"])).toBe("--class is required");
+    expect(parseLeadArgs(["gated", "list"])).toMatch(/^expected fleetd gated run/u);
+  });
+
+  it("says nothing runs before a human approves it", () => {
+    expect(formatResult({ op: "gated_run", askId: "A7" as never, state: "open" })).toBe(
+      "A7 open: the command is stored and waits for a human to approve it; nothing runs before that.\nNext: carry on with other work; the exit code and output tail arrive in a wake.\n",
+    );
+  });
+});
+
 describe("callerCwd", () => {
   const real = path.join(dir, "real-project");
   const link = path.join(dir, "linked-project");

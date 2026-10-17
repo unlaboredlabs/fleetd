@@ -27,8 +27,18 @@ export const LEAD_USAGE = `  brief create --workstream <W> (--json '<Brief>' | -
   ask --key <k> --class <product|money|credential|irreversible> --text <t> --rec <r>
       [--options a,b] [--blocks "<step>"] [--proceeded] [--workstream <W>]
   ask --kind do --key <k> --class <c> --text <t> --step '<json>' [--step '<json>' ...]
-             a step is {"text","where":"<machine>|browser|phone","command"?,"expect"?}
+      [--verify '<check json>']
+             a step is {"text","where":"<machine>|browser|phone","command"?,"expect"?}; --verify is a
+             cmd or http check fleetd runs once the human ticks it done (a failure reopens it)
              ask the human; answers already in the decision log come back at once
+  ask --kind secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
+      --text <t> [--class credential]
+             the human enters it on their phone, sealed to that machine; an env: sink writes the line
+             <N>=<value> (N defaults to the key uppercased, . and - as _). You get its fingerprint, never the value
+  gated run --class irreversible|money|credential --argv '<json array>' --reason <r> [--cwd <abs>]
+      [--secret-env NAME=<secret key> ...] [--timeout <sec>] [--workstream <W>]
+             a command the node runs exactly as stored, in the project workspace by default, only after
+             a human approves it; secrets come from the node's own sinks. The result arrives in a wake
   ask withdraw <A> [--use <D>]
   decide --key <k> --value <v> [--why <w>] [--scope project|workstream] [--workstream <W>]
              log a decision you made yourself
@@ -57,7 +67,7 @@ export const LEAD_USAGE = `  brief create --workstream <W> (--json '<Brief>' | -
              ~/${NODE_SOCKET_PATH}); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable
 `;
 
-const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task", "claim", "review", "change"]);
+const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task", "claim", "review", "change", "gated"]);
 
 export const isLeadCommand = (argv: ReadonlyArray<string>) => argv[0] !== undefined && LEAD_COMMANDS.has(argv[0]);
 
@@ -121,6 +131,13 @@ export const parseLeadArgs = (
         blocking: { type: "string" },
         "non-blocking": { type: "string" },
         summary: { type: "string" },
+        verify: { type: "string" },
+        sink: { type: "string" },
+        "env-name": { type: "string" },
+        argv: { type: "string" },
+        cwd: { type: "string" },
+        "secret-env": { type: "string", multiple: true },
+        timeout: { type: "string" },
       },
     });
   } catch (error) {
@@ -164,9 +181,14 @@ export const parseLeadArgs = (
         break;
       }
       if (sub !== undefined) return `unexpected '${sub}': put the question in --text`;
-      const wrong = only("kind", "key", "class", "text", "rec", "options", "step", "blocks", "proceeded", "workstream");
+      const wrong = only("kind", "key", "class", "text", "rec", "options", "step", "verify", "sink", "env-name", "blocks", "proceeded", "workstream");
       if (wrong !== undefined) return wrong;
-      for (const flag of ["key", "class", "text"] as const) if (v[flag] === undefined) return `--${flag} is required`;
+      // A secret is a credential unless the lead says otherwise.
+      const cls = v.class ?? (v.kind === "secret" ? "credential" : undefined);
+      for (const [flag, value] of [["key", v.key], ["class", cls], ["text", v.text]] as const) if (value === undefined) return `--${flag} is required`;
+      if (v.kind === "secret" && v.sink === undefined) return "a secret ask needs --sink env:<machine>:<path> or file:<machine>:<path>";
+      const verify = v.verify === undefined ? undefined : parseJson("--verify", v.verify);
+      if (verify !== undefined && "error" in verify) return verify.error;
       const steps: Array<unknown> = [];
       for (const [i, step] of (v.step ?? []).entries()) {
         const value = parseJson(`--step ${i + 1}`, step);
@@ -177,11 +199,14 @@ export const parseLeadArgs = (
         op: "ask",
         kind: v.kind,
         key: v.key,
-        class: v.class,
+        class: cls,
         text: v.text,
         recommendation: v.rec,
         options: v.options?.split(",").map((option) => option.trim()).filter((option) => option.length > 0),
         steps: steps.length > 0 ? steps : undefined,
+        verify: verify?.value,
+        sink: v.sink,
+        envName: v["env-name"],
         blocks: v.blocks,
         proceededOnRec: v.proceeded,
         workstreamId: v.workstream,
@@ -312,6 +337,35 @@ export const parseLeadArgs = (
         break;
       }
       return "expected fleetd change enqueue|status";
+    }
+    case "gated": {
+      if (sub !== "run" || rest.length > 0) return "expected fleetd gated run --class <c> --argv '<json array>' --reason <r>";
+      const wrong = only("class", "argv", "reason", "cwd", "secret-env", "timeout", "workstream");
+      if (wrong !== undefined) return wrong;
+      for (const flag of ["class", "argv", "reason"] as const) if (v[flag] === undefined) return `--${flag} is required`;
+      const argvJson = parseJson("--argv", v.argv!);
+      if ("error" in argvJson) return argvJson.error;
+      if (!Array.isArray(argvJson.value) || !argvJson.value.every((word) => typeof word === "string")) {
+        return `--argv is a JSON array of strings, e.g. '["sh","-c","echo hi"]'`;
+      }
+      const secretEnv: Array<{ name: string; secretKey: string }> = [];
+      for (const entry of v["secret-env"] ?? []) {
+        const at = entry.indexOf("=");
+        if (at <= 0 || at === entry.length - 1) return `--secret-env is NAME=<secret key>, got '${entry}'`;
+        secretEnv.push({ name: entry.slice(0, at), secretKey: entry.slice(at + 1) });
+      }
+      if (v.timeout !== undefined && !/^\d+$/u.test(v.timeout)) return `--timeout is whole seconds, got '${v.timeout}'`;
+      raw = definedOnly({
+        op: "gated_run",
+        argv: argvJson.value,
+        cwd: v.cwd,
+        class: v.class,
+        reason: v.reason,
+        secretEnv: secretEnv.length > 0 ? secretEnv : undefined,
+        timeoutSec: v.timeout === undefined ? undefined : Number(v.timeout),
+        workstreamId: v.workstream,
+      });
+      break;
     }
     default:
       return `unknown command '${command ?? ""}'`;
@@ -567,10 +621,9 @@ export const formatResult = (result: LeadCallResult): string => {
       lines.push(...changeLines(result.change));
       next = "don't merge it yourself; the train merges and the outcome arrives in a wake.";
       break;
-    // Placeholder line until `gated run` lands (M8c).
     case "gated_run":
-      lines.push(`${result.askId} ${result.state}: waiting for a human to approve the command.`);
-      next = "carry on with other work; the result arrives in a wake.";
+      lines.push(`${result.askId} ${result.state}: the command is stored and waits for a human to approve it; nothing runs before that.`);
+      next = "carry on with other work; the exit code and output tail arrive in a wake.";
       break;
   }
   return `${lines.join("\n")}\nNext: ${result.next ?? next}\n`;
@@ -584,7 +637,7 @@ export interface LeadDeps {
   readonly readFile?: (file: string) => string;
 }
 
-/** `fleetd brief|ask|decide|status|decisions|task|claim|review|change …`: one call to the hub through the local node. */
+/** `fleetd brief|ask|decide|status|decisions|task|claim|review|change|gated …`: one call to the hub through the local node. */
 export const leadCommand = async (argv: ReadonlyArray<string>, deps: LeadDeps): Promise<CliResult> => {
   const call = parseLeadArgs(argv, deps.readFile);
   if (typeof call === "string") return usage(call);
