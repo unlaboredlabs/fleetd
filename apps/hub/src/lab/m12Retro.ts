@@ -1,29 +1,25 @@
-// M12 lab check, standalone (no T3 or nodes needed): `node apps/hub/src/lab/m12Retro.ts` after `pnpm --filter
-// fleetd build`. Seeds a synthetic incident history into a fresh hub home under the
-// lab, starts the built hub with the user's own claude login, and runs `fleetd retro run --advise`: one real
-// claude-haiku-5-5 turn. Checks the run is recorded as orchestrator usage, every kept proposal is only suggested,
-// no playbook file was written, and the digest and MCP tools show it. The hub is stopped by its spawn PID.
+// M12 lab check, standalone (no T3 or nodes needed): `node apps/hub/src/lab/m12Retro.ts` with FLEETD_BIN set or after
+// `pnpm --filter fleetd build`. Creates a fresh hub home under the lab with the fleetd under test, seeds a synthetic
+// incident history straight into its SQLite (the schema both hubs share), starts the hub with the user's own claude
+// login, and runs `fleetd retro run --advise`: one real claude-haiku-5-5 turn. Checks the run is recorded as
+// orchestrator usage, every kept proposal is only suggested, no playbook file was written, and the digest and MCP tools
+// show it. The hub is stopped by its spawn PID.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { IncidentClass, MachineId, ProjectId } from "@fleetd/contracts";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Incidents from "../incidents/Incidents.ts";
-import * as EventLog from "../store/EventLog.ts";
-import * as HubDb from "../store/HubDb.ts";
 import { type Body, callToolWith, check, CLI, cli, fleetdCommand, LAB, log, ok, scrubbedEnv, slotPort, startCli, stopAll, until } from "./harness.ts";
 
 const PORT = Number(process.env.FLEETD_LAB_M12_PORT ?? slotPort(4797));
 const URL_ = `http://127.0.0.1:${PORT}`;
 const HOME = path.join(LAB, `m12-retro-${PORT}`);
-const REF = { machineId: "lab-a" as MachineId, projectId: "p-demo" as ProjectId };
+const REF = { machineId: "lab-a", projectId: "p-demo" };
 
 /** Three false claims, two estimate misses and a polish loop on bugfix-style work over the last week. */
-const HISTORY: ReadonlyArray<{ readonly class: IncidentClass; readonly evidence: ReadonlyArray<string> }> = [
+const HISTORY: ReadonlyArray<{ readonly class: string; readonly evidence: ReadonlyArray<string> }> = [
   { class: "false_claim", evidence: ["C3 on W4: the lead claimed done; check 0 (cmd: pnpm test) failed with exit 1", "The repro was never run before the claim."] },
   { class: "false_claim", evidence: ["C5 on W6: the lead claimed done; check 0 (test: repro-login) failed", "The task said 'fixed' with 0 commands run."] },
   { class: "false_claim", evidence: ["C8 on W9: the lead claimed done; check 1 (http GET /healthz) returned 500"] },
@@ -32,23 +28,35 @@ const HISTORY: ReadonlyArray<{ readonly class: IncidentClass; readonly evidence:
   { class: "polish_loop", evidence: ["Change C2 had 3 review rounds with zero blocking findings after the first."] },
 ];
 
-const seed = () =>
-  Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const incidents = yield* Incidents.Incidents;
-        for (const item of HISTORY) yield* incidents.record({ class: item.class, projectRef: REF, evidence: item.evidence });
-      }).pipe(Effect.provide(Incidents.layer.pipe(Layer.provideMerge(EventLog.layer), Layer.provideMerge(HubDb.layer(HOME))))),
-    ),
-  );
+/** What the hub's `Incidents.record` writes: the incident row and its incident.recorded event. Needs a migrated db. */
+const seed = () => {
+  const db = new DatabaseSync(path.join(HOME, "hub.sqlite"));
+  try {
+    const insert = db.prepare("INSERT INTO incidents (class, machine_id, project_id, workstream_id, data) VALUES (?, ?, ?, NULL, '') RETURNING n");
+    const fill = db.prepare("UPDATE incidents SET data = ? WHERE n = ?");
+    const event = db.prepare("INSERT INTO events (created_ms, type, machine_id, data) VALUES (?, 'incident.recorded', ?, ?)");
+    for (const item of HISTORY) {
+      const now = Date.now();
+      const at = new Date(now).toISOString();
+      const { n } = insert.get(item.class, REF.machineId, REF.projectId) as { n: number };
+      const incidentId = `I${n}`;
+      fill.run(JSON.stringify({ incidentId, class: item.class, projectRef: REF, evidence: item.evidence, at }), n);
+      const summary = `${incidentId} ${item.class}: ${item.evidence[0]}`;
+      event.run(now, REF.machineId, JSON.stringify({ at, type: "incident.recorded", ...REF, summary, data: { incidentId, class: item.class } }));
+    }
+  } finally {
+    db.close();
+  }
+};
 
 async function main() {
   check(process.env.FLEETD_BIN !== undefined || fs.existsSync(CLI), `the built CLI at ${CLI} (run pnpm --filter fleetd build first)`);
   fs.rmSync(HOME, { recursive: true, force: true });
-  await seed();
-  ok(`seeded ${HISTORY.length} incidents into ${HOME}`);
+  // Creating the key creates and migrates the hub's db, which the seed writes into.
   const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", HOME, "--name", "lab-admin", "--role", "admin", "--machines", "*"))?.[0];
   check(key, "hub key create printed a key");
+  seed();
+  ok(`seeded ${HISTORY.length} incidents into ${HOME}`);
   const keyFile = path.join(HOME, "admin.key");
   fs.writeFileSync(keyFile, `${key}\n`, { mode: 0o600 });
 
