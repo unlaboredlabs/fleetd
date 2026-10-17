@@ -41,6 +41,12 @@ importers:
       '@fleetd/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@fleetd/hub':
+        specifier: workspace:*
+        version: link:../hub
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.5
     devDependencies:
       rolldown:
         specifier: 1.2.14
