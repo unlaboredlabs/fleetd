@@ -318,8 +318,48 @@ pub struct Links<'a> {
     pub estimates: &'a Arc<Estimates>,
 }
 
+const OUTCOME_WORKSTREAMS: usize = 20;
+
 /// Called once in `serve::build_on`, after the areas below leads are built.
 pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
+    // project_get shows the project's lead and its open workstreams, as FleetApi did.
+    let outcome = Arc::clone(area);
+    links
+        .executors
+        .hooks
+        .extend_project_get(Arc::new(move |_hub, project_ref| {
+            let area = Arc::clone(&outcome);
+            Box::pin(async move {
+                let mut extra = crate::hub::executor::tools::ProjectExtra::default();
+                let internal = |e: LeadError| McpToolError::from(e);
+                if let Some(lead) = area.leads.get(&project_ref).map_err(internal)? {
+                    extra.fields.insert(
+                        "lead".into(),
+                        serde_json::to_value(lead).unwrap_or_default(),
+                    );
+                }
+                let mut open = area
+                    .workstreams
+                    .list(&WorkstreamFilter {
+                        project_ref: Some(project_ref),
+                        open: true,
+                        limit: OUTCOME_WORKSTREAMS + 1,
+                        ..Default::default()
+                    })
+                    .map_err(internal)?;
+                if open.len() > OUTCOME_WORKSTREAMS {
+                    open.truncate(OUTCOME_WORKSTREAMS);
+                    extra.truncated = Some(true);
+                }
+                if !open.is_empty() {
+                    extra.fields.insert(
+                        "workstreams".into(),
+                        serde_json::to_value(open).unwrap_or_default(),
+                    );
+                }
+                Ok(extra)
+            })
+        }));
     area.ctx.set_ports(Arc::new(HubPorts {
         executors: Arc::clone(links.executors),
         queue: Arc::clone(links.queue),
