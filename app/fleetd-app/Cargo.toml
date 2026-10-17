@@ -4,4 +4,23 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# gpui pin: zed tag v1.24.2 = fb69067729cb16a7f6135e2c1600c26a28c59659, the latest stable Zed release on
+# 2026-10-17. A stable tag is the gpui Zed actually shipped on Linux and macOS, so its platform layers are
+# known-good; zed main moves daily and breaks gpui's API without notice. Bump deliberately and re-run
+# app/bench/run.sh.
+#
+# Licenses: only Apache-2.0 crates come from zed (gpui, gpui_platform and, transitively, gpui_linux,
+# gpui_macos, gpui_apple, gpui_wgpu, gpui_util, gpui_macros, gpui_shared_string, collections, sum_tree,
+# scheduler, refineable, http_client). No GPL/AGPL zed crate (ui, editor, theme, workspace, ...) is used.
+#
+# `profiler` is on because Zed ships with it; the bench reads present timestamps from it.
+[features]
+# Compiles Metal shaders at launch, so macOS builds need only the Command Line Tools (no full Xcode /
+# `xcrun metal`). Build with --no-default-features on a Mac with Xcode for precompiled shaders.
+default = ["runtime-shaders"]
+runtime-shaders = ["gpui_platform/runtime_shaders"]
+
 [dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "fb69067729cb16a7f6135e2c1600c26a28c59659", default-features = false, features = ["font-kit", "wayland", "x11", "profiler"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "fb69067729cb16a7f6135e2c1600c26a28c59659", features = ["font-kit", "wayland", "x11"] }
+raw-window-handle = "0.6"

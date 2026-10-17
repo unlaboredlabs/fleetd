@@ -36,7 +36,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # gpui is ~600 crates; the first uncached build takes a while.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: app
@@ -46,5 +47,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app
+      - name: GPUI build deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev libwayland-dev libvulkan-dev
+      - name: Use Command Line Tools only (macOS)
+        # Proves the app builds without full Xcode: gpui's runtime_shaders feature skips `xcrun metal`.
+        if: runner.os == 'macOS'
+        run: |
+          sudo xcode-select --switch /Library/Developer/CommandLineTools
+          xcode-select -p
+          if xcrun --find metal 2>/dev/null; then echo "metal compiler unexpectedly present"; fi
       - run: cargo check --locked --all-targets
       - run: cargo test --locked
+      - run: cargo build --locked -p fleetd-app
