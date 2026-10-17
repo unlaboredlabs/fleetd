@@ -4,16 +4,7 @@ use std::path::PathBuf;
 
 use super::args::{self, Kind, Spec};
 
-pub const NODE_USAGE: &str = r#"  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> --t3-home <dir>
-            --t3-url <url> [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>]
-            [--home <dir>] [--enroll-only]
-             enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
-             --t3-restart-cmd (e.g. "t3 service restart") runs when T3 fails 3 health checks, else T3 is
-             only reported down; --token-file - reads the token from stdin; --enroll-only exits once
-             the hub has accepted this node
-  node run [--home <dir>]
-             keep the link up for a machine that has joined
-"#;
+pub use crate::node::NODE_USAGE;
 
 pub const HUB_START_USAGE: &str = r#"  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--router-model <model>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
@@ -74,7 +65,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
             if token.is_none()
                 && let Some(file) = v.str("token-file")
             {
-                match super::pending::node::read_token_file(file) {
+                match crate::node::read_token_file(file) {
                     Ok(text) => token = Some(text),
                     Err(error) => return usage(&format!("cannot read --token-file: {error}")),
                 }
@@ -94,7 +85,7 @@ pub async fn node_command(argv: &[String]) -> u8 {
             }
             let [hub, token, machine, t3_home, t3_url] =
                 fields.map(|(_, value)| value.unwrap_or_default());
-            let join = super::pending::node::JoinArgs {
+            let join = crate::node::JoinArgs {
                 hub,
                 token,
                 machine,
@@ -102,19 +93,19 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 t3_url,
                 t3_cmd: v.string("t3-cmd"),
                 t3_restart_cmd: v.string("t3-restart-cmd"),
-                tags: v.str("tags").map(super::pending::node::parse_tags),
+                tags: v.str("tags").map(crate::node::parse_tags),
                 name: v.string("name"),
                 home,
                 enroll_only: v.flag("enroll-only"),
             };
             exit(
-                super::pending::node::join(join)
+                crate::node::join(join)
                     .await
                     .map_err(|error| error.to_string()),
             )
         }
         Some("run" | "serve") => exit(
-            super::pending::node::run(super::pending::node::RunArgs { home })
+            crate::node::run(crate::node::RunArgs { home })
                 .await
                 .map_err(|error| error.to_string()),
         ),

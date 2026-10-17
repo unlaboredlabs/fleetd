@@ -1,6 +1,6 @@
-//! The hub store, the node and the hub server as the CLI calls them, until their slices land on main
-//! (feat/rust-hub-store, feat/rust-node, feat/rust-hub-framework). Each item has exactly the agreed API; when a slice
-//! lands, its items here become `pub use` of the real ones, and this file goes once all three have.
+//! The hub store and the hub server as the CLI calls them, until their slices land on main (feat/rust-hub-store,
+//! feat/rust-hub-framework). Each item has exactly the agreed API; when a slice lands, its items here become `pub use`
+//! of the real ones, and this file goes once both have.
 
 pub mod store {
     use std::path::{Path, PathBuf};
@@ -100,55 +100,6 @@ pub mod auth {
         pub fn revoke_node(&self, _machine_id: &MachineId) -> Result<bool, StoreError> {
             Err(StoreError::Pending)
         }
-    }
-}
-
-pub mod node {
-    use std::path::PathBuf;
-
-    #[derive(Clone, Debug, Default)]
-    pub struct JoinArgs {
-        pub hub: String,
-        pub token: String,
-        pub machine: String,
-        pub t3_home: String,
-        pub t3_url: String,
-        pub t3_cmd: Option<String>,
-        pub t3_restart_cmd: Option<String>,
-        pub tags: Option<Vec<String>>,
-        pub name: Option<String>,
-        pub home: Option<PathBuf>,
-        pub enroll_only: bool,
-    }
-
-    #[derive(Clone, Debug, Default)]
-    pub struct RunArgs {
-        pub home: Option<PathBuf>,
-    }
-
-    pub fn read_token_file(path: &str) -> std::io::Result<String> {
-        let text = if path == "-" {
-            std::io::read_to_string(std::io::stdin())?
-        } else {
-            std::fs::read_to_string(path)?
-        };
-        Ok(text.trim().to_owned())
-    }
-
-    pub fn parse_tags(tags: &str) -> Vec<String> {
-        tags.split(',')
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(str::to_owned)
-            .collect()
-    }
-
-    pub async fn join(_args: JoinArgs) -> Result<(), String> {
-        Err("this fleetd build has no node yet".into())
-    }
-
-    pub async fn run(_args: RunArgs) -> Result<(), String> {
-        Err("this fleetd build has no node yet".into())
     }
 }
 
