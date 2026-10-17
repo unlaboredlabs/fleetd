@@ -104,6 +104,8 @@ fn describe(error: &reqwest::Error, url: &reqwest::Url) -> String {
 pub fn t3_info_probe(t3_url: String, source_commit: Option<String>) -> Probe {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
+        // Like Node's fetch: T3 is local or on the tailnet, never behind the user's HTTP proxy.
+        .no_proxy()
         .build()
         .unwrap_or_default();
     Arc::new(move || {
