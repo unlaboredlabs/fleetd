@@ -211,7 +211,8 @@
         "usage.resumed",
         "ask.secret_saved",
         "gated.ran",
-        "push.sent"
+        "push.sent",
+        "doctor.changed"
       ]
     },
     "ThreadId": {
@@ -2689,6 +2690,79 @@
       "type": "string",
       "maxLength": 2000
     },
+    "DoctorCheckId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}\\/[a-z0-9_]{1,40}$"
+    },
+    "DoctorStatus": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "warn",
+        "fail",
+        "unknown"
+      ]
+    },
+    "DoctorFix": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "manual"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "command": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "kind",
+        "label"
+      ],
+      "additionalProperties": true
+    },
+    "DoctorCheck": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/DoctorCheckId"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "hub",
+            "machine"
+          ]
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "status": {
+          "$ref": "#/$defs/DoctorStatus"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "fix": {
+          "$ref": "#/$defs/DoctorFix"
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "status",
+        "message"
+      ],
+      "additionalProperties": true
+    },
     "McpTools": {
       "type": "object",
       "properties": {
@@ -4764,6 +4838,78 @@
             "publicKey"
           ],
           "additionalProperties": true
+        },
+        "doctor_list.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "rerun": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "doctor_list.output": {
+          "type": "object",
+          "properties": {
+            "checks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DoctorCheck"
+              },
+              "maxItems": 500
+            },
+            "checkedAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "checks",
+            "checkedAt"
+          ],
+          "additionalProperties": true
+        },
+        "doctor_fix.input": {
+          "type": "object",
+          "properties": {
+            "checkId": {
+              "$ref": "#/$defs/DoctorCheckId"
+            }
+          },
+          "required": [
+            "checkId"
+          ],
+          "additionalProperties": true
+        },
+        "doctor_fix.output": {
+          "type": "object",
+          "properties": {
+            "ran": {
+              "type": "string"
+            },
+            "check": {
+              "$ref": "#/$defs/DoctorCheck"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ran",
+            "check"
+          ],
+          "additionalProperties": true
         }
       },
       "required": [
@@ -4848,7 +4994,11 @@
         "push_unsubscribe.input",
         "push_unsubscribe.output",
         "push_vapid_key.input",
-        "push_vapid_key.output"
+        "push_vapid_key.output",
+        "doctor_list.input",
+        "doctor_list.output",
+        "doctor_fix.input",
+        "doctor_fix.output"
       ],
       "additionalProperties": true
     }

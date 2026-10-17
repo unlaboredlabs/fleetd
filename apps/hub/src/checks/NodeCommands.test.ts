@@ -1,7 +1,9 @@
 import { AskId, DecisionKey, type MachineId } from "@fleetd/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
@@ -95,6 +97,26 @@ describe("NodeCommands", () => {
         yield* Queue.take(a.sent);
         yield* TestClock.adjust("30 seconds");
         expect(yield* Effect.flip(Fiber.join(silent))).toMatchObject({ reason: "no_reply" });
+      }),
+    ));
+  it("sends the doctor's node actions over the same link and waits up to 210 s for a T3 restart", () =>
+    run(
+      Effect.gen(function* () {
+        const context = yield* Layer.build(NodeCommands.layer);
+        const commands = Context.get(context, NodeCommands.NodeCommands);
+        const actions = Context.get(context, NodeCommands.NodeActions);
+        const a = yield* link(commands, LAB_A);
+        const probe = yield* Effect.forkChild(actions.run(LAB_A, "probe"));
+        const frame = yield* Queue.take(a.sent);
+        expect(frame).toMatchObject({ t: "node_action", action: "probe" });
+        const probed = { ok: true, message: "probed", probe: { diskPath: "/home/lab", diskFreeBytes: 6e9 } };
+        yield* commands.resolve(LAB_A, { t: "node_action_result", id: frame.id, ...probed });
+        expect(yield* Fiber.join(probe)).toEqual(probed);
+
+        const restart = yield* Effect.forkChild(actions.run(LAB_A, "restart_t3"));
+        yield* Queue.take(a.sent);
+        yield* TestClock.adjust("210 seconds");
+        expect(yield* Effect.flip(Fiber.join(restart))).toMatchObject({ reason: "no_reply", message: "lab-a's node did not answer within 210 s" });
       }),
     ));
 });

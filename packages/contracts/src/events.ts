@@ -87,6 +87,8 @@ export const HubEventType = Schema.Literals([
   "gated.ran",
   /** M8: a Web Push went out; no item content. `data.items` (how many it covers, "+N more" folded in), `data.devices`. */
   "push.sent",
+  /** M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run). */
+  "doctor.changed",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

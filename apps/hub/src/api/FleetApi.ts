@@ -51,6 +51,7 @@ import { UsageSource } from "../usage/UsageSource.ts";
 import { ChangeRecords } from "../train/ChangeRecords.ts";
 import { freezeKey } from "../train/rules.ts";
 import { Train } from "../train/Train.ts";
+import { Doctor } from "../doctor/Doctor.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -102,6 +103,8 @@ export const IMPLEMENTED_TOOLS = [
   "changes_list",
   "train_get",
   "train_freeze",
+  "doctor_list",
+  "doctor_fix",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
@@ -241,6 +244,7 @@ const make = Effect.gen(function* () {
   const changeRecords = yield* ChangeRecords;
   const approvals = yield* Approvals;
   const finishAll = yield* FinishAll;
+  const doctor = yield* Doctor;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -918,6 +922,45 @@ const make = Effect.gen(function* () {
     digest_get: Effect.fnUntraced(function* (caller) {
       const digest = yield* digests.render((machineId) => auth.allows(caller, "read", machineId));
       return { ...digest, next: "Answer open items with inbox_reply. The hub emits digest.ready at 09:00 and 18:00 (policy.tz) as the cue to call this again." };
+    }),
+
+    doctor_list: Effect.fnUntraced(function* (caller, input) {
+      if (input.machineId !== undefined) yield* require(caller, "read", input.machineId);
+      const results = yield* doctor.list({ rerun: input.rerun === true });
+      const checks = results.checks.filter((c) =>
+        c.machineId === undefined
+          ? input.machineId === undefined
+          : auth.allows(caller, "read", c.machineId) && (input.machineId === undefined || c.machineId === input.machineId),
+      );
+      const failing = checks.filter((c) => c.status === "fail" || c.status === "warn");
+      return {
+        checks,
+        checkedAt: results.checkedAt,
+        next: failing.some((c) => c.fix?.kind === "auto")
+          ? "Run doctor_fix with a checkId to apply its automatic fix; manual fixes name the command to run."
+          : failing.length > 0
+            ? "Each failing check names the command that fixes it."
+            : "Every check passes. rerun: true runs them now; the hub also runs them every 15 minutes and emits doctor.changed.",
+      };
+    }),
+
+    doctor_fix: Effect.fnUntraced(function* (caller, input) {
+      const scope = input.checkId.slice(0, input.checkId.indexOf("/"));
+      const machineId = scope === "hub" ? undefined : (scope as MachineId);
+      // The fixes are safe but act on machines: admin keys, or a person's own paired device.
+      if (!auth.allows(caller, "admin", machineId) && !(caller.kind === "human" && auth.allows(caller, "operate", machineId))) {
+        return yield* new ToolError({
+          code: "forbidden",
+          message: "doctor_fix needs an admin key, or a person's paired device with operate on the machine.",
+          fix: "Run it from the phone app, or with a key from fleetd hub key create --role admin.",
+        });
+      }
+      const { ran, check } = yield* doctor.fix(input.checkId).pipe(Effect.mapError(refusal));
+      return {
+        ran,
+        check,
+        next: check.status === "ok" ? "Fixed: the check passes now." : `Still ${check.status}: ${check.message}`,
+      };
     }),
   };
 

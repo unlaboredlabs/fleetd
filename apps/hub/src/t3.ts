@@ -3,6 +3,9 @@ import { ORCHESTRATION_V2_WS_METHODS, WsRpcGroup } from "@t3tools/contracts";
 /** T3 commit the vendored wire client comes from. Must equal vendor/t3/PIN. */
 export const T3_PIN = "2fbd4318fc5b610c3e7fcfcbd5bbd80b73521d8f";
 
+/** The `serverVersion` T3 reports at T3_PIN (its server package version); the doctor holds each machine to it. */
+export const T3_VERSION = "0.1.0";
+
 /**
  * The narrow executor interface fleetd drives stock T3 through (DESIGN §3.2), mapped to the
  * T3 RPC each operation uses. Send and interrupt are both orchestration commands.

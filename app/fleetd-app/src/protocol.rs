@@ -639,3 +639,76 @@ contract! {
         pub by: Option<String>,
     }
 }
+
+// ---- Doctor (M11) ---------------------------------------------------------------------------
+
+literals! {
+    pub enum DoctorStatus { Ok = "ok", Warn = "warn", Fail = "fail", Unknown = "unknown" }
+}
+
+literals! {
+    pub enum DoctorScope { Hub = "hub", Machine = "machine" }
+}
+
+literals! {
+    pub enum DoctorFixKind { Auto = "auto", Manual = "manual" }
+}
+
+contract! {
+    pub struct DoctorFix {
+        pub kind: DoctorFixKind,
+        pub label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub command: Option<String>,
+    }
+}
+
+contract! {
+    pub struct DoctorCheck {
+        /// `hub/<name>` or `<machineId>/<name>`.
+        pub id: String,
+        pub scope: DoctorScope,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub machine_id: Option<String>,
+        pub status: DoctorStatus,
+        pub message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub fix: Option<DoctorFix>,
+    }
+}
+
+contract! {
+    pub struct DoctorListInput {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub machine_id: Option<String>,
+        /// Runs every check now instead of answering from the last run.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub rerun: Option<bool>,
+    }
+}
+tool!(DoctorListInput => DoctorListOutput, "doctor_list");
+
+contract! {
+    pub struct DoctorListOutput {
+        pub checks: Vec<DoctorCheck>,
+        pub checked_at: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub next: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub truncated: Option<bool>,
+    }
+}
+
+contract! { pub struct DoctorFixInput { pub check_id: String } }
+tool!(DoctorFixInput => DoctorFixOutput, "doctor_fix");
+
+contract! {
+    pub struct DoctorFixOutput {
+        pub ran: String,
+        pub check: DoctorCheck,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub next: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub truncated: Option<bool>,
+    }
+}

@@ -376,6 +376,7 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
           case "cmd_result":
           case "secret_result":
           case "gated_result":
+          case "node_action_result":
             if (options.commands !== undefined) yield* options.commands.resolve(machineId, frame);
             break;
           case "hello":

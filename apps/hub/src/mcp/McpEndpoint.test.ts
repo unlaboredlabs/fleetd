@@ -627,3 +627,29 @@ describe("usage tools", () => {
     expect((await call(admin, "thread_launch", { machineId: "lab-a", ...launch, clientRequestId: "r2" })).body.threadId).toBe("t-new");
   });
 });
+
+describe("doctor tools", () => {
+  it("doctor_list shows hub checks and the machines a key reads; doctor_fix takes admin or a person's device, and refuses manual fixes with the command", async () => {
+    const { hub, url, as } = await fleet();
+    const all = await call(await as("reader"), "doctor_list");
+    expect(all.body.checks.map((c: { id: string }) => c.id)).toEqual(["hub/gh_auth", "lab-a/online", "lab-b/disk"]);
+    expect(all.body.next).toContain("doctor_fix");
+    const aOnly = await as("aOnly");
+    expect((await call(aOnly, "doctor_list")).body.checks.map((c: { id: string }) => c.id)).toEqual(["hub/gh_auth", "lab-a/online"]);
+    expect((await call(aOnly, "doctor_list", { machineId: "lab-b" })).body.code).toBe("forbidden");
+
+    // An agent key with operate is not enough; a person's paired device with operate is.
+    expect((await call(aOnly, "doctor_fix", { checkId: "lab-a/online" })).body.code).toBe("forbidden");
+    const phone = await connect(url, (await hub.addKey("phone", [{ role: "operate", machines: "*" }], "human")).key);
+    const fixed = await call(phone, "doctor_fix", { checkId: "lab-a/online" });
+    expect(fixed.body).toMatchObject({ ran: "restarted T3", check: { id: "lab-a/online", status: "ok" }, next: "Fixed: the check passes now." });
+    expect(hub.doctorFixes).toEqual(["lab-a/online"]);
+
+    expect((await call(await as("admin"), "doctor_fix", { checkId: "lab-b/disk" })).body).toEqual({
+      code: "invalid",
+      message: "lab-b/disk needs a person.",
+      fix: "df -h /home/lab",
+    });
+    expect((await call(await as("admin"), "doctor_fix", { checkId: "not a check" })).body.code).toBe("invalid");
+  });
+});

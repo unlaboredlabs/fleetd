@@ -78,6 +78,10 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   train_get: "One repo's merge train: frozen or not, the Change it is rebasing, checking or merging now, and the queue in order. Only the train merges.",
   train_freeze:
     "Hold (frozen true) or resume (frozen false) a repo's merge train by recording or retiring its policy.freeze.<owner>.<name> decision. The train finishes nothing new while frozen; it emits train.frozen or train.resumed on its next pass.",
+  doctor_list:
+    "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, push configured, HTTPS. Each machine: online/degraded/offline, T3 at the pinned version, the fleetd instance's launch args and own config dir, auto-resume off, probe counter 0, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
+  doctor_fix:
+    "Run a check's automatic fix, then the check again: restart T3 with the node's restart command (degraded), re-mint the hub's T3 session (no T3 connection), or re-apply the fleetd instance config (launch args, auto-resume). Manual fixes are refused with the exact command to run. Admin keys, or a person's paired device.",
 };
 
 /** MCP requires an object root, so the empty input becomes an empty object schema and refs go to $defs. */

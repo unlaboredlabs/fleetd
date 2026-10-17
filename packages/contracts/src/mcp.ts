@@ -34,6 +34,7 @@ import { UsageStatus } from "./usage.ts";
 import { base64Bytes, SealedSecret, SecretFingerprint } from "./secrets.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
 import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
+import { DoctorCheck, DoctorCheckId } from "./doctor.ts";
 
 /** Fields every tool result carries: a hint for the next call, and whether lists were trimmed to their limits. */
 const resultFields = {
@@ -520,6 +521,29 @@ export const PushVapidKeyOutput = Schema.Struct({
   ...resultFields,
 });
 
+// doctor_list: the latest result of every check this key may read; rerun runs them all now first.
+export const DoctorListInput = Schema.Struct({
+  machineId: Schema.optionalKey(MachineId),
+  rerun: Schema.optionalKey(Schema.Boolean),
+});
+export const DoctorListOutput = Schema.Struct({
+  /** Hub checks first, then each machine's, in a fixed order. */
+  checks: Schema.Array(DoctorCheck).check(Schema.isMaxLength(500)),
+  /** When these results were taken. */
+  checkedAt: Timestamp,
+  ...resultFields,
+});
+
+// doctor_fix: runs a check's automatic fix, then that check again. A manual fix is refused with its command.
+export const DoctorFixInput = Schema.Struct({ checkId: DoctorCheckId });
+export const DoctorFixOutput = Schema.Struct({
+  /** What the fix did, in plain words. */
+  ran: Schema.String,
+  /** The check, run again after the fix. */
+  check: DoctorCheck,
+  ...resultFields,
+});
+
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
   fleetd_status: { scope: "read", input: FleetdStatusInput, output: FleetdStatusOutput },
@@ -563,6 +587,9 @@ export const McpTools = {
   push_subscribe: { scope: "read", input: PushSubscribeInput, output: PushSubscribeOutput },
   push_unsubscribe: { scope: "read", input: PushUnsubscribeInput, output: PushUnsubscribeOutput },
   push_vapid_key: { scope: "read", input: PushVapidKeyInput, output: PushVapidKeyOutput },
+  doctor_list: { scope: "read", input: DoctorListInput, output: DoctorListOutput },
+  // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
+  doctor_fix: { scope: "operate", input: DoctorFixInput, output: DoctorFixOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;
 export type McpToolName = keyof typeof McpTools;
 
