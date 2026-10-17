@@ -37,6 +37,8 @@ clap = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing-subscriber = { workspace = true }
 zeroize = { workspace = true }
+# hub framework
+axum = { workspace = true }
 
 # attention
 chrono-tz = { workspace = true }
