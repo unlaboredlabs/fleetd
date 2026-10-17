@@ -12,13 +12,16 @@ export interface SessionKeeperOptions {
   readonly remintAfter?: Duration.Input;
   /** Revoke the previous session this long after the hub was sent its replacement, so the hub can switch first. */
   readonly revokeGrace?: Duration.Input;
+  /** Mints only while T3 is up, and re-mints as soon as it comes back from being down. Default: always up. */
+  readonly t3?: { readonly awaitUp: Effect.Effect<void>; readonly awaitDown: Effect.Effect<void> };
 }
 
 const retryMint = Schedule.min([Schedule.exponential("5 seconds"), Schedule.spaced("5 minutes")]);
 
 /**
- * Keeps one live T3 session for the hub: mints at start, re-mints every 45 min, and revokes the old session once
- * its replacement has reached the hub. Revoking first would drop the hub's live T3 socket.
+ * Keeps one live T3 session for the hub: mints once T3 is up, re-mints every 45 min and whenever T3 comes back
+ * from being down, and revokes the old session once its replacement has reached the hub. Revoking first would
+ * drop the hub's live T3 socket.
  */
 export const makeSessionKeeper = Effect.fn("SessionKeeper.make")(function* (options: SessionKeeperOptions = {}) {
   const t3 = yield* T3Sessions;
@@ -50,15 +53,18 @@ export const makeSessionKeeper = Effect.fn("SessionKeeper.make")(function* (opti
       }),
     );
 
+  const awaitUp = options.t3?.awaitUp ?? Effect.void;
+  const awaitDown = options.t3?.awaitDown ?? Effect.never;
+
   yield* Effect.gen(function* () {
-    let kept = yield* mint;
-    yield* SubscriptionRef.set(current, Option.some(kept));
+    let kept: KeptSession | undefined;
     while (true) {
-      yield* Effect.sleep(remintAfter);
+      yield* awaitUp;
       const next = yield* mint;
       yield* SubscriptionRef.set(current, Option.some(next));
-      yield* Effect.forkScoped(revokeAfterSwitch(kept, next));
+      if (kept !== undefined) yield* Effect.forkScoped(revokeAfterSwitch(kept, next));
       kept = next;
+      yield* Effect.raceFirst(Effect.sleep(remintAfter), awaitDown);
     }
   }).pipe(Effect.forkScoped);
 

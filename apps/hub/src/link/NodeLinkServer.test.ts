@@ -99,7 +99,9 @@ const harness = (options: { readonly attachFails?: boolean } = {}) =>
       createToken: Effect.map(auth.createEnrollToken(LAB_A), ({ token }) => token),
       enroll: (pubKey: string) =>
         Effect.flatMap(auth.createEnrollToken(LAB_A), ({ token }) => auth.consumeEnrollToken(token, LAB_A, pubKey)),
+      machine: store.machines.get(LAB_A),
       status: Effect.map(store.machines.get(LAB_A), (machine) => machine?.status),
+      events: Effect.map(eventLog.wait({ cursor: 0, timeoutSec: 0 }), ({ events }) => events),
       eventTypes: Effect.map(eventLog.wait({ cursor: 0, timeoutSec: 0 }), ({ events }) => events.map((event) => event.type)),
     };
   });
@@ -362,6 +364,88 @@ describe("NodeLinkServer logs", () => {
           expect(line).not.toContain(BEARER);
           expect(line).not.toContain(token);
         }
+      }),
+    ));
+});
+
+describe("NodeLinkServer T3 state", () => {
+  const session = (bearer: string) => ({ t: "t3session", bearer, expiresAt: "2026-10-17T11:00:00.000Z" });
+  const t3state = (state: string, extra: Record<string, unknown> = {}) => ({ t: "t3state", state, at: "2026-10-17T10:00:00.000Z", ...extra });
+  const T3 = { url: "http://127.0.0.1:4712", version: "2fbd4318fc", protocol: 2 };
+
+  it("degrades a machine whose T3 goes down, detaches it, and brings it back online with the new session", () =>
+    runTest(
+      Effect.gen(function* () {
+        const h = yield* harness();
+        const id = identity();
+        yield* h.enroll(id.pubKey);
+        const link = yield* connect(h.server);
+        yield* link.node.send(hello(id, link.nonce));
+        expect((yield* link.node.next).t).toBe("welcome");
+        yield* link.node.send(session("bearer-1"));
+
+        const reason = "T3 failed 3 health checks in a row (connect ECONNREFUSED 127.0.0.1:4711)";
+        yield* link.node.send(t3state("down", { reason }));
+        yield* link.node.send(t3state("restarting", { reason }));
+        yield* link.node.send({ t: "hb", at: "2026-10-17T10:00:15.000Z" });
+        // Not attached while T3 is down, even with a fresh session.
+        yield* link.node.send(session("bearer-2"));
+        yield* link.node.send({ t: "hb", at: "2026-10-17T10:00:16.000Z" });
+        yield* TestClock.adjust("1 second");
+        expect(yield* h.machine).toMatchObject({ status: "degraded", degradedReason: reason });
+        expect(h.detached).toEqual(["lab-a", "lab-a"]);
+        expect(h.attached.map((a) => a.bearer)).toEqual(["bearer-1"]);
+        const degraded = (yield* h.events).at(-1);
+        expect(degraded).toMatchObject({ type: "machine.degraded", machineId: "lab-a", data: { degradedReason: reason } });
+        expect(yield* h.eventTypes).toEqual(["machine.online", "machine.degraded"]);
+
+        yield* link.node.send(t3state("up", { t3: { ...T3, version: "next" } }));
+        yield* link.node.send(session("bearer-3"));
+        yield* link.node.send({ t: "hb", at: "2026-10-17T10:00:20.000Z" });
+        yield* TestClock.adjust("1 second");
+        const machine = yield* h.machine;
+        expect(machine).toMatchObject({ status: "online", t3: { version: "next", protocol: 2 } });
+        expect(machine?.degradedReason).toBeUndefined();
+        expect(yield* h.eventTypes).toEqual(["machine.online", "machine.degraded", "machine.online"]);
+        // The kept session reattaches at once; the re-minted one replaces it.
+        expect(h.attached.map((a) => `${a.t3Url} ${a.bearer}`)).toEqual([
+          "http://127.0.0.1:4711 bearer-1",
+          "http://127.0.0.1:4712 bearer-2",
+          "http://127.0.0.1:4712 bearer-3",
+        ]);
+      }),
+    ));
+
+  it("shows a node whose T3 was down at start as degraded, and attaches once T3 is up", () =>
+    runTest(
+      Effect.gen(function* () {
+        const h = yield* harness();
+        const id = identity();
+        yield* h.enroll(id.pubKey);
+        const link = yield* connect(h.server);
+        const { t3: _t3, ...withoutT3 } = hello(id, link.nonce);
+        yield* link.node.send(withoutT3);
+        expect((yield* link.node.next).t).toBe("welcome");
+        expect(yield* h.machine).toMatchObject({ status: "degraded", degradedReason: "its node cannot reach T3", t3: null });
+        expect(yield* h.eventTypes).toEqual(["machine.degraded"]);
+
+        yield* link.node.send(t3state("down", { reason: "T3 at http://127.0.0.1:4712 is not reachable (connect ECONNREFUSED)" }));
+        yield* link.node.send(t3state("up", { t3: T3 }));
+        yield* link.node.send(session("bearer-1"));
+        yield* link.node.send({ t: "hb", at: "2026-10-17T10:00:15.000Z" });
+        yield* TestClock.adjust("1 second");
+        expect(yield* h.machine).toMatchObject({ status: "online", t3: { version: "2fbd4318fc", protocol: 2 } });
+        expect(yield* h.eventTypes).toEqual(["machine.degraded", "machine.online"]);
+        expect(h.attached).toEqual([{ machineId: "lab-a", t3Url: T3.url, bearer: "bearer-1" }]);
+
+        // A degraded machine whose node goes silent still goes offline after 45 s, and only then.
+        yield* link.node.send(t3state("down", { reason: "gone" }));
+        yield* TestClock.adjust("44 seconds");
+        expect(yield* h.status).toBe("degraded");
+        yield* TestClock.adjust("1 second");
+        expect(yield* h.status).toBe("offline");
+        expect((yield* h.machine)?.degradedReason).toBeUndefined();
+        expect(yield* h.eventTypes).toEqual(["machine.degraded", "machine.online", "machine.degraded", "machine.offline"]);
       }),
     ));
 });

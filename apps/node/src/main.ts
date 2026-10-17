@@ -6,6 +6,7 @@ import { defaultNodeHome, type NodeConfig, readConfig, writeConfig } from "./con
 import { loadOrCreateIdentity } from "./identity.ts";
 import { fetchT3Info, linkUrl, runNode } from "./link.ts";
 import * as T3Sessions from "./T3Sessions.ts";
+import { restartCommand } from "./T3Supervisor.ts";
 
 export { LinkFatal } from "./link.ts";
 
@@ -19,10 +20,14 @@ export interface JoinInput {
   readonly t3Url: string;
   /** Command that runs T3's CLI, split on whitespace. Default `t3`. */
   readonly t3Cmd?: string;
+  /** Command that restarts T3 when it is down, split on whitespace. No default: without it the node never restarts T3. */
+  readonly t3RestartCmd?: string;
   readonly tags?: ReadonlyArray<string>;
   readonly name?: string;
   readonly home?: string;
 }
+
+const splitArgv = (command: string) => command.split(/\s+/u).filter((part) => part.length > 0);
 
 const run = (home: string, config: NodeConfig, enrollToken?: string) =>
   Effect.gen(function* () {
@@ -38,6 +43,7 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
       identity,
       dial: Socket.makeWebSocket(linkUrl(config.hub)).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal)),
       t3Info: fetchT3Info(config.t3Url),
+      ...(config.t3RestartCmd === undefined ? {} : { t3Restart: restartCommand(config.t3RestartCmd) }),
       ...(enrollToken === undefined
         ? {}
         : {
@@ -64,7 +70,8 @@ export const join = (input: JoinInput) =>
       tags: input.tags ?? [],
       t3Home: input.t3Home,
       t3Url: input.t3Url,
-      t3Cmd: (input.t3Cmd ?? "t3").split(/\s+/u).filter((part) => part.length > 0),
+      t3Cmd: splitArgv(input.t3Cmd ?? "t3"),
+      ...(input.t3RestartCmd === undefined ? {} : { t3RestartCmd: splitArgv(input.t3RestartCmd) }),
       enrolled: false,
     };
     yield* Effect.try({
