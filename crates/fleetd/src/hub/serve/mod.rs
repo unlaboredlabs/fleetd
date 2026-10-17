@@ -253,6 +253,22 @@ pub fn build_on(
         watchdog.clone(),
         clock.clone(),
     );
+    let queue = crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock);
+    // PORT: usage (#63) replaces NoHold with its service.
+    let wakes = crate::hub::wakes::Wakes::new(
+        db.clone(),
+        queue.clone(),
+        events.clone(),
+        Arc::new(crate::hub::queue::ports::NoHold),
+        clock.clone(),
+    );
+    let webhooks = crate::hub::webhooks::Webhooks::for_home(
+        &config.home,
+        db.clone(),
+        events.clone(),
+        auth.clone(),
+        clock.clone(),
+    )?;
     Ok(Arc::new(Hub {
         config,
         clock,
@@ -271,6 +287,9 @@ pub fn build_on(
         link,
         watchdog,
         sweep,
+        queue,
+        wakes,
+        webhooks,
     }))
 }
 
@@ -292,6 +311,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(hub.watchdog.start());
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops
+    vec![crate::hub::queue::start_loops(hub)]
 }
 
 #[cfg(test)]

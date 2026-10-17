@@ -42,9 +42,14 @@ zeroize = { workspace = true }
 # hub framework
 axum = { workspace = true }
 
-# attention
-chrono-tz = { workspace = true }
+# attention, wakes
+chrono-tz = { workspace = true, features = ["case-insensitive"] }
 regex = { workspace = true }
+# webhooks
+url = { workspace = true }
+hmac = { workspace = true }
+aes-gcm = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"
