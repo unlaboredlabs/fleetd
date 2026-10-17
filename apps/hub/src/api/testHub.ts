@@ -23,6 +23,8 @@ import * as Executors from "../executor/Executors.ts";
 import * as NodeLinkServer from "../link/NodeLinkServer.ts";
 import * as SecretBox from "../webhooks/SecretBox.ts";
 import * as Webhooks from "../webhooks/Webhooks.ts";
+import * as WriteQueue from "../queue/WriteQueue.ts";
+import * as Wakes from "../wakes/Wakes.ts";
 
 export const AT = "2026-10-17T10:00:00.000Z";
 
@@ -68,11 +70,14 @@ export const makeTestHub = () => {
   let actions: ReadonlyArray<ActionItem> = [];
   let waitCalls = 0;
   const waitWatchers: Array<{ count: number; resolve: () => void }> = [];
+  const liveWaiters: Array<{ id: string; resolve: () => void }> = [];
 
   const executors = Executors.Executors.of({
     attach: () => Effect.void,
     detach: () => Effect.void,
     isConnected: (id) => Effect.sync(() => connected.has(id)),
+    awaitLive: (id) =>
+      connected.has(id) ? Effect.void : Effect.callback<void>((resume) => void liveWaiters.push({ id, resolve: () => resume(Effect.void) })),
     launch: (machineId, input) =>
       Effect.sync(() => {
         calls.push({ op: "launch", args: { machineId, input } });
@@ -121,7 +126,8 @@ export const makeTestHub = () => {
     }),
   );
 
-  const layer = layerWebhooks.pipe(
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer).pipe(
+    Layer.provideMerge(WriteQueue.layer()),
     Layer.provideMerge(
       Layer.mergeAll(
         HubStore.layer,
@@ -145,6 +151,14 @@ export const makeTestHub = () => {
     layer,
     bind: (built: Context.Context<HubStore.HubStore | EventLog.EventLog | Auth.Auth>) => void (context = built),
     connected,
+    /** Marks the machine connected and wakes whatever waits for it. */
+    goLive: (id: string) => {
+      connected.add(id);
+      for (const w of liveWaiters.filter((w) => w.id === id)) {
+        liveWaiters.splice(liveWaiters.indexOf(w), 1);
+        w.resolve();
+      }
+    },
     calls,
     /** Webhook POSTs the hub made; every one is answered 200. */
     posts,

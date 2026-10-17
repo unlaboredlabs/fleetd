@@ -1,6 +1,7 @@
 import * as NodeHttp from "node:http";
 import { PROTOCOL_VERSION } from "@fleetd/contracts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -49,5 +50,13 @@ const layerRoutes = Layer.mergeAll(
 /** The hub's HTTP server: /healthz, /mcp, /app and /node/link on one loopback port by default. */
 export const layer = (listen: { readonly host: string; readonly port: number }) =>
   HttpRouter.serve(layerRoutes, { disableLogger: true }).pipe(
-    Layer.provideMerge(NodeHttpServer.layer(NodeHttp.createServer, { host: listen.host, port: listen.port })),
+    Layer.provideMerge(
+      NodeHttpServer.layer(NodeHttp.createServer, {
+        host: listen.host,
+        port: listen.port,
+        // Node links, /app sessions and events_wait long-polls never end on their own, so waiting the default
+        // 20 s for them only delays exit; after this grace they are interrupted (writes retry by clientRequestId).
+        gracefulShutdownTimeout: Duration.seconds(1),
+      }),
+    ),
   );

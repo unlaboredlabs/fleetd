@@ -347,6 +347,34 @@ describe("NodeLinkServer heartbeat", () => {
     ));
 });
 
+describe("NodeLinkServer after a hub restart", () => {
+  it("marks a machine stored as online offline 45 s after start unless its node links again", () =>
+    runTest(
+      Effect.gen(function* () {
+        const store = yield* HubStore.HubStore;
+        const stored = { name: "Lab", tags: [], status: "online", lastSeenAt: "2026-10-17T09:00:00.000Z", t3: null, nodeVersion: "0.0.0" } as const;
+        yield* store.machines.upsert({ machineId: LAB_A, ...stored });
+        yield* store.machines.upsert({ machineId: MachineId.make("lab-b"), ...stored });
+        const h = yield* harness();
+        const id = identity();
+        yield* h.enroll(id.pubKey);
+
+        yield* TestClock.adjust("30 seconds");
+        const link = yield* connect(h.server);
+        yield* link.node.send(hello(id, link.nonce));
+        expect((yield* link.node.next).t).toBe("welcome");
+        yield* TestClock.adjust("15 seconds");
+        // lab-b's node never came back; lab-a's did, and its timer restarted at the hello.
+        expect((yield* h.events).map((e) => [e.type, e.machineId])).toEqual([
+          ["machine.online", "lab-a"],
+          ["machine.offline", "lab-b"],
+        ]);
+        expect((yield* store.machines.get(MachineId.make("lab-b")))?.status).toBe("offline");
+        expect(yield* h.status).toBe("online");
+      }),
+    ));
+});
+
 describe("NodeLinkServer logs", () => {
   it("never logs a bearer or an enroll token, even when attaching fails with one in its error", () =>
     runTest(

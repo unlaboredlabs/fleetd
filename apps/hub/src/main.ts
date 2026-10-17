@@ -1,5 +1,6 @@
 import os from "node:os";
 import { parseArgs } from "node:util";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as AppSocket from "./api/AppSocket.ts";
@@ -12,15 +13,22 @@ import * as EventLog from "./store/EventLog.ts";
 import * as HubDb from "./store/HubDb.ts";
 import * as HubStore from "./store/HubStore.ts";
 import * as Webhooks from "./webhooks/Webhooks.ts";
+import * as WriteQueue from "./queue/WriteQueue.ts";
+import * as Sweep from "./sweep/Sweep.ts";
+import * as Wakes from "./wakes/Wakes.ts";
+import * as Watchdog from "./watchdog/Watchdog.ts";
 
 export interface HubOptions {
   /** Absent means the default, `~/.fleetd/hub`. */
   readonly home?: string;
   readonly listen: { readonly host: string; readonly port: number };
+  /** How long a write to an offline machine waits in the queue; absent means 24 h. */
+  readonly queueTtlSec?: number;
 }
 
-export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
-             run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790)
+export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
+             run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
+             writes to an offline machine wait 24 h)
 `;
 
 /** `host:port`, `:port` or `port`; IPv6 hosts in brackets, as in `[::1]:4790`. */
@@ -37,14 +45,16 @@ export const parseListen = (value: string): HubOptions["listen"] | undefined => 
 export const parseHubArgs = (argv: ReadonlyArray<string>): HubOptions | { readonly error: string } => {
   let parsed;
   try {
-    parsed = parseArgs({ args: [...argv], options: { home: { type: "string" }, listen: { type: "string" } }, strict: true });
+    parsed = parseArgs({ args: [...argv], options: { home: { type: "string" }, listen: { type: "string" }, "queue-ttl": { type: "string" } }, strict: true });
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
   const { home, listen } = parsed.values;
   const address = listen === undefined ? HttpApp.DEFAULT_LISTEN : parseListen(listen);
   if (address === undefined) return { error: `--listen must be host:port, got '${listen}'` };
-  return { ...(home === undefined ? {} : { home }), listen: address };
+  const ttl = parsed.values["queue-ttl"];
+  if (ttl !== undefined && !/^[1-9]\d*$/u.test(ttl)) return { error: `--queue-ttl must be a whole number of seconds, got '${ttl}'` };
+  return { ...(home === undefined ? {} : { home }), listen: address, ...(ttl === undefined ? {} : { queueTtlSec: Number(ttl) }) };
 };
 
 const layerMachines = Layer.effect(
@@ -54,13 +64,29 @@ const layerMachines = Layer.effect(
   }),
 ).pipe(Layer.provideMerge(Executors.layer));
 
+/** The sweep's overdue-wakes check; the wake scheduler does the firing. */
+const layerWakeSweep = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const sweep = yield* Sweep.Sweep;
+    const wakes = yield* Wakes.Wakes;
+    yield* sweep.register({ name: "wakes", run: wakes.sweepOverdue(Sweep.WAKE_OVERDUE_MS) });
+  }),
+);
+
 /** The whole hub over the database in `home` (already resolved by `HubDb.resolveHubHome`). */
-export const hubLayer = (home: string, listen: HubOptions["listen"]) =>
-  HttpApp.layer(listen).pipe(
+export const hubLayer = (home: string, options: HubOptions) =>
+  HttpApp.layer(options.listen).pipe(
     Layer.provide(
       AppSocket.layer.pipe(
         Layer.provideMerge(FleetApi.layer),
+        Layer.provideMerge(layerWakeSweep),
+        // The sweep reports failing webhooks, so it sits above them.
+        Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
+        Layer.provideMerge(Wakes.layer),
+        Layer.provideMerge(
+          WriteQueue.layer(options.queueTtlSec === undefined ? {} : { ttl: Duration.seconds(options.queueTtlSec) }),
+        ),
         Layer.provideMerge(layerMachines),
         Layer.provideMerge(Layer.mergeAll(HubStore.layer, EventLog.layer, Auth.layer)),
         Layer.provide(HubDb.layer(home)),
@@ -73,6 +99,6 @@ export const hubProgram = (options: HubOptions) =>
   Effect.flatMap(HubDb.resolveHubHome(options.home), (home) =>
     Effect.andThen(
       Effect.logInfo(`fleetd hub: home ${home}, listening on ${options.listen.host}:${options.listen.port}`),
-      Layer.launch(hubLayer(home, options.listen)),
+      Layer.launch(hubLayer(home, options)),
     ),
   );

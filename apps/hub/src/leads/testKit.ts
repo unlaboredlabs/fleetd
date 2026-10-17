@@ -65,6 +65,7 @@ export const makeKit = (options: LeadsOptions = { prompt: "You are the lead of p
     attach: () => Effect.void,
     detach: () => Effect.void,
     isConnected: () => Effect.succeed(!offline),
+    awaitLive: () => Effect.void,
     launch: (machineId, input) =>
       Effect.suspend(() => {
         if (offline) return Effect.fail(new Executors.MachineNotConnected({ machineId }));

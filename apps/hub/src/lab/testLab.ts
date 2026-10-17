@@ -1,86 +1,105 @@
-// `pnpm test:lab`: the M1 "done when" scenario, end to end, against the disposable lab (never in CI).
-// Two stock T3 instances (lab/up.sh), one hub and two nodes, driven only through a real MCP client.
-// Costs one tiny claude-haiku-5-5 turn. Every process this starts is stopped by the PID captured at spawn.
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+// `pnpm test:lab [scenario…]`: the M1 and M2 "done when" scenarios, end to end, against the disposable lab (never
+// in CI). Two stock T3 instances (lab/lab.mjs), one hub and two nodes, driven only through a real MCP client.
+// Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
+// runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { degradedMachine, labRestartCmd } from "./degradedMachine.ts";
+import {
+  type Body,
+  callToolWith,
+  check,
+  cli,
+  HUB_PORT,
+  HUB_URL,
+  isRunning,
+  LAB,
+  type Lab,
+  lab,
+  type LabMachine,
+  launchTiny,
+  log,
+  MACHINES,
+  mintT3Bearer,
+  ok,
+  QUEUE_TTL_SEC,
+  RUN,
+  startCli,
+  stopAll,
+  stopCli,
+  T3_SRC,
+  until,
+  waitEventWith,
+} from "./harness.ts";
+import { m1Fleet } from "./m1Fleet.ts";
+import { offlineQueue } from "./offlineQueue.ts";
+import { scenarioPush } from "./scenarioPush.ts";
+import { wakeOnTime } from "./wakeOnTime.ts";
+import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
 
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-const LAB = process.env.FLEETD_LAB ?? path.join(os.homedir(), "src/fleetd-lab");
-const T3_SRC = process.env.T3_SRC ?? path.join(LAB, "t3-src");
-const HUB_PORT = Number(process.env.FLEETD_LAB_HUB_PORT ?? 4795);
-const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
-const RUN = path.join(LAB, "e2e");
-const CLI = path.join(REPO, "apps/cli/src/bin.ts");
-const MODEL = "claude-haiku-5-5";
-const MACHINES = [
-  { id: "lab-a", t3Home: path.join(LAB, "home-a"), t3Url: "http://127.0.0.1:4711" },
-  { id: "lab-b", t3Home: path.join(LAB, "home-b"), t3Url: "http://127.0.0.1:4712" },
-] as const;
+/** In run order. Later ones may stop nodes or kill T3, so they come after the ones that need both machines up. */
+const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void> }> = [
+  { name: "m1", run: m1Fleet },
+  { name: "wake", run: wakeOnTime },
+  { name: "push", run: scenarioPush },
+  { name: "stall", run: (lab) => stallNudgeFail(lab) },
+  { name: "missed", run: (lab) => missedCompletion(lab) },
+  { name: "degraded", run: degradedMachine },
+  { name: "queue", run: offlineQueue },
+];
 
-if (path.resolve(LAB).startsWith(path.join(os.homedir(), ".t3"))) throw new Error("refusing: lab dir is inside ~/.t3");
-
-/** Children get HOME, PATH, USER and LANG only: never this session's CLAUDE* variables. */
-const scrubbedEnv = () =>
-  Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));
-
-const started: Array<{ name: string; child: ChildProcess }> = [];
-const t0 = Date.now();
-const log = (line: string) => process.stdout.write(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
-const ok = (line: string) => log(`ok  ${line}`);
-const check = (cond: unknown, what: string): void => {
-  if (!cond) throw new Error(`check failed: ${what}`);
+/** Extra `node join` flags per machine. */
+const NODE_FLAGS: Record<LabMachine, ReadonlyArray<string>> = {
+  "lab-a": [],
+  "lab-b": ["--t3-restart-cmd", labRestartCmd("lab-b")],
 };
 
-const cli = (...args: Array<string>) =>
-  execFileSync(process.execPath, [CLI, ...args], { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const hubHome = path.join(RUN, "hub");
+const LOCK = path.join(LAB, "test-lab.lock");
 
-const startProcess = (name: string, args: Array<string>) => {
-  fs.mkdirSync(path.join(RUN, "logs"), { recursive: true });
-  const out = fs.openSync(path.join(RUN, "logs", `${name}.log`), "w");
-  const child = spawn(process.execPath, [CLI, ...args], { env: scrubbedEnv(), stdio: ["ignore", out, out] });
-  started.push({ name, child });
-  log(`started ${name} pid=${child.pid}`);
-  return child;
-};
-
-const stopProcess = async (name: string) => {
-  const entry = started.find((s) => s.name === name);
-  if (!entry || entry.child.exitCode !== null || entry.child.signalCode !== null) return;
-  const exited = new Promise((r) => entry.child.once("exit", r));
-  entry.child.kill("SIGTERM");
-  const timer = setTimeout(() => entry.child.kill("SIGKILL"), 10_000);
-  await exited;
-  clearTimeout(timer);
-  log(`stopped ${name} pid=${entry.child.pid}`);
-};
-
-const lab = (command: "up" | "down", instance: string) =>
-  execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, instance], { env: scrubbedEnv(), encoding: "utf8" });
-
-async function until<A>(what: string, ms: number, probe: () => Promise<A | undefined>): Promise<A> {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    const value = await probe();
-    if (value !== undefined) return value;
+/** One test:lab run at a time: they share the lab's T3 instances, and one run's cleanup stops them. */
+const takeLabLock = () => {
+  try {
+    const holder = Number(fs.readFileSync(LOCK, "utf8").trim());
+    if (holder > 0 && fs.existsSync(`/proc/${holder}`)) throw new Error(`another test:lab run (pid ${holder}) holds ${LOCK}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  throw new Error(`timed out after ${ms / 1000}s: ${what}`);
-}
+  fs.writeFileSync(LOCK, `${process.pid}\n`);
+  process.once("exit", () => fs.rmSync(LOCK, { force: true }));
+};
+const nodeHome = (id: LabMachine) => path.join(RUN, `node-${id}`);
 
-type Body = Record<string, any>;
-const callTool = async (client: Client, name: string, args: Record<string, unknown> = {}) => {
-  const result = await client.callTool({ name, arguments: args }, undefined, { timeout: 70_000 });
-  const text = (result.content as Array<{ text: string }>)[0]!.text;
-  return { isError: result.isError === true, body: JSON.parse(text) as Body };
+const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
+  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
+  await until("hub /healthz", 30_000, async () => {
+    try {
+      return (await fetch(`${HUB_URL}/healthz`)).ok ? true : undefined;
+    } catch {
+      await new Promise((r) => setTimeout(r, 250));
+      return undefined;
+    }
+  });
+};
+
+const connectClient = async (key: string) => {
+  const client = new Client({ name: "fleetd-test-lab", version: "0" });
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(`${HUB_URL}/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }) as Transport,
+  );
+  return client;
 };
 
 async function main() {
+  const wanted = process.argv.slice(2);
+  const unknown = wanted.filter((w) => !SCENARIOS.some((s) => s.name === w));
+  if (unknown.length > 0) throw new Error(`unknown scenario ${unknown.join(", ")}; known: ${SCENARIOS.map((s) => s.name).join(", ")}`);
+  const scenarios = wanted.length === 0 ? SCENARIOS : SCENARIOS.filter((s) => wanted.includes(s.name));
+  takeLabLock();
+
   // Only instances this run started are stopped at the end; one already running is left as found.
   const labStarted: Array<string> = [];
   for (const m of MACHINES) {
@@ -92,109 +111,106 @@ async function main() {
     }
   }
 
+  let client: Client | undefined;
   try {
     fs.rmSync(RUN, { recursive: true, force: true });
-    const hubHome = path.join(RUN, "hub");
-    startProcess("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`]);
-    await until("hub /healthz", 30_000, async () => {
-      try {
-        return (await fetch(`${HUB_URL}/healthz`)).ok ? true : undefined;
-      } catch {
-        await new Promise((r) => setTimeout(r, 250));
-        return undefined;
-      }
-    });
-    ok(`hub up on ${HUB_URL}`);
+    await startHubProcess();
+    ok(`hub up on ${HUB_URL} (queue TTL ${QUEUE_TTL_SEC} s)`);
 
     const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
-    check(key, "hub key create printed a key");
+    if (key === undefined) throw new Error("hub key create printed no key");
     for (const m of MACHINES) {
       const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", m.id))?.[0];
-      check(token, `enrollment token for ${m.id}`);
-      startProcess(`node-${m.id}`, [
-        "node", "join", "--hub", HUB_URL, "--token", token!, "--machine", m.id, "--t3-home", m.t3Home, "--t3-url", m.t3Url,
-        "--t3-cmd", `${process.execPath} ${path.join(T3_SRC, "apps/server/src/bin.ts")}`, "--home", path.join(RUN, `node-${m.id}`),
+      if (token === undefined) throw new Error(`no enrollment token for ${m.id}`);
+      startCli(`node-${m.id}`, [
+        "node", "join", "--hub", HUB_URL, "--token", token, "--machine", m.id, "--t3-home", m.t3Home, "--t3-url", m.t3Url,
+        "--t3-cmd", `${process.execPath} ${path.join(T3_SRC, "apps/server/src/bin.ts")}`, "--home", nodeHome(m.id),
+        ...NODE_FLAGS[m.id],
       ]);
     }
 
-    const client = new Client({ name: "fleetd-test-lab", version: "0" });
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(`${HUB_URL}/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }) as Transport,
-    );
+    client = await connectClient(key);
+    const callTool = callToolWith(() => client!);
     ok(`MCP client connected; ${(await client.listTools()).tools.length} tools`);
+    const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;
+    const waitEvent = waitEventWith(callTool);
 
-    // 1. Both machines online, with lab-b's project cached.
-    let cursor = 0;
-    const status = await until("both machines online with projects", 120_000, async () => {
-      const s = (await callTool(client, "fleetd_status")).body;
-      const online = s.machines.filter((m: Body) => m.status === "online").map((m: Body) => m.machineId);
-      if (online.length === 2 && s.projects.some((p: Body) => p.machineId === "lab-b") && s.projects.some((p: Body) => p.machineId === "lab-a")) return s;
-      cursor = (await callTool(client, "events_wait", { cursor: s.cursor, timeoutSec: 5 })).body.cursor;
-      return undefined;
-    });
-    ok(`fleetd_status: ${status.machines.map((m: Body) => `${m.machineId}=${m.status}`).join(", ")}; ${status.projects.length} projects`);
-    cursor = status.cursor;
+    const waitLive = async (machineId: LabMachine) => {
+      await until(`${machineId} online with a live T3 connection`, 120_000, async () => {
+        const s = (await callTool("fleetd_status")).body;
+        const project = s.projects.find((p: Body) => p.machineId === machineId);
+        const online = s.machines.some((m: Body) => m.machineId === machineId && m.status === "online");
+        if (online && project && (await callTool("project_get", { machineId, projectId: project.projectId })).body.stale === false) return true;
+        await callTool("events_wait", { cursor: s.cursor, timeoutSec: 5 });
+        return undefined;
+      });
+    };
 
-    // 2. Launch on lab-b.
-    const projectB = status.projects.find((p: Body) => p.machineId === "lab-b");
-    const projectA = status.projects.find((p: Body) => p.machineId === "lab-a");
-    const launched = await callTool(client, "thread_launch", {
-      machineId: "lab-b",
-      projectId: projectB.projectId,
-      prompt: "Reply with the single word OK and nothing else.",
-      model: MODEL,
-      effort: "low",
-      title: "fleetd test:lab",
-      clientRequestId: randomUUID(),
-    });
-    check(!launched.isError, `thread_launch succeeded: ${JSON.stringify(launched.body)}`);
-    const threadId = launched.body.threadId as string;
-    ok(`thread_launch lab-b/${projectB.projectId} ${MODEL} effort=low -> ${threadId}`);
+    const base = {
+      hubUrl: HUB_URL,
+      hubHome,
+      key,
+      callTool,
+      log,
+      ok,
+      check,
+      until,
+      startCli,
+      stopCli,
+      waitEvent,
+      waitLive,
+      cursor,
+      stopNode: (machineId: LabMachine) => stopCli(`node-${machineId}`),
+      startNode: (machineId: LabMachine) => void startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)]),
+      machines: MACHINES,
+      mintT3Bearer,
+      stopHub: async () => {
+        await client?.close().catch(() => undefined);
+        await stopCli("hub");
+      },
+      startHub: async (env = {}) => {
+        await client?.close().catch(() => undefined);
+        await stopCli("hub");
+        await startHubProcess(env);
+        client = await connectClient(key);
+        // The store still says online from before; wait until running nodes have relinked and T3 is attached.
+        for (const m of MACHINES) if (isRunning(`node-${m.id}`)) await waitLive(m.id);
+        ok(`hub (re)started${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
+      },
+      idleThread: async (machineId: LabMachine) => {
+        const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === machineId)?.projectId;
+        check(projectId, `${machineId} has a project`);
+        const outcome = (await callTool("project_get", { machineId, projectId })).body;
+        const idle = outcome.threads.find((t: Body) => t.status === "completed");
+        if (idle !== undefined) return { threadId: idle.threadId as string, projectId: projectId as string };
+        const from = await cursor();
+        const threadId = await launchTiny({ callTool, check }, machineId, projectId, "fleetd test:lab idle");
+        await waitEvent(`idle thread on ${machineId} to finish`, 240_000, {
+          cursor: from,
+          machineId,
+          match: (e) => e.threadId === threadId && e.type === "thread.completed",
+        });
+        return { threadId, projectId: projectId as string };
+      },
+    } satisfies Omit<Lab, "dir">;
 
-    // 3. Wait for its completion through events_wait.
-    const done = await until("thread.completed for the launched thread", 240_000, async () => {
-      const page = (await callTool(client, "events_wait", { cursor, machineId: "lab-b", timeoutSec: 50 })).body;
-      cursor = page.cursor;
-      return page.events.find((e: Body) => e.threadId === threadId && e.type !== "thread.started");
-    });
-    check(done.type === "thread.completed", `thread ended with ${done.type}: ${done.summary}`);
-    ok(`events_wait: ${done.type} seq=${done.seq} "${done.summary}"`);
+    for (const m of MACHINES) await waitLive(m.id);
+    const s = (await callTool("fleetd_status")).body;
+    ok(`fleetd_status: ${s.machines.map((m: Body) => `${m.machineId}=${m.status}`).join(", ")}; ${s.projects.length} projects`);
 
-    // 4. Read the reply.
-    const outcome = (await callTool(client, "project_get", { machineId: "lab-b", projectId: projectB.projectId })).body;
-    const summary = outcome.threads.find((t: Body) => t.threadId === threadId);
-    check(summary?.status === "completed" && /OK/u.test(summary.headline), `project_get shows the reply: ${JSON.stringify(summary)}`);
-    ok(`project_get: stale=${outcome.stale} thread status=${summary.status} headline="${summary.headline}"`);
-    const tail = (await callTool(client, "thread_tail", { machineId: "lab-b", threadId, n: 5 })).body;
-    const reply = tail.items.find((i: Body) => i.kind === "message" && i.role === "assistant");
-    check(reply && /OK/u.test(reply.text), `thread_tail has the assistant reply: ${JSON.stringify(tail.items)}`);
-    ok(`thread_tail: ${tail.items.length} items, newest assistant text "${reply.text}"`);
-
-    // 5. lab-a goes offline when its node stops: stale cached reads, refused writes.
-    await stopProcess("node-lab-a");
-    const offline = await until("machine.offline for lab-a", 120_000, async () => {
-      const page = (await callTool(client, "events_wait", { cursor, machineId: "lab-a", types: ["machine.offline"], timeoutSec: 50 })).body;
-      cursor = page.cursor;
-      return page.events[0];
-    });
-    ok(`events_wait: machine.offline seq=${offline.seq} "${offline.summary}"`);
-    const staleRead = (await callTool(client, "project_get", { machineId: "lab-a", projectId: projectA.projectId })).body;
-    check(staleRead.stale === true, `lab-a project_get is stale: ${JSON.stringify(staleRead)}`);
-    ok(`project_get lab-a: stale=${staleRead.stale} asOf=${staleRead.asOf}`);
-    const refused = await callTool(client, "thread_launch", {
-      machineId: "lab-a",
-      projectId: projectA.projectId,
-      prompt: "Reply OK.",
-      model: MODEL,
-      effort: "low",
-      clientRequestId: randomUUID(),
-    });
-    check(refused.isError && refused.body.code === "machine_offline", `launch on lab-a refused: ${JSON.stringify(refused.body)}`);
-    ok(`thread_launch lab-a refused: ${refused.body.code} (fix: ${refused.body.fix})`);
-    await client.close();
-    log("PASS");
+    for (const scenario of scenarios) {
+      log(`--- ${scenario.name}`);
+      // It SIGKILLs lab-b's T3, which must not be someone else's.
+      if (scenario.name === "degraded" && !labStarted.includes("lab-b")) {
+        throw new Error("scenario degraded needs a lab-b T3 this run started; stop lab-b (node lab/lab.mjs down lab-b) and rerun");
+      }
+      await scenario.run({ ...base, dir: path.join(RUN, scenario.name) });
+      ok(`scenario ${scenario.name} passed`);
+    }
+    log(`PASS ${scenarios.map((s) => s.name).join(" ")}`);
   } finally {
-    for (const { name } of started.toReversed()) await stopProcess(name);
+    await client?.close().catch(() => undefined);
+    await stopAll();
     for (const id of labStarted) ok(lab("down", id).trim());
   }
 }

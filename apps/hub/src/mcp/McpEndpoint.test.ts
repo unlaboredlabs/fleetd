@@ -92,13 +92,7 @@ describe("MCP endpoint auth", () => {
 
   it("lists the implemented tools with object input schemas", async () => {
     const { tools } = await (await (await fleet()).as("reader")).listTools();
-    expect(tools.map((t) => t.name).toSorted()).toEqual(
-      [
-        "actions_list", "events_wait", "fleetd_status", "project_get", "projects_list",
-        "subscription_delete", "subscription_list", "subscription_set",
-        "thread_interrupt", "thread_launch", "thread_send", "thread_tail",
-      ],
-    );
+    expect(tools.map((t) => t.name).toSorted()).toEqual([...FleetApi.IMPLEMENTED_TOOLS].toSorted());
     for (const tool of tools) expect(tool.inputSchema.type).toBe("object");
     expect(tools.find((t) => t.name === "thread_tail")!.inputSchema.required).toEqual(["machineId", "threadId"]);
   });
@@ -133,13 +127,12 @@ describe("scope and grant checks", () => {
 });
 
 describe("errors", () => {
-  it("refuses writes to an offline machine with machine_offline and a fix", async () => {
+  it("refuses launches and interrupts to an offline machine with machine_offline and a fix", async () => {
     const { hub, as } = await fleet();
     hub.connected.delete("lab-a");
     const client = await as("admin");
     for (const [tool, args] of [
       ["thread_launch", { machineId: "lab-a", ...launch }],
-      ["thread_send", { machineId: "lab-a", threadId: "t1", message: "hi", clientRequestId: "r2" }],
       ["thread_interrupt", { machineId: "lab-a", threadId: "t1", clientRequestId: "r3" }],
     ] as const) {
       expect(await call(client, tool, args)).toEqual({
@@ -305,5 +298,55 @@ describe("app WebSocket", () => {
     app.send({ t: "auth", key: `fld_${"a".repeat(52)}` });
     expect(await app.next()).toMatchObject({ t: "error", code: "forbidden" });
     expect(await closed).toBe(AppSocket.CLOSE_UNAUTHORIZED);
+  });
+});
+
+describe("queued writes and wakes", () => {
+  it("queues thread_send to an offline machine and delivers it when the machine is back", async () => {
+    const { hub, as } = await fleet();
+    hub.connected.delete("lab-a");
+    await hub.addThread(thread("lab-a", "p-lab-a", "t1"));
+    const client = await as("admin");
+    const sent = await call(client, "thread_send", { machineId: "lab-a", threadId: "t1", message: "hi", clientRequestId: "r2" });
+    expect(sent).toMatchObject({ isError: false, body: { queued: true, queuedUntil: expect.any(String), next: expect.stringContaining("write.delivered") } });
+    const unknown = await call(client, "thread_send", { machineId: "lab-a", threadId: "nope", message: "hi", clientRequestId: "r3" });
+    expect(unknown.body.code).toBe("not_found");
+    expect(hub.calls).toEqual([]);
+    hub.goLive("lab-a");
+    const page = (await call(client, "events_wait", { cursor: 0, types: ["write.delivered"], timeoutSec: 5 })).body;
+    expect(page.events).toMatchObject([{ type: "write.delivered", machineId: "lab-a", threadId: "t1", data: { clientRequestId: "r2", runId: "r1" } }]);
+    expect(hub.calls).toEqual([{ op: "send", args: { ref: { machineId: "lab-a", threadId: "t1" }, message: "hi", clientRequestId: "r2" } }]);
+  });
+
+  it("sets, lists and cancels wakes within the key's grants", async () => {
+    const { hub, as } = await fleet();
+    await hub.addThread(thread("lab-a", "p-lab-a", "t1"));
+    await hub.addThread(thread("lab-b", "p-lab-b", "t2"));
+    const wake = (machineId: string, threadId: string, clientRequestId: string) => ({
+      target: { machineId, threadId },
+      schedule: { kind: "cron", cron: "0 9 * * 1-5", tz: "Europe/London" },
+      message: "morning check",
+      clientRequestId,
+    });
+    const aOnly = await as("aOnly");
+    const set = await call(aOnly, "wake_set", wake("lab-a", "t1", "w1"));
+    expect(set.body).toMatchObject({ wakeId: expect.stringMatching(/^wk_/u), nextRunAt: expect.any(String) });
+    expect((await call(aOnly, "wake_set", wake("lab-a", "t1", "w1"))).body.wakeId).toBe(set.body.wakeId);
+    expect((await call(aOnly, "wake_set", wake("lab-b", "t2", "w2"))).body.code).toBe("forbidden");
+    const bad = await call(aOnly, "wake_set", { ...wake("lab-a", "t1", "w3"), schedule: { kind: "cron", cron: "0 25 * * *", tz: "UTC" } });
+    expect(bad.body).toMatchObject({ code: "invalid", message: expect.stringContaining("hour 25") });
+    const past = await call(aOnly, "wake_set", { ...wake("lab-a", "t1", "w4"), schedule: { kind: "at", at: "2020-01-01T00:00:00Z", tz: "UTC" } });
+    expect(past.body).toMatchObject({ code: "invalid", message: expect.stringContaining("in the past") });
+
+    const admin = await as("admin");
+    const other = (await call(admin, "wake_set", wake("lab-b", "t2", "w5"))).body.wakeId;
+    expect((await call(aOnly, "wake_list")).body.wakes.map((w: { wakeId: string }) => w.wakeId)).toEqual([set.body.wakeId]);
+    expect((await call(admin, "wake_list", { machineId: "lab-b" })).body.wakes).toMatchObject([
+      { wakeId: other, state: "active", once: true, catchUp: "fire_once" },
+    ]);
+    expect((await call(aOnly, "wake_cancel", { wakeId: other })).body.code).toBe("not_found");
+    expect((await call(await as("reader"), "wake_cancel", { wakeId: set.body.wakeId })).body.code).toBe("forbidden");
+    expect((await call(aOnly, "wake_cancel", { wakeId: set.body.wakeId })).body).toEqual({ ok: true });
+    expect((await call(aOnly, "wake_list", { state: "cancelled" })).body.wakes).toMatchObject([{ wakeId: set.body.wakeId, state: "cancelled" }]);
   });
 });
