@@ -1,4 +1,4 @@
-//! secret_submit (MCP); the `gated_run` lead call registers once the link area has landed. TS: api/FleetApi.ts and leads/LeadCallHandler.ts.
+//! secret_submit (MCP) and the `gated_run` lead call. TS: api/FleetApi.ts and leads/LeadCallHandler.ts.
 use super::{ApprovalRefused, Caller as ApprovalCaller};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, is_human};
 use crate::hub::usage::wire::convert;
@@ -41,10 +41,8 @@ async fn secret_submit(
         .map_err(refusal)
 }
 
-/// The `gated_run` lead call (leads/LeadCallHandler.ts): files the approve ask holding exactly the lead's command.
-/// PORT(link): register it as `hub.lead_calls.register("gated_run", ...)` once `crate::hub::link::LeadCalls` is on
-/// main, passing the caller's project and `by`. PORT(leads): a workstream named in the call must be one of the
-/// caller's own (`ownWorkstream`), checked before this runs.
+/// The `gated_run` lead call (leads/LeadCallHandler.ts): files the approve ask holding exactly the lead's command. A
+/// workstream named in the call must be one of the caller's own (`ownWorkstream`), checked before this runs.
 pub async fn gated_run_call(
     hub: &Hub,
     project: &fleetd_contracts::ids::ProjectRef,
@@ -70,4 +68,46 @@ pub async fn gated_run_call(
         tracing::error!(%e, "gated_run result did not decode");
         crate::hub::api::internal_error()
     })
+}
+
+/// Registers `gated_run` in the node link's lead calls, checking a named workstream belongs to the caller's project.
+pub fn register_lead_calls(hub: &Arc<Hub>) {
+    use crate::hub::link::LeadCaller;
+    use crate::hub::link::lead_calls::LeadCallFuture;
+    use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
+    let weak = Arc::downgrade(hub);
+    let handler = Arc::new(
+        move |caller: LeadCaller, call: LeadCall| -> LeadCallFuture {
+            let hub = weak.upgrade();
+            Box::pin(async move {
+                let hub = hub.ok_or_else(|| {
+                    ToolError::new(ErrorCode::Invalid, "The hub is shutting down.")
+                })?;
+                let LeadCall::GatedRun(call) = call else {
+                    return Err(ToolError::new(
+                        ErrorCode::Invalid,
+                        format!(
+                            "{} is not a gated run call.",
+                            crate::hub::link::lead_calls::op_of(&call)
+                        ),
+                    ));
+                };
+                if let Some(w) = &call.workstream_id
+                    && hub.leads.records.project_of(w).as_ref() != Some(&caller.project_ref)
+                {
+                    return Err(ToolError::new(
+                        ErrorCode::NotFound,
+                        format!("There is no workstream {w} in your project."),
+                    )
+                    .with_fix(
+                        "Use a workstream id from the digest at the top of your last wake.",
+                    ));
+                }
+                gated_run_call(&hub, &caller.project_ref, &caller.by, call)
+                    .await
+                    .map(LeadCallResult::GatedRun)
+            })
+        },
+    );
+    hub.lead_calls.register("gated_run", handler);
 }

@@ -379,6 +379,7 @@ pub fn build_on(
     crate::hub::checks::hub_ports::wire_misfiled(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
+    crate::hub::approvals::tools::register_lead_calls(&hub);
     Ok(hub)
 }
 

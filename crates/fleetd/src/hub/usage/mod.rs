@@ -8,5 +8,6 @@ pub mod state;
 pub mod time;
 pub mod tools;
 pub mod wire;
+mod wire_approvals;
 
 pub use service::{Usage, UsageDeps, UsageStatus};

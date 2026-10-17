@@ -174,10 +174,6 @@ impl UsageSource for OpsPorts {
     }
 }
 
-use crate::hub::approvals::{
-    ApprovalAsks, ApprovalHub, ApprovalNodes, ApprovalRefused, GatedOutcome, NodeCommandError,
-    SecretOutcome,
-};
 use crate::hub::doctor::checks::MachineView;
 use crate::hub::doctor::service::ActionOutcome;
 use crate::hub::doctor::{DoctorFleet, T3Settings};
@@ -306,99 +302,6 @@ impl T3Settings for OpsPorts {
                 .map_err(|e| e.to_string())?;
             Ok(settings_json(&s))
         })
-    }
-}
-
-fn unwired_refusal<T>() -> Result<T, ApprovalRefused> {
-    Err(ApprovalRefused {
-        code: "invalid".into(),
-        message: "the ledger is not wired".into(),
-        fix: None,
-    })
-}
-
-// PORT(ledger): Asks get / list / create / update / reopen.
-impl ApprovalAsks for OpsPorts {
-    fn get(&self, _ask_id: &str) -> BoxFut<'_, Option<Value>> {
-        Box::pin(async { None })
-    }
-    fn list_answered(&self) -> BoxFut<'_, Vec<Value>> {
-        Box::pin(async { Vec::new() })
-    }
-    fn create(&self, _input: Value, _by: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
-        Box::pin(async { unwired_refusal() })
-    }
-    fn update(
-        &self,
-        _ask_id: &str,
-        _patch: Map<String, Value>,
-    ) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
-        Box::pin(async { unwired_refusal() })
-    }
-    fn reopen(&self, _ask_id: &str, _evidence: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
-        Box::pin(async { unwired_refusal() })
-    }
-}
-
-// PORT(link): NodeCommands::deliver_secret / run_gated.
-impl ApprovalNodes for OpsPorts {
-    fn deliver_secret(
-        &self,
-        m: &str,
-        _input: Value,
-    ) -> BoxFut<'_, Result<SecretOutcome, NodeCommandError>> {
-        let message = format!("{m}'s node is not linked to the hub");
-        Box::pin(async move {
-            Err(NodeCommandError {
-                reason: "offline".into(),
-                message,
-            })
-        })
-    }
-    fn run_gated(
-        &self,
-        m: &str,
-        _input: Value,
-    ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
-        let message = format!("{m}'s node is not linked to the hub");
-        Box::pin(async move {
-            Err(NodeCommandError {
-                reason: "offline".into(),
-                message,
-            })
-        })
-    }
-}
-
-impl ApprovalHub for OpsPorts {
-    fn box_key(&self, machine_id: &str) -> BoxFut<'_, Option<Option<String>>> {
-        let m: Option<fleetd_contracts::ids::MachineId> = convert(&machine_id);
-        Box::pin(async move {
-            let machine = self.hub().store.machine_get(&m?).ok()??;
-            Some(machine.box_pub_key.as_ref().and_then(convert))
-        })
-    }
-    fn workspace_root(&self, project: &ports::ProjectRef) -> BoxFut<'_, Option<String>> {
-        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
-        Box::pin(async move { Some(self.hub().store.project_get(&r?).ok()??.workspace_root) })
-    }
-    // PORT(leads): LeadWakes::trigger with an answer.
-    fn wake_answer(
-        &self,
-        _project: &ports::ProjectRef,
-        _ask: Value,
-        _value: String,
-    ) -> BoxFut<'_, ()> {
-        Box::pin(async {})
-    }
-    // PORT(checks): CheckRunner::verify.
-    fn verify(
-        &self,
-        _p: &ports::ProjectRef,
-        _w: Option<String>,
-        _v: Value,
-    ) -> BoxFut<'_, (String, String)> {
-        Box::pin(async { ("error".to_string(), "checks are not wired".to_string()) })
     }
 }
 
