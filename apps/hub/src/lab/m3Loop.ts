@@ -5,10 +5,12 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { LEAD_PROMPT_VERSION } from "../leads/prompt.ts";
 import { type Body, LAB, type Lab, MODEL } from "./harness.ts";
 
 const MACHINE = "lab-a";
-const INTENT = "add a /health endpoint";
+// The v1 prompt has the lead delegate at once; m5 decides when tasks run, so this lead registers the brief only.
+const INTENT = "add a /health endpoint (lab run: register the brief, then stop; spawn no tasks until told)";
 const ASK = `fleetd ask --key api.health.path --class product --text "Path?" --rec "/healthz" --proceeded`;
 const TURN_MS = 240_000;
 
@@ -48,7 +50,7 @@ export async function m3Loop(lab: Lab) {
     check(!sent.isError && sent.body.queued === false, `thread_send to the lead: ${JSON.stringify(sent.body)}`);
   };
 
-  // 1. lead_start launches the lead with the v0 prompt; project_get shows it idle once its first turn ends.
+  // 1. lead_start launches the lead with the current prompt; project_get shows it idle once its first turn ends.
   let cursor = await lab.cursor();
   const started = await callTool("lead_start", { ...ref, model: MODEL, effort: "low" });
   check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
@@ -57,7 +59,7 @@ export async function m3Loop(lab: Lab) {
   const again = (await callTool("lead_start", ref)).body;
   check(again.threadId === threadId, `a second lead_start returns the same lead: ${JSON.stringify(again)}`);
   const leadStarted = await lab.waitEvent("lead.started", 10_000, { cursor, machineId: MACHINE, types: ["lead.started"] });
-  check(leadStarted.event.data?.prompt === "v0", `lead.started names prompt v0: ${JSON.stringify(leadStarted.event)}`);
+  check(leadStarted.event.data?.prompt === LEAD_PROMPT_VERSION, `lead.started names prompt ${LEAD_PROMPT_VERSION}: ${JSON.stringify(leadStarted.event)}`);
   cursor = await turnDone(threadId, cursor, "start");
   // thread_tail keeps a long message's end: the prompt's last command line, then the digest.
   const firstTail = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body;
@@ -65,7 +67,7 @@ export async function m3Loop(lab: Lab) {
     (firstTail.items as Array<Body> | undefined)?.some(
       (i) => i.role === "user" && i.text.includes("`fleetd decisions search") && i.text.includes("# fleetd digest:"),
     ),
-    `the lead's first message is the v0 prompt (read from beside the bundled CLI) plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
+    `the lead's first message is the ${LEAD_PROMPT_VERSION} prompt (read from beside the bundled CLI) plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
   );
   const outcome = (await callTool("project_get", ref)).body;
   check(outcome.lead?.threadId === threadId && outcome.lead.state === "idle", `project_get lead: ${JSON.stringify(outcome.lead)}`);

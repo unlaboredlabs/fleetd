@@ -84,6 +84,13 @@ const without = <A extends object, K extends keyof A>(a: A, ...keys: ReadonlyArr
 
 const describeError = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/**
+ * A T3 command id for one of the task's writes. T3 keeps a receipt per id forever, so the id carries the task's
+ * creation time: a hub on a fresh database numbers tasks from T1 again and must not get an earlier hub's thread.
+ */
+const requestId = (task: Task, ...parts: ReadonlyArray<string | number>) =>
+  ["fleetd-task", task.taskId, Date.parse(task.createdAt), ...parts].join(":");
+
 export const make = Effect.gen(function* () {
   const records = yield* TaskRecords.TaskRecords;
   const leadRecords = yield* LeadRecords.LeadRecords;
@@ -159,7 +166,7 @@ export const make = Effect.gen(function* () {
           runtimeMode: "full-access",
           title: `${task.taskId}: ${task.title}`.slice(0, 80),
           // T3 keeps a receipt per command id, so a retried launch returns the same thread.
-          clientRequestId: `fleetd-task:${task.taskId}:${task.attempt}`,
+          clientRequestId: requestId(task, task.attempt),
         },
         baseBranch === undefined || branch === undefined ? undefined : { workspace: { type: "worktree", baseRef: baseBranch, branch } },
       );
@@ -168,7 +175,7 @@ export const make = Effect.gen(function* () {
 
   /** Sends a continuation and returns how it went out, or fails like `launch`. */
   const resume = (task: Task, message: string) =>
-    Effect.as(executors.send(task.threadRef!, message, `fleetd-task:${task.taskId}:${task.attempt}`), {});
+    Effect.as(executors.send(task.threadRef!, message, requestId(task, task.attempt)), {});
 
   const failToStart = (stored: TaskRecords.StoredTask, error: unknown, fromQueue: boolean) =>
     Effect.gen(function* () {
@@ -446,7 +453,7 @@ export const make = Effect.gen(function* () {
           return task;
         }
         case "running": {
-          yield* executors.send(task.threadRef!, text, `fleetd-task:${taskId}:msg:${crypto.randomUUID()}`).pipe(Effect.mapError(fromExecutor));
+          yield* executors.send(task.threadRef!, text, requestId(task, "msg", crypto.randomUUID())).pipe(Effect.mapError(fromExecutor));
           return task;
         }
         default:
@@ -463,7 +470,7 @@ export const make = Effect.gen(function* () {
         return yield* new LeadError({ code: "invalid", message: `${taskId} already ended (${task.state}); there is nothing to cancel.` });
       }
       if (task.state === "running" && task.threadRef !== undefined) {
-        const interrupted = yield* Effect.result(executors.interrupt(task.threadRef, `fleetd-task:${taskId}:cancel:${task.attempt}`));
+        const interrupted = yield* Effect.result(executors.interrupt(task.threadRef, requestId(task, "cancel", task.attempt)));
         if (interrupted._tag === "Failure") yield* Effect.logWarning("task cancel: interrupt failed", { taskId, error: interrupted.failure._tag });
       }
       const at = yield* nowIso;

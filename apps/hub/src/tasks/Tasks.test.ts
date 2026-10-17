@@ -36,7 +36,7 @@ describe("Tasks", () => {
         expect(task).toMatchObject({ taskId: "T1", state: "running", model: "claude-opus-5-5", effort: "high", branch: "fleetd/T1-add-file" });
         const launch = kit.launches[1]!;
         expect(launch.options).toEqual({ workspace: { type: "worktree", baseRef: "main", branch: "fleetd/T1-add-file" } });
-        expect(launch.input).toMatchObject({ model: "claude-opus-5-5", effort: "high", runtimeMode: "full-access", title: "T1: add file", clientRequestId: "fleetd-task:T1:1" });
+        expect(launch.input).toMatchObject({ model: "claude-opus-5-5", effort: "high", runtimeMode: "full-access", title: "T1: add file", clientRequestId: "fleetd-task:T1:0:1" });
         expect(launch.input.prompt).toContain("Only change files in these areas: docs (docs/**).");
         expect(launch.input.prompt).toContain("Goal: a docs page");
         expect((yield* nextEvent(cursor, "task.started")).data).toMatchObject({ taskId: "T1", branch: "fleetd/T1-add-file" });
