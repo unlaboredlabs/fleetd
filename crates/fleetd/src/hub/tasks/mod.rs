@@ -26,8 +26,10 @@ use fleetd_contracts::tasks::{
 use serde_json::{Map, Value, json};
 
 use crate::clock::Clock;
-use crate::hub::executor::{ExecutorError, Executors, LaunchOptions};
+use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
 use crate::hub::leads::LeadError;
+use crate::hub::leads::Trigger;
+use crate::hub::leads::wakes::LineKind;
 use crate::hub::leases::{Leases, Policies, parse_iso_ms};
 use crate::hub::link::NodeCommands;
 use crate::hub::link::commands::CommandInput;
@@ -35,9 +37,12 @@ use crate::hub::slots::{SlotRequest, Slots, priority_of};
 use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
-use hooks::{ResultReceipts, SpawnCheck, TaskLeads, TaskWake, UsageGate};
+use fleetd_contracts::mcp::ErrorCode;
+use fleetd_contracts::model::RuntimeMode;
+use hooks::{ResultReceipts, SpawnCheck, UsageGate};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
 use resolve::{ModelEffort, resolve_model_effort};
+use t3_wire::types::{NewWorktree, WorkspaceStrategy};
 
 pub use records::{StoredTask, TaskRecords};
 
@@ -70,7 +75,7 @@ pub struct TaskDeps {
     pub slots: Arc<Slots>,
     pub leases: Arc<Leases>,
     pub policies: Arc<Policies>,
-    pub leads: Arc<dyn TaskLeads>,
+    pub leads: Arc<crate::hub::leads::Area>,
     pub usage: Arc<dyn UsageGate>,
     pub spawn_check: Arc<dyn SpawnCheck>,
     pub receipts: Arc<dyn ResultReceipts>,
@@ -94,15 +99,19 @@ fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
 }
 
-fn lead_error(code: &str, message: impl Into<String>, fix: Option<&str>) -> LeadError {
-    LeadError::new(code, message, fix.map(str::to_owned))
+fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) -> LeadError {
+    LeadError {
+        code,
+        message: message.into(),
+        fix: fix.map(str::to_owned),
+    }
 }
 
 /// Store failures are defects in TS (Effect.sync throwing); here they refuse the call plainly and are logged.
 fn store_error(error: StoreError) -> LeadError {
     tracing::error!(%error, "tasks: store failed");
     lead_error(
-        "t3_error",
+        ErrorCode::T3Error,
         "The hub failed to answer that request.",
         Some("Retry; if it keeps failing, check the hub's log."),
     )
@@ -110,18 +119,7 @@ fn store_error(error: StoreError) -> LeadError {
 
 /// TS leads/LeadError.ts `fromExecutor`.
 pub(crate) fn from_executor(error: &ExecutorError) -> LeadError {
-    match error {
-        ExecutorError::MachineNotConnected { machine_id } => lead_error(
-            "machine_offline",
-            format!("Machine {} has no live T3 connection.", machine_id.as_str()),
-            Some("Wait for the machine to come back online (fleetd_status shows it), then retry."),
-        ),
-        other => lead_error(
-            "t3_error",
-            other.to_string(),
-            Some("Retry; if it keeps failing, check the machine's T3 with fleetd_status."),
-        ),
-    }
+    LeadError::from(error.clone())
 }
 
 /// Why a launch or continuation did not go out: the machine went offline (the task queues), or anything else
@@ -298,14 +296,30 @@ impl Tasks {
     }
 
     fn wake_result(&self, task: &Task, result: &TaskResult) {
-        self.d.leads.wake(
+        let receipts = self.d.receipts.line(result);
+        let text = render::task_result_lines(
+            task.task_id.as_str(),
+            task.title.as_str(),
+            result,
+            receipts.as_deref(),
+        );
+        self.d.leads.wakes.trigger(
             &task.project_ref,
-            TaskWake::Result {
-                task_id: task.task_id.clone(),
-                title: task.title.as_str().to_owned(),
-                result: result.clone(),
+            Trigger::Line {
+                kind: LineKind::TaskResult,
+                text,
             },
         );
+    }
+
+    fn workstream(&self, id: &WorkstreamId) -> Option<fleetd_contracts::ledger::Workstream> {
+        match self.d.leads.records.workstream_get(id) {
+            Ok(found) => found.map(|w| w.workstream),
+            Err(error) => {
+                tracing::warn!(%error, "tasks: workstream not read");
+                None
+            }
+        }
     }
 
     fn queue(&self, stored: &StoredTask, reason: &str) -> Result<Task, StoreError> {
@@ -343,11 +357,7 @@ impl Tasks {
             )));
         };
         let policy = self.d.policies.get(r).await?;
-        let brief = self
-            .d
-            .leads
-            .workstream(&task.workstream_id)
-            .and_then(|w| w.brief);
+        let brief = self.workstream(&task.workstream_id).and_then(|w| w.brief);
         let write = task.kind == TaskKind::Write;
         let base_branch = if write {
             Some(
@@ -369,22 +379,25 @@ impl Tasks {
             branch: branch.as_deref(),
             base_branch: base_branch.as_deref(),
         });
-        let input = serde_json::from_value(json!({
-            "machineId": r.machine_id,
-            "projectId": r.project_id,
-            "prompt": prompt,
-            "model": task.model,
-            "effort": task.effort,
-            "runtimeMode": "full-access",
-            "title": js_prefix(&format!("{}: {}", task.task_id.as_str(), task.title.as_str()), 80),
+        let input = LaunchInput {
+            project_id: r.project_id.clone(),
+            prompt,
+            model: task.model.as_str().to_owned(),
+            effort: task.effort,
+            runtime_mode: RuntimeMode::FullAccess,
+            title: Some(js_prefix(
+                &format!("{}: {}", task.task_id.as_str(), task.title.as_str()),
+                80,
+            )),
             // T3 keeps a receipt per command id, so a retried launch returns the same thread.
-            "clientRequestId": request_id(task, &[&task.attempt.get().to_string()]),
-        }))
-        .map_err(|e| StartError::Other(e.to_string()))?;
+            client_request_id: request_id(task, &[&task.attempt.get().to_string()]),
+        };
         let workspace = match (&base_branch, &branch) {
-            (Some(base), Some(branch)) => {
-                Some(json!({ "type": "worktree", "baseRef": base, "branch": branch }))
-            }
+            (Some(base), Some(branch)) => Some(WorkspaceStrategy::Worktree(NewWorktree {
+                base_ref: base.clone(),
+                branch: Some(branch.clone()),
+                start_from_origin: None,
+            })),
             _ => None,
         };
         let thread_id = self
@@ -648,7 +661,7 @@ impl Tasks {
                 for a in actions.iter().rev() {
                     texts.push(a.summary.as_str());
                     if let Some(out) = &a.output_tail {
-                        texts.push(out.as_str());
+                        texts.push(out);
                     }
                 }
                 texts.push(&text);
@@ -841,12 +854,16 @@ impl Tasks {
                             thread_ref.thread_id.as_str()
                         )
                     });
-                self.d.leads.wake(
+                let text = render::task_waiting_lines(
+                    task.task_id.as_str(),
+                    task.title.as_str(),
+                    &question,
+                );
+                self.d.leads.wakes.trigger(
                     &task.project_ref,
-                    TaskWake::Waiting {
-                        task_id: task.task_id.clone(),
-                        title: task.title.as_str().to_owned(),
-                        question,
+                    Trigger::Line {
+                        kind: LineKind::TaskWaiting,
+                        text,
                     },
                 );
             }
@@ -911,7 +928,7 @@ impl Tasks {
                 Ok(stored)
             }
             _ => Err(lead_error(
-                "not_found",
+                ErrorCode::NotFound,
                 format!("No task {} in this project.", task_id.as_str()),
                 Some("Run `fleetd task list`."),
             )),
@@ -928,19 +945,17 @@ impl Tasks {
         // M6 value bar: serves, done workstreams and review rounds. Outside the lock, since it may ask GitHub for a
         // PR head, and before the closed-state check, so a done workstream gets its own refusal.
         if let Some(ws) = self
-            .d
-            .leads
             .workstream(&input.workstream_id)
             .filter(|w| same_project(&w.project_ref, r))
         {
             self.d.spawn_check.check_spawn(caller, &input, &ws).await?;
         }
         let _guard = self.lock.lock().await;
-        let ws = match self.d.leads.workstream(&input.workstream_id) {
+        let ws = match self.workstream(&input.workstream_id) {
             Some(ws) if same_project(&ws.project_ref, r) => ws,
             _ => {
                 return Err(lead_error(
-                    "not_found",
+                    ErrorCode::NotFound,
                     format!(
                         "No workstream {} in this project.",
                         input.workstream_id.as_str()
@@ -952,7 +967,7 @@ impl Tasks {
         let ws_state = state_name(&ws.state);
         if CLOSED_STATES.contains(&ws_state.as_str()) {
             return Err(lead_error(
-                "invalid",
+                ErrorCode::Invalid,
                 format!(
                     "Workstream {} is {ws_state}; tasks run only for open workstreams.",
                     input.workstream_id.as_str()
@@ -970,7 +985,7 @@ impl Tasks {
         if !unknown.is_empty() {
             let known: Vec<&str> = policy.areas.keys().map(String::as_str).collect();
             return Err(lead_error(
-                "invalid",
+                ErrorCode::Invalid,
                 format!(
                     "Unknown area{} {}.",
                     if unknown.len() == 1 { "" } else { "s" },
@@ -990,7 +1005,16 @@ impl Tasks {
             model: d.model.as_ref().map(|m| m.as_str().to_owned()),
             effort: d.effort,
         });
-        let settings = self.d.leads.project_settings(r);
+        let settings = self
+            .d
+            .leads
+            .records
+            .settings_get(r)
+            .ok()
+            .map(|s| ModelEffort {
+                model: s.model,
+                effort: s.effort,
+            });
         let (model, effort) = resolve_model_effort(&flag, defaults.as_ref(), settings.as_ref());
         let task = Task {
             task_id: TaskId::unchecked("T0"),
@@ -1046,14 +1070,14 @@ impl Tasks {
         let id = task_id.as_str();
         match task.state {
             TaskState::Cancelled => Err(lead_error(
-                "invalid",
+                ErrorCode::Invalid,
                 format!("{id} was cancelled."),
                 Some("Spawn a new task for the remaining work."),
             )),
             TaskState::Queued => {
                 if task.thread_ref.is_none() {
                     return Err(lead_error(
-                        "invalid",
+                        ErrorCode::Invalid,
                         format!(
                             "{id} has not started yet ({}).",
                             task.queued_reason.as_ref().map_or("queued", |r| r.as_str())
@@ -1117,7 +1141,7 @@ impl Tasks {
             TaskState::Cancelled => return Ok(task),
             TaskState::Done | TaskState::Failed => {
                 return Err(lead_error(
-                    "invalid",
+                    ErrorCode::Invalid,
                     format!(
                         "{id} already ended ({}); there is nothing to cancel.",
                         state_name(&task.state)
@@ -1181,5 +1205,64 @@ impl Tasks {
     /// Newest first.
     pub fn list(&self, filter: &TaskFilter) -> Result<Vec<Task>, StoreError> {
         self.db(|c| TaskRecords::list(c, filter))
+    }
+}
+
+/// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads hook).
+pub struct TasksForLeads(pub Arc<Tasks>);
+
+const LIVE_TASKS: [TaskState; 3] = [TaskState::Queued, TaskState::Running, TaskState::Idle];
+const SCAN_LIMIT: usize = 10_000;
+
+impl crate::hub::leads::hooks::TasksHook for TasksForLeads {
+    fn digest_lines(
+        &self,
+        project_ref: &ProjectRef,
+        since: Option<&Timestamp>,
+        limit: usize,
+    ) -> Vec<String> {
+        let since = since.map(Timestamp::as_str);
+        match self
+            .0
+            .db(|c| TaskRecords::for_digest(c, project_ref, since, limit))
+        {
+            Ok(tasks) => render::task_digest_lines(&tasks, since),
+            Err(error) => {
+                tracing::warn!(%error, "tasks: digest lines not read");
+                Vec::new()
+            }
+        }
+    }
+
+    fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
+        let mut out = Vec::new();
+        for state in LIVE_TASKS {
+            let filter = TaskFilter {
+                project_ref: project_ref.cloned(),
+                state: Some(state),
+                workstream_id: None,
+                limit: SCAN_LIMIT,
+            };
+            for task in self.0.list(&filter).unwrap_or_default() {
+                out.push((task.task_id, task.project_ref));
+            }
+        }
+        out
+    }
+
+    fn cancel(
+        &self,
+        project_ref: &ProjectRef,
+        task_id: &TaskId,
+        reason: &str,
+    ) -> crate::hub::leads::hooks::BoxFuture<()> {
+        let (tasks, task_id, reason) = (self.0.clone(), task_id.clone(), reason.to_owned());
+        let caller = TaskCaller {
+            project_ref: project_ref.clone(),
+            by: "hub".to_owned(),
+        };
+        Box::pin(async move {
+            let _ = tasks.cancel(&caller, &task_id, Some(&reason)).await;
+        })
     }
 }

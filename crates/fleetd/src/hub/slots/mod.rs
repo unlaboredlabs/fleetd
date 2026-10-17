@@ -46,6 +46,18 @@ pub fn lead_holder(r: &ProjectRef) -> String {
 /// The project whose lead currently runs in thread (`machine_id`, `thread_id`), from the leads area's records.
 pub type LeadOf = Arc<dyn Fn(&MachineId, &ThreadId) -> Option<ProjectRef> + Send + Sync>;
 
+/// The `LeadOf` lookup over the leads area's records: the lead whose current thread this is.
+pub fn lead_of(records: Arc<crate::hub::leads::LeadRecords>) -> LeadOf {
+    Arc::new(move |machine_id, thread_id| {
+        records
+            .leads_list()
+            .ok()?
+            .into_iter()
+            .find(|l| l.project_ref.machine_id == *machine_id && l.thread_id == *thread_id)
+            .map(|l| l.project_ref)
+    })
+}
+
 /// Called after a slot frees (a release, or a lead's or task's thread stopping) or the cap or a share changes,
 /// once the queue has been re-evaluated. Called outside the board's lock, but it must not block: the tasks area
 /// spawns its queue retry from it.

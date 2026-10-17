@@ -4,12 +4,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use fleetd_contracts::events::HubEvent;
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{Workstream, WorkstreamId};
-use fleetd_contracts::tasks::{TaskId, TaskResult};
+use fleetd_contracts::ids::{MachineId, ThreadRef};
+use fleetd_contracts::ledger::Workstream;
+use fleetd_contracts::tasks::TaskResult;
 use fleetd_contracts::usage::UsageParked;
 
-use super::resolve::ModelEffort;
 use super::{SpawnInput, TaskCaller};
 use crate::hub::leads::LeadError;
 
@@ -30,30 +29,8 @@ pub trait SpawnCheck: Send + Sync {
 /// TS: Receipts.attach.
 pub trait ResultReceipts: Send + Sync {
     fn attach<'a>(&'a self, thread: &'a ThreadRef, result: TaskResult) -> BoxFut<'a, TaskResult>;
-}
-
-/// The lead wake a task triggers. TS: LeadWakes Trigger kinds `task_result` and `task_waiting`.
-#[derive(Clone, Debug)]
-pub enum TaskWake {
-    Result {
-        task_id: TaskId,
-        title: String,
-        result: TaskResult,
-    },
-    Waiting {
-        task_id: TaskId,
-        title: String,
-        question: String,
-    },
-}
-
-/// What tasks read and trigger in the leads area (LeadRecords, LeadWakes).
-pub trait TaskLeads: Send + Sync {
-    fn workstream(&self, workstream_id: &WorkstreamId) -> Option<Workstream>;
-    /// The project's lead settings (model, effort), if any were set.
-    fn project_settings(&self, project_ref: &ProjectRef) -> Option<ModelEffort>;
-    /// Queues a trigger; LeadWakes debounces it into one wake.
-    fn wake(&self, project_ref: &ProjectRef, wake: TaskWake);
+    /// The result's receipts line for the lead wake, absent on results without receipts. TS: receiptsLine.
+    fn line(&self, result: &TaskResult) -> Option<String>;
 }
 
 /// M4 usage (usage area).

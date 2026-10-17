@@ -10,6 +10,8 @@ use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::tasks::{POLICY_FILE_PATH, PolicyFile, default_policy};
 use serde_yaml_ng::Value;
 
+use fleetd_contracts::mcp::ErrorCode;
+
 use crate::clock::Clock;
 use crate::hub::leads::LeadError;
 use crate::hub::tasks::hooks::BoxFut;
@@ -24,11 +26,11 @@ fn invalid(problem: &str) -> LeadError {
         .take(1000)
         .collect();
     LeadError::new(
-        "invalid",
+        ErrorCode::Invalid,
         message,
-        Some(format!(
+        format!(
             "Fix {POLICY_FILE_PATH} on the project's default branch. Area names are lowercase slugs ([a-z0-9][a-z0-9_-]*, at most 40 characters), each with a list of repo-relative globs. For example:\n{EXAMPLE}"
-        )),
+        ),
     )
 }
 
@@ -214,12 +216,15 @@ impl PolicySource for T3PolicySource {
             let project = self
                 .store
                 .project_get(project_ref)
-                .map_err(|e| LeadError::new("t3_error", e.to_string(), None))?;
+                .map_err(LeadError::from)?;
             let Some(project) = project else {
-                return Err(LeadError::new(
-                    "not_found",
-                    format!("Project {} on {} is not known to the hub.", project_ref.project_id.as_str(), project_ref.machine_id.as_str()),
-                    Some("Check the project with project_get; its machine may not have reported it yet.".to_owned()),
+                return Err(LeadError::not_found(
+                    format!(
+                        "Project {} on {} is not known to the hub.",
+                        project_ref.project_id.as_str(),
+                        project_ref.machine_id.as_str()
+                    ),
+                    "Check the project with project_get; its machine may not have reported it yet.",
                 ));
             };
             self.executors
@@ -229,7 +234,23 @@ impl PolicySource for T3PolicySource {
                     POLICY_FILE_PATH,
                 )
                 .await
-                .map_err(|e| crate::hub::tasks::from_executor(&e))
+                .map_err(LeadError::from)
+        })
+    }
+}
+
+/// What finish-all reads from the policy (leads hook).
+pub struct PolicyForLeads(pub Arc<Policies>);
+
+impl crate::hub::leads::hooks::PolicyHook for PolicyForLeads {
+    fn max_children(
+        &self,
+        project_ref: &ProjectRef,
+    ) -> crate::hub::leads::hooks::BoxFuture<Option<u32>> {
+        let (policies, project_ref) = (self.0.clone(), project_ref.clone());
+        Box::pin(async move {
+            let policy = policies.get(&project_ref).await.ok()?;
+            policy.finish_all.map(|f| f.max_children.get() as u32)
         })
     }
 }
@@ -340,7 +361,7 @@ mod tests {
         ];
         for (text, message) in cases {
             let error = parse_policy(text).unwrap_err();
-            assert_eq!(error.code, "invalid", "{text:?}");
+            assert_eq!(error.code, ErrorCode::Invalid, "{text:?}");
             assert!(
                 error.message.contains(".fleetd/policy.yaml "),
                 "{text:?}: {}",
@@ -369,11 +390,7 @@ mod tests {
             Box::pin(async move {
                 self.reads.fetch_add(1, Ordering::SeqCst);
                 if self.offline.load(Ordering::SeqCst) {
-                    return Err(LeadError::new(
-                        "machine_offline",
-                        "offline",
-                        Some("wait".into()),
-                    ));
+                    return Err(LeadError::new(ErrorCode::MachineOffline, "offline", "wait"));
                 }
                 Ok(self.text.lock().unwrap().clone())
             })
@@ -419,8 +436,8 @@ mod tests {
     async fn rereads_after_invalidate_caches_a_broken_file_and_never_a_failed_read() {
         let (fake, _clock, policies, a) = setup();
         *fake.text.lock().unwrap() = Some("areas:\n  Docs: [docs/**]\n".into());
-        assert_eq!(policies.get(&a).await.unwrap_err().code, "invalid");
-        assert_eq!(policies.get(&a).await.unwrap_err().code, "invalid");
+        assert_eq!(policies.get(&a).await.unwrap_err().code, ErrorCode::Invalid);
+        assert_eq!(policies.get(&a).await.unwrap_err().code, ErrorCode::Invalid);
         assert_eq!(fake.reads.load(Ordering::SeqCst), 1);
         *fake.text.lock().unwrap() = Some("areas:\n  docs: [docs/**]\n".into());
         policies.invalidate(&a);
@@ -430,7 +447,10 @@ mod tests {
         );
         policies.invalidate(&a);
         fake.offline.store(true, Ordering::SeqCst);
-        assert_eq!(policies.get(&a).await.unwrap_err().code, "machine_offline");
+        assert_eq!(
+            policies.get(&a).await.unwrap_err().code,
+            ErrorCode::MachineOffline
+        );
         fake.offline.store(false, Ordering::SeqCst);
         assert_eq!(
             serde_json::to_value(policies.get(&a).await.unwrap()).unwrap(),

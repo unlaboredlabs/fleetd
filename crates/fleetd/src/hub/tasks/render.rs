@@ -245,7 +245,13 @@ fn quoted(text: &str) -> Vec<String> {
 }
 
 /// The "why you are woken" entry for a finished task: its whole result tail, inline.
-pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> String {
+/// `receipts` is the receipts area's line for this result (TS receiptsLine).
+pub fn task_result_lines(
+    task_id: &str,
+    title: &str,
+    result: &TaskResult,
+    receipts: Option<&str>,
+) -> String {
     let verb = match result.status {
         TaskResultStatus::Done => "completed",
         TaskResultStatus::Failed => "failed",
@@ -268,7 +274,7 @@ pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> Str
         one_line(title, 80)
     )];
     // M6 receipts, counted by the hub; absent on results stored before them.
-    if let Some(receipts) = crate::hub::receipts::count::receipts_line(result) {
+    if let Some(receipts) = receipts {
         out.push(format!("  {receipts}"));
     }
     out.push("  result:".to_owned());

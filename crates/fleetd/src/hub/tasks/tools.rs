@@ -103,7 +103,7 @@ fn refused(code: &str, message: impl Into<String>, fix: &str) -> LeadCallRefused
 
 /// Leads refuse in the same `{ code, message, fix }` shape.
 fn from_lead_error(error: LeadError) -> LeadCallRefused {
-    let code = serde_json::to_value(&error.code)
+    let code = serde_json::to_value(error.code)
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_else(|| "invalid".to_owned());
