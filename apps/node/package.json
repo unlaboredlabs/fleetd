@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "rolldown src/main.ts --file dist/main.js --platform node --format esm",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -12,7 +11,8 @@
     "@fleetd/contracts": "workspace:*",
     "effect": "catalog:"
   },
-  "devDependencies": {
-    "rolldown": "1.2.14"
+  "exports": {
+    ".": "./src/main.ts",
+    "./*": "./src/*"
   }
 }

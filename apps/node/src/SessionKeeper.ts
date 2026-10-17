@@ -1,0 +1,74 @@
+import { Deferred, Duration, Effect, Option, Schedule, Stream, SubscriptionRef } from "effect";
+import { type T3Session, T3Sessions } from "./T3Sessions.ts";
+
+/** A minted session plus a signal the link completes once the hub has been sent it. */
+export interface KeptSession {
+  readonly session: T3Session;
+  readonly delivered: Deferred.Deferred<void>;
+}
+
+export interface SessionKeeperOptions {
+  /** Re-mint this long after each mint; sessions live 1 h. */
+  readonly remintAfter?: Duration.Input;
+  /** Revoke the previous session this long after the hub was sent its replacement, so the hub can switch first. */
+  readonly revokeGrace?: Duration.Input;
+}
+
+const retryMint = Schedule.min([Schedule.exponential("5 seconds"), Schedule.spaced("5 minutes")]);
+
+/**
+ * Keeps one live T3 session for the hub: mints at start, re-mints every 45 min, and revokes the old session once
+ * its replacement has reached the hub. Revoking first would drop the hub's live T3 socket.
+ */
+export const makeSessionKeeper = Effect.fn("SessionKeeper.make")(function* (options: SessionKeeperOptions = {}) {
+  const t3 = yield* T3Sessions;
+  const remintAfter = Duration.fromInputUnsafe(options.remintAfter ?? "45 minutes");
+  const revokeGrace = Duration.fromInputUnsafe(options.revokeGrace ?? "30 seconds");
+  const current = yield* SubscriptionRef.make<Option.Option<KeptSession>>(Option.none());
+
+  const mint = t3.mint.pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning("t3 session mint failed; retrying").pipe(
+        Effect.annotateLogs({ exitCode: error.exitCode, stderr: error.stderrTail }),
+      ),
+    ),
+    Effect.retry(retryMint),
+    Effect.flatMap((session) => Effect.map(Deferred.make<void>(), (delivered): KeptSession => ({ session, delivered }))),
+    Effect.tap((kept) => Effect.logInfo("t3 session minted").pipe(Effect.annotateLogs({ sessionId: kept.session.sessionId, expiresAt: kept.session.expiresAt }))),
+  );
+
+  const revokeAfterSwitch = (previous: KeptSession, next: KeptSession) =>
+    Deferred.await(next.delivered).pipe(
+      Effect.andThen(Effect.sleep(revokeGrace)),
+      Effect.andThen(t3.revoke(previous.session.sessionId)),
+      Effect.tap(() => Effect.logInfo("t3 session revoked").pipe(Effect.annotateLogs({ sessionId: previous.session.sessionId }))),
+      Effect.catchTags({
+        T3SessionError: (error) =>
+          Effect.logWarning("t3 session revoke failed; it expires on its own").pipe(
+            Effect.annotateLogs({ sessionId: previous.session.sessionId, exitCode: error.exitCode }),
+          ),
+      }),
+    );
+
+  yield* Effect.gen(function* () {
+    let kept = yield* mint;
+    yield* SubscriptionRef.set(current, Option.some(kept));
+    while (true) {
+      yield* Effect.sleep(remintAfter);
+      const next = yield* mint;
+      yield* SubscriptionRef.set(current, Option.some(next));
+      yield* Effect.forkScoped(revokeAfterSwitch(kept, next));
+      kept = next;
+    }
+  }).pipe(Effect.forkScoped);
+
+  return {
+    /** The current session first (once one exists), then each replacement. */
+    sessions: SubscriptionRef.changes(current).pipe(
+      Stream.filter(Option.isSome),
+      Stream.map((some) => some.value),
+    ),
+  };
+});
+
+export type SessionKeeper = Effect.Success<ReturnType<typeof makeSessionKeeper>>;

@@ -14,6 +14,7 @@
   "dependencies": {
     "@fleetd/contracts": "workspace:*",
     "@fleetd/hub": "workspace:*",
+    "@fleetd/node": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
