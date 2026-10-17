@@ -13,8 +13,7 @@ use serde_yaml_ng::Value;
 use fleetd_contracts::mcp::ErrorCode;
 
 use crate::clock::Clock;
-use crate::hub::leads::LeadError;
-use crate::hub::tasks::hooks::BoxFut;
+use crate::hub::tasks::ports::{BoxFut, TaskError as LeadError, TaskPorts};
 
 pub const POLICY_TTL_MS: u128 = 60_000;
 
@@ -25,13 +24,9 @@ fn invalid(problem: &str) -> LeadError {
         .chars()
         .take(1000)
         .collect();
-    LeadError::new(
-        ErrorCode::Invalid,
-        message,
-        format!(
+    LeadError::new(ErrorCode::Invalid, message).with_fix(format!(
             "Fix {POLICY_FILE_PATH} on the project's default branch. Area names are lowercase slugs ([a-z0-9][a-z0-9_-]*, at most 40 characters), each with a list of repo-relative globs. For example:\n{EXAMPLE}"
-        ),
-    )
+        ))
 }
 
 /// Effect Schema's path notation: `["areas"]["docs"][0]`.
@@ -201,10 +196,11 @@ pub trait PolicySource: Send + Sync {
     ) -> BoxFut<'a, Result<Option<String>, LeadError>>;
 }
 
-/// Reads the file from the project's workspace root through the machine's T3.
+/// Reads the file from the project's workspace root through the machine's T3 (TS layerSourceT3).
 pub struct T3PolicySource {
     pub store: Arc<crate::hub::store::HubStore>,
-    pub executors: Arc<crate::hub::executor::Executors>,
+    /// PORT: WorkspaceFiles.read lives in the executor area.
+    pub ports: Arc<dyn TaskPorts>,
 }
 
 impl PolicySource for T3PolicySource {
@@ -213,44 +209,31 @@ impl PolicySource for T3PolicySource {
         project_ref: &'a ProjectRef,
     ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
         Box::pin(async move {
-            let project = self
-                .store
-                .project_get(project_ref)
-                .map_err(LeadError::from)?;
+            let project = self.store.project_get(project_ref).map_err(|e| {
+                tracing::error!(error = %e, "policy: project not read");
+                LeadError::new(ErrorCode::T3Error, "The hub failed to answer that request.")
+            })?;
             let Some(project) = project else {
-                return Err(LeadError::not_found(
+                return Err(LeadError::new(
+                    ErrorCode::NotFound,
                     format!(
                         "Project {} on {} is not known to the hub.",
                         project_ref.project_id.as_str(),
                         project_ref.machine_id.as_str()
                     ),
+                )
+                .with_fix(
                     "Check the project with project_get; its machine may not have reported it yet.",
                 ));
             };
-            self.executors
+            self.ports
                 .read_file(
                     &project_ref.machine_id,
                     &project.workspace_root,
                     POLICY_FILE_PATH,
                 )
                 .await
-                .map_err(LeadError::from)
-        })
-    }
-}
-
-/// What finish-all reads from the policy (leads hook).
-pub struct PolicyForLeads(pub Arc<Policies>);
-
-impl crate::hub::leads::hooks::PolicyHook for PolicyForLeads {
-    fn max_children(
-        &self,
-        project_ref: &ProjectRef,
-    ) -> crate::hub::leads::hooks::BoxFuture<Option<u32>> {
-        let (policies, project_ref) = (self.0.clone(), project_ref.clone());
-        Box::pin(async move {
-            let policy = policies.get(&project_ref).await.ok()?;
-            policy.finish_all.map(|f| f.max_children.get() as u32)
+                .map_err(|e| e.to_task_error(&project_ref.machine_id))
         })
     }
 }
@@ -390,7 +373,9 @@ mod tests {
             Box::pin(async move {
                 self.reads.fetch_add(1, Ordering::SeqCst);
                 if self.offline.load(Ordering::SeqCst) {
-                    return Err(LeadError::new(ErrorCode::MachineOffline, "offline", "wait"));
+                    return Err(
+                        LeadError::new(ErrorCode::MachineOffline, "offline").with_fix("wait")
+                    );
                 }
                 Ok(self.text.lock().unwrap().clone())
             })

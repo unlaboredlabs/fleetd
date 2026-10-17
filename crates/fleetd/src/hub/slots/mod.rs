@@ -17,6 +17,7 @@ pub use board::{
     Board, BoardState, Claim, ClaimState, Grant, Op, SlotPriority, blocker, reserved_band,
 };
 
+use crate::hub::api::Shutdown;
 use crate::hub::store::{EventLog, HubDb, HubStore, StoreError, WaitInput};
 
 pub const DEFAULT_CAP: i64 = 40;
@@ -45,18 +46,6 @@ pub fn lead_holder(r: &ProjectRef) -> String {
 
 /// The project whose lead currently runs in thread (`machine_id`, `thread_id`), from the leads area's records.
 pub type LeadOf = Arc<dyn Fn(&MachineId, &ThreadId) -> Option<ProjectRef> + Send + Sync>;
-
-/// The `LeadOf` lookup over the leads area's records: the lead whose current thread this is.
-pub fn lead_of(records: Arc<crate::hub::leads::LeadRecords>) -> LeadOf {
-    Arc::new(move |machine_id, thread_id| {
-        records
-            .leads_list()
-            .ok()?
-            .into_iter()
-            .find(|l| l.project_ref.machine_id == *machine_id && l.thread_id == *thread_id)
-            .map(|l| l.project_ref)
-    })
-}
 
 /// Called after a slot frees (a release, or a lead's or task's thread stopping) or the cap or a share changes,
 /// once the queue has been re-evaluated. Called outside the board's lock, but it must not block: the tasks area
@@ -89,6 +78,8 @@ pub struct Slots {
     board: Mutex<Board>,
     listeners: Mutex<Vec<ReleaseListener>>,
     lead_of: LeadOf,
+    /// The event log's head when the board was loaded; `run` follows from here.
+    cursor: i64,
 }
 
 fn project_ref(m: String, p: String) -> ProjectRef {
@@ -187,13 +178,13 @@ fn slot_state(s: BoardState) -> SlotState {
 }
 
 impl Slots {
-    /// Loads the board, rebuilds held claims from each bound thread's stored status, counts running lead threads,
-    /// and follows thread events from the log's head for as long as the hub runs. The queue is re-evaluated when
-    /// the first listener registers, so it hears about slots that came free while the hub was down.
-    pub fn start(
+    /// Loads the board, rebuilds held claims from each bound thread's stored status and counts running lead
+    /// threads; `run` then follows thread events from the log's head as of now. The queue is re-evaluated when the
+    /// first listener registers, so it hears about slots that came free while the hub was down.
+    pub fn new(
         db: Arc<HubDb>,
         store: &HubStore,
-        events: Arc<EventLog>,
+        events: &EventLog,
         lead_of: LeadOf,
         options: SlotsOptions,
     ) -> Result<Arc<Self>, StoreError> {
@@ -227,6 +218,7 @@ impl Slots {
             board: Mutex::new(board),
             listeners: Mutex::new(Vec::new()),
             lead_of,
+            cursor: head,
         });
         for t in store.threads_running()? {
             if slots
@@ -237,39 +229,42 @@ impl Slots {
                 slots.observe(&t.machine_id, &t.thread_id, true)?;
             }
         }
-        let follower = slots.clone();
-        tokio::spawn(async move {
-            let types: Vec<HubEventType> = RUNNING.iter().chain(STOPPED.iter()).copied().collect();
-            let mut cursor = head;
-            loop {
-                let page = match events
-                    .wait(WaitInput {
-                        cursor: Some(cursor),
-                        types: Some(types.clone()),
-                        machine_id: None,
-                        timeout_sec: 3600,
-                    })
-                    .await
-                {
-                    Ok(page) => page,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "slots: event wait failed");
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        continue;
-                    }
+        Ok(slots)
+    }
+
+    /// Follows thread events until the hub stops: a lead's or task's thread running holds its slot, stopping frees it.
+    pub async fn run(self: Arc<Self>, events: Arc<EventLog>, shutdown: Shutdown) {
+        let types: Vec<HubEventType> = RUNNING.iter().chain(STOPPED.iter()).copied().collect();
+        let mut cursor = self.cursor;
+        loop {
+            let input = WaitInput {
+                cursor: Some(cursor),
+                types: Some(types.clone()),
+                machine_id: None,
+                timeout_sec: 3600,
+            };
+            let page = tokio::select! {
+                () = shutdown.wait() => return,
+                page = events.wait(input) => page,
+            };
+            let page = match page {
+                Ok(page) => page,
+                Err(e) => {
+                    tracing::warn!(error = %e, "slots: event wait failed");
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            cursor = page.cursor;
+            for event in page.events {
+                let (Some(m), Some(t)) = (&event.machine_id, &event.thread_id) else {
+                    continue;
                 };
-                cursor = page.cursor;
-                for event in page.events {
-                    let (Some(m), Some(t)) = (&event.machine_id, &event.thread_id) else {
-                        continue;
-                    };
-                    if let Err(e) = follower.observe(m, t, RUNNING.contains(&event.r#type)) {
-                        tracing::warn!(error = %e, "slots: thread event not applied");
-                    }
+                if let Err(e) = self.observe(m, t, RUNNING.contains(&event.r#type)) {
+                    tracing::warn!(error = %e, "slots: thread event not applied");
                 }
             }
-        });
-        Ok(slots)
+        }
     }
 
     fn board(&self) -> std::sync::MutexGuard<'_, Board> {

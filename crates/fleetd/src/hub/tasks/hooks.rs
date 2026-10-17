@@ -1,18 +1,15 @@
 //! What tasks call in areas that land after them (or whose APIs are still moving). Those areas implement these
 //! traits and `hub/serve` passes them in, so the tasks area depends on behaviour, not on their structs.
-use std::future::Future;
-use std::pin::Pin;
-
 use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ThreadRef};
 use fleetd_contracts::ledger::Workstream;
 use fleetd_contracts::tasks::TaskResult;
 use fleetd_contracts::usage::UsageParked;
 
+use super::ports::TaskError;
 use super::{SpawnInput, TaskCaller};
-use crate::hub::leads::LeadError;
 
-pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub use super::ports::BoxFut;
 
 /// M6 value bar (valuebar area): serves, done workstreams and review rounds. Called before the spawn takes the
 /// tasks lock, since it may ask GitHub for a PR head. TS: ValueBar.checkSpawn.
@@ -22,7 +19,7 @@ pub trait SpawnCheck: Send + Sync {
         caller: &'a TaskCaller,
         input: &'a SpawnInput,
         workstream: &'a Workstream,
-    ) -> BoxFut<'a, Result<(), LeadError>>;
+    ) -> BoxFut<'a, Result<(), TaskError>>;
 }
 
 /// M6 receipts (receipts area): what the thread actually ran, counted from its items, added to the result.

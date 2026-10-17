@@ -7,14 +7,16 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskListResult, TaskResultFrame};
 use fleetd_contracts::mcp::{CapSetInput, ErrorCode, TaskGetInput, TasksListInput};
 use fleetd_contracts::prim::List;
+use fleetd_contracts::tasks::Task;
 use serde_json::{Value, json};
 
+use super::ports::TaskError;
 use super::{TaskCaller, TaskFilter, Tasks};
-use crate::hub::api::{Hub, Registry, ToolError, allows, cap, require, unknown_project};
-use crate::hub::leads::LeadError;
-use crate::hub::link::lead_calls::LeadCallFuture;
-use crate::hub::link::{LeadCallHandler, LeadCallRefused, LeadCaller, LeadCalls};
+use crate::hub::api::{
+    Hub, Registry, ToolError, allows, cap, internal_error, require, unknown_project,
+};
 use crate::hub::slots::CapInput;
+use crate::hub::store::StoreError;
 
 const TASK_LIST_LIMIT: usize = 50;
 
@@ -93,115 +95,64 @@ pub fn register(tools: &mut Registry) {
     });
 }
 
-fn refused(code: &str, message: impl Into<String>, fix: &str) -> LeadCallRefused {
-    LeadCallRefused {
-        code: code.to_owned(),
-        message: message.into(),
-        fix: Some(fix.to_owned()),
-    }
-}
-
-/// Leads refuse in the same `{ code, message, fix }` shape.
-fn from_lead_error(error: LeadError) -> LeadCallRefused {
-    let code = serde_json::to_value(error.code)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "invalid".to_owned());
-    LeadCallRefused {
-        code,
-        message: error.message,
-        fix: error.fix,
-    }
-}
-
-fn frame(task: fleetd_contracts::tasks::Task) -> TaskResultFrame {
+fn frame(task: Task) -> TaskResultFrame {
     TaskResultFrame { task, next: None }
 }
 
-struct TaskCalls(Arc<Tasks>);
-
-impl LeadCallHandler for TaskCalls {
-    fn handle(&self, caller: LeadCaller, call: LeadCall) -> LeadCallFuture {
-        let tasks = self.0.clone();
-        Box::pin(async move {
-            let r = caller.project_ref.clone();
-            let who = TaskCaller {
-                project_ref: r.clone(),
-                by: caller.by.clone(),
-            };
-            let internal = |e: crate::hub::store::StoreError| {
-                tracing::error!(error = %e, "task lead call failed");
-                refused(
-                    "t3_error",
-                    "The hub failed to answer that request.",
-                    "Retry; if it keeps failing, check the hub's log.",
-                )
-            };
-            match call {
-                LeadCall::TaskSpawn(input) => Ok(LeadCallResult::TaskSpawn(frame(
-                    tasks.spawn(&who, input).await.map_err(from_lead_error)?,
-                ))),
-                LeadCall::TaskList(c) => {
-                    let filter = TaskFilter {
-                        project_ref: Some(r),
-                        state: c.state,
-                        workstream_id: c.workstream_id,
-                        limit: TASK_LIST_LIMIT + 1,
-                    };
-                    let mut listed = tasks.list(&filter).map_err(internal)?;
-                    let truncated = listed.len() > TASK_LIST_LIMIT;
-                    listed.truncate(TASK_LIST_LIMIT);
-                    Ok(LeadCallResult::TaskList(TaskListResult {
-                        tasks: List::unchecked(listed),
-                        truncated: truncated.then_some(true),
-                        next: None,
-                    }))
-                }
-                LeadCall::TaskStatus(c) => match tasks.get(&c.task_id).map_err(internal)? {
-                    Some(task) if task.project_ref == r => {
-                        Ok(LeadCallResult::TaskStatus(frame(task)))
-                    }
-                    _ => Err(refused(
-                        "not_found",
-                        format!("There is no task {} in your project.", c.task_id.as_str()),
-                        "Run `fleetd task list`.",
-                    )),
-                },
-                LeadCall::TaskMessage(c) => Ok(LeadCallResult::TaskMessage(frame(
-                    tasks
-                        .message(&who, &c.task_id, c.message.as_str())
-                        .await
-                        .map_err(from_lead_error)?,
-                ))),
-                LeadCall::TaskCancel(c) => {
-                    let reason = c.reason.as_ref().map(|r| r.as_str());
-                    Ok(LeadCallResult::TaskCancel(frame(
-                        tasks
-                            .cancel(&who, &c.task_id, reason)
-                            .await
-                            .map_err(from_lead_error)?,
-                    )))
-                }
-                _ => Err(refused(
-                    "invalid",
-                    "Not a task call.",
-                    "Use fleetd task spawn|list|status|message|cancel.",
-                )),
-            }
-        })
-    }
+fn internal(error: StoreError) -> TaskError {
+    tracing::error!(%error, "task lead call failed");
+    internal_error()
 }
 
-/// Adds the five task calls to the link area's registry, keyed by op.
-pub fn register_lead_calls(calls: &LeadCalls, tasks: Arc<Tasks>) {
-    let handler = Arc::new(TaskCalls(tasks));
-    for op in [
-        "task_spawn",
-        "task_list",
-        "task_status",
-        "task_message",
-        "task_cancel",
-    ] {
-        calls.register(op, handler.clone());
+/// The task cases of TS LeadCallHandler. PORT: the link area's `LeadCalls` registers one handler for the ops
+/// `task_spawn`, `task_list`, `task_status`, `task_message` and `task_cancel` that calls this with the caller it
+/// attributed, and sends a refusal back in the same `{ code, message, fix }` shape.
+pub async fn lead_call(
+    tasks: &Arc<Tasks>,
+    caller: &TaskCaller,
+    call: LeadCall,
+) -> Result<LeadCallResult, TaskError> {
+    let r = &caller.project_ref;
+    match call {
+        LeadCall::TaskSpawn(input) => Ok(LeadCallResult::TaskSpawn(frame(
+            tasks.spawn(caller, input).await?,
+        ))),
+        LeadCall::TaskList(c) => {
+            let filter = TaskFilter {
+                project_ref: Some(r.clone()),
+                state: c.state,
+                workstream_id: c.workstream_id,
+                limit: TASK_LIST_LIMIT + 1,
+            };
+            let mut listed = tasks.list(&filter).map_err(internal)?;
+            let truncated = listed.len() > TASK_LIST_LIMIT;
+            listed.truncate(TASK_LIST_LIMIT);
+            Ok(LeadCallResult::TaskList(TaskListResult {
+                tasks: List::unchecked(listed),
+                truncated: truncated.then_some(true),
+                next: None,
+            }))
+        }
+        LeadCall::TaskStatus(c) => match tasks.get(&c.task_id).map_err(internal)? {
+            Some(task) if task.project_ref == *r => Ok(LeadCallResult::TaskStatus(frame(task))),
+            _ => Err(TaskError::new(
+                ErrorCode::NotFound,
+                format!("There is no task {} in your project.", c.task_id.as_str()),
+            )
+            .with_fix("Run `fleetd task list`.")),
+        },
+        LeadCall::TaskMessage(c) => Ok(LeadCallResult::TaskMessage(frame(
+            tasks
+                .message(caller, &c.task_id, c.message.as_str())
+                .await?,
+        ))),
+        LeadCall::TaskCancel(c) => {
+            let reason = c.reason.as_ref().map(|r| r.as_str());
+            Ok(LeadCallResult::TaskCancel(frame(
+                tasks.cancel(caller, &c.task_id, reason).await?,
+            )))
+        }
+        _ => Err(TaskError::new(ErrorCode::Invalid, "Not a task call.")
+            .with_fix("Use fleetd task spawn|list|status|message|cancel.")),
     }
 }

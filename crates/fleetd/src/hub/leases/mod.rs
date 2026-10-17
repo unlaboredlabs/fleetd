@@ -183,6 +183,7 @@ impl Leases {
                     lease.task_id.as_str()
                 ),
                 data: Some(serde_json::json!({ "taskId": lease.task_id, "area": lease.area, "since": lease.since })),
+                attention: None,
             })?;
             self.db.with(|db| {
                 db.prepare_cached("UPDATE leases SET stale_flagged = 1 WHERE machine_id = ? AND project_id = ? AND area = ?")?.execute(params![
@@ -194,17 +195,6 @@ impl Leases {
             })?;
         }
         Ok(stale.len())
-    }
-}
-
-/// The stale-lease check for the 5-min sweep.
-pub fn sweep_check(leases: Arc<Leases>) -> crate::hub::sweep::SweepCheck {
-    crate::hub::sweep::SweepCheck {
-        name: "stale leases".to_owned(),
-        run: Arc::new(move || {
-            let leases = leases.clone();
-            Box::pin(async move { leases.flag_stale().map(|_| ()).map_err(|e| e.to_string()) })
-        }),
     }
 }
 

@@ -6,6 +6,7 @@
 pub mod branch_diff;
 pub mod glob;
 pub mod hooks;
+pub mod ports;
 pub mod records;
 pub mod render;
 pub mod resolve;
@@ -26,23 +27,17 @@ use fleetd_contracts::tasks::{
 use serde_json::{Map, Value, json};
 
 use crate::clock::Clock;
-use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
-use crate::hub::leads::LeadError;
-use crate::hub::leads::Trigger;
-use crate::hub::leads::wakes::LineKind;
+use crate::hub::api::Shutdown;
 use crate::hub::leases::{Leases, Policies, parse_iso_ms};
-use crate::hub::link::NodeCommands;
-use crate::hub::link::commands::CommandInput;
 use crate::hub::slots::{SlotRequest, Slots, priority_of};
 use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::model::RuntimeMode;
 use hooks::{ResultReceipts, SpawnCheck, UsageGate};
+use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
 use resolve::{ModelEffort, resolve_model_effort};
-use t3_wire::types::{NewWorktree, WorkspaceStrategy};
 
 pub use records::{StoredTask, TaskRecords};
 
@@ -70,12 +65,11 @@ pub struct TaskDeps {
     pub store: Arc<HubStore>,
     pub events: Arc<EventLog>,
     pub clock: Arc<dyn Clock>,
-    pub executors: Arc<Executors>,
-    pub commands: Arc<NodeCommands>,
+    /// PORT: executor, link and leads (see `ports`).
+    pub ports: Arc<dyn TaskPorts>,
     pub slots: Arc<Slots>,
     pub leases: Arc<Leases>,
     pub policies: Arc<Policies>,
-    pub leads: Arc<crate::hub::leads::Area>,
 }
 
 const THREAD_EVENTS: [HubEventType; 7] = [
@@ -96,8 +90,8 @@ fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
 }
 
-fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) -> LeadError {
-    LeadError {
+fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) -> TaskError {
+    TaskError {
         code,
         message: message.into(),
         fix: fix.map(str::to_owned),
@@ -105,18 +99,13 @@ fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) ->
 }
 
 /// Store failures are defects in TS (Effect.sync throwing); here they refuse the call plainly and are logged.
-fn store_error(error: StoreError) -> LeadError {
+fn store_error(error: StoreError) -> TaskError {
     tracing::error!(%error, "tasks: store failed");
     lead_error(
         ErrorCode::T3Error,
         "The hub failed to answer that request.",
         Some("Retry; if it keeps failing, check the hub's log."),
     )
-}
-
-/// TS leads/LeadError.ts `fromExecutor`.
-pub(crate) fn from_executor(error: &ExecutorError) -> LeadError {
-    LeadError::from(error.clone())
 }
 
 /// Why a launch or continuation did not go out: the machine went offline (the task queues), or anything else
@@ -126,17 +115,17 @@ enum StartError {
     Other(String),
 }
 
-impl From<ExecutorError> for StartError {
-    fn from(error: ExecutorError) -> Self {
+impl From<PortError> for StartError {
+    fn from(error: PortError) -> Self {
         match error {
-            ExecutorError::MachineNotConnected { .. } => Self::Offline,
-            other => Self::Other(other.to_string()),
+            PortError::Offline => Self::Offline,
+            PortError::Failed(message) => Self::Other(message),
         }
     }
 }
 
-impl From<LeadError> for StartError {
-    fn from(error: LeadError) -> Self {
+impl From<TaskError> for StartError {
+    fn from(error: TaskError) -> Self {
         Self::Other(error.message)
     }
 }
@@ -221,9 +210,10 @@ pub struct Tasks {
     lock: tokio::sync::Mutex<()>,
     /// Machines a queued task waits on; one waiter each.
     awaiting: Mutex<HashSet<MachineId>>,
-    /// Set once in `hub/serve` by the areas that merge after tasks; unset passes through, as the TS hub did
+    /// PORT: set once in `hub/serve` by usage, valuebar and receipts; unset passes through, as the TS hub did
     /// before those milestones.
     pub hooks: TaskHooks,
+    cursor: i64,
 }
 
 #[derive(Default)]
@@ -234,26 +224,34 @@ pub struct TaskHooks {
 }
 
 impl Tasks {
-    /// Registers the slot release listener (which also runs once now, picking up tasks queued before a restart)
-    /// and follows thread events from the log's head for as long as the hub runs.
-    pub fn start(deps: TaskDeps) -> Result<Arc<Self>, StoreError> {
-        let tasks = Arc::new(Self {
+    /// The cursor is read here, not in `run`, so nothing appended before `run` first waits is missed.
+    pub fn new(deps: TaskDeps) -> Arc<Self> {
+        let cursor = deps.events.head();
+        Arc::new(Self {
             d: deps,
             lock: tokio::sync::Mutex::new(()),
             awaiting: Mutex::new(HashSet::new()),
             hooks: TaskHooks::default(),
-        });
-        let weak = Arc::downgrade(&tasks);
-        tasks.d.slots.on_release(Arc::new(move || {
+            cursor,
+        })
+    }
+
+    /// Registers the slot release listener (which also runs once now, picking up tasks queued before a restart)
+    /// and follows thread events until the hub stops.
+    pub async fn run(self: Arc<Self>, shutdown: Shutdown) {
+        let weak = Arc::downgrade(&self);
+        let registered = self.d.slots.on_release(Arc::new(move || {
             if let Some(tasks) = weak.upgrade() {
                 tasks.retry_later();
             }
-        }))?;
-        // The cursor is read here, not in the task, so nothing appended before the task first runs is missed.
-        let from = tasks.d.events.head();
-        let follower = tasks.clone();
-        tokio::spawn(async move { follower.follow(from).await });
-        Ok(tasks)
+        }));
+        if let Err(error) = registered {
+            tracing::error!(%error, "tasks: slot listener not registered");
+        }
+        tokio::select! {
+            () = shutdown.wait() => {}
+            () = self.clone().follow(self.cursor) => {}
+        }
     }
 
     fn now_iso(&self) -> String {
@@ -293,6 +291,7 @@ impl Tasks {
             thread_id: task.thread_ref.as_ref().map(|r| r.thread_id.clone()),
             summary,
             data: Some(Value::Object(data)),
+            attention: None,
         })?;
         Ok(())
     }
@@ -311,23 +310,13 @@ impl Tasks {
             result,
             receipts.as_deref(),
         );
-        self.d.leads.wakes.trigger(
-            &task.project_ref,
-            Trigger::Line {
-                kind: LineKind::TaskResult,
-                text,
-            },
-        );
+        self.d
+            .ports
+            .wake(&task.project_ref, WakeKind::TaskResult, text);
     }
 
     fn workstream(&self, id: &WorkstreamId) -> Option<fleetd_contracts::ledger::Workstream> {
-        match self.d.leads.records.workstream_get(id) {
-            Ok(found) => found.map(|w| w.workstream),
-            Err(error) => {
-                tracing::warn!(%error, "tasks: workstream not read");
-                None
-            }
-        }
+        self.d.ports.workstream(id)
     }
 
     fn queue(&self, stored: &StoredTask, reason: &str) -> Result<Task, StoreError> {
@@ -370,7 +359,7 @@ impl Tasks {
         let base_branch = if write {
             Some(
                 self.d
-                    .executors
+                    .ports
                     .default_branch(&r.machine_id, &project.workspace_root)
                     .await?,
             )
@@ -383,36 +372,27 @@ impl Tasks {
             task,
             project_title: &project.title,
             brief: brief.as_ref(),
+            done_when: brief.as_ref().map(|b| self.d.ports.done_when_text(b)),
             area_globs: &globs,
             branch: branch.as_deref(),
             base_branch: base_branch.as_deref(),
         });
-        let input = LaunchInput {
+        let request = LaunchRequest {
             project_id: r.project_id.clone(),
             prompt,
             model: task.model.as_str().to_owned(),
             effort: task.effort,
-            runtime_mode: RuntimeMode::FullAccess,
-            title: Some(js_prefix(
+            title: js_prefix(
                 &format!("{}: {}", task.task_id.as_str(), task.title.as_str()),
                 80,
-            )),
+            ),
             // T3 keeps a receipt per command id, so a retried launch returns the same thread.
             client_request_id: request_id(task, &[&task.attempt.get().to_string()]),
+            worktree: base_branch
+                .zip(branch.clone())
+                .map(|(base_ref, branch)| Worktree { base_ref, branch }),
         };
-        let workspace = match (&base_branch, &branch) {
-            (Some(base), Some(branch)) => Some(WorkspaceStrategy::Worktree(NewWorktree {
-                base_ref: base.clone(),
-                branch: Some(branch.clone()),
-                start_from_origin: None,
-            })),
-            _ => None,
-        };
-        let thread_id = self
-            .d
-            .executors
-            .launch(&r.machine_id, &input, LaunchOptions { workspace })
-            .await?;
+        let thread_id = self.d.ports.launch(&r.machine_id, request).await?;
         Ok((
             ThreadRef {
                 machine_id: r.machine_id.clone(),
@@ -471,7 +451,7 @@ impl Tasks {
         }
         let (tasks, machine_id) = (self.clone(), machine_id.clone());
         tokio::spawn(async move {
-            tasks.d.executors.await_live(&machine_id).await;
+            tasks.d.ports.await_live(&machine_id).await;
             tasks.awaiting.lock().unwrap().remove(&machine_id);
             let _guard = tasks.lock.lock().await;
             tasks.retry_queue().await;
@@ -513,7 +493,7 @@ impl Tasks {
         }
         // Checked before the slot: taking and releasing one would run the queue again at once.
         let offline = format!("machine {} is offline", r.machine_id.as_str());
-        if !self.d.executors.is_connected(&r.machine_id) {
+        if !self.d.ports.is_connected(&r.machine_id) {
             self.retry_when_live(&r.machine_id);
             return self.queue(stored, &offline);
         }
@@ -539,7 +519,7 @@ impl Tasks {
                 .expect("continuing has a message");
             let id = request_id(task, &[&task.attempt.get().to_string()]);
             self.d
-                .executors
+                .ports
                 .send(thread, message, &id)
                 .await
                 .map(|_| (thread.clone(), None))
@@ -611,21 +591,22 @@ impl Tasks {
         let project = self.d.store.project_get(r).ok()??;
         let base = self
             .d
-            .executors
+            .ports
             .default_branch(&r.machine_id, &project.workspace_root)
             .await
             .ok()?;
         let argv = branch_diff::branch_diff_argv(&base, branch)?;
-        let input = CommandInput {
-            cwd: project.workspace_root.clone(),
-            argv,
-            timeout_sec: Some(branch_diff::TIMEOUT_SEC as u32),
-        };
-        let out = self.d.commands.run(&r.machine_id, input).await.ok()?;
-        branch_diff::parse_branch_diff(
-            out.exit_code.map_or(-1, |c| c.get()),
-            out.output_tail.as_str(),
-        )
+        let out = self
+            .d
+            .ports
+            .run_command(
+                &r.machine_id,
+                &project.workspace_root,
+                argv,
+                branch_diff::TIMEOUT_SEC as u32,
+            )
+            .await?;
+        branch_diff::parse_branch_diff(out.exit_code.unwrap_or(-1), &out.output_tail)
     }
 
     async fn finish(
@@ -651,24 +632,19 @@ impl Tasks {
         };
         let write = task.kind == TaskKind::Write;
         let changes = if write {
-            self.d.executors.changes(&thread_ref).await.ok()
+            self.d.ports.changes(&thread_ref).await
         } else {
             None
         };
-        let actions = self
-            .d
-            .executors
-            .actions(&thread_ref, 30, false)
-            .await
-            .unwrap_or_default();
+        let actions = self.d.ports.action_texts(&thread_ref, 30).await;
         let pr_url = changes
             .as_ref()
             .and_then(|c| c.pull_request_urls.last().cloned())
             .or_else(|| {
                 let mut texts: Vec<&str> = Vec::new();
-                for a in actions.iter().rev() {
-                    texts.push(a.summary.as_str());
-                    if let Some(out) = &a.output_tail {
+                for (summary, output_tail) in actions.iter().rev() {
+                    texts.push(summary);
+                    if let Some(out) = output_tail {
                         texts.push(out);
                     }
                 }
@@ -838,13 +814,7 @@ impl Tasks {
                     pending_message: None,
                 })?;
                 // Nobody else answers a task's question, so its lead is woken with it.
-                let asked = self
-                    .d
-                    .executors
-                    .pending_question(&thread_ref)
-                    .await
-                    .ok()
-                    .flatten();
+                let asked = self.d.ports.pending_question(&thread_ref).await;
                 let latest = self
                     .d
                     .store
@@ -864,13 +834,9 @@ impl Tasks {
                     task.title.as_str(),
                     &question,
                 );
-                self.d.leads.wakes.trigger(
-                    &task.project_ref,
-                    Trigger::Line {
-                        kind: LineKind::TaskWaiting,
-                        text,
-                    },
-                );
+                self.d
+                    .ports
+                    .wake(&task.project_ref, WakeKind::TaskWaiting, text);
             }
             HubEventType::ThreadCompleted if live => {
                 self.finish(&stored, TaskResultStatus::Done).await?
@@ -903,7 +869,7 @@ impl Tasks {
         Ok(())
     }
 
-    async fn follow(self: Arc<Self>, from: u64) {
+    async fn follow(self: Arc<Self>, from: i64) {
         let mut cursor = from;
         loop {
             let input = WaitInput {
@@ -930,7 +896,7 @@ impl Tasks {
         }
     }
 
-    fn owned(&self, caller: &TaskCaller, task_id: &TaskId) -> Result<StoredTask, LeadError> {
+    fn owned(&self, caller: &TaskCaller, task_id: &TaskId) -> Result<StoredTask, TaskError> {
         match self
             .db(|c| TaskRecords::get(c, task_id))
             .map_err(store_error)?
@@ -951,7 +917,7 @@ impl Tasks {
         self: &Arc<Self>,
         caller: &TaskCaller,
         input: SpawnInput,
-    ) -> Result<Task, LeadError> {
+    ) -> Result<Task, TaskError> {
         let r = &caller.project_ref;
         // M6 value bar: serves, done workstreams and review rounds. Outside the lock, since it may ask GitHub for a
         // PR head, and before the closed-state check, so a done workstream gets its own refusal.
@@ -1017,16 +983,7 @@ impl Tasks {
             model: d.model.as_ref().map(|m| m.as_str().to_owned()),
             effort: d.effort,
         });
-        let settings = self
-            .d
-            .leads
-            .records
-            .settings_get(r)
-            .ok()
-            .map(|s| ModelEffort {
-                model: s.model,
-                effort: s.effort,
-            });
+        let settings = self.d.ports.lead_settings(r);
         let (model, effort) = resolve_model_effort(&flag, defaults.as_ref(), settings.as_ref());
         let task = Task {
             task_id: TaskId::unchecked("T0"),
@@ -1075,7 +1032,7 @@ impl Tasks {
         caller: &TaskCaller,
         task_id: &TaskId,
         text: &str,
-    ) -> Result<Task, LeadError> {
+    ) -> Result<Task, TaskError> {
         let _guard = self.lock.lock().await;
         let stored = self.owned(caller, task_id)?;
         let task = stored.task.clone();
@@ -1117,10 +1074,10 @@ impl Tasks {
                     .expect("a running task has a thread");
                 let uuid = random_uuid();
                 self.d
-                    .executors
+                    .ports
                     .send(thread, text, &request_id(&task, &["msg", &uuid]))
                     .await
-                    .map_err(|e| from_executor(&e))?;
+                    .map_err(|e| e.to_task_error(&thread.machine_id))?;
                 Ok(task)
             }
             _ => {
@@ -1145,7 +1102,7 @@ impl Tasks {
         caller: &TaskCaller,
         task_id: &TaskId,
         reason: Option<&str>,
-    ) -> Result<Task, LeadError> {
+    ) -> Result<Task, TaskError> {
         let _guard = self.lock.lock().await;
         let task = self.owned(caller, task_id)?.task;
         let id = task_id.as_str();
@@ -1167,14 +1124,14 @@ impl Tasks {
             && let Some(thread) = &task.thread_ref
             && let Err(error) = self
                 .d
-                .executors
+                .ports
                 .interrupt(
                     thread,
                     &request_id(&task, &["cancel", &task.attempt.get().to_string()]),
                 )
                 .await
         {
-            tracing::warn!(task_id = id, %error, "task cancel: interrupt failed");
+            tracing::warn!(task_id = id, error = ?error, "task cancel: interrupt failed");
         }
         let at = self.now_iso();
         let reason = reason.map_or_else(|| format!("Cancelled by {}.", caller.by), str::to_owned);
@@ -1220,24 +1177,20 @@ impl Tasks {
     }
 }
 
-/// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads hook).
-pub struct TasksForLeads(pub Arc<Tasks>);
-
 const LIVE_TASKS: [TaskState; 3] = [TaskState::Queued, TaskState::Running, TaskState::Idle];
 const SCAN_LIMIT: usize = 10_000;
 
-impl crate::hub::leads::hooks::TasksHook for TasksForLeads {
-    fn digest_lines(
+/// What leads read from tasks: digest lines, live tasks and cancels for removed projects. PORT: the leads area's
+/// TasksHook forwards to these.
+impl Tasks {
+    pub fn digest_lines(
         &self,
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
     ) -> Vec<String> {
         let since = since.map(Timestamp::as_str);
-        match self
-            .0
-            .db(|c| TaskRecords::for_digest(c, project_ref, since, limit))
-        {
+        match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
             Ok(tasks) => render::task_digest_lines(&tasks, since),
             Err(error) => {
                 tracing::warn!(%error, "tasks: digest lines not read");
@@ -1246,7 +1199,7 @@ impl crate::hub::leads::hooks::TasksHook for TasksForLeads {
         }
     }
 
-    fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
+    pub fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
         let mut out = Vec::new();
         for state in LIVE_TASKS {
             let filter = TaskFilter {
@@ -1255,26 +1208,24 @@ impl crate::hub::leads::hooks::TasksHook for TasksForLeads {
                 workstream_id: None,
                 limit: SCAN_LIMIT,
             };
-            for task in self.0.list(&filter).unwrap_or_default() {
+            for task in self.list(&filter).unwrap_or_default() {
                 out.push((task.task_id, task.project_ref));
             }
         }
         out
     }
 
-    fn cancel(
-        &self,
+    /// `Tasks.cancel({projectRef, by: "hub"}, taskId, reason)` for a removed project, errors ignored.
+    pub async fn cancel_for_removal(
+        self: &Arc<Self>,
         project_ref: &ProjectRef,
         task_id: &TaskId,
         reason: &str,
-    ) -> crate::hub::leads::hooks::BoxFuture<()> {
-        let (tasks, task_id, reason) = (self.0.clone(), task_id.clone(), reason.to_owned());
+    ) {
         let caller = TaskCaller {
             project_ref: project_ref.clone(),
             by: "hub".to_owned(),
         };
-        Box::pin(async move {
-            let _ = tasks.cancel(&caller, &task_id, Some(&reason)).await;
-        })
+        let _ = self.cancel(&caller, task_id, Some(reason)).await;
     }
 }

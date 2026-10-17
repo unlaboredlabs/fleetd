@@ -118,6 +118,8 @@ pub struct PromptInput<'a> {
     pub project_title: &'a str,
     /// Absent while the workstream is a draft.
     pub brief: Option<&'a Brief>,
+    /// The brief's done-when checks as text (leads' doneWhenText with max 200).
+    pub done_when: Option<String>,
     /// The globs of each leased area, in the task's area order.
     pub area_globs: &'a [(String, Vec<String>)],
     /// Write tasks: their branch and the branch it starts from.
@@ -161,7 +163,7 @@ pub fn render_task_prompt(input: &PromptInput<'_>) -> String {
         context.push(format!("Goal: {}", one_line(brief.goal.as_str(), 1000)));
         context.push(format!(
             "Done when: {}",
-            crate::hub::leads::digest::done_when_text(&brief.done_when, None, 200)
+            input.done_when.as_deref().unwrap_or_default()
         ));
     }
     if let Some(serves) = serves {
