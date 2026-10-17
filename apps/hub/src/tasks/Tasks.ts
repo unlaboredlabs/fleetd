@@ -28,8 +28,10 @@ import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as LeadWakes from "../leads/LeadWakes.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
+import * as Leases from "../leases/Leases.ts";
+import * as Policy from "../leases/Policy.ts";
+import * as Slots from "../slots/Slots.ts";
 import { outsideGlobs } from "./glob.ts";
-import { LeasePort, PolicyPort, SlotPort } from "./ports.ts";
 import { branchFor, findPrUrl, renderTaskPrompt, tailOf } from "./render.ts";
 import { resolveModelEffort } from "./resolve.ts";
 import * as TaskRecords from "./TaskRecords.ts";
@@ -88,9 +90,9 @@ export const make = Effect.gen(function* () {
   const executors = yield* Executors.Executors;
   const workspace = yield* ThreadWorkspace;
   const wakes = yield* LeadWakes.LeadWakes;
-  const slots = yield* SlotPort;
-  const leases = yield* LeasePort;
-  const policies = yield* PolicyPort;
+  const slots = yield* Slots.Slots;
+  const leases = yield* Leases.Leases;
+  const policies = yield* Policy.Policies;
   const scope = yield* Effect.scope;
   // Every state change goes through this, so a release, a completion and a lead call never interleave.
   const lock = Semaphore.makeUnsafe(1);
@@ -111,7 +113,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const releaseAll = (task: Task) => Effect.andThen(slots.release(task.taskId), leases.release(task.taskId));
+  const releaseAll = (task: Task) => Effect.andThen(slots.release(task.taskId), Effect.asVoid(leases.release(task.taskId)));
 
   const wake = (task: Task, result: TaskResult) =>
     wakes.trigger(task.projectRef, { kind: "task_result", taskId: task.taskId, title: task.title, result });
@@ -204,7 +206,7 @@ export const make = Effect.gen(function* () {
         yield* retryWhenLive(task.projectRef.machineId);
         return yield* queue(stored, offline);
       }
-      const slot = yield* slots.acquire({ holder: task.taskId, projectRef: task.projectRef, kind: task.kind });
+      const slot = yield* slots.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: Slots.priorityOf(task.kind) });
       if (!slot.granted) return yield* queue(stored, slot.reason);
 
       const continuing = task.threadRef !== undefined && stored.pendingMessage !== undefined;
@@ -225,6 +227,8 @@ export const make = Effect.gen(function* () {
         state: "running",
         startedAt: task.startedAt ?? at,
       };
+      // From here the board holds the slot while the thread runs and frees it whenever it stops.
+      yield* slots.bind(task.taskId, next.threadRef!);
       yield* records.put({ task: next });
       yield* emit(
         next,
@@ -307,15 +311,14 @@ export const make = Effect.gen(function* () {
           // Continued outside `task message`: the watchdog's nudge, or a human writing to the thread.
           if (task.state !== "done" && task.state !== "failed" && task.state !== "idle") return;
           if (task.kind === "write") yield* leases.acquire({ projectRef: task.projectRef, taskId: task.taskId, areas: task.areas });
-          yield* slots.acquire({ holder: task.taskId, projectRef: task.projectRef, kind: task.kind });
+          yield* slots.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: Slots.priorityOf(task.kind) });
+          yield* slots.bind(task.taskId, task.threadRef!);
           yield* records.put({ task: { ...without(task, "endedAt"), state: "running" } });
           return;
         }
         case "thread.waiting": {
-          if (task.state !== "running") return;
-          yield* records.put({ task: { ...task, state: "idle" } });
-          yield* slots.release(task.taskId);
-          yield* retryQueue;
+          // The board frees the slot itself and takes it again if the run resumes; the leases stay.
+          if (task.state === "running") yield* records.put({ task: { ...task, state: "idle" } });
           return;
         }
         case "thread.completed":
@@ -451,11 +454,10 @@ export const make = Effect.gen(function* () {
       return next;
     }).pipe(lock.withPermit);
 
+  // The board also runs the listener once now, which picks up tasks queued before a restart.
   yield* slots.onRelease(retryLater);
   // The cursor is read here, not in the fiber, so nothing appended before the fiber first runs is missed.
   yield* Effect.forkScoped(follow(yield* events.head()));
-  // Tasks queued before a restart.
-  yield* retryLater;
 
   return Tasks.of({
     spawn,
@@ -466,5 +468,5 @@ export const make = Effect.gen(function* () {
   });
 });
 
-/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace and the three ports. */
+/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace, Slots, Leases and Policies. */
 export const layer = Layer.effect(Tasks, make);

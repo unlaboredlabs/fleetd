@@ -7,7 +7,7 @@ import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as LeadWakes from "../leads/LeadWakes.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as Tasks from "./Tasks.ts";
-import { LEAD, makeKit, nextEvent, REF, runKit } from "./testKit.ts";
+import { LEAD, leaseOwners, makeKit, nextEvent, REF, runKit, slotsUsed } from "./testKit.ts";
 
 const T = (n: number) => `T${n}` as TaskId;
 const spawnInput = (workstreamId: string, over: Partial<Tasks.SpawnInput> = {}): Tasks.SpawnInput =>
@@ -39,7 +39,8 @@ describe("Tasks", () => {
         expect(launch.input.prompt).toContain("Only change files in these areas: docs (docs/**).");
         expect(launch.input.prompt).toContain("Goal: a docs page");
         expect((yield* nextEvent(cursor, "task.started")).data).toMatchObject({ taskId: "T1", branch: "fleetd/T1-add-file" });
-        expect(kit.owners.get("docs")).toBe("T1");
+        expect(yield* leaseOwners).toEqual({ docs: "T1" });
+        expect(yield* slotsUsed).toBe(1);
 
         kit.changes.set("t2", { branch: "fleetd/T1-add-file", worktreePath: "/w/p1/.t3/worktrees/T1", paths: ["docs/x.md"], pullRequestUrls: [] });
         const before = yield* head;
@@ -54,8 +55,8 @@ describe("Tasks", () => {
           branch: "fleetd/T1-add-file",
           prUrl: "https://github.com/wynn-dev/lab/pull/7",
         });
-        expect(kit.released).toEqual(["T1"]);
-        expect(kit.owners.size).toBe(0);
+        expect(yield* slotsUsed).toBe(0);
+        expect(yield* leaseOwners).toEqual({});
         // In area: no out_of_area event.
         expect((yield* (yield* EventLog.EventLog).wait({ cursor: before, types: ["task.out_of_area"], timeoutSec: 0 })).events).toEqual([]);
 
@@ -140,10 +141,10 @@ describe("Tasks", () => {
         const cancelled = yield* tasks.cancel(LEAD, T(1), "superseded");
         expect(cancelled).toMatchObject({ state: "cancelled", result: { status: "cancelled", tail: "superseded", branch: "fleetd/T1-add-file" } });
         expect(kit.interrupts).toEqual(["t2"]);
-        expect(kit.released).toEqual(["T1"]);
         yield* nextEvent(before, "task.cancelled");
         expect((yield* tasks.get(T(2)))).toMatchObject({ state: "running", branch: "fleetd/T2-more-docs" });
-        expect(kit.owners.get("docs")).toBe("T2");
+        expect(yield* leaseOwners).toEqual({ docs: "T2" });
+        expect(yield* slotsUsed).toBe(1);
 
         // The interrupt's own thread event changes nothing and wakes nobody.
         yield* kit.threadEvent("t2", "thread.interrupted");
@@ -177,7 +178,7 @@ describe("Tasks", () => {
 
         const queued = yield* tasks.message(LEAD, T(1), "now fix the typo");
         expect(queued).toMatchObject({ state: "queued", attempt: 2, queuedReason: "slots: 1/1 in use" });
-        expect(kit.owners.get("docs")).toBe("T1");
+        expect(yield* leaseOwners).toEqual({ docs: "T1" });
         // A second message while it waits joins the first.
         yield* tasks.message(LEAD, T(1), "and the link");
         expect(kit.sends).toHaveLength(1);
@@ -188,13 +189,13 @@ describe("Tasks", () => {
         expect(kit.sends.at(-1)).toEqual({ threadId: "t2", message: "now fix the typo\n\nand the link" });
         expect(kit.launches).toHaveLength(3);
         expect((yield* tasks.get(T(1)))).toMatchObject({ state: "running", attempt: 2, threadRef: { threadId: "t2" } });
-        expect(kit.held.has(T(1))).toBe(true);
+        expect(yield* slotsUsed).toBe(1);
       }),
     );
   });
 
   it("resolves model and effort from the policy file, then the project, never defaulting to medium", async () => {
-    const kit = makeKit({ policy: { areas: { docs: ["docs/**"] }, defaults: { model: "claude-sonnet-5-5" } } as never });
+    const kit = makeKit({ policy: "areas:\n  docs: [docs/**]\ndefaults:\n  model: claude-sonnet-5-5\n" });
     await runKit(
       kit,
       Effect.gen(function* () {
@@ -238,7 +239,7 @@ describe("Tasks", () => {
         yield* kit.setOffline(true);
         const task = yield* tasks.spawn(LEAD, spawnInput(ws));
         expect(task).toMatchObject({ state: "queued", queuedReason: "machine lab-a is offline" });
-        expect(kit.held.size).toBe(0);
+        expect(yield* slotsUsed).toBe(0);
         const before = yield* head;
         yield* kit.setOffline(false);
         yield* nextEvent(before, "task.started");
@@ -259,9 +260,12 @@ describe("Tasks", () => {
         const before = yield* head;
         yield* kit.threadEvent("t2", "thread.waiting");
         yield* nextEvent(before, "task.started", "T2");
+        // Thread events are handled in order, so once T2's end is handled, so is T1's wait.
+        yield* kit.threadEvent("t3", "thread.completed", "looked");
+        yield* nextEvent(before, "task.completed", "T2");
         expect((yield* tasks.get(T(1)))?.state).toBe("idle");
-        expect(kit.owners.get("docs")).toBe("T1");
-        expect([...kit.held]).toEqual(["T2"]);
+        expect(yield* leaseOwners).toEqual({ docs: "T1" });
+        expect(yield* slotsUsed).toBe(0);
       }),
     );
   });

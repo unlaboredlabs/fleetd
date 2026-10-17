@@ -1,16 +1,6 @@
 // Test kit for tasks: the real store, event log, leads and ledger on an in-memory database under a TestClock,
-// with fake executors, a fake ThreadWorkspace and in-memory slot, lease and policy ports.
-import {
-  type HubEventType,
-  type MachineId,
-  type PolicyFile,
-  type ProjectId,
-  type ProjectRef,
-  type TaskId,
-  type ThreadId,
-  type ThreadLaunchInput,
-  type WorkstreamId,
-} from "@fleetd/contracts";
+// with the real slot board and leases, fake executors, a fake ThreadWorkspace and a policy file given as text.
+import type { HubEventType, MachineId, ProjectId, ProjectRef, ThreadId, ThreadLaunchInput, WorkstreamId } from "@fleetd/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,22 +10,26 @@ import { type ThreadChanges, ThreadWorkspace } from "../executor/ThreadWorkspace
 import * as LeadsLayer from "../leads/layer.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as Leads from "../leads/Leads.ts";
+import * as Leases from "../leases/Leases.ts";
+import * as Policy from "../leases/Policy.ts";
+import * as Slots from "../slots/Slots.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
-import { type Grant, LeasePort, PolicyPort, SlotPort } from "./ports.ts";
 import * as Tasks from "./Tasks.ts";
 
 export const REF: ProjectRef = { machineId: "lab-a" as MachineId, projectId: "p1" as ProjectId };
 export const LEAD = { projectRef: REF, by: "lead:lab-a/p1" };
 
-export const POLICY: PolicyFile = {
-  areas: { docs: ["docs/**"], hub: ["apps/hub/**", "packages/contracts/src/tasks.ts"] },
-} as PolicyFile;
+export const POLICY = `areas:
+  docs: ["docs/**"]
+  hub: ["apps/hub/**", "packages/contracts/src/tasks.ts"]
+`;
 
 type LaunchInput = typeof ThreadLaunchInput.Type;
 
-export const makeKit = (options: { readonly cap?: number; readonly policy?: PolicyFile } = {}) => {
+/** `policy` is the text of .fleetd/policy.yaml. */
+export const makeKit = (options: { readonly cap?: number; readonly policy?: string } = {}) => {
   const launches: Array<{ readonly input: LaunchInput; readonly options: Executors.LaunchOptions | undefined }> = [];
   const sends: Array<{ readonly threadId: ThreadId; readonly message: string }> = [];
   const interrupts: Array<ThreadId> = [];
@@ -72,56 +66,17 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: Poli
     changes: (ref) => Effect.succeed(changes.get(ref.threadId) ?? { paths: [], pullRequestUrls: [] }),
   });
 
-  // Slots: a plain global cap.
-  const held = new Set<TaskId>();
-  const released: Array<TaskId> = [];
-  const listeners: Array<Effect.Effect<void>> = [];
-  const slots = SlotPort.of({
-    acquire: ({ holder }) =>
-      Effect.sync((): Grant => {
-        if (held.has(holder)) return { granted: true };
-        const cap = options.cap ?? 40;
-        if (held.size >= cap) return { granted: false, reason: `slots: ${held.size}/${cap} in use` };
-        held.add(holder);
-        return { granted: true };
-      }),
-    release: (holder) =>
-      Effect.suspend(() => {
-        if (!held.delete(holder)) return Effect.void;
-        released.push(holder);
-        return Effect.forEach(listeners, (l) => l, { discard: true });
-      }),
-    onRelease: (listener) => Effect.sync(() => void listeners.push(listener)),
-  });
-
-  // Leases: exclusive per area.
-  const owners = new Map<string, TaskId>();
-  const leases = LeasePort.of({
-    acquire: ({ taskId, areas }) =>
-      Effect.sync((): Grant => {
-        const taken = areas.find((a) => owners.has(a) && owners.get(a) !== taskId);
-        if (taken !== undefined) return { granted: false, reason: `lease: ${taken} held by ${owners.get(taken)}` };
-        for (const a of areas) owners.set(a, taskId);
-        return { granted: true };
-      }),
-    release: (taskId) =>
-      Effect.sync(() => {
-        for (const [a, t] of owners) if (t === taskId) owners.delete(a);
-      }),
-  });
-
-  const policies = PolicyPort.of({ get: () => Effect.succeed(options.policy ?? POLICY) });
+  const policySource = Policy.PolicySource.of({ read: () => Effect.succeed(options.policy ?? POLICY) });
 
   const base = Layer.mergeAll(
     HubStore.layer,
     EventLog.layer,
     Layer.succeed(Executors.Executors, executors),
     Layer.succeed(ThreadWorkspace, workspace),
-    Layer.succeed(SlotPort, slots),
-    Layer.succeed(LeasePort, leases),
-    Layer.succeed(PolicyPort, policies),
+    Layer.succeed(Policy.PolicySource, policySource),
   ).pipe(Layer.provideMerge(HubDb.layerMemory), Layer.provideMerge(TestClock.layer()));
   const layer = Tasks.layer.pipe(
+    Layer.provideMerge(Layer.mergeAll(Slots.layer({ defaultCap: options.cap ?? 40 }), Leases.layer, Policy.layer)),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(base),
   );
@@ -195,9 +150,6 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: Poli
     sends,
     interrupts,
     changes,
-    held,
-    released,
-    owners,
     setup,
     threadEvent,
     setOffline: (value: boolean) =>
@@ -212,6 +164,18 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: Poli
 };
 
 export type Kit = ReturnType<typeof makeKit>;
+
+/** Slots held now, across projects. */
+export const slotsUsed = Effect.gen(function* () {
+  const state = yield* (yield* Slots.Slots).state();
+  return state.used;
+});
+
+/** Area → task, for REF. */
+export const leaseOwners = Effect.map(
+  Effect.flatMap(Leases.Leases, (l) => l.list({ projectRef: REF })),
+  (leases) => Object.fromEntries(leases.map((l) => [l.area, l.taskId])),
+);
 
 export const runKit = <A, E>(kit: Kit, effect: Effect.Effect<A, E, Layer.Success<Kit["layer"]>>) =>
   Effect.runPromise(Effect.scoped(Effect.provide(effect, kit.layer)));

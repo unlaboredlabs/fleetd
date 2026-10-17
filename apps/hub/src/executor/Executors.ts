@@ -527,7 +527,7 @@ const make = Effect.gen(function* () {
           Effect.mapError(readFailed(ref.machineId)),
         );
         const paths = [...new Set(p.checkpoints.flatMap((c) => c.files.map((f) => f.path)))].sort();
-        const urls = [...(p.thread.pullRequests ?? []).filter((l) => l.source !== "stack-dismissed").map((l) => l.url)];
+        const urls = (p.thread.pullRequests ?? []).filter((l) => l.source !== "stack-dismissed").map((l) => l.url);
         if (p.thread.linkedPullRequest) urls.push(p.thread.linkedPullRequest.url);
         return {
           ...(p.thread.branch === null ? {} : { branch: p.thread.branch }),
