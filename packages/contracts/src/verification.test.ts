@@ -24,8 +24,13 @@ describe("serves", () => {
     expect(accepts(LeadCall, { ...spawn, kind: "read", areas: [] })).toBe(true);
   });
 
-  it("allows --qa only on review tasks", () => {
-    expect(accepts(LeadCall, { ...spawn, kind: "review", areas: [], qa: true })).toBe(true);
+  it("needs a PR URL for a review and allows --qa only on review tasks", () => {
+    const review = { ...spawn, kind: "review", areas: [], pr: "https://github.com/o/r/pull/1" };
+    expect(accepts(LeadCall, review)).toBe(true);
+    expect(accepts(LeadCall, { ...review, qa: true })).toBe(true);
+    const { pr: _, ...noPr } = review;
+    expect(accepts(LeadCall, noPr)).toBe(false);
+    expect(accepts(LeadCall, { ...review, pr: "o/r#1" })).toBe(false);
     expect(accepts(LeadCall, { ...spawn, serves: "done:0", qa: true })).toBe(false);
   });
 });

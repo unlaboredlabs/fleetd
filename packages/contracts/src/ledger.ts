@@ -87,10 +87,6 @@ export type Tier = typeof Tier.Type;
 export const Estimate = Schema.Struct({
   rawMinutes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
   gates: list(text(200), 20),
-  /** Hub-filled: wall-clock minutes from running to done. */
-  actualMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
-  /** Hub-filled: the tier's calibration ratio when the workstream started running. */
-  ratioAtStart: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
 }).annotate({ identifier: "Estimate" });
 export type Estimate = typeof Estimate.Type;
 
@@ -138,6 +134,15 @@ export const Workstream = Schema.Struct({
   state: WorkstreamState,
   headline: Schema.optionalKey(Headline),
   headlineAt: Schema.optionalKey(Timestamp),
+  /** Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate. */
+  estimateActual: Schema.optionalKey(
+    Schema.Struct({
+      /** Wall-clock minutes from running to done; set on done. */
+      actualMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+      /** The tier's calibration ratio when it started running. */
+      ratioAtStart: Schema.Finite.check(Schema.isGreaterThan(0)),
+    }),
+  ),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 }).annotate({ identifier: "Workstream" });

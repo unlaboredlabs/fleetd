@@ -223,14 +223,6 @@
             "maxLength": 200
           },
           "maxItems": 20
-        },
-        "actualMinutes": {
-          "type": "number",
-          "minimum": 0
-        },
-        "ratioAtStart": {
-          "type": "number",
-          "exclusiveMinimum": 0
         }
       },
       "required": [
@@ -401,6 +393,23 @@
         },
         "headlineAt": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "estimateActual": {
+          "type": "object",
+          "properties": {
+            "actualMinutes": {
+              "type": "number",
+              "minimum": 0
+            },
+            "ratioAtStart": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "required": [
+            "ratioAtStart"
+          ],
+          "additionalProperties": true
         },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"

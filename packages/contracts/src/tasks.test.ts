@@ -21,7 +21,7 @@ describe("task spawn", () => {
     const { areas: _, ...noAreas } = spawn;
     expect(accepts(LeadCall, noAreas)).toBe(false);
     expect(accepts(LeadCall, { ...noAreas, kind: "read" })).toBe(true);
-    expect(accepts(LeadCall, { ...noAreas, kind: "review" })).toBe(true);
+    expect(accepts(LeadCall, { ...noAreas, kind: "review", pr: "https://github.com/o/r/pull/1" })).toBe(true);
   });
 
   it("caps the title at 80 on one line and the prompt at 8000", () => {

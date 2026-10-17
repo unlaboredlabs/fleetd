@@ -22,7 +22,7 @@ import {
 } from "./ledger.ts";
 import { McpToolError } from "./mcp.ts";
 import { Effort } from "./model.ts";
-import { Serves, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
+import { PrUrl, Serves, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
 import { Claim, ClaimId, ReviewVerdict } from "./verification.ts";
 
 // Lead-side `fleetd` CLI calls. The CLI connects to the local node's unix socket, writes one LeadCallFrame as a
@@ -91,8 +91,9 @@ export const DecisionsSearchCall = Schema.Struct({
 
 /**
  * `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
- * [--effort e] [--tier S|M|L] [--estimate <min>] [--serves s] [--qa]`. Absent model and effort resolve from the policy
- * file, then the project, then claude-opus-5-5/high. A write task needs `--serves`; `--qa` marks a review task as a QA run.
+ * [--effort e] [--tier S|M|L] [--estimate <min>] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve from
+ * the policy file, then the project, then claude-opus-5-5/high. A write task needs `--serves`, a review task `--pr`;
+ * `--qa` marks a review task as a QA run.
  */
 export const TaskSpawnCall = Schema.Struct({
   op: Schema.tag("task_spawn"),
@@ -106,6 +107,7 @@ export const TaskSpawnCall = Schema.Struct({
   tier: Schema.optionalKey(Tier),
   estimateMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
   serves: Schema.optionalKey(Serves),
+  pr: Schema.optionalKey(PrUrl),
   qa: Schema.optionalKey(Schema.Boolean),
 }).check(taskAreasRule, taskSpawnRule);
 

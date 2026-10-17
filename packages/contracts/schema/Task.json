@@ -190,6 +190,9 @@
         "qa": {
           "type": "boolean"
         },
+        "pr": {
+          "type": "string"
+        },
         "state": {
           "type": "string",
           "enum": [

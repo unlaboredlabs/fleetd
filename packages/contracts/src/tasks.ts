@@ -70,10 +70,11 @@ export const Serves = Schema.String.check(Schema.makeFilter(isServes, { expected
   identifier: "Serves",
 });
 
-/** A write task must say what it serves; only review tasks may be QA runs. */
+/** A write task must say what it serves; a review task names its PR; only review tasks may be QA runs. */
 export const taskSpawnRule = Schema.makeFilter(
-  (call: { readonly kind: TaskKind; readonly serves?: string; readonly qa?: boolean }) => {
+  (call: { readonly kind: TaskKind; readonly serves?: string; readonly qa?: boolean; readonly pr?: string }) => {
     if (call.kind === "write" && call.serves === undefined) return { path: ["serves"], issue: `a write task needs --serves: ${SERVES_FIX}` };
+    if (call.kind === "review" && call.pr === undefined) return { path: ["pr"], issue: "a review task needs --pr <PR URL>" };
     if (call.qa === true && call.kind !== "review") return { path: ["qa"], issue: "--qa applies only to --kind review" };
     return undefined;
   },
@@ -88,6 +89,8 @@ export const Receipts = Schema.Struct({
 }).annotate({ identifier: "Receipts" });
 export type Receipts = typeof Receipts.Type;
 
+export const PrUrl = Schema.String.check(Schema.makeFilter(isHttpUrl, { expected: "an absolute http:// or https:// URL" }));
+
 export const TaskResultStatus = Schema.Literals(["done", "failed", "cancelled"]);
 export type TaskResultStatus = typeof TaskResultStatus.Type;
 
@@ -96,7 +99,7 @@ export const TaskResult = Schema.Struct({
   /** The latest assistant message, trimmed to its last 2000 characters. */
   tail: Schema.String.check(Schema.isMaxLength(2000)),
   branch: Schema.optionalKey(Schema.NonEmptyString),
-  prUrl: Schema.optionalKey(Schema.String.check(Schema.makeFilter(isHttpUrl, { expected: "an absolute http:// or https:// URL" }))),
+  prUrl: Schema.optionalKey(PrUrl),
   /** Absent on results stored before M6. */
   receipts: Schema.optionalKey(Receipts),
   /** The tail claims success ("tests pass", "fixed", ...) while `receipts.commands` is 0. Absent before M6. */
@@ -122,6 +125,8 @@ export const Task = Schema.Struct({
   serves: Schema.optionalKey(Serves),
   /** A review task spawned with `--qa`. */
   qa: Schema.optionalKey(Schema.Boolean),
+  /** The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows. */
+  pr: Schema.optionalKey(PrUrl),
   state: TaskState,
   /** Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use". */
   queuedReason: Schema.optionalKey(text(200)),
