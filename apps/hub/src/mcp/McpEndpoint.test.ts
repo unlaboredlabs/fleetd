@@ -458,3 +458,36 @@ describe("M5 tools", () => {
     expect((await call(await as("reader"), "fleetd_status")).body.slots).toMatchObject({ cap: 10, used: 0 });
   });
 });
+
+describe("usage tools", () => {
+  it("usage_status shows each readable machine's login, breaker and probe counter; usage_resume needs operate there", async () => {
+    const { hub, as } = await fleet();
+    const reader = await as("reader");
+    const quiet = await call(reader, "usage_status");
+    expect(quiet.isError).toBe(false);
+    expect(quiet.body.machines.map((m: { machineId: string }) => m.machineId).toSorted()).toEqual(["lab-a", "lab-b"]);
+    expect(quiet.body.machines[0]).toMatchObject({ login: "subscription", breaker: { state: "closed" }, parked: { leads: 0, tasks: 0 }, probes: { observable: false } });
+
+    // The executor's event for a proxy 400 on a thread no lead or task owns: the breaker opens all the same.
+    await hub.append({
+      at: AT,
+      type: "thread.usage_limited",
+      machineId: "lab-a" as MachineId,
+      threadId: "x1" as ThreadId,
+      summary: '"x1" on lab-a hit the usage limit: your proxy has no account available for claude-opus-5-5',
+      data: { status: "failed", usageClass: "pool_exhausted", model: "claude-opus-5-5" },
+    });
+    const paused = await call(reader, "usage_status", { machineId: "lab-a" });
+    expect(paused.body.machines).toHaveLength(1);
+    expect(paused.body.machines[0].breaker).toMatchObject({ state: "open", class: "pool_exhausted" });
+    expect(paused.body.next).toContain("Paused: lab-a");
+    expect((await call(reader, "fleetd_status")).body.attention.map((e: { type: string }) => e.type)).toContain("usage.breaker");
+
+    expect((await call(reader, "usage_resume", { machineId: "lab-a" })).body.code).toBe("forbidden");
+    const aOnly = await as("aOnly");
+    expect((await call(aOnly, "usage_resume", { machineId: "lab-b" })).body.code).toBe("forbidden");
+    const resumed = await call(aOnly, "usage_resume", { machineId: "lab-a" });
+    expect(resumed.isError).toBe(false);
+    expect(resumed.body).toMatchObject({ resumed: 0, status: { breaker: { state: "closed" } } });
+  });
+});

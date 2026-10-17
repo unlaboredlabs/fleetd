@@ -3,6 +3,7 @@ import { ProjectRef, ThreadRef, Timestamp } from "./ids.ts";
 import { Tier, WorkstreamId } from "./ledger.ts";
 import { Effort } from "./effort.ts";
 import { isHttpUrl } from "./subscriptions.ts";
+import { UsageParked } from "./usage.ts";
 
 // M5 objects: fleetd-owned tasks, area leases, slots and the repo policy file.
 
@@ -134,6 +135,8 @@ export const Task = Schema.Struct({
   /** `fleetd/<taskId>-<slug>`; write tasks only. */
   branch: Schema.optionalKey(Schema.NonEmptyString),
   worktreePath: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^\//u))),
+  /** M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`. */
+  parked: Schema.optionalKey(UsageParked),
   /** 1 for the first launch. */
   attempt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   result: Schema.optionalKey(TaskResult),

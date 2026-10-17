@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { MachineId, ProjectRef, ThreadId, Timestamp } from "./ids.ts";
 import { isHttpUrl } from "./subscriptions.ts";
+import { UsageParked } from "./usage.ts";
 
 // M3 ledger objects: leads, workstreams and briefs, asks and batches, decisions.
 
@@ -51,6 +52,8 @@ export const Lead = Schema.Struct({
   lastWakeAt: Schema.optionalKey(Timestamp),
   /** Bumped by each lead_restart. */
   sessionGeneration: Count,
+  /** M4: the lead thread hit a usage limit; derived from the usage layer when read. */
+  parked: Schema.optionalKey(UsageParked),
 }).annotate({ identifier: "Lead" });
 export type Lead = typeof Lead.Type;
 

@@ -28,6 +28,7 @@ import { ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, Threa
 import { SlotState, Task, TaskId, TaskState } from "./tasks.ts";
 import { Claim, Eta, Incident, IncidentClass } from "./verification.ts";
 import { Change, ChangeState, GitHubRepo, TrainState } from "./train.ts";
+import { UsageStatus } from "./usage.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
 import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
 
@@ -419,6 +420,19 @@ export const TrainFreezeInput = Schema.Struct({
 });
 export const TrainFreezeOutput = Schema.Struct({ train: TrainState, ...resultFields });
 
+// usage_status: per machine, the login kind, breaker, parked counts, the latest limit events and the probe counter.
+export const UsageStatusInput = Schema.Struct({ machineId: Schema.optionalKey(MachineId) });
+export const UsageStatusOutput = Schema.Struct({ machines: Schema.Array(UsageStatus), ...resultFields });
+
+// usage_resume: closes the machine's breaker and sends "continue" to everything parked there.
+export const UsageResumeInput = Schema.Struct({ machineId: MachineId });
+export const UsageResumeOutput = Schema.Struct({
+  /** Parked threads sent "continue". */
+  resumed: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  status: UsageStatus,
+  ...resultFields,
+});
+
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
   fleetd_status: { scope: "read", input: FleetdStatusInput, output: FleetdStatusOutput },
@@ -449,6 +463,8 @@ export const McpTools = {
   tasks_list: { scope: "read", input: TasksListInput, output: TasksListOutput },
   task_get: { scope: "read", input: TaskGetInput, output: TaskGetOutput },
   cap_set: { scope: "admin", input: CapSetInput, output: CapSetOutput },
+  usage_status: { scope: "read", input: UsageStatusInput, output: UsageStatusOutput },
+  usage_resume: { scope: "operate", input: UsageResumeInput, output: UsageResumeOutput },
   claims_list: { scope: "read", input: ClaimsListInput, output: ClaimsListOutput },
   incidents_list: { scope: "read", input: IncidentsListInput, output: IncidentsListOutput },
   changes_list: { scope: "read", input: ChangesListInput, output: ChangesListOutput },

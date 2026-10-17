@@ -75,6 +75,10 @@ export const HubEventType = Schema.Literals([
   "intake.routed",
   /** A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`. */
   "research.verdict",
+  /** M4: a machine's login hit the same limit on several threads, or its proxy has no account; dispatch there pauses. */
+  "usage.breaker",
+  /** M4: parked threads were sent "continue" at their reset or on usage_resume; `data.breakerCleared`. */
+  "usage.resumed",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

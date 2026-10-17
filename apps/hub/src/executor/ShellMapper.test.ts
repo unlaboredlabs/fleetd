@@ -205,6 +205,26 @@ describe("usage limits", () => {
     );
   });
 
+  it("a proxy 400 'unknown provider for model' is a usage limit (pool_exhausted), not a failure", () => {
+    const proxy: Item = {
+      ...failedRow,
+      sequence: failedRow.sequence + 1,
+      thread: {
+        ...failedRow.thread,
+        lastErrorClass: "provider_error",
+        lastError: 'API Error: 400 {"error":{"message":"unknown provider for model claude-opus-5-5","type":"invalid_request_error","code":"model_not_found","param":"model"}}',
+        usageLimitResetAt: null,
+      },
+    };
+    const state = beforeTurns();
+    expect(run([proxy], state).events).toEqual([["thread.usage_limited", "d"]]);
+    expect(run([{ ...proxy, sequence: proxy.sequence + 1 }], state).events).toEqual([]);
+    const tracked = state.threads.get(d)!;
+    const event = transitionEvent({ type: "thread.usage_limited", threadId: tracked.summary.threadId }, tracked, machineId);
+    expect(event.summary).toBe(`"fixtures: bad model" on lab-b hit the usage limit: your proxy has no account available for claude-opus-5-5`);
+    expect(event.data).toMatchObject({ usageClass: "pool_exhausted", model: "claude-opus-5-5" });
+  });
+
   it("a plain failure that turns into a usage limit on the same run is a transition", () => {
     const { state } = run(live.items, emptyShellState(), ctx({ baseline: true }));
     expect(run([limited], state).events).toEqual([["thread.usage_limited", "d"]]);

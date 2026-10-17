@@ -13,6 +13,7 @@ import {
 import type { OrchestrationV2ShellStreamItem, OrchestrationV2ThreadShell } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import type { StoredThread } from "../store/HubStore.ts";
+import { limitData, limitOfSummary } from "../usage/classify.ts";
 
 export interface TrackedThread {
   readonly summary: ThreadSummary;
@@ -127,8 +128,8 @@ export const toThreadSummary = (
 };
 
 type Phase = ThreadStatus | "usage_limited";
-export const phase = (s: ThreadSummary): Phase =>
-  s.status === "failed" && s.lastError?.class === "usage_limit" ? "usage_limited" : s.status;
+/** M4: a failure T3 calls usage_limit, or whose text is a 429, a usage limit or an exhausted proxy, is a usage limit. */
+export const phase = (s: ThreadSummary): Phase => (limitOfSummary(s) !== undefined ? "usage_limited" : s.status);
 
 const EVENT_FOR: Partial<Record<Phase, HubEventType>> = {
   running: "thread.started",
@@ -297,9 +298,12 @@ export const transitionEvent = (
   machineId: MachineId,
 ): Omit<HubEvent, "seq"> => {
   const s = thread.summary;
+  const limit = t.type === "thread.usage_limited" ? limitOfSummary(s) : undefined;
   const detail =
-    t.type === "thread.usage_limited"
-      ? s.usageLimitResetAt ? ` (resets ${s.usageLimitResetAt})` : ""
+    limit !== undefined
+      ? limit.class === "pool_exhausted"
+        ? `: your proxy has no account available for ${limit.model ?? s.model ?? "the model"}`
+        : limit.resumeAt === undefined ? "" : ` (resets ${limit.resumeAt})`
       : t.type === "thread.failed" && s.lastError
         ? `: ${s.lastError.class}: ${s.lastError.message}`
         : t.type !== "thread.started" && s.headline !== ""
@@ -318,6 +322,7 @@ export const transitionEvent = (
       ...(t.late ? { late: true } : {}),
       ...(s.lastError && t.type !== "thread.completed" ? { error: { class: s.lastError.class, message: s.lastError.message.slice(0, 500) } } : {}),
       ...(s.usageLimitResetAt ? { usageLimitResetAt: s.usageLimitResetAt } : {}),
+      ...(limit === undefined ? {} : limitData(limit)),
     },
   };
 };

@@ -14,8 +14,8 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import * as HubDb from "../store/HubDb.ts";
 
-/** A lead as stored; its `state` is derived from the lead thread when read. */
-export type StoredLead = Omit<Lead, "state">;
+/** A lead as stored; its `state` (and M4 `parked`) is derived from the lead thread when read. */
+export type StoredLead = Omit<Lead, "state" | "parked">;
 
 export interface LeadSettings {
   readonly model?: string;
@@ -64,7 +64,7 @@ export class LeadRecords extends Context.Service<
   }
 >()("fleetd/leads/LeadRecords") {}
 
-const StoredLeadJson = Lead.mapFields(Struct.omit(["state"]));
+const StoredLeadJson = Lead.mapFields(Struct.omit(["state", "parked"]));
 const decodeLead = Schema.decodeUnknownSync(StoredLeadJson);
 const decodeWorkstream = Schema.decodeSync(Schema.fromJsonString(Workstream));
 const encodeWorkstream = Schema.encodeSync(Schema.fromJsonString(Workstream));

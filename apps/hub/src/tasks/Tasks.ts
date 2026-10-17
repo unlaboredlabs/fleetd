@@ -32,6 +32,8 @@ import * as Leases from "../leases/Leases.ts";
 import * as Policy from "../leases/Policy.ts";
 import * as Receipts from "../receipts/Receipts.ts";
 import * as Slots from "../slots/Slots.ts";
+import { parkedOf } from "../usage/classify.ts";
+import * as Usage from "../usage/Usage.ts";
 import * as ValueBar from "../valuebar/ValueBar.ts";
 import { outsideGlobs } from "./glob.ts";
 import { branchFor, findPrUrl, renderTaskPrompt, tailOf } from "./render.ts";
@@ -73,6 +75,8 @@ const THREAD_EVENTS: ReadonlyArray<HubEventType> = [
   "thread.failed",
   "thread.interrupted",
   "thread.usage_limited",
+  // M4 usage: a lifted pause lets queued tasks start.
+  "usage.resumed",
 ];
 
 const OUT_OF_AREA_MAX = 20;
@@ -105,6 +109,7 @@ export const make = Effect.gen(function* () {
   // M6 value bar and receipts (apps/hub/src/valuebar, apps/hub/src/receipts).
   const valueBar = yield* ValueBar.ValueBar;
   const receipts = yield* Receipts.Receipts;
+  const usage = yield* Usage.Usage;
   const scope = yield* Effect.scope;
   // Every state change goes through this, so a release, a completion and a lead call never interleave.
   const lock = Semaphore.makeUnsafe(1);
@@ -218,6 +223,9 @@ export const make = Effect.gen(function* () {
         yield* retryWhenLive(task.projectRef.machineId);
         return yield* queue(stored, offline);
       }
+      // M4 usage: a paused login takes no new turns; usage.resumed runs the queue again.
+      const paused = yield* usage.gate(task.projectRef.machineId);
+      if (paused !== undefined) return yield* queue(stored, paused);
       const slot = yield* slots.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: Slots.priorityOf(task.kind) });
       if (!slot.granted) return yield* queue(stored, slot.reason);
 
@@ -234,7 +242,7 @@ export const make = Effect.gen(function* () {
       }
       const at = yield* nowIso;
       const next: Task = {
-        ...without(task, "queuedReason", "endedAt"),
+        ...without(task, "queuedReason", "endedAt", "parked"),
         ...started.success,
         state: "running",
         startedAt: task.startedAt ?? at,
@@ -314,6 +322,7 @@ export const make = Effect.gen(function* () {
 
   const onThreadEvent = (event: HubEvent) =>
     Effect.gen(function* () {
+      if (event.type === "usage.resumed") return yield* retryQueue;
       if (event.machineId === undefined || event.threadId === undefined) return;
       const stored = yield* records.byThread({ machineId: event.machineId, threadId: event.threadId });
       if (stored === undefined) return;
@@ -326,7 +335,7 @@ export const make = Effect.gen(function* () {
           if (task.kind === "write") yield* leases.acquire({ projectRef: task.projectRef, taskId: task.taskId, areas: task.areas });
           yield* slots.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: Slots.priorityOf(task.kind) });
           yield* slots.bind(task.taskId, task.threadRef!);
-          yield* records.put({ task: { ...without(task, "endedAt"), state: "running" } });
+          yield* records.put({ task: { ...without(task, "endedAt", "parked"), state: "running" } });
           return;
         }
         case "thread.waiting": {
@@ -349,8 +358,14 @@ export const make = Effect.gen(function* () {
         case "thread.completed":
           if (live) yield* finish(stored, "done");
           return;
+        case "thread.usage_limited": {
+          // M4 usage: parked, not failed. The board freed the slot, the leases stay, and the usage layer sends
+          // "continue" at the reset, which comes back here as thread.started.
+          const parked = parkedOf(event);
+          if (live && parked !== undefined) yield* records.put({ ...stored, task: { ...task, state: "idle", parked } });
+          return;
+        }
         case "thread.failed":
-        case "thread.usage_limited":
         case "thread.interrupted":
           // A cancel interrupts the thread itself and has already ended the task.
           if (live) yield* finish(stored, "failed");
@@ -502,5 +517,5 @@ export const make = Effect.gen(function* () {
   });
 });
 
-/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace, Slots, Leases, Policies, ValueBar and Receipts. */
+/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace, Slots, Leases, Policies, ValueBar, Receipts and Usage. */
 export const layer = Layer.effect(Tasks, make);

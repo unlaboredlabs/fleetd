@@ -48,7 +48,8 @@ import {
 import { connect, type T3Client } from "./T3Connection.ts";
 import { openTool, ThreadWatch } from "./ThreadWatch.ts";
 import { WorkspaceFiles } from "./WorkspaceFiles.ts";
-import { effortOption, ProviderList, routeModel, toInstance } from "./ProviderList.ts";
+import { effortOption, FLEETD_INSTANCE, ProviderList, routeModel, toInstance } from "./ProviderList.ts";
+import { isLoopbackUrl, loginKindOf, UsageSource } from "../usage/UsageSource.ts";
 import { ThreadWorkspace } from "./ThreadWorkspace.ts";
 import {
   actionsOf,
@@ -369,6 +370,24 @@ const make = Effect.gen(function* () {
       }),
   });
 
+  // M4 usage: the fleetd instance's login kind and T3's logs directory, for usage_status. Env var names only.
+  const usageSource = UsageSource.of({
+    read: (machineId) =>
+      Effect.gen(function* () {
+        const { client } = yield* liveOf(machineId);
+        const config = yield* client[WS_METHODS.serverGetConfig]({}).pipe(
+          Effect.timeout(READ_TIMEOUT),
+          Effect.mapError((cause) => new T3RequestFailed({ machineId, operation: "read", cause })),
+        );
+        const fleetd = config.providers.find((p) => p.instanceId === FLEETD_INSTANCE);
+        return {
+          login: loginKindOf(fleetd, config.settings.providerInstances[FLEETD_INSTANCE as ProviderInstanceId]),
+          logsDir: config.observability.logsDirectoryPath,
+          local: isLoopbackUrl(machines.get(machineId)?.t3Url ?? ""),
+        };
+      }),
+  });
+
   /** Claude models go straight to the fleetd instance; anything else looks at the provider list, falling back to fleetd. */
   const routeOf = (machineId: MachineId, model: string) =>
     model.startsWith("claude")
@@ -578,6 +597,7 @@ const make = Effect.gen(function* () {
     files,
     workspace,
     providers,
+    usageSource,
     executors: Executors.of({
       attach,
       detach,
@@ -604,15 +624,16 @@ const make = Effect.gen(function* () {
 
 /**
  * Provides Executors, the ThreadWatch the watchdog follows running threads through, WorkspaceFiles, ThreadWorkspace for
- * tasks, and each machine's ProviderList.
+ * tasks, each machine's ProviderList, and the UsageSource behind usage_status.
  */
 export const layer = Layer.effectContext(
-  Effect.map(make, ({ executors, watch, files, workspace, providers }) =>
+  Effect.map(make, ({ executors, watch, files, workspace, providers, usageSource }) =>
     Context.make(Executors, executors).pipe(
       Context.add(ThreadWatch, watch),
       Context.add(WorkspaceFiles, files),
       Context.add(ThreadWorkspace, workspace),
       Context.add(ProviderList, providers),
+      Context.add(UsageSource, usageSource),
     ),
   ),
 );

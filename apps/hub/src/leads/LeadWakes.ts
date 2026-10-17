@@ -20,6 +20,7 @@ import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { taskDigestLines, taskResultLines, taskWaitingLines } from "../tasks/render.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
+import * as Usage from "../usage/Usage.ts";
 import { renderLeadDigest, type WorkstreamFacts } from "./digest.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 
@@ -135,6 +136,7 @@ export const make = (options: LeadWakesOptions = {}) =>
     const events = yield* EventLog.EventLog;
     const queue = yield* WriteQueue.WriteQueue;
     const tasks = yield* TaskRecords.TaskRecords;
+    const usage = yield* Usage.Usage;
     const factsContext = yield* Effect.context<ClaimRecords.ClaimRecords | Estimates.Estimates>();
     const scope = yield* Effect.scope;
     const debounceMs = Duration.toMillis(Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE));
@@ -173,10 +175,18 @@ export const make = (options: LeadWakesOptions = {}) =>
           yield* Effect.logInfo("lead wake dropped: project has no lead", { project: keyOf(p.ref), triggers: triggers.length });
           return;
         }
+        const thread = { machineId: p.ref.machineId, threadId: lead.threadId };
+        // M4 usage: a wake is a turn, so it waits while the login is paused or the lead is parked, then goes again.
+        if ((yield* usage.hold(thread)) !== undefined) {
+          yield* usage.whenClear(thread).pipe(
+            Effect.andThen(Effect.forEach(triggers, (t) => trigger(p.ref, t), { discard: true })),
+            Effect.forkIn(scope),
+          );
+          return;
+        }
         const answers = triggers.flatMap((t) => (t.kind === "answer" ? [t.answer] : []));
         const message = renderWake(yield* digest(p.ref, answers), triggers);
         const at = yield* nowIso;
-        const thread = { machineId: p.ref.machineId, threadId: lead.threadId };
         const sent = yield* Effect.result(deliver(thread, message, `fleetd-wake:${keyOf(p.ref)}:${lead.sessionGeneration}:${at}`));
         if (sent._tag === "Failure") {
           yield* Effect.logWarning("lead wake not delivered", { project: keyOf(p.ref), reason: sent.failure._tag });

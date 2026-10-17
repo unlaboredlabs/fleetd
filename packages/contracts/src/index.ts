@@ -6,6 +6,7 @@ export * from "./effort.ts";
 export * from "./tasks.ts";
 export * from "./verification.ts";
 export * from "./train.ts";
+export * from "./usage.ts";
 export * from "./model.ts";
 export * from "./events.ts";
 export * from "./auth.ts";
