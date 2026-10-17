@@ -1,0 +1,290 @@
+use super::{HubDb, StoreError};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
+use fleetd_contracts::model::{Machine, MachineStatus, ProjectSummary, ThreadSummary};
+use rusqlite::{OptionalExtension, named_params, params};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredThread {
+    #[serde(flatten)]
+    pub thread: ThreadSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_sequence: Option<i64>,
+    /// T3's latest run id when this row was written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_run_id: Option<String>,
+    /// That run's phase: a ThreadStatus, or "usage_limited".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_run_status: Option<String>,
+}
+
+/// Caches of what the hub has seen of each machine. Reads return what was written; staleness is the reader's call.
+pub struct HubStore {
+    db: Arc<HubDb>,
+}
+
+fn decode<T: serde::de::DeserializeOwned>(data: String) -> Result<T, StoreError> {
+    Ok(serde_json::from_str(&data)?)
+}
+
+fn decode_all<T: serde::de::DeserializeOwned>(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    params: impl rusqlite::Params,
+) -> Result<Vec<T>, StoreError> {
+    let mut stmt = conn.prepare_cached(sql)?;
+    let rows = stmt.query_map(params, |row| row.get::<_, String>(0))?;
+    rows.map(|data| decode(data?)).collect()
+}
+
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+const MACHINE_UPSERT: &str = "INSERT INTO machines (machine_id, data) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET data = excluded.data";
+const MACHINE_GET: &str = "SELECT data FROM machines WHERE machine_id = ?";
+
+fn get_machine(
+    conn: &rusqlite::Connection,
+    machine_id: &MachineId,
+) -> Result<Option<Machine>, StoreError> {
+    let data: Option<String> = conn
+        .prepare_cached(MACHINE_GET)?
+        .query_row([&machine_id.as_str()], |row| row.get(0))
+        .optional()?;
+    data.map(decode).transpose()
+}
+
+impl HubStore {
+    pub fn new(db: Arc<HubDb>) -> Self {
+        Self { db }
+    }
+
+    /// `pub_key`, when given, replaces the machine's node key.
+    pub fn machine_upsert(
+        &self,
+        machine: &Machine,
+        pub_key: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let data = serde_json::to_string(machine)?;
+        self.db.transaction(|conn| {
+            conn.prepare_cached(MACHINE_UPSERT)?.execute(params![machine.machine_id.as_str(), data])?;
+            if let Some(pub_key) = pub_key {
+                conn.prepare_cached(
+                    "INSERT INTO node_keys (machine_id, pub_key) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key",
+                )?
+                .execute(params![machine.machine_id.as_str(), pub_key])?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn machine_get(&self, machine_id: &MachineId) -> Result<Option<Machine>, StoreError> {
+        self.db.with(|conn| get_machine(conn, machine_id))
+    }
+
+    pub fn machines_list(&self) -> Result<Vec<Machine>, StoreError> {
+        self.db
+            .with(|conn| decode_all(conn, "SELECT data FROM machines ORDER BY machine_id", []))
+    }
+
+    /// Sets the status and `lastSeenAt = at`. A no-op for an unknown machine.
+    pub fn machine_set_status(
+        &self,
+        machine_id: &MachineId,
+        status: MachineStatus,
+        at: &Timestamp,
+    ) -> Result<(), StoreError> {
+        self.db.transaction(|conn| {
+            if let Some(mut machine) = get_machine(conn, machine_id)? {
+                machine.status = status;
+                machine.last_seen_at = at.clone();
+                conn.prepare_cached(MACHINE_UPSERT)?.execute(params![
+                    machine_id.as_str(),
+                    serde_json::to_string(&machine)?
+                ])?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Drops the machine's record (`fleetd machine remove`); its projects and threads stay cached.
+    pub fn machine_remove(&self, machine_id: &MachineId) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.prepare_cached("DELETE FROM machines WHERE machine_id = ?")?
+                .execute([&machine_id.as_str()])?;
+            Ok(())
+        })
+    }
+
+    pub fn projects_upsert_many(
+        &self,
+        machine_id: &MachineId,
+        projects: &[ProjectSummary],
+    ) -> Result<(), StoreError> {
+        self.db.transaction(|conn| {
+            let mut stmt = conn.prepare_cached(
+                "INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (machine_id, project_id) DO UPDATE SET
+         search = excluded.search, last_activity_at = excluded.last_activity_at, data = excluded.data",
+            )?;
+            for project in projects {
+                let row = ProjectSummary { machine_id: machine_id.clone(), ..project.clone() };
+                stmt.execute(params![
+                    machine_id.as_str(),
+                    row.project_id.as_str(),
+                    format!("{}\n{}", row.title, row.workspace_root),
+                    row.last_activity_at.as_str(),
+                    serde_json::to_string(&row)?,
+                ])?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Newest activity first. `query` matches title or workspace root, case-insensitively.
+    pub fn projects_list(
+        &self,
+        machine_id: Option<&MachineId>,
+        query: Option<&str>,
+    ) -> Result<Vec<ProjectSummary>, StoreError> {
+        let query = query
+            .filter(|q| !q.is_empty())
+            .map(|q| format!("%{}%", escape_like(q)));
+        self.db.with(|conn| {
+            decode_all(
+                conn,
+                r"SELECT data FROM projects
+       WHERE ($machine IS NULL OR machine_id = $machine) AND ($query IS NULL OR search LIKE $query ESCAPE '\')
+       ORDER BY last_activity_at DESC",
+                named_params! { "$machine": machine_id.map(MachineId::as_str), "$query": query },
+            )
+        })
+    }
+
+    pub fn project_get(&self, r: &ProjectRef) -> Result<Option<ProjectSummary>, StoreError> {
+        self.db.with(|conn| {
+            let data: Option<String> = conn
+                .prepare_cached(
+                    "SELECT data FROM projects WHERE machine_id = ? AND project_id = ?",
+                )?
+                .query_row(
+                    params![r.machine_id.as_str(), r.project_id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            data.map(decode).transpose()
+        })
+    }
+
+    /// Drops the project and its cached threads, once T3 no longer has it.
+    pub fn project_remove(&self, r: &ProjectRef) -> Result<(), StoreError> {
+        self.db.transaction(|conn| {
+            conn.prepare_cached("DELETE FROM projects WHERE machine_id = ? AND project_id = ?")?
+                .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
+            conn.prepare_cached("DELETE FROM threads WHERE machine_id = ? AND project_id = ?")?
+                .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
+            Ok(())
+        })
+    }
+
+    /// An absent `last_sequence`, `last_run_id` or `last_run_status` keeps the stored one.
+    pub fn thread_upsert(&self, stored: &StoredThread) -> Result<(), StoreError> {
+        let thread = &stored.thread;
+        let data = serde_json::to_string(thread)?;
+        self.db.with(|conn| {
+            conn.prepare_cached(
+                "INSERT INTO threads (machine_id, thread_id, project_id, last_progress_at, last_sequence, last_run_id, last_run_status, data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (machine_id, thread_id) DO UPDATE SET
+         project_id = excluded.project_id, last_progress_at = excluded.last_progress_at,
+         last_sequence = COALESCE(excluded.last_sequence, threads.last_sequence),
+         last_run_id = COALESCE(excluded.last_run_id, threads.last_run_id),
+         last_run_status = COALESCE(excluded.last_run_status, threads.last_run_status), data = excluded.data",
+            )?
+            .execute(params![
+                thread.machine_id.as_str(),
+                thread.thread_id.as_str(),
+                thread.project_id.as_str(),
+                thread.last_progress_at.as_str(),
+                stored.last_sequence,
+                stored.last_run_id,
+                stored.last_run_status,
+                data,
+            ])?;
+            Ok(())
+        })
+    }
+
+    pub fn thread_get(&self, r: &ThreadRef) -> Result<Option<StoredThread>, StoreError> {
+        self.db.with(|conn| {
+            let row = conn
+                .prepare_cached(
+                    "SELECT data, last_sequence, last_run_id, last_run_status FROM threads WHERE machine_id = ? AND thread_id = ?",
+                )?
+                .query_row(params![r.machine_id.as_str(), r.thread_id.as_str()], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })
+                .optional()?;
+            row.map(|(data, last_sequence, last_run_id, last_run_status)| {
+                Ok(StoredThread { thread: decode(data)?, last_sequence, last_run_id, last_run_status })
+            })
+            .transpose()
+        })
+    }
+
+    /// Threads whose last known status is "running", on every machine.
+    pub fn threads_running(&self) -> Result<Vec<ThreadSummary>, StoreError> {
+        self.db.with(|conn| {
+            decode_all(
+                conn,
+                "SELECT data FROM threads WHERE json_extract(data, '$.status') = 'running'",
+                [],
+            )
+        })
+    }
+
+    /// Newest progress first.
+    pub fn threads_by_project(
+        &self,
+        r: &ProjectRef,
+        limit: i64,
+    ) -> Result<Vec<ThreadSummary>, StoreError> {
+        self.db.with(|conn| {
+            decode_all(
+                conn,
+                "SELECT data FROM threads WHERE machine_id = ? AND project_id = ? ORDER BY last_progress_at DESC LIMIT ?",
+                params![r.machine_id.as_str(), r.project_id.as_str(), limit],
+            )
+        })
+    }
+
+    /// T3 shell `afterSequence` per machine.
+    pub fn cursor_get(&self, machine_id: &MachineId) -> Result<Option<i64>, StoreError> {
+        self.db.with(|conn| {
+            Ok(conn
+                .prepare_cached("SELECT seq FROM shell_cursors WHERE machine_id = ?")?
+                .query_row([&machine_id.as_str()], |row| row.get(0))
+                .optional()?)
+        })
+    }
+
+    pub fn cursor_set(&self, machine_id: &MachineId, seq: i64) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.prepare_cached(
+                "INSERT INTO shell_cursors (machine_id, seq) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET seq = excluded.seq",
+            )?
+            .execute(params![machine_id.as_str(), seq])?;
+            Ok(())
+        })
+    }
+}
