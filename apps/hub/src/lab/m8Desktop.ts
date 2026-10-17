@@ -11,7 +11,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import sodium from "libsodium-wrappers";
-import { type Body, CLI, cli, HUB_PORT, LAB, type Lab, MODEL, RUN, scrubbedEnv } from "./harness.ts";
+import { type Body, cli, fleetdCommand, HUB_PORT, LAB, type Lab, MODEL, RUN, scrubbedEnv } from "./harness.ts";
 import { TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -77,7 +77,7 @@ export async function m8Desktop(lab: Lab) {
   const VALUE = `sk_test_lab_${crypto.randomBytes(12).toString("hex")}`;
 
   const fleetd = (...args: Array<string>) => {
-    const out = spawnSync(process.execPath, [CLI, ...args], {
+    const out = spawnSync(...fleetdCommand(args), {
       cwd: root,
       encoding: "utf8",
       env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },
