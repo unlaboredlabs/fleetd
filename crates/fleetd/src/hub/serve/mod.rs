@@ -255,12 +255,12 @@ pub fn build_on(
     );
     let queue =
         crate::hub::queue::WriteQueue::from_config(&config, &db, &events, &clock, &executors);
-    // PORT: usage (#63) replaces NoHold with its service.
+    let ops = crate::hub::usage::wire::build(&config, clock.clone());
     let wakes = crate::hub::wakes::Wakes::new(
         db.clone(),
         queue.clone(),
         events.clone(),
-        Arc::new(crate::hub::queue::ports::NoHold),
+        ops.usage.clone(),
         clock.clone(),
     );
     let webhooks = crate::hub::webhooks::Webhooks::for_home(
@@ -271,7 +271,6 @@ pub fn build_on(
         clock.clone(),
     )?;
     let checks = crate::hub::checks::build(&db, &events, &clock);
-    let ops = crate::hub::usage::wire::build(&config, clock.clone());
     let train_host = Arc::new(crate::hub::train::hub_host::HubHost {
         clock: clock.clone(),
         events: events.clone(),
