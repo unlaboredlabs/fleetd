@@ -197,7 +197,9 @@
         "pr.merged",
         "train.frozen",
         "train.resumed",
-        "change.refused"
+        "change.refused",
+        "intake.routed",
+        "research.verdict"
       ]
     },
     "ThreadId": {
@@ -666,6 +668,30 @@
       ],
       "additionalProperties": true
     },
+    "DecisionRule": {
+      "type": "object",
+      "properties": {
+        "better": {
+          "type": "string",
+          "enum": [
+            "higher",
+            "lower"
+          ]
+        },
+        "goAtLeast": {
+          "type": "number"
+        },
+        "stopBelow": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "better",
+        "goAtLeast",
+        "stopBelow"
+      ],
+      "additionalProperties": true
+    },
     "Brief": {
       "type": "object",
       "properties": {
@@ -725,6 +751,20 @@
         },
         "estimate": {
           "$ref": "#/$defs/Estimate"
+        },
+        "baseline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "metric": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "decisionRule": {
+          "$ref": "#/$defs/DecisionRule"
         }
       },
       "required": [
@@ -745,6 +785,56 @@
       "type": "string",
       "maxLength": 280,
       "pattern": "^[^\\r\\n]*$"
+    },
+    "PlaybookRef": {
+      "type": "string",
+      "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "description": "<playbook name>@<full lowercase hex git blob SHA>"
+    },
+    "MetricValues": {
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "type": "number"
+        },
+        "candidate": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "baseline",
+        "candidate"
+      ],
+      "additionalProperties": true
+    },
+    "ResearchVerdict": {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "go",
+            "stop",
+            "inconclusive"
+          ]
+        },
+        "metricValues": {
+          "$ref": "#/$defs/MetricValues"
+        },
+        "rule": {
+          "$ref": "#/$defs/DecisionRule"
+        },
+        "computedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "outcome",
+        "metricValues",
+        "rule",
+        "computedAt"
+      ],
+      "additionalProperties": true
     },
     "Workstream": {
       "type": "object",
@@ -845,6 +935,20 @@
             "ratioAtStart"
           ],
           "additionalProperties": true
+        },
+        "playbook": {
+          "$ref": "#/$defs/PlaybookRef"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "go",
+            "stop",
+            "inconclusive"
+          ]
+        },
+        "verdict": {
+          "$ref": "#/$defs/ResearchVerdict"
         },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
@@ -1483,6 +1587,48 @@
     "AskId": {
       "type": "string",
       "pattern": "^A[1-9][0-9]*$"
+    },
+    "IntakeEcho": {
+      "type": "object",
+      "properties": {
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "template": {
+          "type": "string",
+          "enum": [
+            "bugfix",
+            "feature",
+            "research",
+            "finish-all"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$"
+        }
+      },
+      "required": [
+        "projectRef",
+        "template",
+        "reason"
+      ],
+      "additionalProperties": true
     },
     "DecisionKey": {
       "type": "string",
@@ -3196,14 +3342,21 @@
               "minLength": 1,
               "maxLength": 4000
             },
+            "template": {
+              "type": "string",
+              "enum": [
+                "bugfix",
+                "feature",
+                "research",
+                "finish-all"
+              ]
+            },
             "clientRequestId": {
               "type": "string",
               "minLength": 1
             }
           },
           "required": [
-            "machineId",
-            "projectId",
             "text",
             "clientRequestId"
           ],
@@ -3215,6 +3368,12 @@
             "workstreamId": {
               "$ref": "#/$defs/WorkstreamId"
             },
+            "askId": {
+              "$ref": "#/$defs/AskId"
+            },
+            "echo": {
+              "$ref": "#/$defs/IntakeEcho"
+            },
             "next": {
               "type": "string"
             },
@@ -3222,9 +3381,6 @@
               "type": "boolean"
             }
           },
-          "required": [
-            "workstreamId"
-          ],
           "additionalProperties": true
         },
         "workstream_list.input": {

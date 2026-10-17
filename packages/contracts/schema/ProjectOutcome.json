@@ -433,6 +433,30 @@
       ],
       "additionalProperties": true
     },
+    "DecisionRule": {
+      "type": "object",
+      "properties": {
+        "better": {
+          "type": "string",
+          "enum": [
+            "higher",
+            "lower"
+          ]
+        },
+        "goAtLeast": {
+          "type": "number"
+        },
+        "stopBelow": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "better",
+        "goAtLeast",
+        "stopBelow"
+      ],
+      "additionalProperties": true
+    },
     "Brief": {
       "type": "object",
       "properties": {
@@ -492,6 +516,20 @@
         },
         "estimate": {
           "$ref": "#/$defs/Estimate"
+        },
+        "baseline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "metric": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "decisionRule": {
+          "$ref": "#/$defs/DecisionRule"
         }
       },
       "required": [
@@ -512,6 +550,56 @@
       "type": "string",
       "maxLength": 280,
       "pattern": "^[^\\r\\n]*$"
+    },
+    "PlaybookRef": {
+      "type": "string",
+      "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "description": "<playbook name>@<full lowercase hex git blob SHA>"
+    },
+    "MetricValues": {
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "type": "number"
+        },
+        "candidate": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "baseline",
+        "candidate"
+      ],
+      "additionalProperties": true
+    },
+    "ResearchVerdict": {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "go",
+            "stop",
+            "inconclusive"
+          ]
+        },
+        "metricValues": {
+          "$ref": "#/$defs/MetricValues"
+        },
+        "rule": {
+          "$ref": "#/$defs/DecisionRule"
+        },
+        "computedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "outcome",
+        "metricValues",
+        "rule",
+        "computedAt"
+      ],
+      "additionalProperties": true
     },
     "Workstream": {
       "type": "object",
@@ -612,6 +700,20 @@
             "ratioAtStart"
           ],
           "additionalProperties": true
+        },
+        "playbook": {
+          "$ref": "#/$defs/PlaybookRef"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "go",
+            "stop",
+            "inconclusive"
+          ]
+        },
+        "verdict": {
+          "$ref": "#/$defs/ResearchVerdict"
         },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"

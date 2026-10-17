@@ -81,6 +81,13 @@ export const CheckSpec = Schema.Union([
   .annotate({ identifier: "CheckSpec" });
 export type CheckSpec = typeof CheckSpec.Type;
 
+/** The `type` of a CheckSpec, as playbooks name them in `requiredChecks`. */
+export const CheckType = Schema.Literals(["pr_merged", "ci_green", "http", "cmd", "test", "judge", "human"]);
+export type CheckType = typeof CheckType.Type;
+// Fails to compile when CheckSpec gains or loses a type without CheckType following.
+const checkTypesMatch: [CheckType, CheckSpec["type"]] extends [CheckSpec["type"], CheckType] ? true : never = true;
+void checkTypesMatch;
+
 export const Tier = Schema.Literals(["S", "M", "L"]);
 export type Tier = typeof Tier.Type;
 
@@ -89,6 +96,80 @@ export const Estimate = Schema.Struct({
   gates: list(text(200), 20),
 }).annotate({ identifier: "Estimate" });
 export type Estimate = typeof Estimate.Type;
+
+// Research briefs (M9): a pre-registered baseline and a decision rule the hub applies to the judge's numbers.
+
+/**
+ * Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least `goAtLeast`,
+ * STOP when it is below `stopBelow`, INCONCLUSIVE in between. "GO iff candidate − baseline ≥ 0.10, else STOP" is
+ * `{ better: "higher", goAtLeast: 0.1, stopBelow: 0.1 }`.
+ */
+export const DecisionRule = Schema.Struct({
+  better: Schema.Literals(["higher", "lower"]),
+  goAtLeast: Schema.Finite,
+  stopBelow: Schema.Finite,
+})
+  .check(
+    Schema.makeFilter((rule) =>
+      rule.stopBelow <= rule.goAtLeast ? undefined : { path: ["stopBelow"], issue: "stopBelow must not be above goAtLeast" },
+    ),
+  )
+  .annotate({ identifier: "DecisionRule" });
+export type DecisionRule = typeof DecisionRule.Type;
+
+/** The judge's reported numbers for the brief's metric. */
+export const MetricValues = Schema.Struct({ baseline: Schema.Finite, candidate: Schema.Finite }).annotate({
+  identifier: "MetricValues",
+});
+export type MetricValues = typeof MetricValues.Type;
+
+/** STOP is a success: the question was answered. */
+export const ResearchOutcome = Schema.Literals(["go", "stop", "inconclusive"]);
+export type ResearchOutcome = typeof ResearchOutcome.Type;
+
+export const researchOutcome = (rule: DecisionRule, values: MetricValues): ResearchOutcome => {
+  // Float subtraction lands just short of the line (0.6 − 0.5 is 0.0999…), so values on a line count as on it.
+  const tolerance = 1e-9 * Math.max(1, Math.abs(values.baseline), Math.abs(values.candidate));
+  const improvement = (values.candidate - values.baseline) * (rule.better === "lower" ? -1 : 1) + tolerance;
+  if (improvement >= rule.goAtLeast) return "go";
+  if (improvement < rule.stopBelow) return "stop";
+  return "inconclusive";
+};
+
+/** Computed by the hub, never reported by an agent; `outcome` always follows from `rule` and `metricValues`. */
+export const ResearchVerdict = Schema.Struct({
+  outcome: ResearchOutcome,
+  metricValues: MetricValues,
+  /** The brief's frozen rule. */
+  rule: DecisionRule,
+  computedAt: Timestamp,
+})
+  .check(
+    Schema.makeFilter((verdict) => {
+      const expected = researchOutcome(verdict.rule, verdict.metricValues);
+      return verdict.outcome === expected ? undefined : { path: ["outcome"], issue: `the rule gives ${expected} for these values` };
+    }),
+  )
+  .annotate({ identifier: "ResearchVerdict" });
+export type ResearchVerdict = typeof ResearchVerdict.Type;
+
+// Playbooks (M9): versioned templates a workstream pins at creation.
+
+/** The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. */
+export const PlaybookName = Schema.Literals(["bugfix", "feature", "research", "finish-all"]);
+export type PlaybookName = typeof PlaybookName.Type;
+
+/**
+ * `<name>@<sha>`: the git blob SHA of the playbook file (`git hash-object <file>`), so a user override outside git
+ * pins the same way as the repo's copy.
+ */
+export const PlaybookRef = Schema.String.check(
+  Schema.isPattern(new RegExp(`^(?:${PlaybookName.literals.join("|")})@(?:[0-9a-f]{40}|[0-9a-f]{64})$`, "u")),
+).pipe(
+  Schema.brand("PlaybookRef"),
+  Schema.annotate({ identifier: "PlaybookRef", description: "<playbook name>@<full lowercase hex git blob SHA>" }),
+);
+export type PlaybookRef = typeof PlaybookRef.Type;
 
 export const Brief = Schema.Struct({
   goal: text(1000),
@@ -100,6 +181,12 @@ export const Brief = Schema.Struct({
   tier: Tier,
   budget: Schema.optionalKey(Schema.Struct({ agentHours: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))) })),
   estimate: Schema.optionalKey(Estimate),
+  /** Research: what the candidate is compared against, and how both are measured. */
+  baseline: Schema.optionalKey(text(1000)),
+  /** Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". */
+  metric: Schema.optionalKey(text(200).check(Schema.isPattern(/^[^\r\n]*$/u))),
+  /** Research: frozen with the brief, so the verdict can't move the goalposts. */
+  decisionRule: Schema.optionalKey(DecisionRule),
 }).annotate({ identifier: "Brief" });
 export type Brief = typeof Brief.Type;
 
@@ -143,9 +230,20 @@ export const Workstream = Schema.Struct({
       ratioAtStart: Schema.Finite.check(Schema.isGreaterThan(0)),
     }),
   ),
+  /** Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9. */
+  playbook: Schema.optionalKey(PlaybookRef),
+  /** Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed. */
+  outcome: Schema.optionalKey(ResearchOutcome),
+  verdict: Schema.optionalKey(ResearchVerdict),
   createdAt: Timestamp,
   updatedAt: Timestamp,
-}).annotate({ identifier: "Workstream" });
+})
+  .check(
+    Schema.makeFilter((w) =>
+      w.outcome === w.verdict?.outcome ? undefined : { path: ["outcome"], issue: "outcome and verdict come together and agree" },
+    ),
+  )
+  .annotate({ identifier: "Workstream" });
 export type Workstream = typeof Workstream.Type;
 
 // Decisions

@@ -71,6 +71,10 @@ export const HubEventType = Schema.Literals([
   "train.resumed",
   /** Refused at enqueue; `data.prUrl`, `data.fix`. */
   "change.refused",
+  /** Where an intent went; `data.workstreamId` or `data.askId`, `data.template`, `data.reason`, `data.playbook`. */
+  "intake.routed",
+  /** A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`. */
+  "research.verdict",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

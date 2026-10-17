@@ -194,6 +194,12 @@ export const PolicyFile = Schema.Struct({
   defaults: Schema.optionalKey(
     Schema.Struct({ model: Schema.optionalKey(Schema.NonEmptyString), effort: Schema.optionalKey(Effort) }),
   ),
+  finishAll: Schema.optionalKey(
+    Schema.Struct({
+      /** Most child workstreams one finish-all run spawns. */
+      maxChildren: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 })),
+    }),
+  ),
 }).annotate({ identifier: "PolicyFile" });
 export type PolicyFile = typeof PolicyFile.Type;
 
