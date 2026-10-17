@@ -16,6 +16,8 @@ export const NodeConfig = Schema.Struct({
   t3Url: Schema.String,
   /** argv prefix that runs T3's CLI, e.g. ["t3"] or ["node", "<t3-src>/apps/server/src/bin.ts"]. */
   t3Cmd: Schema.Array(Schema.String),
+  /** argv that restarts T3 after it fails its health checks. Absent: the node reports T3 down but never restarts it. */
+  t3RestartCmd: Schema.optionalKey(Schema.Array(Schema.String)),
   /** True once the hub has accepted this node's key. */
   enrolled: Schema.Boolean,
 });

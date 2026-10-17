@@ -23,6 +23,15 @@ export const NodeLinkClose = {
 export const HubChallenge = Schema.Struct({ t: Schema.tag("challenge"), nonce: Schema.NonEmptyString });
 export type HubChallenge = typeof HubChallenge.Type;
 
+/** Where and which T3 the node supervises. */
+export const NodeT3Endpoint = Schema.Struct({
+  /** Loopback or tailnet URL the hub can reach. */
+  url: Schema.String,
+  version: Schema.String,
+  protocol: Schema.Int,
+});
+export type NodeT3Endpoint = typeof NodeT3Endpoint.Type;
+
 export const NodeHello = Schema.Struct({
   t: Schema.tag("hello"),
   machineId: MachineId,
@@ -31,14 +40,7 @@ export const NodeHello = Schema.Struct({
   nodeVersion: Schema.String,
   protocol: ProtocolVersion,
   /** Absent when T3 is down at node start; the hub shows the machine as degraded. */
-  t3: Schema.optionalKey(
-    Schema.Struct({
-      /** Loopback or tailnet URL the hub can reach. */
-      url: Schema.String,
-      version: Schema.String,
-      protocol: Schema.Int,
-    }),
-  ),
+  t3: Schema.optionalKey(NodeT3Endpoint),
   /** ed25519 public key, base64. */
   pubKey: Schema.NonEmptyString,
   /** Signature over the hub's challenge nonce (its UTF-8 bytes), base64. */
@@ -69,6 +71,8 @@ export const NodeT3State = Schema.Struct({
   t: Schema.tag("t3state"),
   state: Schema.Literals(["up", "down", "restarting"]),
   reason: Schema.optionalKey(Schema.String),
+  /** Sent with "up", so the hub can attach a machine whose T3 was down when the node said hello. */
+  t3: Schema.optionalKey(NodeT3Endpoint),
   at: Timestamp,
 });
 export type NodeT3State = typeof NodeT3State.Type;

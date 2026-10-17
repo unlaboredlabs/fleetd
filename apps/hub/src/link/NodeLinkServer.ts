@@ -1,5 +1,14 @@
 import { createPublicKey, randomBytes, verify } from "node:crypto";
-import { type HubToNode, type MachineId, NodeLinkClose, NodeToHub, PROTOCOL_VERSION, ProtocolVersion } from "@fleetd/contracts";
+import {
+  type HubToNode,
+  type MachineId,
+  NodeLinkClose,
+  type NodeT3Endpoint,
+  NodeToHub,
+  PROTOCOL_VERSION,
+  ProtocolVersion,
+  type Timestamp,
+} from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -106,17 +115,53 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
 
   /** The live link per machine; a newer link replaces an older one. */
   const links = new Map<MachineId, { readonly id: number; readonly close: Link["close"] }>();
-  /** Machines this hub process has announced online and not offline since. */
-  const online = new Set<MachineId>();
+  /** What this hub process last announced per machine, until it announces the machine offline. */
+  const announced = new Map<MachineId, "online" | "degraded">();
   const watchdogs = yield* FiberMap.make<MachineId>();
   let nextLinkId = 0;
 
+  /** Rewrites the stored machine's status (and T3 info, when given); `degradedReason` is kept only while degraded. */
+  const writeStatus = (
+    machineId: MachineId,
+    at: Timestamp,
+    status: "online" | "offline" | "degraded",
+    extra: { readonly degradedReason?: string; readonly t3?: NodeT3Endpoint } = {},
+  ) =>
+    Effect.gen(function* () {
+      const stored = yield* store.machines.get(machineId);
+      if (stored === undefined) return;
+      const { degradedReason: previousReason, ...machine } = stored;
+      yield* store.machines.upsert({
+        ...machine,
+        status,
+        lastSeenAt: at,
+        ...(extra.t3 === undefined ? {} : { t3: { version: extra.t3.version, protocol: extra.t3.protocol } }),
+        ...(status === "degraded" ? { degradedReason: extra.degradedReason ?? previousReason ?? "T3 is down" } : {}),
+      });
+    });
+
+  /** Emits machine.online or machine.degraded when the machine's announced status changes. */
+  const announce = (machineId: MachineId, at: Timestamp, status: "online" | "degraded", degradedReason?: string) =>
+    Effect.gen(function* () {
+      if (announced.get(machineId) === status) return;
+      announced.set(machineId, status);
+      yield* status === "online"
+        ? eventLog.append({ at, type: "machine.online", machineId, summary: `${machineId} is online` })
+        : eventLog.append({
+            at,
+            type: "machine.degraded",
+            machineId,
+            summary: `${machineId} is degraded: ${degradedReason}`,
+            data: { degradedReason },
+          });
+    });
+
   const markOffline = (machineId: MachineId) =>
     Effect.gen(function* () {
-      online.delete(machineId);
+      announced.delete(machineId);
       const at = yield* nowIso;
       const seconds = Duration.toSeconds(silenceTimeout);
-      yield* store.machines.setStatus(machineId, "offline", at);
+      yield* writeStatus(machineId, at, "offline");
       yield* eventLog.append({
         at,
         type: "machine.offline",
@@ -197,20 +242,30 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
         }),
       );
 
+      /** The T3 to attach while the node reports it up; undefined while it is down. */
+      let t3: NodeT3Endpoint | undefined = hello.t3;
+      let bearer: string | undefined;
+      const attach = Effect.suspend(() =>
+        t3 === undefined || bearer === undefined
+          ? Effect.void
+          : executors.attach(machineId, { t3Url: t3.url, bearer }).pipe(bestEffort("attach executor", machineId)),
+      );
+
       const at = yield* nowIso;
+      const stored = yield* store.machines.get(machineId);
+      const helloReason = "its node cannot reach T3";
       yield* store.machines.upsert({
         machineId,
         name: hello.name,
         tags: hello.tags,
-        status: "online",
+        status: t3 === undefined ? "degraded" : "online",
         lastSeenAt: at,
-        t3: hello.t3 === undefined ? null : { version: hello.t3.version, protocol: hello.t3.protocol },
+        // A machine whose T3 is down keeps the version it last reported.
+        t3: t3 === undefined ? (stored?.t3 ?? null) : { version: t3.version, protocol: t3.protocol },
         nodeVersion: hello.nodeVersion,
+        ...(t3 === undefined ? { degradedReason: helloReason } : {}),
       });
-      if (!online.has(machineId)) {
-        online.add(machineId);
-        yield* eventLog.append({ at, type: "machine.online", machineId, summary: `${machineId} is online` });
-      }
+      yield* t3 === undefined ? announce(machineId, at, "degraded", helloReason) : announce(machineId, at, "online");
       yield* touch(machineId);
       yield* link.send({ t: "welcome", hubId: options.hubId, protocol: ProtocolVersion.make(PROTOCOL_VERSION) });
       yield* Effect.logInfo("node link: welcomed").pipe(Effect.annotateLogs({ machineId, linkId: id }));
@@ -230,18 +285,35 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
         const frame = decoded.value;
         switch (frame.t) {
           case "hb":
-            yield* Effect.flatMap(nowIso, (at) => store.machines.setStatus(machineId, "online", at));
+            yield* Effect.flatMap(nowIso, (at) => store.machines.setStatus(machineId, announced.get(machineId) ?? "online", at));
             break;
           case "t3session":
-            // A hello sent while T3 was down carries no URL to attach to.
-            if (hello.t3 === undefined) break;
-            yield* executors
-              .attach(machineId, { t3Url: hello.t3.url, bearer: frame.bearer })
-              .pipe(bestEffort("attach executor", machineId));
+            bearer = frame.bearer;
+            // Kept for when T3 is back if it is down now.
+            if (t3 === undefined) break;
+            yield* attach;
             yield* Effect.logInfo("node link: t3 session attached").pipe(
               Effect.annotateLogs({ machineId, expiresAt: frame.expiresAt }),
             );
             break;
+          case "t3state": {
+            const at = yield* nowIso;
+            if (frame.state === "up") {
+              t3 = frame.t3 ?? hello.t3;
+              yield* writeStatus(machineId, at, "online", t3 === undefined ? {} : { t3 });
+              yield* announce(machineId, at, "online");
+              // The node re-mints right after this, and that session reattaches; the last one may still work.
+              yield* attach;
+            } else {
+              t3 = undefined;
+              const reason = frame.reason ?? (frame.state === "restarting" ? "T3 is restarting" : "T3 is down");
+              yield* writeStatus(machineId, at, "degraded", { degradedReason: reason });
+              yield* announce(machineId, at, "degraded", reason);
+              yield* executors.detach(machineId).pipe(bestEffort("detach executor", machineId));
+            }
+            yield* Effect.logInfo(`node link: t3 ${frame.state}`).pipe(Effect.annotateLogs({ machineId }));
+            break;
+          }
           case "hello":
             return yield* refuse(NodeLinkClose.badFrame, "hello after welcome");
         }

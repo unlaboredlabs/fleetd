@@ -8,7 +8,7 @@ import * as Socket from "effect/socket/Socket";
 import { TestClock } from "effect/testing";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadOrCreateIdentity } from "./identity.ts";
-import { runNode } from "./link.ts";
+import { type RunNodeOptions, runNode, T3Unreachable } from "./link.ts";
 import { T3Sessions } from "./T3Sessions.ts";
 
 const BEARER = "t3-bearer-secret-0123456789abcdef";
@@ -67,9 +67,14 @@ const runTest = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
     ),
   );
 
-const startNode = (options: { readonly enrollToken?: string; readonly onEnrolled?: Effect.Effect<void> } = {}) =>
+const startNode = (
+  options: Partial<Pick<RunNodeOptions, "enrollToken" | "onEnrolled" | "t3Info" | "t3Restart">> & {
+    readonly t3Sessions?: Layer.Layer<T3Sessions>;
+  } = {},
+) =>
   Effect.gen(function* () {
     const { dials, dial } = yield* dialer;
+    const { t3Sessions: sessions = t3Sessions, ...rest } = options;
     const node = yield* runNode({
       settings: {
         machineId: MachineId.make("lab-a"),
@@ -81,8 +86,8 @@ const startNode = (options: { readonly enrollToken?: string; readonly onEnrolled
       identity,
       dial,
       t3Info: Effect.succeed({ version: "2fbd4318fc", protocol: 2 }),
-      ...options,
-    }).pipe(Effect.provide(t3Sessions), Effect.forkScoped);
+      ...rest,
+    }).pipe(Effect.provide(sessions), Effect.forkScoped);
     return { dials, node };
   });
 
@@ -208,6 +213,57 @@ describe("node link", () => {
           _tag: "LinkFatal",
           code: NodeLinkClose.protocolMismatch,
         });
+      }),
+    ));
+
+  it("links while T3 is down, says why, then reports T3 up with a fresh session after the node restarts it", () =>
+    runTest(
+      Effect.gen(function* () {
+        let t3Up = false;
+        let mints = 0;
+        let restarts = 0;
+        const { dials } = yield* startNode({
+          t3Info: Effect.suspend(() =>
+            t3Up
+              ? Effect.succeed({ version: "2fbd4318fc", protocol: 2 })
+              : Effect.fail(new T3Unreachable({ url: "http://127.0.0.1:4711", cause: new Error("connect ECONNREFUSED") })),
+          ),
+          t3Restart: Effect.sync(() => {
+            restarts++;
+            t3Up = true;
+          }),
+          t3Sessions: Layer.succeed(T3Sessions)({
+            mint: Effect.sync(() => ({ sessionId: `s-${++mints}`, bearer: Redacted.make(`bearer-${mints}`), expiresAt: "later" })),
+            revoke: () => Effect.void,
+          }),
+        });
+
+        const link = yield* Queue.take(dials);
+        yield* link.send({ t: "challenge", nonce: "n" });
+        const hello = yield* link.next;
+        expect(hello.t === "hello" && hello.t3).toBe(undefined);
+        yield* link.send(welcome);
+        expect(yield* link.next).toMatchObject({ t: "t3state", state: "down", reason: "T3 at http://127.0.0.1:4711 is not reachable (connect ECONNREFUSED)" });
+
+        // Third failed probe at 10 s: the node restarts T3, which answers at once.
+        yield* TestClock.adjust("10 seconds");
+        expect(yield* link.next).toMatchObject({ t: "t3state", state: "down", reason: "T3 failed 3 health checks in a row (connect ECONNREFUSED)" });
+        expect(yield* link.next).toMatchObject({ t: "t3state", state: "restarting" });
+        expect(yield* link.next).toMatchObject({
+          t: "t3state",
+          state: "up",
+          t3: { url: "http://127.0.0.1:4711", version: "2fbd4318fc", protocol: 2 },
+        });
+        expect(yield* link.next).toMatchObject({ t: "t3session", bearer: "bearer-1" });
+        expect(restarts).toBe(1);
+
+        // It dies again: down after three more probes, and a new session once it is back.
+        t3Up = false;
+        yield* TestClock.adjust("15 seconds");
+        const frames = [yield* link.next, yield* link.next, yield* link.next, yield* link.next];
+        expect(frames.map((frame) => (frame.t === "t3state" ? frame.state : frame.t))).toEqual(["hb", "down", "restarting", "up"]);
+        expect(yield* link.next).toMatchObject({ t: "t3session", bearer: "bearer-2" });
+        expect(mints).toBe(2);
       }),
     ));
 });

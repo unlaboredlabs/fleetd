@@ -3,6 +3,7 @@ import { Clock, Data, Deferred, Duration, Effect, Exit, Option, Random, Redacted
 import * as Socket from "effect/socket/Socket";
 import type { NodeIdentity } from "./identity.ts";
 import { makeSessionKeeper, type SessionKeeper, type SessionKeeperOptions } from "./SessionKeeper.ts";
+import { makeT3Supervisor, type T3RestartFailed, type T3State, type T3Supervisor } from "./T3Supervisor.ts";
 
 export interface LinkSettings {
   readonly machineId: MachineId;
@@ -71,7 +72,7 @@ const runLinkOnce = (
   deps: {
     readonly identity: NodeIdentity;
     readonly keeper: SessionKeeper;
-    readonly t3: T3Info;
+    readonly t3: T3Supervisor;
     readonly enrollToken: string | undefined;
     readonly onWelcome: Effect.Effect<void>;
   },
@@ -102,9 +103,19 @@ const runLinkOnce = (
       );
     const send = (frame: NodeToHub) => writer.write(JSON.stringify(frame));
     const nowIso = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
+    const endpoint = (info: T3Info) => ({ url: settings.t3Url, version: info.version, protocol: info.protocol });
+    const t3state = (current: T3State) =>
+      Effect.flatMap(nowIso, (at) =>
+        send(
+          current.state === "up"
+            ? { t: "t3state", state: "up", t3: endpoint(current.info), at }
+            : { t: "t3state", state: current.state, reason: current.reason, at },
+        ),
+      );
 
     const challenge = yield* next(handshakeTimeout, "challenge");
     if (challenge.t !== "challenge") return yield* new LinkLost({ why: `expected a challenge, got ${challenge.t}` });
+    const t3 = yield* deps.t3.current;
     yield* send({
       t: "hello",
       machineId: settings.machineId,
@@ -112,7 +123,7 @@ const runLinkOnce = (
       tags: settings.tags,
       nodeVersion: settings.nodeVersion,
       protocol: ProtocolVersion.make(PROTOCOL_VERSION),
-      t3: { url: settings.t3Url, version: deps.t3.version, protocol: deps.t3.protocol },
+      ...(t3.state === "up" ? { t3: endpoint(t3.info) } : {}),
       pubKey: deps.identity.pubKey,
       sig: deps.identity.sign(challenge.nonce),
       ...(deps.enrollToken === undefined ? {} : { enrollToken: deps.enrollToken }),
@@ -128,9 +139,20 @@ const runLinkOnce = (
     yield* deps.onWelcome;
     yield* Effect.logInfo("linked to hub").pipe(Effect.annotateLogs({ hubId: welcome.hubId, machineId: settings.machineId }));
 
+    // An up hello already said it all; a T3-less one still owes the hub the reason.
+    let reported: T3State | undefined = t3.state === "up" ? t3 : undefined;
+    const report = (current: T3State) =>
+      Effect.suspend(() => {
+        if (current === reported) return Effect.void;
+        reported = current;
+        return t3state(current);
+      });
+    yield* deps.t3.changes.pipe(Stream.runForEach(report), Effect.ignore, Effect.forkScoped);
     yield* deps.keeper.sessions.pipe(
       Stream.runForEach((kept) =>
-        send({ t: "t3session", bearer: Redacted.value(kept.session.bearer), expiresAt: kept.session.expiresAt }).pipe(
+        // The hub attaches a session only to a T3 it knows is up, so a fresh "up" goes first.
+        Effect.flatMap(deps.t3.current, report).pipe(
+          Effect.andThen(send({ t: "t3session", bearer: Redacted.value(kept.session.bearer), expiresAt: kept.session.expiresAt })),
           Effect.andThen(Deferred.succeed(kept.delivered, undefined)),
         ),
       ),
@@ -163,7 +185,10 @@ export interface RunNodeOptions {
   readonly identity: NodeIdentity;
   /** Opens a fresh socket to the hub for each attempt. */
   readonly dial: Effect.Effect<Socket.Socket, never, Scope.Scope>;
+  /** Health probe for the local T3; also reports its version. */
   readonly t3Info: Effect.Effect<T3Info, T3Unreachable>;
+  /** Runs when T3 has failed its probes; absent means the node reports T3 down but never restarts it. */
+  readonly t3Restart?: Effect.Effect<void, T3RestartFailed>;
   /** Sent on links until the hub first welcomes this node, then forgotten. */
   readonly enrollToken?: string;
   /** Runs after the first welcome of a link that carried the enroll token. */
@@ -175,14 +200,20 @@ export interface RunNodeOptions {
 const backoff = (attempt: number) =>
   Effect.map(Random.nextBetween(0.8, 1.2), (jitter) => Duration.millis(Math.round(Math.min(30_000, 1_000 * 2 ** attempt) * jitter)));
 
-/** The node's main loop: keep a link to the hub, reconnecting with backoff. Only ends by failing `LinkFatal`. */
+/**
+ * The node's main loop: supervise the local T3 and keep a link to the hub, reconnecting with backoff, whether or
+ * not T3 is up. Only ends by failing `LinkFatal`.
+ */
 export const runNode = Effect.fn("runNode")(function* (options: RunNodeOptions) {
-  const keeper = yield* makeSessionKeeper(options.sessions);
+  const t3 = yield* makeT3Supervisor({
+    probe: options.t3Info,
+    ...(options.t3Restart === undefined ? {} : { restart: options.t3Restart }),
+  });
+  const keeper = yield* makeSessionKeeper({ ...options.sessions, t3 });
   let enrollToken = options.enrollToken;
   let attempt = 0;
   while (true) {
     const outcome = yield* Effect.gen(function* () {
-      const t3 = yield* options.t3Info;
       const socket = yield* options.dial;
       return yield* runLinkOnce(socket, options.settings, {
         identity: options.identity,
@@ -200,7 +231,6 @@ export const runNode = Effect.fn("runNode")(function* (options: RunNodeOptions) 
       Effect.scoped,
       Effect.catchTags({
         LinkLost: (lost) => Effect.logWarning("hub link lost").pipe(Effect.annotateLogs({ why: lost.why })),
-        T3Unreachable: (error) => Effect.logWarning(error.message),
       }),
       Effect.exit,
     );

@@ -31,7 +31,7 @@ const IssuedSession = Schema.Struct({ sessionId: Schema.NonEmptyString, token: S
 const decodeIssued = Schema.decodeUnknownOption(Schema.fromJsonString(IssuedSession));
 
 /** Children get only these variables, so the `CLAUDE*` ones of whatever started the node never leak into T3. */
-const scrubbedEnv = () =>
+export const scrubbedEnv = () =>
   Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]]])));
 
 const runT3 = (t3Cmd: ReadonlyArray<string>, operation: T3SessionError["operation"], args: ReadonlyArray<string>) =>

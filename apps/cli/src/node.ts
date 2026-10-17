@@ -6,8 +6,10 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 
 export const NODE_USAGE = `  node join --hub <url> --token <token> --machine <id> --t3-home <dir> --t3-url <url>
-            [--t3-cmd <cmd>] [--tags a,b] [--name <name>] [--home <dir>]
-             enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node)
+            [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>] [--home <dir>]
+             enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
+             --t3-restart-cmd (e.g. "t3 service restart") runs when T3 fails 3 health checks, else T3 is
+             only reported down
   node run [--home <dir>]
              keep the link up for a machine that has joined
 `;
@@ -20,6 +22,7 @@ const options = {
   "t3-home": { type: "string" },
   "t3-url": { type: "string" },
   "t3-cmd": { type: "string" },
+  "t3-restart-cmd": { type: "string" },
   tags: { type: "string" },
   name: { type: "string" },
 } as const;
@@ -70,6 +73,7 @@ export const nodeCommand = (argv: ReadonlyArray<string>): Promise<number> => {
           t3Home,
           t3Url,
           ...(values["t3-cmd"] === undefined ? {} : { t3Cmd: values["t3-cmd"] }),
+          ...(values["t3-restart-cmd"] === undefined ? {} : { t3RestartCmd: values["t3-restart-cmd"] }),
           ...(values.tags === undefined ? {} : { tags: values.tags.split(",").map((tag) => tag.trim()).filter(Boolean) }),
           ...(values.name === undefined ? {} : { name: values.name }),
           ...(values.home === undefined ? {} : { home: values.home }),
