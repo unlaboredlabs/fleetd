@@ -84,6 +84,18 @@ importers:
         specifier: 'catalog:'
         version: 4.0.5
 
+  spikes/s0:
+    dependencies:
+      '@t3tools/client-runtime':
+        specifier: workspace:*
+        version: link:../../vendor/t3/packages/client-runtime
+      '@t3tools/contracts':
+        specifier: workspace:*
+        version: link:../../vendor/t3/packages/contracts
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.5
+
   vendor/t3/packages/client-runtime:
     dependencies:
       '@t3tools/contracts':
