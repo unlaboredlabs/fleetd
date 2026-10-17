@@ -12,6 +12,8 @@ pub mod t3;
 pub mod thread_view;
 pub mod tools;
 
+pub use tools::register;
+
 #[cfg(test)]
 mod shell_mapper_tests;
 
@@ -251,6 +253,8 @@ pub struct Executors {
     /// Per machine: true while live. `await_live` waits on it.
     live: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
     offline_writer: Mutex<Option<Arc<dyn OfflineWriter>>>,
+    /// Where later areas plug into the M1 tools.
+    pub hooks: tools::ToolHooks,
 }
 
 fn thread_ref(machine_id: &MachineId, thread_id: &str) -> ThreadRef {
@@ -324,6 +328,7 @@ impl Executors {
             machines: Mutex::default(),
             live: Mutex::default(),
             offline_writer: Mutex::default(),
+            hooks: tools::ToolHooks::default(),
         })
     }
 

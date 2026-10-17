@@ -148,9 +148,7 @@ fn event(
 }
 
 impl NodeLinkServer {
-    /// Arms the silence timer for every machine the store says is not offline (after a hub restart the store still
-    /// says online for machines whose nodes may never come back, and only a link arms the timer).
-    pub fn start(deps: LinkDeps) -> Arc<Self> {
+    pub fn new(deps: LinkDeps) -> Arc<Self> {
         Self::with_timings(deps, HEARTBEAT_EVERY, SILENCE_TIMEOUT, HELLO_TIMEOUT)
     }
 
@@ -160,25 +158,26 @@ impl NodeLinkServer {
         silence_timeout: Duration,
         hello_timeout: Duration,
     ) -> Arc<Self> {
-        let server = Arc::new(Self {
+        Arc::new(Self {
             deps,
             state: Mutex::default(),
             heartbeat_every,
             silence_timeout,
             hello_timeout,
-        });
-        match server.deps.store.machines_list() {
+        })
+    }
+
+    /// Arms the silence timer for every machine the store says is not offline: after a hub restart the store still
+    /// says online for machines whose nodes may never come back, and only a link arms the timer.
+    pub fn start(self: &Arc<Self>) {
+        match self.deps.store.machines_list() {
             Ok(machines) => {
-                for m in machines
-                    .iter()
-                    .filter(|m| m.status != MachineStatus::Offline)
-                {
-                    server.touch(&m.machine_id);
+                for m in machines.iter().filter(|m| m.status != MachineStatus::Offline) {
+                    self.touch(&m.machine_id);
                 }
             }
             Err(e) => tracing::error!(error = %e, "node link: could not list machines"),
         }
-        server
     }
 
     fn now_iso(&self) -> String {
@@ -734,4 +733,13 @@ impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.0.abort();
     }
+}
+
+/// `fleetd-<hostname>`, as the TS hub names itself in its welcome.
+pub fn hub_id() -> String {
+    let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .or_else(|_| std::fs::read_to_string("/etc/hostname"))
+        .map(|h| h.trim().to_owned())
+        .unwrap_or_default();
+    format!("fleetd-{}", if host.is_empty() { "localhost" } else { &host })
 }
