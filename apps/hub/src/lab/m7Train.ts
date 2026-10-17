@@ -1,7 +1,7 @@
 // M7 "done when" 1-5 on lab-a against the public testbed wynn-dev/fleetd-testbed (CI fails iff a file FAIL exists;
 // main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a second T3 project on lab-a,
 // with its policy file kept untracked, so nothing but the train ever lands on main. With the train frozen by a
-// Decision, two M-tier writers (areas alpha, beta) open PRs and get one reviewer each; then two S-tier writers open a
+// Decision, two M-tier writers (areas alpha, beta, files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
 // PR that conflicts with alpha's and one that adds FAIL. A harness PR without `Source:` is refused at enqueue. Thawed
 // with train_freeze, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
@@ -22,12 +22,16 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const FREEZE_KEY = "policy.freeze.wynn-dev.fleetd-testbed";
 /** Branch prefixes this scenario pushes to the testbed, cleaned up before and after. */
 const OURS = ["fleetd/", "lab-m7/"];
+// Each run writes under its own directory, since main keeps what earlier runs merged.
+const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
+const ALPHA = `${DIR}/alpha.md`;
+const BETA = `${DIR}/beta.md`;
 // Kept untracked (.git/info/exclude): the hub reads it from the checkout, and nothing but the train lands on main.
-// gamma overlaps alpha on purpose, so its writer runs at the same time and conflicts with it.
+// gamma overlaps alpha on purpose, so its writer runs at the same time and conflicts with it. CI looks for FAIL at the root.
 const POLICY = `areas:
-  alpha: ["alpha.md"]
-  beta: ["beta.md"]
-  gamma: ["alpha.md"]
+  alpha: ["${ALPHA}"]
+  beta: ["${BETA}"]
+  gamma: ["${ALPHA}"]
   ci: ["FAIL"]
 defaults:
   model: ${MODEL}
@@ -37,7 +41,8 @@ defaults:
 const run = (cmd: string, args: ReadonlyArray<string>, cwd = TESTBED) =>
   execFileSync(cmd, args, { cwd, env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const git = (...args: Array<string>) => run("git", args);
-const gh = (...args: Array<string>) => run("gh", args);
+// Outside the clone, so `--delete-branch` deletes only the remote branch, never a task's checked-out local one.
+const gh = (...args: Array<string>) => run("gh", args, LAB);
 const ghJson = <A = Body>(...args: Array<string>): A => JSON.parse(gh(...args)) as A;
 
 /** Open PRs and remote branches an earlier run of this scenario left on the testbed; never main. */
@@ -138,16 +143,22 @@ export async function m7Train(lab: Lab) {
       return w;
     };
     const quiet = "Lab run: the harness spawns every task; reply to each wake with one short line, run no commands.";
-    const wm = await workstream(`${quiet} Add alpha.md and beta.md.`, {
-      goal: "add alpha.md and beta.md to the testbed, one line each",
+    // One check per PR, so each reviewer judges its PR against its own check. Node-run checks: a claim costs no turns.
+    const onMain = (file: string) => ["gh", "api", `repos/${REPO}/contents/${file}`, "--silent"];
+    const cmd = (argv: Array<string>) => ({ type: "cmd", machineId: MACHINE, argv, expectExit: 0 });
+    const wm = await workstream(`${quiet} Add alpha.md and beta.md in two PRs.`, {
+      goal: `two independent PRs: one adds ${ALPHA}, the other adds ${BETA}`,
       why: "the M7 lab scenario",
-      doneWhen: [{ type: "pr_merged", repo: REPO }, { type: "pr_merged", repo: REPO }],
+      doneWhen: [cmd(onMain(ALPHA)), cmd(onMain(BETA))],
       tier: "M",
     });
     const ws = await workstream(`${quiet} Train edge cases.`, {
-      goal: "one PR that conflicts with alpha.md and one that turns CI red",
+      goal: `one PR that adds the line gamma to ${ALPHA}, and one that adds FAIL and so must never merge`,
       why: "the M7 lab scenario",
-      doneWhen: [{ type: "pr_merged", repo: REPO }, { type: "judge", criteria: "CI red PR stays unmerged" }],
+      doneWhen: [
+        cmd(["sh", "-c", `gh api repos/${REPO}/contents/${ALPHA} -H 'Accept: application/vnd.github.raw' | grep -qx gamma`]),
+        cmd(["sh", "-c", `! gh api repos/${REPO}/contents/FAIL --silent`]),
+      ],
       tier: "S",
     });
     ok(`${wm} (tier M) and ${ws} (tier S) running with frozen briefs`);
@@ -176,10 +187,11 @@ export async function m7Train(lab: Lab) {
       const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--areas", area, "--serves", serves, "--model", MODEL, "--effort", "low", "--prompt", prompt);
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
       check(out.code === 0 && taskId, `task spawn ${title}: ${JSON.stringify(out)}`);
+      lab.log(`spawned ${taskId} (${title}, area ${area}, serves ${serves})`);
       return taskId!;
     };
     const writer = (file: string, line: string, serves: string, after = "") =>
-      `Create the file ${file} at the repo root containing exactly one line: ${line}. Commit it with the message "add ${file}". Then push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: ${serves}". Reply with the PR URL.${after}`;
+      `Create the file ${file} (from the repo root) containing exactly one line: ${line}. Commit it with the message "add ${file}". Then push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: ${serves}". Reply with the PR URL.${after}`;
     const queued = async (taskId: string, from: number) => {
       const end = await lab.waitEvent(`${taskId} ends`, TURN_MS, { cursor: from, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === taskId });
       check(end.event.type === "task.completed", `${taskId} completed: ${end.event.summary}`);
@@ -192,8 +204,8 @@ export async function m7Train(lab: Lab) {
 
     // 1. Two M-tier writers in different areas.
     let cursor = await lab.cursor();
-    const a = spawn(wm, "alpha", "done:0", "add alpha", writer("alpha.md", "alpha", "done:0"));
-    const b = spawn(wm, "beta", "done:1", "add beta", writer("beta.md", "beta", "done:1"));
+    const a = spawn(wm, "alpha", "done:0", "add alpha", writer(ALPHA, "alpha", "done:0"));
+    const b = spawn(wm, "beta", "done:1", "add beta", writer(BETA, "beta", "done:1"));
     const ca = await queued(a, cursor);
     const cb = await queued(b, cursor);
     ok(`1. ${a} opened ${ca.prUrl} (${ca.changeId}) and ${b} opened ${cb.prUrl} (${cb.changeId}), each auto-enqueued`);
@@ -203,15 +215,15 @@ export async function m7Train(lab: Lab) {
     // 2 and 3. After both, so they come later in train order: a PR conflicting with alpha.md, and one that adds FAIL.
     cursor = await lab.cursor();
     const c = spawn(ws, "gamma", "done:0", "add gamma line", writer(
-      "alpha.md",
+      ALPHA,
       "gamma",
       "done:0",
-      " If you are later told this PR conflicts: run `git fetch origin` and `git rebase origin/main`; make alpha.md exactly two lines, `alpha` then `gamma`; `git add alpha.md`; `GIT_EDITOR=true git rebase --continue`; `git push --force-with-lease`; then reply with one word: resolved.",
+      ` If you are later told this PR conflicts: run \`git fetch origin\` and \`git rebase origin/main\`; make ${ALPHA} exactly two lines, \`alpha\` then \`gamma\`; \`git add ${ALPHA}\`; \`GIT_EDITOR=true git rebase --continue\`; \`git push --force-with-lease\`; then reply with one word: resolved.`,
     ));
-    const d = spawn(ws, "ci", "done:1", "add FAIL", writer("FAIL", "red", "done:1", " If you are later told CI failed, change nothing: reply with one word: acknowledged."));
+    const d = spawn(ws, "ci", "done:1", "add FAIL", writer("FAIL", "red", "done:1", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
     const cc = await queued(c, cursor);
     const cd = await queued(d, cursor);
-    ok(`${c} opened ${cc.prUrl} (${cc.changeId}, conflicts with alpha.md) and ${d} opened ${cd.prUrl} (${cd.changeId}, adds FAIL)`);
+    ok(`${c} opened ${cc.prUrl} (${cc.changeId}, conflicts with ${ALPHA}) and ${d} opened ${cd.prUrl} (${cd.changeId}, adds FAIL)`);
 
     // 1. Each M PR gets a reviewer that returns blocking: 0; nothing merges while frozen.
     for (const m of [ca, cb]) {
@@ -256,7 +268,7 @@ export async function m7Train(lab: Lab) {
 
     // 2. The conflict goes back to its author with the paths; the train moves on.
     const conflict = await lab.waitEvent(`change.needs_rebase for ${cc.changeId}`, CI_MS, { cursor, types: ["change.needs_rebase"], match: (e) => e.data?.changeId === cc.changeId });
-    check((conflict.event.data.paths as Array<string>).includes("alpha.md"), `needs_rebase names alpha.md: ${JSON.stringify(conflict.event)}`);
+    check((conflict.event.data.paths as Array<string>).includes(ALPHA), `needs_rebase names ${ALPHA}: ${JSON.stringify(conflict.event)}`);
     ok(`2. ${conflict.event.type}: ${conflict.event.summary}`);
     // 3. Red CI goes back to its author with the check name; never merged.
     const red = await lab.waitEvent(`change.ci_failed for ${cd.changeId}`, CI_MS, { cursor, types: ["change.ci_failed"], match: (e) => e.data?.changeId === cd.changeId });
@@ -271,15 +283,15 @@ export async function m7Train(lab: Lab) {
         return undefined;
       });
     };
-    await told(c, ["The merge train could not rebase your PR", "alpha.md"]);
-    ok(`2. ${c} got the task message naming alpha.md`);
+    await told(c, ["The merge train could not rebase your PR", ALPHA]);
+    ok(`2. ${c} got the task message naming ${ALPHA}`);
     await told(d, ["The merge train did not merge your PR", "ci (failure)"]);
     ok(`3. ${d} was woken with the failing check name: ci (failure)`);
 
     // 2. The author resolved and pushed; the train merges the new head.
     const m3 = await mergedOf(cc, CI_MS + TURN_MS);
-    const mainAlpha = gh("api", `repos/${REPO}/contents/alpha.md`, "-H", "Accept: application/vnd.github.raw");
-    ok(`2. ${c} resolved the conflict; pr.merged ${cc.changeId} (#${m3.data.prNumber}); alpha.md on main: ${JSON.stringify(mainAlpha)}`);
+    const mainAlpha = gh("api", `repos/${REPO}/contents/${ALPHA}`, "-H", "Accept: application/vnd.github.raw");
+    ok(`2. ${c} resolved the conflict; pr.merged ${cc.changeId} (#${m3.data.prNumber}); ${ALPHA} on main: ${JSON.stringify(mainAlpha)}`);
 
     // 3. Once the author has acknowledged, the red PR is closed; it was never merged.
     await lab.waitEvent(`${d} ends its second turn`, TURN_MS, { cursor: red.cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === d });
@@ -320,7 +332,7 @@ export async function m7Train(lab: Lab) {
     check(leadTurns + taskTurns <= 20, `M7 stays within 20 claude turns (${leadTurns + taskTurns})`);
   } finally {
     // Never main and never the repo: only this run's PRs and branches, the lab project and its policy file.
-    for (const n of opened) spawnSync("gh", ["pr", "close", String(n), "-R", REPO, "--delete-branch"], { env: scrubbedEnv(), stdio: "ignore" });
+    for (const n of opened) spawnSync("gh", ["pr", "close", String(n), "-R", REPO, "--delete-branch"], { cwd: LAB, env: scrubbedEnv(), stdio: "ignore" });
     cleanTestbed();
     await removeTestbedProject(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
     fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });

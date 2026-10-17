@@ -150,7 +150,16 @@ export interface Lab {
 export const callToolWith =
   (client: () => Client): Lab["callTool"] =>
   async (name, args = {}) => {
-    const result = await client().callTool({ name, arguments: args }, undefined, { timeout: 70_000 });
+    const send = () => client().callTool({ name, arguments: args }, undefined, { timeout: 70_000 });
+    const result = await send()
+      // After a few idle seconds the hub's HTTP server may close the kept-alive socket just as the next request goes
+      // out on it; that request never reached the hub, so it is sent once more.
+      .catch((error: unknown) => (/other side closed/u.test(String((error as Error).cause)) ? send() : Promise.reject(error)))
+      .catch((error: unknown) => {
+        // The SDK's "fetch failed" names neither the tool nor why.
+        const cause = error instanceof Error && error.cause !== undefined ? ` (${String(error.cause)})` : "";
+        throw new Error(`MCP ${name} failed: ${error instanceof Error ? error.message : String(error)}${cause}`);
+      });
     const text = (result.content as Array<{ text: string }>)[0]!.text;
     return { isError: result.isError === true, body: JSON.parse(text) as Body };
   };

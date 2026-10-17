@@ -248,6 +248,8 @@ async function main() {
 
 main().catch((error: unknown) => {
   log(`FAIL ${error instanceof Error ? error.message : String(error)}`);
+  // A bare "fetch failed" says nothing about which call; the stack and cause do.
+  if (error instanceof Error) log(`${error.stack?.split("\n").slice(1, 6).join("\n") ?? ""}${error.cause === undefined ? "" : `\ncause: ${String(error.cause)}`}`);
   log(`logs: ${path.join(RUN, "logs")}`);
   process.exitCode = 1;
 });
