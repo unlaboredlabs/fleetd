@@ -23,6 +23,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Socket from "effect/socket/Socket";
 import * as Auth from "../auth/Auth.ts";
+import type { NodeCommands } from "../checks/NodeCommands.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { type LeadCallHandler, LeadCallRefused, leadBy, outsideEveryProject, projectForCwd } from "./LeadCalls.ts";
@@ -42,6 +43,8 @@ export interface NodeLinkOptions {
   readonly executors: LinkExecutors;
   /** Answers lead-side `fleetd` calls the node forwards. Absent: every such call is refused as not available yet. */
   readonly leadCalls?: LeadCallHandler;
+  /** Runs hub commands (`cmd` checks, train git steps) over each welcomed link. Absent: none are sent. */
+  readonly commands?: Pick<NodeCommands["Service"], "attach" | "resolve">;
   readonly heartbeatEvery?: Duration.Input;
   readonly silenceTimeout?: Duration.Input;
   readonly helloTimeout?: Duration.Input;
@@ -313,9 +316,11 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
         nodeVersion: hello.nodeVersion,
         ...(t3 === undefined ? { degradedReason: helloReason } : {}),
       });
-      yield* t3 === undefined ? announce(machineId, at, "degraded", helloReason) : announce(machineId, at, "online");
       yield* touch(machineId);
       yield* link.send({ t: "welcome", hubId: options.hubId, protocol: ProtocolVersion.make(PROTOCOL_VERSION) });
+      if (options.commands !== undefined) yield* options.commands.attach(machineId, link.send);
+      // After the attach, so whoever acts on the announcement can already run commands on the machine.
+      yield* t3 === undefined ? announce(machineId, at, "degraded", helloReason) : announce(machineId, at, "online");
       yield* Effect.logInfo("node link: welcomed").pipe(Effect.annotateLogs({ machineId, linkId: id }));
 
       yield* Effect.sleep(heartbeatEvery).pipe(
@@ -365,6 +370,9 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
           case "lead_call":
             // Off the frame loop: a slow call must not hold up heartbeats or other calls.
             yield* answerLeadCall(machineId, frame).pipe(Effect.flatMap(link.send), Effect.forkScoped);
+            break;
+          case "cmd_result":
+            if (options.commands !== undefined) yield* options.commands.resolve(machineId, frame);
             break;
           case "hello":
             return yield* refuse(NodeLinkClose.badFrame, "hello after welcome");
