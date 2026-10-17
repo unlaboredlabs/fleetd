@@ -11,13 +11,74 @@
       "type": "string",
       "minLength": 1
     },
-    "ThreadId": {
-      "type": "string",
-      "minLength": 1
-    },
     "Timestamp": {
       "type": "string",
       "format": "date-time"
+    },
+    "ProjectSummary": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        },
+        "threads": {
+          "type": "object",
+          "properties": {
+            "running": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "waiting": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idle": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "running",
+            "waiting",
+            "idle",
+            "failed"
+          ],
+          "additionalProperties": true
+        },
+        "lastActivityAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "workspaceRoot",
+        "threads",
+        "lastActivityAt"
+      ],
+      "additionalProperties": true
+    },
+    "ThreadId": {
+      "type": "string",
+      "minLength": 1
     },
     "ThreadSummary": {
       "type": "object",
@@ -106,17 +167,8 @@
     "ProjectOutcome": {
       "type": "object",
       "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "title": {
-          "type": "string"
-        },
-        "workspaceRoot": {
-          "type": "string"
+        "project": {
+          "$ref": "#/$defs/ProjectSummary"
         },
         "threads": {
           "type": "array",
@@ -125,23 +177,22 @@
           },
           "maxItems": 20
         },
-        "lastActivityAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
         "stale": {
           "type": "boolean"
         },
         "asOf": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
         }
       },
       "required": [
-        "machineId",
-        "projectId",
-        "title",
-        "workspaceRoot",
+        "project",
         "threads",
-        "lastActivityAt",
         "stale",
         "asOf"
       ],

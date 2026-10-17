@@ -40,7 +40,7 @@ export const ProjectsListOutput = Schema.Struct({ projects: Schema.Array(Project
 
 // project_get
 export const ProjectGetInput = Schema.Struct({ machineId: MachineId, projectId: ProjectId });
-export const ProjectGetOutput = Schema.Struct({ ...ProjectOutcome.fields, ...resultFields });
+export const ProjectGetOutput = ProjectOutcome;
 
 // thread_tail
 export const TailKind = Schema.Literals(["message", "action"]);

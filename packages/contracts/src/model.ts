@@ -54,13 +54,17 @@ export const ThreadSummary = Schema.Struct({
 }).annotate({ identifier: "ThreadSummary" });
 export type ThreadSummary = typeof ThreadSummary.Type;
 
-/** The one-call project outcome. `threads` replaces ProjectSummary's counts with the summaries. */
+/** The one-call project outcome, returned as-is by project_get. M3 adds lead and workstreams. */
 export const ProjectOutcome = Schema.Struct({
-  ...ProjectSummary.fields,
+  project: ProjectSummary,
   /** Newest activity first. */
   threads: Schema.Array(ThreadSummary).check(Schema.isMaxLength(20)),
   stale: Schema.Boolean,
   asOf: Timestamp,
+  /** Hint for the next call. */
+  next: Schema.optionalKey(Schema.String),
+  /** True when `threads` was trimmed to its limit. */
+  truncated: Schema.optionalKey(Schema.Boolean),
 }).annotate({ identifier: "ProjectOutcome" });
 export type ProjectOutcome = typeof ProjectOutcome.Type;
 

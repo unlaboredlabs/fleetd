@@ -85,9 +85,8 @@ describe("length limits", () => {
     projectId: "p1",
     title: "p",
     workspaceRoot: "/w",
+    threads: { running: 1, waiting: 0, idle: 0, failed: 0 },
     lastActivityAt: at,
-    stale: false,
-    asOf: at,
   };
 
   it("caps event summaries at 200 and thread text at 280/4096", () => {
@@ -100,8 +99,9 @@ describe("length limits", () => {
   });
 
   it("caps a project outcome at 20 threads", () => {
-    expect(accepts(ProjectOutcome, { ...project, threads: Array(20).fill(thread) })).toBe(true);
-    expect(accepts(ProjectOutcome, { ...project, threads: Array(21).fill(thread) })).toBe(false);
+    const outcome = { project, stale: false, asOf: at };
+    expect(accepts(ProjectOutcome, { ...outcome, threads: Array(20).fill(thread) })).toBe(true);
+    expect(accepts(ProjectOutcome, { ...outcome, threads: Array(21).fill(thread) })).toBe(false);
   });
 });
 
