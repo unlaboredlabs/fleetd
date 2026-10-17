@@ -9,6 +9,7 @@ mod notify;
 mod seal;
 mod shell;
 mod state;
+mod update;
 
 use std::borrow::Cow;
 
@@ -16,7 +17,7 @@ use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions
 
 fn main() {
     if std::env::args().any(|a| a == "--version") {
-        println!("fleetd-app {}", env!("CARGO_PKG_VERSION"));
+        println!("fleetd-app {}", update::VERSION);
         return;
     }
     gpui_platform::application().run(|cx: &mut App| {
@@ -27,8 +28,8 @@ fn main() {
                 Cow::Borrowed(include_bytes!("../assets/fonts/Lilex-Regular.ttf").as_slice()),
             ])
             .expect("bundled fonts load");
-        // Required for system notifications; on macOS they also need the app bundle (app/macos-bundle.sh).
-        cx.set_app_identity("dev.fleetd.app", "fleetd");
+        // Required for system notifications; on macOS they also need the app bundle (app/packaging/macos-bundle.sh).
+        cx.set_app_identity("sh.fleetd.app", "fleetd");
         let bounds = Bounds::centered(None, size(px(1400.), px(900.)), cx);
         cx.open_window(
             WindowOptions {

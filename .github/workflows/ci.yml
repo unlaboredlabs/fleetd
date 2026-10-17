@@ -12,9 +12,13 @@ concurrency:
 permissions:
   contents: read
 
+# Linux jobs run on Blacksmith, except for pull requests from forks, which fall back to GitHub-hosted runners so a
+# stranger's PR never spends Blacksmith minutes (forks also need a maintainer's approval to run at all).
+# macOS stays on GitHub-hosted macos-latest, which is free for public repos.
+
 jobs:
   ts:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -79,8 +83,8 @@ jobs:
   rust:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os: [linux, macos]
+    runs-on: ${{ matrix.os == 'macos' && 'macos-latest' || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest') }}
     # gpui is ~600 crates; the first uncached build takes a while.
     timeout-minutes: 45
     steps:
@@ -117,4 +121,14 @@ jobs:
       - name: App bundle (macOS)
         # Notifications on macOS need the app bundle; this proves the script makes a valid, signed one.
         if: runner.os == 'macOS'
-        run: app/macos-bundle.sh target/debug/fleetd-app && codesign --verify target/debug/fleetd.app
+        run: app/packaging/macos-bundle.sh target/debug/fleetd-app && codesign --verify target/debug/fleetd.app
+
+  darwin-deps:
+    # The release cross-builds the darwin fleetd binaries on Linux, which breaks on any crate that links a macOS
+    # framework. Catch one here, before it lands on main.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - if: hashFiles('crates/fleetd/Cargo.toml') != ''
+        run: .github/release/check-darwin-deps.sh

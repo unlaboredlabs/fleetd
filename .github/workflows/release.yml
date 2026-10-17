@@ -1,0 +1,19 @@
+# A pushed v* tag becomes a normal (latest) release with the same assets as nightly. Tag runs are never cancelled.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: ./.github/workflows/build-release.yml
+    with:
+      channel: stable
+    permissions:
+      contents: write
+    secrets: inherit
