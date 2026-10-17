@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+  - vendor/t3/packages/*
+
+# effect, jose, typescript and @types/node match the T3 pin (vendor/t3/PIN) so the
+# vendored T3 code type-checks and runs against the same versions it ships with.
+# Bump them together with the pin.
+catalog:
+  "@types/node": 24.12.4
+  effect: 4.0.5
+  jose: 6.2.2
+  typescript: 7.0.2

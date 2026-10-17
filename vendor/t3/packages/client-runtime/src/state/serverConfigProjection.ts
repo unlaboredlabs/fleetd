@@ -1,0 +1,138 @@
+import type { ServerConfig, ServerConfigStreamEvent } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+
+export interface ServerConfigProjection {
+  readonly config: ServerConfig;
+  readonly latestEvent: ServerConfigStreamEvent;
+  readonly source: "cache" | "live";
+}
+
+/**
+ * Published themes and usage-limit sources are current machine state, so a
+ * cache could restore a set the machine no longer reports.
+ */
+export function withoutEnvironmentThemes(config: ServerConfig): ServerConfig {
+  if (config.environmentThemes === undefined && config.usageLimitSources === undefined) {
+    return config;
+  }
+  const { environmentThemes: _themes, usageLimitSources: _sources, ...rest } = config;
+  return rest;
+}
+
+/**
+ * Returns `next` with every part deep-equal to `previous` replaced by the
+ * previous object. A provider status push re-sends every provider even when
+ * only one field (often just `checkedAt`) changed, so this keeps unchanged
+ * providers, models and skills identical and lets memoized UI skip them.
+ */
+export function reuseUnchanged<T>(previous: unknown, next: T): T {
+  if (Object.is(previous, next)) return next;
+  if (
+    typeof previous !== "object" ||
+    typeof next !== "object" ||
+    previous === null ||
+    next === null ||
+    Array.isArray(previous) !== Array.isArray(next)
+  ) {
+    return next;
+  }
+  if (Array.isArray(next)) {
+    const before = previous as ReadonlyArray<unknown>;
+    let same = before.length === next.length;
+    const merged = next.map((item, index) => {
+      const reused = reuseUnchanged(before[index], item);
+      if (reused !== before[index]) same = false;
+      return reused;
+    });
+    return (same ? previous : merged) as T;
+  }
+  if (Object.getPrototypeOf(next) !== Object.prototype) return next;
+  const before = previous as Record<string, unknown>;
+  const after = next as Record<string, unknown>;
+  const keys = Object.keys(after);
+  let same = keys.length === Object.keys(before).length;
+  const merged: Record<string, unknown> = {};
+  for (const key of keys) {
+    const reused = reuseUnchanged(before[key], after[key]);
+    if (reused !== before[key] || !(key in before)) same = false;
+    merged[key] = reused;
+  }
+  return (same ? previous : merged) as T;
+}
+
+export function applyServerConfigProjection(
+  current: Option.Option<ServerConfigProjection>,
+  event: ServerConfigStreamEvent,
+): Option.Option<ServerConfigProjection> {
+  switch (event.type) {
+    case "snapshot": {
+      // Wire snapshots never contain published themes. Keep the previous set
+      // until a capable server sends its authoritative theme event. A legacy
+      // server cannot send a later removal, so a downgrade must clear the set.
+      const capabilities = event.config.environment.capabilities;
+      const carriedThemes =
+        capabilities.environmentThemes === true && Option.isSome(current)
+          ? current.value.config.environmentThemes
+          : undefined;
+      const carriedSources =
+        capabilities.usageLimitSources === true && Option.isSome(current)
+          ? current.value.config.usageLimitSources
+          : undefined;
+      return Option.some({
+        config: {
+          ...event.config,
+          ...(carriedThemes === undefined ? {} : { environmentThemes: carriedThemes }),
+          ...(carriedSources === undefined ? {} : { usageLimitSources: carriedSources }),
+        },
+        latestEvent: event,
+        source: "live" as const,
+      });
+    }
+    case "keybindingsUpdated":
+      return Option.map(current, (projection) => ({
+        config: {
+          ...projection.config,
+          keybindings: event.payload.keybindings,
+          issues: event.payload.issues,
+        },
+        latestEvent: event,
+        source: "live",
+      }));
+    case "providerStatuses":
+      return Option.map(current, (projection) => ({
+        config: {
+          ...projection.config,
+          providers: reuseUnchanged(projection.config.providers, event.payload.providers),
+        },
+        latestEvent: event,
+        source: "live",
+      }));
+    case "settingsUpdated":
+      return Option.map(current, (projection) => ({
+        config: {
+          ...projection.config,
+          settings: event.payload.settings,
+        },
+        latestEvent: event,
+        source: "live",
+      }));
+    case "environmentThemesUpdated":
+      return Option.map(current, (projection) => ({
+        config: {
+          ...projection.config,
+          environmentThemes: event.payload.themes.length > 0 ? event.payload.themes : undefined,
+        },
+        latestEvent: event,
+        source: "live",
+      }));
+    case "usageLimitSourcesUpdated":
+      return Option.map(current, (projection) => ({
+        config: {
+          ...projection.config,
+          usageLimitSources: event.payload.sources.length > 0 ? event.payload.sources : undefined,
+        },
+        latestEvent: event,
+        source: "live",
+      }));
+  }
+}

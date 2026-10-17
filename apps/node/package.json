@@ -1,0 +1,18 @@
+{
+  "name": "@fleetd/node",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "rolldown src/main.ts --file dist/main.js --platform node --format esm",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fleetd/contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "rolldown": "1.2.14"
+  }
+}
