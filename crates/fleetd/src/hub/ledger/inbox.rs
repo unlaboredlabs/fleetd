@@ -148,11 +148,13 @@ impl Inbox {
         }
     }
 
+    // PORT: leads (LeadWakes) calls this when it is built; until then answers reach no lead.
     /// The lead-wake code's sink; answers are dropped until one is set.
     pub fn set_answer_sink(&self, sink: Arc<dyn AnswerSink>) {
         *self.sink.write().unwrap_or_else(|p| p.into_inner()) = Some(sink);
     }
 
+    // PORT: incidents calls this to record `misfiled_ask`; until then no incident is recorded.
     /// The incidents area's hook for misfiled asks.
     pub fn set_misfiled_sink(&self, sink: Arc<dyn MisfiledSink>) {
         *self.misfiled.write().unwrap_or_else(|p| p.into_inner()) = Some(sink);

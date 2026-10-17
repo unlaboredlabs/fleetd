@@ -260,6 +260,7 @@ pub fn register(tools: &mut Registry) {
     });
 }
 
+// PORT: link (#54) registers ask, ask_withdraw, decide and decisions_search in `LeadCalls` to call this.
 /// The ledger's lead-side calls (`ask`, `ask_withdraw`, `decide`, `decisions_search`) for a caller already attributed
 /// to `project_ref` by its cwd, with `by` = `lead:<machineId>/<projectId>`. TS `LeadCallHandler.ts`; the link area's
 /// `LeadCalls` registry routes those four ops here and maps a refusal onto `LeadCallRefused` (`code.as_str()`,
