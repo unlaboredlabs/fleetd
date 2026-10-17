@@ -12,6 +12,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::client::Incoming;
+use crate::notify::{Notification, Notifier, Policy};
 use crate::protocol::*;
 
 /// (machineId, projectId)
@@ -29,12 +30,15 @@ enum Purpose {
     Doctor,
     DoctorRerun,
     DoctorFix(String),
+    /// `saved` is what the echo says on success, e.g. "STRIPE_KEY saved on lab-a".
+    Secret { ask_id: String, saved: String },
+    Policy,
 }
 
 impl Purpose {
     /// One-shot user actions: never coalesced, never redone.
     fn one_shot(&self) -> bool {
-        matches!(self, Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_))
+        matches!(self, Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) | Purpose::Secret { .. })
     }
 }
 
@@ -129,6 +133,12 @@ pub struct State {
     pub doctor: Option<Doctor>,
     /// A hub error not tied to one call.
     pub notice: Option<String>,
+    /// The hub's attention_policy; notifications wait until it is known.
+    pub policy: Option<Policy>,
+    notifier: Notifier,
+    /// Open-asks fetches sent, and the number of the last one answered (see `Notifier::due`).
+    asks_sent: u64,
+    asks_seen: u64,
     streaming: bool,
     snapshot_pending: bool,
     next_id: u64,
@@ -151,6 +161,10 @@ impl Default for State {
             detail: None,
             doctor: None,
             notice: None,
+            policy: None,
+            notifier: Notifier::default(),
+            asks_sent: 0,
+            asks_seen: 0,
             streaming: false,
             snapshot_pending: false,
             next_id: 0,
@@ -253,6 +267,46 @@ impl State {
         vec![self.call(Purpose::DoctorFix(check_id.to_string()), &DoctorFixInput { check_id: check_id.to_string() })]
     }
 
+    /// The machine a secret ask's sink is on and its box key, or why it can't take the secret now.
+    pub fn secret_target(&self, ask: &Ask) -> Result<(String, String), String> {
+        // `env:<machine>:/…` or `file:<machine>:/…`
+        let machine_id = ask
+            .sink
+            .as_deref()
+            .and_then(|sink| sink.strip_prefix("env:").or_else(|| sink.strip_prefix("file:")))
+            .and_then(|rest| rest.split_once(":/"))
+            .map(|(machine, _)| machine)
+            .filter(|m| !m.is_empty() && m.len() <= 32 && m.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'));
+        let Some(machine_id) = machine_id else { return Err("This ask has no valid sink.".into()) };
+        let Some(machine) = self.machine(machine_id) else { return Err(format!("The hub doesn't know machine {machine_id}.")) };
+        let Some(key) = &machine.box_pub_key else { return Err(format!("{machine_id} takes no secrets: its node has no box key yet.")) };
+        if machine.status == MachineStatus::Offline {
+            return Err(format!("{machine_id} is offline. Try again when it is online."));
+        }
+        Ok((machine_id.to_string(), key.clone()))
+    }
+
+    /// Sends a value sealed to the sink machine (see `seal`); the echo shows the node's fingerprint.
+    pub fn submit_secret(&mut self, ask_id: &str, machine_id: &str, sealed: String) -> Out {
+        if self.secret_submitting(ask_id) || !self.live_or_echo("Not connected to the hub; the secret was not sent.") {
+            return Vec::new();
+        }
+        let key = self.asks.get(ask_id).map_or("The secret", |a| a.key.as_str());
+        let purpose = Purpose::Secret { ask_id: ask_id.to_string(), saved: format!("{key} saved on {machine_id}") };
+        vec![self.call(purpose, &SecretSubmitInput { ask_id: ask_id.to_string(), sealed })]
+    }
+
+    pub fn secret_submitting(&self, ask_id: &str) -> bool {
+        self.pending.values().any(|p| matches!(p, Purpose::Secret { ask_id: id, .. } if id == ask_id))
+    }
+
+    /// A "needs you" notification to show now, if the hub's rules and policy allow one.
+    pub fn take_notification(&mut self, now_ms: i64) -> Option<Notification> {
+        let policy = self.policy.as_ref()?;
+        let (asks, seen) = (&self.asks, self.asks_seen);
+        self.notifier.due(now_ms, policy, |id, sent| seen <= sent || asks.get(id).is_some_and(|a| a.state == AskState::Open))
+    }
+
     pub fn doctor_rerunning(&self) -> bool {
         self.pending.values().any(|p| *p == Purpose::DoctorRerun)
     }
@@ -268,12 +322,17 @@ impl State {
         self.conn == Conn::Live
     }
 
-    /// Periodic: keeps the open project's lead log fresh while the lead is at work.
-    pub fn poll(&mut self) -> Out {
+    /// Periodic: keeps the open project's lead log fresh while the lead is at work, and the quiet windows
+    /// current.
+    pub fn poll(&mut self, now_ms: i64) -> Out {
         let busy = self.detail.as_ref().and_then(|d| self.project(&d.key)).is_some_and(|row| {
             row.lead().is_some_and(|l| l.state == LeadState::Working) || row.lead_thread().is_some_and(|t| t.status == ThreadStatus::Running)
         });
-        if busy && self.conn == Conn::Live { self.request_tail().into_iter().collect() } else { Vec::new() }
+        let mut out: Out = if busy && self.conn == Conn::Live { self.request_tail().into_iter().collect() } else { Vec::new() };
+        if self.policy.as_ref().is_some_and(|p| p.stale(now_ms)) {
+            out.extend(self.request_policy());
+        }
+        out
     }
 
     fn reset_calls(&mut self) {
@@ -307,7 +366,15 @@ impl State {
     }
 
     fn request_asks(&mut self) -> Option<ClientMessage> {
-        self.refetch(Purpose::Asks, &AsksListInput { state: Some(AskState::Open), batch_id: None })
+        let call = self.refetch(Purpose::Asks, &AsksListInput { state: Some(AskState::Open), batch_id: None });
+        if call.is_some() {
+            self.asks_sent += 1;
+        }
+        call
+    }
+
+    fn request_policy(&mut self) -> Option<ClientMessage> {
+        self.refetch(Purpose::Policy, &AttentionPolicyInput {})
     }
 
     fn request_project(&mut self, key: &ProjectKey) -> Option<ClientMessage> {
@@ -339,7 +406,8 @@ impl State {
             Purpose::Project(key) => self.request_project(&key),
             Purpose::Tail(_) => self.request_tail(),
             Purpose::Doctor => self.request_doctor(),
-            Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) => None,
+            Purpose::Policy => self.request_policy(),
+            Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) | Purpose::Secret { .. } => None,
         }
     }
 
@@ -398,6 +466,7 @@ impl State {
         let keys: Vec<ProjectKey> = self.projects.iter().map(ProjectRow::key).collect();
         out.extend(keys.iter().filter_map(|k| self.request_project(k)));
         out.extend(self.request_asks());
+        out.extend(self.request_policy());
         if self.doctor.is_some() {
             out.extend(self.request_doctor());
         }
@@ -413,9 +482,16 @@ impl State {
         if kind == "doctor.changed" && self.doctor.is_some() {
             out.extend(self.request_doctor());
         }
-        if matches!(kind, "ask.created" | "ask.auto" | "batch.ready" | "decision.recorded") {
+        let asks_before = self.asks_sent;
+        if kind.starts_with("ask.") || matches!(kind, "batch.ready" | "decision.recorded" | "gated.ran") {
             out.extend(self.request_asks());
         }
+        // policy.quiet_hours or policy.tz may have changed.
+        if kind == "decision.recorded" && self.policy.is_some() {
+            out.extend(self.request_policy());
+        }
+        // A fetch sent just now for this event can say whether its ask was answered; one already in flight can't.
+        self.notifier.push(event, asks_before);
         let project_scoped = ["workstream.", "lead.", "thread."].iter().any(|p| kind.starts_with(p));
         if let (true, Some(machine_id), Some(project_id)) = (project_scoped, &event.machine_id, &event.project_id) {
             let key = (machine_id.clone(), project_id.clone());
@@ -438,6 +514,7 @@ impl State {
         match purpose {
             Purpose::Asks => match parse::<AsksListOutput>(output) {
                 Ok(list) => {
+                    self.asks_seen = self.asks_sent;
                     self.batches = list.batches;
                     self.asks = list.asks.into_iter().map(|a| (a.ask_id.clone(), a)).collect();
                     self.asks_error = None;
@@ -495,6 +572,16 @@ impl State {
                     Err(e) => doctor.error = Some(e),
                 }
             }
+            Purpose::Secret { saved, .. } => {
+                match parse::<SecretSubmitOutput>(output) {
+                    Ok(out) => self.echo = Some(Echo { text: format!("{saved}, fingerprint {}", out.fingerprint), ok: true }),
+                    Err(e) => self.echo = Some(Echo { text: e, ok: false }),
+                }
+                return self.request_asks().into_iter().collect();
+            }
+            Purpose::Policy => {
+                self.policy = Some(parse::<AttentionPolicyOutput>(output).map_or_else(|_| Policy::fallback(), |p| Policy::from_output(&p)));
+            }
             Purpose::DoctorFix(_) => match parse::<DoctorFixOutput>(output) {
                 Ok(fixed) => {
                     let doctor = self.doctor.get_or_insert_with(Doctor::default);
@@ -524,7 +611,9 @@ impl State {
                 }
             }
             Purpose::Doctor | Purpose::DoctorRerun => self.doctor.get_or_insert_with(Doctor::default).error = Some(text),
-            Purpose::Reply | Purpose::DoctorFix(_) => self.echo = Some(Echo { text, ok: false }),
+            Purpose::Reply | Purpose::DoctorFix(_) | Purpose::Secret { .. } => self.echo = Some(Echo { text, ok: false }),
+            // An older hub without attention_policy: notify with the default window and no quiet hours.
+            Purpose::Policy => self.policy = Some(Policy::fallback()),
         }
     }
 }
@@ -566,6 +655,7 @@ mod tests {
             thread_id: thread.map(Into::into),
             summary: kind.into(),
             data: None,
+            attention: None,
         }))
     }
 
@@ -602,6 +692,7 @@ mod tests {
         for (id, tool) in calls(&out) {
             let output = match tool.as_str() {
                 "asks_list" => json!({ "batches": [], "asks": [] }),
+                "attention_policy" => json!({ "coalesceSec": 1200, "quiet": [] }),
                 _ => outcome(if s.pending[&id] == Purpose::Project(("lab-a".into(), "p1".into())) { "p1" } else { "p2" }, Some("lead-1"), "idle"),
             };
             s.apply(result(&id, output));
@@ -616,7 +707,7 @@ mod tests {
         let out = s.apply(snapshot(&[("lab-a", "p1"), ("lab-a", "p2")], 41));
         assert_eq!(out[0], ClientMessage::Events { cursor: 41 });
         let tools: Vec<String> = calls(&out).into_iter().map(|(_, t)| t).collect();
-        assert_eq!(tools, ["project_get", "project_get", "asks_list"]);
+        assert_eq!(tools, ["project_get", "project_get", "asks_list", "attention_policy"]);
         assert_eq!(s.projects.len(), 2);
     }
 
@@ -635,7 +726,7 @@ mod tests {
         let first = calls(&s.apply(event("ask.created", None, None)));
         assert_eq!(first.len(), 1);
         assert!(s.apply(event("batch.ready", None, None)).is_empty());
-        assert!(s.apply(event("decision.recorded", None, None)).is_empty());
+        assert_eq!(calls(&s.apply(event("decision.recorded", None, None))).iter().map(|c| c.1.as_str()).collect::<Vec<_>>(), ["attention_policy"]);
         let after = calls(&s.apply(result(&first[0].0, json!({ "batches": [], "asks": [] }))));
         assert_eq!(after.iter().map(|c| c.1.as_str()).collect::<Vec<_>>(), ["asks_list"]);
         assert!(calls(&s.apply(result(&after[0].0, json!({ "batches": [], "asks": [] })))).is_empty());
@@ -739,11 +830,11 @@ mod tests {
                 "machineId": "lab-a", "threadId": "lead-1", "projectId": "p1", "title": "lead", "status": "idle", "headline": "",
                 "latestMessageTail": "", "lastProgressAt": AT, "stale": false, "asOf": AT } }) } else { outcome("p1", Some("lead-1"), "idle") }));
         }
-        assert!(s.poll().is_empty());
+        assert!(s.poll(0).is_empty());
         let id = calls(&s.apply(event("lead.woken", Some("p1"), None)))[0].0.clone();
         s.apply(result(&id, outcome("p1", Some("lead-1"), "working")));
         // The project refresh already asked for the tail; a poll meanwhile doesn't double it.
-        assert!(s.poll().is_empty());
+        assert!(s.poll(0).is_empty());
     }
 
     fn check(id: &str, status: &str, fix: Option<Value>) -> Value {
@@ -800,6 +891,127 @@ mod tests {
         })));
         assert_eq!(s.echo, Some(Echo { text: "This fix is manual. Run gh auth login on the hub.".into(), ok: false }));
         assert!(!s.doctor_fixing("hub/gh_auth"));
+    }
+
+    fn machine_json(id: &str, status: &str, box_key: Option<&str>) -> Value {
+        let mut m = json!({ "machineId": id, "name": id, "tags": [], "status": status, "lastSeenAt": AT, "t3": null, "nodeVersion": "0.0.0" });
+        if let Some(k) = box_key {
+            m["boxPubKey"] = json!(k);
+        }
+        m
+    }
+
+    fn secret_ask(id: &str, sink: &str) -> Ask {
+        serde_json::from_value(json!({ "askId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "kind": "secret",
+            "key": "STRIPE_KEY", "class": "credential", "text": "Stripe key?", "sink": sink, "blocks": "the deploy",
+            "proceededOnRec": false, "state": "open", "batchId": "B1", "number": 1, "createdAt": AT }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_secret_goes_to_its_sink_machine_only_when_that_machine_can_take_it() {
+        let mut s = synced();
+        let machines = [machine_json("lab-a", "online", Some("a2V5")), machine_json("lab-b", "online", None), machine_json("lab-c", "offline", Some("a2V5"))];
+        s.machines = machines.iter().map(|m| serde_json::from_value(m.clone()).unwrap()).collect();
+        assert_eq!(s.secret_target(&secret_ask("A1", "env:lab-a:/w/p1/.env")), Ok(("lab-a".into(), "a2V5".into())));
+        assert_eq!(s.secret_target(&secret_ask("A1", "file:lab-a:/home/x/key")).unwrap().0, "lab-a");
+        assert!(s.secret_target(&secret_ask("A1", "env:lab-b:/w/.env")).unwrap_err().contains("no box key"));
+        assert!(s.secret_target(&secret_ask("A1", "env:lab-c:/w/.env")).unwrap_err().contains("offline"));
+        assert!(s.secret_target(&secret_ask("A1", "env:lab-z:/w/.env")).unwrap_err().contains("doesn't know"));
+        assert!(s.secret_target(&secret_ask("A1", "keychain")).unwrap_err().contains("no valid sink"));
+    }
+
+    #[test]
+    fn submit_secret_sends_the_sealed_value_and_echoes_the_fingerprint() {
+        let mut s = synced();
+        s.asks.insert("A1".into(), secret_ask("A1", "env:lab-a:/w/p1/.env"));
+        let out = s.submit_secret("A1", "lab-a", "c2VhbGVk".into());
+        let ClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
+        assert_eq!((tool.as_str(), input), ("secret_submit", &json!({ "askId": "A1", "sealed": "c2VhbGVk" })));
+        assert!(s.secret_submitting("A1"));
+        assert!(s.submit_secret("A1", "lab-a", "again".into()).is_empty(), "one submit at a time");
+        let refresh = calls(&s.apply(result(id, json!({ "askId": "A1", "fingerprint": "0a1b2c3d" }))));
+        assert_eq!(s.echo, Some(Echo { text: "STRIPE_KEY saved on lab-a, fingerprint 0a1b2c3d".into(), ok: true }));
+        assert_eq!(refresh[0].1, "asks_list");
+
+        let ClientMessage::Call { id, .. } = &s.submit_secret("A1", "lab-a", "c2VhbGVk".into())[0] else { panic!() };
+        s.apply(Incoming::Message(ServerMessage::Error(ErrorFrame {
+            id: Some(id.clone()),
+            code: ErrorCode::MachineOffline,
+            message: "lab-a's node did not take the secret.".into(),
+            fix: None,
+        })));
+        assert_eq!(s.echo, Some(Echo { text: "lab-a's node did not take the secret.".into(), ok: false }));
+    }
+
+    #[test]
+    fn saved_secrets_and_gated_runs_refresh_the_inbox() {
+        let mut s = synced();
+        for kind in ["ask.secret_saved", "gated.ran"] {
+            let out = calls(&s.apply(event(kind, None, None)));
+            assert_eq!(out.iter().map(|c| c.1.as_str()).collect::<Vec<_>>(), ["asks_list"], "{kind}");
+            s.apply(result(&out[0].0, json!({ "batches": [], "asks": [] })));
+        }
+    }
+
+    fn loud(kind: &str, summary: &str, ask: Option<&str>, attention: Attention) -> Incoming {
+        Incoming::Message(ServerMessage::Event(HubEvent {
+            seq: 10,
+            at: AT.into(),
+            kind: kind.into(),
+            machine_id: None,
+            project_id: None,
+            thread_id: None,
+            summary: summary.into(),
+            data: ask.map(|id| json!({ "askId": id })),
+            attention: Some(attention),
+        }))
+    }
+
+    const NOW: i64 = 1_792_231_200_000;
+
+    #[test]
+    fn loud_events_notify_once_the_policy_is_known_unless_answered_first() {
+        let mut s = State::default();
+        s.apply(Incoming::Ready);
+        let out = calls(&s.apply(snapshot(&[], 0)));
+        s.apply(loud("usage.breaker", "lab-a breaker open", None, Attention::Loud));
+        assert_eq!(s.take_notification(NOW), None, "held until the policy is known");
+        s.apply(result(&out[0].0, json!({ "batches": [], "asks": [] })));
+        assert_eq!(out[1].1, "attention_policy");
+        s.apply(result(&out[1].0, json!({ "coalesceSec": 60, "quiet": [] })));
+        assert_eq!(s.take_notification(NOW).unwrap().body, "lab-a breaker open");
+
+        // An ask answered before the window reopens never notifies: the refetch it caused no longer lists it.
+        let fetch = calls(&s.apply(loud("ask.created", "A7 [money] pay: Buy?", Some("A7"), Attention::Urgent)));
+        let asks = fetch.iter().find(|c| c.1 == "asks_list").unwrap();
+        s.apply(result(&asks.0, json!({ "batches": [], "asks": [] })));
+        assert_eq!(s.take_notification(NOW + 60_000), None);
+
+        let fetch = calls(&s.apply(loud("ask.created", "A8 [money] pay: Buy?", Some("A8"), Attention::Urgent)));
+        let asks = fetch.iter().find(|c| c.1 == "asks_list").unwrap();
+        s.apply(result(&asks.0, json!({ "batches": [], "asks": [ask("A8", 1, "open")] })));
+        assert_eq!(s.take_notification(NOW + 60_000).unwrap().body, "A8 [money] pay: Buy?");
+    }
+
+    #[test]
+    fn the_policy_is_fetched_again_on_decisions_and_after_its_last_window() {
+        let mut s = synced();
+        let out = calls(&s.apply(event("decision.recorded", None, None)));
+        let policy = out.iter().find(|c| c.1 == "attention_policy").unwrap().0.clone();
+        s.apply(result(&policy, json!({ "coalesceSec": 1200, "quiet": [{ "from": "2026-10-17T09:00:00.000Z", "to": "2026-10-17T11:00:00.000Z" }] })));
+        assert!(calls(&s.poll(NOW)).is_empty());
+        assert_eq!(calls(&s.poll(NOW + 3_600_000)).iter().map(|c| c.1.as_str()).collect::<Vec<_>>(), ["attention_policy"]);
+    }
+
+    #[test]
+    fn an_older_hub_without_attention_policy_gets_the_default_window() {
+        let mut s = State::default();
+        s.apply(Incoming::Ready);
+        let out = s.apply(snapshot(&[], 0));
+        let policy = calls(&out).into_iter().find(|c| c.1 == "attention_policy").unwrap();
+        s.apply(Incoming::Message(ServerMessage::Error(ErrorFrame { id: Some(policy.0), code: ErrorCode::NotFound, message: "No tool attention_policy.".into(), fix: None })));
+        assert_eq!(s.policy, Some(Policy::fallback()));
     }
 
     #[test]

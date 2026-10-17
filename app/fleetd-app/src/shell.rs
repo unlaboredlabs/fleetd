@@ -3,16 +3,20 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use gpui::{
-    AnyElement, Context, Div, FocusHandle, KeyDownEvent, Keystroke, ScrollDelta, ScrollStrategy, ScrollWheelEvent,
-    SharedString, Stateful, Task, UniformListScrollHandle, Window, div, point, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, ClipboardItem, Context, Div, FocusHandle, KeyDownEvent, Keystroke, ScrollDelta, ScrollStrategy,
+    ScrollWheelEvent, SharedString, Stateful, SystemNotification, Task, UniformListScrollHandle, Window, div, point,
+    prelude::*, px, rgb, uniform_list,
 };
+use zeroize::Zeroize;
 
 use crate::bench::{self, Mode, Probe};
 use crate::client;
 use crate::fake::{self, LogKind, LogStream};
 use crate::keychain::{self, Saved};
+use crate::notify::unix_secs;
 use crate::protocol::*;
-use crate::state::{Conn, ProjectKey, ProjectRow, State};
+use crate::seal::{self, Secret};
+use crate::state::{Conn, Echo, ProjectKey, ProjectRow, State};
 
 const UI_FONT: &str = "IBM Plex Sans";
 const MONO_FONT: &str = "Lilex";
@@ -84,6 +88,10 @@ pub struct Shell {
     hub: Option<HubLink>,
     /// Shown above the screen, e.g. that the key could not be saved to the keychain.
     note: Option<String>,
+    /// The secret ask whose masked field has the keyboard, and what has been typed into it.
+    secret: Option<(String, Secret)>,
+    /// The step command last copied, so its button says so.
+    copied: Option<String>,
     log: Vec<LogRow>,
     log_version: u64,
     log_scroll: UniformListScrollHandle,
@@ -107,6 +115,8 @@ impl Shell {
             form: ConnectForm { url: "http://127.0.0.1:4790".into(), key: String::new(), field: Field::Url, error: None },
             hub: None,
             note: None,
+            secret: None,
+            copied: None,
             log: Vec::new(),
             log_version: 0,
             log_scroll,
@@ -117,9 +127,37 @@ impl Shell {
         };
         match Mode::from_env() {
             Some(mode) => shell.start_bench(mode, window, cx),
-            None => shell.load_saved(cx),
+            None => {
+                shell.on_notification_click(window, cx);
+                shell.load_saved(cx);
+            }
         }
         shell
+    }
+
+    /// Clicking a "needs you" notification brings the window forward on the inbox.
+    fn on_notification_click(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let shell = cx.entity().downgrade();
+        let handle = window.window_handle();
+        cx.on_system_notification_response(move |_, cx| {
+            cx.activate(true);
+            handle.update(cx, |_, window, _| window.activate_window()).ok();
+            shell
+                .update(cx, |this, cx| {
+                    this.go(Screen::Inbox);
+                    cx.notify();
+                })
+                .ok();
+        });
+    }
+
+    /// Posts the notification the hub's attention rules and policy allow now, if any.
+    fn notify_if_due(&mut self, cx: &mut App) {
+        let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+        if let Some(n) = self.state.take_notification(now_ms) {
+            // One tag: a newer notification replaces an older one still on screen.
+            cx.show_system_notification(SystemNotification { tag: "fleetd-needs-you".into(), title: n.title.into(), body: n.body.into(), actions: Vec::new() });
+        }
     }
 
     // ---- hub link ------------------------------------------------------------------------
@@ -156,6 +194,7 @@ impl Shell {
                     let out = this.state.apply(incoming);
                     this.send(out);
                     this.after_state_change();
+                    this.notify_if_due(cx);
                     cx.notify();
                 });
                 if ok.is_err() {
@@ -166,9 +205,11 @@ impl Shell {
         let poll = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(POLL_EVERY).await;
-                let ok = this.update(cx, |this, _| {
-                    let out = this.state.poll();
+                let ok = this.update(cx, |this, cx| {
+                    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+                    let out = this.state.poll(now_ms);
                     this.send(out);
+                    this.notify_if_due(cx);
                 });
                 if ok.is_err() {
                     return;
@@ -220,6 +261,7 @@ impl Shell {
 
     fn disconnect(&mut self, cx: &mut Context<Self>) {
         self.hub = None;
+        self.secret = None;
         self.state = State::default();
         self.screen = Screen::Connect;
         self.form.field = Field::Key;
@@ -240,7 +282,12 @@ impl Shell {
             self.form.error = Some(message.clone());
             self.form.field = Field::Key;
             self.hub = None;
+            self.secret = None;
             self.screen = Screen::Connect;
+        }
+        // The ask was answered or withdrawn elsewhere: drop (and wipe) what was typed for it.
+        if self.secret.as_ref().is_some_and(|(id, _)| !self.state.asks.get(id).is_some_and(|a| a.state == AskState::Open)) {
+            self.secret = None;
         }
         let version = self.state.detail.as_ref().map_or(0, |d| d.version);
         if version != self.log_version {
@@ -260,6 +307,9 @@ impl Shell {
         }
         if screen != Screen::Project {
             self.state.close_project();
+        }
+        if screen != Screen::Inbox {
+            self.secret = None;
         }
         if screen == Screen::Machines && self.screen != Screen::Machines {
             let out = self.state.open_doctor();
@@ -298,8 +348,16 @@ impl Shell {
                 "2" => self.go(Screen::Projects),
                 "3" => self.go(Screen::Machines),
                 "v" => {
-                    let text = cx.read_from_clipboard().and_then(|c| c.text()).unwrap_or_default();
-                    self.type_text(text.trim());
+                    let mut text = cx.read_from_clipboard().and_then(|c| c.text()).unwrap_or_default();
+                    match &mut self.secret {
+                        Some((_, secret)) => {
+                            if !secret.push_str(text.trim_end_matches(['\n', '\r'])) {
+                                self.state.echo = Some(Echo { text: format!("A secret is at most {} bytes.", seal::SECRET_MAX_BYTES), ok: false });
+                            }
+                            text.zeroize();
+                        }
+                        None => self.type_text(text.trim()),
+                    }
                 }
                 _ => return,
             }
@@ -320,6 +378,24 @@ impl Shell {
                 }
                 _ => match printable(ks) {
                     Some(ch) => self.type_text(ch),
+                    None => return,
+                },
+            }
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+        if let Some((_, secret)) = &mut self.secret {
+            match key {
+                "enter" => self.submit_secret(),
+                "escape" => self.secret = None,
+                "backspace" => secret.pop(),
+                _ => match printable(ks) {
+                    Some(ch) => {
+                        if !secret.push_str(ch) {
+                            self.state.echo = Some(Echo { text: format!("A secret is at most {} bytes.", seal::SECRET_MAX_BYTES), ok: false });
+                        }
+                    }
                     None => return,
                 },
             }
@@ -373,6 +449,24 @@ impl Shell {
     fn type_text(&mut self, text: &str) {
         let text: String = text.chars().filter(|c| !c.is_control()).collect();
         if self.screen == Screen::Connect { self.field_mut().push_str(&text) } else { self.bar.push_str(&text) }
+    }
+
+    /// Seals what was typed to the sink machine's key and sends only the ciphertext; the typed value is
+    /// wiped when `secret` drops at the end of this call, whatever happens.
+    fn submit_secret(&mut self) {
+        let Some((ask_id, secret)) = self.secret.take() else { return };
+        if secret.is_empty() {
+            self.secret = Some((ask_id, secret));
+            return;
+        }
+        let Some(ask) = self.state.asks.get(&ask_id) else { return };
+        match self.state.secret_target(ask).and_then(|(machine, key)| Ok((machine, seal::seal(&key, secret.bytes())?))) {
+            Ok((machine, sealed)) => {
+                let out = self.state.submit_secret(&ask_id, &machine, sealed);
+                self.send(out);
+            }
+            Err(e) => self.state.echo = Some(Echo { text: e, ok: false }),
+        }
     }
 
     fn quick_reply(&mut self, batch_id: String, raw: String, cx: &mut Context<Self>) {
@@ -584,14 +678,12 @@ impl Shell {
                     .child(reply("Approve".into(), format!("{number} go"), cx))
                     .child(reply("Reject".into(), format!("{number} no"), cx));
             }
-            // Secrets are sealed in a browser to the node's key; this app never handles the value.
             AskKind::Secret => buttons = buttons.child(reply("decline".into(), format!("{number} no"), cx)),
             _ => {
                 if ask.kind == AskKind::Do {
                     buttons = buttons.child(reply("✓ done".into(), format!("{number} done"), cx));
-                } else {
-                    let rec = ask.recommendation.clone().unwrap_or_default();
-                    buttons = buttons.child(reply(format!("go: {}", clip(&rec, 40)), format!("{number} go"), cx));
+                } else if let Some(rec) = &ask.recommendation {
+                    buttons = buttons.child(reply(format!("go: {}", clip(rec, 40)), format!("{number} go"), cx));
                 }
                 for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
                     let letter = (b'a' + i as u8) as char;
@@ -622,9 +714,26 @@ impl Shell {
             )
             .child(div().whitespace_normal().child(ask.text.clone()));
         for (i, step) in ask.steps.iter().flatten().enumerate() {
-            card = card.child(muted(format!("{}. [{}] {}", i + 1, step.place, step.text)));
+            card = card.child(div().whitespace_normal().child(format!("{}. {}", i + 1, step.text)).child(muted(format!("on {}", step.place))));
             if let Some(command) = &step.command {
-                card = card.child(div().pl_4().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()));
+                let copied = self.copied.as_deref() == Some(command.as_str());
+                let to_copy = command.clone();
+                card = card.child(
+                    div()
+                        .pl_4()
+                        .flex()
+                        .gap_2()
+                        .items_center()
+                        .child(div().flex_1().min_w_0().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()))
+                        .child(button(SharedString::from(format!("{}-copy-{i}", ask.ask_id)), if copied { "Copied" } else { "Copy" }, cx.listener(move |this, _, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(to_copy.clone()));
+                            this.copied = Some(to_copy.clone());
+                            cx.notify();
+                        }))),
+                );
+            }
+            if let Some(expect) = &step.expect {
+                card = card.child(div().pl_4().child(muted(format!("expect: {expect}"))));
             }
         }
         if let Some(gated) = &ask.gated {
@@ -634,16 +743,64 @@ impl Shell {
                 .child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(argv))
                 .child(muted(format!("in {}", gated.cwd.as_deref().unwrap_or("the project workspace"))))
                 .child(muted(format!("{} · {} · up to {} min", gated.class.as_str(), gated.reason, gated.timeout_sec.div_ceil(60))));
+            let env: Vec<String> = gated.secret_env.iter().flatten().map(|e| format!("{} ← {}", e.name, e.secret_key)).collect();
+            if !env.is_empty() {
+                card = card.child(muted(format!("secret env: {}", env.join(", "))));
+            }
         }
-        if let (AskKind::Secret, Some(sink)) = (ask.kind, &ask.sink) {
-            card = card
-                .child(muted(format!("{} → {sink}", ask.key)))
-                .child(div().text_color(rgb(Theme::YELLOW)).child("Open on phone or web to enter"));
+        if ask.kind == AskKind::Secret {
+            card = card.child(self.secret_entry(ask, cx));
         }
         if let Some(evidence) = &ask.evidence {
             card = card.child(muted(evidence.clone()));
         }
         card.child(buttons)
+    }
+
+    /// Masked entry: the value lives only in a self-wiping buffer, and is sealed to the sink machine's key
+    /// here before anything is sent.
+    fn secret_entry(&self, ask: &Ask, cx: &mut Context<Self>) -> Div {
+        let mut col = div().flex().flex_col().gap_1().child(muted(format!("{} → {}", ask.key, ask.sink.as_deref().unwrap_or("?"))));
+        let machine = match self.state.secret_target(ask) {
+            Ok((machine, _)) => machine,
+            Err(reason) => return col.child(div().text_color(rgb(Theme::YELLOW)).whitespace_normal().child(reason)),
+        };
+        let typed = self.secret.as_ref().filter(|(id, _)| *id == ask.ask_id).map(|(_, s)| s.chars());
+        let sending = self.state.secret_submitting(&ask.ask_id);
+        let open = ask.ask_id.clone();
+        let field = div()
+            .id(SharedString::from(format!("{}-secret", ask.ask_id)))
+            .flex_1()
+            .h(px(30.))
+            .px_2()
+            .flex()
+            .items_center()
+            .border_1()
+            .rounded_sm()
+            .border_color(rgb(if typed.is_some() { Theme::ACCENT } else { Theme::BORDER }))
+            .bg(rgb(Theme::BG))
+            .font_family(MONO_FONT)
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if this.secret.as_ref().is_none_or(|(id, _)| *id != open) {
+                    this.secret = Some((open.clone(), Secret::default()));
+                }
+                cx.notify();
+            }))
+            .child(match typed {
+                Some(0) => div().text_color(rgb(Theme::MUTED)).child("Type or paste the value, Enter seals and sends, Esc cancels"),
+                Some(n) => div().child("•".repeat(n.min(40))),
+                None => div().text_color(rgb(Theme::MUTED)).child("Click to enter the value"),
+            })
+            .when(typed.is_some(), |d| d.child(caret()));
+        let send = button(SharedString::from(format!("{}-seal", ask.ask_id)), if sending { "Sending…" } else { "Seal & send" }, cx.listener(|this, _, _, cx| {
+            this.submit_secret();
+            cx.notify();
+        }));
+        col = col
+            .child(div().flex().gap_2().items_center().child(field).when(typed.is_some_and(|n| n > 0), |d| d.child(send)))
+            .child(muted(format!("Encrypted here to {machine}'s key; the hub never sees the value.")));
+        col
     }
 
     fn projects_screen(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -895,7 +1052,7 @@ impl Shell {
                 .child(div().text_color(rgb(color)).child("●"))
                 .child(div().w(px(180.)).flex_none().font_family(MONO_FONT).text_size(px(12.)).child(check.id.clone()))
                 .child(div().flex_1().min_w_0().whitespace_normal().child(check.message.clone()));
-            if let Some(fix) = &check.fix {
+            if let Some(fix) = check.fix.as_ref().filter(|_| check.status != DoctorStatus::Ok) {
                 let mut fix_col = div().w(px(320.)).flex_none().flex().flex_col().gap_1().child(muted(fix.label.clone()));
                 if let Some(command) = fix.command.as_ref().filter(|_| fix.kind == DoctorFixKind::Manual) {
                     fix_col = fix_col.child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()));
@@ -1106,19 +1263,6 @@ fn clock(iso: &str) -> &str {
     iso.get(11..19).unwrap_or(iso)
 }
 
-/// Seconds since the Unix epoch for "YYYY-MM-DDTHH:MM:SS[.fff]Z".
-fn unix_secs(iso: &str) -> Option<i64> {
-    let n = |r: std::ops::Range<usize>| iso.get(r)?.parse::<i64>().ok();
-    let (y, mo, d, h, mi, s) = (n(0..4)?, n(5..7)?, n(8..10)?, n(11..13)?, n(14..16)?, n(17..19)?);
-    // Days from civil (H. Hinnant).
-    let y = if mo <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (mo + if mo > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some((era * 146_097 + doe - 719_468) * 86_400 + h * 3600 + mi * 60 + s)
-}
-
 /// "4m ago"-style age; computed at render, which only happens on change, so it never ticks by itself.
 fn ago(iso: &str) -> String {
     let Some(then) = unix_secs(iso) else { return iso.to_string() };
@@ -1314,14 +1458,6 @@ fn log_color(kind: LogKind) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn unix_secs_parses_hub_timestamps() {
-        assert_eq!(unix_secs("1970-01-01T00:00:00.000Z"), Some(0));
-        assert_eq!(unix_secs("2026-10-17T10:00:00.000Z"), Some(1_792_231_200));
-        assert_eq!(unix_secs("2024-02-29T23:59:59Z"), Some(1_709_251_199));
-        assert_eq!(unix_secs("soon"), None);
-    }
 
     #[test]
     fn tail_rows_split_messages_and_show_action_output() {

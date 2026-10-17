@@ -167,6 +167,9 @@ fn tool_inputs_and_outputs_match_the_contracts() {
     tool_io!("inbox_reply", InboxReplyInput, InboxReplyOutput);
     tool_io!("doctor_list", DoctorListInput, DoctorListOutput);
     tool_io!("doctor_fix", DoctorFixInput, DoctorFixOutput);
+    tool_io!("secret_submit", SecretSubmitInput, SecretSubmitOutput);
+    // Its input is `{}`, which the schema can only state as "not null".
+    check::<AttentionPolicyOutput>(&doc, &doc.property("attention_policy.output").clone(), "attention_policy.output");
 }
 
 #[test]

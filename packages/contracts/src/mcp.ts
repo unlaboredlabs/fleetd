@@ -574,6 +574,18 @@ export const DoctorFixOutput = Schema.Struct({
   ...resultFields,
 });
 
+// attention_policy: when a client may interrupt the human with an event marked `attention`. Quiet windows are absolute
+// times the hub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.
+export const AttentionPolicyInput = Schema.Struct({});
+export const QuietWindow = Schema.Struct({ from: Timestamp, to: Timestamp });
+export const AttentionPolicyOutput = Schema.Struct({
+  /** At most one notification per this many seconds; what arrives meanwhile is folded into the next. */
+  coalesceSec: Schema.Int.check(Schema.isGreaterThan(0)),
+  /** Only "urgent" events notify inside these; empty when quiet hours are off. Ask again after the last one ends. */
+  quiet: Schema.Array(QuietWindow).check(Schema.isMaxLength(2)),
+  ...resultFields,
+});
+
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
   fleetd_status: { scope: "read", input: FleetdStatusInput, output: FleetdStatusOutput },
@@ -621,6 +633,7 @@ export const McpTools = {
   push_unsubscribe: { scope: "read", input: PushUnsubscribeInput, output: PushUnsubscribeOutput },
   push_vapid_key: { scope: "read", input: PushVapidKeyInput, output: PushVapidKeyOutput },
   doctor_list: { scope: "read", input: DoctorListInput, output: DoctorListOutput },
+  attention_policy: { scope: "read", input: AttentionPolicyInput, output: AttentionPolicyOutput },
   // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
   doctor_fix: { scope: "operate", input: DoctorFixInput, output: DoctorFixOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;

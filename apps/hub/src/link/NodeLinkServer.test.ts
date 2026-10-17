@@ -16,6 +16,7 @@ import * as Auth from "../auth/Auth.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
+import { thread } from "../api/testHub.ts";
 import { type LeadCaller, type LeadCallHandler, LeadCallRefused } from "./LeadCalls.ts";
 import { type LinkExecutors, make } from "./NodeLinkServer.ts";
 
@@ -288,6 +289,27 @@ describe("NodeLinkServer handshake", () => {
 });
 
 describe("NodeLinkServer heartbeat", () => {
+  it("marks machine.offline for attention only while runs were going there", () =>
+    runTest(
+      Effect.gen(function* () {
+        const h = yield* harness();
+        const id = identity();
+        yield* h.enroll(id.pubKey);
+        const goSilent = Effect.gen(function* () {
+          const link = yield* connect(h.server);
+          yield* link.node.send(hello(id, link.nonce));
+          expect((yield* link.node.next).t).toBe("welcome");
+          yield* TestClock.adjust("45 seconds");
+          yield* link.node.closed;
+        });
+        yield* goSilent;
+        yield* h.store.threads.upsert(thread("lab-a", "p1", "t1", { status: "running" }));
+        yield* goSilent;
+        const offline = (yield* h.events).filter((e) => e.type === "machine.offline");
+        expect(offline.map((e) => e.attention)).toEqual([undefined, "loud"]);
+      }),
+    ));
+
   it("marks a machine offline once after 45 s of silence, detaches it, and announces it again on reconnect", () =>
     runTest(
       Effect.gen(function* () {

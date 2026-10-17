@@ -207,11 +207,14 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
       const at = yield* nowIso;
       const seconds = Duration.toSeconds(silenceTimeout);
       yield* writeStatus(machineId, at, "offline");
+      // It needs the human only while runs were going there: nobody is watching them now.
+      const running = (yield* store.threads.listRunning()).some((t) => t.machineId === machineId);
       yield* eventLog.append({
         at,
         type: "machine.offline",
         machineId,
         summary: `${machineId} went offline: no word from its node for ${seconds} s`,
+        ...(running ? { attention: "loud" as const } : {}),
       });
       yield* executors.detach(machineId).pipe(bestEffort("detach executor", machineId));
       const live = links.get(machineId);

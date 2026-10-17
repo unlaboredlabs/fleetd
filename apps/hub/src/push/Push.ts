@@ -1,11 +1,11 @@
-// Web Push to the human's paired devices: only loud items (push/rules.ts), at most one per 20 minutes with the rest
+// Web Push to the human's paired devices: only events the hub marked for attention (attention/rules.ts), at most one per 20 minutes with the rest
 // folded in as "+N more", held during quiet hours (`policy.quiet_hours`, 23:00-08:00 by default) unless they are money or irreversible. Each push is one
 // line with no secret in it; `push.sent` records how many items and devices, never the text.
 import path from "node:path";
 import {
   type AgentKeyInfo,
   type AskId,
-  type HubEventType,
+  type HubEvent,
   type McpToolError,
   type PushSubscribeInput as PushSubscribeInputSchema,
 } from "@fleetd/contracts";
@@ -16,14 +16,14 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
-import { hubZone, isZone, POLICY_TZ_KEY } from "../digests/HumanDigests.ts";
+import { quietPolicy } from "../attention/policy.ts";
+import { quietUntil } from "../attention/rules.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { isoAt } from "../ledger/LedgerRepo.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
-import * as HubStore from "../store/HubStore.ts";
-import { type LoudItem, loudAsk, loudEvent, plan, pushLine, QUIET_HOURS_KEY, quietHours, quietUntil } from "./rules.ts";
+import { askLine, eventLine, type LoudItem, plan, pushLine } from "./rules.ts";
 import { pushRequest, type PushRequest, type VapidKeys, vapidKeysFromFile } from "./webPush.ts";
 
 type PushSubscribeInput = typeof PushSubscribeInputSchema.Type;
@@ -76,15 +76,12 @@ const humanOnly = (caller: AgentKeyInfo) =>
         }),
       );
 
-const WATCHED: ReadonlyArray<HubEventType> = ["ask.created", "usage.breaker", "machine.offline"];
-
 export const make = (options: { readonly keys: VapidKeys; readonly post: PushPost }) =>
   Effect.gen(function* () {
     const { db } = yield* HubDb.HubDb;
     const events = yield* EventLog.EventLog;
     const asks = yield* Asks;
     const decisions = yield* Decisions;
-    const store = yield* HubStore.HubStore;
     // Rings when the follower adds items; the sender loop also wakes on its own at the next window or quiet end.
     const signal = yield* Queue.dropping<void>(1);
 
@@ -103,12 +100,7 @@ export const make = (options: { readonly keys: VapidKeys; readonly post: PushPos
     let pending: Array<LoudItem> = [];
     let lastSentMs: number | undefined;
 
-    const quietEnd = (nowMs: number) =>
-      Effect.map(decisions.list({ scope: { kind: "global" }, limit: 500 }), (global) => {
-        const value = (key: string) => global.find((d) => d.key === key)?.value.trim();
-        const tz = value(POLICY_TZ_KEY);
-        return quietUntil(nowMs, tz !== undefined && isZone(tz) ? tz : hubZone(), quietHours(value(QUIET_HOURS_KEY)));
-      });
+    const quietEnd = (nowMs: number) => Effect.map(quietPolicy(decisions), ({ tz, quiet }) => quietUntil(nowMs, tz, quiet));
 
     /** An ask answered or withdrawn since it was queued no longer needs the human. */
     const stillLoud = (item: LoudItem) =>
@@ -153,23 +145,20 @@ export const make = (options: { readonly keys: VapidKeys; readonly post: PushPos
       }
     });
 
-    const loudFrom = Effect.fnUntraced(function* (event: { readonly type: HubEventType; readonly machineId?: string; readonly summary: string; readonly data?: unknown }) {
-      if (event.type === "ask.created") {
-        const data = event.data as { readonly askId?: AskId; readonly reopened?: boolean } | undefined;
-        const ask = data?.askId === undefined ? undefined : yield* asks.get(data.askId);
-        return ask === undefined ? undefined : loudAsk(ask, data?.reopened === true);
-      }
-      if (event.type === "usage.breaker") return loudEvent(event.summary);
-      // machine.offline: loud only while that machine had runs going.
-      const running = (yield* store.threads.listRunning()).filter((t) => t.machineId === event.machineId);
-      return running.length === 0 ? undefined : loudEvent(event.summary);
+    const loudFrom = Effect.fnUntraced(function* (event: HubEvent) {
+      if (event.attention === undefined) return undefined;
+      const breaksQuiet = event.attention === "urgent";
+      if (event.type !== "ask.created") return { line: eventLine(event.summary), breaksQuiet } satisfies LoudItem;
+      const data = event.data as { readonly askId?: AskId; readonly reopened?: boolean } | undefined;
+      const ask = data?.askId === undefined ? undefined : yield* asks.get(data.askId);
+      return ask === undefined ? undefined : ({ line: askLine(ask, data?.reopened === true), breaksQuiet, askId: ask.askId } satisfies LoudItem);
     });
 
     let cursor = yield* events.head();
     yield* Effect.forkScoped(
       Effect.forever(
         Effect.gen(function* () {
-          const page = yield* events.wait({ cursor, types: WATCHED, timeoutSec: 3600 });
+          const page = yield* events.wait({ cursor, timeoutSec: 3600 });
           cursor = page.cursor;
           let added = false;
           for (const event of page.events) {

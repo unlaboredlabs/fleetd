@@ -179,18 +179,23 @@ Prerequisites:
 
 ```sh
 git clone https://github.com/wynn-dev/fleetd ~/src/fleetd && cd ~/src/fleetd && git checkout 9260d10
-cd app && cargo build --release -p fleetd-app     # several minutes the first time
+app/macos-bundle.sh                               # builds release (several minutes the first time) into app/target/release/fleetd.app
 # make a key for this device on forge, printed once:
 ssh forge 'node ~/opt/fleetd/apps/cli/dist/bin.js hub key create --human --name mac'
-open -a Terminal app/target/release/fleetd-app    # or run it from a terminal
+open app/target/release/fleetd.app
 ```
 
 Wynn's part:
-1. In the app's connect screen, enter hub URL `https://forge.tailb10092.ts.net` and the `--human` key.
-2. macOS asks once to store the key in the Keychain. Allow it.
+1. In the app's connect screen, enter hub URL `https://forge.tailb10092.ts.net` and the `--human` key. A human key
+   is how the hub records answers, approvals and secrets as Wynn's; there is no other pairing.
+2. macOS asks once to store the key in the Keychain, and once to allow notifications. Allow both.
 
-The app then shows Inbox, Projects, Machines and the Doctor. There is no `.app` bundle or installer yet; it runs as
-a binary.
+The app then shows Inbox, Projects, Machines and the Doctor. Every ask is answered there: one click or the reply box
+for decisions, Approve/Reject on the exact stored command, Copy and ✓ done on checklists, and masked entry for
+secrets, which the app seals to the target machine's key before sending. While it runs, things only Wynn can unblock
+(blocking money, credential and irreversible asks, unrun approvals, usage breakers, a machine down with work running)
+raise a macOS notification, at most one per 20 minutes and only money/irreversible ones during quiet hours. Clicking
+one opens the inbox. Notifications need the `fleetd.app` bundle; the bare binary runs without them.
 
 ## Step 5: pair the phone (Wynn, about 2 min)
 

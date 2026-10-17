@@ -121,7 +121,15 @@ contract! {
         pub summary: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub data: Option<Value>,
+        /// Set when only the human can unblock this (the hub's attention rules); drives notifications.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub attention: Option<Attention>,
     }
+}
+
+literals! {
+    /// `Urgent` notifies even during quiet hours; `Loud` waits them out.
+    pub enum Attention { Loud = "loud", Urgent = "urgent" }
 }
 
 literals! {
@@ -637,6 +645,44 @@ contract! {
         pub source: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub by: Option<String>,
+    }
+}
+
+contract! {
+    pub struct SecretSubmitInput {
+        pub ask_id: String,
+        /// Standard base64 of a libsodium sealed box to the sink machine's `boxPubKey`.
+        pub sealed: String,
+    }
+}
+tool!(SecretSubmitInput => SecretSubmitOutput, "secret_submit");
+
+contract! {
+    pub struct SecretSubmitOutput {
+        pub ask_id: String,
+        /// sha256 prefix of the plaintext, computed by the node.
+        pub fingerprint: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub next: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub truncated: Option<bool>,
+    }
+}
+
+contract! { pub struct AttentionPolicyInput {} }
+tool!(AttentionPolicyInput => AttentionPolicyOutput, "attention_policy");
+
+contract! { pub struct QuietWindow { pub from: String, pub to: String } }
+
+contract! {
+    pub struct AttentionPolicyOutput {
+        pub coalesce_sec: u64,
+        /// Inside these only urgent events notify.
+        pub quiet: Vec<QuietWindow>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub next: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub truncated: Option<bool>,
     }
 }
 

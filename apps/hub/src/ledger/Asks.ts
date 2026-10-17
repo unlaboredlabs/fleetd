@@ -7,6 +7,7 @@ import {
   isHubAskKey,
   secretEnvName,
   type Ask,
+  type Attention,
   type CheckSpec,
   type GatedRunSpec,
   type AskId,
@@ -28,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as FiberHandle from "effect/FiberHandle";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import { askAttention } from "../attention/rules.ts";
 import * as EventLog from "../store/EventLog.ts";
 import {
   type LedgerError,
@@ -172,6 +174,8 @@ export const validateAsk = (input: AskInput): LedgerError | undefined => {
 /** Money, credential and irreversible asks that hold a step back skip the quiet window. */
 const isUrgent = (ask: Ask) => ask.class !== "product" && ask.blocks !== "nothing";
 
+const attentionField = (attention: Attention | undefined) => (attention === undefined ? {} : { attention });
+
 const projectFields = (ref: ProjectRef | undefined) => (ref === undefined ? {} : { machineId: ref.machineId, projectId: ref.projectId });
 
 export const batchReadyEvent = (stored: StoredBatch, nowMs: number): Omit<HubEvent, "seq"> => ({
@@ -237,6 +241,7 @@ const make = Effect.gen(function* () {
         ...projectFields(ask.projectRef),
         summary: summary.slice(0, 200),
         data: { askId: ask.askId, key: ask.key, class: ask.class, kind: ask.kind, batchId: ask.batchId, number: ask.number, ...extra },
+        ...attentionField(askAttention(ask, extra.reopened === true)),
       });
       if (created.publishedNow) {
         yield* FiberHandle.clear(timer);

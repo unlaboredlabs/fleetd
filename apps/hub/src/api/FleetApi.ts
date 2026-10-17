@@ -26,6 +26,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { Approvals } from "../approvals/Approvals.ts";
+import { quietPolicy } from "../attention/policy.ts";
+import { COALESCE_MS, quietWindows } from "../attention/rules.ts";
+import { isoAt } from "../ledger/LedgerRepo.ts";
 import { Push } from "../push/Push.ts";
 import * as Auth from "../auth/Auth.ts";
 import * as ClaimRecords from "../checks/ClaimRecords.ts";
@@ -113,6 +116,7 @@ export const IMPLEMENTED_TOOLS = [
   "train_freeze",
   "doctor_list",
   "doctor_fix",
+  "attention_policy",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
@@ -1021,6 +1025,19 @@ const make = Effect.gen(function* () {
           : failing.length > 0
             ? "Each failing check names the command that fixes it."
             : "Every check passes. rerun: true runs them now; the hub also runs them every 15 minutes and emits doctor.changed.",
+      };
+    }),
+
+    attention_policy: Effect.fnUntraced(function* () {
+      const { tz, quiet } = yield* quietPolicy(decisions);
+      const windows = quietWindows(yield* Clock.currentTimeMillis, tz, quiet);
+      return {
+        coalesceSec: COALESCE_MS / 1000,
+        quiet: windows.map((w) => ({ from: isoAt(w.fromMs), to: isoAt(w.toMs) })),
+        next:
+          windows.length === 0
+            ? "Quiet hours are off (policy.quiet_hours). Notify on events with attention, at most once per coalesceSec."
+            : "Inside a quiet window only attention \"urgent\" events notify; hold \"loud\" ones until it ends. Call again after the last window ends or on decision.recorded.",
       };
     }),
 
