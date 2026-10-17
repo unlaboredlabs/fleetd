@@ -271,6 +271,18 @@ pub fn build_on(
     )?;
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let ops = crate::hub::usage::wire::build(&config, clock.clone());
+    let train_host = Arc::new(crate::hub::train::hub_host::HubHost {
+        clock: clock.clone(),
+        events: events.clone(),
+        store: store.clone(),
+    });
+    let (train, reviews) = crate::hub::reviews::build(
+        train_host,
+        clock.clone(),
+        db.clone(),
+        Arc::new(crate::hub::train::github::SystemGh),
+        crate::hub::train::TrainOptions::default(),
+    );
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -303,6 +315,8 @@ pub fn build_on(
         doctor: ops.doctor,
         retro: ops.retro,
         approvals: ops.approvals,
+        train,
+        reviews,
     });
     checks.ports.bind(&hub);
     Ok(hub)
@@ -328,6 +342,16 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::checks::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));
+    // The train and reviews spawn their own tasks (a repo's loop starts on its first enqueue); this one stops them.
+    hub.train.start();
+    let reviews = hub.reviews.start();
+    let (shutdown, train) = (hub.shutdown.clone(), hub.train.clone());
+    let stopper = tokio::spawn(async move {
+        shutdown.wait().await;
+        train.stop();
+    });
+    loops.push(reviews);
+    loops.push(stopper);
     loops
 }
 

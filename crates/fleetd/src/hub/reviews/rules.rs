@@ -1,0 +1,582 @@
+//! Review tiers, the readiness gate, and the text reviewers and authors get. Pure; the gate feeds them the Change, its
+//! review tasks and what those recorded.
+use std::collections::{HashMap, HashSet};
+
+use crate::hub::train::contract::{Change, ReviewRule, Tier, tier_str};
+use crate::hub::train::host::{PlaybookView, ProviderView, TaskView};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ReviewRole {
+    Reviewer,
+    Verifier,
+}
+
+impl ReviewRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReviewRole::Reviewer => "reviewer",
+            ReviewRole::Verifier => "verifier",
+        }
+    }
+    pub fn parse(s: &str) -> Self {
+        if s == "verifier" {
+            ReviewRole::Verifier
+        } else {
+            ReviewRole::Reviewer
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReviewProvider {
+    Claude,
+    Codex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlannedReview {
+    pub role: ReviewRole,
+    pub provider: ReviewProvider,
+}
+
+const fn rule(reviewers: i64, verifier: bool, plan_first: bool) -> ReviewRule {
+    ReviewRule {
+        reviewers,
+        verifier,
+        plan_first,
+    }
+}
+
+/// Without a pinned playbook. S: none. M: one reviewer. L: two reviewers plus a verifier.
+pub const CODED_RULES: [ReviewRule; 3] = [
+    rule(0, false, false),
+    rule(1, false, false),
+    rule(2, true, true),
+];
+
+fn tier_index(tier: Tier) -> usize {
+    match tier {
+        Tier::S => 0,
+        Tier::M => 1,
+        Tier::L => 2,
+    }
+}
+
+/// The pinned playbook's `reviewRules` for the tier, else the coded ones.
+pub fn rule_for(tier: Tier, playbook: Option<&PlaybookView>) -> ReviewRule {
+    playbook.map_or(CODED_RULES, |p| p.review_rules)[tier_index(tier)]
+}
+
+/// The rule's reviewers from fresh sessions, the second on Codex when there is one, plus its verifier.
+pub fn review_plan(rule: &ReviewRule, codex_available: bool) -> Vec<PlannedReview> {
+    let mut plan: Vec<PlannedReview> = (0..rule.reviewers)
+        .map(|i| PlannedReview {
+            role: ReviewRole::Reviewer,
+            provider: if i == 1 && codex_available {
+                ReviewProvider::Codex
+            } else {
+                ReviewProvider::Claude
+            },
+        })
+        .collect();
+    if rule.verifier {
+        plan.push(PlannedReview {
+            role: ReviewRole::Verifier,
+            provider: ReviewProvider::Claude,
+        });
+    }
+    plan
+}
+
+/// Nothing to review: the Change may be taken as soon as it is enqueued.
+pub fn needs_no_review(rule: &ReviewRule) -> bool {
+    rule.reviewers == 0 && !rule.verifier
+}
+
+/// The planned reviews not yet spawned for this patch, given the roles already spawned for it.
+pub fn missing_reviews(plan: &[PlannedReview], spawned: &[ReviewRole]) -> Vec<PlannedReview> {
+    let mut left: HashMap<ReviewRole, usize> = HashMap::new();
+    for role in spawned {
+        *left.entry(*role).or_default() += 1;
+    }
+    plan.iter()
+        .filter(|p| match left.get_mut(&p.role) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        })
+        .copied()
+        .collect()
+}
+
+/// A recorded verdict of one of the Change's review tasks, with its role.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleReview {
+    pub task_id: String,
+    pub role: ReviewRole,
+    pub patch_id: String,
+    pub blocking: i64,
+    /// Verifiers only: their task ended with commands run, so the verdict rests on receipts.
+    pub receipts: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Gate {
+    pub ready: bool,
+    /// Not ready because of blocking findings: only a new head moves it.
+    pub waiting_for_head: bool,
+    pub why: String,
+}
+
+fn ready(why: String) -> Gate {
+    Gate {
+        ready: true,
+        waiting_for_head: false,
+        why,
+    }
+}
+
+fn not_ready(waiting_for_head: bool, why: String) -> Gate {
+    Gate {
+        ready: false,
+        waiting_for_head,
+        why,
+    }
+}
+
+/// The rule is satisfied for `patch_id` when its required clean verdicts are bound to exactly that patch: its number
+/// of distinct reviewers, plus a verifier with receipts when it has one. Any blocking verdict on the patch holds it
+/// until a new head changes the patch. `waived` is set when the polish-loop rule ended review for this patch.
+pub fn gate(
+    tier: Tier,
+    rule: &ReviewRule,
+    patch_id: Option<&str>,
+    reviews: &[RoleReview],
+    waived: Option<&str>,
+) -> Gate {
+    if needs_no_review(rule) {
+        return ready(format!("tier {} needs no review", tier_str(tier)));
+    }
+    let Some(patch_id) = patch_id else {
+        return not_ready(false, "the patch id is not known yet".into());
+    };
+    let current: Vec<&RoleReview> = reviews.iter().filter(|r| r.patch_id == patch_id).collect();
+    let blocked: Vec<String> = current
+        .iter()
+        .filter(|r| r.blocking > 0)
+        .map(|r| format!("{} ({})", r.task_id, r.blocking))
+        .collect();
+    if !blocked.is_empty() {
+        return not_ready(
+            true,
+            format!(
+                "blocking findings from {}; waiting for a new head",
+                blocked.join(", ")
+            ),
+        );
+    }
+    if let Some(waived) = waived {
+        return ready(waived.to_string());
+    }
+    let reviewers = current
+        .iter()
+        .filter(|r| r.role == ReviewRole::Reviewer)
+        .map(|r| r.task_id.as_str())
+        .collect::<HashSet<_>>()
+        .len() as i64;
+    let verified = current
+        .iter()
+        .any(|r| r.role == ReviewRole::Verifier && r.receipts);
+    if reviewers < rule.reviewers {
+        return not_ready(
+            false,
+            format!("{reviewers}/{} clean reviews on this patch", rule.reviewers),
+        );
+    }
+    if rule.verifier && !verified {
+        return not_ready(
+            false,
+            "waiting for the verifier's clean verdict with receipts".into(),
+        );
+    }
+    ready(format!(
+        "tier {} reviews are clean on patch {}",
+        tier_str(tier),
+        &patch_id[..patch_id.len().min(12)]
+    ))
+}
+
+/// A verifier's verdict counts once its task ended done with commands run and no unverified claim.
+pub fn has_receipts(task: Option<&TaskView>) -> bool {
+    task.is_some_and(|t| t.state == "done" && t.receipt_commands > 0 && !t.claims_unverified)
+}
+
+const CODEX_DRIVER: &str = "codex";
+const FLEETD_INSTANCE: &str = "fleetd";
+
+/// A usable Codex instance fleetd set up itself (its id starts with "fleetd"). Mirrors executor/ProviderList.ts.
+fn is_fleetd_codex(i: &ProviderView) -> bool {
+    i.driver == CODEX_DRIVER && i.usable && i.instance_id.starts_with(FLEETD_INSTANCE)
+}
+
+/// The first fleetd Codex instance with a model to run, and that model.
+pub fn codex_instance(instances: &[ProviderView]) -> Option<(&ProviderView, &str)> {
+    instances.iter().find_map(|i| {
+        if is_fleetd_codex(i) {
+            i.default_model.as_deref().map(|m| (i, m))
+        } else {
+            None
+        }
+    })
+}
+
+/// Usable Codex instances fleetd does not use, because their ids do not start with "fleetd".
+pub fn other_codex(instances: &[ProviderView]) -> Vec<String> {
+    instances
+        .iter()
+        .filter(|i| i.driver == CODEX_DRIVER && i.usable && !is_fleetd_codex(i))
+        .map(|i| i.instance_id.clone())
+        .collect()
+}
+
+fn verdict_line(sha: &str, summary: &str) -> String {
+    format!(
+        "fleetd review verdict --task <your task id, from the first line> --sha {sha} --blocking <n> --non-blocking <n> --summary \"{summary}\""
+    )
+}
+
+/// A reviewer's or verifier's prompt: the PR diff ref and the tier rules. Tasks adds the brief's goal and done-when.
+/// Never the author's narrative, so the PR description and comments are off limits too.
+pub fn review_prompt(change: &Change, role: ReviewRole) -> String {
+    let n = change.pr_number;
+    let fetch = format!("git fetch origin pull/{n}/head");
+    let (url, repo, tier, head, serves) = (
+        &change.pr_url,
+        &change.repo,
+        tier_str(change.tier),
+        &change.head_sha,
+        &change.serves,
+    );
+    if role == ReviewRole::Verifier {
+        return [
+            format!("Verify pull request {url} ({repo}#{n}, tier {tier}) at head {head} by running the repo's tests on exactly that commit."),
+            String::new(),
+            format!("1. `{fetch}`, then `git worktree add --detach \"$(mktemp -d)\" {head}` and work only in that worktree; never check anything out in the project's own checkout."),
+            "2. Find the repo's test command (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, package.json scripts, Makefile, the CI workflow) and run it with any install step it needs.".into(),
+            "3. Remove the worktree with `git worktree remove --force <dir>`.".into(),
+            String::new(),
+            "blocking = the number of test commands that failed, 0 when all passed. The hub counts the commands you ran and their exit codes; a verdict without them does not count.".into(),
+            "Do not read the PR description or comments. Do not change, commit or push anything.".into(),
+            "Finish with exactly one command, filled in:".into(),
+            verdict_line(head, "<the commands you ran and their exit codes; for failures, the failing tests>"),
+        ]
+        .join("\n");
+    }
+    [
+        format!("Review pull request {url} ({repo}#{n}, tier {tier}) at head {head}. You are an independent reviewer: you get the diff and the brief, not the author's account."),
+        String::new(),
+        format!("Read the change yourself: `gh pr diff {n} --repo {repo}`, and files at that head with `{fetch}` then `git show {head}:<path>`. Do not read the PR description or its comments; judge the diff against the goal and done-when below."),
+        String::new(),
+        format!("Rules for tier {tier}:"),
+        format!("- Blocking means the change is wrong, unsafe, or fails the done-when it serves ({serves}). Style, naming, polish and nice-to-haves are non-blocking."),
+        format!("- It serves {serves} only: the other done-when checks are other PRs' work, never a finding here."),
+        "- One round: report everything you find now. A verdict with 0 blocking ends review for this patch.".into(),
+        "- Do not change, commit or push anything.".into(),
+        "Finish with exactly one command, filled in:".into(),
+        verdict_line(head, "<each blocking finding as path:line and what is wrong, then the non-blocking ones>"),
+    ]
+    .join("\n")
+}
+
+pub struct FindingsVerdict<'a> {
+    pub task_id: &'a str,
+    pub pr_head_sha: &'a str,
+    pub blocking: i64,
+    pub non_blocking: i64,
+    pub summary: &'a str,
+}
+
+/// The message that sends blocking findings back to the task that wrote the code.
+pub fn findings_message(change: &Change, v: &FindingsVerdict<'_>) -> String {
+    [
+        format!(
+            "Review {} of {} at {} found {} blocking finding{} ({} non-blocking):",
+            v.task_id,
+            change.pr_url,
+            &v.pr_head_sha[..v.pr_head_sha.len().min(12)],
+            v.blocking,
+            if v.blocking == 1 { "" } else { "s" },
+            v.non_blocking
+        ),
+        String::new(),
+        v.summary.trim().to_string(),
+        String::new(),
+        format!(
+            "Fix the blocking findings on {}, commit and push to the same PR. It is reviewed again once its patch changes, and the train will not merge it before then. Do not merge it yourself.",
+            change.branch
+        ),
+    ]
+    .join("\n")
+}
+
+/// One line, at most `max` characters.
+pub fn one_line(text: &str, max: usize) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() > max {
+        format!("{}…", flat.chars().take(max - 1).collect::<String>())
+    } else {
+        flat
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const P: &str = "1111111111111111111111111111111111111111";
+    const Q: &str = "2222222222222222222222222222222222222222";
+    const S: ReviewRule = CODED_RULES[0];
+    const M: ReviewRule = CODED_RULES[1];
+    const L: ReviewRule = CODED_RULES[2];
+
+    fn review(
+        task_id: &str,
+        role: ReviewRole,
+        blocking: i64,
+        patch_id: &str,
+        receipts: bool,
+    ) -> RoleReview {
+        RoleReview {
+            task_id: task_id.into(),
+            role,
+            patch_id: patch_id.into(),
+            blocking,
+            receipts,
+        }
+    }
+    fn reviewer(task_id: &str) -> RoleReview {
+        review(task_id, ReviewRole::Reviewer, 0, P, false)
+    }
+    fn verifier(task_id: &str) -> RoleReview {
+        review(task_id, ReviewRole::Verifier, 0, P, true)
+    }
+    fn names(plan: &[PlannedReview]) -> Vec<String> {
+        plan.iter()
+            .map(|p| {
+                format!(
+                    "{}/{}",
+                    p.role.as_str(),
+                    if p.provider == ReviewProvider::Codex {
+                        "codex"
+                    } else {
+                        "claude"
+                    }
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn plans_none_for_s_one_for_m_and_two_plus_a_verifier_for_l_with_codex_second() {
+        assert!(review_plan(&S, true).is_empty());
+        assert_eq!(names(&review_plan(&M, true)), ["reviewer/claude"]);
+        assert_eq!(
+            names(&review_plan(&L, true)),
+            ["reviewer/claude", "reviewer/codex", "verifier/claude"]
+        );
+        assert_eq!(
+            names(&review_plan(&L, false)),
+            ["reviewer/claude", "reviewer/claude", "verifier/claude"]
+        );
+        assert_eq!(
+            names(&missing_reviews(
+                &review_plan(&L, true),
+                &[ReviewRole::Reviewer]
+            )),
+            ["reviewer/codex", "verifier/claude"]
+        );
+        assert!(
+            missing_reviews(
+                &review_plan(&L, true),
+                &[
+                    ReviewRole::Reviewer,
+                    ReviewRole::Verifier,
+                    ReviewRole::Reviewer
+                ]
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn is_ready_only_with_the_tiers_clean_verdicts_bound_to_the_current_patch() {
+        assert!(gate(Tier::S, &S, None, &[], None).ready);
+        let g = gate(Tier::M, &M, Some(P), &[], None);
+        assert!(!g.ready && !g.waiting_for_head);
+        assert!(gate(Tier::M, &M, Some(P), &[reviewer("T2")], None).ready);
+        // A clean review of another patch counts for nothing.
+        assert!(!gate(Tier::M, &M, Some(Q), &[reviewer("T2")], None).ready);
+
+        let two = [reviewer("T2"), reviewer("T3")];
+        assert_eq!(
+            gate(Tier::L, &L, Some(P), &two, None).why,
+            "waiting for the verifier's clean verdict with receipts"
+        );
+        let unreceipted = [
+            two.clone().as_slice(),
+            &[review("T4", ReviewRole::Verifier, 0, P, false)],
+        ]
+        .concat();
+        assert!(!gate(Tier::L, &L, Some(P), &unreceipted, None).ready);
+        assert!(
+            gate(
+                Tier::L,
+                &L,
+                Some(P),
+                &[two.as_slice(), &[verifier("T4")]].concat(),
+                None
+            )
+            .ready
+        );
+        // The same reviewer twice is one review.
+        assert!(
+            !gate(
+                Tier::L,
+                &L,
+                Some(P),
+                &[reviewer("T2"), reviewer("T2"), verifier("T4")],
+                None
+            )
+            .ready
+        );
+    }
+
+    #[test]
+    fn holds_a_patch_with_any_blocking_verdict_until_the_patch_changes_and_lets_a_waiver_through() {
+        let blocked = gate(
+            Tier::M,
+            &M,
+            Some(P),
+            &[
+                review("T2", ReviewRole::Reviewer, 2, P, false),
+                reviewer("T3"),
+            ],
+            None,
+        );
+        assert_eq!(
+            blocked,
+            Gate {
+                ready: false,
+                waiting_for_head: true,
+                why: "blocking findings from T2 (2); waiting for a new head".into()
+            }
+        );
+        assert!(
+            gate(
+                Tier::M,
+                &M,
+                Some(Q),
+                &[
+                    review("T2", ReviewRole::Reviewer, 2, P, false),
+                    review("T5", ReviewRole::Reviewer, 0, Q, false)
+                ],
+                None
+            )
+            .ready
+        );
+        assert!(gate(Tier::M, &M, Some(Q), &[], Some("waived")).ready);
+    }
+
+    #[test]
+    fn takes_the_pinned_playbooks_rule_and_gates_on_it() {
+        let strict = PlaybookView {
+            require_source: true,
+            review_rules: [
+                rule(1, false, false),
+                rule(2, true, false),
+                rule(3, true, true),
+            ],
+        };
+        assert_eq!(rule_for(Tier::M, Some(&strict)), strict.review_rules[1]);
+        assert_eq!(rule_for(Tier::M, None), M);
+        assert_eq!(
+            names(&review_plan(&rule_for(Tier::S, Some(&strict)), false)),
+            ["reviewer/claude"]
+        );
+        assert_eq!(
+            names(&review_plan(&strict.review_rules[2], true)),
+            [
+                "reviewer/claude",
+                "reviewer/codex",
+                "reviewer/claude",
+                "verifier/claude"
+            ]
+        );
+
+        let (ss, sm) = (strict.review_rules[0], strict.review_rules[1]);
+        // A playbook that reviews S: tier S is no longer ready by itself.
+        assert_eq!(
+            gate(Tier::S, &ss, Some(P), &[], None).why,
+            "0/1 clean reviews on this patch"
+        );
+        assert!(gate(Tier::S, &ss, Some(P), &[reviewer("T2")], None).ready);
+        assert!(!gate(Tier::M, &sm, Some(P), &[reviewer("T2")], None).ready);
+        assert_eq!(
+            gate(
+                Tier::M,
+                &sm,
+                Some(P),
+                &[reviewer("T2"), reviewer("T3")],
+                None
+            )
+            .why,
+            "waiting for the verifier's clean verdict with receipts"
+        );
+        assert!(
+            gate(
+                Tier::M,
+                &sm,
+                Some(P),
+                &[reviewer("T2"), reviewer("T3"), verifier("T4")],
+                None
+            )
+            .ready
+        );
+        // And one that waives M review lets it through with none.
+        assert_eq!(
+            gate(Tier::M, &rule(0, false, false), None, &[], None),
+            ready("tier M needs no review".into())
+        );
+    }
+
+    #[test]
+    fn uses_only_a_usable_fleetd_codex_instance_with_a_model() {
+        let p = |id: &str, driver: &str, usable: bool, model: Option<&str>| ProviderView {
+            instance_id: id.into(),
+            driver: driver.into(),
+            usable,
+            models: model.into_iter().map(String::from).collect(),
+            default_model: model.map(String::from),
+        };
+        let claude = p("fleetd", "claudeAgent", true, Some("claude-opus-5-5"));
+        let codex = p("fleetd-codex", "codex", true, Some("gpt-6-astra"));
+        let theirs = p("codex", "codex", true, Some("gpt-6-astra"));
+        assert_eq!(
+            codex_instance(&[claude.clone(), codex.clone()])
+                .map(|(i, m)| (i.instance_id.as_str(), m)),
+            Some(("fleetd-codex", "gpt-6-astra"))
+        );
+        assert!(codex_instance(std::slice::from_ref(&claude)).is_none());
+        assert!(
+            codex_instance(&[claude.clone(), p("fleetd-codex", "codex", false, Some("x"))])
+                .is_none()
+        );
+        assert!(
+            codex_instance(&[claude.clone(), p("fleetd-codex", "codex", true, None)]).is_none()
+        );
+        assert!(codex_instance(&[claude.clone(), theirs.clone()]).is_none());
+        assert_eq!(other_codex(&[claude, theirs, codex]), ["codex"]);
+    }
+}
