@@ -40,3 +40,34 @@ async fn secret_submit(
         .await
         .map_err(refusal)
 }
+
+/// The `gated_run` lead call (leads/LeadCallHandler.ts): files the approve ask holding exactly the lead's command.
+/// PORT(link): register it as `hub.lead_calls.register("gated_run", ...)` once `crate::hub::link::LeadCalls` is on
+/// main, passing the caller's project and `by`. PORT(leads): a workstream named in the call must be one of the
+/// caller's own (`ownWorkstream`), checked before this runs.
+pub async fn gated_run_call(
+    hub: &Hub,
+    project: &fleetd_contracts::ids::ProjectRef,
+    by: &str,
+    call: fleetd_contracts::lead_calls::GatedRunCall,
+) -> Result<fleetd_contracts::lead_calls::GatedRunResult, ToolError> {
+    let input = super::GatedRunInput {
+        argv: convert(&call.argv).unwrap_or_default(),
+        cwd: call.cwd.as_ref().and_then(convert),
+        class: convert(&call.class).unwrap_or_default(),
+        reason: convert(&call.reason).unwrap_or_default(),
+        secret_env: call.secret_env.as_ref().and_then(convert),
+        timeout_sec: convert(&call.timeout_sec).unwrap_or(1800),
+        workstream_id: call.workstream_id.as_ref().and_then(convert),
+    };
+    let project = convert(project).expect("a project ref reads back");
+    let result = hub
+        .approvals
+        .gated_run(&project, by, input)
+        .await
+        .map_err(refusal)?;
+    serde_json::from_value(result).map_err(|e| {
+        tracing::error!(%e, "gated_run result did not decode");
+        crate::hub::api::internal_error()
+    })
+}

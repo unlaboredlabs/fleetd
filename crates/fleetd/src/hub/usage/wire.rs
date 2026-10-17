@@ -102,7 +102,7 @@ impl ports::EventLog for OpsPorts {
     }
 }
 
-// WIRE(tasks, leads): TaskRecords::by_thread / get and LeadRecords::leads list.
+// PORT(tasks, leads): TaskRecords::by_thread / get and LeadRecords::leads list.
 impl UsageOwners for OpsPorts {
     fn owner_of(&self, _thread: &ThreadRef) -> BoxFut<'_, Option<Owner>> {
         Box::pin(async { None })
@@ -112,7 +112,7 @@ impl UsageOwners for OpsPorts {
     }
 }
 
-// WIRE(queue): WriteQueue::send.
+// PORT(queue): WriteQueue::send.
 impl UsageQueue for OpsPorts {
     fn send(
         &self,
@@ -124,7 +124,7 @@ impl UsageQueue for OpsPorts {
     }
 }
 
-// WIRE(executor): server.getConfig's provider status and env names, and the T3 URL.
+// PORT(executor): server.getConfig's provider status and env names, and the T3 URL.
 impl UsageSource for OpsPorts {
     fn read(&self, machine_id: &str) -> BoxFut<'_, Result<UsageReading, String>> {
         let m = machine_id.to_string();
@@ -161,7 +161,7 @@ impl DoctorFleet for OpsPorts {
                 .unwrap_or_default()
         })
     }
-    // WIRE(executor): Executors::is_connected / await_live.
+    // PORT(executor): Executors::is_connected / await_live.
     fn connected(&self, _machine_id: &str) -> BoxFut<'_, bool> {
         Box::pin(async { false })
     }
@@ -177,7 +177,7 @@ impl DoctorFleet for OpsPorts {
                 .await
         })
     }
-    // WIRE(link): NodeCommands::run_action.
+    // PORT(link): NodeCommands::run_action.
     fn node_action(
         &self,
         machine_id: &str,
@@ -188,7 +188,7 @@ impl DoctorFleet for OpsPorts {
     }
 }
 
-// WIRE(executor): settings_read / settings_update.
+// PORT(executor): settings_read / settings_update.
 impl T3Settings for OpsPorts {
     fn read(&self, _machine_id: &str) -> BoxFut<'_, Result<Value, String>> {
         Box::pin(async { unwired("T3 settings") })
@@ -211,7 +211,7 @@ fn unwired_refusal<T>() -> Result<T, ApprovalRefused> {
     })
 }
 
-// WIRE(ledger): Asks get / list / create / update / reopen.
+// PORT(ledger): Asks get / list / create / update / reopen.
 impl ApprovalAsks for OpsPorts {
     fn get(&self, _ask_id: &str) -> BoxFut<'_, Option<Value>> {
         Box::pin(async { None })
@@ -234,7 +234,7 @@ impl ApprovalAsks for OpsPorts {
     }
 }
 
-// WIRE(link): NodeCommands::deliver_secret / run_gated.
+// PORT(link): NodeCommands::deliver_secret / run_gated.
 impl ApprovalNodes for OpsPorts {
     fn deliver_secret(
         &self,
@@ -276,7 +276,7 @@ impl ApprovalHub for OpsPorts {
         let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
         Box::pin(async move { Some(self.hub().store.project_get(&r?).ok()??.workspace_root) })
     }
-    // WIRE(leads): LeadWakes::trigger with an answer.
+    // PORT(leads): LeadWakes::trigger with an answer.
     fn wake_answer(
         &self,
         _project: &ports::ProjectRef,
@@ -285,7 +285,7 @@ impl ApprovalHub for OpsPorts {
     ) -> BoxFut<'_, ()> {
         Box::pin(async {})
     }
-    // WIRE(checks): CheckRunner::verify.
+    // PORT(checks): CheckRunner::verify.
     fn verify(
         &self,
         _p: &ports::ProjectRef,
@@ -308,7 +308,7 @@ impl SqlRunner for OpsPorts {
     }
 }
 
-// WIRE(intake): the router's one-shot claude runner with RUN_TIMEOUT_MS.
+// PORT(intake): the router's one-shot claude runner with RUN_TIMEOUT_MS.
 impl RetroRunner for OpsPorts {
     fn ask(&self, _prompt: String) -> BoxFut<'_, (Option<String>, OrchestratorRun)> {
         Box::pin(async {
@@ -335,7 +335,7 @@ impl PlaybookParser for NoParser {
     }
 }
 
-// WIRE(playbooks): Playbooks current / override / set_override and parse_playbook.
+// PORT(playbooks): Playbooks current / override / set_override and parse_playbook.
 impl RetroPlaybooks for OpsPorts {
     fn current(&self, name: &str) -> (String, String) {
         (String::new(), format!("{name}@unknown"))
@@ -351,7 +351,7 @@ impl RetroPlaybooks for OpsPorts {
     }
 }
 
-// WIRE(ledger, incidents): global decisions, asks and incidents.
+// PORT(ledger, incidents): global decisions, asks and incidents.
 impl RetroLedger for OpsPorts {
     fn global_value(&self, _key: &str) -> BoxFut<'_, Option<String>> {
         Box::pin(async { None })
@@ -376,7 +376,7 @@ impl RetroLedger for OpsPorts {
     }
 }
 
-// WIRE(incidents, leads, tasks).
+// PORT(incidents, leads, tasks).
 impl RetroWork for OpsPorts {
     fn incidents(&self, _from: i64, _to: Option<i64>, _limit: usize) -> BoxFut<'_, Vec<Value>> {
         Box::pin(async { Vec::new() })
