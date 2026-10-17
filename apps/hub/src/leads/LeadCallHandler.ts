@@ -141,6 +141,14 @@ export const make = Effect.gen(function* () {
           return result({ op: "task_message", task: yield* tasks.message(caller, call.taskId, call.message) });
         case "task_cancel":
           return result({ op: "task_cancel", task: yield* tasks.cancel(caller, call.taskId, call.reason) });
+        // Answered once verification is wired here (M6).
+        case "claim_done":
+        case "review_verdict":
+          return yield* refused({
+            code: "forbidden",
+            message: `fleetd ${call.op.replace("_", " ")} is not available on this hub yet.`,
+            fix: "Carry on without it and mention it in your next status line.",
+          });
       }
     }).pipe(Effect.catchTags({ LeadError: (e) => Effect.fail(refused(e)), LedgerError: (e) => Effect.fail(refused(e)) }));
 

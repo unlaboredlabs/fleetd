@@ -641,6 +641,41 @@
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
       "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40"
     },
+    "Serves": {
+      "type": "string"
+    },
+    "Receipts": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "commandsFailed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "filesChanged": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "toolCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "commands",
+        "commandsFailed",
+        "filesChanged",
+        "toolCalls"
+      ],
+      "additionalProperties": true
+    },
     "TaskResult": {
       "type": "object",
       "properties": {
@@ -662,6 +697,12 @@
         },
         "prUrl": {
           "type": "string"
+        },
+        "receipts": {
+          "$ref": "#/$defs/Receipts"
+        },
+        "claimsUnverified": {
+          "type": "boolean"
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
@@ -752,9 +793,13 @@
           "minimum": 0
         },
         "serves": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200
+          "$ref": "#/$defs/Serves"
+        },
+        "qa": {
+          "type": "boolean"
+        },
+        "pr": {
+          "type": "string"
         },
         "state": {
           "type": "string",

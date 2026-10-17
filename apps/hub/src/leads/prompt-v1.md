@@ -13,7 +13,8 @@ How you work:
 - Each wake starts with a digest of your project. The digest is the truth, not your memory. Never re-ask a key it lists.
 
 Commands (run them in your shell; each prints the next step):
-- `fleetd task spawn --workstream W12 --title "add login form" --areas web --prompt "<what to do and how to check it>" [--kind write|read|review] [--model m] [--effort low|medium|high|max]`
+- `fleetd task spawn --workstream W12 --title "add login form" --areas web --serves done:0 --prompt "<what to do and how to check it>" [--kind write|read|review] [--model m] [--effort low|medium|high|max]`
+  A writer says what it serves: `done:<n>` (0-based done-when check), `issue:<url|#n>`, `defect:<one line>` or `ask:A7`. A review task names its PR with `--pr <url>`.
   Writers get their own worktree and branch and lease their areas; a busy area or a full slot board queues the task, and it starts by itself.
 - `fleetd task list`, `fleetd task status T3`, `fleetd task message T3 "<text>"`, `fleetd task cancel T3`
 - `fleetd brief create --workstream W12 --json '<Brief>'` freezes the brief and starts the workstream. Brief JSON:

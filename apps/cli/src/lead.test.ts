@@ -184,7 +184,7 @@ describe("task commands", () => {
     expect(
       parseLeadArgs([
         "task", "spawn", "--workstream", "W1", "--title", "add file", "--areas", "docs, api", "--prompt", "create docs/x.md",
-        "--model", "claude-haiku-5-5", "--effort", "low", "--estimate", "5", "--serves", "done 1",
+        "--model", "claude-haiku-5-5", "--effort", "low", "--estimate", "5", "--serves", "done:1",
       ]),
     ).toEqual({
       op: "task_spawn",
@@ -196,8 +196,11 @@ describe("task commands", () => {
       model: "claude-haiku-5-5",
       effort: "low",
       estimateMinutes: 5,
-      serves: "done 1",
+      serves: "done:1",
     });
+    expect(
+      parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "review", "--kind", "review", "--qa", "--pr", "https://github.com/o/r/pull/7", "--prompt", "review it"]),
+    ).toMatchObject({ op: "task_spawn", kind: "review", qa: true, pr: "https://github.com/o/r/pull/7" });
     expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "look", "--kind", "read", "--prompt", "read README"])).toMatchObject({
       kind: "read",
       areas: [],
@@ -209,9 +212,11 @@ describe("task commands", () => {
   });
 
   it("refuses incomplete or malformed task calls with a usage line", () => {
-    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--prompt", "y"])).toMatch(/at least one area/u);
+    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--prompt", "y", "--serves", "done:0"])).toMatch(/at least one area/u);
+    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--prompt", "y", "--areas", "docs"])).toMatch(/needs --serves: say what this serves/u);
+    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--prompt", "y", "--kind", "review"])).toMatch(/needs --pr/u);
     expect(parseLeadArgs(["task", "spawn", "--title", "x", "--prompt", "y"])).toBe("--workstream is required");
-    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--prompt", "y", "--areas", "docs", "--effort", "huge"])).toMatch(/^invalid input/u);
+    expect(parseLeadArgs(["task", "spawn", "--workstream", "W1", "--title", "x", "--prompt", "y", "--areas", "docs", "--serves", "done:0", "--effort", "huge"])).toMatch(/^invalid input/u);
     expect(parseLeadArgs(["task", "status", "X1"])).toMatch(/^invalid input/u);
     expect(parseLeadArgs(["task", "status"])).toBe("expected fleetd task status <T>");
     expect(parseLeadArgs(["task", "message", "T1"])).toBe('expected fleetd task message <T> "<text>"');
@@ -233,7 +238,7 @@ describe("task commands", () => {
     expect(formatResult({ op: "task_spawn", task: queued })).toContain("Next: nothing to do; T2 starts by itself once that clears");
     const done = task({
       state: "done",
-      threadRef: { machineId: "lab-a", threadId: "t9" } as Task["threadRef"],
+      threadRef: { machineId: "lab-a", threadId: "t9" } as NonNullable<Task["threadRef"]>,
       result: { status: "done", tail: "Created docs/x.md.\nCommitted.", branch: "fleetd/T1-add-file", at: "2026-10-17T10:05:00.000Z" },
     });
     expect(formatResult({ op: "task_status", task: done })).toBe(

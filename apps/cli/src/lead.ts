@@ -32,8 +32,10 @@ export const LEAD_USAGE = `  brief create --workstream <W> (--json '<Brief>' | -
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L] [--estimate <min>] [--serves <s>]
-             delegate work to a subagent; writers need --areas and get their own branch
+      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L] [--estimate <min>]
+      [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa]
+             delegate work to a subagent; writers need --areas and --serves and get their own
+             branch; a review task needs --pr, and --qa marks it a QA run
   task list [--state <s>] [--workstream <W>]
   task status <T>
   task message <T> "<text>"
@@ -98,6 +100,8 @@ export const parseLeadArgs = (
         tier: { type: "string" },
         estimate: { type: "string" },
         serves: { type: "string" },
+        pr: { type: "string" },
+        qa: { type: "boolean" },
         state: { type: "string" },
         reason: { type: "string" },
       },
@@ -196,7 +200,7 @@ export const parseLeadArgs = (
       switch (sub) {
         case "spawn": {
           if (rest.length > 0) return `unexpected '${rest[0]}': put the task's instructions in --prompt`;
-          const wrong = only("workstream", "title", "prompt", "kind", "areas", "model", "effort", "tier", "estimate", "serves");
+          const wrong = only("workstream", "title", "prompt", "kind", "areas", "model", "effort", "tier", "estimate", "serves", "pr", "qa");
           if (wrong !== undefined) return wrong;
           for (const flag of ["workstream", "title", "prompt"] as const) if (v[flag] === undefined) return `--${flag} is required`;
           if (v.estimate !== undefined && !/^\d+(\.\d+)?$/u.test(v.estimate)) return `--estimate is minutes, got '${v.estimate}'`;
@@ -212,6 +216,8 @@ export const parseLeadArgs = (
             tier: v.tier,
             estimateMinutes: v.estimate === undefined ? undefined : Number(v.estimate),
             serves: v.serves,
+            pr: v.pr,
+            qa: v.qa,
           });
           break;
         }
@@ -356,7 +362,10 @@ const taskNext = (task: Task) => {
 
 /** Every field the lead may need about one task, then its result if it has one. */
 const taskDetail = (task: Task) => {
-  const lines = [taskLine(task), `  workstream ${task.workstreamId}${task.serves === undefined ? "" : `, serves ${task.serves}`}, attempt ${task.attempt}`];
+  const lines = [
+    taskLine(task),
+    `  workstream ${task.workstreamId}${task.serves === undefined ? "" : `, serves ${task.serves}`}${task.pr === undefined ? "" : `, reviews ${task.pr}${task.qa === true ? " (QA)" : ""}`}, attempt ${task.attempt}`,
+  ];
   if (task.threadRef !== undefined) lines.push(`  thread ${task.threadRef.machineId}/${task.threadRef.threadId}`);
   if (task.result !== undefined) {
     const { result } = task;
