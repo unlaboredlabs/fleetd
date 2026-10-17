@@ -2,6 +2,10 @@ import {
   ErrorCode,
   McpTools,
   type AgentKeyInfo,
+  type Ask,
+  type Batch,
+  type Decision,
+  type DecisionScope,
   type HubEvent,
   type HubEventType,
   type Machine,
@@ -25,6 +29,12 @@ import * as Executors from "../executor/Executors.ts";
 import * as Webhooks from "../webhooks/Webhooks.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as Wakes from "../wakes/Wakes.ts";
+import * as HumanDigests from "../digests/HumanDigests.ts";
+import * as Leads from "../leads/Leads.ts";
+import * as Workstreams from "../leads/Workstreams.ts";
+import { Asks } from "../ledger/Asks.ts";
+import { Decisions } from "../ledger/Decisions.ts";
+import { Inbox } from "../ledger/Inbox.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -53,10 +63,30 @@ export const IMPLEMENTED_TOOLS = [
   "wake_set",
   "wake_list",
   "wake_cancel",
+  "lead_start",
+  "lead_restart",
+  "intake_submit",
+  "workstream_list",
+  "workstream_get",
+  "asks_list",
+  "inbox_reply",
+  "decisions_search",
+  "decisions_record",
+  "digest_get",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
-export const LIMITS = { projects: 50, attention: 10, outcomeThreads: 20, tailText: 2000, wakes: 200 } as const;
+export const LIMITS = {
+  projects: 50,
+  attention: 10,
+  outcomeThreads: 20,
+  outcomeWorkstreams: 20,
+  tailText: 2000,
+  wakes: 200,
+  workstreamAsks: 50,
+  batches: 20,
+  asks: 100,
+} as const;
 const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited"];
 /** How far back fleetd_status looks for attention events. */
 const ATTENTION_LOOKBACK = 1000;
@@ -125,6 +155,13 @@ const fromExecutor = (error: Executors.ExecutorError): ToolError => {
   }
 };
 
+/** Leads and the ledger refuse in the same `{ code, message, fix }` shape. */
+const refusal = (error: { readonly code: ToolError["code"]; readonly message: string; readonly fix?: string }) =>
+  new ToolError({ code: error.code, message: error.message, ...(error.fix === undefined ? {} : { fix: error.fix }) });
+
+const unknownWorkstream = (workstreamId: string): ToolError =>
+  new ToolError({ code: "not_found", message: `No workstream ${workstreamId}.`, fix: "Call workstream_list to see workstreams." });
+
 const make = Effect.gen(function* () {
   const store = yield* HubStore.HubStore;
   const events = yield* EventLog.EventLog;
@@ -133,6 +170,12 @@ const make = Effect.gen(function* () {
   const webhooks = yield* Webhooks.Webhooks;
   const writes = yield* WriteQueue.WriteQueue;
   const wakes = yield* Wakes.Wakes;
+  const leads = yield* Leads.Leads;
+  const workstreams = yield* Workstreams.Workstreams;
+  const asks = yield* Asks;
+  const decisions = yield* Decisions;
+  const inbox = yield* Inbox;
+  const digests = yield* HumanDigests.HumanDigests;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -141,6 +184,39 @@ const make = Effect.gen(function* () {
 
   const canRead = (caller: AgentKeyInfo) => (event: HubEvent) =>
     event.machineId === undefined || auth.allows(caller, "read", event.machineId);
+
+  /** A grant over every machine, as global decisions need: they apply to all of them. */
+  const allowsEverywhere = (caller: AgentKeyInfo, role: Role) =>
+    caller.grants.some((grant) => grant.machines === "*" && auth.allows({ ...caller, grants: [grant] }, role));
+
+  /** Decisions written over MCP come from an agent key, recorded by its name. */
+  const actorOf = (caller: AgentKeyInfo) => ({ source: "agent" as const, by: caller.name });
+
+  /** The project a decision scope belongs to: undefined for global, a not_found for an unknown workstream. */
+  const decisionProject = Effect.fnUntraced(function* (scope: DecisionScope) {
+    if (scope.kind === "global") return undefined;
+    if (scope.kind === "project") return scope.projectRef;
+    const workstream = yield* workstreams.get(scope.workstreamId);
+    if (workstream === undefined) return yield* unknownWorkstream(scope.workstreamId);
+    return workstream.projectRef;
+  });
+
+  /** lead_start and lead_restart save a given model or effort as the project's lead settings first. */
+  const configureLead = Effect.fnUntraced(function* (input: ToolInput<"lead_start">) {
+    if (input.model === undefined && input.effort === undefined) return;
+    const ref = { machineId: input.machineId, projectId: input.projectId };
+    if ((yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
+    yield* leads.configure(ref, {
+      ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
+    });
+  });
+
+  const canReadDecision = (caller: AgentKeyInfo, decision: Decision) =>
+    decisionProject(decision.scope).pipe(
+      Effect.map((ref) => ref === undefined || auth.allows(caller, "read", ref.machineId)),
+      Effect.orElseSucceed(() => false),
+    );
 
   /** A machine's cache is fresh only while its node is online and its executor holds a T3 connection. */
   const freshness = Effect.fnUntraced(function* (machineId: MachineId) {
@@ -215,12 +291,16 @@ const make = Effect.gen(function* () {
       const project = yield* store.projects.get(input);
       if (project === undefined) return yield* unknownProject(input);
       const threads = cap(yield* store.threads.listByProject(input, LIMITS.outcomeThreads + 1), LIMITS.outcomeThreads);
+      const lead = yield* leads.get(input);
+      const open = cap(yield* workstreams.list({ ref: input, open: true, limit: LIMITS.outcomeWorkstreams + 1 }), LIMITS.outcomeWorkstreams);
       return {
         project,
         threads: threads.items.map((t) => markStale(t, fresh)),
+        ...(lead === undefined ? {} : { lead }),
+        ...(open.items.length === 0 ? {} : { workstreams: open.items }),
         stale: fresh.stale,
         asOf: fresh.asOf,
-        ...withTruncated(threads.truncated),
+        ...withTruncated(threads.truncated ?? open.truncated),
         next: fresh.stale
           ? `Cached as of ${fresh.asOf}: ${input.machineId} is offline.`
           : "Call thread_tail for a thread's latest messages and actions.",
@@ -378,6 +458,162 @@ const make = Effect.gen(function* () {
       yield* require(caller, "operate", wake.target.machineId);
       yield* wakes.cancel(input.wakeId);
       return { ok: true as const };
+    }),
+
+    lead_start: Effect.fnUntraced(function* (caller, input) {
+      yield* require(caller, "operate", input.machineId);
+      yield* configureLead(input);
+      const lead = yield* leads.start({ machineId: input.machineId, projectId: input.projectId }).pipe(Effect.mapError(refusal));
+      return {
+        ...lead,
+        next: `Lead thread ${lead.threadId} is ${lead.state}. Submit work with intake_submit; watch it with project_get or events_wait (lead.woken, ask.created, batch.ready).`,
+      };
+    }),
+
+    lead_restart: Effect.fnUntraced(function* (caller, input) {
+      yield* require(caller, "operate", input.machineId);
+      yield* configureLead(input);
+      const lead = yield* leads.restart({ machineId: input.machineId, projectId: input.projectId }).pipe(Effect.mapError(refusal));
+      return {
+        ...lead,
+        next: `Fresh lead thread ${lead.threadId} (session ${lead.sessionGeneration}) started from the current digest; the old thread stays in T3 as history.`,
+      };
+    }),
+
+    intake_submit: Effect.fnUntraced(function* (caller, input) {
+      yield* require(caller, "operate", input.machineId);
+      const created = yield* workstreams
+        .intake({
+          ref: { machineId: input.machineId, projectId: input.projectId },
+          text: input.text,
+          clientRequestId: input.clientRequestId,
+          channel: "mcp",
+          by: caller.keyId,
+        })
+        .pipe(Effect.mapError(refusal));
+      return { workstreamId: created.workstreamId, ...(created.next === undefined ? {} : { next: created.next }) };
+    }),
+
+    workstream_list: Effect.fnUntraced(function* (caller, input) {
+      if (input.machineId !== undefined) yield* require(caller, "read", input.machineId);
+      const ref = input.machineId !== undefined && input.projectId !== undefined ? { machineId: input.machineId, projectId: input.projectId } : undefined;
+      const all = (yield* workstreams.list({
+        ...(ref === undefined ? {} : { ref }),
+        ...(input.state === undefined ? {} : { state: input.state }),
+        limit: ref === undefined ? 1000 : input.limit + 1,
+      })).filter(
+        (w) =>
+          auth.allows(caller, "read", w.projectRef.machineId) &&
+          (input.machineId === undefined || w.projectRef.machineId === input.machineId) &&
+          (input.projectId === undefined || w.projectRef.projectId === input.projectId),
+      );
+      const shown = cap(all, input.limit);
+      return { workstreams: shown.items, ...withTruncated(shown.truncated), ...(shown.truncated ? { next: "Narrow the list with machineId, projectId or state." } : {}) };
+    }),
+
+    workstream_get: Effect.fnUntraced(function* (caller, input) {
+      const workstream = yield* workstreams.get(input.workstreamId);
+      if (workstream === undefined || !auth.allows(caller, "read", workstream.projectRef.machineId)) {
+        return yield* unknownWorkstream(input.workstreamId);
+      }
+      const open = cap(yield* asks.list({ workstreamId: input.workstreamId, state: "open", limit: LIMITS.workstreamAsks + 1 }), LIMITS.workstreamAsks);
+      const scoped = cap(
+        yield* decisions.list({ scope: { kind: "workstream", workstreamId: input.workstreamId }, limit: LIMITS.workstreamAsks + 1 }),
+        LIMITS.workstreamAsks,
+      );
+      return {
+        workstream,
+        asks: open.items,
+        decisions: scoped.items,
+        ...withTruncated(open.truncated ?? scoped.truncated),
+        next:
+          workstream.state === "draft"
+            ? "The lead has not registered its brief yet; wait for workstream.running with events_wait."
+            : "Open asks are answered with asks_list and inbox_reply.",
+      };
+    }),
+
+    asks_list: Effect.fnUntraced(function* (caller, input) {
+      const visible = (ask: Ask) => auth.allows(caller, "read", ask.projectRef.machineId);
+      const listed = (yield* asks.list({ state: input.state, ...(input.batchId === undefined ? {} : { batchId: input.batchId }), limit: 1000 })).filter(visible);
+      const shownAsks = cap(listed, LIMITS.asks);
+      const ids = new Set(shownAsks.items.map((ask) => ask.askId as string));
+      const inBatch = new Set(shownAsks.items.flatMap((ask) => (ask.batchId === undefined ? [] : [ask.batchId as string])));
+      const candidates = input.batchId === undefined ? yield* asks.batches({ limit: 200 }) : yield* asks.batches({ batchId: input.batchId });
+      // Only the caller's items are shown; numbers stay as fixed in the batch.
+      const batches = candidates
+        .filter((b: Batch) => inBatch.has(b.batchId))
+        .map((b: Batch) => ({ ...b, items: b.items.filter((item) => ids.has(item.askId)) }));
+      const shownBatches = cap(batches, LIMITS.batches);
+      const truncated = shownAsks.truncated ?? shownBatches.truncated;
+      return {
+        batches: shownBatches.items,
+        asks: shownAsks.items,
+        ...withTruncated(truncated),
+        next:
+          shownAsks.items.length === 0
+            ? "Nothing to answer. Wait for batch.ready with events_wait."
+            : 'Answer with inbox_reply, e.g. "1 go 2 nvm 3 b", "recs fine", "2: your own answer"; a leading "#B<n>" picks an older batch.',
+      };
+    }),
+
+    inbox_reply: Effect.fnUntraced(function* (caller, input) {
+      const result = yield* inbox.reply(
+        {
+          raw: input.raw,
+          ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
+          allows: (ref) => (ref === undefined ? allowsEverywhere(caller, "operate") : auth.allows(caller, "operate", ref.machineId)),
+        },
+        actorOf(caller),
+      );
+      return result.parsed ? { ...result, next: "Each answer is a Decision now and reaches its lead in its next wake." } : result;
+    }),
+
+    decisions_search: Effect.fnUntraced(function* (caller, input) {
+      const scoped = input.scope === undefined ? undefined : yield* decisionProject(input.scope);
+      if (scoped !== undefined) yield* require(caller, "read", scoped.machineId);
+      const found = yield* decisions.search(input.query, { ...(input.scope === undefined ? {} : { scope: input.scope }), limit: input.limit });
+      const visible: Array<Decision> = [];
+      for (const decision of found) if (yield* canReadDecision(caller, decision)) visible.push(decision);
+      return {
+        decisions: visible,
+        ...(visible.length === 0 ? { next: "No active decision matches; record one with decisions_record." } : {}),
+      };
+    }),
+
+    decisions_record: Effect.fnUntraced(function* (caller, input) {
+      const ref = yield* decisionProject(input.scope);
+      if (input.scope.kind === "global") {
+        if (!allowsEverywhere(caller, "operate")) {
+          return yield* new ToolError({
+            code: "forbidden",
+            message: "A global decision applies to every machine; this key has no operate grant on all of them.",
+            fix: "Record it at project scope, or use a key with an operate grant on * machines.",
+          });
+        }
+      } else if (ref !== undefined) {
+        yield* require(caller, "operate", ref.machineId);
+        if (input.scope.kind === "project" && (yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
+      }
+      const decision = yield* decisions.record(
+        {
+          key: input.key,
+          scope: input.scope,
+          value: input.value,
+          ...(input.why === undefined ? {} : { why: input.why }),
+          ...(ref === undefined ? {} : { projectRef: ref }),
+        },
+        actorOf(caller),
+      );
+      return {
+        decision,
+        next: `${decision.decisionId} is active${decision.supersedes === undefined ? "" : ` and supersedes ${decision.supersedes}`}. Leads use it instead of asking; a project's lead is woken with it.`,
+      };
+    }),
+
+    digest_get: Effect.fnUntraced(function* (caller) {
+      const digest = yield* digests.render((machineId) => auth.allows(caller, "read", machineId));
+      return { ...digest, next: "Answer open items with inbox_reply. The hub also emits this as digest.ready at 09:00 and 18:00 (policy.tz)." };
     }),
   };
 

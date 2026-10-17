@@ -350,3 +350,59 @@ describe("queued writes and wakes", () => {
     expect((await call(aOnly, "wake_list", { state: "cancelled" })).body.wakes).toMatchObject([{ wakeId: set.body.wakeId, state: "cancelled" }]);
   });
 });
+
+describe("M3 tools", () => {
+  it("starts a lead with per-project model and effort and shows it with open workstreams in project_get", async () => {
+    const { hub, as } = await fleet();
+    const client = await as("aOnly");
+    const ref = { machineId: "lab-a", projectId: "p-lab-a" };
+    const started = await call(client, "lead_start", { ...ref, model: "claude-haiku-5-5", effort: "low" });
+    expect(started.body).toMatchObject({ threadId: "t-new", state: "starting", sessionGeneration: 0 });
+    expect(hub.calls[0]).toMatchObject({ op: "launch", args: { input: { model: "claude-haiku-5-5", effort: "low", projectId: "p-lab-a" } } });
+    expect((await call(client, "lead_start", { machineId: "lab-b", projectId: "p-lab-b" })).body.code).toBe("forbidden");
+
+    const intake = await call(client, "intake_submit", { ...ref, text: "add a /health endpoint", clientRequestId: "i1" });
+    expect(intake.body).toMatchObject({ workstreamId: "W1" });
+    const outcome = (await call(client, "project_get", ref)).body;
+    expect(outcome.lead).toMatchObject({ threadId: "t-new" });
+    expect(outcome.workstreams).toMatchObject([{ workstreamId: "W1", state: "draft", source: { channel: "mcp", text: "add a /health endpoint" } }]);
+    expect((await call(client, "workstream_get", { workstreamId: "W1" })).body).toMatchObject({ workstream: { state: "draft" }, asks: [], decisions: [] });
+  });
+
+  it("shows and answers only asks on the key's machines, recording the key as the decision's author", async () => {
+    const { hub, as } = await fleet();
+    await hub.fileAsk("lab-a", "p-lab-a", "api.health.path", "/healthz");
+    await hub.fileAsk("lab-b", "p-lab-b", "db.engine", "sqlite");
+    const aOnly = await as("aOnly");
+
+    const listed = (await call(aOnly, "asks_list")).body;
+    expect(listed.asks.map((a: { askId: string }) => a.askId)).toEqual(["A1"]);
+    expect(listed.batches).toMatchObject([{ batchId: "B1", items: [{ number: 1, askId: "A1" }] }]);
+
+    const refused = (await call(aOnly, "inbox_reply", { raw: "recs fine" })).body;
+    expect(refused).toMatchObject({ parsed: false, applied: [], hint: expect.stringContaining("Item 2 is about lab-b/p-lab-b") });
+    expect((await call(aOnly, "inbox_reply", { raw: "pref: short answers" })).body.parsed).toBe(false);
+
+    const answered = (await call(aOnly, "inbox_reply", { raw: "1 go" })).body;
+    expect(answered).toMatchObject({ parsed: true, echo: "Logged: 1 → /healthz (D1)", applied: [{ source: "agent", by: "a-only" }] });
+
+    const global = { key: "policy.tz", value: "UTC", scope: { kind: "global" } };
+    expect((await call(aOnly, "decisions_record", global)).body.code).toBe("forbidden");
+    expect((await call(await as("admin"), "decisions_record", global)).body.decision).toMatchObject({ source: "agent", by: "admin" });
+    await call(await as("admin"), "decisions_record", {
+      key: "db.engine",
+      value: "postgres",
+      scope: { kind: "project", projectRef: { machineId: "lab-b", projectId: "p-lab-b" } },
+    });
+    const search = async (who: "aOnly" | "reader", query: string) =>
+      (await call(who === "aOnly" ? aOnly : await as("reader"), "decisions_search", { query })).body.decisions.map((d: { key: string }) => d.key);
+    expect(await search("aOnly", "healthz postgres utc")).toEqual(expect.arrayContaining(["api.health.path", "policy.tz"]));
+    expect(await search("aOnly", "postgres")).toEqual([]);
+    expect(await search("reader", "postgres")).toEqual(["db.engine"]);
+
+    const digest = (await call(aOnly, "digest_get")).body.text as string;
+    expect(digest).toContain("fleetd digest");
+    expect(digest).not.toContain("p-lab-b");
+    expect((await call(await as("reader"), "digest_get")).body.text).toContain("p-lab-b");
+  });
+});

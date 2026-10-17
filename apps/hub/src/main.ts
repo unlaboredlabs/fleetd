@@ -7,7 +7,10 @@ import * as AppSocket from "./api/AppSocket.ts";
 import * as FleetApi from "./api/FleetApi.ts";
 import * as HttpApp from "./api/HttpApp.ts";
 import * as Auth from "./auth/Auth.ts";
+import * as HumanDigests from "./digests/HumanDigests.ts";
 import * as Executors from "./executor/Executors.ts";
+import * as LeadCallHandler from "./leads/LeadCallHandler.ts";
+import * as LeadsLayer from "./leads/layer.ts";
 import * as NodeLinkServer from "./link/NodeLinkServer.ts";
 import * as EventLog from "./store/EventLog.ts";
 import * as HubDb from "./store/HubDb.ts";
@@ -57,12 +60,17 @@ export const parseHubArgs = (argv: ReadonlyArray<string>): HubOptions | { readon
   return { ...(home === undefined ? {} : { home }), listen: address, ...(ttl === undefined ? {} : { queueTtlSec: Number(ttl) }) };
 };
 
+/** Node links; lead-side `fleetd` calls they forward are answered over the ledger and leads. */
 const layerMachines = Layer.effect(
   NodeLinkServer.NodeLinkServer,
   Effect.gen(function* () {
-    return yield* NodeLinkServer.make({ hubId: `fleetd-${os.hostname()}`, executors: yield* Executors.Executors });
+    return yield* NodeLinkServer.make({
+      hubId: `fleetd-${os.hostname()}`,
+      executors: yield* Executors.Executors,
+      leadCalls: yield* LeadCallHandler.make,
+    });
   }),
-).pipe(Layer.provideMerge(Executors.layer));
+);
 
 /** The sweep's overdue-wakes check; the wake scheduler does the firing. */
 const layerWakeSweep = Layer.effectDiscard(
@@ -83,11 +91,15 @@ export const hubLayer = (home: string, options: HubOptions) =>
         // The sweep reports failing webhooks, so it sits above them.
         Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
+        Layer.provideMerge(layerMachines),
+        Layer.provideMerge(HumanDigests.layer),
+        // Leads and the ledger; lead wakes go out through the write queue below.
+        Layer.provideMerge(LeadsLayer.layerWithLedger()),
         Layer.provideMerge(Wakes.layer),
         Layer.provideMerge(
           WriteQueue.layer(options.queueTtlSec === undefined ? {} : { ttl: Duration.seconds(options.queueTtlSec) }),
         ),
-        Layer.provideMerge(layerMachines),
+        Layer.provideMerge(Executors.layer),
         Layer.provideMerge(Layer.mergeAll(HubStore.layer, EventLog.layer, Auth.layer)),
         Layer.provide(HubDb.layer(home)),
       ),

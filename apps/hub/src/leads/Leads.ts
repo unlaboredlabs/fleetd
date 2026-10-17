@@ -1,5 +1,6 @@
 // One lead per project: a T3 thread on the project's machine, started with the v0 lead prompt plus the digest.
 import type { Effort, Lead, LeadState, ProjectRef, ProjectSummary, ThreadSummary } from "@fleetd/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -87,6 +88,7 @@ export const make = (options: LeadsOptions = {}) =>
         const model = settings.model ?? options.model ?? DEFAULT_LEAD_MODEL;
         const effort = settings.effort ?? options.effort ?? DEFAULT_LEAD_EFFORT;
         const prompt = `${renderLeadPrompt(template, { ref, title: project.title })}\n\n${yield* wakes.digest(ref)}`;
+        const launchedMs = yield* Clock.currentTimeMillis;
         const { threadId } = yield* executors
           .launch(ref.machineId, {
             machineId: ref.machineId,
@@ -96,8 +98,9 @@ export const make = (options: LeadsOptions = {}) =>
             effort,
             runtimeMode: "full-access",
             title: `fleetd lead: ${project.title}`.slice(0, 80),
-            // T3 keeps a receipt per command id, so a retry after a lost reply returns the same thread.
-            clientRequestId: `fleetd-lead:${ref.machineId}/${ref.projectId}:${sessionGeneration}`,
+            // T3 keeps a receipt per command id forever, so the id names this launch: a hub started on a fresh
+            // database must get a new thread, not the one an earlier hub launched for the same project.
+            clientRequestId: `fleetd-lead:${ref.machineId}/${ref.projectId}:${sessionGeneration}:${launchedMs}`,
           })
           .pipe(Effect.mapError(fromExecutor));
         const at = DateTime.formatIso(yield* DateTime.now);

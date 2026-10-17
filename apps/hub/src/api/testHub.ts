@@ -2,6 +2,8 @@
 // executors and node link (W2/W3) that record calls.
 import type {
   ActionItem,
+  DecisionKey,
+  ProjectId,
   Grant,
   HubEvent,
   Machine,
@@ -25,6 +27,9 @@ import * as SecretBox from "../webhooks/SecretBox.ts";
 import * as Webhooks from "../webhooks/Webhooks.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as Wakes from "../wakes/Wakes.ts";
+import * as HumanDigests from "../digests/HumanDigests.ts";
+import * as LeadsLayer from "../leads/layer.ts";
+import { Asks } from "../ledger/Asks.ts";
 
 export const AT = "2026-10-17T10:00:00.000Z";
 
@@ -126,7 +131,8 @@ export const makeTestHub = () => {
     }),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer).pipe(
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer).pipe(
+    Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),
     Layer.provideMerge(
       Layer.mergeAll(
@@ -140,16 +146,17 @@ export const makeTestHub = () => {
     Layer.provideMerge(HubDb.layerMemory),
   );
 
+  type Seeded = HubStore.HubStore | EventLog.EventLog | Auth.Auth | Asks;
   /** Set once the hub's layer is built, so seeding runs against the same database the server reads. */
-  let context: Context.Context<HubStore.HubStore | EventLog.EventLog | Auth.Auth> | undefined;
-  const run = <A>(effect: Effect.Effect<A, unknown, HubStore.HubStore | EventLog.EventLog | Auth.Auth>) => {
+  let context: Context.Context<Seeded> | undefined;
+  const run = <A>(effect: Effect.Effect<A, unknown, Seeded>) => {
     if (context === undefined) throw new Error("start the hub first");
     return Effect.runPromise(Effect.provideContext(effect, context));
   };
 
   return {
     layer,
-    bind: (built: Context.Context<HubStore.HubStore | EventLog.EventLog | Auth.Auth>) => void (context = built),
+    bind: (built: Context.Context<Seeded>) => void (context = built),
     connected,
     /** Marks the machine connected and wakes whatever waits for it. */
     goLive: (id: string) => {
@@ -176,5 +183,24 @@ export const makeTestHub = () => {
       run(Effect.flatMap(Auth.Auth, (a) => a.createKey(name, grants))).then(({ key, info }) => ({ key, keyId: info.keyId })),
     revoke: (keyId: string) => run(Effect.flatMap(Auth.Auth, (a) => a.revoke(keyId))),
     append: (event: Omit<HubEvent, "seq">) => run(Effect.flatMap(EventLog.EventLog, (e) => e.append(event))),
+    /** `fleetd ask` from the lead of a project: a product decide with a recommendation. */
+    fileAsk: (machineId: string, projectId: string, key: string, recommendation: string) =>
+      run(
+        Effect.flatMap(Asks, (asks) =>
+          asks.create(
+            {
+              projectRef: { machineId: machineId as MachineId, projectId: projectId as ProjectId },
+              kind: "decide",
+              key: key as DecisionKey,
+              class: "product",
+              text: `${key}?`,
+              recommendation,
+              blocks: "nothing",
+              proceededOnRec: true,
+            },
+            `lead:${machineId}/${projectId}`,
+          ),
+        ),
+      ),
   };
 };

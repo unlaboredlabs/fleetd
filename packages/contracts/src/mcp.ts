@@ -198,7 +198,13 @@ export const SubscriptionDeleteInput = Schema.Struct({ subscriptionId: Schema.No
 export const SubscriptionDeleteOutput = Schema.Struct({ ok: Schema.Literal(true), ...resultFields });
 
 // lead_start, lead_restart
-export const LeadStartInput = Schema.Struct({ machineId: MachineId, projectId: ProjectId });
+export const LeadStartInput = Schema.Struct({
+  machineId: MachineId,
+  projectId: ProjectId,
+  /** Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub default. */
+  model: Schema.optionalKey(Schema.NonEmptyString),
+  effort: Schema.optionalKey(Effort),
+});
 export const LeadStartOutput = Schema.Struct({ ...Lead.fields, ...resultFields });
 export const LeadRestartInput = LeadStartInput;
 export const LeadRestartOutput = LeadStartOutput;

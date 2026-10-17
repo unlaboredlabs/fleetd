@@ -129,7 +129,7 @@ describe("LeadWakes", () => {
     );
   });
 
-  it("drops a wake for a project without a lead, and leaves lastWakeAt alone when delivery fails", async () => {
+  it("drops a wake for a project without a lead, and queues one to an offline machine until it is back", async () => {
     const kit = makeKit();
     await runKit(
       kit,
@@ -142,10 +142,18 @@ describe("LeadWakes", () => {
 
         yield* (yield* Leads.Leads).start(REF);
         kit.setOffline(true);
+        const events = yield* EventLog.EventLog;
+        const from = yield* events.head();
         yield* wakes.trigger(REF, intent(2));
         yield* advance(10);
         expect(kit.sends).toHaveLength(0);
-        expect((yield* (yield* LeadRecords.LeadRecords).leads.get(REF))?.lastWakeAt).toBeUndefined();
+        const queued = yield* events.wait({ cursor: from, types: ["lead.woken"], timeoutSec: 0 });
+        expect(queued.events.map((e) => e.data)).toEqual([{ triggers: ["intent"], queued: true }]);
+
+        kit.setOffline(false);
+        const delivered = yield* events.wait({ cursor: from, types: ["write.delivered"], timeoutSec: 60 });
+        expect(delivered.events).toHaveLength(1);
+        expect(kit.sends.map((s) => s.message.match(/New intent W\d+/gu))).toEqual([["New intent W2"]]);
       }),
     );
   });

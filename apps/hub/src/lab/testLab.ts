@@ -1,4 +1,4 @@
-// `pnpm test:lab [scenario…]`: the M1 and M2 "done when" scenarios, end to end, against the disposable lab (never
+// `pnpm test:lab [scenario…]`: the M1, M2 and M3 "done when" scenarios, end to end, against the disposable lab (never
 // in CI). Two stock T3 instances (lab/lab.mjs), one hub and two nodes, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
 // runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
@@ -12,6 +12,7 @@ import {
   type Body,
   callToolWith,
   check,
+  CLI,
   cli,
   HUB_PORT,
   HUB_URL,
@@ -35,6 +36,7 @@ import {
   waitEventWith,
 } from "./harness.ts";
 import { m1Fleet } from "./m1Fleet.ts";
+import { m3Loop } from "./m3Loop.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
@@ -49,6 +51,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "missed", run: (lab) => missedCompletion(lab) },
   { name: "degraded", run: degradedMachine },
   { name: "queue", run: offlineQueue },
+  // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above.
+  { name: "m3", run: m3Loop },
 ];
 
 /** Extra `node join` flags per machine. */
@@ -72,6 +76,21 @@ const takeLabLock = () => {
   process.once("exit", () => fs.rmSync(LOCK, { force: true }));
 };
 const nodeHome = (id: LabMachine) => path.join(RUN, `node-${id}`);
+
+/**
+ * What a lead's shell needs, at the stable paths lab/lab.mjs gives each T3: `fleetd` on PATH (this checkout's
+ * built CLI) and FLEETD_NODE_SOCK pointing at this run's node socket.
+ */
+const linkLeadShell = () => {
+  fs.mkdirSync(path.join(LAB, "bin"), { recursive: true });
+  fs.writeFileSync(path.join(LAB, "bin", "fleetd"), `#!/bin/sh\nexec '${process.execPath}' '${CLI}' "$@"\n`, { mode: 0o755 });
+  fs.mkdirSync(path.join(LAB, "sock"), { recursive: true });
+  for (const m of MACHINES) {
+    const link = path.join(LAB, "sock", `${m.id}.sock`);
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(path.join(nodeHome(m.id), "node.sock"), link);
+  }
+};
 
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
   startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
@@ -114,6 +133,7 @@ async function main() {
   let client: Client | undefined;
   try {
     fs.rmSync(RUN, { recursive: true, force: true });
+    linkLeadShell();
     await startHubProcess();
     ok(`hub up on ${HUB_URL} (queue TTL ${QUEUE_TTL_SEC} s)`);
 

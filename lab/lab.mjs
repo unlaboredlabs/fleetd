@@ -51,6 +51,10 @@ function scrubbedEnv(i) {
   }
   return {
     ...keep,
+    // Leads run `fleetd` from their shell: test:lab writes LAB/bin/fleetd (the built CLI) and points
+    // LAB/sock/<instance>.sock at that run's node socket.
+    PATH: [path.join(LAB, "bin"), keep.PATH].filter(Boolean).join(":"),
+    FLEETD_NODE_SOCK: path.join(LAB, "sock", `${i.name}.sock`),
     ...claudeAuthEnv(),
     // Every Claude process this server spawns uses the lab config dir, never ~/.claude.
     CLAUDE_CONFIG_DIR: claudeDir(i),

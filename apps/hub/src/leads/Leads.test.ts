@@ -82,7 +82,7 @@ describe("Leads", () => {
         yield* l.start(REF);
         const restarted = yield* l.restart(REF);
         expect(restarted).toMatchObject({ threadId: "t2", sessionGeneration: 1, state: "starting" });
-        expect(kit.launches.map((x) => x.input.clientRequestId)).toEqual(["fleetd-lead:lab-a/p1:0", "fleetd-lead:lab-a/p1:1"]);
+        expect(kit.launches.map((x) => x.input.clientRequestId)).toEqual(["fleetd-lead:lab-a/p1:0:0", "fleetd-lead:lab-a/p1:1:0"]);
         expect(kit.launches[1]!.input.prompt).toContain("# fleetd digest");
         expect((yield* l.start(REF)).threadId).toBe("t2");
       }),

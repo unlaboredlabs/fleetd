@@ -36,6 +36,23 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
     "Have the hub send a message to a thread later: at an ISO time (no offset means wall-clock time in tz), every N seconds (>= 60), or on a 5-field cron in an IANA tz. once defaults to true. A run missed while the hub was down fires once, marked late, unless catchUp is skip. Offline machines get it queued. Emits wake.fired.",
   wake_list: "Wakes, oldest first, optionally filtered by machineId, threadId and state (active, done, cancelled).",
   wake_cancel: "Cancel a wake so it never fires again. Cancelling a finished wake is a no-op.",
+  lead_start:
+    "Start the project's lead: one T3 thread that turns intents into briefs, asks only product/money/credential/irreversible questions, and never writes code. Returns the existing lead if there is one. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
+  lead_restart:
+    "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays in T3. Takes model and effort like lead_start.",
+  intake_submit:
+    "Give a project one intent in plain words (e.g. \"add a /health endpoint\"). Creates a draft workstream and wakes the lead, which registers a brief and moves it to running. Idempotent per clientRequestId.",
+  workstream_list: "Workstreams newest first, filtered by machineId, projectId and state (limit defaults to 50).",
+  workstream_get: "One workstream with its frozen brief and headline, its open asks and the decisions scoped to it.",
+  asks_list:
+    "The questions waiting for the human, grouped in numbered batches (state defaults to open; batchId picks one batch). Item numbers are fixed per batch: answer them with inbox_reply.",
+  inbox_reply:
+    "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Each answer becomes a Decision and wakes its lead. Unparseable text changes nothing and returns a hint.",
+  decisions_search: "Full-text search over active decisions (key, value, why), best match first; scope narrows to global, a project or a workstream.",
+  decisions_record:
+    "Record a decision (key = lowercase dotted slug) at global, project or workstream scope; it supersedes the active one with the same key and scope, so leads never ask it again. A project's lead is woken with it. Global decisions need an operate grant on all machines.",
+  digest_get:
+    "The human digest now, as plain text: what needs you (numbered asks), what is running and done, and what leads decided without you. The same text goes out as digest.ready at 09:00 and 18:00 in policy.tz.",
 };
 
 /** MCP requires an object root, so the empty input becomes an empty object schema and refs go to $defs. */
