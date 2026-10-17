@@ -2,6 +2,7 @@
 // result the lead receives inline in its wake. Pure.
 import type { Brief, Task, TaskId, TaskResult } from "@fleetd/contracts";
 import { describeCheck } from "../leads/digest.ts";
+import { receiptsLine } from "../receipts/count.ts";
 
 export const TAIL_MAX = 2000;
 const SLUG_MAX = 40;
@@ -110,7 +111,9 @@ export const taskResultLines = (t: { readonly taskId: TaskId; readonly title: st
     result.status === "cancelled"
       ? "  next: nothing; spawn a new task if the work is still needed."
       : `  next: judge the result; \`fleetd task message ${t.taskId} "<text>"\` continues the same thread.`;
-  return [head, "  result:", ...tail, next].join("\n");
+  // M6 receipts, counted by the hub; absent on results stored before them.
+  const receipts = receiptsLine(result);
+  return [head, ...(receipts === undefined ? [] : [`  ${receipts}`]), "  result:", ...tail, next].join("\n");
 };
 
 const model = (t: Task) => `${t.model}/${t.effort}`;

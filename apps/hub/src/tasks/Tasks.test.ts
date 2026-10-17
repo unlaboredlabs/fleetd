@@ -17,6 +17,7 @@ const spawnInput = (workstreamId: string, over: Partial<Tasks.SpawnInput> = {}):
     kind: "write",
     prompt: "create docs/x.md with one line 'hi', commit it on your branch",
     areas: ["docs"],
+    serves: "done:0",
     ...over,
   }) as Tasks.SpawnInput;
 const head = Effect.flatMap(EventLog.EventLog, (e) => e.head());
@@ -54,6 +55,8 @@ describe("Tasks", () => {
           tail: "Created docs/x.md and committed it.\n\nResult: done, nothing left.",
           branch: "fleetd/T1-add-file",
           prUrl: "https://github.com/wynn-dev/lab/pull/7",
+          receipts: { commands: 1, commandsFailed: 0, filesChanged: 0, toolCalls: 0 },
+          claimsUnverified: false,
         });
         expect(yield* slotsUsed).toBe(0);
         expect(yield* leaseOwners).toEqual({});
@@ -68,6 +71,7 @@ describe("Tasks", () => {
         expect(wake.message).toContain(
           [
             "- T1 completed: add file (branch fleetd/T1-add-file, PR https://github.com/wynn-dev/lab/pull/7)",
+            "  receipts: 1 command (0 failed), 0 files changed, 0 tool calls",
             "  result:",
             "  > Created docs/x.md and committed it.",
             "  >",

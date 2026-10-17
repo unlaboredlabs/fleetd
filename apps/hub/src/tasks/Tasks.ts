@@ -30,7 +30,9 @@ import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import * as Leases from "../leases/Leases.ts";
 import * as Policy from "../leases/Policy.ts";
+import * as Receipts from "../receipts/Receipts.ts";
 import * as Slots from "../slots/Slots.ts";
+import * as ValueBar from "../valuebar/ValueBar.ts";
 import { outsideGlobs } from "./glob.ts";
 import { branchFor, findPrUrl, renderTaskPrompt, tailOf } from "./render.ts";
 import { resolveModelEffort } from "./resolve.ts";
@@ -93,6 +95,9 @@ export const make = Effect.gen(function* () {
   const slots = yield* Slots.Slots;
   const leases = yield* Leases.Leases;
   const policies = yield* Policy.Policies;
+  // M6 value bar and receipts (apps/hub/src/valuebar, apps/hub/src/receipts).
+  const valueBar = yield* ValueBar.ValueBar;
+  const receipts = yield* Receipts.Receipts;
   const scope = yield* Effect.scope;
   // Every state change goes through this, so a release, a completion and a lead call never interleave.
   const lock = Semaphore.makeUnsafe(1);
@@ -260,13 +265,14 @@ export const make = Effect.gen(function* () {
         findPrUrl([...actions].reverse().flatMap((a) => [a.summary, a.outputTail]).concat(text));
       const branch = (changes?._tag === "Some" ? changes.value.branch : undefined) ?? task.branch;
       const at = yield* nowIso;
-      const result: TaskResult = {
+      // M6 receipts: what the thread actually ran, counted from its items.
+      const result: TaskResult = yield* receipts.attach(ref, {
         status,
         tail: tailOf([text.trim(), error].filter((s) => s !== "").join("\n\n")),
         ...(branch === undefined ? {} : { branch }),
         ...(prUrl === undefined ? {} : { prUrl }),
         at,
-      };
+      });
       const worktreePath = changes?._tag === "Some" ? changes.value.worktreePath : undefined;
       const next: Task = {
         ...task,
@@ -353,8 +359,15 @@ export const make = Effect.gen(function* () {
         : Effect.succeed(stored),
     );
 
+  // M6 value bar: serves, done workstreams and review rounds. Outside the lock, since it may ask GitHub for a PR head,
+  // and before the closed-state check, so a done workstream gets its own refusal.
+  const checkValueBar = (caller: TaskCaller, input: SpawnInput) =>
+    Effect.flatMap(leadRecords.workstreams.get(input.workstreamId), (ws) =>
+      ws === undefined || !sameProject(ws.workstream.projectRef, caller.projectRef) ? Effect.void : valueBar.checkSpawn(caller, input, ws.workstream),
+    );
+
   const spawn: Tasks["Service"]["spawn"] = (caller, input) =>
-    Effect.gen(function* () {
+    Effect.andThen(checkValueBar(caller, input), Effect.gen(function* () {
       const ref = caller.projectRef;
       const ws = yield* leadRecords.workstreams.get(input.workstreamId);
       if (ws === undefined || !sameProject(ws.workstream.projectRef, ref)) {
@@ -392,12 +405,14 @@ export const make = Effect.gen(function* () {
         ...(input.tier === undefined ? {} : { tier: input.tier }),
         ...(input.estimateMinutes === undefined ? {} : { estimateMinutes: input.estimateMinutes }),
         ...(input.serves === undefined ? {} : { serves: input.serves }),
+        ...(input.pr === undefined ? {} : { pr: input.pr }),
+        ...(input.qa === undefined ? {} : { qa: input.qa }),
         state: "queued",
         attempt: 1,
         createdAt: yield* nowIso,
       });
       return yield* tryStart({ task }, false);
-    }).pipe(lock.withPermit);
+    }).pipe(lock.withPermit));
 
   const message: Tasks["Service"]["message"] = (caller, taskId, text) =>
     Effect.gen(function* () {
@@ -468,5 +483,5 @@ export const make = Effect.gen(function* () {
   });
 });
 
-/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace, Slots, Leases and Policies. */
+/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace, Slots, Leases, Policies, ValueBar and Receipts. */
 export const layer = Layer.effect(Tasks, make);

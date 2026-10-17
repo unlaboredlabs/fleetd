@@ -1,11 +1,12 @@
 // Test kit for tasks: the real store, event log, leads and ledger on an in-memory database under a TestClock,
 // with the real slot board and leases, fake executors, a fake ThreadWorkspace and a policy file given as text.
-import type { HubEventType, MachineId, ProjectId, ProjectRef, ThreadId, ThreadLaunchInput, WorkstreamId } from "@fleetd/contracts";
+import type { ActionItem, HubEventType, MachineId, ProjectId, ProjectRef, ThreadId, ThreadLaunchInput, WorkstreamId } from "@fleetd/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 import * as Executors from "../executor/Executors.ts";
+import * as Incidents from "../incidents/Incidents.ts";
 import { type ThreadChanges, ThreadWorkspace } from "../executor/ThreadWorkspace.ts";
 import * as LeadsLayer from "../leads/layer.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
@@ -13,10 +14,14 @@ import * as Leads from "../leads/Leads.ts";
 import * as Leases from "../leases/Leases.ts";
 import * as Policy from "../leases/Policy.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
+import * as Receipts from "../receipts/Receipts.ts";
 import * as Slots from "../slots/Slots.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
+import * as JudgeHook from "../valuebar/JudgeHook.ts";
+import * as PrHeads from "../valuebar/PrHeads.ts";
+import * as ValueBar from "../valuebar/ValueBar.ts";
 import * as Tasks from "./Tasks.ts";
 
 export const REF: ProjectRef = { machineId: "lab-a" as MachineId, projectId: "p1" as ProjectId };
@@ -35,6 +40,10 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
   const sends: Array<{ readonly threadId: ThreadId; readonly message: string }> = [];
   const interrupts: Array<ThreadId> = [];
   const changes = new Map<string, ThreadChanges>();
+  /** PR URL → its head SHA as GitHub would report it; unknown PRs fail like an unauthenticated `gh`. */
+  const prHeads = new Map<string, string>();
+  /** Thread id → its actions; threads not in it ran one `gh pr create`. */
+  const actions = new Map<string, ReadonlyArray<ActionItem>>();
   let offline = false;
   let live = Deferred.makeUnsafe<void>();
 
@@ -56,10 +65,12 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
       }),
     interrupt: (ref) => Effect.sync(() => void interrupts.push(ref.threadId)),
     tail: (ref) => Effect.fail(new Executors.ThreadNotFound({ machineId: ref.machineId, threadId: ref.threadId })),
-    actions: () =>
-      Effect.succeed([
-        { at: "1970-01-01T00:00:01.000Z", kind: "command", status: "completed", summary: "gh pr create --fill", outputTail: "https://github.com/wynn-dev/lab/pull/7", failed: false },
-      ] as const),
+    actions: (ref) =>
+      Effect.succeed(
+        actions.get(ref.threadId) ?? [
+          { at: "1970-01-01T00:00:01.000Z", kind: "command", status: "completed", summary: "gh pr create --fill", outputTail: "https://github.com/wynn-dev/lab/pull/7", failed: false },
+        ],
+      ),
   });
 
   const workspace = ThreadWorkspace.of({
@@ -76,8 +87,18 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
     Layer.succeed(ThreadWorkspace, workspace),
     Layer.succeed(Policy.PolicySource, policySource),
   ).pipe(Layer.provideMerge(HubDb.layerMemory), Layer.provideMerge(TestClock.layer()));
+  const prHeadsFake = PrHeads.PrHeads.of({
+    headSha: (pr) => {
+      const sha = prHeads.get(pr);
+      return sha === undefined ? Effect.fail(new PrHeads.PrHeadError({ pr, message: "gh: not logged in" })) : Effect.succeed(sha);
+    },
+  });
+
   const layer = Tasks.layer.pipe(
-    Layer.provideMerge(Layer.mergeAll(Slots.layer({ defaultCap: options.cap ?? 40 }), Leases.layer, Policy.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(Slots.layer({ defaultCap: options.cap ?? 40 }), Leases.layer, Policy.layer, ValueBar.layer, Receipts.layer),
+    ),
+    Layer.provideMerge(Layer.mergeAll(Incidents.layer, Layer.succeed(PrHeads.PrHeads, prHeadsFake), JudgeHook.layerNoop)),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),
     Layer.provideMerge(base),
@@ -152,6 +173,8 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
     sends,
     interrupts,
     changes,
+    prHeads,
+    actions,
     setup,
     threadEvent,
     setOffline: (value: boolean) =>
