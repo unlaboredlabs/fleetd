@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/AppClientMessage",
+  "$defs": {
+    "EventSeq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "AppClientMessage": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "auth"
+              ]
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "t",
+            "key"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "snapshot"
+              ]
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "events"
+              ]
+            },
+            "cursor": {
+              "$ref": "#/$defs/EventSeq"
+            }
+          },
+          "required": [
+            "t",
+            "cursor"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

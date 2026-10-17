@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/HubEvent",
+  "$defs": {
+    "EventSeq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "HubEventType": {
+      "type": "string",
+      "enum": [
+        "machine.online",
+        "machine.offline",
+        "machine.degraded",
+        "thread.started",
+        "thread.completed",
+        "thread.failed",
+        "thread.interrupted",
+        "thread.waiting",
+        "thread.usage_limited"
+      ]
+    },
+    "MachineId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "description": "Machine slug, [a-z0-9-]{1,32}"
+    },
+    "ProjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ThreadId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "HubEvent": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "type": {
+          "$ref": "#/$defs/HubEventType"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "data": {}
+      },
+      "required": [
+        "seq",
+        "at",
+        "type",
+        "summary"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
