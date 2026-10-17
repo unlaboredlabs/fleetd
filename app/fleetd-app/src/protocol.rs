@@ -428,8 +428,8 @@ contract! {
         pub recommendation: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub steps: Option<Vec<Step>>,
-        /// M8: a do ask's re-check, a secret ask's sink and fingerprint, an approve ask's stored command (not shown
-        /// yet) and what closed or reopened the ask.
+        /// M8: a do ask's re-check, a secret ask's sink and fingerprint, an approve ask's stored command and what
+        /// closed or reopened the ask.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub verify: Option<CheckSpec>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -437,7 +437,7 @@ contract! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub fingerprint: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub gated: Option<Value>,
+        pub gated: Option<GatedRunSpec>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub evidence: Option<String>,
         pub blocks: String,
@@ -454,6 +454,27 @@ contract! {
         pub created_at: String,
     }
 }
+
+literals! {
+    pub enum GatedClass { Irreversible = "irreversible", Money = "money", Credential = "credential" }
+}
+
+contract! {
+    /// An approve ask's stored command: the node runs exactly this after a human approves it.
+    pub struct GatedRunSpec {
+        pub argv: Vec<String>,
+        /// Absent: the project workspace.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub cwd: Option<String>,
+        pub class: GatedClass,
+        pub reason: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub secret_env: Option<Vec<SecretEnv>>,
+        pub timeout_sec: u32,
+    }
+}
+
+contract! { pub struct SecretEnv { pub name: String, pub secret_key: String } }
 
 contract! { pub struct AskAnswer { pub value: String, pub by: String, pub at: String, pub raw: String } }
 

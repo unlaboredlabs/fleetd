@@ -4617,6 +4617,29 @@
             "removed"
           ],
           "additionalProperties": true
+        },
+        "push_vapid_key.input": {
+          "not": {
+            "type": "null"
+          }
+        },
+        "push_vapid_key.output": {
+          "type": "object",
+          "properties": {
+            "publicKey": {
+              "type": "string"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "publicKey"
+          ],
+          "additionalProperties": true
         }
       },
       "required": [
@@ -4695,7 +4718,9 @@
         "push_subscribe.input",
         "push_subscribe.output",
         "push_unsubscribe.input",
-        "push_unsubscribe.output"
+        "push_unsubscribe.output",
+        "push_vapid_key.input",
+        "push_vapid_key.output"
       ],
       "additionalProperties": true
     }

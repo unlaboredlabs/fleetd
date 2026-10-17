@@ -483,6 +483,13 @@ export const PushUnsubscribeOutput = Schema.Struct({
   ...resultFields,
 });
 
+// push_vapid_key: the hub's VAPID public key, for PushManager.subscribe's applicationServerKey.
+export const PushVapidKeyInput = Schema.Struct({});
+export const PushVapidKeyOutput = Schema.Struct({
+  publicKey: base64url(65, "base64url of the hub's 65-byte uncompressed P-256 VAPID public key"),
+  ...resultFields,
+});
+
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
   fleetd_status: { scope: "read", input: FleetdStatusInput, output: FleetdStatusOutput },
@@ -523,6 +530,7 @@ export const McpTools = {
   secret_submit: { scope: "operate", input: SecretSubmitInput, output: SecretSubmitOutput },
   push_subscribe: { scope: "read", input: PushSubscribeInput, output: PushSubscribeOutput },
   push_unsubscribe: { scope: "read", input: PushUnsubscribeInput, output: PushUnsubscribeOutput },
+  push_vapid_key: { scope: "read", input: PushVapidKeyInput, output: PushVapidKeyOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;
 export type McpToolName = keyof typeof McpTools;
 

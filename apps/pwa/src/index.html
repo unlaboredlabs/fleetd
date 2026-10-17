@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1b1c1f">
+<meta name="referrer" content="no-referrer">
+<title>fleetd</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1b1c1f;--panel:#f3f4f6;--border:#d8dade;--muted:#6b6f78;--accent:#2f6fde;--good:#2e7d32;--bad:#c62828;--warn:#8a6100}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1c1f;--fg:#d6d7da;--panel:#222327;--border:#33353a;--muted:#7d8089;--accent:#6ea8fe;--good:#7cc47f;--bad:#e5737a;--warn:#d9b45c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;padding-bottom:5rem}
+header{position:sticky;top:0;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;padding:.4rem .75rem;padding-top:calc(.4rem + env(safe-area-inset-top));background:var(--bg);border-bottom:1px solid var(--border);font-size:13px}
+main{padding:.75rem;max-width:40rem;margin:0 auto}
+h1{font-size:20px}h2{font-size:13px;font-weight:400;margin:1rem 0 0}p{margin:.4rem 0}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:.75rem;margin:.5rem 0}
+.meta{display:flex;flex-wrap:wrap;gap:.5rem;font-size:12px;align-items:baseline}.meta b{color:var(--accent);font-size:16px}
+.product .class{color:var(--accent)}.credential .class{color:var(--warn)}.money .class,.irreversible .class{color:var(--bad)}
+.taps{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.6rem}
+button{font:inherit;min-height:44px;padding:.5rem .9rem;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg)}
+button.go{background:var(--accent);border-color:var(--accent);color:var(--bg)}button.no{color:var(--bad)}button:disabled{opacity:.5}
+header button{min-height:32px;padding:.2rem .6rem}
+input{font:inherit;font-size:16px;flex:1;min-width:0;min-height:44px;padding:.5rem;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg)}
+code,pre{font:13px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
+pre{margin:.4rem 0;padding:.4rem;border-left:3px solid var(--warn)}
+.steps{padding-left:1.25rem}.steps li{margin:.4rem 0}
+.cmd{display:flex;gap:.5rem;align-items:center;background:var(--bg);border-radius:4px;padding:.2rem .2rem .2rem .5rem;margin:.25rem 0}.cmd code{flex:1}
+.gated{display:grid;grid-template-columns:auto 1fr;gap:.3rem .75rem;margin:.5rem 0}.gated dt{color:var(--muted)}.gated dd{margin:0;min-width:0}
+.row,.reply,.pair form{display:flex;gap:.5rem}.secret{margin:.5rem 0}
+.reply{position:fixed;left:0;right:0;bottom:0;padding:.5rem .75rem;padding-bottom:calc(.5rem + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--border)}
+.muted{color:var(--muted)}.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

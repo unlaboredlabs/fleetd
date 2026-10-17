@@ -9,6 +9,8 @@ a GPUI desktop app and a phone PWA. Claude is reached only through the `claude` 
 - `packages/contracts` - Effect Schema types shared by hub, node, CLI and app. Anything that crosses
   a wire between fleetd components is defined here.
 - `apps/hub`, `apps/node`, `apps/cli` (bin `fleetd`) - TypeScript, Effect 4.
+- `apps/pwa` - the phone web app (Preact, no Effect), built into `apps/hub/dist/pwa` for the hub to serve at `/`.
+  Import only types from `@fleetd/contracts`; its values would pull Effect into a bundle capped at 60 KB gzipped.
 - `vendor/t3/` - generated slice of T3's `contracts`, `client-runtime` and `shared` at the commit in
   `vendor/t3/PIN`. **Never edit by hand.** To use more of T3, add an entry to `ENTRIES` in
   `scripts/sync-t3.ts` and run `pnpm sync:t3 --source <t3 checkout>`. Keep `T3_PIN` in
