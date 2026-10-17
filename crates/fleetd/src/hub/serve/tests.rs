@@ -19,12 +19,15 @@ struct TestHub {
     url: String,
     served: tokio::task::JoinHandle<std::io::Result<()>>,
     interrupts: Arc<AtomicUsize>,
+    // Each test gets its own home: the webhook key file is created there, and a shared one races between tests.
+    _home: tempfile::TempDir,
 }
 
 /// The real registry plus an operate tool that counts its calls and a tool that panics.
 async fn start() -> TestHub {
+    let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
-        home: std::env::temp_dir(),
+        home: home.path().to_path_buf(),
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
@@ -50,6 +53,7 @@ async fn start() -> TestHub {
         url,
         served,
         interrupts,
+        _home: home,
     }
 }
 
