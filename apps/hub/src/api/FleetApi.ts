@@ -159,7 +159,7 @@ const fromExecutor = (error: Executors.ExecutorError): ToolError => {
 const refusal = (error: { readonly code: ToolError["code"]; readonly message: string; readonly fix?: string }) =>
   new ToolError({ code: error.code, message: error.message, ...(error.fix === undefined ? {} : { fix: error.fix }) });
 
-const unknownWorkstream = (workstreamId: string) =>
+const unknownWorkstream = (workstreamId: string): ToolError =>
   new ToolError({ code: "not_found", message: `No workstream ${workstreamId}.`, fix: "Call workstream_list to see workstreams." });
 
 const make = Effect.gen(function* () {
@@ -192,22 +192,31 @@ const make = Effect.gen(function* () {
   /** Decisions written over MCP come from an agent key, recorded by its name. */
   const actorOf = (caller: AgentKeyInfo) => ({ source: "agent" as const, by: caller.name });
 
-  const projectOfWorkstream = (workstreamId: string) =>
-    Effect.map(workstreams.get(workstreamId as Parameters<typeof workstreams.get>[0]), (w) => w?.projectRef);
-
-  /** The project a decision belongs to, or undefined for a global one. */
-  const decisionProject = (scope: DecisionScope) =>
-    scope.kind === "global"
-      ? Effect.succeed(undefined)
-      : scope.kind === "project"
-        ? Effect.succeed(scope.projectRef)
-        : projectOfWorkstream(scope.workstreamId);
-
-  const canReadDecision = Effect.fnUntraced(function* (caller: AgentKeyInfo, decision: Decision) {
-    if (decision.scope.kind === "global") return true;
-    const ref = yield* decisionProject(decision.scope);
-    return ref !== undefined && auth.allows(caller, "read", ref.machineId);
+  /** The project a decision scope belongs to: undefined for global, a not_found for an unknown workstream. */
+  const decisionProject = Effect.fnUntraced(function* (scope: DecisionScope) {
+    if (scope.kind === "global") return undefined;
+    if (scope.kind === "project") return scope.projectRef;
+    const workstream = yield* workstreams.get(scope.workstreamId);
+    if (workstream === undefined) return yield* unknownWorkstream(scope.workstreamId);
+    return workstream.projectRef;
   });
+
+  /** lead_start and lead_restart save a given model or effort as the project's lead settings first. */
+  const configureLead = Effect.fnUntraced(function* (input: ToolInput<"lead_start">) {
+    if (input.model === undefined && input.effort === undefined) return;
+    const ref = { machineId: input.machineId, projectId: input.projectId };
+    if ((yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
+    yield* leads.configure(ref, {
+      ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
+    });
+  });
+
+  const canReadDecision = (caller: AgentKeyInfo, decision: Decision) =>
+    decisionProject(decision.scope).pipe(
+      Effect.map((ref) => ref === undefined || auth.allows(caller, "read", ref.machineId)),
+      Effect.orElseSucceed(() => false),
+    );
 
   /** A machine's cache is fresh only while its node is online and its executor holds a T3 connection. */
   const freshness = Effect.fnUntraced(function* (machineId: MachineId) {
@@ -453,15 +462,8 @@ const make = Effect.gen(function* () {
 
     lead_start: Effect.fnUntraced(function* (caller, input) {
       yield* require(caller, "operate", input.machineId);
-      const ref = { machineId: input.machineId, projectId: input.projectId };
-      if (input.model !== undefined || input.effort !== undefined) {
-        if ((yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
-        yield* leads.configure(ref, {
-          ...(input.model === undefined ? {} : { model: input.model }),
-          ...(input.effort === undefined ? {} : { effort: input.effort }),
-        });
-      }
-      const lead = yield* leads.start(ref).pipe(Effect.mapError(refusal));
+      yield* configureLead(input);
+      const lead = yield* leads.start({ machineId: input.machineId, projectId: input.projectId }).pipe(Effect.mapError(refusal));
       return {
         ...lead,
         next: `Lead thread ${lead.threadId} is ${lead.state}. Submit work with intake_submit; watch it with project_get or events_wait (lead.woken, ask.created, batch.ready).`,
@@ -470,15 +472,8 @@ const make = Effect.gen(function* () {
 
     lead_restart: Effect.fnUntraced(function* (caller, input) {
       yield* require(caller, "operate", input.machineId);
-      const ref = { machineId: input.machineId, projectId: input.projectId };
-      if (input.model !== undefined || input.effort !== undefined) {
-        if ((yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
-        yield* leads.configure(ref, {
-          ...(input.model === undefined ? {} : { model: input.model }),
-          ...(input.effort === undefined ? {} : { effort: input.effort }),
-        });
-      }
-      const lead = yield* leads.restart(ref).pipe(Effect.mapError(refusal));
+      yield* configureLead(input);
+      const lead = yield* leads.restart({ machineId: input.machineId, projectId: input.projectId }).pipe(Effect.mapError(refusal));
       return {
         ...lead,
         next: `Fresh lead thread ${lead.threadId} (session ${lead.sessionGeneration}) started from the current digest; the old thread stays in T3 as history.`,
@@ -575,11 +570,8 @@ const make = Effect.gen(function* () {
     }),
 
     decisions_search: Effect.fnUntraced(function* (caller, input) {
-      if (input.scope !== undefined) {
-        const ref = yield* decisionProject(input.scope);
-        if (input.scope.kind !== "global" && ref === undefined) return yield* unknownWorkstream((input.scope as { workstreamId: string }).workstreamId);
-        if (ref !== undefined) yield* require(caller, "read", ref.machineId);
-      }
+      const scoped = input.scope === undefined ? undefined : yield* decisionProject(input.scope);
+      if (scoped !== undefined) yield* require(caller, "read", scoped.machineId);
       const found = yield* decisions.search(input.query, { ...(input.scope === undefined ? {} : { scope: input.scope }), limit: input.limit });
       const visible: Array<Decision> = [];
       for (const decision of found) if (yield* canReadDecision(caller, decision)) visible.push(decision);
@@ -599,9 +591,7 @@ const make = Effect.gen(function* () {
             fix: "Record it at project scope, or use a key with an operate grant on * machines.",
           });
         }
-      } else if (ref === undefined) {
-        return yield* unknownWorkstream((input.scope as { workstreamId: string }).workstreamId);
-      } else {
+      } else if (ref !== undefined) {
         yield* require(caller, "operate", ref.machineId);
         if (input.scope.kind === "project" && (yield* store.projects.get(ref)) === undefined) return yield* unknownProject(ref);
       }
