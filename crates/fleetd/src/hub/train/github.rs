@@ -29,7 +29,10 @@ pub struct SystemGh;
 impl GhRunner for SystemGh {
     fn run(&self, args: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
         Box::pin(async move {
-            let child = tokio::process::Command::new("gh").args(&args).kill_on_drop(true).output();
+            let child = tokio::process::Command::new("gh")
+                .args(&args)
+                .kill_on_drop(true)
+                .output();
             match tokio::time::timeout(std::time::Duration::from_secs(30), child).await {
                 Err(_) => Err("gh timed out after 30 s".into()),
                 Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Err("ENOENT".into()),
@@ -59,7 +62,10 @@ pub struct GhError {
 
 impl GhError {
     fn failed(message: impl Into<String>) -> Self {
-        Self { kind: GhErrorKind::Failed, message: message.into() }
+        Self {
+            kind: GhErrorKind::Failed,
+            message: message.into(),
+        }
     }
 }
 
@@ -128,9 +134,14 @@ pub struct MergedPull {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MergeOutcome {
-    Merged { sha: String },
+    Merged {
+        sha: String,
+    },
     /// GitHub said no: 405 (not mergeable, e.g. the base moved) or 409 (the head is no longer `sha`).
-    Refused { status: u16, message: String },
+    Refused {
+        status: u16,
+        message: String,
+    },
 }
 
 enum Reply {
@@ -140,7 +151,9 @@ enum Reply {
 
 fn auth_hint(stderr: &str) -> bool {
     let s = stderr.to_lowercase();
-    s.contains("gh auth login") || s.contains("not logged in") || s.contains("authentication required")
+    s.contains("gh auth login")
+        || s.contains("not logged in")
+        || s.contains("authentication required")
 }
 
 /// `(HTTP nnn)` in gh's stderr.
@@ -149,7 +162,8 @@ fn http_status(stderr: &str) -> u16 {
         .match_indices("(HTTP ")
         .find_map(|(i, _)| {
             let digits = stderr.get(i + 6..i + 9)?;
-            (stderr.get(i + 9..i + 10) == Some(")") && digits.bytes().all(|b| b.is_ascii_digit())).then(|| digits.parse().ok())?
+            (stderr.get(i + 9..i + 10) == Some(")") && digits.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| digits.parse().ok())?
         })
         .unwrap_or(0)
 }
@@ -165,8 +179,22 @@ impl TrainGitHub {
     }
 
     /// `gh api`; a non-2xx answer is `{ status, message }` rather than an error, so callers can tell a 409 apart.
-    async fn call(&self, method: &str, path: &str, fields: &[(&str, &str)]) -> Result<Reply, GhError> {
-        let mut args: Vec<String> = ["api", "-X", method, "-H", "Accept: application/vnd.github+json", path].map(String::from).into();
+    async fn call(
+        &self,
+        method: &str,
+        path: &str,
+        fields: &[(&str, &str)],
+    ) -> Result<Reply, GhError> {
+        let mut args: Vec<String> = [
+            "api",
+            "-X",
+            method,
+            "-H",
+            "Accept: application/vnd.github+json",
+            path,
+        ]
+        .map(String::from)
+        .into();
         for (k, v) in fields {
             args.push("-f".into());
             args.push(format!("{k}={v}"));
@@ -179,31 +207,69 @@ impl TrainGitHub {
             }
         })?;
         if out.exit_code == 4 || (out.exit_code != 0 && auth_hint(&out.stderr)) {
-            return Err(GhError { kind: GhErrorKind::Auth, message: format!("gh is not authenticated: {GH_AUTH_FIX}") });
+            return Err(GhError {
+                kind: GhErrorKind::Auth,
+                message: format!("gh is not authenticated: {GH_AUTH_FIX}"),
+            });
         }
         if out.exit_code == 0 {
-            let text = if out.stdout.is_empty() { "null" } else { &out.stdout };
-            return serde_json::from_str(text).map(Reply::Ok).map_err(|_| GhError::failed(format!("gh api {path} did not return JSON")));
+            let text = if out.stdout.is_empty() {
+                "null"
+            } else {
+                &out.stdout
+            };
+            return serde_json::from_str(text)
+                .map(Reply::Ok)
+                .map_err(|_| GhError::failed(format!("gh api {path} did not return JSON")));
         }
-        let last = out.stderr.trim().split('\n').next_back().unwrap_or_default();
-        let message: String = last.strip_prefix("gh: ").unwrap_or(last).chars().take(500).collect();
-        Ok(Reply::Err { status: http_status(&out.stderr), message })
+        let last = out
+            .stderr
+            .trim()
+            .split('\n')
+            .next_back()
+            .unwrap_or_default();
+        let message: String = last
+            .strip_prefix("gh: ")
+            .unwrap_or(last)
+            .chars()
+            .take(500)
+            .collect();
+        Ok(Reply::Err {
+            status: http_status(&out.stderr),
+            message,
+        })
     }
 
-    async fn json<T: DeserializeOwned>(&self, method: &str, path: &str, fields: &[(&str, &str)]) -> Result<T, GhError> {
+    async fn json<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        path: &str,
+        fields: &[(&str, &str)],
+    ) -> Result<T, GhError> {
         match self.call(method, path, fields).await? {
-            Reply::Ok(v) => serde_json::from_value(v).map_err(|_| GhError::failed(format!("gh api {path} returned an unexpected shape"))),
-            Reply::Err { message, .. } => Err(GhError::failed(format!("gh api {path} failed: {message}"))),
+            Reply::Ok(v) => serde_json::from_value(v).map_err(|_| {
+                GhError::failed(format!("gh api {path} returned an unexpected shape"))
+            }),
+            Reply::Err { message, .. } => {
+                Err(GhError::failed(format!("gh api {path} failed: {message}")))
+            }
         }
     }
 
     pub async fn pull(&self, repo: &str, n: i64) -> Result<Pull, GhError> {
-        self.json("GET", &format!("repos/{repo}/pulls/{n}"), &[]).await
+        self.json("GET", &format!("repos/{repo}/pulls/{n}"), &[])
+            .await
     }
 
     /// The latest run of each check on `sha`.
     pub async fn check_runs(&self, repo: &str, sha: &str) -> Result<Vec<CheckRun>, GhError> {
-        let runs: CheckRuns = self.json("GET", &format!("repos/{repo}/commits/{sha}/check-runs?per_page=100"), &[]).await?;
+        let runs: CheckRuns = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/commits/{sha}/check-runs?per_page=100"),
+                &[],
+            )
+            .await?;
         // A re-run adds a newer run with the same name; only the newest counts. Map order is first-seen, as in TS.
         let mut order: Vec<String> = Vec::new();
         let mut latest: HashMap<String, CheckRun> = HashMap::new();
@@ -219,35 +285,78 @@ impl TrainGitHub {
                 }
             }
         }
-        Ok(order.into_iter().filter_map(|n| latest.remove(&n)).collect())
+        Ok(order
+            .into_iter()
+            .filter_map(|n| latest.remove(&n))
+            .collect())
     }
 
     /// Posts `fleetd/train=success` on `sha`.
-    pub async fn post_train_status(&self, repo: &str, sha: &str, description: &str) -> Result<(), GhError> {
+    pub async fn post_train_status(
+        &self,
+        repo: &str,
+        sha: &str,
+        description: &str,
+    ) -> Result<(), GhError> {
         let description: String = description.chars().take(140).collect();
-        let fields = [("state", "success"), ("context", TRAIN_CONTEXT), ("description", description.as_str())];
-        self.json::<Value>("POST", &format!("repos/{repo}/statuses/{sha}"), &fields).await.map(|_| ())
+        let fields = [
+            ("state", "success"),
+            ("context", TRAIN_CONTEXT),
+            ("description", description.as_str()),
+        ];
+        self.json::<Value>("POST", &format!("repos/{repo}/statuses/{sha}"), &fields)
+            .await
+            .map(|_| ())
     }
 
     /// Squash-merges pinned to `sha`.
     pub async fn merge(&self, repo: &str, n: i64, sha: &str) -> Result<MergeOutcome, GhError> {
-        match self.call("PUT", &format!("repos/{repo}/pulls/{n}/merge"), &[("merge_method", "squash"), ("sha", sha)]).await? {
-            Reply::Err { status: status @ (405 | 409), message } => Ok(MergeOutcome::Refused { status, message }),
-            Reply::Err { message, .. } => Err(GhError::failed(format!("merging {repo}#{n} failed: {message}"))),
+        match self
+            .call(
+                "PUT",
+                &format!("repos/{repo}/pulls/{n}/merge"),
+                &[("merge_method", "squash"), ("sha", sha)],
+            )
+            .await?
+        {
+            Reply::Err {
+                status: status @ (405 | 409),
+                message,
+            } => Ok(MergeOutcome::Refused { status, message }),
+            Reply::Err { message, .. } => Err(GhError::failed(format!(
+                "merging {repo}#{n} failed: {message}"
+            ))),
             Reply::Ok(v) => match serde_json::from_value::<MergeJson>(v) {
                 Ok(m) if m.merged => Ok(MergeOutcome::Merged { sha: m.sha }),
-                Ok(_) => Ok(MergeOutcome::Refused { status: 405, message: "GitHub did not merge it".into() }),
-                Err(_) => Err(GhError::failed(format!("merging {repo}#{n} returned an unexpected shape"))),
+                Ok(_) => Ok(MergeOutcome::Refused {
+                    status: 405,
+                    message: "GitHub did not merge it".into(),
+                }),
+                Err(_) => Err(GhError::failed(format!(
+                    "merging {repo}#{n} returned an unexpected shape"
+                ))),
             },
         }
     }
 
     /// Recently updated closed PRs that were merged.
     pub async fn merged_pulls(&self, repo: &str) -> Result<Vec<MergedPull>, GhError> {
-        let pulls: Vec<ClosedPull> = self.json("GET", &format!("repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=50"), &[]).await?;
+        let pulls: Vec<ClosedPull> = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=50"),
+                &[],
+            )
+            .await?;
         Ok(pulls
             .into_iter()
-            .filter_map(|p| p.merged_at.map(|merged_at| MergedPull { number: p.number, merged_at, merge_sha: p.merge_commit_sha }))
+            .filter_map(|p| {
+                p.merged_at.map(|merged_at| MergedPull {
+                    number: p.number,
+                    merged_at,
+                    merge_sha: p.merge_commit_sha,
+                })
+            })
             .collect())
     }
 }

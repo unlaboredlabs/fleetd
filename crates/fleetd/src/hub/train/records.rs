@@ -3,17 +3,30 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::contract::{Change, ChangeId, ChangeState, MachineId, ProjectId, ProjectRef, TrainState};
+use super::contract::{
+    Change, ChangeId, ChangeState, GitHubRepo, MachineId, ProjectId, ProjectRef, TrainState,
+    parse_state, state_str,
+};
+use fleetd_contracts::prim::UniqueList;
 
 /// The hub's one SQLite connection. TEMPORARY alias until the store area's handle lands.
 pub type Db = Arc<Mutex<Connection>>;
 
 /// States a Change waits in, in its train's queue.
-pub const QUEUED_STATES: &[ChangeState] = &[ChangeState::Queued, ChangeState::Reviewing, ChangeState::Ready];
+pub const QUEUED_STATES: &[ChangeState] = &[
+    ChangeState::Queued,
+    ChangeState::Reviewing,
+    ChangeState::Ready,
+];
 /// States of the Change the train is working on.
-pub const HEAD_STATES: &[ChangeState] = &[ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging];
+pub const HEAD_STATES: &[ChangeState] =
+    &[ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging];
 /// No way back from these; a new enqueue of the PR makes a new Change.
-pub const TERMINAL_STATES: &[ChangeState] = &[ChangeState::Merged, ChangeState::Refused, ChangeState::Abandoned];
+pub const TERMINAL_STATES: &[ChangeState] = &[
+    ChangeState::Merged,
+    ChangeState::Refused,
+    ChangeState::Abandoned,
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrainRow {
@@ -31,9 +44,6 @@ pub struct ListFilter {
     pub state: Option<ChangeState>,
     pub limit: i64,
 }
-
-/// A Change without its number, as `create` takes it.
-pub struct NewChange(pub Change);
 
 #[derive(Clone)]
 pub struct ChangeRecords {
@@ -78,30 +88,46 @@ impl ChangeRecords {
         let mut conn = self.conn();
         let tx = conn.transaction().expect("begin");
         let repo = change.repo.to_lowercase();
+        let pr_number = change.pr_number.get();
         let n: i64 = tx
             .query_row(
                 "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
                  VALUES (?1, ?2, ?3, ?4, ?5, (SELECT COALESCE(MAX(train_order), 0) + 1 FROM changes WHERE repo = ?1), '') RETURNING n",
-                params![repo, change.pr_number, change.state.as_str(), change.project_ref.machine_id.as_str(), change.project_ref.project_id.as_str()],
+                params![repo, pr_number, state_str(change.state), change.project_ref.machine_id.as_str(), change.project_ref.project_id.as_str()],
                 |r| r.get(0),
             )
             .expect("insert change");
-        change.repo = repo;
+        change.repo = GitHubRepo::unchecked(repo);
         change.change_id = ChangeId::unchecked(format!("X{n}"));
-        tx.execute("UPDATE changes SET state = ?1, data = ?2 WHERE n = ?3", params![change.state.as_str(), encode(&change), n]).expect("put change");
+        tx.execute(
+            "UPDATE changes SET state = ?1, data = ?2 WHERE n = ?3",
+            params![state_str(change.state), encode(&change), n],
+        )
+        .expect("put change");
         tx.commit().expect("commit");
         change
     }
 
     pub fn put(&self, change: &Change) {
         self.conn()
-            .execute("UPDATE changes SET state = ?1, data = ?2 WHERE n = ?3", params![change.state.as_str(), encode(change), number_of(&change.change_id)])
+            .execute(
+                "UPDATE changes SET state = ?1, data = ?2 WHERE n = ?3",
+                params![
+                    state_str(change.state),
+                    encode(change),
+                    number_of(&change.change_id)
+                ],
+            )
             .expect("put change");
     }
 
     pub fn get(&self, change_id: &ChangeId) -> Option<Change> {
         self.conn()
-            .query_row("SELECT data FROM changes WHERE n = ?1", [number_of(change_id)], |r| r.get::<_, String>(0))
+            .query_row(
+                "SELECT data FROM changes WHERE n = ?1",
+                [number_of(change_id)],
+                |r| r.get::<_, String>(0),
+            )
             .optional()
             .expect("get change")
             .map(|d| decode(&d))
@@ -112,7 +138,10 @@ impl ChangeRecords {
     pub fn note(&self, change_id: &ChangeId, text: &str) {
         let text: String = text.chars().take(2000).collect();
         self.conn()
-            .execute("UPDATE changes SET data = json_set(data, '$.lastError', ?1) WHERE n = ?2", params![text, number_of(change_id)])
+            .execute(
+                "UPDATE changes SET data = json_set(data, '$.lastError', ?1) WHERE n = ?2",
+                params![text, number_of(change_id)],
+            )
             .expect("note change");
     }
 
@@ -120,11 +149,13 @@ impl ChangeRecords {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached("SELECT data, state FROM changes WHERE repo = ?1 AND pr_number = ?2 ORDER BY n DESC").expect("prepare");
         let rows = stmt
-            .query_map(params![repo.to_lowercase(), pr_number], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .query_map(params![repo.to_lowercase(), pr_number], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
             .expect("query");
         for row in rows {
             let (data, state) = row.expect("row");
-            let terminal = ChangeState::parse(&state).is_some_and(|s| TERMINAL_STATES.contains(&s));
+            let terminal = parse_state(&state).is_some_and(|s| TERMINAL_STATES.contains(&s));
             if !open || !terminal {
                 return Some(decode(&data));
             }
@@ -145,13 +176,19 @@ impl ChangeRecords {
     /// The repo's Changes in these states, in train order.
     pub fn in_train(&self, repo: &str, states: &[ChangeState]) -> Vec<Change> {
         let conn = self.conn();
-        let mut stmt = conn.prepare_cached("SELECT data, state FROM changes WHERE repo = ?1 ORDER BY train_order, n").expect("prepare");
-        stmt.query_map([repo.to_lowercase()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .expect("query")
-            .map(|r| r.expect("row"))
-            .filter(|(_, state)| ChangeState::parse(state).is_some_and(|s| states.contains(&s)))
-            .map(|(data, _)| decode(&data))
-            .collect()
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT data, state FROM changes WHERE repo = ?1 ORDER BY train_order, n",
+            )
+            .expect("prepare");
+        stmt.query_map([repo.to_lowercase()], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .expect("query")
+        .map(|r| r.expect("row"))
+        .filter(|(_, state)| parse_state(state).is_some_and(|s| states.contains(&s)))
+        .map(|(data, _)| decode(&data))
+        .collect()
     }
 
     /// Moves it ahead of every other Change of its repo.
@@ -175,14 +212,22 @@ impl ChangeRecords {
                  ORDER BY n DESC LIMIT ?5",
             )
             .expect("prepare");
-        let machine = filter.project_ref.as_ref().map(|r| r.machine_id.to_string());
-        let project = filter.project_ref.as_ref().map(|r| r.project_id.to_string());
+        let machine = filter
+            .project_ref
+            .as_ref()
+            .map(|r| r.machine_id.to_string());
+        let project = filter
+            .project_ref
+            .as_ref()
+            .map(|r| r.project_id.to_string());
         let repo = filter.repo.as_ref().map(|r| r.to_lowercase());
-        let state = filter.state.map(|s| s.as_str());
-        stmt.query_map(params![machine, project, repo, state, filter.limit], |r| r.get::<_, String>(0))
-            .expect("query")
-            .map(|d| decode(&d.expect("row")))
-            .collect()
+        let state = filter.state.map(state_str);
+        stmt.query_map(params![machine, project, repo, state, filter.limit], |r| {
+            r.get::<_, String>(0)
+        })
+        .expect("query")
+        .map(|d| decode(&d.expect("row")))
+        .collect()
     }
 
     /// Creates the repo's train for `project_ref` if it has none; returns the train either way.
@@ -198,23 +243,43 @@ impl ChangeRecords {
     }
 
     pub fn train(&self, repo: &str) -> Option<TrainRow> {
-        self.conn().query_row("SELECT * FROM trains WHERE repo = ?1", [repo.to_lowercase()], to_train).optional().expect("train")
+        self.conn()
+            .query_row(
+                "SELECT * FROM trains WHERE repo = ?1",
+                [repo.to_lowercase()],
+                to_train,
+            )
+            .optional()
+            .expect("train")
     }
 
     pub fn trains(&self) -> Vec<TrainRow> {
         let conn = self.conn();
-        let mut stmt = conn.prepare_cached("SELECT * FROM trains ORDER BY repo").expect("prepare");
-        stmt.query_map([], to_train).expect("query").map(|r| r.expect("row")).collect()
+        let mut stmt = conn
+            .prepare_cached("SELECT * FROM trains ORDER BY repo")
+            .expect("prepare");
+        stmt.query_map([], to_train)
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .collect()
     }
 
     pub fn set_frozen(&self, repo: &str, frozen: bool) {
-        self.conn().execute("UPDATE trains SET frozen = ?1 WHERE repo = ?2", params![frozen as i64, repo.to_lowercase()]).expect("set frozen");
+        self.conn()
+            .execute(
+                "UPDATE trains SET frozen = ?1 WHERE repo = ?2",
+                params![frozen as i64, repo.to_lowercase()],
+            )
+            .expect("set frozen");
     }
 
     /// True the first time a PR is reported as merged outside the train.
     pub fn mark_bypass(&self, repo: &str, pr_number: i64) -> bool {
         self.conn()
-            .execute("INSERT OR IGNORE INTO train_bypasses (repo, pr_number) VALUES (?1, ?2)", params![repo.to_lowercase(), pr_number])
+            .execute(
+                "INSERT OR IGNORE INTO train_bypasses (repo, pr_number) VALUES (?1, ?2)",
+                params![repo.to_lowercase(), pr_number],
+            )
             .expect("mark bypass")
             == 1
     }
@@ -224,17 +289,31 @@ impl ChangeRecords {
         let repo = repo.to_lowercase();
         TrainState {
             frozen: self.train(&repo).is_some_and(|t| t.frozen),
-            head: self.in_train(&repo, HEAD_STATES).into_iter().next().map(|c| c.change_id),
-            queue: self.in_train(&repo, QUEUED_STATES).into_iter().map(|c| c.change_id).collect(),
-            repo,
+            head: self
+                .in_train(&repo, HEAD_STATES)
+                .into_iter()
+                .next()
+                .map(|c| c.change_id),
+            queue: UniqueList::unchecked(
+                self.in_train(&repo, QUEUED_STATES)
+                    .into_iter()
+                    .map(|c| c.change_id)
+                    .collect(),
+            ),
+            repo: GitHubRepo::unchecked(repo),
         }
     }
 
     /// The reason the polish-loop rule waived review of each listed Change's patch, in insertion order.
     pub fn waivers(&self) -> Vec<(String, String)> {
         let conn = self.conn();
-        let mut stmt = conn.prepare_cached("SELECT change_id, reason FROM review_waivers ORDER BY rowid").expect("prepare");
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).expect("query").map(|r| r.expect("row")).collect()
+        let mut stmt = conn
+            .prepare_cached("SELECT change_id, reason FROM review_waivers ORDER BY rowid")
+            .expect("prepare");
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .collect()
     }
 }
 

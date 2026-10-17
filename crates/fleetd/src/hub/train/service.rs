@@ -9,7 +9,11 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
-use super::contract::{Change, ChangeEnqueueInput, ChangeId, ChangeReview, ChangeState, ProjectRef, TrainState, parse_pr_url};
+use super::contract::{
+    Change, ChangeEnqueueCall, ChangeId, ChangeReview, ChangeState, CommitSha, Count, GitHubPrUrl,
+    GitHubRepo, NonEmpty, Positive, ProjectRef, Serves, Timestamp, TrainState, last_error,
+    parse_pr_url, state_str, tier_str,
+};
 use super::git::{GitError, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TrainGitHub};
 use super::host::{BoxFut, IncidentInput, TrainHost};
@@ -17,6 +21,7 @@ use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
 use super::rules::{Refusal, check_source, check_tier, freeze_key, is_frozen_value};
 use super::time::{iso, millis, parse_iso};
 use crate::clock::Clock;
+use fleetd_contracts::prim::Text;
 
 /// Recorded as the sender of the train's task messages.
 pub const TRAIN_BY: &str = "hub:train";
@@ -32,7 +37,11 @@ pub struct TrainError {
 
 impl TrainError {
     fn new(code: &'static str, message: impl Into<String>, fix: Option<&str>) -> Self {
-        Self { code, message: message.into(), fix: fix.map(String::from) }
+        Self {
+            code,
+            message: message.into(),
+            fix: fix.map(String::from),
+        }
     }
 }
 
@@ -90,8 +99,12 @@ fn short(sha: &str) -> &str {
     &sha[..sha.len().min(12)]
 }
 
-fn error_text(text: &str) -> String {
-    if text.chars().count() > 2000 { format!("{}…", text.chars().take(1999).collect::<String>()) } else { text.to_string() }
+fn error_text(text: &str) -> Text<0, 2000> {
+    last_error(if text.chars().count() > 2000 {
+        format!("{}…", text.chars().take(1999).collect::<String>())
+    } else {
+        text.to_string()
+    })
 }
 
 enum CiOutcome {
@@ -194,7 +207,10 @@ impl Train {
             let mut cursor = from;
             loop {
                 let Some(train) = me.upgrade() else { return };
-                let (events, next) = train.host.events_wait(cursor, &["task.completed"], 300).await;
+                let (events, next) = train
+                    .host
+                    .events_wait(cursor, &["task.completed"], 300)
+                    .await;
                 cursor = next;
                 for event in events {
                     train.on_task_completed(&event.data).await;
@@ -210,12 +226,19 @@ impl Train {
         millis(self.clock.now())
     }
 
-    fn now_iso(&self) -> String {
-        iso(self.clock.now())
+    fn now_iso(&self) -> Timestamp {
+        Timestamp(iso(self.clock.now()))
     }
 
-    fn emit(&self, project_ref: &ProjectRef, event_type: &'static str, summary: String, data: Value) {
-        self.host.append_event(project_ref, event_type, summary, data);
+    fn emit(
+        &self,
+        project_ref: &ProjectRef,
+        event_type: &'static str,
+        summary: String,
+        data: Value,
+    ) {
+        self.host
+            .append_event(project_ref, event_type, summary, data);
     }
 
     async fn wake_lead(&self, project_ref: &ProjectRef, line: String) {
@@ -223,7 +246,12 @@ impl Train {
     }
 
     /// Applies `next` to the stored Change if it is still in one of `from` (any state when None); else does nothing.
-    fn update(&self, change_id: &ChangeId, from: Option<&[ChangeState]>, next: impl FnOnce(Change) -> Change) -> Option<Change> {
+    fn update(
+        &self,
+        change_id: &ChangeId,
+        from: Option<&[ChangeState]>,
+        next: impl FnOnce(Change) -> Change,
+    ) -> Option<Change> {
         let _rows = lock(&self.rows);
         let current = self.records.get(change_id)?;
         if from.is_some_and(|from| !from.contains(&current.state)) {
@@ -238,14 +266,24 @@ impl Train {
     fn positioned(&self, changes: Vec<Change>) -> Vec<Change> {
         let mut queues: HashMap<String, Vec<ChangeId>> = HashMap::new();
         for c in &changes {
-            if !queues.contains_key(&c.repo) {
-                queues.insert(c.repo.clone(), self.records.in_train(&c.repo, QUEUED_STATES).into_iter().map(|c| c.change_id).collect());
+            if !queues.contains_key(c.repo.as_str()) {
+                queues.insert(
+                    c.repo.to_string(),
+                    self.records
+                        .in_train(&c.repo, QUEUED_STATES)
+                        .into_iter()
+                        .map(|c| c.change_id)
+                        .collect(),
+                );
             }
         }
         changes
             .into_iter()
             .map(|mut c| {
-                c.position = queues.get(&c.repo).and_then(|q| q.iter().position(|id| *id == c.change_id)).map(|p| p as i64);
+                c.position = queues
+                    .get(c.repo.as_str())
+                    .and_then(|q| q.iter().position(|id| *id == c.change_id))
+                    .map(|p| Count::unchecked(p as i64));
                 c
             })
             .collect()
@@ -255,13 +293,27 @@ impl Train {
         self.positioned(vec![change]).remove(0)
     }
 
-    fn git_for(&self, change: &Change) -> Result<(TrainGit<'_>, Arc<tokio::sync::Mutex<()>>), GitError> {
-        let project_ref = self.records.train(&change.repo).map(|t| t.project_ref).unwrap_or_else(|| change.project_ref.clone());
-        let root = self
-            .host
-            .project_root(&project_ref)
-            .ok_or_else(|| GitError(format!("no project {} on {} to run git in", project_ref.project_id, project_ref.machine_id)))?;
-        let git = TrainGit { host: self.host.as_ref(), machine_id: project_ref.machine_id.clone(), worktree: (self.options.worktree_for)(&root), root };
+    fn git_for(
+        &self,
+        change: &Change,
+    ) -> Result<(TrainGit<'_>, Arc<tokio::sync::Mutex<()>>), GitError> {
+        let project_ref = self
+            .records
+            .train(&change.repo)
+            .map(|t| t.project_ref)
+            .unwrap_or_else(|| change.project_ref.clone());
+        let root = self.host.project_root(&project_ref).ok_or_else(|| {
+            GitError(format!(
+                "no project {} on {} to run git in",
+                project_ref.project_id, project_ref.machine_id
+            ))
+        })?;
+        let git = TrainGit {
+            host: self.host.as_ref(),
+            machine_id: project_ref.machine_id.clone(),
+            worktree: (self.options.worktree_for)(&root),
+            root,
+        };
         Ok((git, repo_lock(&self.git_locks, &change.repo)))
     }
 
@@ -274,16 +326,31 @@ impl Train {
     /// The author task gets it as a task message; without one, or if that fails, the lead gets it.
     async fn tell_author(&self, change: &Change, text: String) {
         if let Some(task_id) = &change.task_id {
-            match self.host.message_task(&change.project_ref, TRAIN_BY, task_id, text.clone()).await {
+            match self
+                .host
+                .message_task(&change.project_ref, TRAIN_BY, task_id, text.clone())
+                .await
+            {
                 Ok(()) => return,
-                Err(e) => tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged"),
+                Err(e) => {
+                    tracing::warn!(change_id = %change.change_id, task_id = %task_id, error = %e, "train: author not messaged")
+                }
             }
         }
-        self.wake_lead(&change.project_ref, format!("{} ({}): {text}", change.change_id, change.pr_url)).await;
+        self.wake_lead(
+            &change.project_ref,
+            format!("{} ({}): {text}", change.change_id, change.pr_url),
+        )
+        .await;
     }
 
     fn set_ready(&self, change: &Change, reviews: Vec<ChangeReview>) -> Option<Change> {
-        let from = [ChangeState::Queued, ChangeState::Reviewing, ChangeState::NeedsRebase, ChangeState::CiFailed];
+        let from = [
+            ChangeState::Queued,
+            ChangeState::Reviewing,
+            ChangeState::NeedsRebase,
+            ChangeState::CiFailed,
+        ];
         let ready = self.update(&change.change_id, Some(&from), |mut c| {
             c.last_error = None;
             c.state = ChangeState::Ready;
@@ -293,7 +360,10 @@ impl Train {
         self.emit(
             &ready.project_ref,
             "change.ready",
-            format!("{} ready for the train: {}#{}", ready.change_id, ready.repo, ready.pr_number),
+            format!(
+                "{} ready for the train: {}#{}",
+                ready.change_id, ready.repo, ready.pr_number
+            ),
             json!({ "changeId": ready.change_id }),
         );
         self.kick(&ready.repo);
@@ -345,11 +415,18 @@ impl Train {
     async fn abandon(&self, change: &Change, why: &str) {
         let done = self.update(&change.change_id, Some(&[change.state]), |mut c| {
             c.state = ChangeState::Abandoned;
-            c.last_error = Some(why.to_string());
+            c.last_error = Some(last_error(why));
             c
         });
         if done.is_some() {
-            self.wake_lead(&change.project_ref, format!("{} left the train: {} {why}.", change.change_id, change.pr_url)).await;
+            self.wake_lead(
+                &change.project_ref,
+                format!(
+                    "{} left the train: {} {why}.",
+                    change.change_id, change.pr_url
+                ),
+            )
+            .await;
         }
     }
 
@@ -359,23 +436,44 @@ impl Train {
             c.last_error = None;
             c.state = ChangeState::Merged;
             if let Some(sha) = &sha {
-                c.merged_sha = Some(sha.clone());
+                c.merged_sha = Some(CommitSha::unchecked(sha.clone()));
             }
             c
         }) else {
             return;
         };
         lock(&self.merge_refusals).remove(&change.change_id);
-        let as_sha = sha.as_deref().map(|s| format!(" as {}", short(s))).unwrap_or_default();
+        let as_sha = sha
+            .as_deref()
+            .map(|s| format!(" as {}", short(s)))
+            .unwrap_or_default();
         let mut data = json!({ "changeId": merged.change_id, "repo": merged.repo, "prNumber": merged.pr_number });
         if let Some(sha) = &sha {
             data["mergedSha"] = json!(sha);
         }
-        self.emit(&merged.project_ref, "pr.merged", format!("{} merged: {}#{}{as_sha}", merged.change_id, merged.repo, merged.pr_number), data);
-        let by = merged.task_id.as_ref().map(|t| format!(", by {t}")).unwrap_or_default();
+        self.emit(
+            &merged.project_ref,
+            "pr.merged",
+            format!(
+                "{} merged: {}#{}{as_sha}",
+                merged.change_id, merged.repo, merged.pr_number
+            ),
+            data,
+        );
+        let by = merged
+            .task_id
+            .as_ref()
+            .map(|t| format!(", by {t}"))
+            .unwrap_or_default();
         self.wake_lead(
             &merged.project_ref,
-            format!("{} merged by the train: {}{as_sha} (tier {}, serves {}{by}).", merged.change_id, merged.pr_url, merged.tier, merged.serves),
+            format!(
+                "{} merged by the train: {}{as_sha} (tier {}, serves {}{by}).",
+                merged.change_id,
+                merged.pr_url,
+                tier_str(merged.tier),
+                merged.serves
+            ),
         )
         .await;
     }
@@ -386,11 +484,15 @@ impl Train {
         } else {
             format!("conflicts with origin/{base} in {}", paths.join(", "))
         };
-        let Some(parked) = self.update(&change.change_id, Some(&[ChangeState::Rebasing]), |mut c| {
-            c.state = ChangeState::NeedsRebase;
-            c.last_error = Some(error_text(&why));
-            c
-        }) else {
+        let Some(parked) = self.update(
+            &change.change_id,
+            Some(&[ChangeState::Rebasing]),
+            |mut c| {
+                c.state = ChangeState::NeedsRebase;
+                c.last_error = Some(error_text(&why));
+                c
+            },
+        ) else {
             return;
         };
         self.emit(
@@ -410,13 +512,33 @@ impl Train {
     }
 
     async fn ci_failed(&self, change: &Change, failing: &[CheckRun], timed_out: bool) {
-        let names: Vec<String> = failing.iter().map(|r| format!("{} ({})", r.name, r.conclusion.as_deref().unwrap_or(&r.status))).collect();
+        let names: Vec<String> = failing
+            .iter()
+            .map(|r| {
+                format!(
+                    "{} ({})",
+                    r.name,
+                    r.conclusion.as_deref().unwrap_or(&r.status)
+                )
+            })
+            .collect();
         let log_url = failing.iter().find_map(|r| r.html_url.clone());
         let why = if timed_out {
-            format!("CI on {} did not finish within {} min", short(&change.head_sha), (self.options.ci_timeout.as_millis() as f64 / 60_000.0).round())
+            format!(
+                "CI on {} did not finish within {} min",
+                short(&change.head_sha),
+                (self.options.ci_timeout.as_millis() as f64 / 60_000.0).round()
+            )
         } else {
-            let log = log_url.as_ref().map(|u| format!(" (log: {u})")).unwrap_or_default();
-            format!("CI failed on {}: {}{log}", short(&change.head_sha), names.join(", "))
+            let log = log_url
+                .as_ref()
+                .map(|u| format!(" (log: {u})"))
+                .unwrap_or_default();
+            format!(
+                "CI failed on {}: {}{log}",
+                short(&change.head_sha),
+                names.join(", ")
+            )
         };
         let Some(parked) = self.update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
             c.state = ChangeState::CiFailed;
@@ -429,7 +551,12 @@ impl Train {
         if let Some(url) = &log_url {
             data["logUrl"] = json!(url);
         }
-        self.emit(&change.project_ref, "change.ci_failed", format!("{} {why}", change.change_id), data);
+        self.emit(
+            &change.project_ref,
+            "change.ci_failed",
+            format!("{} {why}", change.change_id),
+            data,
+        );
         self.tell_author(
             &parked,
             format!(
@@ -468,7 +595,12 @@ impl Train {
     /// A pass that could not finish: the Change goes back first in line with the reason, and the loop retries later.
     fn put_back(&self, change: &Change, why: &str) {
         tracing::warn!(change_id = %change.change_id, why, "train: pass failed");
-        let from = [ChangeState::Ready, ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging];
+        let from = [
+            ChangeState::Ready,
+            ChangeState::Rebasing,
+            ChangeState::Ci,
+            ChangeState::Merging,
+        ];
         let back = self.update(&change.change_id, Some(&from), |mut c| {
             c.state = ChangeState::Ready;
             c.last_error = Some(error_text(why));
@@ -516,7 +648,7 @@ impl Train {
 
     async fn take_inner(&self, change: &Change) -> Result<(), TakeError> {
         let repo = &change.repo;
-        let pull = self.github.pull(repo, change.pr_number).await?;
+        let pull = self.github.pull(repo, change.pr_number.get()).await?;
         if pull.merged {
             self.abandon(change, "was merged outside the train").await;
             return Ok(());
@@ -525,13 +657,15 @@ impl Train {
             self.abandon(change, "was closed").await;
             return Ok(());
         }
-        if pull.head.sha.to_lowercase() != change.head_sha {
+        if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
             return Ok(self.ready_moved(change, &pull).await?);
         }
-        let Some(rebasing) = self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
-            c.state = ChangeState::Rebasing;
-            c
-        }) else {
+        let Some(rebasing) =
+            self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
+                c.state = ChangeState::Rebasing;
+                c
+            })
+        else {
             return Ok(());
         };
         let base = pull.base.ref_.as_str();
@@ -544,10 +678,20 @@ impl Train {
         let outcome = {
             let _held = git_lock.lock().await;
             match git.rebase(base, &change.branch).await? {
-                Rebase::Rebased { remote_head, head_sha, patch_id } if head_sha != remote_head => match git.push(&change.branch, &remote_head).await? {
-                    Ok(()) => Outcome::Rebase(Rebase::Rebased { remote_head, head_sha, patch_id }),
-                    Err(output) => Outcome::PushRejected(output),
-                },
+                Rebase::Rebased {
+                    remote_head,
+                    head_sha,
+                    patch_id,
+                } if head_sha.as_str() != remote_head => {
+                    match git.push(&change.branch, &remote_head).await? {
+                        Ok(()) => Outcome::Rebase(Rebase::Rebased {
+                            remote_head,
+                            head_sha,
+                            patch_id,
+                        }),
+                        Err(output) => Outcome::PushRejected(output),
+                    }
+                }
                 other => Outcome::Rebase(other),
             }
         };
@@ -557,31 +701,46 @@ impl Train {
                 return Ok(());
             }
             Outcome::PushRejected(output) => {
-                self.put_back(&rebasing, &format!("push refused, the branch moved: {output}"));
+                self.put_back(
+                    &rebasing,
+                    &format!("push refused, the branch moved: {output}"),
+                );
                 return Ok(());
             }
-            Outcome::Rebase(Rebase::Rebased { head_sha, patch_id, .. }) => (head_sha, patch_id),
+            Outcome::Rebase(Rebase::Rebased {
+                head_sha, patch_id, ..
+            }) => (head_sha, patch_id),
         };
         if Some(patch_id.as_str()) != rebasing.patch_id.as_deref() {
             // Reviews are bound to the patch id; a rebase that changed it needs them again.
-            let reviewing = self.update(&change.change_id, Some(&[ChangeState::Rebasing]), |mut c| {
-                c.head_sha = head_sha.clone();
-                c.patch_id = Some(patch_id.clone());
-                c.state = ChangeState::Reviewing;
-                c.last_error = Some(format!("the rebase onto origin/{base} changed the patch id; it needs review again"));
-                c
-            });
+            let reviewing = self.update(
+                &change.change_id,
+                Some(&[ChangeState::Rebasing]),
+                |mut c| {
+                    c.head_sha = head_sha.clone();
+                    c.patch_id = Some(patch_id.clone());
+                    c.state = ChangeState::Reviewing;
+                    c.last_error = Some(last_error(format!(
+                        "the rebase onto origin/{base} changed the patch id; it needs review again"
+                    )));
+                    c
+                },
+            );
             if let Some(reviewing) = reviewing {
                 self.to_gate(reviewing).await;
             }
             return Ok(());
         }
 
-        let Some(in_ci) = self.update(&change.change_id, Some(&[ChangeState::Rebasing]), |mut c| {
-            c.head_sha = head_sha.clone();
-            c.state = ChangeState::Ci;
-            c
-        }) else {
+        let Some(in_ci) = self.update(
+            &change.change_id,
+            Some(&[ChangeState::Rebasing]),
+            |mut c| {
+                c.head_sha = head_sha.clone();
+                c.state = ChangeState::Ci;
+                c
+            },
+        ) else {
             return Ok(());
         };
         match self.wait_ci(repo, &head_sha).await {
@@ -602,8 +761,18 @@ impl Train {
         }) else {
             return Ok(());
         };
-        self.github.post_train_status(repo, &head_sha, &format!("{}: rebased onto {base}, CI green", change.change_id)).await?;
-        let (status, message) = match self.github.merge(repo, change.pr_number, &head_sha).await? {
+        self.github
+            .post_train_status(
+                repo,
+                &head_sha,
+                &format!("{}: rebased onto {base}, CI green", change.change_id),
+            )
+            .await?;
+        let (status, message) = match self
+            .github
+            .merge(repo, change.pr_number.get(), &head_sha)
+            .await?
+        {
             MergeOutcome::Merged { sha } => {
                 self.finish_merged(&merging, Some(&sha)).await;
                 return Ok(());
@@ -631,7 +800,9 @@ impl Train {
         lock(&self.merge_refusals).remove(&change.change_id);
         self.update(&change.change_id, Some(&[ChangeState::Merging]), |mut c| {
             c.state = ChangeState::CiFailed;
-            c.last_error = Some(error_text(&format!("{why}; gave up after {refusals} tries")));
+            c.last_error = Some(error_text(&format!(
+                "{why}; gave up after {refusals} tries"
+            )));
             c
         });
         self.wake_lead(
@@ -647,9 +818,14 @@ impl Train {
 
     /// Changes waiting on something outside the train: a patch id to read, reviews, or the author's next push.
     async fn refresh(&self, repo: &str) {
-        let waiting = [ChangeState::Queued, ChangeState::Reviewing, ChangeState::NeedsRebase, ChangeState::CiFailed];
+        let waiting = [
+            ChangeState::Queued,
+            ChangeState::Reviewing,
+            ChangeState::NeedsRebase,
+            ChangeState::CiFailed,
+        ];
         for change in self.records.in_train(repo, &waiting) {
-            let pull = match self.github.pull(repo, change.pr_number).await {
+            let pull = match self.github.pull(repo, change.pr_number.get()).await {
                 Ok(pull) => pull,
                 Err(e) => {
                     tracing::warn!(change_id = %change.change_id, error = %e.message, "train: refresh failed");
@@ -660,7 +836,8 @@ impl Train {
                 self.abandon(&change, "was merged outside the train").await;
             } else if pull.state != "open" {
                 self.abandon(&change, "was closed").await;
-            } else if (change.state == ChangeState::Queued || pull.head.sha.to_lowercase() != change.head_sha)
+            } else if (change.state == ChangeState::Queued
+                || pull.head.sha.to_lowercase() != change.head_sha.as_str())
                 && let Err(GitError(e)) = self.admit(&change, &pull).await
             {
                 self.update(&change.change_id, Some(&[change.state]), |mut c| {
@@ -674,8 +851,11 @@ impl Train {
     /// After a restart: a Change the train was merging is finished if GitHub merged it, else put back first in line.
     async fn recover(&self, repo: &str) {
         for change in self.records.in_train(repo, HEAD_STATES) {
-            match self.github.pull(repo, change.pr_number).await {
-                Ok(pull) if pull.merged && change.state == ChangeState::Merging => self.finish_merged(&change, pull.merge_commit_sha.as_deref()).await,
+            match self.github.pull(repo, change.pr_number.get()).await {
+                Ok(pull) if pull.merged && change.state == ChangeState::Merging => {
+                    self.finish_merged(&change, pull.merge_commit_sha.as_deref())
+                        .await
+                }
                 _ => self.put_back(&change, "the hub restarted while the train worked on it"),
             }
         }
@@ -686,7 +866,10 @@ impl Train {
         let now = self.now_ms();
         {
             let mut last = lock(&self.last_bypass_check);
-            if last.get(repo).is_some_and(|l| now - l < self.options.bypass_every.as_millis() as i64) {
+            if last
+                .get(repo)
+                .is_some_and(|l| now - l < self.options.bypass_every.as_millis() as i64)
+            {
                 return;
             }
             last.insert(repo.to_string(), now);
@@ -701,23 +884,38 @@ impl Train {
                 continue;
             }
             let change = self.records.latest_for(repo, pr.number);
-            if change.as_ref().is_some_and(|c| c.state == ChangeState::Merged) {
+            if change
+                .as_ref()
+                .is_some_and(|c| c.state == ChangeState::Merged)
+            {
                 continue;
             }
             if !self.records.mark_bypass(repo, pr.number) {
                 continue;
             }
-            let sha = pr.merge_sha.as_deref().map(|s| format!(" ({})", short(s))).unwrap_or_default();
+            let sha = pr
+                .merge_sha
+                .as_deref()
+                .map(|s| format!(" ({})", short(s)))
+                .unwrap_or_default();
             self.host.record_incident(IncidentInput {
                 class: "policy_bypass",
-                project_ref: change.as_ref().map(|c| c.project_ref.clone()).unwrap_or_else(|| project_ref.clone()),
+                project_ref: change
+                    .as_ref()
+                    .map(|c| c.project_ref.clone())
+                    .unwrap_or_else(|| project_ref.clone()),
                 workstream_id: change.as_ref().map(|c| c.workstream_id.clone()),
                 task_id: change.as_ref().and_then(|c| c.task_id.clone()),
                 evidence: vec![
-                    format!("{repo}#{} was merged at {} without the merge train{sha}.", pr.number, pr.merged_at),
+                    format!(
+                        "{repo}#{} was merged at {} without the merge train{sha}.",
+                        pr.number, pr.merged_at
+                    ),
                     match &change {
                         None => "No Change was ever enqueued for it.".to_string(),
-                        Some(c) => format!("Its Change {} was {}.", c.change_id, c.state),
+                        Some(c) => {
+                            format!("Its Change {} was {}.", c.change_id, state_str(c.state))
+                        }
                     },
                 ],
             });
@@ -732,10 +930,23 @@ impl Train {
             self.records.set_frozen(repo, now);
             match decision.filter(|_| now) {
                 Some(d) => {
-                    let reason = d.why.clone().unwrap_or_else(|| format!("{} {} = {}", d.decision_id, d.key, d.value));
-                    self.emit(project_ref, "train.frozen", format!("Train for {repo} frozen: {reason}"), json!({ "repo": repo, "reason": reason }));
+                    let reason = d
+                        .why
+                        .clone()
+                        .unwrap_or_else(|| format!("{} {} = {}", d.decision_id, d.key, d.value));
+                    self.emit(
+                        project_ref,
+                        "train.frozen",
+                        format!("Train for {repo} frozen: {reason}"),
+                        json!({ "repo": repo, "reason": reason }),
+                    );
                 }
-                None => self.emit(project_ref, "train.resumed", format!("Train for {repo} resumed"), json!({ "repo": repo })),
+                None => self.emit(
+                    project_ref,
+                    "train.resumed",
+                    format!("Train for {repo} resumed"),
+                    json!({ "repo": repo }),
+                ),
             }
         }
         now
@@ -747,16 +958,26 @@ impl Train {
         let repo = raw_repo.to_lowercase();
         let step_lock = repo_lock(&self.step_locks, &repo);
         let _held = step_lock.lock().await;
-        let Some(train) = self.records.train(&repo) else { return false };
+        let Some(train) = self.records.train(&repo) else {
+            return false;
+        };
         if !lock(&self.recovered).contains(&repo) {
             self.recover(&repo).await;
         }
         self.refresh(&repo).await;
-        self.check_bypasses(&repo, train.watch_since_ms, &train.project_ref).await;
+        self.check_bypasses(&repo, train.watch_since_ms, &train.project_ref)
+            .await;
         if self.frozen(&repo, train.frozen, &train.project_ref) {
             return false;
         }
-        let Some(next) = self.records.in_train(&repo, &[ChangeState::Ready]).into_iter().next() else { return false };
+        let Some(next) = self
+            .records
+            .in_train(&repo, &[ChangeState::Ready])
+            .into_iter()
+            .next()
+        else {
+            return false;
+        };
         self.take(&next).await;
         true
     }
@@ -765,7 +986,10 @@ impl Train {
         if !self.options.auto_run || !lock(&self.loops).insert(repo.to_string()) {
             return;
         }
-        let notify = lock(&self.kicks).entry(repo.to_string()).or_default().clone();
+        let notify = lock(&self.kicks)
+            .entry(repo.to_string())
+            .or_default()
+            .clone();
         let (me, repo) = (self.me.clone(), repo.to_string());
         tokio::spawn(async move {
             loop {
@@ -791,52 +1015,95 @@ impl Train {
         });
     }
 
-    async fn refuse(&self, project_ref: &ProjectRef, pr_url: &str, refusal: Refusal, row: Option<Change>) -> TrainError {
+    async fn refuse(
+        &self,
+        project_ref: &ProjectRef,
+        pr_url: &str,
+        refusal: Refusal,
+        row: Option<Change>,
+    ) -> TrainError {
         if let Some(mut row) = row {
             let at = self.now_iso();
             row.state = ChangeState::Refused;
-            row.last_error = Some(error_text(&format!("{} Fix: {}", refusal.message, refusal.fix)));
+            row.last_error = Some(error_text(&format!(
+                "{} Fix: {}",
+                refusal.message, refusal.fix
+            )));
             row.created_at = at.clone();
             row.updated_at = at;
             self.records.create(row);
         }
-        self.emit(project_ref, "change.refused", format!("Refused {pr_url}: {}", refusal.message), json!({ "prUrl": pr_url, "fix": refusal.fix }));
-        TrainError::new("invalid", format!("The train refused {pr_url}: {}", refusal.message), Some(&refusal.fix))
+        self.emit(
+            project_ref,
+            "change.refused",
+            format!("Refused {pr_url}: {}", refusal.message),
+            json!({ "prUrl": pr_url, "fix": refusal.fix }),
+        );
+        TrainError::new(
+            "invalid",
+            format!("The train refused {pr_url}: {}", refusal.message),
+            Some(&refusal.fix),
+        )
     }
 
     /// Validates the PR (`Source:`, tier) and puts it on its repo's train; the same open PR returns its Change.
-    pub async fn enqueue(&self, project_ref: &ProjectRef, input: ChangeEnqueueInput) -> Result<Change, TrainError> {
-        let Some((parsed_repo, pr_number)) = parse_pr_url(&input.pr_url) else {
+    pub async fn enqueue(
+        &self,
+        project_ref: &ProjectRef,
+        input: ChangeEnqueueCall,
+    ) -> Result<Change, TrainError> {
+        let Some(parsed) = parse_pr_url(&input.pr_url) else {
             return Err(TrainError::new(
                 "invalid",
                 format!("{} is not a github.com pull request URL.", input.pr_url),
                 Some("Pass https://github.com/<owner>/<name>/pull/<n>."),
             ));
         };
-        let repo = parsed_repo.to_lowercase();
+        let (repo, pr_number) = (parsed.repo.to_lowercase(), parsed.pr_number);
         let pr_url = format!("https://github.com/{repo}/pull/{pr_number}");
         let task = input.task_id.as_ref().and_then(|id| self.host.task(id));
         if let Some(task_id) = &input.task_id
             && !task.as_ref().is_some_and(|t| t.project_ref == *project_ref)
         {
-            return Err(TrainError::new("not_found", format!("No task {task_id} in this project."), Some("Run `fleetd task list`.")));
+            return Err(TrainError::new(
+                "not_found",
+                format!("No task {task_id} in this project."),
+                Some("Run `fleetd task list`."),
+            ));
         }
         if let Some(existing) = self.records.open_for(&repo, pr_number) {
             self.kick(&repo);
             return Ok(self.one(existing));
         }
 
-        let Some(workstream_id) = input.workstream_id.clone().or_else(|| task.as_ref().map(|t| t.workstream_id.clone())) else {
-            let refusal = Refusal::new("It names no workstream.", "pass --task T<n> (the write task that opened it) or --workstream W<n>");
+        let Some(workstream_id) = input
+            .workstream_id
+            .clone()
+            .or_else(|| task.as_ref().map(|t| t.workstream_id.clone()))
+        else {
+            let refusal = Refusal::new(
+                "It names no workstream.",
+                "pass --task T<n> (the write task that opened it) or --workstream W<n>",
+            );
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
         };
-        let Some(workstream) = self.host.workstream(&workstream_id).filter(|w| w.project_ref == *project_ref) else {
-            return Err(TrainError::new("not_found", format!("No workstream {workstream_id} in this project."), Some("Use a workstream id from your digest.")));
+        let Some(workstream) = self
+            .host
+            .workstream(&workstream_id)
+            .filter(|w| w.project_ref == *project_ref)
+        else {
+            return Err(TrainError::new(
+                "not_found",
+                format!("No workstream {workstream_id} in this project."),
+                Some("Use a workstream id from your digest."),
+            ));
         };
         let Some(brief) = workstream.brief.clone() else {
             let refusal = Refusal::new(
                 format!("{workstream_id} has no brief, so it has no tier or done-when."),
-                format!("register its brief with `fleetd brief create --workstream {workstream_id}` first"),
+                format!(
+                    "register its brief with `fleetd brief create --workstream {workstream_id}` first"
+                ),
             );
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
         };
@@ -848,22 +1115,36 @@ impl Train {
                 Some("Check the URL; the hub reads PRs with its own `gh` login."),
             )
         })?;
-        let expected = input.serves.clone().or_else(|| task.as_ref().and_then(|t| t.serves.clone()));
-        let require_source = workstream.playbook.as_deref().and_then(|pin| self.host.playbook(pin)).is_none_or(|p| p.require_source);
-        let source = check_source(pull.body.as_deref(), expected.as_deref(), &workstream_id, brief.done_when, require_source);
+        let expected = input
+            .serves
+            .as_ref()
+            .map(|s| s.to_string())
+            .or_else(|| task.as_ref().and_then(|t| t.serves.clone()));
+        let require_source = workstream
+            .playbook
+            .as_deref()
+            .and_then(|pin| self.host.playbook(pin))
+            .is_none_or(|p| p.require_source);
+        let source = check_source(
+            pull.body.as_deref(),
+            expected.as_deref(),
+            &workstream_id,
+            brief.done_when,
+            require_source,
+        );
         let now = self.now_iso();
         let row_of = |serves: &str| Change {
             change_id: ChangeId::unchecked("X0"),
             project_ref: project_ref.clone(),
-            repo: repo.clone(),
-            pr_number,
-            pr_url: pr_url.clone(),
-            branch: pull.head.ref_.clone(),
+            repo: GitHubRepo::unchecked(repo.clone()),
+            pr_number: Positive::unchecked(pr_number),
+            pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
+            branch: NonEmpty::unchecked(pull.head.ref_.clone()),
             task_id: input.task_id.clone(),
             workstream_id: workstream_id.clone(),
-            serves: serves.to_string(),
+            serves: Serves::unchecked(serves),
             tier: brief.tier,
-            head_sha: pull.head.sha.to_lowercase(),
+            head_sha: CommitSha::unchecked(pull.head.sha.to_lowercase()),
             patch_id: None,
             state: ChangeState::Queued,
             reviews: Vec::new(),
@@ -883,25 +1164,59 @@ impl Train {
         };
         let row = row_of(&serves);
         if pull.merged || pull.state != "open" {
-            let what = if pull.merged { "already merged".to_string() } else { pull.state.clone() };
-            return Err(self.refuse(project_ref, &pr_url, Refusal::new(format!("It is {what}."), "enqueue an open PR"), Some(row)).await);
+            let what = if pull.merged {
+                "already merged".to_string()
+            } else {
+                pull.state.clone()
+            };
+            return Err(self
+                .refuse(
+                    project_ref,
+                    &pr_url,
+                    Refusal::new(format!("It is {what}."), "enqueue an open PR"),
+                    Some(row),
+                )
+                .await);
         }
-        if pull.head.repo.as_ref().map(|r| r.full_name.to_lowercase()).as_deref() != Some(repo.as_str()) {
-            let refusal = Refusal::new("Its branch lives in another repository.", format!("push the branch to {repo} and open the PR from there"));
+        if pull
+            .head
+            .repo
+            .as_ref()
+            .map(|r| r.full_name.to_lowercase())
+            .as_deref()
+            != Some(repo.as_str())
+        {
+            let refusal = Refusal::new(
+                "Its branch lives in another repository.",
+                format!("push the branch to {repo} and open the PR from there"),
+            );
             return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
         }
         let tier = match check_tier(brief.tier, input.tier, task.as_ref().and_then(|t| t.tier)) {
             Ok(tier) => tier,
-            Err(refusal) => return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await),
+            Err(refusal) => {
+                return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
+            }
         };
 
         self.records.ensure_train(&repo, project_ref, self.now_ms());
         let at = self.now_iso();
-        let change = self.records.create(Change { tier, state: ChangeState::Queued, created_at: at.clone(), updated_at: at, ..row });
+        let change = self.records.create(Change {
+            tier,
+            state: ChangeState::Queued,
+            created_at: at.clone(),
+            updated_at: at,
+            ..row
+        });
         self.emit(
             project_ref,
             "change.queued",
-            format!("{} queued: {repo}#{} (tier {}, {serves})", change.change_id, change.pr_number, change.tier),
+            format!(
+                "{} queued: {repo}#{} (tier {}, {serves})",
+                change.change_id,
+                change.pr_number,
+                tier_str(change.tier)
+            ),
             json!({ "changeId": change.change_id, "repo": repo, "prNumber": change.pr_number }),
         );
         // Reading the patch id needs the machine; if that fails, the loop retries it from `queued`.
@@ -913,43 +1228,100 @@ impl Train {
         }
         self.ensure_loop(&repo);
         self.kick(&repo);
-        Ok(self.one(self.records.get(&change.change_id).expect("the Change just created")))
+        Ok(self.one(
+            self.records
+                .get(&change.change_id)
+                .expect("the Change just created"),
+        ))
     }
 
     /// Reviews satisfied the tier for the Change's current patch id; it may be taken. For the review gate.
-    pub fn mark_ready(&self, change_id: &ChangeId, reviews: Vec<ChangeReview>) -> Result<Change, TrainError> {
+    pub fn mark_ready(
+        &self,
+        change_id: &ChangeId,
+        reviews: Vec<ChangeReview>,
+    ) -> Result<Change, TrainError> {
         let Some(change) = self.records.get(change_id) else {
-            return Err(TrainError::new("not_found", format!("No change {change_id}."), None));
+            return Err(TrainError::new(
+                "not_found",
+                format!("No change {change_id}."),
+                None,
+            ));
         };
         if change.state != ChangeState::Reviewing {
-            return Err(TrainError::new("invalid", format!("{change_id} is {}, not reviewing.", change.state), None));
+            return Err(TrainError::new(
+                "invalid",
+                format!("{change_id} is {}, not reviewing.", state_str(change.state)),
+                None,
+            ));
         }
-        let stale: Vec<&ChangeReview> = reviews.iter().filter(|r| Some(r.patch_id.as_str()) != change.patch_id.as_deref()).collect();
+        let stale: Vec<&ChangeReview> = reviews
+            .iter()
+            .filter(|r| Some(r.patch_id.as_str()) != change.patch_id.as_deref())
+            .collect();
         if let Some(first) = stale.first() {
-            let ids = stale.iter().map(|r| r.task_id.to_string()).collect::<Vec<_>>().join(", ");
+            let ids = stale
+                .iter()
+                .map(|r| r.task_id.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             let at = change.patch_id.as_deref().map(short).unwrap_or("(unread)");
             return Err(TrainError::new(
                 "invalid",
-                format!("{ids} reviewed patch {}, but {change_id} is at patch {at}.", short(&first.patch_id)),
+                format!(
+                    "{ids} reviewed patch {}, but {change_id} is at patch {at}.",
+                    short(&first.patch_id)
+                ),
                 Some("Review the current head."),
             ));
         }
         match self.set_ready(&change, reviews) {
             Some(ready) => Ok(self.one(ready)),
-            None => Err(TrainError::new("invalid", format!("{change_id} changed state while it was marked ready; read it again."), None)),
+            None => Err(TrainError::new(
+                "invalid",
+                format!("{change_id} changed state while it was marked ready; read it again."),
+                None,
+            )),
         }
     }
 
     // M7 auto-enqueue, hooked onto task completion through the event log: a write task whose result names a PR puts
     // it on the train. A refusal goes to the lead with its fix.
     async fn on_task_completed(&self, data: &Value) {
-        let Some(task_id) = data.get("taskId").and_then(Value::as_str) else { return };
-        let Some(task) = self.host.task(&super::contract::TaskId::unchecked(task_id)) else { return };
-        let Some(pr_url) = task.pr_url.clone().filter(|u| task.kind == "write" && parse_pr_url(u).is_some()) else { return };
-        let input = ChangeEnqueueInput { task_id: Some(task.task_id.clone()), pr_url: pr_url.clone(), ..Default::default() };
+        let Some(task_id) = data.get("taskId").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(task) = self.host.task(&super::contract::TaskId::unchecked(task_id)) else {
+            return;
+        };
+        let Some(pr_url) = task
+            .pr_url
+            .clone()
+            .filter(|u| task.kind == "write" && parse_pr_url(u).is_some())
+        else {
+            return;
+        };
+        let input = ChangeEnqueueCall {
+            task_id: Some(task.task_id.clone()),
+            pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
+            workstream_id: None,
+            serves: None,
+            tier: None,
+        };
         if let Err(e) = self.enqueue(&task.project_ref, input).await {
-            let fix = e.fix.as_ref().map(|f| format!(" Fix: {f}.")).unwrap_or_default();
-            self.wake_lead(&task.project_ref, format!("The train refused {pr_url} from {}: {}{fix}", task.task_id, e.message)).await;
+            let fix = e
+                .fix
+                .as_ref()
+                .map(|f| format!(" Fix: {f}."))
+                .unwrap_or_default();
+            self.wake_lead(
+                &task.project_ref,
+                format!(
+                    "The train refused {pr_url} from {}: {}{fix}",
+                    task.task_id, e.message
+                ),
+            )
+            .await;
         }
     }
 

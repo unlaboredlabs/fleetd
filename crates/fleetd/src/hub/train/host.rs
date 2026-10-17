@@ -132,7 +132,13 @@ pub struct ReviewRefusal {
 pub trait TrainHost: Send + Sync + 'static {
     fn task(&self, task_id: &TaskId) -> Option<TaskView>;
     /// Tasks.message from `by`; the error is its message.
-    fn message_task<'a>(&'a self, project_ref: &'a ProjectRef, by: &'static str, task_id: &'a TaskId, text: String) -> BoxFut<'a, Result<(), String>>;
+    fn message_task<'a>(
+        &'a self,
+        project_ref: &'a ProjectRef,
+        by: &'static str,
+        task_id: &'a TaskId,
+        text: String,
+    ) -> BoxFut<'a, Result<(), String>>;
     /// Tasks.spawn of a review task; the error is its message.
     fn spawn_review(&self, spawn: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>>;
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<WorkstreamView>;
@@ -142,18 +148,44 @@ pub trait TrainHost: Send + Sync + 'static {
     fn resolve_decision(&self, key: &str, project_ref: &ProjectRef) -> Option<DecisionView>;
     fn record_incident(&self, incident: IncidentInput);
     /// EventLog.append at now, on the project.
-    fn append_event(&self, project_ref: &ProjectRef, event_type: &'static str, summary: String, data: Value);
+    fn append_event(
+        &self,
+        project_ref: &ProjectRef,
+        event_type: &'static str,
+        summary: String,
+        data: Value,
+    );
     fn events_head(&self) -> i64;
     /// EventLog.wait: the events after `cursor` of these types, and the new cursor.
-    fn events_wait<'a>(&'a self, cursor: i64, types: &'a [&'static str], timeout_sec: u64) -> BoxFut<'a, (Vec<EventView>, i64)>;
+    fn events_wait<'a>(
+        &'a self,
+        cursor: i64,
+        types: &'a [&'static str],
+        timeout_sec: u64,
+    ) -> BoxFut<'a, (Vec<EventView>, i64)>;
     /// The project's checkout (`workspaceRoot`) on its machine.
     fn project_root(&self, project_ref: &ProjectRef) -> Option<String>;
     /// LeadWakes.trigger(ref, { kind: "train", line }).
     fn wake_lead<'a>(&'a self, project_ref: &'a ProjectRef, line: String) -> BoxFut<'a, ()>;
     /// NodeCommands.run: argv on the machine, through its node.
-    fn run_command<'a>(&'a self, machine_id: &'a MachineId, cwd: &'a str, argv: Vec<String>, timeout_sec: u64) -> BoxFut<'a, Result<CmdOut, String>>;
+    fn run_command<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+        cwd: &'a str,
+        argv: Vec<String>,
+        timeout_sec: u64,
+    ) -> BoxFut<'a, Result<CmdOut, String>>;
     /// ProviderList.instances.
-    fn provider_instances<'a>(&'a self, machine_id: &'a MachineId) -> BoxFut<'a, Result<Vec<ProviderView>, String>>;
+    fn provider_instances<'a>(
+        &'a self,
+        machine_id: &'a MachineId,
+    ) -> BoxFut<'a, Result<Vec<ProviderView>, String>>;
     /// valuebar `reviewRefusal({ workstreamId, kind: "review", pr }, "hub:reviews", headSha, verdicts)`.
-    fn review_refusal(&self, workstream_id: &WorkstreamId, pr: &str, head_sha: &str, verdicts: &[PrVerdict]) -> Option<ReviewRefusal>;
+    fn review_refusal(
+        &self,
+        workstream_id: &WorkstreamId,
+        pr: &str,
+        head_sha: &str,
+        verdicts: &[PrVerdict],
+    ) -> Option<ReviewRefusal>;
 }
