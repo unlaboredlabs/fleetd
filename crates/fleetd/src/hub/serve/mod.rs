@@ -283,7 +283,6 @@ pub fn build_on(
         Arc::new(crate::hub::train::github::SystemGh),
         crate::hub::train::TrainOptions::default(),
     );
-    let hub = Arc::new(Hub {
     // PORT: executor, link and leads are not wired into tasks, slots and leases yet.
     let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> =
         Arc::new(crate::hub::tasks::ports::UnwiredPorts);
@@ -311,7 +310,7 @@ pub fn build_on(
         leases: leases.clone(),
         policies: policies.clone(),
     });
-    Ok(Arc::new(Hub {
+    let hub = Arc::new(Hub {
         config,
         clock,
         shutdown: Shutdown::default(),
@@ -345,14 +344,13 @@ pub fn build_on(
         approvals: ops.approvals,
         train,
         reviews,
-    });
-    checks.ports.bind(&hub);
-    Ok(hub)
         slots,
         leases,
         policies,
         tasks,
-    }))
+    });
+    checks.ports.bind(&hub);
+    Ok(hub)
 }
 
 /// Every area's long-running loop, one tokio task each; they stop with `hub.shutdown` (and are aborted after the
@@ -385,15 +383,13 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     });
     loops.push(reviews);
     loops.push(stopper);
+    loops.push(tokio::spawn(
+        hub.slots
+            .clone()
+            .run(hub.events.clone(), hub.shutdown.clone()),
+    ));
+    loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
     loops
-    vec![
-        tokio::spawn(
-            hub.slots
-                .clone()
-                .run(hub.events.clone(), hub.shutdown.clone()),
-        ),
-        tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())),
-    ]
 }
 
 #[cfg(test)]
