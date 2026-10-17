@@ -15,6 +15,7 @@ import {
   cli,
   HUB_PORT,
   HUB_URL,
+  isRunning,
   LAB,
   type Lab,
   lab,
@@ -172,6 +173,8 @@ async function main() {
         await stopCli("hub");
         await startHubProcess(env);
         client = await connectClient(key);
+        // The store still says online from before; wait until running nodes have relinked and T3 is attached.
+        for (const m of MACHINES) if (isRunning(`node-${m.id}`)) await waitLive(m.id);
         ok(`hub (re)started${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
       },
       idleThread: async (machineId: LabMachine) => {

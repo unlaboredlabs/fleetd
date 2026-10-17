@@ -223,6 +223,12 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
   const touch = (machineId: MachineId) =>
     FiberMap.run(watchdogs, machineId, Effect.sleep(silenceTimeout).pipe(Effect.andThen(markOffline(machineId))));
 
+  // After a hub restart the store still says online for machines whose nodes may never come back, and only a
+  // link arms the silence timer; arm it now so they go offline unless their node links again.
+  for (const machine of yield* store.machines.list()) {
+    if (machine.status !== "offline") yield* touch(machine.machineId);
+  }
+
   const handshake = (link: Link) =>
     Effect.gen(function* () {
       const nonce = randomBytes(32).toString("base64url");

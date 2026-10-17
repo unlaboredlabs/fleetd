@@ -97,6 +97,11 @@ export const stopCli = async (name: string) => {
   log(`stopped ${name} pid=${entry.child.pid} (${killed ? "SIGKILL after 10 s" : `SIGTERM, exited in ${Date.now() - startedMs} ms`})`);
 };
 
+export const isRunning = (name: string) => {
+  const entry = started.findLast((s) => s.name === name);
+  return entry !== undefined && entry.child.exitCode === null && entry.child.signalCode === null;
+};
+
 export const stopAll = async () => {
   for (const name of [...new Set(started.map((s) => s.name))].toReversed()) await stopCli(name);
 };
