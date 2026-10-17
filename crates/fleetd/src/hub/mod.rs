@@ -2,6 +2,7 @@
 pub mod api;
 pub mod app_ws;
 pub mod approvals;
+pub mod attention;
 pub mod auth;
 pub mod checks;
 pub mod digests;
