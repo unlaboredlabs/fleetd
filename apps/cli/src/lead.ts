@@ -324,6 +324,15 @@ export const formatResult = (result: LeadCallResult): string => {
       lines.push(...(result.tasks.length === 0 ? ["No tasks."] : result.tasks.map(taskLine)));
       next = "carry on.";
       break;
+    // Placeholder lines until `claim done` and `review verdict` land (M6c).
+    case "claim_done":
+      lines.push(`${result.claimId} ${result.workstreamId} ${result.claim?.outcome ?? "checking"}; workstream ${result.state}`);
+      next = "carry on; failing checks arrive in a wake with their evidence.";
+      break;
+    case "review_verdict":
+      lines.push(`Verdict for ${result.verdict.taskId} at ${result.verdict.prHeadSha.slice(0, 12)}: ${result.verdict.blocking} blocking`);
+      next = "stop here; this review is finished.";
+      break;
   }
   return `${lines.join("\n")}\nNext: ${result.next ?? next}\n`;
 };

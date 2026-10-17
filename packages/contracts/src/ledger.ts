@@ -84,6 +84,12 @@ export type CheckSpec = typeof CheckSpec.Type;
 export const Tier = Schema.Literals(["S", "M", "L"]);
 export type Tier = typeof Tier.Type;
 
+export const Estimate = Schema.Struct({
+  rawMinutes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  gates: list(text(200), 20),
+}).annotate({ identifier: "Estimate" });
+export type Estimate = typeof Estimate.Type;
+
 export const Brief = Schema.Struct({
   goal: text(1000),
   why: text(2000),
@@ -93,9 +99,7 @@ export const Brief = Schema.Struct({
   doneWhen: list(CheckSpec, 20).check(Schema.isMinLength(1)),
   tier: Tier,
   budget: Schema.optionalKey(Schema.Struct({ agentHours: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))) })),
-  estimate: Schema.optionalKey(
-    Schema.Struct({ rawMinutes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)), gates: list(text(200), 20) }),
-  ),
+  estimate: Schema.optionalKey(Estimate),
 }).annotate({ identifier: "Brief" });
 export type Brief = typeof Brief.Type;
 
@@ -130,6 +134,15 @@ export const Workstream = Schema.Struct({
   state: WorkstreamState,
   headline: Schema.optionalKey(Headline),
   headlineAt: Schema.optionalKey(Timestamp),
+  /** Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate. */
+  estimateActual: Schema.optionalKey(
+    Schema.Struct({
+      /** Wall-clock minutes from running to done; set on done. */
+      actualMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+      /** The tier's calibration ratio when it started running. */
+      ratioAtStart: Schema.Finite.check(Schema.isGreaterThan(0)),
+    }),
+  ),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 }).annotate({ identifier: "Workstream" });

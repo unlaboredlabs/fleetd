@@ -8,8 +8,10 @@ import {
   AppServerMessage,
   Ask,
   Batch,
+  Claim,
   Decision,
   HubEvent,
+  Incident,
   Lead,
   Machine,
   ProjectOutcome,
@@ -37,6 +39,8 @@ const appFacing = {
   Decision,
   Task,
   SlotState,
+  Claim,
+  Incident,
 };
 
 /** File name -> file contents. */

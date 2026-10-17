@@ -4,7 +4,7 @@ import { CapSetInput, DEFAULT_POLICY, LeadCall, PolicyFile, Task, TaskId } from 
 
 const accepts = (schema: Schema.Top, value: unknown) => Schema.decodeUnknownResult(schema as Schema.Codec<unknown>)(value)._tag === "Success";
 const at = "2026-10-17T10:00:00.000Z";
-const spawn = { op: "task_spawn", workstreamId: "W1", title: "add file", areas: ["docs"], prompt: "create docs/x.md" };
+const spawn = { op: "task_spawn", workstreamId: "W1", title: "add file", areas: ["docs"], prompt: "create docs/x.md", serves: "done:0" };
 
 describe("TaskId", () => {
   it("is T plus a positive integer", () => {
@@ -21,7 +21,7 @@ describe("task spawn", () => {
     const { areas: _, ...noAreas } = spawn;
     expect(accepts(LeadCall, noAreas)).toBe(false);
     expect(accepts(LeadCall, { ...noAreas, kind: "read" })).toBe(true);
-    expect(accepts(LeadCall, { ...noAreas, kind: "review" })).toBe(true);
+    expect(accepts(LeadCall, { ...noAreas, kind: "review", pr: "https://github.com/o/r/pull/1" })).toBe(true);
   });
 
   it("caps the title at 80 on one line and the prompt at 8000", () => {

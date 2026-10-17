@@ -45,7 +45,12 @@
         "task.failed",
         "task.cancelled",
         "task.out_of_area",
-        "lease.stale"
+        "lease.stale",
+        "claim.failed",
+        "claim.passed",
+        "workstream.done",
+        "review.verdict",
+        "incident.recorded"
       ]
     },
     "MachineId": {

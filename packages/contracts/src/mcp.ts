@@ -23,6 +23,7 @@ import {
 } from "./ledger.ts";
 import { ActionItem, Effort, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary } from "./model.ts";
 import { SlotState, Task, TaskId, TaskState } from "./tasks.ts";
+import { Claim, Eta, Incident, IncidentClass } from "./verification.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
 import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
 
@@ -239,6 +240,10 @@ export const WorkstreamGetOutput = Schema.Struct({
   asks: Schema.Array(Ask).check(Schema.isMaxLength(50)),
   /** Active decisions scoped to it. */
   decisions: Schema.Array(Decision).check(Schema.isMaxLength(50)),
+  /** Absent without a raw estimate in the brief. */
+  eta: Schema.optionalKey(Eta),
+  /** Its claims, newest first. */
+  claims: Schema.optionalKey(Schema.Array(Claim).check(Schema.isMaxLength(20))),
   ...resultFields,
 });
 
@@ -339,6 +344,32 @@ export const CapSetInput = Schema.Struct({
 );
 export const CapSetOutput = Schema.Struct({ slots: SlotState, ...resultFields });
 
+// claims_list
+export const ClaimsListInput = Schema.Struct({
+  workstreamId: Schema.optionalKey(WorkstreamId),
+  projectRef: Schema.optionalKey(ProjectRef),
+  outcome: Schema.optionalKey(Schema.Literals(["pass", "fail"])),
+  limit: intDefault(1, 100, 20),
+});
+export const ClaimsListOutput = Schema.Struct({
+  /** Newest first. */
+  claims: Schema.Array(Claim).check(Schema.isMaxLength(100)),
+  ...resultFields,
+});
+
+// incidents_list
+export const IncidentsListInput = Schema.Struct({
+  projectRef: Schema.optionalKey(ProjectRef),
+  workstreamId: Schema.optionalKey(WorkstreamId),
+  class: Schema.optionalKey(IncidentClass),
+  limit: intDefault(1, 100, 20),
+});
+export const IncidentsListOutput = Schema.Struct({
+  /** Newest first. */
+  incidents: Schema.Array(Incident).check(Schema.isMaxLength(100)),
+  ...resultFields,
+});
+
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
   fleetd_status: { scope: "read", input: FleetdStatusInput, output: FleetdStatusOutput },
@@ -369,6 +400,8 @@ export const McpTools = {
   tasks_list: { scope: "read", input: TasksListInput, output: TasksListOutput },
   task_get: { scope: "read", input: TaskGetInput, output: TaskGetOutput },
   cap_set: { scope: "admin", input: CapSetInput, output: CapSetOutput },
+  claims_list: { scope: "read", input: ClaimsListInput, output: ClaimsListOutput },
+  incidents_list: { scope: "read", input: IncidentsListInput, output: IncidentsListOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;
 export type McpToolName = keyof typeof McpTools;
 

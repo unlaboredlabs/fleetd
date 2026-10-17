@@ -81,8 +81,33 @@ export type NodeT3State = typeof NodeT3State.Type;
 export const Heartbeat = Schema.Struct({ t: Schema.tag("hb"), at: Timestamp });
 export type Heartbeat = typeof Heartbeat.Type;
 
-export const NodeToHub = Schema.Union([NodeHello, NodeT3Session, NodeT3State, Heartbeat, LeadCallFrame]).pipe(Schema.toTaggedUnion("t"));
+/** Hub -> node: run a `cmd` check. argv only, never through a shell. */
+export const CmdCheck = Schema.Struct({
+  t: Schema.tag("cmd_check"),
+  id: Schema.NonEmptyString,
+  /** Absolute; the project workspace unless the check says otherwise. */
+  cwd: Schema.String.check(Schema.isPattern(/^\//u)),
+  argv: Schema.Array(Schema.String).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+  timeoutSec: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3600 })),
+});
+export type CmdCheck = typeof CmdCheck.Type;
+
+/** Node -> hub, one per `cmd_check`. */
+export const CmdResult = Schema.Struct({
+  t: Schema.tag("cmd_result"),
+  id: Schema.NonEmptyString,
+  /** Null when the process did not exit on its own: it timed out, was killed by a signal, or could not start. */
+  exitCode: Schema.NullOr(Schema.Int),
+  /** Last 2000 characters of stdout and stderr interleaved, secrets scrubbed; the start error when it could not start. */
+  outputTail: Schema.String.check(Schema.isMaxLength(2000)),
+  timedOut: Schema.Boolean,
+});
+export type CmdResult = typeof CmdResult.Type;
+
+export const NodeToHub = Schema.Union([NodeHello, NodeT3Session, NodeT3State, Heartbeat, LeadCallFrame, CmdResult]).pipe(
+  Schema.toTaggedUnion("t"),
+);
 export type NodeToHub = typeof NodeToHub.Type;
 
-export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat, LeadResultFrame]).pipe(Schema.toTaggedUnion("t"));
+export const HubToNode = Schema.Union([HubChallenge, HubWelcome, Heartbeat, LeadResultFrame, CmdCheck]).pipe(Schema.toTaggedUnion("t"));
 export type HubToNode = typeof HubToNode.Type;

@@ -46,6 +46,15 @@ export const HubEventType = Schema.Literals([
   "task.out_of_area",
   /** A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`. */
   "lease.stale",
+  /** A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`. */
+  "claim.failed",
+  "claim.passed",
+  /** Every done-when check passed. `data.workstreamId`. */
+  "workstream.done",
+  /** `data.taskId`, `data.prHeadSha`, `data.blocking`. */
+  "review.verdict",
+  /** `data.incidentId`, `data.class`. */
+  "incident.recorded",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

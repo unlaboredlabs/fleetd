@@ -43,6 +43,54 @@ export const taskAreasRule = Schema.makeFilter(
       : undefined,
 );
 
+/** What a write task must serve, as `--serves` takes it. */
+export const SERVES_FIX = "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>";
+
+const isServes = (serves: string): boolean => {
+  const [, kind = "", ref = ""] = /^(done|issue|defect|ask):(.*)$/su.exec(serves) ?? [];
+  switch (kind) {
+    case "done":
+      return /^(?:0|[1-9][0-9]*)$/u.test(ref);
+    case "issue":
+      return /^#[1-9][0-9]*$/u.test(ref) || isHttpUrl(ref);
+    case "defect":
+      return ref.length <= 200 && ref.trim() !== "" && !/[\r\n]/u.test(ref);
+    case "ask":
+      return /^A[1-9][0-9]*$/u.test(ref);
+    default:
+      return false;
+  }
+};
+
+/**
+ * What a task works towards: `done:<n>` (0-based index into the brief's doneWhen, same as CheckResult.checkIndex),
+ * `issue:<url|#n>`, `defect:<one line, at most 200>` or `ask:A<n>`.
+ */
+export const Serves = Schema.String.check(Schema.makeFilter(isServes, { expected: SERVES_FIX })).annotate({
+  identifier: "Serves",
+});
+
+/** A write task must say what it serves; a review task names its PR; only review tasks may be QA runs. */
+export const taskSpawnRule = Schema.makeFilter(
+  (call: { readonly kind: TaskKind; readonly serves?: string; readonly qa?: boolean; readonly pr?: string }) => {
+    if (call.kind === "write" && call.serves === undefined) return { path: ["serves"], issue: `a write task needs --serves: ${SERVES_FIX}` };
+    if (call.kind === "review" && call.pr === undefined) return { path: ["pr"], issue: "a review task needs --pr <PR URL>" };
+    if (call.qa === true && call.kind !== "review") return { path: ["qa"], issue: "--qa applies only to --kind review" };
+    return undefined;
+  },
+);
+
+/** Counted by the hub from the task's T3 items, never from its prose. */
+export const Receipts = Schema.Struct({
+  commands: Count,
+  commandsFailed: Count,
+  filesChanged: Count,
+  toolCalls: Count,
+}).annotate({ identifier: "Receipts" });
+export type Receipts = typeof Receipts.Type;
+
+export const PrUrl = Schema.String.check(Schema.makeFilter(isHttpUrl, { expected: "an absolute http:// or https:// URL" }));
+
 export const TaskResultStatus = Schema.Literals(["done", "failed", "cancelled"]);
 export type TaskResultStatus = typeof TaskResultStatus.Type;
 
@@ -51,7 +99,11 @@ export const TaskResult = Schema.Struct({
   /** The latest assistant message, trimmed to its last 2000 characters. */
   tail: Schema.String.check(Schema.isMaxLength(2000)),
   branch: Schema.optionalKey(Schema.NonEmptyString),
-  prUrl: Schema.optionalKey(Schema.String.check(Schema.makeFilter(isHttpUrl, { expected: "an absolute http:// or https:// URL" }))),
+  prUrl: Schema.optionalKey(PrUrl),
+  /** Absent on results stored before M6. */
+  receipts: Schema.optionalKey(Receipts),
+  /** The tail claims success ("tests pass", "fixed", ...) while `receipts.commands` is 0. Absent before M6. */
+  claimsUnverified: Schema.optionalKey(Schema.Boolean),
   at: Timestamp,
 }).annotate({ identifier: "TaskResult" });
 export type TaskResult = typeof TaskResult.Type;
@@ -69,8 +121,12 @@ export const Task = Schema.Struct({
   effort: Effort,
   tier: Schema.optionalKey(Tier),
   estimateMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
-  /** The done-when index or ref it works towards. */
-  serves: Schema.optionalKey(text(200)),
+  /** Required at spawn for write tasks; optional here for tasks stored before M6. */
+  serves: Schema.optionalKey(Serves),
+  /** A review task spawned with `--qa`. */
+  qa: Schema.optionalKey(Schema.Boolean),
+  /** The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows. */
+  pr: Schema.optionalKey(PrUrl),
   state: TaskState,
   /** Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use". */
   queuedReason: Schema.optionalKey(text(200)),
