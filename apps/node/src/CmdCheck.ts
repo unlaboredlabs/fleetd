@@ -37,29 +37,50 @@ export const confine = (
   return { ok: true, dir };
 };
 
-/**
- * Runs one `cmd_check` and always answers it. `exitCode` is null when the command timed out, died of a signal, could
- * not start, or was refused; `outputTail` then says which. Interrupting the effect kills the process group too.
- */
-export const runCmdCheck = (frame: CmdCheck, roots: ReadonlyArray<string>): Effect.Effect<CmdResult> =>
-  Effect.callback<CmdResult>((resume, signal) => {
-    const reply = (exitCode: number | null, output: string, timedOut = false): CmdResult => ({
-      t: "cmd_result",
-      id: frame.id,
-      exitCode,
-      outputTail: output.slice(-OUTPUT_TAIL_MAX),
-      timedOut,
-    });
-    const where = confine(frame.cwd, roots);
-    if (!where.ok) return resume(Effect.succeed(reply(null, `fleetd node refused to run this: ${where.why}`)));
+export interface ConfinedRun {
+  readonly cwd: string;
+  readonly argv: ReadonlyArray<string>;
+  readonly timeoutSec: number;
+  /** The child's whole environment. Default: the scrubbed node environment. */
+  readonly env?: NodeJS.ProcessEnv;
+  /** Values replaced by `[secret]` in the output, so they never leave the node. */
+  readonly scrub?: ReadonlyArray<string>;
+}
 
-    const [command = "", ...args] = frame.argv;
+export interface RunOutcome {
+  readonly exitCode: number | null;
+  /** Scrubbed, at most OUTPUT_TAIL_MAX characters, with a note on how it ended when it did not exit on its own. */
+  readonly outputTail: string;
+  readonly timedOut: boolean;
+  /** Why it never ran: a cwd outside the roots, or a command that could not start. */
+  readonly notRun?: string;
+}
+
+const SCRUBBED = "[secret]";
+
+/** Every occurrence of each value replaced, longest first so a value inside another cannot leave a piece behind. */
+export const scrubValues = (text: string, values: ReadonlyArray<string>) =>
+  [...values].filter((value) => value.length > 0).sort((a, b) => b.length - a.length).reduce((out, value) => out.replaceAll(value, SCRUBBED), text);
+
+/**
+ * Runs argv (never through a shell) in a directory under `roots`, killing the whole process group at the timeout.
+ * Interrupting the effect kills the process group too.
+ */
+export const runConfined = (run: ConfinedRun, roots: ReadonlyArray<string>): Effect.Effect<RunOutcome> =>
+  Effect.callback<RunOutcome>((resume, signal) => {
+    const scrub = run.scrub ?? [];
+    const longest = Math.max(0, ...scrub.map((value) => value.length));
+    const where = confine(run.cwd, roots);
+    if (!where.ok) return resume(Effect.succeed({ exitCode: null, outputTail: "", timedOut: false, notRun: `fleetd node refused to run this: ${where.why}` }));
+
+    const [command = "", ...args] = run.argv;
     // Its own process group, so a timeout also kills whatever the command started.
-    const child = spawn(command, args, { cwd: where.dir, env: scrubbedEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+    const child = spawn(command, args, { cwd: where.dir, env: run.env ?? scrubbedEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
     let output = "";
-    // Keeps a little more than the tail so a multi-chunk tail is never cut short.
+    // Keeps a little more than the tail so a multi-chunk tail is never cut short, and scrubs before trimming so a
+    // secret split across chunks is whole when it is replaced; only a value still arriving can be at the end.
     const push = (chunk: string) => {
-      output = (output + chunk).slice(-2 * OUTPUT_TAIL_MAX);
+      output = scrubValues(output + chunk, scrub).slice(-(2 * OUTPUT_TAIL_MAX + longest));
     };
     child.stdout.setEncoding("utf8").on("data", push);
     child.stderr.setEncoding("utf8").on("data", push);
@@ -77,23 +98,36 @@ export const runCmdCheck = (frame: CmdCheck, roots: ReadonlyArray<string>): Effe
     const timer = setTimeout(() => {
       timedOut = true;
       killGroup();
-    }, frame.timeoutSec * 1000);
+    }, run.timeoutSec * 1000);
     signal.addEventListener("abort", killGroup, { once: true });
-    const settle = (result: CmdResult) => {
+    const settle = (exitCode: number | null, note?: string, notRun?: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal.removeEventListener("abort", killGroup);
-      resume(Effect.succeed(result));
+      const text = scrubValues(note === undefined ? output : output === "" ? note : `${output.replace(/\n$/u, "")}\n${note}`, scrub);
+      resume(Effect.succeed({ exitCode, outputTail: text.slice(-OUTPUT_TAIL_MAX), timedOut, ...(notRun === undefined ? {} : { notRun }) }));
     };
 
     child.once("error", (error) => {
-      if (child.pid === undefined) settle(reply(null, `could not start ${command}: ${error.message}`));
+      if (child.pid === undefined) settle(null, undefined, `could not start ${command}: ${error.message}`);
     });
     child.once("close", (code, killedBy) => {
-      const noted = (note: string) => (output === "" ? note : `${output.replace(/\n$/u, "")}\n${note}`);
-      if (timedOut) return settle(reply(null, noted(`[fleetd: killed after ${frame.timeoutSec} s]`), true));
-      if (code === null) return settle(reply(null, noted(`[fleetd: ended by ${killedBy ?? "a signal"}]`)));
-      settle(reply(code, output));
+      if (timedOut) return settle(null, `[fleetd: killed after ${run.timeoutSec} s]`);
+      if (code === null) return settle(null, `[fleetd: ended by ${killedBy ?? "a signal"}]`);
+      settle(code);
     });
   });
+
+/**
+ * Runs one `cmd_check` and always answers it. `exitCode` is null when the command timed out, died of a signal, could
+ * not start, or was refused; `outputTail` then says which.
+ */
+export const runCmdCheck = (frame: CmdCheck, roots: ReadonlyArray<string>): Effect.Effect<CmdResult> =>
+  Effect.map(runConfined(frame, roots), (outcome) => ({
+    t: "cmd_result",
+    id: frame.id,
+    exitCode: outcome.exitCode,
+    outputTail: outcome.notRun ?? outcome.outputTail,
+    timedOut: outcome.timedOut,
+  }));

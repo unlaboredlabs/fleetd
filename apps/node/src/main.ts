@@ -3,7 +3,7 @@ import { Data, Effect, Exit, Schema } from "effect";
 import * as Socket from "effect/socket/Socket";
 import pkg from "../package.json" with { type: "json" };
 import { defaultNodeHome, type NodeConfig, readConfig, writeConfig } from "./config.ts";
-import { loadOrCreateIdentity } from "./identity.ts";
+import { loadOrCreateBoxKey, loadOrCreateIdentity } from "./identity.ts";
 import { leadSocketPath, makeLeadRelay, serveLeadSocket } from "./LeadCalls.ts";
 import { fetchT3Info, linkUrl, runNode } from "./link.ts";
 import * as T3Sessions from "./T3Sessions.ts";
@@ -36,6 +36,10 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
       try: () => loadOrCreateIdentity(home),
       catch: () => new NodeSetupError({ message: `cannot read or create the node key in ${home}` }),
     });
+    const box = yield* Effect.tryPromise({
+      try: () => loadOrCreateBoxKey(home),
+      catch: () => new NodeSetupError({ message: `cannot read or create the node box key in ${home}` }),
+    });
     yield* Effect.logInfo("fleetd node starting").pipe(
       Effect.annotateLogs({ machineId: config.machineId, hub: config.hub, t3Url: config.t3Url }),
     );
@@ -47,6 +51,7 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
       dial: Socket.makeWebSocket(linkUrl(config.hub)).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal)),
       t3Info: fetchT3Info(config.t3Url),
       leadCalls,
+      secrets: { box, home },
       ...(config.cmdRoots === undefined ? {} : { cmdRoots: config.cmdRoots }),
       ...(config.t3RestartCmd === undefined ? {} : { t3Restart: restartCommand(config.t3RestartCmd) }),
       ...(enrollToken === undefined

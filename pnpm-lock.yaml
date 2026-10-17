@@ -57,6 +57,9 @@ importers:
         specifier: 'catalog:'
         version: 4.0.5
     devDependencies:
+      libsodium-wrappers:
+        specifier: 0.8.4
+        version: 0.8.4
       rolldown:
         specifier: 1.2.14
         version: 1.2.14
@@ -85,6 +88,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.29.0
         version: 1.29.0(zod@4.6.7)
+      libsodium-wrappers:
+        specifier: 0.8.4
+        version: 0.8.4
       rolldown:
         specifier: 1.2.14
         version: 1.2.14
@@ -97,6 +103,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.5
+      libsodium-wrappers:
+        specifier: 0.8.4
+        version: 0.8.4
 
   apps/pwa:
     dependencies:
