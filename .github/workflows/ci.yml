@@ -40,7 +40,7 @@ jobs:
 
   rust-crates:
     # The root Cargo workspace minus the GPUI app and its bench, which `rust` below builds on Linux and macOS.
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -55,7 +55,7 @@ jobs:
   t3-conformance:
     # t3-wire against T3's own contracts at the pin (vendor/t3/pin.json), and the recorded T3 streams through its
     # decoders. Fails on a removed method or a field fleetd sends or reads that T3 renamed, retyped or dropped.
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
