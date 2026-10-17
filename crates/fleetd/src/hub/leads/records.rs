@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
-use fleetd_contracts::ledger::{AskId, IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamSource, WorkstreamState};
+use fleetd_contracts::ledger::{
+    AskId, IntakeChannel, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
+    WorkstreamSource, WorkstreamState,
+};
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +37,11 @@ pub struct StoredWorkstream {
     pub amends: Vec<AskId>,
 }
 
-pub const CLOSED_STATES: [WorkstreamState; 3] = [WorkstreamState::Done, WorkstreamState::Stopped, WorkstreamState::Failed];
+pub const CLOSED_STATES: [WorkstreamState; 3] = [
+    WorkstreamState::Done,
+    WorkstreamState::Stopped,
+    WorkstreamState::Failed,
+];
 
 pub fn is_closed(state: WorkstreamState) -> bool {
     CLOSED_STATES.contains(&state)
@@ -69,11 +76,22 @@ fn state_str(state: WorkstreamState) -> String {
     crate::hub::leads::digest::state_text(state).to_string()
 }
 
-fn lead_of(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, String, String, String, Option<String>, i64)> {
-    Ok((row.get("machine_id")?, row.get("project_id")?, row.get("thread_id")?, row.get("started_at")?, row.get("last_wake_at")?, row.get("session_generation")?))
+fn lead_of(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<(String, String, String, String, Option<String>, i64)> {
+    Ok((
+        row.get("machine_id")?,
+        row.get("project_id")?,
+        row.get("thread_id")?,
+        row.get("started_at")?,
+        row.get("last_wake_at")?,
+        row.get("session_generation")?,
+    ))
 }
 
-fn decode_lead(cols: (String, String, String, String, Option<String>, i64)) -> Result<StoredLead, StoreError> {
+fn decode_lead(
+    cols: (String, String, String, String, Option<String>, i64),
+) -> Result<StoredLead, StoreError> {
     let (machine_id, project_id, thread_id, started_at, last_wake_at, session_generation) = cols;
     Ok(serde_json::from_value(serde_json::json!({
         "projectRef": { "machineId": machine_id, "projectId": project_id },
@@ -128,7 +146,9 @@ impl LeadRecords {
     pub fn leads_list(&self) -> Result<Vec<StoredLead>, StoreError> {
         let rows = self.db.with(|c| {
             let mut stmt = c.prepare("SELECT * FROM leads ORDER BY machine_id, project_id")?;
-            let rows = stmt.query_map([], lead_of)?.collect::<rusqlite::Result<Vec<_>>>()?;
+            let rows = stmt
+                .query_map([], lead_of)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(rows)
         })?;
         rows.into_iter().map(decode_lead).collect()
@@ -143,14 +163,21 @@ impl LeadRecords {
             )
             .optional()?)
         })?;
-        let Some((model, effort)) = row else { return Ok(LeadSettings::default()) };
-        let effort = effort.map(|e| serde_json::from_value(serde_json::Value::String(e))).transpose()?;
+        let Some((model, effort)) = row else {
+            return Ok(LeadSettings::default());
+        };
+        let effort = effort
+            .map(|e| serde_json::from_value(serde_json::Value::String(e)))
+            .transpose()?;
         Ok(LeadSettings { model, effort })
     }
 
     /// Absent fields fall back to the hub default.
     pub fn settings_set(&self, r: &ProjectRef, settings: &LeadSettings) -> Result<(), StoreError> {
-        let effort = settings.effort.as_ref().map(crate::hub::leads::digest::serde_plain);
+        let effort = settings
+            .effort
+            .as_ref()
+            .map(crate::hub::leads::digest::serde_plain);
         self.db.with(|c| {
             c.execute(
                 "INSERT INTO lead_settings (machine_id, project_id, model, effort) VALUES (?, ?, ?, ?)
@@ -162,7 +189,10 @@ impl LeadRecords {
     }
 
     /// Creates a draft. A repeated `client_request_id` in the same project returns the first one with `created: false`.
-    pub fn workstream_create(&self, input: NewWorkstream) -> Result<(Workstream, bool), StoreError> {
+    pub fn workstream_create(
+        &self,
+        input: NewWorkstream,
+    ) -> Result<(Workstream, bool), StoreError> {
         self.db.transaction(|c| {
             let r = &input.project_ref;
             if let Some(id) = &input.client_request_id {
@@ -206,15 +236,25 @@ impl LeadRecords {
         })
     }
 
-    pub fn workstream_get(&self, id: &WorkstreamId) -> Result<Option<StoredWorkstream>, StoreError> {
+    pub fn workstream_get(
+        &self,
+        id: &WorkstreamId,
+    ) -> Result<Option<StoredWorkstream>, StoreError> {
         let row: Option<(String, String)> = self.db.with(|c| {
-            Ok(c.query_row("SELECT data, amends FROM workstreams WHERE n = ?", params![workstream_number(id)], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            Ok(c.query_row(
+                "SELECT data, amends FROM workstreams WHERE n = ?",
+                params![workstream_number(id)],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .optional()?)
         })?;
-        row.map(|(data, amends)| Ok(StoredWorkstream { workstream: serde_json::from_str(&data)?, amends: serde_json::from_str(&amends)? }))
-            .transpose()
+        row.map(|(data, amends)| {
+            Ok(StoredWorkstream {
+                workstream: serde_json::from_str(&data)?,
+                amends: serde_json::from_str(&amends)?,
+            })
+        })
+        .transpose()
     }
 
     pub fn workstream_put(&self, stored: &StoredWorkstream) -> Result<(), StoreError> {
@@ -224,14 +264,22 @@ impl LeadRecords {
         self.db.with(|c| {
             c.execute(
                 "UPDATE workstreams SET state = ?, amends = ?, data = ? WHERE n = ?",
-                params![state_str(w.state), amends, data, workstream_number(&w.workstream_id)],
+                params![
+                    state_str(w.state),
+                    amends,
+                    data,
+                    workstream_number(&w.workstream_id)
+                ],
             )?;
             Ok(())
         })
     }
 
     /// Newest first.
-    pub fn workstreams_list(&self, filter: &WorkstreamFilter) -> Result<Vec<Workstream>, StoreError> {
+    pub fn workstreams_list(
+        &self,
+        filter: &WorkstreamFilter,
+    ) -> Result<Vec<Workstream>, StoreError> {
         let closed = serde_json::to_string(&CLOSED_STATES.map(state_str))?;
         let rows: Vec<String> = self.db.with(|c| {
             let mut stmt = c.prepare(
@@ -256,6 +304,29 @@ impl LeadRecords {
                 .collect::<rusqlite::Result<Vec<String>>>()?;
             Ok(rows)
         })?;
-        rows.iter().map(|data| Ok(serde_json::from_str(data)?)).collect()
+        rows.iter()
+            .map(|data| Ok(serde_json::from_str(data)?))
+            .collect()
+    }
+}
+
+/// The ledger's view of workstreams: which project one belongs to, and a project's open ones.
+impl crate::hub::ledger::WorkstreamLookup for LeadRecords {
+    fn project_of(&self, workstream_id: &WorkstreamId) -> Option<ProjectRef> {
+        self.workstream_get(workstream_id)
+            .ok()
+            .flatten()
+            .map(|s| s.workstream.project_ref)
+    }
+
+    fn open_in(&self, project_ref: &ProjectRef, limit: usize) -> Vec<WorkstreamId> {
+        self.workstreams_list(&WorkstreamFilter {
+            project_ref: Some(project_ref.clone()),
+            open: true,
+            limit,
+            ..Default::default()
+        })
+        .map(|ws| ws.into_iter().map(|w| w.workstream_id).collect())
+        .unwrap_or_default()
     }
 }

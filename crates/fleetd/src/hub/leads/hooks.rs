@@ -28,7 +28,12 @@ pub trait UsageHook: Send + Sync {
 /// Tasks (TS TaskRecords.forDigest + taskDigestLines, Tasks.list/cancel for removed projects).
 pub trait TasksHook: Send + Sync {
     /// The digest's "Tasks" lines: `taskDigestLines(forDigest(ref, since, limit), since)`.
-    fn digest_lines(&self, project_ref: &ProjectRef, since: Option<&Timestamp>, limit: usize) -> Vec<String>;
+    fn digest_lines(
+        &self,
+        project_ref: &ProjectRef,
+        since: Option<&Timestamp>,
+        limit: usize,
+    ) -> Vec<String>;
     /// Live (queued, running, idle) tasks, in one project or all.
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)>;
     /// `Tasks.cancel({projectRef, by: "hub"}, taskId, reason)`, errors ignored.
@@ -52,7 +57,11 @@ pub trait EstimatesHook: Send + Sync {
 /// The merge train (TS trainFacts + leadTrainLines).
 pub trait TrainHook: Send + Sync {
     /// None when the project has no train and no change: the digest leaves the section out.
-    fn lead_lines(&self, project_ref: &ProjectRef, since: Option<&Timestamp>) -> Option<Vec<String>>;
+    fn lead_lines(
+        &self,
+        project_ref: &ProjectRef,
+        since: Option<&Timestamp>,
+    ) -> Option<Vec<String>>;
 }
 
 /// Policies (TS Policies.get(ref).finishAll.maxChildren).

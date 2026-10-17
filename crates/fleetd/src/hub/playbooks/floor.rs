@@ -26,7 +26,12 @@ fn missing_research_fields(brief: &Brief) -> Vec<&'static str> {
     if brief.decision_rule.is_none() {
         missing.push("decisionRule");
     }
-    if brief.budget.as_ref().and_then(|b| b.agent_hours.as_ref()).is_none() {
+    if brief
+        .budget
+        .as_ref()
+        .and_then(|b| b.agent_hours.as_ref())
+        .is_none()
+    {
         missing.push("budget.agentHours");
     }
     missing
@@ -52,8 +57,15 @@ pub fn floor_refusal(playbook: &Playbook, brief: &Brief) -> Option<String> {
     if playbook.name == PlaybookName::Research {
         let missing = missing_research_fields(brief);
         if !missing.is_empty() {
-            unmet.push(format!("{RESEARCH_FIELDS_FIX}; missing {}", missing.join(", ")));
+            unmet.push(format!(
+                "{RESEARCH_FIELDS_FIX}; missing {}",
+                missing.join(", ")
+            ));
         }
     }
-    if unmet.is_empty() { None } else { Some(unmet.join("; ")) }
+    if unmet.is_empty() {
+        None
+    } else {
+        Some(unmet.join("; "))
+    }
 }

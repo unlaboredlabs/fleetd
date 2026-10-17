@@ -96,15 +96,55 @@ impl Area {
         let records = LeadRecords::new(Arc::clone(&ctx.db));
         let playbooks = Playbooks::new(Arc::clone(&ctx.db), Some(options.home.join("playbooks")))?;
         let sender = Arc::new(wakes::ExecutorSender(Arc::clone(&ctx.executors)));
-        let wakes = LeadWakes::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&playbooks), sender);
-        let leads = Leads::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes), options.leads);
-        let workstreams = Workstreams::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes), Arc::clone(&playbooks));
+        let wakes = LeadWakes::new(
+            Arc::clone(&ctx),
+            Arc::clone(&records),
+            Arc::clone(&playbooks),
+            sender,
+        );
+        let leads = Leads::new(
+            Arc::clone(&ctx),
+            Arc::clone(&records),
+            Arc::clone(&wakes),
+            options.leads,
+        );
+        let workstreams = Workstreams::new(
+            Arc::clone(&ctx),
+            Arc::clone(&records),
+            Arc::clone(&wakes),
+            Arc::clone(&playbooks),
+        );
         let research = Research::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes));
-        let finish_all = FinishAll::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&workstreams));
-        let one_shot = Arc::new(OneShot::new(options.home, options.router_model, &options.env, None)?);
-        let intake = Intake::new(Arc::clone(&ctx), Arc::clone(&workstreams), IntakeRouter::new(Arc::clone(&one_shot)));
+        let finish_all = FinishAll::new(
+            Arc::clone(&ctx),
+            Arc::clone(&records),
+            Arc::clone(&workstreams),
+        );
+        let one_shot = Arc::new(OneShot::new(
+            options.home,
+            options.router_model,
+            &options.env,
+            None,
+        )?);
+        let intake = Intake::new(
+            Arc::clone(&ctx),
+            Arc::clone(&workstreams),
+            IntakeRouter::new(Arc::clone(&one_shot)),
+        );
         let removals = removals::ProjectRemovals::new(Arc::clone(&ctx), Arc::clone(&records));
-        Ok(Arc::new(Self { ctx, records, playbooks, wakes, leads, workstreams, research, finish_all, one_shot, intake, removals }))
+        Ok(Arc::new(Self {
+            ctx,
+            records,
+            playbooks,
+            wakes,
+            leads,
+            workstreams,
+            research,
+            finish_all,
+            one_shot,
+            intake,
+            removals,
+        }))
     }
 
     /// The ledger's AnswerSink: each applied answer wakes its project's lead.

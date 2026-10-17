@@ -20,11 +20,21 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(90);
 const MAX_STDOUT: usize = 1 << 20;
 
 /// Copied from the hub's environment into the run: what lets `claude` reach the user's login or proxy.
-pub const LOGIN_ENV: [&str; 3] = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"];
+pub const LOGIN_ENV: [&str; 3] = [
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+];
 const BASE_ENV: [&str; 4] = ["HOME", "PATH", "USER", "LANG"];
 
 /// No tools, no MCP servers, no saved session, and none of the user's customizations; the login still applies.
-pub const ONE_SHOT_FLAGS: [&str; 5] = ["--tools", "", "--strict-mcp-config", "--no-session-persistence", "--safe-mode"];
+pub const ONE_SHOT_FLAGS: [&str; 5] = [
+    "--tools",
+    "",
+    "--strict-mcp-config",
+    "--no-session-persistence",
+    "--safe-mode",
+];
 
 pub const ROUTER_PROMPT: &str = include_str!("../../../assets/prompts/router-prompt.md");
 
@@ -64,7 +74,10 @@ pub struct RouteOutcome {
 }
 
 fn basename(path: &str) -> &str {
-    Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("")
+    Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
 }
 
 pub fn render_router_prompt(template: &str, text: &str, projects: &[RouterProject]) -> String {
@@ -82,7 +95,9 @@ pub fn render_router_prompt(template: &str, text: &str, projects: &[RouterProjec
             )
         })
         .collect();
-    template.replacen("{{projects}}", &lines.join("\n"), 1).replacen("{{intent}}", text.trim(), 1)
+    template
+        .replacen("{{projects}}", &lines.join("\n"), 1)
+        .replacen("{{intent}}", text.trim(), 1)
 }
 
 fn json_str(s: &str) -> String {
@@ -95,7 +110,12 @@ pub fn router_env(source: &HashMap<String, String>) -> Vec<(String, String)> {
     BASE_ENV
         .iter()
         .chain(LOGIN_ENV.iter())
-        .filter_map(|k| source.get(*k).filter(|v| !v.is_empty()).map(|v| (k.to_string(), v.clone())))
+        .filter_map(|k| {
+            source
+                .get(*k)
+                .filter(|v| !v.is_empty())
+                .map(|v| (k.to_string(), v.clone()))
+        })
         .collect()
 }
 
@@ -118,20 +138,35 @@ pub fn judge_answer(text: &str, projects: &[RouterProject]) -> Verdict {
         return Verdict::Invalid("the answer is not valid JSON".into());
     };
     if raw.get("projectRef").is_some_and(Value::is_null) {
-        let reason = raw.get("reason").and_then(Value::as_str).map(|r| r.split_whitespace().collect::<Vec<_>>().join(" ")).unwrap_or_default();
+        let reason = raw
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(|r| r.split_whitespace().collect::<Vec<_>>().join(" "))
+            .unwrap_or_default();
         let reason: String = reason.chars().take(200).collect();
-        return Verdict::Unsure(if reason.is_empty() { "the router could not tell which project".into() } else { reason });
+        return Verdict::Unsure(if reason.is_empty() {
+            "the router could not tell which project".into()
+        } else {
+            reason
+        });
     }
     let result: RouterResult = match serde_json::from_value(raw) {
         Ok(r) => r,
         Err(e) => {
             let detail: String = e.to_string().chars().take(300).collect();
-            return Verdict::Invalid(format!("the answer does not match {{projectRef, template, reason}}: {detail}"));
+            return Verdict::Invalid(format!(
+                "the answer does not match {{projectRef, template, reason}}: {detail}"
+            ));
         }
     };
     let r = &result.project_ref;
-    if !projects.iter().any(|p| p.project_ref.machine_id == r.machine_id && p.project_ref.project_id == r.project_id) {
-        return Verdict::Invalid(format!("{}/{} is not one of the listed projects", r.machine_id, r.project_id));
+    if !projects.iter().any(|p| {
+        p.project_ref.machine_id == r.machine_id && p.project_ref.project_id == r.project_id
+    }) {
+        return Verdict::Invalid(format!(
+            "{}/{} is not one of the listed projects",
+            r.machine_id, r.project_id
+        ));
     }
     Verdict::Ok(result)
 }
@@ -145,27 +180,43 @@ pub struct Envelope {
 }
 
 fn count(v: Option<&Value>) -> u64 {
-    v.and_then(Value::as_f64).filter(|n| n.is_finite()).map_or(0, |n| n as u64)
+    v.and_then(Value::as_f64)
+        .filter(|n| n.is_finite())
+        .map_or(0, |n| n as u64)
 }
 
 /// `claude -p --output-format json` stdout: the `result` text and the usage it reports.
 pub fn read_envelope(stdout: &str) -> Envelope {
-    let no_json = || Envelope { error: Some("the CLI printed no JSON result".into()), ..Default::default() };
-    let Ok(Value::Object(e)) = serde_json::from_str::<Value>(stdout) else { return no_json() };
+    let no_json = || Envelope {
+        error: Some("the CLI printed no JSON result".into()),
+        ..Default::default()
+    };
+    let Ok(Value::Object(e)) = serde_json::from_str::<Value>(stdout) else {
+        return no_json();
+    };
     let mut out = Envelope::default();
     if let Some(Value::Object(usage)) = e.get("usage") {
-        out.input_tokens = Some(count(usage.get("input_tokens")) + count(usage.get("cache_creation_input_tokens")) + count(usage.get("cache_read_input_tokens")));
+        out.input_tokens = Some(
+            count(usage.get("input_tokens"))
+                + count(usage.get("cache_creation_input_tokens"))
+                + count(usage.get("cache_read_input_tokens")),
+        );
         out.output_tokens = Some(count(usage.get("output_tokens")));
     }
     match e.get("result") {
-        Some(Value::String(text)) if e.get("is_error") != Some(&Value::Bool(true)) => out.text = Some(text.clone()),
+        Some(Value::String(text)) if e.get("is_error") != Some(&Value::Bool(true)) => {
+            out.text = Some(text.clone())
+        }
         other => {
             let shown = match other {
                 Some(Value::String(s)) => s.clone(),
                 None | Some(Value::Null) => "no result".into(),
                 Some(v) => v.to_string(),
             };
-            out.error = Some(format!("the CLI reported an error: {}", shown.chars().take(200).collect::<String>()));
+            out.error = Some(format!(
+                "the CLI reported an error: {}",
+                shown.chars().take(200).collect::<String>()
+            ));
         }
     }
     out
@@ -188,14 +239,24 @@ pub struct OneShot {
 
 impl OneShot {
     /// `env` is where the login variables and PATH come from: the hub's own environment in production.
-    pub fn new(home: &Path, model: Option<String>, env: &HashMap<String, String>, timeout: Option<Duration>) -> std::io::Result<Self> {
+    pub fn new(
+        home: &Path,
+        model: Option<String>,
+        env: &HashMap<String, String>,
+        timeout: Option<Duration>,
+    ) -> std::io::Result<Self> {
         let cwd = home.join("claude-router");
         let mut dir = std::fs::DirBuilder::new();
         dir.recursive(true);
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut dir, 0o700);
         dir.create(&cwd)?;
-        Ok(Self { model: model.unwrap_or_else(|| DEFAULT_ROUTER_MODEL.into()), cwd, env: router_env(env), timeout: timeout.unwrap_or(RUN_TIMEOUT) })
+        Ok(Self {
+            model: model.unwrap_or_else(|| DEFAULT_ROUTER_MODEL.into()),
+            cwd,
+            env: router_env(env),
+            timeout: timeout.unwrap_or(RUN_TIMEOUT),
+        })
     }
 
     pub fn model(&self) -> &str {
@@ -207,14 +268,20 @@ impl OneShot {
         let exit = self.spawn(prompt).await;
         let duration_ms = started.elapsed().as_millis() as u64;
         let (envelope, failed) = match exit {
-            Err(spawn_error) => (Envelope::default(), Some(format!("could not start claude: {spawn_error}"))),
+            Err(spawn_error) => (
+                Envelope::default(),
+                Some(format!("could not start claude: {spawn_error}")),
+            ),
             Ok((code, stdout, stderr)) => {
                 let envelope = read_envelope(&stdout);
                 let failed = envelope.error.clone().or_else(|| match code {
                     Some(0) => None,
                     code => {
                         let tail = tail_chars(stderr.trim(), 200);
-                        Some(format!("claude exited with {}: {tail}", code.map_or("a signal".to_string(), |c| c.to_string())))
+                        Some(format!(
+                            "claude exited with {}: {tail}",
+                            code.map_or("a signal".to_string(), |c| c.to_string())
+                        ))
                     }
                 });
                 (envelope, failed)
@@ -229,7 +296,14 @@ impl OneShot {
             output_tokens: envelope.output_tokens,
             error: failed.as_ref().map(|f| f.chars().take(300).collect()),
         };
-        OneShotResult { text: if failed.is_none() { Some(envelope.text.unwrap_or_default()) } else { None }, run }
+        OneShotResult {
+            text: if failed.is_none() {
+                Some(envelope.text.unwrap_or_default())
+            } else {
+                None
+            },
+            run,
+        }
     }
 
     /// Runs `claude` once with the prompt on stdin, killed at the timeout.
@@ -246,7 +320,13 @@ impl OneShot {
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { "spawn claude ENOENT".to_string() } else { e.to_string() })?;
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    "spawn claude ENOENT".to_string()
+                } else {
+                    e.to_string()
+                }
+            })?;
         let mut stdin = child.stdin.take().expect("piped stdin");
         let mut stdout = child.stdout.take().expect("piped stdout");
         let mut stderr = child.stderr.take().expect("piped stderr");
@@ -257,7 +337,10 @@ impl OneShot {
         };
         let read_out = async move {
             let mut buf = Vec::new();
-            let _ = (&mut stdout).take(MAX_STDOUT as u64).read_to_end(&mut buf).await;
+            let _ = (&mut stdout)
+                .take(MAX_STDOUT as u64)
+                .read_to_end(&mut buf)
+                .await;
             String::from_utf8_lossy(&buf).into_owned()
         };
         let read_err = async move {
@@ -307,19 +390,46 @@ impl IntakeRouter {
         let prompt = render_router_prompt(ROUTER_PROMPT, text, projects);
         let (first, first_run) = self.attempt(&prompt, projects).await;
         let error = match first {
-            Verdict::Ok(result) => return RouteOutcome { result: Some(result), why: None, runs: vec![first_run] },
-            Verdict::Unsure(why) => return RouteOutcome { result: None, why: Some(why), runs: vec![first_run] },
+            Verdict::Ok(result) => {
+                return RouteOutcome {
+                    result: Some(result),
+                    why: None,
+                    runs: vec![first_run],
+                };
+            }
+            Verdict::Unsure(why) => {
+                return RouteOutcome {
+                    result: None,
+                    why: Some(why),
+                    runs: vec![first_run],
+                };
+            }
             Verdict::Invalid(error) => error,
         };
-        let retry = format!("{prompt}\n\nYour previous answer was not usable ({error}). Reply with only the JSON object.");
+        let retry = format!(
+            "{prompt}\n\nYour previous answer was not usable ({error}). Reply with only the JSON object."
+        );
         let (second, second_run) = self.attempt(&retry, projects).await;
         let runs = vec![first_run, second_run];
         match second {
-            Verdict::Ok(result) => RouteOutcome { result: Some(result), why: None, runs },
-            Verdict::Unsure(why) => RouteOutcome { result: None, why: Some(why), runs },
+            Verdict::Ok(result) => RouteOutcome {
+                result: Some(result),
+                why: None,
+                runs,
+            },
+            Verdict::Unsure(why) => RouteOutcome {
+                result: None,
+                why: Some(why),
+                runs,
+            },
             Verdict::Invalid(error) => RouteOutcome {
                 result: None,
-                why: Some(format!("the router gave no usable answer twice ({error})").chars().take(300).collect()),
+                why: Some(
+                    format!("the router gave no usable answer twice ({error})")
+                        .chars()
+                        .take(300)
+                        .collect(),
+                ),
                 runs,
             },
         }
@@ -359,35 +469,77 @@ exit "$(cat "$dir/reply-$n.exit")"
             std::fs::create_dir_all(root.path().join("hub")).unwrap();
             let claude = bin.join("claude");
             std::fs::write(&claude, FAKE).unwrap();
-            std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+            std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .unwrap();
             for (i, (out, exit)) in replies.iter().enumerate() {
                 std::fs::write(calls.join(format!("reply-{}.out", i + 1)), out).unwrap();
-                std::fs::write(calls.join(format!("reply-{}.exit", i + 1)), exit.to_string()).unwrap();
+                std::fs::write(
+                    calls.join(format!("reply-{}.exit", i + 1)),
+                    exit.to_string(),
+                )
+                .unwrap();
             }
             let env = HashMap::from([
-                ("PATH".to_string(), format!("{}:/usr/bin:/bin", bin.display())),
+                (
+                    "PATH".to_string(),
+                    format!("{}:/usr/bin:/bin", bin.display()),
+                ),
                 ("HOME".to_string(), root.path().display().to_string()),
-                ("ANTHROPIC_BASE_URL".to_string(), "http://proxy.invalid".to_string()),
+                (
+                    "ANTHROPIC_BASE_URL".to_string(),
+                    "http://proxy.invalid".to_string(),
+                ),
                 ("ANTHROPIC_AUTH_TOKEN".to_string(), "test-token".to_string()),
                 ("CLAUDECODE".to_string(), "1".to_string()),
                 ("CLAUDE_CODE_ENTRYPOINT".to_string(), "cli".to_string()),
-                ("CLAUDE_CONFIG_DIR".to_string(), "/somewhere/else".to_string()),
+                (
+                    "CLAUDE_CONFIG_DIR".to_string(),
+                    "/somewhere/else".to_string(),
+                ),
             ]);
             Fake { root, env }
         }
 
         fn router(&self, model: Option<&str>) -> Arc<IntakeRouter> {
-            IntakeRouter::new(Arc::new(OneShot::new(&self.root.path().join("hub"), model.map(Into::into), &self.env, None).unwrap()))
+            IntakeRouter::new(Arc::new(
+                OneShot::new(
+                    &self.root.path().join("hub"),
+                    model.map(Into::into),
+                    &self.env,
+                    None,
+                )
+                .unwrap(),
+            ))
         }
 
         fn call(&self, n: usize) -> (Vec<String>, String, String) {
-            let read = |ext: &str| std::fs::read_to_string(self.root.path().join("calls").join(format!("call-{n}.{ext}"))).unwrap();
-            let args = read("args").lines().map(|l| l[1..l.len() - 1].to_string()).collect();
+            let read = |ext: &str| {
+                std::fs::read_to_string(
+                    self.root
+                        .path()
+                        .join("calls")
+                        .join(format!("call-{n}.{ext}")),
+                )
+                .unwrap()
+            };
+            let args = read("args")
+                .lines()
+                .map(|l| l[1..l.len() - 1].to_string())
+                .collect();
             (args, read("env"), read("prompt"))
         }
 
         fn calls(&self) -> usize {
-            std::fs::read_dir(self.root.path().join("calls")).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().ends_with(".prompt")).count()
+            std::fs::read_dir(self.root.path().join("calls"))
+                .unwrap()
+                .filter(|e| {
+                    e.as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .ends_with(".prompt")
+                })
+                .count()
         }
     }
 
@@ -404,12 +556,22 @@ exit "$(cat "$dir/reply-$n.exit")"
 
     fn projects() -> Vec<RouterProject> {
         let p = |m: &str, id: &str, title: &str, root: &str, recent: &[&str]| RouterProject {
-            project_ref: serde_json::from_value(json!({ "machineId": m, "projectId": id })).unwrap(),
+            project_ref: serde_json::from_value(json!({ "machineId": m, "projectId": id }))
+                .unwrap(),
             title: title.into(),
             root: root.into(),
             recent_intents: recent.iter().map(|s| s.to_string()).collect(),
         };
-        vec![p("lab-a", "p-a", "repo-a", "/lab/repo-a", &["add a /health endpoint"]), p("lab-b", "p-b", "repo-b", "/lab/repo-b", &[])]
+        vec![
+            p(
+                "lab-a",
+                "p-a",
+                "repo-a",
+                "/lab/repo-a",
+                &["add a /health endpoint"],
+            ),
+            p("lab-b", "p-b", "repo-b", "/lab/repo-b", &[]),
+        ]
     }
 
     fn to_a() -> Value {
@@ -465,13 +627,48 @@ exit "$(cat "$dir/reply-$n.exit")"
     async fn runs_claude_once_with_the_users_login_and_no_claude_session_variables() {
         let fake = Fake::new(&[(&result(&to_a()), 0)]);
         let outcome = fake.router(None).route(TEXT, &projects()).await;
-        assert_eq!(serde_json::to_value(outcome.result.unwrap()).unwrap(), to_a());
+        assert_eq!(
+            serde_json::to_value(outcome.result.unwrap()).unwrap(),
+            to_a()
+        );
         let run = &outcome.runs[0];
-        assert_eq!((run.kind, run.model.as_str(), run.ok, run.input_tokens, run.output_tokens), ("orchestrator", "claude-haiku-5-5", true, Some(120), Some(30)));
+        assert_eq!(
+            (
+                run.kind,
+                run.model.as_str(),
+                run.ok,
+                run.input_tokens,
+                run.output_tokens
+            ),
+            (
+                "orchestrator",
+                "claude-haiku-5-5",
+                true,
+                Some(120),
+                Some(30)
+            )
+        );
         assert_eq!(fake.calls(), 1);
         let (args, env, prompt) = fake.call(1);
-        assert_eq!(args, ["-p", "--output-format", "json", "--model", "claude-haiku-5-5", "--tools", "", "--strict-mcp-config", "--no-session-persistence", "--safe-mode"]);
-        assert!(env.lines().any(|l| l == "ANTHROPIC_BASE_URL=http://proxy.invalid"));
+        assert_eq!(
+            args,
+            [
+                "-p",
+                "--output-format",
+                "json",
+                "--model",
+                "claude-haiku-5-5",
+                "--tools",
+                "",
+                "--strict-mcp-config",
+                "--no-session-persistence",
+                "--safe-mode"
+            ]
+        );
+        assert!(
+            env.lines()
+                .any(|l| l == "ANTHROPIC_BASE_URL=http://proxy.invalid")
+        );
         assert!(env.lines().any(|l| l == "ANTHROPIC_AUTH_TOKEN=test-token"));
         assert!(!env.lines().any(|l| l.starts_with("CLAUDE")), "{env}");
         assert!(prompt.contains(TEXT) && prompt.contains(r#""title":"repo-b""#));
@@ -480,7 +677,10 @@ exit "$(cat "$dir/reply-$n.exit")"
     #[tokio::test]
     async fn uses_the_configured_model() {
         let fake = Fake::new(&[(&result(&to_a()), 0)]);
-        let outcome = fake.router(Some("claude-sonnet-5-5")).route(TEXT, &projects()).await;
+        let outcome = fake
+            .router(Some("claude-sonnet-5-5"))
+            .route(TEXT, &projects())
+            .await;
         assert!(fake.call(1).0.contains(&"claude-sonnet-5-5".to_string()));
         assert_eq!(outcome.runs[0].model, "claude-sonnet-5-5");
     }
@@ -492,9 +692,20 @@ exit "$(cat "$dir/reply-$n.exit")"
         let fake = Fake::new(&[(&result(&bad), 0), (&result(&to_a()), 0)]);
         let outcome = fake.router(None).route(TEXT, &projects()).await;
         assert!(outcome.result.is_some());
-        assert_eq!(outcome.runs.iter().map(|r| r.ok).collect::<Vec<_>>(), [false, true]);
-        assert!(outcome.runs[0].error.as_deref().unwrap().contains("lab-a/p-z is not one of the listed projects"));
-        assert!(fake.call(2).2.contains("Your previous answer was not usable (lab-a/p-z is not one of the listed projects)"));
+        assert_eq!(
+            outcome.runs.iter().map(|r| r.ok).collect::<Vec<_>>(),
+            [false, true]
+        );
+        assert!(
+            outcome.runs[0]
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("lab-a/p-z is not one of the listed projects")
+        );
+        assert!(fake.call(2).2.contains(
+            "Your previous answer was not usable (lab-a/p-z is not one of the listed projects)"
+        ));
     }
 
     #[tokio::test]
@@ -503,10 +714,22 @@ exit "$(cat "$dir/reply-$n.exit")"
         let fake = Fake::new(&[(&error, 0), (&result(&json!("repo-a")), 0)]);
         let outcome = fake.router(None).route(TEXT, &projects()).await;
         assert!(outcome.result.is_none());
-        assert!(outcome.why.unwrap().contains("the router gave no usable answer twice (the answer has no JSON object)"));
+        assert!(
+            outcome
+                .why
+                .unwrap()
+                .contains("the router gave no usable answer twice (the answer has no JSON object)")
+        );
         assert_eq!(
-            outcome.runs.iter().map(|r| r.error.clone().unwrap()).collect::<Vec<_>>(),
-            ["the CLI reported an error: API Error: 529", "the answer has no JSON object"]
+            outcome
+                .runs
+                .iter()
+                .map(|r| r.error.clone().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "the CLI reported an error: API Error: 529",
+                "the answer has no JSON object"
+            ]
         );
         assert_eq!(fake.calls(), 2);
     }
@@ -516,12 +739,24 @@ exit "$(cat "$dir/reply-$n.exit")"
         let fake = Fake::new(&[("", 1), ("not json", 0)]);
         let outcome = fake.router(None).route(TEXT, &projects()).await;
         assert!(outcome.result.is_none());
-        assert_eq!(outcome.runs.iter().map(|r| r.error.clone().unwrap()).collect::<Vec<_>>(), ["the CLI printed no JSON result"; 2]);
+        assert_eq!(
+            outcome
+                .runs
+                .iter()
+                .map(|r| r.error.clone().unwrap())
+                .collect::<Vec<_>>(),
+            ["the CLI printed no JSON result"; 2]
+        );
     }
 
     #[tokio::test]
     async fn does_not_retry_when_the_model_says_no_project_fits() {
-        let fake = Fake::new(&[(&result(&json!({ "projectRef": null, "template": "bugfix", "reason": "both repos have a README" })), 0)]);
+        let fake = Fake::new(&[(
+            &result(
+                &json!({ "projectRef": null, "template": "bugfix", "reason": "both repos have a README" }),
+            ),
+            0,
+        )]);
         let outcome = fake.router(None).route(TEXT, &projects()).await;
         assert_eq!(outcome.why.as_deref(), Some("both repos have a README"));
         assert!(outcome.result.is_none() && outcome.runs[0].ok);
@@ -535,6 +770,9 @@ exit "$(cat "$dir/reply-$n.exit")"
         let outcome = fake.router(None).route(TEXT, &projects()).await;
         assert!(outcome.result.is_none());
         let error = outcome.runs[0].error.clone().unwrap();
-        assert!(error.starts_with("could not start claude: ") && error.contains("ENOENT"), "{error}");
+        assert!(
+            error.starts_with("could not start claude: ") && error.contains("ENOENT"),
+            "{error}"
+        );
     }
 }

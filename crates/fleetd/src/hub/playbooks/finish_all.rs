@@ -5,13 +5,17 @@ use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{AskState, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamState};
+use fleetd_contracts::ledger::{
+    AskState, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
+    WorkstreamState,
+};
 use fleetd_contracts::verification::{CheckOutcome, ClaimOutcome};
 use serde::Deserialize;
 
 use super::finish_all_rules::{
-    DEFAULT_MAX_CHILDREN, FINISH_ALL_IDLE, InventoryInput, InventoryItem, InventoryParent, ItemKind, TODO_GREP, github_repo_of,
-    is_finish_all, is_spawnable, render_inventory, should_idle, spawn_refusal, todo_count,
+    DEFAULT_MAX_CHILDREN, FINISH_ALL_IDLE, InventoryInput, InventoryItem, InventoryParent,
+    ItemKind, TODO_GREP, github_repo_of, is_finish_all, is_spawnable, render_inventory,
+    should_idle, spawn_refusal, todo_count,
 };
 use crate::hub::leads::digest::{describe_check, one_line, serde_plain};
 use crate::hub::leads::error::LeadError;
@@ -19,7 +23,7 @@ use crate::hub::leads::records::{LeadRecords, WorkstreamFilter};
 use crate::hub::leads::workstreams::{IntakeInput, Workstreams};
 use crate::hub::leads::{Ctx, now_iso};
 use crate::hub::ledger::AskFilter;
-use crate::hub::link::CommandInput;
+use crate::hub::link::commands::CommandInput;
 use crate::hub::store::NewEvent;
 
 const ISSUES_LIMIT: usize = 50;
@@ -61,12 +65,25 @@ pub struct FinishAll {
 }
 
 impl FinishAll {
-    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, workstreams: Arc<Workstreams>) -> Arc<Self> {
-        Arc::new(Self { ctx, records, workstreams })
+    pub fn new(
+        ctx: Arc<Ctx>,
+        records: Arc<LeadRecords>,
+        workstreams: Arc<Workstreams>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            ctx,
+            records,
+            workstreams,
+        })
     }
 
     fn open_in(&self, r: &ProjectRef) -> Result<Vec<Workstream>, LeadError> {
-        Ok(self.records.workstreams_list(&WorkstreamFilter { project_ref: Some(r.clone()), open: true, limit: 200, ..Default::default() })?)
+        Ok(self.records.workstreams_list(&WorkstreamFilter {
+            project_ref: Some(r.clone()),
+            open: true,
+            limit: 200,
+            ..Default::default()
+        })?)
     }
 
     async fn max_children(&self, r: &ProjectRef) -> u32 {
@@ -76,8 +93,15 @@ impl FinishAll {
         }
     }
 
-    fn set_state(&self, w: &Workstream, state: WorkstreamState, why: &str) -> Result<(), LeadError> {
-        let Some(mut stored) = self.records.workstream_get(&w.workstream_id)? else { return Ok(()) };
+    fn set_state(
+        &self,
+        w: &Workstream,
+        state: WorkstreamState,
+        why: &str,
+    ) -> Result<(), LeadError> {
+        let Some(mut stored) = self.records.workstream_get(&w.workstream_id)? else {
+            return Ok(());
+        };
         if stored.workstream.state == state {
             return Ok(());
         }
@@ -93,6 +117,7 @@ impl FinishAll {
             thread_id: None,
             summary: format!("{} is {}: {why}", w.workstream_id, serde_plain(&state)),
             data: Some(serde_json::json!({ "workstreamId": w.workstream_id, "state": state })),
+            attention: None,
         })?;
         Ok(())
     }
@@ -102,11 +127,25 @@ impl FinishAll {
         if parent.state != WorkstreamState::Idle {
             return Ok(());
         }
-        self.set_state(parent, if parent.brief.is_none() { WorkstreamState::Draft } else { WorkstreamState::Running }, why)
+        self.set_state(
+            parent,
+            if parent.brief.is_none() {
+                WorkstreamState::Draft
+            } else {
+                WorkstreamState::Running
+            },
+            why,
+        )
     }
 
     /// `fleetd workstream spawn`: a child of the project's open finish-all workstream, for one value source.
-    pub async fn spawn(&self, caller: &Caller, text: &str, serves: &str, template: Option<PlaybookName>) -> Result<Spawned, LeadError> {
+    pub async fn spawn(
+        &self,
+        caller: &Caller,
+        text: &str,
+        serves: &str,
+        template: Option<PlaybookName>,
+    ) -> Result<Spawned, LeadError> {
         let r = &caller.project_ref;
         let open = self.open_in(r)?;
         let Some(parent) = open.iter().find(|w| is_finish_all(w)) else {
@@ -121,11 +160,23 @@ impl FinishAll {
                 "Pass --template bugfix, feature or research.",
             ));
         }
-        let children: Vec<&Workstream> = open.iter().filter(|w| w.parent.as_ref().is_some_and(|p| p.workstream_id == parent.workstream_id)).collect();
-        if let Some(refusal) = spawn_refusal(serves, parent, &children, self.max_children(r).await) {
+        let children: Vec<&Workstream> = open
+            .iter()
+            .filter(|w| {
+                w.parent
+                    .as_ref()
+                    .is_some_and(|p| p.workstream_id == parent.workstream_id)
+            })
+            .collect();
+        if let Some(refusal) = spawn_refusal(serves, parent, &children, self.max_children(r).await)
+        {
             return Err(LeadError::invalid(refusal.message, refusal.fix));
         }
-        let template = template.unwrap_or(if serves.starts_with("defect:") { PlaybookName::Bugfix } else { PlaybookName::Feature });
+        let template = template.unwrap_or(if serves.starts_with("defect:") {
+            PlaybookName::Bugfix
+        } else {
+            PlaybookName::Feature
+        });
         let created = self.workstreams.intake(IntakeInput {
             project_ref: r.clone(),
             text: text.to_string(),
@@ -135,11 +186,20 @@ impl FinishAll {
             template: Some(template),
             parent: Some(WorkstreamParent {
                 workstream_id: parent.workstream_id.clone(),
-                serves: serde_json::from_value(serde_json::Value::String(serves.into()))
-                    .map_err(|e| LeadError::invalid(format!("'{serves}' is not a value source: {e}"), "Pass a serves value from inventory."))?,
+                serves: serde_json::from_value(serde_json::Value::String(serves.into())).map_err(
+                    |e| {
+                        LeadError::invalid(
+                            format!("'{serves}' is not a value source: {e}"),
+                            "Pass a serves value from inventory.",
+                        )
+                    },
+                )?,
             }),
         })?;
-        self.reopen(parent, &format!("child {} serves {serves}", created.workstream_id))?;
+        self.reopen(
+            parent,
+            &format!("child {} serves {serves}", created.workstream_id),
+        )?;
         Ok(Spawned {
             next: format!(
                 "{} ({}) serves {serves} for {}; register its brief when its intent wake arrives.",
@@ -154,19 +214,42 @@ impl FinishAll {
     }
 
     /// Failing done-when checks from each workstream's latest claim; open workstreams other than the parent own theirs.
-    fn failing_checks(&self, r: &ProjectRef, open: &[Workstream], parent: Option<&Workstream>, served_by: &dyn Fn(&str) -> Option<WorkstreamId>) -> Result<Vec<InventoryItem>, LeadError> {
-        let Some(claims) = self.ctx.hooks.claims.get() else { return Ok(Vec::new()) };
+    fn failing_checks(
+        &self,
+        r: &ProjectRef,
+        open: &[Workstream],
+        parent: Option<&Workstream>,
+        served_by: &dyn Fn(&str) -> Option<WorkstreamId>,
+    ) -> Result<Vec<InventoryItem>, LeadError> {
+        let Some(claims) = self.ctx.hooks.claims.get() else {
+            return Ok(Vec::new());
+        };
         let mut closed = Vec::new();
         for state in [WorkstreamState::Failed, WorkstreamState::Stopped] {
-            closed.extend(self.records.workstreams_list(&WorkstreamFilter { project_ref: Some(r.clone()), state: Some(state), limit: 20, open: false })?);
+            closed.extend(self.records.workstreams_list(&WorkstreamFilter {
+                project_ref: Some(r.clone()),
+                state: Some(state),
+                limit: 20,
+                open: false,
+            })?);
         }
         let mut items = Vec::new();
-        for (w, is_open) in open.iter().map(|w| (w, true)).chain(closed.iter().map(|w| (w, false))) {
-            let Some(latest) = claims.latest(&w.workstream_id) else { continue };
+        for (w, is_open) in open
+            .iter()
+            .map(|w| (w, true))
+            .chain(closed.iter().map(|w| (w, false)))
+        {
+            let Some(latest) = claims.latest(&w.workstream_id) else {
+                continue;
+            };
             if latest.outcome != ClaimOutcome::Fail {
                 continue;
             }
-            for result in latest.results.iter().filter(|r| r.result != CheckOutcome::Pass) {
+            for result in latest
+                .results
+                .iter()
+                .filter(|r| r.result != CheckOutcome::Pass)
+            {
                 let index = result.check_index.get();
                 let what = format!(
                     "{} done:{index} ({}) {} in {}",
@@ -177,7 +260,12 @@ impl FinishAll {
                 );
                 if Some(&w.workstream_id) == parent.map(|p| &p.workstream_id) {
                     let serves = format!("done:{index}");
-                    items.push(InventoryItem { kind: ItemKind::FailingCheck, text: what, served_by: served_by(&serves), serves: Some(serves) });
+                    items.push(InventoryItem {
+                        kind: ItemKind::FailingCheck,
+                        text: what,
+                        served_by: served_by(&serves),
+                        serves: Some(serves),
+                    });
                 } else if is_open {
                     items.push(InventoryItem {
                         kind: ItemKind::FailingCheck,
@@ -203,22 +291,47 @@ impl FinishAll {
     pub async fn inventory(&self, caller: &Caller) -> Result<Inventory, LeadError> {
         let r = &caller.project_ref;
         let Some(project) = self.ctx.store.project_get(r)? else {
-            return Err(LeadError::bare(fleetd_contracts::mcp::ErrorCode::NotFound, format!("The hub has no record of project {}.", r.project_id)));
+            return Err(LeadError::bare(
+                fleetd_contracts::mcp::ErrorCode::NotFound,
+                format!("The hub has no record of project {}.", r.project_id),
+            ));
         };
         let open = self.open_in(r)?;
         let parent = open.iter().find(|w| is_finish_all(w)).cloned();
         let children: Vec<Workstream> = parent
             .as_ref()
-            .map(|p| open.iter().filter(|w| w.parent.as_ref().is_some_and(|x| x.workstream_id == p.workstream_id)).cloned().collect())
+            .map(|p| {
+                open.iter()
+                    .filter(|w| {
+                        w.parent
+                            .as_ref()
+                            .is_some_and(|x| x.workstream_id == p.workstream_id)
+                    })
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default();
-        let served_by = |serves: &str| children.iter().find(|c| c.parent.as_ref().is_some_and(|p| p.serves.as_str() == serves)).map(|c| c.workstream_id.clone());
+        let served_by = |serves: &str| {
+            children
+                .iter()
+                .find(|c| {
+                    c.parent
+                        .as_ref()
+                        .is_some_and(|p| p.serves.as_str() == serves)
+                })
+                .map(|c| c.workstream_id.clone())
+        };
         let mut items = self.failing_checks(r, &open, parent.as_ref(), &served_by)?;
         let mut unread = Vec::new();
         let mut notes = Vec::new();
         let run = |argv: &[&str]| {
             self.ctx.commands.run(
                 &r.machine_id,
-                CommandInput { cwd: project.workspace_root.clone(), argv: argv.iter().map(|s| s.to_string()).collect(), timeout_sec: Some(60) },
+                CommandInput {
+                    cwd: project.workspace_root.clone(),
+                    argv: argv.iter().map(|s| s.to_string()).collect(),
+                    timeout_sec: Some(60),
+                },
             )
         };
 
@@ -226,11 +339,20 @@ impl FinishAll {
         match run(&["git", "remote", "get-url", "origin"]).await {
             Err(e) => unread.push(format!("open issues: {e}")),
             Ok(remote) => {
-                let repo = if remote.exit_code.map(|c| c.get()) == Some(0) { github_repo_of(remote.output_tail.as_str()) } else { None };
+                let repo = if remote.exit_code.map(|c| c.get()) == Some(0) {
+                    github_repo_of(remote.output_tail.as_str())
+                } else {
+                    None
+                };
                 match repo {
-                    None => notes.push("No open issues to read: the checkout's origin is not a GitHub repository.".to_string()),
+                    None => notes.push(
+                        "No open issues to read: the checkout's origin is not a GitHub repository."
+                            .to_string(),
+                    ),
                     Some(repo) => {
-                        let path = format!("repos/{repo}/issues?state=open&per_page={ISSUES_LIMIT}&sort=created&direction=asc");
+                        let path = format!(
+                            "repos/{repo}/issues?state=open&per_page={ISSUES_LIMIT}&sort=created&direction=asc"
+                        );
                         let listed = match self.ctx.hooks.github.get() {
                             Some(github) => github.api(&path).await,
                             None => Err("GitHub is not available on this hub".into()),
@@ -238,14 +360,23 @@ impl FinishAll {
                         match listed {
                             Err(e) => unread.push(format!("open issues of {repo}: {e}")),
                             Ok(value) => match serde_json::from_value::<Vec<Issue>>(value) {
-                                Err(_) => unread.push(format!("open issues of {repo}: GitHub returned an unexpected shape")),
+                                Err(_) => unread.push(format!(
+                                    "open issues of {repo}: GitHub returned an unexpected shape"
+                                )),
                                 Ok(issues) => {
-                                    for issue in issues.iter().filter(|i| i.pull_request.is_none()) {
+                                    for issue in issues.iter().filter(|i| i.pull_request.is_none())
+                                    {
                                         let serves = format!("issue:#{}", issue.number);
                                         items.push(InventoryItem {
                                             kind: ItemKind::Issue,
-                                            text: format!("{repo}#{} {}", issue.number, one_line(&issue.title, 120)),
-                                            served_by: served_by(&serves).or_else(|| served_by(&format!("issue:{}", issue.html_url))),
+                                            text: format!(
+                                                "{repo}#{} {}",
+                                                issue.number,
+                                                one_line(&issue.title, 120)
+                                            ),
+                                            served_by: served_by(&serves).or_else(|| {
+                                                served_by(&format!("issue:{}", issue.html_url))
+                                            }),
                                             serves: Some(serves),
                                         });
                                     }
@@ -260,11 +391,21 @@ impl FinishAll {
             }
         }
 
-        let asks = self.ctx.asks.list(&AskFilter { state: Some(AskState::Open), project_ref: Some(r.clone()), limit: 20, ..Default::default() })?;
+        let asks = self.ctx.asks.list(&AskFilter {
+            state: Some(AskState::Open),
+            project_ref: Some(r.clone()),
+            limit: Some(20),
+            ..Default::default()
+        })?;
         for ask in asks {
             items.push(InventoryItem {
                 kind: ItemKind::Ask,
-                text: format!("{} open ask {}: {} (the human answers it)", ask.ask_id, ask.key, one_line(ask.text.as_ref(), 120)),
+                text: format!(
+                    "{} open ask {}: {} (the human answers it)",
+                    ask.ask_id,
+                    ask.key,
+                    one_line(ask.text.as_ref(), 120)
+                ),
                 serves: None,
                 served_by: None,
             });
@@ -276,10 +417,16 @@ impl FinishAll {
             Ok(grep) => {
                 let code = grep.exit_code.map(|c| c.get());
                 if code != Some(0) && code != Some(1) {
-                    notes.push(format!("TODO/FIXME markers not counted: {}", one_line(grep.output_tail.as_str(), 200)));
+                    notes.push(format!(
+                        "TODO/FIXME markers not counted: {}",
+                        one_line(grep.output_tail.as_str(), 200)
+                    ));
                 } else {
                     let tail = grep.output_tail.as_str();
-                    let (count, at_least) = todo_count(if code == Some(0) { tail } else { "" }, tail.chars().count() >= 1990);
+                    let (count, at_least) = todo_count(
+                        if code == Some(0) { tail } else { "" },
+                        tail.chars().count() >= 1990,
+                    );
                     if count > 0 {
                         items.push(InventoryItem {
                             kind: ItemKind::Todo,
@@ -297,7 +444,11 @@ impl FinishAll {
         let input = InventoryInput {
             project: format!("{} ({}/{})", project.title, r.machine_id, r.project_id),
             parent: match &parent {
-                Some(p) => Some(InventoryParent { workstream_id: p.workstream_id.clone(), open_children: children.len(), max_children: self.max_children(r).await }),
+                Some(p) => Some(InventoryParent {
+                    workstream_id: p.workstream_id.clone(),
+                    open_children: children.len(),
+                    max_children: self.max_children(r).await,
+                }),
                 None => None,
             },
             items,
@@ -311,13 +462,22 @@ impl FinishAll {
                 self.set_state(parent, WorkstreamState::Idle, FINISH_ALL_IDLE)?;
             }
             if spawnable > 0 {
-                let fresh = self.records.workstream_get(&parent.workstream_id)?.map(|s| s.workstream).unwrap_or_else(|| parent.clone());
-                self.reopen(&fresh, &format!("{spawnable} item{} with a value source", if spawnable == 1 { "" } else { "s" }))?;
+                self.reopen(
+                    parent,
+                    &format!(
+                        "{spawnable} item{} with a value source",
+                        if spawnable == 1 { "" } else { "s" }
+                    ),
+                )?;
             }
         }
         let mut text = vec![render_inventory(&input)];
         text.extend(notes);
-        Ok(Inventory { text: text.join("\n"), spawnable, idle })
+        Ok(Inventory {
+            text: text.join("\n"),
+            spawnable,
+            idle,
+        })
     }
 }
 
@@ -327,5 +487,12 @@ fn random_uuid() -> String {
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
     let h = crate::hub::leads::brief::hex(&b);
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }

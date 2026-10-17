@@ -2,7 +2,7 @@
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 
 use crate::hub::executor::ExecutorError;
-use crate::hub::link::LeadCallRefused;
+use crate::hub::ledger::{LedgerCode, LedgerError};
 use crate::hub::store::StoreError;
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -15,11 +15,19 @@ pub struct LeadError {
 
 impl LeadError {
     pub fn new(code: ErrorCode, message: impl Into<String>, fix: impl Into<String>) -> Self {
-        Self { code, message: message.into(), fix: Some(fix.into()) }
+        Self {
+            code,
+            message: message.into(),
+            fix: Some(fix.into()),
+        }
     }
 
     pub fn bare(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into(), fix: None }
+        Self {
+            code,
+            message: message.into(),
+            fix: None,
+        }
     }
 
     pub fn not_found(message: impl Into<String>, fix: impl Into<String>) -> Self {
@@ -59,18 +67,42 @@ impl From<ExecutorError> for LeadError {
 impl From<StoreError> for LeadError {
     fn from(error: StoreError) -> Self {
         tracing::error!(%error, "hub database failure in leads");
-        LeadError::bare(ErrorCode::Invalid, format!("The hub's database failed: {error}"))
+        LeadError::bare(
+            ErrorCode::Invalid,
+            format!("The hub's database failed: {error}"),
+        )
     }
 }
 
-impl From<LeadError> for LeadCallRefused {
-    fn from(e: LeadError) -> Self {
-        LeadCallRefused { code: crate::hub::leads::digest::serde_plain(&e.code), message: e.message, fix: e.fix }
+impl From<LedgerError> for LeadError {
+    fn from(e: LedgerError) -> Self {
+        let code = match e.code {
+            LedgerCode::NotFound => ErrorCode::NotFound,
+            LedgerCode::Invalid => ErrorCode::Invalid,
+            LedgerCode::Forbidden => ErrorCode::Forbidden,
+            LedgerCode::Internal => ErrorCode::T3Error,
+        };
+        LeadError {
+            code,
+            message: e.message,
+            fix: e.fix,
+        }
     }
 }
 
+impl From<serde_json::Error> for LeadError {
+    fn from(e: serde_json::Error) -> Self {
+        LeadError::bare(ErrorCode::Invalid, format!("Invalid JSON: {e}"))
+    }
+}
+
+/// Also the lead-call refusal: `link::LeadCallRefused` is `McpToolError`.
 impl From<LeadError> for McpToolError {
     fn from(e: LeadError) -> Self {
-        McpToolError { code: e.code, message: e.message, fix: e.fix }
+        McpToolError {
+            code: e.code,
+            message: e.message,
+            fix: e.fix,
+        }
     }
 }

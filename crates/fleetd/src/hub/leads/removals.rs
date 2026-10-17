@@ -16,12 +16,12 @@ use fleetd_contracts::ledger::{AskState, WorkstreamState};
 use super::error::LeadError;
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
-use crate::hub::ledger::{AskFilter, WithdrawOptions};
+use crate::hub::ledger::AskFilter;
 use crate::hub::store::{NewEvent, WaitInput};
 
 pub const STOPPED_REASON: &str = "its project was deleted in T3";
 pub const ASK_REASON: &str = "project deleted";
-const SCAN_LIMIT: usize = 10_000;
+const SCAN_LIMIT: i64 = 10_000;
 
 pub struct ProjectRemovals {
     ctx: Arc<Ctx>,
@@ -38,22 +38,40 @@ impl ProjectRemovals {
         if self.ctx.store.project_get(r)?.is_some() {
             return Ok(());
         }
-        let asks = self.ctx.asks.list(&AskFilter { state: Some(AskState::Open), project_ref: Some(r.clone()), limit: SCAN_LIMIT, ..Default::default() })?;
+        let asks = self.ctx.asks.list(&AskFilter {
+            state: Some(AskState::Open),
+            project_ref: Some(r.clone()),
+            limit: Some(SCAN_LIMIT),
+            ..Default::default()
+        })?;
         for ask in asks {
-            let _ = self.ctx.asks.withdraw(&ask.ask_id, WithdrawOptions { reason: Some(ASK_REASON.into()), ..Default::default() });
+            let _ = self
+                .ctx
+                .asks
+                .withdraw(ask.ask_id.as_str(), None, None, Some(ASK_REASON));
         }
         if let Some(tasks) = self.ctx.hooks.tasks.get() {
             for (task_id, _) in tasks.live(Some(r)) {
-                tasks.cancel(r, &task_id, &format!("Cancelled: {STOPPED_REASON}.")).await;
+                tasks
+                    .cancel(r, &task_id, &format!("Cancelled: {STOPPED_REASON}."))
+                    .await;
             }
         }
-        let open = self.records.workstreams_list(&WorkstreamFilter { project_ref: Some(r.clone()), open: true, limit: SCAN_LIMIT, ..Default::default() })?;
+        let open = self.records.workstreams_list(&WorkstreamFilter {
+            project_ref: Some(r.clone()),
+            open: true,
+            limit: SCAN_LIMIT as usize,
+            ..Default::default()
+        })?;
         for w in open {
-            let Some(mut stored) = self.records.workstream_get(&w.workstream_id)? else { continue };
+            let Some(mut stored) = self.records.workstream_get(&w.workstream_id)? else {
+                continue;
+            };
             let at = now_iso(&self.ctx);
             let headline = format!("Stopped: {STOPPED_REASON}.");
             stored.workstream.state = WorkstreamState::Stopped;
-            stored.workstream.headline = Some(fleetd_contracts::ledger::Headline::unchecked(headline));
+            stored.workstream.headline =
+                Some(fleetd_contracts::ledger::Headline::unchecked(headline));
             stored.workstream.headline_at = Some(at.clone().into());
             stored.workstream.updated_at = at.clone().into();
             self.records.workstream_put(&stored)?;
@@ -65,6 +83,7 @@ impl ProjectRemovals {
                 thread_id: None,
                 summary: format!("{} is stopped: {STOPPED_REASON}", w.workstream_id),
                 data: Some(serde_json::json!({ "workstreamId": w.workstream_id, "state": "stopped", "reason": STOPPED_REASON })),
+                attention: None,
             })?;
         }
         Ok(())
@@ -76,7 +95,11 @@ impl ProjectRemovals {
         let mut add = |r: ProjectRef| {
             refs.insert(format!("{}/{}", r.machine_id, r.project_id), r);
         };
-        for ask in self.ctx.asks.list(&AskFilter { state: Some(AskState::Open), limit: SCAN_LIMIT, ..Default::default() })? {
+        for ask in self.ctx.asks.list(&AskFilter {
+            state: Some(AskState::Open),
+            limit: Some(SCAN_LIMIT),
+            ..Default::default()
+        })? {
             if let Some(r) = ask.project_ref {
                 add(r);
             }
@@ -86,7 +109,11 @@ impl ProjectRemovals {
                 add(r);
             }
         }
-        for w in self.records.workstreams_list(&WorkstreamFilter { open: true, limit: SCAN_LIMIT, ..Default::default() })? {
+        for w in self.records.workstreams_list(&WorkstreamFilter {
+            open: true,
+            limit: SCAN_LIMIT as usize,
+            ..Default::default()
+        })? {
             add(w.project_ref);
         }
         Ok(refs.into_values().collect())
@@ -108,7 +135,12 @@ impl ProjectRemovals {
         }
         loop {
             let page = match events
-                .wait(WaitInput { cursor: Some(cursor), types: Some(vec![HubEventType::ProjectRemoved]), machine_id: None, timeout_sec: 3600 })
+                .wait(WaitInput {
+                    cursor: Some(cursor),
+                    types: Some(vec![HubEventType::ProjectRemoved]),
+                    machine_id: None,
+                    timeout_sec: 3600,
+                })
                 .await
             {
                 Ok(page) => page,
@@ -120,10 +152,15 @@ impl ProjectRemovals {
             };
             cursor = page.cursor;
             for event in page.events {
-                if let (Some(machine_id), Some(project_id)) = (event.machine_id, event.project_id) {
-                    if let Err(error) = self.reconcile(&ProjectRef { machine_id, project_id }).await {
-                        tracing::warn!(%error, "project removal failed");
-                    }
+                if let (Some(machine_id), Some(project_id)) = (event.machine_id, event.project_id)
+                    && let Err(error) = self
+                        .reconcile(&ProjectRef {
+                            machine_id,
+                            project_id,
+                        })
+                        .await
+                {
+                    tracing::warn!(%error, "project removal failed");
                 }
             }
         }

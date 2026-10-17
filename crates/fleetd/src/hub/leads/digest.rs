@@ -3,9 +3,11 @@
 use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{Ask, CheckSpec, Decision, DecisionScope, PlaybookRef, Workstream, WorkstreamId, WorkstreamState};
+use fleetd_contracts::ledger::{
+    Ask, CheckSpec, Decision, DecisionScope, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
+};
 
-use crate::hub::ledger::Answer;
+use crate::hub::ledger::{Answer, AnswerOutcome};
 use crate::hub::playbooks::finish_all_rules::{FINISH_ALL_IDLE, is_finish_all};
 
 pub const DIGEST_MAX_TOKENS: usize = 1500;
@@ -86,16 +88,33 @@ pub fn clip_utf16(flat: &str, max: usize) -> String {
 pub fn describe_check(check: &CheckSpec) -> String {
     match check {
         CheckSpec::PrMerged { repo, pr } => {
-            format!("PR {}merged in {repo}", pr.map(|p| format!("#{p} ")).unwrap_or_default())
+            format!(
+                "PR {}merged in {repo}",
+                pr.map(|p| format!("#{p} ")).unwrap_or_default()
+            )
         }
         CheckSpec::CiGreen { repo, r#ref } => {
-            format!("CI green on {repo}{}", r#ref.as_ref().map(|r| format!("@{r}")).unwrap_or_default())
+            format!(
+                "CI green on {repo}{}",
+                r#ref.as_ref().map(|r| format!("@{r}")).unwrap_or_default()
+            )
         }
-        CheckSpec::Http { url, status, contains } => format!(
+        CheckSpec::Http {
+            url,
+            status,
+            contains,
+        } => format!(
             "GET {url} → {status}{}",
-            contains.as_ref().map(|c| format!(" containing \"{c}\"")).unwrap_or_default()
+            contains
+                .as_ref()
+                .map(|c| format!(" containing \"{c}\""))
+                .unwrap_or_default()
         ),
-        CheckSpec::Cmd { machine_id, argv, expect_exit } => {
+        CheckSpec::Cmd {
+            machine_id,
+            argv,
+            expect_exit,
+        } => {
             format!("on {machine_id}: `{}` exits {expect_exit}", argv.join(" "))
         }
         CheckSpec::Test { repo, test_id } => format!("test {test_id} passes in {repo}"),
@@ -113,7 +132,10 @@ fn scope_label(d: &Decision) -> String {
 }
 
 /// Open workstreams' own decisions first, then the project's, then global ones; newest first within each.
-pub fn rank_decisions<'a>(decisions: &'a [Decision], open: &HashSet<&WorkstreamId>) -> Vec<&'a Decision> {
+pub fn rank_decisions<'a>(
+    decisions: &'a [Decision],
+    open: &HashSet<&WorkstreamId>,
+) -> Vec<&'a Decision> {
     let rank = |d: &Decision| match &d.scope {
         DecisionScope::Workstream { workstream_id } => {
             if open.contains(workstream_id) {
@@ -126,7 +148,11 @@ pub fn rank_decisions<'a>(decisions: &'a [Decision], open: &HashSet<&WorkstreamI
         DecisionScope::Global => 2,
     };
     let mut ranked: Vec<&Decision> = decisions.iter().collect();
-    ranked.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| b.at.as_ref().cmp(a.at.as_ref())));
+    ranked.sort_by(|a, b| {
+        rank(a)
+            .cmp(&rank(b))
+            .then_with(|| b.at.as_str().cmp(a.at.as_str()))
+    });
     ranked
 }
 
@@ -136,27 +162,51 @@ pub fn done_when_text(checks: &[CheckSpec], passed: Option<&HashSet<usize>>, max
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let tick = if passed.is_some_and(|p| p.contains(&i)) { " ✓" } else { "" };
+            let tick = if passed.is_some_and(|p| p.contains(&i)) {
+                " ✓"
+            } else {
+                ""
+            };
             format!("done:{i}{tick} {}", one_line(&describe_check(c), max))
         })
         .collect::<Vec<_>>()
         .join("; ")
 }
 
-fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>, playbook: Option<&DigestPlaybook>) -> String {
+fn workstream_lines(
+    w: &Workstream,
+    facts: Option<&WorkstreamFacts>,
+    playbook: Option<&DigestPlaybook>,
+) -> String {
     let child = w
         .parent
         .as_ref()
-        .map(|p| format!(", child of {} for {}", p.workstream_id, one_line(p.serves.as_ref(), 80)))
+        .map(|p| {
+            format!(
+                ", child of {} for {}",
+                p.workstream_id,
+                one_line(p.serves.as_ref(), 80)
+            )
+        })
         .unwrap_or_default();
     let tag = if playbook.is_none() && child.is_empty() {
         String::new()
     } else {
-        format!(" ({}{child})", playbook.map_or("no playbook", |p| p.name.as_str()))
+        format!(
+            " ({}{child})",
+            playbook.map_or("no playbook", |p| p.name.as_str())
+        )
     };
-    let head = format!("- {} {}{tag}: {}", w.workstream_id, state_text(w.state), one_line(&w.title, 120));
+    let head = format!(
+        "- {} {}{tag}: {}",
+        w.workstream_id,
+        state_text(w.state),
+        one_line(&w.title, 120)
+    );
     if w.state == WorkstreamState::Idle && is_finish_all(w) {
-        return format!("{head}\n  {FINISH_ALL_IDLE}; `fleetd inventory` again only when something new comes in");
+        return format!(
+            "{head}\n  {FINISH_ALL_IDLE}; `fleetd inventory` again only when something new comes in"
+        );
     }
     let Some(brief) = &w.brief else {
         return format!(
@@ -164,9 +214,19 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>, playbook: O
             w.workstream_id
         );
     };
-    let status = w.headline.as_ref().map(|h| format!("\n  lead says: {}", one_line(h.as_ref(), 200))).unwrap_or_default();
-    let eta = facts.and_then(|f| f.eta.as_ref()).map(|e| format!("\n  {e}")).unwrap_or_default();
-    format!("{head}{status}\n  done when: {}{eta}", done_when_text(&brief.done_when, facts.map(|f| &f.passed), 120))
+    let status = w
+        .headline
+        .as_ref()
+        .map(|h| format!("\n  lead says: {}", one_line(h.as_ref(), 200)))
+        .unwrap_or_default();
+    let eta = facts
+        .and_then(|f| f.eta.as_ref())
+        .map(|e| format!("\n  {e}"))
+        .unwrap_or_default();
+    format!(
+        "{head}{status}\n  done when: {}{eta}",
+        done_when_text(&brief.done_when, facts.map(|f| &f.passed), 120)
+    )
 }
 
 pub fn state_text(state: WorkstreamState) -> &'static str {
@@ -187,8 +247,16 @@ fn ask_line(a: &Ask) -> String {
         None => "not batched yet".to_string(),
         Some(batch) => format!("#{} in {batch}", a.number.unwrap_or_default()),
     };
-    let rec = a.recommendation.as_ref().map(|r| format!("; rec {}", one_line(r.as_ref(), 80))).unwrap_or_default();
-    let proceeded = if a.proceeded_on_rec { "; you proceeded on the rec" } else { "" };
+    let rec = a
+        .recommendation
+        .as_ref()
+        .map(|r| format!("; rec {}", one_line(r.as_ref(), 80)))
+        .unwrap_or_default();
+    let proceeded = if a.proceeded_on_rec {
+        "; you proceeded on the rec"
+    } else {
+        ""
+    };
     format!(
         "- {} ({place}) [{}] {}: {}{rec}{proceeded}",
         a.ask_id,
@@ -200,17 +268,33 @@ fn ask_line(a: &Ask) -> String {
 
 fn answer_line(answer: &Answer) -> String {
     let ask = &answer.ask;
-    if answer.withdrawn() {
-        return format!("- {} {}: dropped by the human; do not pursue it", ask.ask_id, ask.key);
+    if answer.outcome == AnswerOutcome::Withdrawn {
+        return format!(
+            "- {} {}: dropped by the human; do not pursue it",
+            ask.ask_id, ask.key
+        );
     }
     let value = answer
         .value
         .as_deref()
         .or(answer.decision.as_ref().map(|d| d.value.as_ref()))
         .unwrap_or("");
-    let decision = answer.decision.as_ref().map(|d| format!(" ({})", d.decision_id)).unwrap_or_default();
-    let evidence = ask.evidence.as_ref().map(|e| format!("; {}", one_line(e.as_ref(), 600))).unwrap_or_default();
-    format!("- {} {} → {}{decision}{evidence}", ask.ask_id, ask.key, one_line(value, 300))
+    let decision = answer
+        .decision
+        .as_ref()
+        .map(|d| format!(" ({})", d.decision_id))
+        .unwrap_or_default();
+    let evidence = ask
+        .evidence
+        .as_ref()
+        .map(|e| format!("; {}", one_line(e.as_ref(), 600)))
+        .unwrap_or_default();
+    format!(
+        "- {} {} → {}{decision}{evidence}",
+        ask.ask_id,
+        ask.key,
+        one_line(value, 300)
+    )
 }
 
 fn decision_line(d: &Decision) -> String {
@@ -242,19 +326,40 @@ struct Section {
 }
 
 impl Section {
-    fn new(title: &'static str, items: Vec<String>, max: usize, more: &'static str, join: &'static str) -> Self {
+    fn new(
+        title: &'static str,
+        items: Vec<String>,
+        max: usize,
+        more: &'static str,
+        join: &'static str,
+    ) -> Self {
         let omitted = items.len().saturating_sub(max);
         let mut items = items;
         items.truncate(max);
-        Section { title, items, omitted, more, join }
+        Section {
+            title,
+            items,
+            omitted,
+            more,
+            join,
+        }
     }
 
     fn render(&self) -> String {
-        let body = if self.items.is_empty() && self.omitted == 0 { "none".to_string() } else { self.items.join(self.join) };
+        let body = if self.items.is_empty() && self.omitted == 0 {
+            "none".to_string()
+        } else {
+            self.items.join(self.join)
+        };
         let more = if self.omitted == 0 {
             String::new()
         } else {
-            format!("{}(+{} more: {})", if self.items.is_empty() { "" } else { self.join }, self.omitted, self.more)
+            format!(
+                "{}(+{} more: {})",
+                if self.items.is_empty() { "" } else { self.join },
+                self.omitted,
+                self.more
+            )
         };
         format!("## {}\n{body}{more}", self.title)
     }
@@ -274,7 +379,11 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     let open: HashSet<&WorkstreamId> = input.workstreams.iter().map(|w| &w.workstream_id).collect();
     let ranked = rank_decisions(input.decisions, &open);
     let mut keys: Vec<String> = Vec::new();
-    for key in ranked.iter().map(|d| d.key.to_string()).chain(input.open_asks.iter().map(|a| a.key.to_string())) {
+    for key in ranked
+        .iter()
+        .map(|d| d.key.to_string())
+        .chain(input.open_asks.iter().map(|a| a.key.to_string()))
+    {
         if !keys.contains(&key) {
             keys.push(key);
         }
@@ -292,7 +401,9 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     // Insertion-ordered: first workstream to name a playbook places it.
     let mut following: Vec<(&PlaybookRef, &DigestPlaybook, Vec<String>)> = Vec::new();
     for w in input.workstreams {
-        let (Some(r), Some(p)) = (&w.playbook, playbook_of(w)) else { continue };
+        let (Some(r), Some(p)) = (&w.playbook, playbook_of(w)) else {
+            continue;
+        };
         match following.iter_mut().find(|(fr, _, _)| *fr == r) {
             Some(entry) => entry.2.push(w.workstream_id.to_string()),
             None => following.push((r, p, vec![w.workstream_id.to_string()])),
@@ -322,13 +433,26 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "Playbooks: follow these for their workstreams",
             following
                 .iter()
-                .map(|(_, p, ids)| format!("- {} ({}): {}", p.name, ids.join(", "), one_line(&p.lead_instructions, 600)))
+                .map(|(_, p, ids)| {
+                    format!(
+                        "- {} ({}): {}",
+                        p.name,
+                        ids.join(", "),
+                        one_line(&p.lead_instructions, 600)
+                    )
+                })
                 .collect(),
             4,
             "older versions not shown",
             "\n",
         ),
-        Section::new("Tasks", input.tasks.clone().unwrap_or_default(), 20, "`fleetd task list`", "\n"),
+        Section::new(
+            "Tasks",
+            input.tasks.clone().unwrap_or_default(),
+            20,
+            "`fleetd task list`",
+            "\n",
+        ),
         Section::new(
             "Merge train (only it merges)",
             input.train.clone().unwrap_or_default(),
@@ -336,7 +460,13 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "`fleetd change status X<n>`",
             "\n",
         ),
-        Section::new("Your open asks", input.open_asks.iter().map(ask_line).collect(), 20, "older ones not shown", "\n"),
+        Section::new(
+            "Your open asks",
+            input.open_asks.iter().map(ask_line).collect(),
+            20,
+            "older ones not shown",
+            "\n",
+        ),
         Section::new(
             "Decisions (most relevant)",
             ranked.iter().map(|d| decision_line(d)).collect(),
@@ -385,7 +515,9 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     let mut text = render(&sections);
     for pass in [1, 0] {
         for (section, floor) in drop_order {
-            while estimate_tokens(&text) > DIGEST_MAX_TOKENS && sections[section].items.len() > floor * pass {
+            while estimate_tokens(&text) > DIGEST_MAX_TOKENS
+                && sections[section].items.len() > floor * pass
+            {
                 sections[section].items.pop();
                 sections[section].omitted += 1;
                 text = render(&sections);

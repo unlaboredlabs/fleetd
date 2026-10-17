@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{Decision, DecisionScope, DecisionSource, PlaybookRef, WorkstreamId};
+use fleetd_contracts::ledger::{
+    Decision, DecisionScope, DecisionSource, PlaybookRef, WorkstreamId,
+};
 
 use super::digest::{DigestInput, DigestPlaybook, WorkstreamFacts, one_line, render_lead_digest};
 use super::error::LeadError;
@@ -16,7 +18,7 @@ use super::hooks::BoxFuture;
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
-use crate::hub::ledger::{Answer, AnswerOutcome, AskFilter, DecisionFilter};
+use crate::hub::ledger::{Answer, AnswerSink, AskFilter, Chain, DecisionFilter};
 use crate::hub::playbooks::Playbooks;
 use crate::hub::store::{NewEvent, now_ms};
 
@@ -35,6 +37,10 @@ pub enum LineKind {
 }
 
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "a few triggers per lead, held for seconds"
+)]
 pub enum Trigger {
     Intent {
         workstream_id: WorkstreamId,
@@ -47,18 +53,27 @@ pub enum Trigger {
     Decision(Decision),
     /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
     /// that raises it renders its own "why" line(s), as the TS render helpers did.
-    Line { kind: LineKind, text: String },
+    Line {
+        kind: LineKind,
+        text: String,
+    },
 }
 
 impl Trigger {
     /// M7 merge train: a merge, or a PR the train refused or gave up on, as one line.
     pub fn train(line: &str) -> Self {
-        Trigger::Line { kind: LineKind::Train, text: format!("- {line}") }
+        Trigger::Line {
+            kind: LineKind::Train,
+            text: format!("- {line}"),
+        }
     }
 
     /// M9: a research workstream's computed verdict, as one line.
     pub fn research_verdict(line: &str) -> Self {
-        Trigger::Line { kind: LineKind::ResearchVerdict, text: format!("- {line}") }
+        Trigger::Line {
+            kind: LineKind::ResearchVerdict,
+            text: format!("- {line}"),
+        }
     }
 
     pub fn kind(&self) -> &'static str {
@@ -96,7 +111,11 @@ pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
     let mut lines = Vec::new();
     for t in triggers {
         match t {
-            Trigger::Intent { workstream_id, text, playbook } => {
+            Trigger::Intent {
+                workstream_id,
+                text,
+                playbook,
+            } => {
                 lines.push(format!(
                     "- New intent {workstream_id}: '{}'. Register it with `fleetd brief create --workstream {workstream_id} --json '<Brief>'`.",
                     quote(text)
@@ -114,7 +133,10 @@ pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
                 let who = if d.source == DecisionSource::Human {
                     "The human".to_string()
                 } else {
-                    format!("Agent {}, for the human,", d.by.as_deref().unwrap_or("(unnamed)"))
+                    format!(
+                        "Agent {}, for the human,",
+                        d.by.as_deref().unwrap_or("(unnamed)")
+                    )
                 };
                 lines.push(format!(
                     "- {who} recorded {}: {} = {} ({}). Follow it.",
@@ -128,7 +150,10 @@ pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
             Trigger::Answer(_) => {}
         }
     }
-    let answers = triggers.iter().filter(|t| matches!(t, Trigger::Answer(_))).count();
+    let answers = triggers
+        .iter()
+        .filter(|t| matches!(t, Trigger::Answer(_)))
+        .count();
     if answers > 0 {
         lines.push(format!("- The human settled {answers} of your asks; see \"Answers since your last wake\" above."));
     }
@@ -136,7 +161,10 @@ pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
 }
 
 pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {
-    format!("{digest}\n\n## Why you are woken\n{}", trigger_lines(triggers, digest).join("\n"))
+    format!(
+        "{digest}\n\n## Why you are woken\n{}",
+        trigger_lines(triggers, digest).join("\n")
+    )
 }
 
 /// Coalesces items per key: a key flushes once no new item arrived for `debounce`, or `max_wait` after its first
@@ -185,16 +213,23 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
             p.items.push(item);
             p.generation += 1;
             // The quiet window, cut short so the latest timer never sleeps past the max-wait deadline.
-            let delay = self.debounce_ms.min(p.first_ms + self.max_wait_ms - now).max(0);
+            let delay = self
+                .debounce_ms
+                .min(p.first_ms + self.max_wait_ms - now)
+                .max(0);
             (p.entry, p.generation, delay)
         };
+        // The deadline is taken now, not when the task first runs.
+        let sleep = self.clock.sleep(Duration::from_millis(delay_ms as u64));
         let this = Arc::clone(self);
         tokio::spawn(async move {
-            this.clock.sleep(Duration::from_millis(delay_ms as u64)).await;
+            sleep.await;
             let items = {
                 let mut pending = this.pending.lock().unwrap();
                 match pending.get(&key) {
-                    Some(p) if p.entry == entry && p.generation == generation => pending.remove(&key).map(|p| p.items),
+                    Some(p) if p.entry == entry && p.generation == generation => {
+                        pending.remove(&key).map(|p| p.items)
+                    }
                     _ => None,
                 }
             };
@@ -209,17 +244,31 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
 /// wake to an offline machine waits for it instead of being dropped. A seam so the debounce can be tested alone.
 pub trait WakeSender: Send + Sync {
     /// `Ok(queued)`, or why it was not delivered.
-    fn send(&self, thread: ThreadRef, message: String, client_request_id: String) -> BoxFuture<Result<bool, String>>;
+    fn send(
+        &self,
+        thread: ThreadRef,
+        message: String,
+        client_request_id: String,
+    ) -> BoxFuture<Result<bool, String>>;
 }
 
 /// Production sender: the hub's executors.
 pub struct ExecutorSender(pub Arc<crate::hub::executor::Executors>);
 
 impl WakeSender for ExecutorSender {
-    fn send(&self, thread: ThreadRef, message: String, client_request_id: String) -> BoxFuture<Result<bool, String>> {
+    fn send(
+        &self,
+        thread: ThreadRef,
+        message: String,
+        client_request_id: String,
+    ) -> BoxFuture<Result<bool, String>> {
         let executors = Arc::clone(&self.0);
         Box::pin(async move {
-            executors.send(&thread, &message, &client_request_id).await.map(|o| o.queued).map_err(|e| e.to_string())
+            executors
+                .send(&thread, &message, &client_request_id)
+                .await
+                .map(|o| o.queued)
+                .map_err(|e| e.to_string())
         })
     }
 }
@@ -238,45 +287,91 @@ pub struct LeadWakes {
 }
 
 impl LeadWakes {
-    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, playbooks: Arc<Playbooks>, sender: Arc<dyn WakeSender>) -> Arc<Self> {
+    pub fn new(
+        ctx: Arc<Ctx>,
+        records: Arc<LeadRecords>,
+        playbooks: Arc<Playbooks>,
+        sender: Arc<dyn WakeSender>,
+    ) -> Arc<Self> {
         let debouncer = Debouncer::new(Arc::clone(&ctx.clock), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
-        Arc::new(Self { ctx, records, playbooks, sender, debouncer, flushing: tokio::sync::Mutex::new(()) })
+        Arc::new(Self {
+            ctx,
+            records,
+            playbooks,
+            sender,
+            debouncer,
+            flushing: tokio::sync::Mutex::new(()),
+        })
     }
 
     /// Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE, or WAKE_MAX_WAIT after
     /// the first.
     pub fn trigger(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
         let this = Arc::clone(self);
-        self.debouncer.push(r.clone(), trigger, move |r, triggers| Box::pin(async move { this.flush(r, triggers).await }));
+        self.debouncer.push(r.clone(), trigger, move |r, triggers| {
+            Box::pin(async move { this.flush(r, triggers).await })
+        });
     }
 
     /// The lead digest as of now, with `answers` as its "since your last wake" list.
     pub async fn digest(&self, r: &ProjectRef, answers: &[Answer]) -> Result<String, LeadError> {
         let ctx = &self.ctx;
         let project = ctx.store.project_get(r)?;
-        let workstreams =
-            self.records.workstreams_list(&WorkstreamFilter { project_ref: Some(r.clone()), open: true, limit: 50, ..Default::default() })?;
+        let workstreams = self.records.workstreams_list(&WorkstreamFilter {
+            project_ref: Some(r.clone()),
+            open: true,
+            limit: 50,
+            ..Default::default()
+        })?;
         let since = self.records.lead_get(r)?.and_then(|l| l.last_wake_at);
         let mut pinned: HashMap<PlaybookRef, DigestPlaybook> = HashMap::new();
-        let refs: HashSet<&PlaybookRef> = workstreams.iter().filter_map(|w| w.playbook.as_ref()).collect();
+        let refs: HashSet<&PlaybookRef> = workstreams
+            .iter()
+            .filter_map(|w| w.playbook.as_ref())
+            .collect();
         for p in refs {
             if let Some(loaded) = self.playbooks.by_ref(p)? {
                 pinned.insert(
                     p.clone(),
-                    DigestPlaybook { name: loaded.playbook.name.as_str().into(), lead_instructions: loaded.playbook.lead_instructions.to_string() },
+                    DigestPlaybook {
+                        name: loaded.playbook.name.as_str().into(),
+                        lead_instructions: loaded.playbook.lead_instructions.to_string(),
+                    },
                 );
             }
         }
-        let open_asks = ctx.asks.list(&AskFilter { state: Some(fleetd_contracts::ledger::AskState::Open), project_ref: Some(r.clone()), limit: 50, ..Default::default() })?;
+        let open_asks = ctx.asks.list(&AskFilter {
+            state: Some(fleetd_contracts::ledger::AskState::Open),
+            project_ref: Some(r.clone()),
+            limit: Some(50),
+            ..Default::default()
+        })?;
         // Global, project and every workstream-scoped decision in the project; the digest ranks them.
-        let decisions = ctx.decisions.list(&DecisionFilter { chain: Some(r.clone()), limit: 500, ..Default::default() })?;
-        let tasks = ctx.hooks.tasks.get().map(|t| t.digest_lines(r, since.as_ref(), 50));
-        let train = ctx.hooks.train.get().and_then(|t| t.lead_lines(r, since.as_ref()));
+        let decisions = ctx.decisions.list(&DecisionFilter {
+            chain: Some(Chain {
+                project_ref: r.clone(),
+                workstream_id: None,
+            }),
+            limit: Some(500),
+            ..Default::default()
+        })?;
+        let tasks = ctx
+            .hooks
+            .tasks
+            .get()
+            .map(|t| t.digest_lines(r, since.as_ref(), 50));
+        let train = ctx
+            .hooks
+            .train
+            .get()
+            .and_then(|t| t.lead_lines(r, since.as_ref()));
         let facts = self.workstream_facts(&workstreams);
         let at = now_iso(ctx);
         Ok(render_lead_digest(&DigestInput {
             project_ref: r,
-            title: project.as_ref().map_or(r.project_id.as_str(), |p| p.title.as_str()),
+            title: project
+                .as_ref()
+                .map_or(r.project_id.as_str(), |p| p.title.as_str()),
             at: &at,
             workstreams: &workstreams,
             open_asks: &open_asks,
@@ -290,7 +385,10 @@ impl LeadWakes {
     }
 
     /// Per workstream with a brief: the checks its latest finished claim passed, and its ETA.
-    pub fn workstream_facts(&self, workstreams: &[fleetd_contracts::ledger::Workstream]) -> HashMap<WorkstreamId, WorkstreamFacts> {
+    pub fn workstream_facts(
+        &self,
+        workstreams: &[fleetd_contracts::ledger::Workstream],
+    ) -> HashMap<WorkstreamId, WorkstreamFacts> {
         let hooks = &self.ctx.hooks;
         let mut facts = HashMap::new();
         for w in workstreams.iter().filter(|w| w.brief.is_some()) {
@@ -307,7 +405,10 @@ impl LeadWakes {
                         .collect()
                 })
                 .unwrap_or_default();
-            let eta = hooks.estimates.get().and_then(|e| e.eta(w).map(|eta| e.eta_text(&eta)));
+            let eta = hooks
+                .estimates
+                .get()
+                .and_then(|e| e.eta(w).map(|eta| e.eta_text(&eta)));
             facts.insert(w.workstream_id.clone(), WorkstreamFacts { passed, eta });
         }
         facts
@@ -320,27 +421,34 @@ impl LeadWakes {
         }
     }
 
-    async fn flush_inner(self: &Arc<Self>, r: &ProjectRef, triggers: Vec<Trigger>) -> Result<(), LeadError> {
+    async fn flush_inner(
+        self: &Arc<Self>,
+        r: &ProjectRef,
+        triggers: Vec<Trigger>,
+    ) -> Result<(), LeadError> {
         let Some(lead) = self.records.lead_get(r)? else {
             // No lead yet: lead_start's first message carries the digest, which shows the same state.
             tracing::info!(project = %key_of(r), triggers = triggers.len(), "lead wake dropped: project has no lead");
             return Ok(());
         };
-        let thread = ThreadRef { machine_id: r.machine_id.clone(), thread_id: lead.thread_id.clone() };
+        let thread = ThreadRef {
+            machine_id: r.machine_id.clone(),
+            thread_id: lead.thread_id.clone(),
+        };
         // M4 usage: a wake is a turn, so it waits while the login is paused or the lead is parked, then goes again.
-        if let Some(usage) = self.ctx.hooks.usage.get() {
-            if usage.hold(&thread).is_some() {
-                let clear = usage.when_clear(&thread);
-                let this = Arc::clone(self);
-                let r = r.clone();
-                tokio::spawn(async move {
-                    clear.await;
-                    for t in triggers {
-                        this.trigger(&r, t);
-                    }
-                });
-                return Ok(());
-            }
+        if let Some(usage) = self.ctx.hooks.usage.get()
+            && usage.hold(&thread).is_some()
+        {
+            let clear = usage.when_clear(&thread);
+            let this = Arc::clone(self);
+            let r = r.clone();
+            tokio::spawn(async move {
+                clear.await;
+                for t in triggers {
+                    this.trigger(&r, t);
+                }
+            });
+            return Ok(());
         }
         let answers: Vec<Answer> = triggers
             .iter()
@@ -360,7 +468,10 @@ impl LeadWakes {
             }
         };
         let n = triggers.len();
-        self.records.lead_put(&super::records::StoredLead { last_wake_at: Some(at.clone().into()), ..lead.clone() })?;
+        self.records.lead_put(&super::records::StoredLead {
+            last_wake_at: Some(at.clone().into()),
+            ..lead.clone()
+        })?;
         let mut data = serde_json::json!({ "triggers": triggers.iter().map(Trigger::kind).collect::<Vec<_>>() });
         if queued {
             data["queued"] = serde_json::Value::Bool(true);
@@ -378,6 +489,7 @@ impl LeadWakes {
                 if n == 1 { "" } else { "s" }
             ),
             data: Some(data),
+            attention: None,
         })?;
         Ok(())
     }
@@ -417,16 +529,45 @@ impl LeadWakes {
             };
             cursor = page.cursor;
             for event in page.events {
-                let (Some(machine_id), Some(project_id)) = (event.machine_id.clone(), event.project_id.clone()) else { continue };
+                let (Some(machine_id), Some(project_id)) =
+                    (event.machine_id.clone(), event.project_id.clone())
+                else {
+                    continue;
+                };
                 // A global decision touches every project; leads see it in their next digest instead.
-                let id = event.data.as_ref().and_then(|d| d.get("decisionId")).and_then(|v| serde_json::from_value(v.clone()).ok());
-                let Some(decision) = id.and_then(|id| self.ctx.decisions.get(&id).ok().flatten()) else { continue };
-                if matches!(decision.scope, DecisionScope::Global) || decision.source == DecisionSource::Lead || decision.ask_id.is_some() {
+                let id = event
+                    .data
+                    .as_ref()
+                    .and_then(|d| d.get("decisionId"))
+                    .and_then(|v| v.as_str());
+                let Some(decision) = id.and_then(|id| self.ctx.decisions.get(id).ok().flatten())
+                else {
+                    continue;
+                };
+                if matches!(decision.scope, DecisionScope::Global)
+                    || decision.source == DecisionSource::Lead
+                    || decision.ask_id.is_some()
+                {
                     continue;
                 }
-                self.trigger(&ProjectRef { machine_id, project_id }, Trigger::Decision(decision));
+                self.trigger(
+                    &ProjectRef {
+                        machine_id,
+                        project_id,
+                    },
+                    Trigger::Decision(decision),
+                );
             }
         }
+    }
+}
+
+/// The ledger's AnswerSink, set with `Inbox::set_answer_sink`.
+pub struct WakeOnAnswer(pub Arc<LeadWakes>);
+
+impl AnswerSink for WakeOnAnswer {
+    fn on_answered(&self, project_ref: &ProjectRef, answers: Vec<Answer>) {
+        self.0.on_answered(project_ref, &answers);
     }
 }
 
@@ -443,11 +584,22 @@ mod tests {
         }
     }
 
-    fn push(d: &Arc<Debouncer<u32, u32>>, clock: &Arc<ManualClock>, flushes: &Flushes, key: u32, item: u32) {
+    fn push(
+        d: &Arc<Debouncer<u32, u32>>,
+        clock: &Arc<ManualClock>,
+        flushes: &Flushes,
+        key: u32,
+        item: u32,
+    ) {
         let flushes = Arc::clone(flushes);
         let clock = Arc::clone(clock);
         d.push(key, item, move |key, items| {
-            Box::pin(async move { flushes.lock().unwrap().push((key, items, now_ms(clock.as_ref()) as u64)) })
+            Box::pin(async move {
+                flushes
+                    .lock()
+                    .unwrap()
+                    .push((key, items, now_ms(clock.as_ref()) as u64))
+            })
         });
     }
 
@@ -476,7 +628,8 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn flushes_sixty_seconds_after_the_first_trigger_under_a_steady_stream_then_opens_a_fresh_window() {
+    async fn flushes_sixty_seconds_after_the_first_trigger_under_a_steady_stream_then_opens_a_fresh_window()
+     {
         let clock = ManualClock::at(0);
         let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
         let flushes: Flushes = Default::default();
@@ -490,7 +643,10 @@ mod tests {
         advance(&clock, 3).await;
         assert!(flushes.lock().unwrap().is_empty());
         advance(&clock, 1).await;
-        assert_eq!(*flushes.lock().unwrap(), vec![(1, (1..=8).collect(), 60_000)]);
+        assert_eq!(
+            *flushes.lock().unwrap(),
+            vec![(1, (1..=8).collect(), 60_000)]
+        );
 
         // The next trigger opens a new window measured from itself.
         push(&d, &clock, &flushes, 1, 9);
@@ -509,8 +665,24 @@ mod tests {
         advance(&clock, 6).await;
         push(&d, &clock, &flushes, 2, 2);
         advance(&clock, 4).await;
-        assert_eq!(flushes.lock().unwrap().iter().map(|f| f.0).collect::<Vec<_>>(), vec![1]);
+        assert_eq!(
+            flushes
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|f| f.0)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
         advance(&clock, 6).await;
-        assert_eq!(flushes.lock().unwrap().iter().map(|f| f.0).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            flushes
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|f| f.0)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
     }
 }

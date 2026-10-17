@@ -50,8 +50,19 @@ pub struct Leads {
 }
 
 impl Leads {
-    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, wakes: Arc<LeadWakes>, options: LeadsOptions) -> Arc<Self> {
-        Arc::new(Self { ctx, records, wakes, options, lock: Mutex::new(()) })
+    pub fn new(
+        ctx: Arc<Ctx>,
+        records: Arc<LeadRecords>,
+        wakes: Arc<LeadWakes>,
+        options: LeadsOptions,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            ctx,
+            records,
+            wakes,
+            options,
+            lock: Mutex::new(()),
+        })
     }
 
     /// Launches the project's lead, or returns the one it already has.
@@ -69,16 +80,23 @@ impl Leads {
         let _guard = self.lock.lock().await;
         let Some(existing) = self.records.lead_get(r)? else {
             return Err(LeadError::not_found(
-                format!("Project {} on {} has no lead to restart.", r.project_id, r.machine_id),
+                format!(
+                    "Project {} on {} has no lead to restart.",
+                    r.project_id, r.machine_id
+                ),
                 "Call lead_start first.",
             ));
         };
         let project = self.project_of(r)?;
-        self.launch(r, &project, existing.session_generation + 1).await
+        self.launch(r, &project, existing.session_generation + 1)
+            .await
     }
 
     pub fn get(&self, r: &ProjectRef) -> Result<Option<Lead>, LeadError> {
-        self.records.lead_get(r)?.map(|lead| self.with_state(lead)).transpose()
+        self.records
+            .lead_get(r)?
+            .map(|lead| self.with_state(lead))
+            .transpose()
     }
 
     /// Per-project model and effort for the next start or restart.
@@ -87,10 +105,18 @@ impl Leads {
     }
 
     fn with_state(&self, lead: StoredLead) -> Result<Lead, LeadError> {
-        let thread_ref = ThreadRef { machine_id: lead.project_ref.machine_id.clone(), thread_id: lead.thread_id.clone() };
+        let thread_ref = ThreadRef {
+            machine_id: lead.project_ref.machine_id.clone(),
+            thread_id: lead.thread_id.clone(),
+        };
         let thread = self.ctx.store.thread_get(&thread_ref)?.map(|t| t.thread);
         // M4 usage: a lead whose thread hit a limit shows it is parked and until when.
-        let parked = self.ctx.hooks.usage.get().and_then(|u| u.parked_of(&thread_ref));
+        let parked = self
+            .ctx
+            .hooks
+            .usage
+            .get()
+            .and_then(|u| u.parked_of(&thread_ref));
         let gone = self.ctx.store.project_get(&lead.project_ref)?.is_none();
         Ok(Lead {
             state: lead_state(thread.as_ref(), gone),
@@ -104,12 +130,26 @@ impl Leads {
     }
 
     fn project_of(&self, r: &ProjectRef) -> Result<ProjectSummary, LeadError> {
-        self.ctx.store.project_get(r)?.ok_or_else(|| LeadError::no_project(r))
+        self.ctx
+            .store
+            .project_get(r)?
+            .ok_or_else(|| LeadError::no_project(r))
     }
 
-    async fn launch(&self, r: &ProjectRef, project: &ProjectSummary, session_generation: i64) -> Result<Lead, LeadError> {
+    async fn launch(
+        &self,
+        r: &ProjectRef,
+        project: &ProjectSummary,
+        session_generation: i64,
+    ) -> Result<Lead, LeadError> {
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
-        if let Some(paused) = self.ctx.hooks.usage.get().and_then(|u| u.gate(&r.machine_id)) {
+        if let Some(paused) = self
+            .ctx
+            .hooks
+            .usage
+            .get()
+            .and_then(|u| u.gate(&r.machine_id))
+        {
             return Err(LeadError::new(
                 ErrorCode::Invalid,
                 format!("The lead was not started: {paused}."),
@@ -117,11 +157,24 @@ impl Leads {
             ));
         }
         let settings = self.records.settings_get(r)?;
-        let model = settings.model.or_else(|| self.options.model.clone()).unwrap_or_else(|| DEFAULT_LEAD_MODEL.into());
-        let effort = settings.effort.or(self.options.effort).unwrap_or(DEFAULT_LEAD_EFFORT);
-        let prompt = format!("{}\n\n{}", render_lead_prompt(LEAD_PROMPT, r, &project.title), self.wakes.digest(r, &[]).await?);
+        let model = settings
+            .model
+            .or_else(|| self.options.model.clone())
+            .unwrap_or_else(|| DEFAULT_LEAD_MODEL.into());
+        let effort = settings
+            .effort
+            .or(self.options.effort)
+            .unwrap_or(DEFAULT_LEAD_EFFORT);
+        let prompt = format!(
+            "{}\n\n{}",
+            render_lead_prompt(LEAD_PROMPT, r, &project.title),
+            self.wakes.digest(r, &[]).await?
+        );
         let launched_ms = now_ms(self.ctx.clock.as_ref());
-        let title: String = format!("fleetd lead: {}", project.title).chars().take(80).collect();
+        let title: String = format!("fleetd lead: {}", project.title)
+            .chars()
+            .take(80)
+            .collect();
         let input: ThreadLaunchInput = serde_json::from_value(serde_json::json!({
             "machineId": r.machine_id,
             "projectId": r.project_id,
@@ -135,7 +188,11 @@ impl Leads {
             "clientRequestId": format!("fleetd-lead:{}/{}:{session_generation}:{launched_ms}", r.machine_id, r.project_id),
         }))
         .map_err(|e| LeadError::bare(ErrorCode::Invalid, format!("The lead launch is invalid: {e}")))?;
-        let thread_id = self.ctx.executors.launch(&r.machine_id, &input, LaunchOptions::default()).await?;
+        let thread_id = self
+            .ctx
+            .executors
+            .launch(&r.machine_id, &input, LaunchOptions::default())
+            .await?;
         let at = now_iso(&self.ctx);
         let lead = StoredLead {
             project_ref: r.clone(),
@@ -153,6 +210,7 @@ impl Leads {
             thread_id: Some(thread_id),
             summary: format!("Lead of {} started (session {session_generation})", project.title),
             data: Some(serde_json::json!({ "sessionGeneration": session_generation, "model": model, "effort": effort, "prompt": LEAD_PROMPT_VERSION })),
+            attention: None,
         })?;
         self.with_state(lead)
     }

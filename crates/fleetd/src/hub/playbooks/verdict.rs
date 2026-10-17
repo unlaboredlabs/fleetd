@@ -24,7 +24,12 @@ fn num(n: f64) -> String {
 }
 
 /// What the verdict rests on, and for INCONCLUSIVE what evidence would change it.
-pub fn verdict_text(outcome: ResearchOutcome, rule: &DecisionRule, values: &MetricValues, metric: Option<&str>) -> String {
+pub fn verdict_text(
+    outcome: ResearchOutcome,
+    rule: &DecisionRule,
+    values: &MetricValues,
+    metric: Option<&str>,
+) -> String {
     let (baseline, candidate) = (values.baseline.get(), values.candidate.get());
     let improvement = (candidate - baseline) * sign(rule);
     let on = metric.map(|m| format!(" on {m}")).unwrap_or_default();
@@ -36,7 +41,10 @@ pub fn verdict_text(outcome: ResearchOutcome, rule: &DecisionRule, values: &Metr
         num(improvement)
     );
     match outcome {
-        ResearchOutcome::Go => format!("GO: {measured}, at least the go line {}.", num(rule.go_at_least.get())),
+        ResearchOutcome::Go => format!(
+            "GO: {measured}, at least the go line {}.",
+            num(rule.go_at_least.get())
+        ),
         ResearchOutcome::Stop => format!(
             "STOP: {measured}, below the stop line {}. STOP is a success: the question is answered.",
             num(rule.stop_below.get())
@@ -59,29 +67,60 @@ mod tests {
     use fleetd_contracts::prim::Finite;
 
     fn rule(better: DecisionRuleBetter, go_at_least: f64, stop_below: f64) -> DecisionRule {
-        DecisionRule { better, go_at_least: Finite::unchecked(go_at_least), stop_below: Finite::unchecked(stop_below) }
+        DecisionRule {
+            better,
+            go_at_least: Finite::unchecked(go_at_least),
+            stop_below: Finite::unchecked(stop_below),
+        }
     }
     fn v(baseline: f64, candidate: f64) -> MetricValues {
-        MetricValues { baseline: Finite::unchecked(baseline), candidate: Finite::unchecked(candidate) }
+        MetricValues {
+            baseline: Finite::unchecked(baseline),
+            candidate: Finite::unchecked(candidate),
+        }
     }
 
     #[test]
     fn go_stop_and_inconclusive_with_the_tolerance_on_the_lines() {
         let higher = rule(DecisionRuleBetter::Higher, 0.1, 0.02);
         assert_eq!(research_outcome(&higher, &v(0.5, 0.6)), ResearchOutcome::Go);
-        assert_eq!(research_outcome(&higher, &v(0.5, 0.55)), ResearchOutcome::Inconclusive);
-        assert_eq!(research_outcome(&higher, &v(0.5, 0.52)), ResearchOutcome::Inconclusive);
-        assert_eq!(research_outcome(&higher, &v(0.5, 0.51)), ResearchOutcome::Stop);
-        assert_eq!(research_outcome(&higher, &v(0.5, 0.3)), ResearchOutcome::Stop);
+        assert_eq!(
+            research_outcome(&higher, &v(0.5, 0.55)),
+            ResearchOutcome::Inconclusive
+        );
+        assert_eq!(
+            research_outcome(&higher, &v(0.5, 0.52)),
+            ResearchOutcome::Inconclusive
+        );
+        assert_eq!(
+            research_outcome(&higher, &v(0.5, 0.51)),
+            ResearchOutcome::Stop
+        );
+        assert_eq!(
+            research_outcome(&higher, &v(0.5, 0.3)),
+            ResearchOutcome::Stop
+        );
     }
 
     #[test]
     fn a_drop_is_the_improvement_when_lower_is_better() {
         let lower = rule(DecisionRuleBetter::Lower, 50.0, 50.0);
-        assert_eq!(research_outcome(&lower, &v(400.0, 300.0)), ResearchOutcome::Go);
-        assert_eq!(research_outcome(&lower, &v(400.0, 380.0)), ResearchOutcome::Stop);
-        assert_eq!(research_outcome(&lower, &v(400.0, 500.0)), ResearchOutcome::Stop);
-        assert_eq!(research_outcome(&lower, &v(400.0, 350.0)), ResearchOutcome::Go);
+        assert_eq!(
+            research_outcome(&lower, &v(400.0, 300.0)),
+            ResearchOutcome::Go
+        );
+        assert_eq!(
+            research_outcome(&lower, &v(400.0, 380.0)),
+            ResearchOutcome::Stop
+        );
+        assert_eq!(
+            research_outcome(&lower, &v(400.0, 500.0)),
+            ResearchOutcome::Stop
+        );
+        assert_eq!(
+            research_outcome(&lower, &v(400.0, 350.0)),
+            ResearchOutcome::Go
+        );
     }
 
     #[test]
@@ -93,7 +132,12 @@ mod tests {
         );
         let lower = rule(DecisionRuleBetter::Lower, 50.0, 20.0);
         assert_eq!(
-            verdict_text(ResearchOutcome::Inconclusive, &lower, &v(400.0, 370.0), None),
+            verdict_text(
+                ResearchOutcome::Inconclusive,
+                &lower,
+                &v(400.0, 370.0),
+                None
+            ),
             "INCONCLUSIVE: candidate 370 vs baseline 400 (lower is better): improvement 30, between the stop line 20 and the go line 50. An improvement of at least 50 would make it GO; one below 20 would make it STOP."
         );
     }

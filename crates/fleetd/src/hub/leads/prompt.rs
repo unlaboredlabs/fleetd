@@ -11,7 +11,10 @@ pub const LEAD_PROMPT: &str = include_str!("../../../assets/prompts/prompt-v4.md
 pub fn render_lead_prompt(template: &str, project_ref: &ProjectRef, title: &str) -> String {
     template
         .replace("{{project}}", title)
-        .replace("{{projectRef}}", &format!("{}/{}", project_ref.machine_id, project_ref.project_id))
+        .replace(
+            "{{projectRef}}",
+            &format!("{}/{}", project_ref.machine_id, project_ref.project_id),
+        )
         .trim_end()
         .to_string()
 }

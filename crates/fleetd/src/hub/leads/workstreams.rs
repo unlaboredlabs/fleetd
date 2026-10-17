@@ -5,7 +5,10 @@ use std::sync::Arc;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
-use fleetd_contracts::ledger::{AskId, AskState, BriefDraft, BriefHash, DecisionSource, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamState};
+use fleetd_contracts::ledger::{
+    AskId, AskState, BriefDraft, BriefHash, DecisionSource, IntakeChannel, PlaybookName,
+    PlaybookRef, Workstream, WorkstreamId, WorkstreamParent, WorkstreamState,
+};
 use fleetd_contracts::mcp::ErrorCode;
 
 use super::brief::brief_hash;
@@ -62,8 +65,18 @@ pub struct Workstreams {
 }
 
 impl Workstreams {
-    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, wakes: Arc<LeadWakes>, playbooks: Arc<Playbooks>) -> Arc<Self> {
-        Arc::new(Self { ctx, records, wakes, playbooks })
+    pub fn new(
+        ctx: Arc<Ctx>,
+        records: Arc<LeadRecords>,
+        wakes: Arc<LeadWakes>,
+        playbooks: Arc<Playbooks>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            ctx,
+            records,
+            wakes,
+            playbooks,
+        })
     }
 
     pub fn get(&self, id: &WorkstreamId) -> Result<Option<Workstream>, LeadError> {
@@ -75,7 +88,13 @@ impl Workstreams {
         Ok(self.records.workstreams_list(filter)?)
     }
 
-    fn event(&self, w: &Workstream, r#type: HubEventType, summary: String, data: Option<serde_json::Value>) -> Result<(), LeadError> {
+    fn event(
+        &self,
+        w: &Workstream,
+        r#type: HubEventType,
+        summary: String,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), LeadError> {
         self.ctx.events.append(NewEvent {
             at: w.updated_at.clone(),
             r#type,
@@ -84,6 +103,7 @@ impl Workstreams {
             thread_id: None,
             summary,
             data,
+            attention: None,
         })?;
         Ok(())
     }
@@ -125,7 +145,12 @@ impl Workstreams {
         })?;
         let id = workstream.workstream_id.clone();
         if created {
-            self.event(&workstream, HubEventType::WorkstreamCreated, format!("New intent {id}: {}", workstream.title), None)?;
+            self.event(
+                &workstream,
+                HubEventType::WorkstreamCreated,
+                format!("New intent {id}: {}", workstream.title),
+                None,
+            )?;
             self.wakes.trigger(
                 &input.project_ref,
                 Trigger::Intent {
@@ -139,30 +164,59 @@ impl Workstreams {
             );
         }
         let next = if self.records.lead_get(&input.project_ref)?.is_none() {
-            format!("{id} is a draft. The project has no lead yet; call lead_start and it will pick this up.")
+            format!(
+                "{id} is a draft. The project has no lead yet; call lead_start and it will pick this up."
+            )
         } else {
             format!("{id} is a draft; the lead registers its brief. Watch it with workstream_get.")
         };
-        Ok(IntakeOutcome { workstream_id: id, playbook: workstream.playbook, next })
+        Ok(IntakeOutcome {
+            workstream_id: id,
+            playbook: workstream.playbook,
+            next,
+        })
     }
 
     /// The amend ask must be one the human answered, for this project (and this workstream, if it names one), used once.
     fn check_amend(&self, stored: &StoredWorkstream, ask_id: &AskId) -> Result<(), LeadError> {
         let w = &stored.workstream;
         let refuse = |message: String| LeadError::invalid(message, amend_fix(&w.workstream_id));
-        let ask = self.ctx.asks.get(ask_id)?;
-        let Some(ask) = ask.filter(|a| a.project_ref.as_ref().is_some_and(|r| same_project(r, &w.project_ref))) else {
+        let ask = self.ctx.asks.get(ask_id.as_str())?;
+        let Some(ask) = ask.filter(|a| {
+            a.project_ref
+                .as_ref()
+                .is_some_and(|r| same_project(r, &w.project_ref))
+        }) else {
             return Err(refuse(format!("There is no ask {ask_id} in this project.")));
         };
-        if let Some(other) = ask.workstream_id.as_ref().filter(|id| **id != w.workstream_id) {
-            return Err(refuse(format!("{ask_id} is about {other}, not {}.", w.workstream_id)));
+        if let Some(other) = ask
+            .workstream_id
+            .as_ref()
+            .filter(|id| **id != w.workstream_id)
+        {
+            return Err(refuse(format!(
+                "{ask_id} is about {other}, not {}.",
+                w.workstream_id
+            )));
         }
-        let decision = ask.decision_id.as_ref().map(|id| self.ctx.decisions.get(id)).transpose()?.flatten();
-        if ask.state != AskState::Answered || decision.map(|d| d.source) != Some(DecisionSource::Human) {
-            return Err(refuse(format!("{ask_id} has no answer from the human yet.")));
+        let decision = ask
+            .decision_id
+            .as_ref()
+            .map(|id| self.ctx.decisions.get(id.as_str()))
+            .transpose()?
+            .flatten();
+        if ask.state != AskState::Answered
+            || decision.map(|d| d.source) != Some(DecisionSource::Human)
+        {
+            return Err(refuse(format!(
+                "{ask_id} has no answer from the human yet."
+            )));
         }
         if stored.amends.contains(ask_id) {
-            return Err(refuse(format!("{ask_id} was already used to amend {}.", w.workstream_id)));
+            return Err(refuse(format!(
+                "{ask_id} was already used to amend {}.",
+                w.workstream_id
+            )));
         }
         Ok(())
     }
@@ -179,7 +233,13 @@ impl Workstreams {
         let w = &stored.workstream;
         let id = &w.workstream_id;
         // M9: checked against the version pinned at intake, whatever the playbook file says now.
-        let playbook = w.playbook.as_ref().map(|r| self.playbooks.by_ref(r)).transpose()?.flatten().map(|p| p.playbook);
+        let playbook = w
+            .playbook
+            .as_ref()
+            .map(|r| self.playbooks.by_ref(r))
+            .transpose()?
+            .flatten()
+            .map(|p| p.playbook);
         let tier = draft.tier.or(playbook.as_ref().map(|p| p.tier_default));
         let Some(tier) = tier else {
             return Err(LeadError::invalid(
@@ -189,36 +249,75 @@ impl Workstreams {
         };
         let brief = draft.into_brief(tier);
         if let Some(short) = playbook.as_ref().and_then(|p| floor_refusal(p, &brief)) {
-            return Err(LeadError::invalid(short, format!("Add what is missing to the brief and run `fleetd brief create --workstream {id}` again.")));
+            return Err(LeadError::invalid(
+                short,
+                format!(
+                    "Add what is missing to the brief and run `fleetd brief create --workstream {id}` again."
+                ),
+            ));
         }
         if is_closed(w.state) {
-            return Err(LeadError::bare(ErrorCode::Invalid, format!("{id} is {}; its brief can no longer change.", state_text(w.state))));
+            return Err(LeadError::bare(
+                ErrorCode::Invalid,
+                format!(
+                    "{id} is {}; its brief can no longer change.",
+                    state_text(w.state)
+                ),
+            ));
         }
         let hash = BriefHash::unchecked(brief_hash(&brief));
-        let running = format!("Plan the work and report progress with `fleetd status set \"<one line>\" --workstream {id}`.");
+        let running = format!(
+            "Plan the work and report progress with `fleetd status set \"<one line>\" --workstream {id}`."
+        );
         let result = |state: WorkstreamState, next: String| BriefCreateResult {
-            op: Default::default(),
             workstream_id: id.clone(),
             brief_hash: hash.clone(),
             state,
             next: Some(next),
         };
         if w.brief_hash.as_ref() == Some(&hash) {
-            return Ok(result(w.state, format!("Unchanged: this brief is already frozen. {running}")));
+            return Ok(result(
+                w.state,
+                format!("Unchanged: this brief is already frozen. {running}"),
+            ));
         }
         let at = now_iso(&self.ctx);
         let data = |state: WorkstreamState| serde_json::json!({ "workstreamId": id, "state": state, "briefHash": hash });
         if w.brief.is_none() && w.state == WorkstreamState::Idle {
             // An idle finish-all stays idle: only new work with a value source reopens it (FinishAll).
-            let next = Workstream { brief: Some(brief), brief_hash: Some(hash.clone()), updated_at: at.into(), ..w.clone() };
-            self.records.workstream_put(&StoredWorkstream { workstream: next.clone(), amends: stored.amends.clone() })?;
-            self.event(&next, HubEventType::WorkstreamState, format!("{id} brief frozen while idle"), Some(data(WorkstreamState::Idle)))?;
-            return Ok(result(WorkstreamState::Idle, format!("Brief frozen; {id} stays idle. Nothing to do until new work comes in.")));
+            let next = Workstream {
+                brief: Some(brief),
+                brief_hash: Some(hash.clone()),
+                updated_at: at.into(),
+                ..w.clone()
+            };
+            self.records.workstream_put(&StoredWorkstream {
+                workstream: next.clone(),
+                amends: stored.amends.clone(),
+            })?;
+            self.event(
+                &next,
+                HubEventType::WorkstreamState,
+                format!("{id} brief frozen while idle"),
+                Some(data(WorkstreamState::Idle)),
+            )?;
+            return Ok(result(
+                WorkstreamState::Idle,
+                format!("Brief frozen; {id} stays idle. Nothing to do until new work comes in."),
+            ));
         }
         if w.brief.is_none() {
-            let next =
-                Workstream { brief: Some(brief), brief_hash: Some(hash.clone()), state: WorkstreamState::Running, updated_at: at.into(), ..w.clone() };
-            self.records.workstream_put(&StoredWorkstream { workstream: next.clone(), amends: stored.amends.clone() })?;
+            let next = Workstream {
+                brief: Some(brief),
+                brief_hash: Some(hash.clone()),
+                state: WorkstreamState::Running,
+                updated_at: at.into(),
+                ..w.clone()
+            };
+            self.records.workstream_put(&StoredWorkstream {
+                workstream: next.clone(),
+                amends: stored.amends.clone(),
+            })?;
             self.event(
                 &next,
                 HubEventType::WorkstreamRunning,
@@ -229,7 +328,9 @@ impl Workstreams {
         }
         let Some(amend) = amend else {
             return Err(LeadError::invalid(
-                format!("The brief of {id} is frozen; changing it needs an ask the human answered."),
+                format!(
+                    "The brief of {id} is frozen; changing it needs an ask the human answered."
+                ),
                 format!(
                     "File `fleetd ask --class product --key {}.brief --text \"<the change and why>\" --rec \"<your proposal>\" --workstream {id}`, carry on meanwhile, and rerun with --amend <askId> once it is answered.",
                     id.as_str().to_lowercase()
@@ -237,28 +338,53 @@ impl Workstreams {
             ));
         };
         self.check_amend(&stored, amend)?;
-        let next = Workstream { brief: Some(brief), brief_hash: Some(hash.clone()), updated_at: at.into(), ..w.clone() };
+        let next = Workstream {
+            brief: Some(brief),
+            brief_hash: Some(hash.clone()),
+            updated_at: at.into(),
+            ..w.clone()
+        };
         let mut amends = stored.amends.clone();
         amends.push(amend.clone());
-        self.records.workstream_put(&StoredWorkstream { workstream: next.clone(), amends })?;
+        self.records.workstream_put(&StoredWorkstream {
+            workstream: next.clone(),
+            amends,
+        })?;
         self.event(
             &next,
             HubEventType::WorkstreamState,
             format!("{id} brief amended under {amend}"),
             Some(serde_json::json!({ "workstreamId": id, "state": next.state, "briefHash": hash, "amend": amend })),
         )?;
-        Ok(result(next.state, format!("Brief amended under {amend}. {running}")))
+        Ok(result(
+            next.state,
+            format!("Brief amended under {amend}. {running}"),
+        ))
     }
 
     /// `fleetd status set`. Without a workstream it needs exactly one open workstream in the project.
-    pub fn status_set(&self, caller: &ProjectRef, text: &str, workstream_id: Option<&WorkstreamId>) -> Result<StatusSetResult, LeadError> {
+    pub fn status_set(
+        &self,
+        caller: &ProjectRef,
+        text: &str,
+        workstream_id: Option<&WorkstreamId>,
+    ) -> Result<StatusSetResult, LeadError> {
         let stored = match workstream_id {
             Some(id) => self.own(caller, id)?,
             None => {
-                let open = self.records.workstreams_list(&WorkstreamFilter { project_ref: Some(caller.clone()), open: true, limit: 2, ..Default::default() })?;
+                let open = self.records.workstreams_list(&WorkstreamFilter {
+                    project_ref: Some(caller.clone()),
+                    open: true,
+                    limit: 2,
+                    ..Default::default()
+                })?;
                 if open.len() != 1 {
                     return Err(LeadError::invalid(
-                        if open.is_empty() { "Your project has no open workstream." } else { "Your project has several open workstreams." },
+                        if open.is_empty() {
+                            "Your project has no open workstream."
+                        } else {
+                            "Your project has several open workstreams."
+                        },
                         "Pass --workstream W<n> with an id from your digest.",
                     ));
                 }
@@ -270,10 +396,12 @@ impl Workstreams {
         let headline: String = {
             // `.slice(0, 280)` in UTF-16 units, without the ellipsis.
             let mut used = 0;
-            flat.chars().take_while(|c| {
-                used += c.len_utf16();
-                used <= 280
-            }).collect()
+            flat.chars()
+                .take_while(|c| {
+                    used += c.len_utf16();
+                    used <= 280
+                })
+                .collect()
         };
         let workstream = Workstream {
             headline: Some(fleetd_contracts::ledger::Headline::unchecked(headline)),
@@ -282,7 +410,13 @@ impl Workstreams {
             ..stored.workstream.clone()
         };
         let id = workstream.workstream_id.clone();
-        self.records.workstream_put(&StoredWorkstream { workstream, amends: stored.amends })?;
-        Ok(StatusSetResult { op: Default::default(), workstream_id: id, next: Some("Status recorded. Carry on.".into()) })
+        self.records.workstream_put(&StoredWorkstream {
+            workstream,
+            amends: stored.amends,
+        })?;
+        Ok(StatusSetResult {
+            workstream_id: id,
+            next: Some("Status recorded. Carry on.".into()),
+        })
     }
 }

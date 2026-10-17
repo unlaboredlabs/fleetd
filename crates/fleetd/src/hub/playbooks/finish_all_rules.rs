@@ -13,7 +13,9 @@ pub const TODO_GREP: [&str; 7] = ["git", "grep", "-I", "-c", "-w", "-E", "TODO|F
 pub const CHILD_SOURCES: [&str; 3] = ["issue:", "defect:", "done:"];
 
 pub fn is_finish_all(w: &Workstream) -> bool {
-    w.playbook.as_ref().is_some_and(|p| p.as_ref().starts_with("finish-all@"))
+    w.playbook
+        .as_ref()
+        .is_some_and(|p| p.as_ref().starts_with("finish-all@"))
 }
 
 pub struct Refusal {
@@ -24,26 +26,45 @@ pub struct Refusal {
 static DONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^done:(\d+)$").unwrap());
 
 /// Why `serves` cannot start a child of `parent`; None when it can. `open_children` are the parent's open children.
-pub fn spawn_refusal(serves: &str, parent: &Workstream, open_children: &[&Workstream], max_children: u32) -> Option<Refusal> {
-    if !CHILD_SOURCES.iter().any(|prefix| serves.starts_with(prefix)) {
+pub fn spawn_refusal(
+    serves: &str,
+    parent: &Workstream,
+    open_children: &[&Workstream],
+    max_children: u32,
+) -> Option<Refusal> {
+    if !CHILD_SOURCES
+        .iter()
+        .any(|prefix| serves.starts_with(prefix))
+    {
         return Some(Refusal {
             message: format!("'{serves}' is not a value source a child can serve."),
             fix: "Pass --serves issue:<#n|url> (an open issue), defect:<one line> (a failing check or error you saw) or done:<n> (a done-when check of the finish-all workstream). Never invent work.".into(),
         });
     }
     let checks = parent.brief.as_ref().map_or(0, |b| b.done_when.len());
-    if let Some(m) = DONE.captures(serves) {
-        if m[1].parse::<usize>().map_or(true, |n| n >= checks) {
-            let fix = if checks == 0 {
-                "Use issue: or defect:; the finish-all workstream has no done-when checks.".to_string()
+    if let Some(m) = DONE.captures(serves)
+        && m[1].parse::<usize>().map_or(true, |n| n >= checks)
+    {
+        let fix = if checks == 0 {
+            "Use issue: or defect:; the finish-all workstream has no done-when checks.".to_string()
+        } else {
+            let range = if checks > 1 {
+                format!(" to done:{}", checks - 1)
             } else {
-                let range = if checks > 1 { format!(" to done:{}", checks - 1) } else { String::new() };
-                format!("Use done:0{range}, or issue: or defect:.")
+                String::new()
             };
-            return Some(Refusal { message: format!("{} has no done-when check {serves}.", parent.workstream_id), fix });
-        }
+            format!("Use done:0{range}, or issue: or defect:.")
+        };
+        return Some(Refusal {
+            message: format!("{} has no done-when check {serves}.", parent.workstream_id),
+            fix,
+        });
     }
-    if let Some(same) = open_children.iter().find(|c| c.parent.as_ref().is_some_and(|p| p.serves.as_ref() == serves)) {
+    if let Some(same) = open_children.iter().find(|c| {
+        c.parent
+            .as_ref()
+            .is_some_and(|p| p.serves.as_ref() == serves)
+    }) {
         return Some(Refusal {
             message: format!("{} already serves {serves}.", same.workstream_id),
             fix: "Spawn a child for another item, or wait for it.".into(),
@@ -110,12 +131,15 @@ pub fn is_spawnable(item: &InventoryItem) -> bool {
     item.serves.is_some() && item.served_by.is_none()
 }
 
-static GITHUB: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$").unwrap());
+static GITHUB: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$").unwrap()
+});
 
 /// `owner/name` of a GitHub remote URL (https or ssh), lowercased; None for any other remote.
 pub fn github_repo_of(remote: &str) -> Option<String> {
-    GITHUB.captures(remote.trim()).map(|m| format!("{}/{}", &m[1], &m[2]).to_lowercase())
+    GITHUB
+        .captures(remote.trim())
+        .map(|m| format!("{}/{}", &m[1], &m[2]).to_lowercase())
 }
 
 static COUNT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r":(\d+)$").unwrap());
@@ -125,7 +149,11 @@ static COUNT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r":(\d+)$").unwrap()
 pub fn todo_count(output: &str, truncated: bool) -> (u64, bool) {
     let count = output
         .split('\n')
-        .filter_map(|line| COUNT.captures(line.trim()).and_then(|m| m[1].parse::<u64>().ok()))
+        .filter_map(|line| {
+            COUNT
+                .captures(line.trim())
+                .and_then(|m| m[1].parse::<u64>().ok())
+        })
         .sum();
     (count, truncated)
 }
@@ -146,14 +174,19 @@ pub struct InventoryInput {
 
 /// The finish-all workstream goes idle when it has no open child and nothing it could start, as far as can be read.
 pub fn should_idle(input: &InventoryInput) -> bool {
-    input.parent.as_ref().is_some_and(|p| p.open_children == 0) && input.unread.is_empty() && !input.items.iter().any(is_spawnable)
+    input.parent.as_ref().is_some_and(|p| p.open_children == 0)
+        && input.unread.is_empty()
+        && !input.items.iter().any(is_spawnable)
 }
 
 pub fn render_inventory(input: &InventoryInput) -> String {
     let ranked = rank_items(&input.items);
     let (sourced, others): (Vec<_>, Vec<_>) = ranked.iter().partition(|i| i.serves.is_some());
     let head = match &input.parent {
-        None => format!("Inventory of {}, ranked (no open finish-all workstream):", input.project),
+        None => format!(
+            "Inventory of {}, ranked (no open finish-all workstream):",
+            input.project
+        ),
         Some(p) => format!(
             "Inventory of {}, ranked; finish-all {} has {} of at most {} open children:",
             input.project, p.workstream_id, p.open_children, p.max_children
@@ -164,7 +197,11 @@ pub fn render_inventory(input: &InventoryInput) -> String {
         lines.push("Nothing with a value source.".into());
     }
     for (n, item) in sourced.iter().enumerate() {
-        let progress = item.served_by.as_ref().map(|w| format!(" (in progress: {w})")).unwrap_or_default();
+        let progress = item
+            .served_by
+            .as_ref()
+            .map(|w| format!(" (in progress: {w})"))
+            .unwrap_or_default();
         lines.push(format!(
             "{}. {} — {} [{}]{progress}",
             n + 1,
@@ -182,10 +219,10 @@ pub fn render_inventory(input: &InventoryInput) -> String {
     for why in &input.unread {
         lines.push(format!("Could not read {why}"));
     }
-    if should_idle(input) {
-        if let Some(p) = &input.parent {
-            lines.push(format!("{FINISH_ALL_IDLE}; {} is idle.", p.workstream_id));
-        }
+    if should_idle(input)
+        && let Some(p) = &input.parent
+    {
+        lines.push(format!("{FINISH_ALL_IDLE}; {} is idle.", p.workstream_id));
     }
     lines.join("\n")
 }
