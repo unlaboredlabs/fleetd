@@ -32,7 +32,11 @@ const API_KEY_VARS: &[&str] = &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
 
 /// A custom base URL wins over a key, which wins over a signed-in subscription. `auth_type` and `auth_status` are
 /// T3's `ServerProvider.auth` fields; `env_names` the instance config's environment variable names.
-pub fn login_kind_of(auth_type: Option<&str>, auth_status: Option<&str>, env_names: &[&str]) -> LoginKind {
+pub fn login_kind_of(
+    auth_type: Option<&str>,
+    auth_status: Option<&str>,
+    env_names: &[&str],
+) -> LoginKind {
     if BASE_URL_VARS.iter().any(|n| env_names.contains(n)) {
         return LoginKind::CustomBaseUrl;
     }

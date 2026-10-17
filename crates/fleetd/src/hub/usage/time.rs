@@ -4,12 +4,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// `2026-10-17T10:00:00.000Z`.
 pub fn iso(ms: i64) -> String {
-    DateTime::<Utc>::from_timestamp_millis(ms).unwrap_or_default().to_rfc3339_opts(SecondsFormat::Millis, true)
+    DateTime::<Utc>::from_timestamp_millis(ms)
+        .unwrap_or_default()
+        .to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 /// `Date.parse` for the RFC 3339 timestamps fleetd stores; `None` where JS would give NaN.
 pub fn parse_ms(text: &str) -> Option<i64> {
-    DateTime::parse_from_rfc3339(text).ok().map(|d| d.timestamp_millis())
+    DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|d| d.timestamp_millis())
 }
 
 pub fn system_ms(t: SystemTime) -> i64 {

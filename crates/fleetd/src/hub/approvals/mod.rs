@@ -25,20 +25,26 @@ pub struct ApprovalRefused {
 }
 
 fn refuse(code: &str, message: impl Into<String>, fix: Option<&str>) -> ApprovalRefused {
-    ApprovalRefused { code: code.into(), message: message.into(), fix: fix.map(str::to_string) }
+    ApprovalRefused {
+        code: code.into(),
+        message: message.into(),
+        fix: fix.map(str::to_string),
+    }
 }
 
 const EVIDENCE_MAX: usize = 2000;
 /// Evidence while an approved command runs; replaced by its result.
 const RUNNING: &str = "running on";
 /// How a recorded outcome starts: exit code, timeout, or the node's refusal.
-static FINISHED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(exit |killed after |not run on )").unwrap());
-static SINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(env|file):([a-z0-9-]{1,32}):(/.*)$").unwrap());
+static FINISHED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(exit |killed after |not run on )").unwrap());
+static SINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(env|file):([a-z0-9-]{1,32}):(/.*)$").unwrap());
 static PLAIN_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\w./:=@%+-]+$").unwrap());
-pub const NOT_RUN_AFTER_RESTART: &str = "not run: hub restarted before execution; answer again to run";
+pub const NOT_RUN_AFTER_RESTART: &str =
+    "not run: hub restarted before execution; answer again to run";
 
-pub const HUMAN_ONLY_SECRET_FIX: &str =
-    "Enter it from the fleetd desktop app or another client with a --human key; agent keys never handle secret values.";
+pub const HUMAN_ONLY_SECRET_FIX: &str = "Enter it from the fleetd desktop app or another client with a --human key; agent keys never handle secret values.";
 
 /// Who called: a human or agent key, by name, with its grants.
 pub struct Caller<'a> {
@@ -63,15 +69,30 @@ pub fn parse_secret_sink(sink: &str) -> Option<ParsedSink> {
     if path.chars().any(|ch| ch <= '\u{1f}' || ch == '\u{7f}') {
         return None;
     }
-    if path[1..].split('/').any(|s| s.is_empty() || s == "." || s == "..") {
+    if path[1..]
+        .split('/')
+        .any(|s| s.is_empty() || s == "." || s == "..")
+    {
         return None;
     }
-    Some(ParsedSink { kind: c[1].to_string(), machine_id: c[2].to_string() })
+    Some(ParsedSink {
+        kind: c[1].to_string(),
+        machine_id: c[2].to_string(),
+    })
 }
 
 /// argv as one readable line: JSON quoting only for words that need it.
 pub fn shown_argv(argv: &[String]) -> String {
-    argv.iter().map(|w| if PLAIN_WORD.is_match(w) { w.clone() } else { json!(w).to_string() }).collect::<Vec<_>>().join(" ")
+    argv.iter()
+        .map(|w| {
+            if PLAIN_WORD.is_match(w) {
+                w.clone()
+            } else {
+                json!(w).to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A header line, then as much of the output's end as fits.
@@ -99,7 +120,9 @@ pub fn restart_reopen_reason(evidence: Option<&str>, machine_id: &str) -> Option
     }
     // Anything else is evidence from before this "go" (an earlier reopen) or none: it never started.
     Some(if evidence.starts_with(RUNNING) {
-        format!("result unknown: the hub restarted while it ran on {machine_id}; check on {machine_id} whether it ran before approving it again")
+        format!(
+            "result unknown: the hub restarted while it ran on {machine_id}; check on {machine_id} whether it ran before approving it again"
+        )
     } else {
         NOT_RUN_AFTER_RESTART.to_string()
     })
@@ -133,16 +156,28 @@ pub trait ApprovalAsks: Send + Sync {
     fn list_answered(&self) -> BoxFut<'_, Vec<Value>>;
     /// `input` is an `AskInput`; returns the created ask or the ledger's refusal.
     fn create(&self, input: Value, by: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
-    fn update(&self, ask_id: &str, patch: Map<String, Value>) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
+    fn update(
+        &self,
+        ask_id: &str,
+        patch: Map<String, Value>,
+    ) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
     fn reopen(&self, ask_id: &str, evidence: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
 }
 
 /// The node link's request/reply commands (checks/NodeCommands.ts).
 pub trait ApprovalNodes: Send + Sync {
     /// `secret_deliver`: `{ sink, sealed, secretKey, envName? }`.
-    fn deliver_secret(&self, machine_id: &str, input: Value) -> BoxFut<'_, Result<SecretOutcome, NodeCommandError>>;
+    fn deliver_secret(
+        &self,
+        machine_id: &str,
+        input: Value,
+    ) -> BoxFut<'_, Result<SecretOutcome, NodeCommandError>>;
     /// `gated_run`: `{ askId, argv, cwd, timeoutSec, secretEnv? }`.
-    fn run_gated(&self, machine_id: &str, input: Value) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
+    fn run_gated(
+        &self,
+        machine_id: &str,
+        input: Value,
+    ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
 }
 
 /// The rest of the hub approvals reads or wakes.
@@ -154,7 +189,12 @@ pub trait ApprovalHub: Send + Sync {
     /// LeadWakes.trigger with `{ kind: "answer", answer: { ask, outcome: "answered", value } }`.
     fn wake_answer(&self, project: &ProjectRef, ask: Value, value: String) -> BoxFut<'_, ()>;
     /// CheckRunner.verify for a do ask's verify spec: (result "pass"/"fail"/..., evidence).
-    fn verify(&self, project: &ProjectRef, workstream_id: Option<String>, verify: Value) -> BoxFut<'_, (String, String)>;
+    fn verify(
+        &self,
+        project: &ProjectRef,
+        workstream_id: Option<String>,
+        verify: Value,
+    ) -> BoxFut<'_, (String, String)>;
 }
 
 pub struct ApprovalsDeps {
@@ -195,11 +235,17 @@ impl Approvals {
     pub async fn start(deps: ApprovalsDeps) -> Arc<Self> {
         let approvals = Arc::new(Approvals { deps });
         for ask in approvals.deps.asks.list_answered().await {
-            if s(&ask, "kind") != Some("approve") || ask.pointer("/answer/value").and_then(Value::as_str) != Some("go") {
+            if s(&ask, "kind") != Some("approve")
+                || ask.pointer("/answer/value").and_then(Value::as_str) != Some("go")
+            {
                 continue;
             }
-            let machine = project_of(&ask).map_or_else(|| "its machine".to_string(), |p| p.machine_id);
-            if let (Some(why), Some(id)) = (restart_reopen_reason(s(&ask, "evidence"), &machine), s(&ask, "askId")) {
+            let machine =
+                project_of(&ask).map_or_else(|| "its machine".to_string(), |p| p.machine_id);
+            if let (Some(why), Some(id)) = (
+                restart_reopen_reason(s(&ask, "evidence"), &machine),
+                s(&ask, "askId"),
+            ) {
                 let _ = approvals.deps.asks.reopen(id, &why).await;
             }
         }
@@ -242,14 +288,27 @@ impl Approvals {
                 let page = self
                     .deps
                     .events
-                    .wait(WaitInput { cursor, types: vec!["decision.recorded"], timeout_sec: 3600, ..Default::default() })
+                    .wait(WaitInput {
+                        cursor,
+                        types: vec!["decision.recorded"],
+                        timeout_sec: 3600,
+                        ..Default::default()
+                    })
                     .await;
                 cursor = page.cursor;
                 for event in page.events {
                     let data = event.data.unwrap_or(Value::Null);
-                    let (Some(ask_id), Some(decision_id)) = (s(&data, "askId"), s(&data, "decisionId")) else { continue };
-                    let Some(ask) = self.deps.asks.get(ask_id).await else { continue };
-                    if s(&ask, "state") != Some("answered") || s(&ask, "decisionId") != Some(decision_id) {
+                    let (Some(ask_id), Some(decision_id)) =
+                        (s(&data, "askId"), s(&data, "decisionId"))
+                    else {
+                        continue;
+                    };
+                    let Some(ask) = self.deps.asks.get(ask_id).await else {
+                        continue;
+                    };
+                    if s(&ask, "state") != Some("answered")
+                        || s(&ask, "decisionId") != Some(decision_id)
+                    {
                         continue;
                     }
                     let me = self.clone();
@@ -266,18 +325,41 @@ impl Approvals {
     }
 
     /// `secret_submit`: relays the sealed value to the sink's node and closes the ask with the node's fingerprint.
-    pub async fn submit_secret(&self, caller: &Caller<'_>, ask_id: &str, sealed: &str) -> Result<Value, ApprovalRefused> {
+    pub async fn submit_secret(
+        &self,
+        caller: &Caller<'_>,
+        ask_id: &str,
+        sealed: &str,
+    ) -> Result<Value, ApprovalRefused> {
         if !caller.human {
-            return Err(refuse("forbidden", "Only a person enters secrets.", Some(HUMAN_ONLY_SECRET_FIX)));
+            return Err(refuse(
+                "forbidden",
+                "Only a person enters secrets.",
+                Some(HUMAN_ONLY_SECRET_FIX),
+            ));
         }
         let ask = self.deps.asks.get(ask_id).await;
         let sink_text = ask.as_ref().and_then(|a| s(a, "sink")).map(str::to_string);
         let sink = sink_text.as_deref().and_then(parse_secret_sink);
-        let (Some(ask), Some(sink), Some(sink_text)) = (ask.filter(|a| s(a, "kind") == Some("secret")), sink, sink_text) else {
-            return Err(refuse("not_found", format!("No secret ask {ask_id}."), Some("Use the askId of an open secret ask from asks_list.")));
+        let (Some(ask), Some(sink), Some(sink_text)) = (
+            ask.filter(|a| s(a, "kind") == Some("secret")),
+            sink,
+            sink_text,
+        ) else {
+            return Err(refuse(
+                "not_found",
+                format!("No secret ask {ask_id}."),
+                Some("Use the askId of an open secret ask from asks_list."),
+            ));
         };
         let project = project_of(&ask);
-        let machines: BTreeSet<&str> = [Some(sink.machine_id.as_str()), project.as_ref().map(|p| p.machine_id.as_str())].into_iter().flatten().collect();
+        let machines: BTreeSet<&str> = [
+            Some(sink.machine_id.as_str()),
+            project.as_ref().map(|p| p.machine_id.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         for m in machines {
             if !(caller.allows_operate)(m) {
                 return Err(refuse(
@@ -290,7 +372,11 @@ impl Approvals {
         let id = s(&ask, "askId").unwrap_or(ask_id).to_string();
         let state = s(&ask, "state").unwrap_or("");
         if state != "open" {
-            return Err(refuse("invalid", format!("{id} is already {state}."), Some("Nothing to enter: it is settled.")));
+            return Err(refuse(
+                "invalid",
+                format!("{id} is already {state}."),
+                Some("Nothing to enter: it is settled."),
+            ));
         }
         let m = &sink.machine_id;
         match self.deps.hub.box_key(m).await {
@@ -316,21 +402,38 @@ impl Approvals {
             input["envName"] = json!(env);
         }
         // The ciphertext is never queued: the human enters it again once the node is back.
-        let delivered = self.deps.nodes.deliver_secret(m, input).await.map_err(|e| {
-            refuse("machine_offline", format!("{m}'s node did not take the secret: {}.", e.message), Some(&format!("Try again when {m} is online.")))
-        })?;
+        let delivered = self
+            .deps
+            .nodes
+            .deliver_secret(m, input)
+            .await
+            .map_err(|e| {
+                refuse(
+                    "machine_offline",
+                    format!("{m}'s node did not take the secret: {}.", e.message),
+                    Some(&format!("Try again when {m} is online.")),
+                )
+            })?;
         let Some(fingerprint) = delivered.fingerprint else {
             return Err(refuse(
                 "invalid",
-                format!("{m}'s node could not save it: {}.", delivered.error.as_deref().unwrap_or("no reason given")),
-                Some("Seal it to the machine's current boxPubKey and try again, or ask the lead to fix the sink."),
+                format!(
+                    "{m}'s node could not save it: {}.",
+                    delivered.error.as_deref().unwrap_or("no reason given")
+                ),
+                Some(
+                    "Seal it to the machine's current boxPubKey and try again, or ask the lead to fix the sink.",
+                ),
             ));
         };
         let by = format!("human:{}", caller.name);
         let mut patch = Map::new();
         patch.insert("state".into(), json!("answered"));
         patch.insert("fingerprint".into(), json!(fingerprint));
-        patch.insert("evidence".into(), json!(format!("fingerprint {fingerprint}")));
+        patch.insert(
+            "evidence".into(),
+            json!(format!("fingerprint {fingerprint}")),
+        );
         patch.insert(
             "answer".into(),
             json!({ "value": format!("saved, fingerprint {fingerprint}"), "by": by, "at": self.now(), "raw": "secret_submit" }),
@@ -343,17 +446,34 @@ impl Approvals {
             json!({ "askId": id, "fingerprint": fingerprint, "by": by }),
         )
         .await;
-        self.wake_with(&saved, format!("saved to its {} sink on {m}, fingerprint {fingerprint}", sink.kind)).await;
-        Ok(json!({ "askId": id, "fingerprint": fingerprint, "next": format!("Saved on {m}; the lead hears it in its next wake.") }))
+        self.wake_with(
+            &saved,
+            format!(
+                "saved to its {} sink on {m}, fingerprint {fingerprint}",
+                sink.kind
+            ),
+        )
+        .await;
+        Ok(
+            json!({ "askId": id, "fingerprint": fingerprint, "next": format!("Saved on {m}; the lead hears it in its next wake.") }),
+        )
     }
 
     /// `fleetd gated run`: files the approve ask holding exactly this command, run in the project workspace by
     /// default. Returns the `GatedRunResult`.
-    pub async fn gated_run(&self, project: &ProjectRef, by: &str, call: GatedRunInput) -> Result<Value, ApprovalRefused> {
+    pub async fn gated_run(
+        &self,
+        project: &ProjectRef,
+        by: &str,
+        call: GatedRunInput,
+    ) -> Result<Value, ApprovalRefused> {
         let Some(root) = self.deps.hub.workspace_root(project).await else {
             return Err(refuse(
                 "not_found",
-                format!("The hub has no record of project {} on {}.", project.project_id, project.machine_id),
+                format!(
+                    "The hub has no record of project {} on {}.",
+                    project.project_id, project.machine_id
+                ),
                 Some("Check fleetd_status, then run it again."),
             ));
         };
@@ -389,13 +509,19 @@ impl Approvals {
 
     /// Runs an approve ask's stored command on its project's node after a human answered "go".
     async fn run_approved(&self, ask: &Value) {
-        let (Some(spec), Some(project)) = (ask.get("gated"), project_of(ask)) else { return };
+        let (Some(spec), Some(project)) = (ask.get("gated"), project_of(ask)) else {
+            return;
+        };
         if ask.pointer("/answer/value").and_then(Value::as_str) != Some("go") {
             return;
         }
         let ask_id = s(ask, "askId").unwrap_or("").to_string();
         let machine = project.machine_id.clone();
-        let by = ask.pointer("/answer/by").and_then(Value::as_str).unwrap_or("").to_string();
+        let by = ask
+            .pointer("/answer/by")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
         let timeout_sec = spec.get("timeoutSec").and_then(Value::as_u64).unwrap_or(0);
         let cwd = match s(spec, "cwd") {
             Some(c) => Some(c.to_string()),
@@ -403,10 +529,16 @@ impl Approvals {
         };
         // Marks it in flight, so a hub restart before the result arrives is reported as "result unknown", not "not run".
         let mut running = Map::new();
-        running.insert("evidence".into(), json!(format!("{RUNNING} {machine}, approved by {by}")));
+        running.insert(
+            "evidence".into(),
+            json!(format!("{RUNNING} {machine}, approved by {by}")),
+        );
         let _ = self.deps.asks.update(&ask_id, running).await;
         let ran = match cwd {
-            None => Ok(GatedOutcome { error: Some("the project has no workspace on record".into()), ..Default::default() }),
+            None => Ok(GatedOutcome {
+                error: Some("the project has no workspace on record".into()),
+                ..Default::default()
+            }),
             Some(cwd) => {
                 let mut input = json!({ "askId": ask_id, "argv": spec["argv"], "cwd": cwd, "timeoutSec": timeout_sec });
                 if let Some(env) = spec.get("secretEnv") {
@@ -415,22 +547,31 @@ impl Approvals {
                 self.deps.nodes.run_gated(&machine, input).await
             }
         };
-        if let Err(e) = &ran {
-            if e.reason == "offline" {
-                // Nothing ran, so the human can approve it again once the machine is back.
-                let why = format!("not run: {machine}'s node was offline when {by} approved it; answer go again once it is online");
-                let _ = self.deps.asks.reopen(&ask_id, &why).await;
-                return;
-            }
+        if let Err(e) = &ran
+            && e.reason == "offline"
+        {
+            // Nothing ran, so the human can approve it again once the machine is back.
+            let why = format!(
+                "not run: {machine}'s node was offline when {by} approved it; answer go again once it is online"
+            );
+            let _ = self.deps.asks.reopen(&ask_id, &why).await;
+            return;
         }
         let evidence = match &ran {
-            Err(e) => format!("result unknown: {}; check on {machine} whether it ran before approving it again", e.message),
-            Ok(GatedOutcome { error: Some(err), .. }) => format!("not run on {machine}: {err}"),
+            Err(e) => format!(
+                "result unknown: {}; check on {machine} whether it ran before approving it again",
+                e.message
+            ),
+            Ok(GatedOutcome {
+                error: Some(err), ..
+            }) => format!("not run on {machine}: {err}"),
             Ok(o) => {
                 let head = if o.timed_out {
                     format!("killed after {timeout_sec} s on {machine}, approved by {by}")
                 } else {
-                    let code = o.exit_code.map_or_else(|| "none (ended by a signal)".to_string(), |c| c.to_string());
+                    let code = o
+                        .exit_code
+                        .map_or_else(|| "none (ended by a signal)".to_string(), |c| c.to_string());
                     format!("exit {code} on {machine}, approved by {by}")
                 };
                 with_tail(&head, &o.output_tail)
@@ -443,11 +584,20 @@ impl Approvals {
         };
         // A link that dropped mid-run leaves the result unknown: back to the human, loud, to check before approving again.
         let done = match &ran {
-            Err(_) => self.deps.asks.reopen(&ask_id, &evidence).await.unwrap_or_else(|_| with_evidence()),
+            Err(_) => self
+                .deps
+                .asks
+                .reopen(&ask_id, &evidence)
+                .await
+                .unwrap_or_else(|_| with_evidence()),
             Ok(_) => {
                 let mut patch = Map::new();
                 patch.insert("evidence".into(), json!(evidence));
-                self.deps.asks.update(&ask_id, patch).await.unwrap_or_else(|_| with_evidence())
+                self.deps
+                    .asks
+                    .update(&ask_id, patch)
+                    .await
+                    .unwrap_or_else(|_| with_evidence())
             }
         };
         let outcome = ran.as_ref().ok();
@@ -461,14 +611,22 @@ impl Approvals {
             data["ran"] = json!(false);
         }
         let first = evidence.lines().next().unwrap_or("");
-        self.append("gated.ran", Some(&project), clip(&format!("{ask_id} {first}"), 200), data).await;
+        self.append(
+            "gated.ran",
+            Some(&project),
+            clip(&format!("{ask_id} {first}"), 200),
+            data,
+        )
+        .await;
         self.wake_with(&done, "go".into()).await;
     }
 
     /// Re-checks a do ask with a verify check once the human ticks it done: a pass goes to the lead with the evidence,
     /// a failure reopens the ask with it.
     async fn recheck(&self, ask: &Value) {
-        let (Some(verify), Some(project)) = (ask.get("verify"), project_of(ask)) else { return };
+        let (Some(verify), Some(project)) = (ask.get("verify"), project_of(ask)) else {
+            return;
+        };
         if ask.pointer("/answer/value").and_then(Value::as_str) != Some("done") {
             return;
         }
@@ -477,16 +635,45 @@ impl Approvals {
         }
         let ask_id = s(ask, "askId").unwrap_or("").to_string();
         let workstream = s(ask, "workstreamId").map(str::to_string);
-        let (result, evidence) = self.deps.hub.verify(&project, workstream, verify.clone()).await;
+        let (result, evidence) = self
+            .deps
+            .hub
+            .verify(&project, workstream, verify.clone())
+            .await;
         if result != "pass" {
-            let why = if result == "fail" { "failed" } else { "could not run" };
-            let _ = self.deps.asks.reopen(&ask_id, &clip(&format!("ticked done, but its check {why}: {evidence}"), EVIDENCE_MAX)).await;
+            let why = if result == "fail" {
+                "failed"
+            } else {
+                "could not run"
+            };
+            let _ = self
+                .deps
+                .asks
+                .reopen(
+                    &ask_id,
+                    &clip(
+                        &format!("ticked done, but its check {why}: {evidence}"),
+                        EVIDENCE_MAX,
+                    ),
+                )
+                .await;
             return;
         }
         let mut patch = Map::new();
-        patch.insert("evidence".into(), json!(clip(&format!("verified: {evidence}"), EVIDENCE_MAX)));
-        let done = self.deps.asks.update(&ask_id, patch).await.unwrap_or_else(|_| ask.clone());
-        self.deps.hub.wake_answer(&project, done, "done".into()).await;
+        patch.insert(
+            "evidence".into(),
+            json!(clip(&format!("verified: {evidence}"), EVIDENCE_MAX)),
+        );
+        let done = self
+            .deps
+            .asks
+            .update(&ask_id, patch)
+            .await
+            .unwrap_or_else(|_| ask.clone());
+        self.deps
+            .hub
+            .wake_answer(&project, done, "done".into())
+            .await;
     }
 }
 
@@ -505,7 +692,13 @@ mod tests {
 
     impl ApprovalAsks for Fake {
         fn get(&self, ask_id: &str) -> BoxFut<'_, Option<Value>> {
-            let found = self.asks.lock().unwrap().iter().find(|a| a["askId"] == ask_id).cloned();
+            let found = self
+                .asks
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|a| a["askId"] == ask_id)
+                .cloned();
             Box::pin(async move { found })
         }
         fn list_answered(&self) -> BoxFut<'_, Vec<Value>> {
@@ -514,7 +707,11 @@ mod tests {
         fn create(&self, _: Value, _: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
             unreachable!()
         }
-        fn update(&self, ask_id: &str, patch: Map<String, Value>) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
+        fn update(
+            &self,
+            ask_id: &str,
+            patch: Map<String, Value>,
+        ) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
             let mut asks = self.asks.lock().unwrap();
             let ask = asks.iter_mut().find(|a| a["askId"] == ask_id).unwrap();
             for (k, v) in patch {
@@ -528,11 +725,24 @@ mod tests {
         }
     }
     impl ApprovalNodes for Fake {
-        fn deliver_secret(&self, _: &str, input: Value) -> BoxFut<'_, Result<SecretOutcome, NodeCommandError>> {
+        fn deliver_secret(
+            &self,
+            _: &str,
+            input: Value,
+        ) -> BoxFut<'_, Result<SecretOutcome, NodeCommandError>> {
             self.delivered.lock().unwrap().push(input);
-            Box::pin(async { Ok(SecretOutcome { fingerprint: Some("ab12cd34".into()), error: None }) })
+            Box::pin(async {
+                Ok(SecretOutcome {
+                    fingerprint: Some("ab12cd34".into()),
+                    error: None,
+                })
+            })
         }
-        fn run_gated(&self, _: &str, _: Value) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
+        fn run_gated(
+            &self,
+            _: &str,
+            _: Value,
+        ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
             unreachable!()
         }
     }
@@ -546,7 +756,12 @@ mod tests {
         fn wake_answer(&self, _: &ProjectRef, _: Value, _: String) -> BoxFut<'_, ()> {
             Box::pin(async {})
         }
-        fn verify(&self, _: &ProjectRef, _: Option<String>, _: Value) -> BoxFut<'_, (String, String)> {
+        fn verify(
+            &self,
+            _: &ProjectRef,
+            _: Option<String>,
+            _: Value,
+        ) -> BoxFut<'_, (String, String)> {
             unreachable!()
         }
     }
@@ -594,30 +809,77 @@ mod tests {
         let everywhere = |_: &str| true;
         const SEALED: &str = "c2VhbGVkLWJ5LXRoZS1hcHA=";
 
-        let agent = Caller { human: false, name: "adri", allows_operate: &everywhere };
-        let refused = approvals.submit_secret(&agent, "A1", SEALED).await.unwrap_err();
-        assert_eq!((refused.code.as_str(), refused.fix.as_deref()), ("forbidden", Some(HUMAN_ONLY_SECRET_FIX)));
-        assert!(fake.delivered.lock().unwrap().is_empty(), "an agent's value never reaches a node");
+        let agent = Caller {
+            human: false,
+            name: "adri",
+            allows_operate: &everywhere,
+        };
+        let refused = approvals
+            .submit_secret(&agent, "A1", SEALED)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            (refused.code.as_str(), refused.fix.as_deref()),
+            ("forbidden", Some(HUMAN_ONLY_SECRET_FIX))
+        );
+        assert!(
+            fake.delivered.lock().unwrap().is_empty(),
+            "an agent's value never reaches a node"
+        );
 
         let nowhere = |_: &str| false;
-        let ungranted = Caller { human: true, name: "phone", allows_operate: &nowhere };
-        assert_eq!(approvals.submit_secret(&ungranted, "A1", SEALED).await.unwrap_err().code, "forbidden");
+        let ungranted = Caller {
+            human: true,
+            name: "phone",
+            allows_operate: &nowhere,
+        };
+        assert_eq!(
+            approvals
+                .submit_secret(&ungranted, "A1", SEALED)
+                .await
+                .unwrap_err()
+                .code,
+            "forbidden"
+        );
 
-        let human = Caller { human: true, name: "phone", allows_operate: &everywhere };
+        let human = Caller {
+            human: true,
+            name: "phone",
+            allows_operate: &everywhere,
+        };
         let out = approvals.submit_secret(&human, "A1", SEALED).await.unwrap();
         assert_eq!(out["fingerprint"], "ab12cd34");
         assert_eq!(
             fake.delivered.lock().unwrap().as_slice(),
-            [json!({ "sink": "env:lab-a:/w/p1/.env", "sealed": SEALED, "secretKey": "stripe.test_key" })]
+            [
+                json!({ "sink": "env:lab-a:/w/p1/.env", "sealed": SEALED, "secretKey": "stripe.test_key" })
+            ]
         );
         let ask = fake.asks.lock().unwrap()[0].clone();
-        assert_eq!((&ask["state"], &ask["fingerprint"], &ask["evidence"]), (&json!("answered"), &json!("ab12cd34"), &json!("fingerprint ab12cd34")));
+        assert_eq!(
+            (&ask["state"], &ask["fingerprint"], &ask["evidence"]),
+            (
+                &json!("answered"),
+                &json!("ab12cd34"),
+                &json!("fingerprint ab12cd34")
+            )
+        );
         assert_eq!(ask["answer"]["by"], "human:phone");
-        assert!(!ask.to_string().contains(SEALED), "the ciphertext is never stored");
-        let events = fake.events.lock().unwrap();
+        assert!(
+            !ask.to_string().contains(SEALED),
+            "the ciphertext is never stored"
+        );
+        let events = fake.events.lock().unwrap().clone();
         assert_eq!(events[0].kind, "ask.secret_saved");
-        assert!(!serde_json::to_string(&*events).unwrap().contains(SEALED));
-        drop(events);
-        assert_eq!(approvals.submit_secret(&human, "A1", SEALED).await.unwrap_err().code, "invalid", "settled");
+        assert!(!serde_json::to_string(&events).unwrap().contains(SEALED));
+        assert_eq!(
+            approvals
+                .submit_secret(&human, "A1", SEALED)
+                .await
+                .unwrap_err()
+                .code,
+            "invalid",
+            "settled"
+        );
     }
 }

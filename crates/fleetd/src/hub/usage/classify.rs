@@ -51,27 +51,47 @@ pub const FALLBACK_USAGE_LIMIT_MS: i64 = 60 * 60_000;
 pub const FALLBACK_RATE_LIMIT_MS: i64 = 5 * 60_000;
 
 fn fallback_ms(cls: UsageClass) -> i64 {
-    if cls == UsageClass::RateLimit { FALLBACK_RATE_LIMIT_MS } else { FALLBACK_USAGE_LIMIT_MS }
+    if cls == UsageClass::RateLimit {
+        FALLBACK_RATE_LIMIT_MS
+    } else {
+        FALLBACK_USAGE_LIMIT_MS
+    }
 }
 
 macro_rules! re {
     ($name:ident, $pattern:expr) => {
-        static $name: LazyLock<Regex> = LazyLock::new(|| Regex::new($pattern).expect("valid regex"));
+        static $name: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new($pattern).expect("valid regex"));
     };
 }
 
 // CLIProxyAPI: a model no enabled credential offers, or every credential signed out (research 04 §2.3).
-re!(UNKNOWN_PROVIDER, r#"(?i)unknown provider for model\s+["']?([^\s"'\\,}]+)"#);
-re!(NO_ACCOUNT, r"(?i)no available account|no auth available|auth_unavailable");
+re!(
+    UNKNOWN_PROVIDER,
+    r#"(?i)unknown provider for model\s+["']?([^\s"'\\,}]+)"#
+);
+re!(
+    NO_ACCOUNT,
+    r"(?i)no available account|no auth available|auth_unavailable"
+);
 // CLIProxyAPI: every credential for the model is cooling down; it says when in reset_seconds.
 re!(COOLDOWN, r"(?i)model_cooldown|are cooling down");
 re!(RESET_SECONDS, r#""reset_seconds"\s*:\s*(\d+)"#);
-re!(RATE, r"(?i)rate[ _-]?limit|\[429\]|\b(?:api error|status|error)\W{0,3}429\b");
-re!(USAGE, r"(?i)usage limit|hit your (?:usage )?limit|(?:5-hour|weekly|session|opus) limit reached|out of extra usage");
+re!(
+    RATE,
+    r"(?i)rate[ _-]?limit|\[429\]|\b(?:api error|status|error)\W{0,3}429\b"
+);
+re!(
+    USAGE,
+    r"(?i)usage limit|hit your (?:usage )?limit|(?:5-hour|weekly|session|opus) limit reached|out of extra usage"
+);
 // The CLI's "Claude AI usage limit reached|<epoch seconds>".
 re!(PIPE_EPOCH, r"(?i)limit reached\|(\d{10})\b");
 // A proxy's "(reset after 1h2m3s)".
-re!(RESET_AFTER, r"(?i)reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?");
+re!(
+    RESET_AFTER,
+    r"(?i)reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?"
+);
 
 fn plus(at: &str, ms: i64) -> String {
     iso(parse_ms(at).unwrap_or(0) + ms)
@@ -88,14 +108,22 @@ fn reset_of(input: &LimitInput, cls: UsageClass) -> String {
         }
     };
     let num = |c: Option<regex::Match>| c.map_or(0, |m| m.as_str().parse::<i64>().unwrap_or(0));
-    let epoch = PIPE_EPOCH.captures(&input.message).map(|c| iso(num(c.get(1)) * 1000));
-    let seconds = RESET_SECONDS.captures(&input.message).map(|c| num(c.get(1)));
-    let span_ms = RESET_AFTER
+    let epoch = PIPE_EPOCH
         .captures(&input.message)
-        .map_or(0, |c| (num(c.get(1)) * 3600 + num(c.get(2)) * 60 + num(c.get(3))) * 1000);
+        .map(|c| iso(num(c.get(1)) * 1000));
+    let seconds = RESET_SECONDS
+        .captures(&input.message)
+        .map(|c| num(c.get(1)));
+    let span_ms = RESET_AFTER.captures(&input.message).map_or(0, |c| {
+        (num(c.get(1)) * 3600 + num(c.get(2)) * 60 + num(c.get(3))) * 1000
+    });
     after(input.reset_at.clone())
         .or_else(|| after(epoch))
-        .or_else(|| seconds.filter(|s| *s > 0).map(|s| plus(&input.at, s * 1000)))
+        .or_else(|| {
+            seconds
+                .filter(|s| *s > 0)
+                .map(|s| plus(&input.at, s * 1000))
+        })
         .or_else(|| (span_ms > 0).then(|| plus(&input.at, span_ms)))
         .unwrap_or_else(|| plus(&input.at, fallback_ms(cls)))
 }
@@ -108,14 +136,26 @@ fn non_empty(model: &Option<String>) -> Option<String> {
 pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
     let text = &input.message;
     if let Some(c) = UNKNOWN_PROVIDER.captures(text) {
-        return Some(Limit { class: UsageClass::PoolExhausted, resume_at: None, model: Some(c[1].to_string()) });
+        return Some(Limit {
+            class: UsageClass::PoolExhausted,
+            resume_at: None,
+            model: Some(c[1].to_string()),
+        });
     }
     if NO_ACCOUNT.is_match(text) {
-        return Some(Limit { class: UsageClass::PoolExhausted, resume_at: None, model: non_empty(&input.model) });
+        return Some(Limit {
+            class: UsageClass::PoolExhausted,
+            resume_at: None,
+            model: non_empty(&input.model),
+        });
     }
     if COOLDOWN.is_match(text) {
         let cls = UsageClass::UsageLimit;
-        return Some(Limit { class: cls, resume_at: Some(reset_of(input, cls)), model: non_empty(&input.model) });
+        return Some(Limit {
+            class: cls,
+            resume_at: Some(reset_of(input, cls)),
+            model: non_empty(&input.model),
+        });
     }
     let cls = if RATE.is_match(text) {
         UsageClass::RateLimit
@@ -124,7 +164,11 @@ pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
     } else {
         return None;
     };
-    Some(Limit { class: cls, resume_at: Some(reset_of(input, cls)), model: non_empty(&input.model) })
+    Some(Limit {
+        class: cls,
+        resume_at: Some(reset_of(input, cls)),
+        model: non_empty(&input.model),
+    })
 }
 
 /// A failed thread's limit, read off the fields of its summary (`limitOfSummary`).
@@ -172,7 +216,10 @@ pub fn limit_of_event(event: &HubEvent) -> Option<Limit> {
         return None;
     }
     let data = event.data.clone().unwrap_or(Value::Null);
-    if let Some(cls) = data.get("usageClass").and_then(|v| serde_json::from_value::<UsageClass>(v.clone()).ok()) {
+    if let Some(cls) = data
+        .get("usageClass")
+        .and_then(|v| serde_json::from_value::<UsageClass>(v.clone()).ok())
+    {
         return Some(Limit {
             class: cls,
             resume_at: str_at(&data, &["resumeAt"]).map(str::to_string),
@@ -181,13 +228,25 @@ pub fn limit_of_event(event: &HubEvent) -> Option<Limit> {
     }
     // Events from before M4 carry only T3's class and reset; T3 marked them usage_limit.
     classify_limit(&LimitInput {
-        error_class: Some(str_at(&data, &["error", "class"]).unwrap_or("usage_limit").to_string()),
-        message: str_at(&data, &["error", "message"]).unwrap_or("").to_string(),
+        error_class: Some(
+            str_at(&data, &["error", "class"])
+                .unwrap_or("usage_limit")
+                .to_string(),
+        ),
+        message: str_at(&data, &["error", "message"])
+            .unwrap_or("")
+            .to_string(),
         reset_at: str_at(&data, &["usageLimitResetAt"]).map(str::to_string),
         at: event.at.clone(),
         model: None,
     })
-    .or_else(|| Some(Limit { class: UsageClass::UsageLimit, resume_at: Some(plus(&event.at, FALLBACK_USAGE_LIMIT_MS)), model: None }))
+    .or_else(|| {
+        Some(Limit {
+            class: UsageClass::UsageLimit,
+            resume_at: Some(plus(&event.at, FALLBACK_USAGE_LIMIT_MS)),
+            model: None,
+        })
+    })
 }
 
 /// What a task or lead record shows while parked.
@@ -202,7 +261,11 @@ pub struct UsageParked {
 
 pub fn parked_of(event: &HubEvent) -> Option<UsageParked> {
     let limit = limit_of_event(event)?;
-    Some(UsageParked { class: limit.class, since: event.at.clone(), resume_at: limit.resume_at })
+    Some(UsageParked {
+        class: limit.class,
+        since: event.at.clone(),
+        resume_at: limit.resume_at,
+    })
 }
 
 #[cfg(test)]
@@ -214,10 +277,19 @@ mod tests {
         plus(AT, ms)
     }
     fn input(class: &str, message: &str) -> LimitInput {
-        LimitInput { error_class: Some(class.into()), message: message.into(), at: AT.into(), ..Default::default() }
+        LimitInput {
+            error_class: Some(class.into()),
+            message: message.into(),
+            at: AT.into(),
+            ..Default::default()
+        }
     }
     fn limit(class: UsageClass, resume_at: Option<String>, model: Option<&str>) -> Option<Limit> {
-        Some(Limit { class, resume_at, model: model.map(str::to_string) })
+        Some(Limit {
+            class,
+            resume_at,
+            model: model.map(str::to_string),
+        })
     }
 
     // Error text shapes as T3 stores them in a thread's lastError: T3's own Claude adapter messages and the CLI's or
@@ -230,13 +302,19 @@ mod tests {
                 "T3 usage_limit with its reset",
                 LimitInput {
                     reset_at: Some("2026-10-20T09:00:00.000Z".into()),
-                    ..input("usage_limit", "Claude usage limit reached. Send the message again once the limit resets.")
+                    ..input(
+                        "usage_limit",
+                        "Claude usage limit reached. Send the message again once the limit resets.",
+                    )
                 },
                 limit(UsageLimit, Some("2026-10-20T09:00:00.000Z".into()), None),
             ),
             (
                 "T3 blocking_limit without a reset",
-                input("usage_limit", "Claude stopped: a usage limit blocked the request."),
+                input(
+                    "usage_limit",
+                    "Claude stopped: a usage limit blocked the request.",
+                ),
                 limit(UsageLimit, Some(at(FALLBACK_USAGE_LIMIT_MS)), None),
             ),
             (
@@ -246,7 +324,10 @@ mod tests {
             ),
             (
                 "T3 429",
-                input("usage_limit", "Claude API rate limit reached. Try again later."),
+                input(
+                    "usage_limit",
+                    "Claude API rate limit reached. Try again later.",
+                ),
                 limit(RateLimit, Some(at(FALLBACK_RATE_LIMIT_MS)), None),
             ),
             (
@@ -280,13 +361,19 @@ mod tests {
                 "CLIProxyAPI 503 no auth available",
                 LimitInput {
                     model: Some("claude-opus-5-5".into()),
-                    ..input("provider_error", r#"API Error: 503 {"error":{"message":"no auth available","code":"auth_unavailable"}}"#)
+                    ..input(
+                        "provider_error",
+                        r#"API Error: 503 {"error":{"message":"no auth available","code":"auth_unavailable"}}"#,
+                    )
                 },
                 limit(PoolExhausted, None, Some("claude-opus-5-5")),
             ),
             (
                 "a proxy 503 no available account",
-                input("provider_error", "API Error: 503 no available account for claude-opus-5-5"),
+                input(
+                    "provider_error",
+                    "API Error: 503 no available account for claude-opus-5-5",
+                ),
                 limit(PoolExhausted, None, None),
             ),
             (
@@ -297,9 +384,27 @@ mod tests {
                 ),
                 limit(UsageLimit, Some(at(3_720_000)), None),
             ),
-            ("overloaded", input("provider_error", "Claude API is overloaded (529). Try again shortly."), None),
-            ("context window", input("provider_error", "Claude stopped: the prompt exceeds the model's context window."), None),
-            ("transport", input("transport_error", "Claude API connection error."), None),
+            (
+                "overloaded",
+                input(
+                    "provider_error",
+                    "Claude API is overloaded (529). Try again shortly.",
+                ),
+                None,
+            ),
+            (
+                "context window",
+                input(
+                    "provider_error",
+                    "Claude stopped: the prompt exceeds the model's context window.",
+                ),
+                None,
+            ),
+            (
+                "transport",
+                input("transport_error", "Claude API connection error."),
+                None,
+            ),
         ];
         for (name, input, expected) in fixtures {
             assert_eq!(classify_limit(&input), expected, "{name}");
@@ -308,7 +413,17 @@ mod tests {
 
     #[test]
     fn ignores_a_reported_reset_that_is_not_after_the_failure() {
-        let i = LimitInput { reset_at: Some(at(-1000)), ..input("usage_limit", "Claude usage limit reached.") };
-        assert_eq!(classify_limit(&i), limit(UsageClass::UsageLimit, Some(at(FALLBACK_USAGE_LIMIT_MS)), None));
+        let i = LimitInput {
+            reset_at: Some(at(-1000)),
+            ..input("usage_limit", "Claude usage limit reached.")
+        };
+        assert_eq!(
+            classify_limit(&i),
+            limit(
+                UsageClass::UsageLimit,
+                Some(at(FALLBACK_USAGE_LIMIT_MS)),
+                None
+            )
+        );
     }
 }

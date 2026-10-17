@@ -19,8 +19,10 @@ struct Pin {
     commit: String,
     npm: String,
 }
-static PIN: LazyLock<Pin> =
-    LazyLock::new(|| serde_json::from_str(include_str!("../../../../../vendor/t3/pin.json")).expect("vendor/t3/pin.json"));
+static PIN: LazyLock<Pin> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../../../vendor/t3/pin.json"))
+        .expect("vendor/t3/pin.json")
+});
 
 /// T3 commit the vendored wire client comes from.
 pub fn t3_pin() -> &'static str {
@@ -108,21 +110,43 @@ pub const REQUIRED_DISALLOWED: [&str; 3] = ["mcp__t3-code__*", "Task", "Workflow
 const DISALLOWED_FLAGS: [&str; 2] = ["--disallowedTools", "--disallowed-tools"];
 
 fn manual(label: &str, command: Option<String>) -> DoctorFix {
-    DoctorFix { kind: "manual".into(), label: clip(label, 200), command }
+    DoctorFix {
+        kind: "manual".into(),
+        label: clip(label, 200),
+        command,
+    }
 }
 
 fn auto(label: String) -> DoctorFix {
-    DoctorFix { kind: "auto".into(), label, command: None }
+    DoctorFix {
+        kind: "auto".into(),
+        label,
+        command: None,
+    }
 }
 
 fn hub_entry(name: &str, status: DoctorStatus, message: &str, fix: Option<DoctorFix>) -> Entry {
     Entry {
-        check: DoctorCheck { id: format!("hub/{name}"), scope: "hub".into(), machine_id: None, status, message: clip(message, 500), fix },
+        check: DoctorCheck {
+            id: format!("hub/{name}"),
+            scope: "hub".into(),
+            machine_id: None,
+            status,
+            message: clip(message, 500),
+            fix,
+        },
         action: None,
     }
 }
 
-fn machine_entry(machine_id: &str, name: &str, status: DoctorStatus, message: &str, fix: Option<DoctorFix>, action: Option<AutoAction>) -> Entry {
+fn machine_entry(
+    machine_id: &str,
+    name: &str,
+    status: DoctorStatus,
+    message: &str,
+    fix: Option<DoctorFix>,
+    action: Option<AutoAction>,
+) -> Entry {
     Entry {
         check: DoctorCheck {
             id: format!("{machine_id}/{name}"),
@@ -137,8 +161,14 @@ fn machine_entry(machine_id: &str, name: &str, status: DoctorStatus, message: &s
 }
 
 fn setup_again(machine_id: &str, setup: Option<&MachineSetup>) -> DoctorFix {
-    let host = setup.map_or_else(|| format!("<ssh host of {machine_id}>"), |s| s.ssh_host.clone());
-    manual("Run machine setup again from the hub; it is idempotent", Some(format!("fleetd machine add {host}")))
+    let host = setup.map_or_else(
+        || format!("<ssh host of {machine_id}>"),
+        |s| s.ssh_host.clone(),
+    );
+    manual(
+        "Run machine setup again from the hub; it is idempotent",
+        Some(format!("fleetd machine add {host}")),
+    )
 }
 
 use DoctorStatus::{Fail, Ok as Pass, Unknown, Warn};
@@ -153,7 +183,12 @@ pub enum Probe {
 
 pub fn hub_reachable(url: &str, probe: &Probe, restart: String) -> Entry {
     match probe {
-        Probe::Ok => hub_entry("reachable", Pass, &format!("The hub answers at {url}."), None),
+        Probe::Ok => hub_entry(
+            "reachable",
+            Pass,
+            &format!("The hub answers at {url}."),
+            None,
+        ),
         Probe::Failed(why) => hub_entry(
             "reachable",
             Fail,
@@ -166,7 +201,11 @@ pub fn hub_reachable(url: &str, probe: &Probe, restart: String) -> Entry {
 /// A finished command, or why it could not start (`ENOENT` when the binary is missing).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CmdOutcome {
-    Ran { exit_code: i32, stdout: String, stderr: String },
+    Ran {
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    },
     SpawnError(String),
 }
 
@@ -179,23 +218,45 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
                 "gh_auth",
                 Fail,
                 "The GitHub CLI (gh) is not installed on the hub; the merge train and PR checks need it.",
-                Some(manual("Install gh (https://cli.github.com), then log in", Some("gh auth login".into()))),
+                Some(manual(
+                    "Install gh (https://cli.github.com), then log in",
+                    Some("gh auth login".into()),
+                )),
             );
         }
-        CmdOutcome::SpawnError(e) => return hub_entry("gh_auth", Unknown, &format!("Could not run gh on the hub: {e}"), None),
-        CmdOutcome::Ran { exit_code, stdout, stderr } => (*exit_code, stdout, stderr),
+        CmdOutcome::SpawnError(e) => {
+            return hub_entry(
+                "gh_auth",
+                Unknown,
+                &format!("Could not run gh on the hub: {e}"),
+                None,
+            );
+        }
+        CmdOutcome::Ran {
+            exit_code,
+            stdout,
+            stderr,
+        } => (*exit_code, stdout, stderr),
     };
     if exit_code != 0 {
         return hub_entry(
             "gh_auth",
             Fail,
             "gh is not logged in on the hub; the merge train and PR checks need it.",
-            Some(manual("Log gh in on the hub machine", Some("gh auth login".into()))),
+            Some(manual(
+                "Log gh in on the hub machine",
+                Some("gh auth login".into()),
+            )),
         );
     }
     let both = format!("{stdout}\n{stderr}");
     match GH_ACCOUNT.captures(&both) {
-        Some(c) => hub_entry("gh_auth", Pass, &format!("gh is logged in on the hub as {}.", &c[1]), None),
+        Some(c) => hub_entry(
+            "gh_auth",
+            Pass,
+            &format!("gh is logged in on the hub as {}.", &c[1]),
+            None,
+        ),
         None => hub_entry("gh_auth", Pass, "gh is logged in on the hub.", None),
     }
 }
@@ -216,14 +277,34 @@ pub fn claude_login(outcome: &CmdOutcome) -> Entry {
                 "claude_login",
                 Fail,
                 "Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run.",
-                Some(manual("Install Claude Code on the hub machine, then log in", Some("claude auth login".into()))),
+                Some(manual(
+                    "Install Claude Code on the hub machine, then log in",
+                    Some("claude auth login".into()),
+                )),
             );
         }
-        CmdOutcome::SpawnError(e) => return hub_entry("claude_login", Unknown, &format!("Could not run claude on the hub: {e}"), None),
-        CmdOutcome::Ran { exit_code, stdout, .. } => (*exit_code, stdout),
+        CmdOutcome::SpawnError(e) => {
+            return hub_entry(
+                "claude_login",
+                Unknown,
+                &format!("Could not run claude on the hub: {e}"),
+                None,
+            );
+        }
+        CmdOutcome::Ran {
+            exit_code, stdout, ..
+        } => (*exit_code, stdout),
     };
-    let Some(status) = serde_json::from_str::<Value>(stdout).ok().filter(|v| !v.is_null()) else {
-        return hub_entry("claude_login", Unknown, &format!("claude auth status gave no JSON (exit {exit_code})."), None);
+    let Some(status) = serde_json::from_str::<Value>(stdout)
+        .ok()
+        .filter(|v| !v.is_null())
+    else {
+        return hub_entry(
+            "claude_login",
+            Unknown,
+            &format!("claude auth status gave no JSON (exit {exit_code})."),
+            None,
+        );
     };
     if status.get("loggedIn") != Some(&Value::Bool(true)) {
         return hub_entry(
@@ -233,11 +314,26 @@ pub fn claude_login(outcome: &CmdOutcome) -> Entry {
             Some(claude_login_fix()),
         );
     }
-    let method = status.get("authMethod").and_then(Value::as_str).map_or(String::new(), |m| format!(" ({m})"));
-    hub_entry("claude_login", Pass, &format!("claude on the hub is logged in{method}; the intake router and the retro can run."), None)
+    let method = status
+        .get("authMethod")
+        .and_then(Value::as_str)
+        .map_or(String::new(), |m| format!(" ({m})"));
+    hub_entry(
+        "claude_login",
+        Pass,
+        &format!(
+            "claude on the hub is logged in{method}; the intake router and the retro can run."
+        ),
+        None,
+    )
 }
 
-pub fn https_reachable(config: &HubConfig, problem: Option<&str>, port: u16, probe: Option<&Probe>) -> Entry {
+pub fn https_reachable(
+    config: &HubConfig,
+    problem: Option<&str>,
+    port: u16,
+    probe: Option<&Probe>,
+) -> Entry {
     let serve = || {
         manual(
             "Serve the hub over HTTPS (Tailscale Serve shown), then stop the hub and run fleetd init --url https://<that address>",
@@ -259,17 +355,27 @@ pub fn https_reachable(config: &HubConfig, problem: Option<&str>, port: u16, pro
         return hub_entry(
             "https",
             Warn,
-            &format!("The hub's address {url} is not HTTPS; keys from the desktop app and other machines would cross the network unencrypted."),
+            &format!(
+                "The hub's address {url} is not HTTPS; keys from the desktop app and other machines would cross the network unencrypted."
+            ),
             Some(serve()),
         );
     }
     match probe {
-        None | Some(Probe::Ok) => hub_entry("https", Pass, &format!("The hub is reachable over HTTPS at {url}."), None),
+        None | Some(Probe::Ok) => hub_entry(
+            "https",
+            Pass,
+            &format!("The hub is reachable over HTTPS at {url}."),
+            None,
+        ),
         Some(Probe::Failed(why)) => hub_entry(
             "https",
             Fail,
             &format!("{url} does not answer ({why})."),
-            Some(manual("Check that HTTPS still points at the hub", Some("tailscale serve status".into()))),
+            Some(manual(
+                "Check that HTTPS still points at the hub",
+                Some("tailscale serve status".into()),
+            )),
         ),
     }
 }
@@ -294,7 +400,11 @@ pub struct T3Info {
     pub version: String,
 }
 
-pub fn machine_online(machine: &MachineView, connected: bool, setup: Option<&MachineSetup>) -> Entry {
+pub fn machine_online(
+    machine: &MachineView,
+    connected: bool,
+    setup: Option<&MachineSetup>,
+) -> Entry {
     let id = machine.machine_id.as_str();
     match machine.status.as_str() {
         "offline" => machine_entry(
@@ -302,23 +412,35 @@ pub fn machine_online(machine: &MachineView, connected: bool, setup: Option<&Mac
             "online",
             Fail,
             &format!("{id} is offline (last seen {}).", machine.last_seen_at),
-            Some(manual(&format!("Start the fleetd node on {id}"), Some(restart_command("node", setup)))),
+            Some(manual(
+                &format!("Start the fleetd node on {id}"),
+                Some(restart_command("node", setup)),
+            )),
             None,
         ),
         "degraded" => machine_entry(
             id,
             "online",
             Fail,
-            &format!("{id} is degraded: {}.", machine.degraded_reason.as_deref().unwrap_or("T3 is down")),
-            Some(auto(format!("Restart T3 on {id} with its node's restart command"))),
+            &format!(
+                "{id} is degraded: {}.",
+                machine.degraded_reason.as_deref().unwrap_or("T3 is down")
+            ),
+            Some(auto(format!(
+                "Restart T3 on {id} with its node's restart command"
+            ))),
             Some(AutoAction::RestartT3),
         ),
-        _ if connected => machine_entry(id, "online", Pass, &format!("{id} is online."), None, None),
+        _ if connected => {
+            machine_entry(id, "online", Pass, &format!("{id} is online."), None, None)
+        }
         _ => machine_entry(
             id,
             "online",
             Fail,
-            &format!("{id}'s node is linked, but the hub has no T3 connection there (its session may be revoked or expired)."),
+            &format!(
+                "{id}'s node is linked, but the hub has no T3 connection there (its session may be revoked or expired)."
+            ),
             Some(auto(format!("Re-mint the hub's T3 session on {id}"))),
             Some(AutoAction::RemintSession),
         ),
@@ -328,11 +450,25 @@ pub fn machine_online(machine: &MachineView, connected: bool, setup: Option<&Mac
 pub fn t3_version(machine: &MachineView, setup: Option<&MachineSetup>) -> Entry {
     let id = machine.machine_id.as_str();
     let Some(t3) = &machine.t3 else {
-        return machine_entry(id, "t3_version", Unknown, &format!("T3 on {id} has not reported its version yet."), None, None);
+        return machine_entry(
+            id,
+            "t3_version",
+            Unknown,
+            &format!("T3 on {id} has not reported its version yet."),
+            None,
+            None,
+        );
     };
     let (npm, pin) = (t3_npm_version(), t3_pin());
     if t3.version == npm {
-        return machine_entry(id, "t3_version", Pass, &format!("T3 {npm}, the version setup installs."), None, None);
+        return machine_entry(
+            id,
+            "t3_version",
+            Pass,
+            &format!("T3 {npm}, the version setup installs."),
+            None,
+            None,
+        );
     }
     // The node reports T3 run from a source checkout as `<package version>+<commit>`.
     if t3.version.ends_with(&format!("+{pin}")) {
@@ -340,7 +476,10 @@ pub fn t3_version(machine: &MachineView, setup: Option<&MachineSetup>) -> Entry 
             id,
             "t3_version",
             Pass,
-            &format!("T3 from source at {}, the commit setup's {npm} is built from.", &pin[..pin.len().min(10)]),
+            &format!(
+                "T3 from source at {}, the commit setup's {npm} is built from.",
+                &pin[..pin.len().min(10)]
+            ),
             None,
             None,
         );
@@ -407,7 +546,11 @@ pub fn with_required_args(launch_args: &str) -> String {
         }
     }
     let mut denied: Vec<String> = Vec::new();
-    for t in REQUIRED_DISALLOWED.iter().map(|s| s.to_string()).chain(disallowed_tools(launch_args)) {
+    for t in REQUIRED_DISALLOWED
+        .iter()
+        .map(|s| s.to_string())
+        .chain(disallowed_tools(launch_args))
+    {
         if !denied.contains(&t) {
             denied.push(t);
         }
@@ -420,7 +563,11 @@ pub fn with_required_args(launch_args: &str) -> String {
 }
 
 fn config_of(instance: &Value) -> Map<String, Value> {
-    instance.get("config").and_then(Value::as_object).cloned().unwrap_or_default()
+    instance
+        .get("config")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
 }
 
 static OWN_CLAUDE_DIR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"/\.claude/?$").unwrap());
@@ -442,35 +589,86 @@ pub fn reapplicable(settings: &Value) -> Option<&Value> {
 }
 
 /// `instance_args` and `auto_resume`, from the machine's T3 settings, or why they could not be read.
-pub fn instance_checks(machine_id: &str, settings: Result<&Value, &str>, setup: Option<&MachineSetup>) -> Vec<Entry> {
+pub fn instance_checks(
+    machine_id: &str,
+    settings: Result<&Value, &str>,
+    setup: Option<&MachineSetup>,
+) -> Vec<Entry> {
     let settings = match settings {
-        Err(why) => return ["instance_args", "auto_resume"].iter().map(|n| machine_entry(machine_id, n, Unknown, why, None, None)).collect(),
+        Err(why) => {
+            return ["instance_args", "auto_resume"]
+                .iter()
+                .map(|n| machine_entry(machine_id, n, Unknown, why, None, None))
+                .collect();
+        }
         Ok(s) => s,
     };
-    let reapply = || auto(format!("Re-apply the fleetd instance config on {machine_id}"));
+    let reapply = || {
+        auto(format!(
+            "Re-apply the fleetd instance config on {machine_id}"
+        ))
+    };
     let instance = fleetd_instance(settings);
     let config = instance.map(config_of).unwrap_or_default();
-    let home = config.get("homePath").and_then(Value::as_str).map(str::trim).unwrap_or("");
-    let args = config.get("launchArgs").and_then(Value::as_str).unwrap_or("");
+    let home = config
+        .get("homePath")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let args = config
+        .get("launchArgs")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let denied = disallowed_tools(args);
-    let missing: Vec<&str> = REQUIRED_DISALLOWED.iter().copied().filter(|t| !denied.iter().any(|d| d == t)).collect();
-    let driver = instance.and_then(|i| i.get("driver")).and_then(Value::as_str).unwrap_or("");
-    let fail = |message: String| machine_entry(machine_id, "instance_args", Fail, &message, Some(setup_again(machine_id, setup)), None);
-    let instance_args = if instance.is_none() {
-        fail(format!("T3 on {machine_id} has no \"{FLEETD_INSTANCE}\" Claude instance."))
-    } else if driver != "claudeAgent" {
-        fail(format!("The \"{FLEETD_INSTANCE}\" instance on {machine_id} runs {driver}, not Claude."))
-    } else if home.is_empty() {
-        fail(format!("The fleetd instance on {machine_id} has no config dir of its own (CLAUDE_CONFIG_DIR)."))
-    } else if reapplicable(settings).is_none() {
-        fail(format!("The fleetd instance on {machine_id} shares your own Claude config dir ({home})."))
-    } else if !missing.is_empty() {
-        let shown = if args.trim().is_empty() { "none" } else { args.trim() };
+    let missing: Vec<&str> = REQUIRED_DISALLOWED
+        .iter()
+        .copied()
+        .filter(|t| !denied.iter().any(|d| d == t))
+        .collect();
+    let driver = instance
+        .and_then(|i| i.get("driver"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let fail = |message: String| {
         machine_entry(
             machine_id,
             "instance_args",
             Fail,
-            &format!("The fleetd instance on {machine_id} does not deny {} (launch args: {shown}).", missing.join(", ")),
+            &message,
+            Some(setup_again(machine_id, setup)),
+            None,
+        )
+    };
+    let instance_args = if instance.is_none() {
+        fail(format!(
+            "T3 on {machine_id} has no \"{FLEETD_INSTANCE}\" Claude instance."
+        ))
+    } else if driver != "claudeAgent" {
+        fail(format!(
+            "The \"{FLEETD_INSTANCE}\" instance on {machine_id} runs {driver}, not Claude."
+        ))
+    } else if home.is_empty() {
+        fail(format!(
+            "The fleetd instance on {machine_id} has no config dir of its own (CLAUDE_CONFIG_DIR)."
+        ))
+    } else if reapplicable(settings).is_none() {
+        fail(format!(
+            "The fleetd instance on {machine_id} shares your own Claude config dir ({home})."
+        ))
+    } else if !missing.is_empty() {
+        let shown = if args.trim().is_empty() {
+            "none"
+        } else {
+            args.trim()
+        };
+        machine_entry(
+            machine_id,
+            "instance_args",
+            Fail,
+            &format!(
+                "The fleetd instance on {machine_id} does not deny {} (launch args: {shown}).",
+                missing.join(", ")
+            ),
             Some(reapply()),
             Some(AutoAction::ReapplyInstance),
         )
@@ -479,22 +677,38 @@ pub fn instance_checks(machine_id: &str, settings: Result<&Value, &str>, setup: 
             machine_id,
             "instance_args",
             Pass,
-            &format!("The fleetd instance denies {} and uses its own config dir {home}.", REQUIRED_DISALLOWED.join(", ")),
+            &format!(
+                "The fleetd instance denies {} and uses its own config dir {home}.",
+                REQUIRED_DISALLOWED.join(", ")
+            ),
             None,
             None,
         )
     };
-    let auto_resume = if settings.get("autoResumeLimitedThreads").and_then(Value::as_bool).unwrap_or(false) {
+    let auto_resume = if settings
+        .get("autoResumeLimitedThreads")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
         machine_entry(
             machine_id,
             "auto_resume",
             Fail,
-            &format!("T3 on {machine_id} auto-resumes usage-limited threads, which bypasses fleetd's usage pacing."),
+            &format!(
+                "T3 on {machine_id} auto-resumes usage-limited threads, which bypasses fleetd's usage pacing."
+            ),
             Some(reapply()),
             Some(AutoAction::ReapplyInstance),
         )
     } else {
-        machine_entry(machine_id, "auto_resume", Pass, "T3 does not auto-resume usage-limited threads.", None, None)
+        machine_entry(
+            machine_id,
+            "auto_resume",
+            Pass,
+            "T3 does not auto-resume usage-limited threads.",
+            None,
+            None,
+        )
     };
     vec![instance_args, auto_resume]
 }
@@ -505,14 +719,24 @@ pub fn probe_counter(machine_id: &str, probes: &ProbeCounter) -> Entry {
             machine_id,
             "probes",
             Unknown,
-            &format!("Probe counter not observable: {}.", probes.reason.as_deref().unwrap_or("no trace to read")),
+            &format!(
+                "Probe counter not observable: {}.",
+                probes.reason.as_deref().unwrap_or("no trace to read")
+            ),
             None,
             None,
         );
     }
     let count = probes.count.unwrap_or(0);
     if count == 0 {
-        return machine_entry(machine_id, "probes", Pass, "T3 made no direct usage API calls (probe counter 0).", None, None);
+        return machine_entry(
+            machine_id,
+            "probes",
+            Pass,
+            "T3 made no direct usage API calls (probe counter 0).",
+            None,
+            None,
+        );
     }
     machine_entry(
         machine_id,
@@ -523,22 +747,42 @@ pub fn probe_counter(machine_id: &str, probes: &ProbeCounter) -> Entry {
             if count == 1 { "" } else { "s" },
             probes.source.as_deref().unwrap_or("its trace")
         ),
-        Some(manual("Remove stored Claude credentials from the fleetd instance's config dir and any cliproxy usage source in T3's settings", None)),
+        Some(manual(
+            "Remove stored Claude credentials from the fleetd instance's config dir and any cliproxy usage source in T3's settings",
+            None,
+        )),
         None,
     )
 }
 
 pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
     if breaker.state == "closed" {
-        return machine_entry(machine_id, "usage_breaker", Pass, "The usage breaker is closed.", None, None);
+        return machine_entry(
+            machine_id,
+            "usage_breaker",
+            Pass,
+            "The usage breaker is closed.",
+            None,
+            None,
+        );
     }
-    let until = breaker.until.as_ref().map_or(String::new(), |u| format!(" ({u})"));
+    let until = breaker
+        .until
+        .as_ref()
+        .map_or(String::new(), |u| format!(" ({u})"));
     machine_entry(
         machine_id,
         "usage_breaker",
         Warn,
-        &breaker.message.clone().unwrap_or_else(|| format!("New turns on {machine_id} are paused by the usage breaker.")),
-        Some(manual(&format!("Wait for the reset{until}, or call usage_resume for {machine_id} once the login has capacity"), None)),
+        &breaker.message.clone().unwrap_or_else(|| {
+            format!("New turns on {machine_id} are paused by the usage breaker.")
+        }),
+        Some(manual(
+            &format!(
+                "Wait for the reset{until}, or call usage_resume for {machine_id} once the login has capacity"
+            ),
+            None,
+        )),
         None,
     )
 }
@@ -556,9 +800,14 @@ pub struct HostProbe {
     pub disk_free_bytes: f64,
 }
 
-static NOREPLY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)@users\.noreply\.github\.com$").unwrap());
+static NOREPLY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)@users\.noreply\.github\.com$").unwrap());
 
-pub fn commit_identity(machine_id: &str, probe: Result<&HostProbe, &str>, config: &HubConfig) -> Entry {
+pub fn commit_identity(
+    machine_id: &str,
+    probe: Result<&HostProbe, &str>,
+    config: &HubConfig,
+) -> Entry {
     let probe = match probe {
         Err(why) => return machine_entry(machine_id, "commit_identity", Unknown, why, None, None),
         Ok(p) => p,
@@ -571,31 +820,60 @@ pub fn commit_identity(machine_id: &str, probe: Result<&HostProbe, &str>, config
             Some("git config --global user.email '<id>+<user>@users.noreply.github.com'".into()),
         ),
         Some(_) => {
-            let host = config.machines.get(machine_id).map_or_else(|| format!("<ssh host of {machine_id}>"), |m| m.ssh_host.clone());
+            let host = config.machines.get(machine_id).map_or_else(
+                || format!("<ssh host of {machine_id}>"),
+                |m| m.ssh_host.clone(),
+            );
             manual(
-                &format!("Run machine setup again from the hub to write the hub's identity into {machine_id}'s services"),
+                &format!(
+                    "Run machine setup again from the hub to write the hub's identity into {machine_id}'s services"
+                ),
                 Some(format!("fleetd machine add {host}")),
             )
         }
     };
     let Some(email) = &probe.git_email else {
-        return machine_entry(machine_id, "commit_identity", Fail, &format!("No git commit identity is set on {machine_id}."), Some(set()), None);
+        return machine_entry(
+            machine_id,
+            "commit_identity",
+            Fail,
+            &format!("No git commit identity is set on {machine_id}."),
+            Some(set()),
+            None,
+        );
     };
-    let from = if probe.git_email_from.as_deref() == Some("env") { "the service environment" } else { "git's global config" };
-    if let Some(want) = want {
-        if email.to_lowercase() != want.to_lowercase() {
-            return machine_entry(
-                machine_id,
-                "commit_identity",
-                Warn,
-                &format!("Commits on {machine_id} use {email} (from {from}); the hub's identity is {want}."),
-                Some(set()),
-                None,
-            );
-        }
+    let from = if probe.git_email_from.as_deref() == Some("env") {
+        "the service environment"
+    } else {
+        "git's global config"
+    };
+    if let Some(want) = want
+        && email.to_lowercase() != want.to_lowercase()
+    {
+        return machine_entry(
+            machine_id,
+            "commit_identity",
+            Warn,
+            &format!(
+                "Commits on {machine_id} use {email} (from {from}); the hub's identity is {want}."
+            ),
+            Some(set()),
+            None,
+        );
     }
-    let noreply = if NOREPLY.is_match(email) { ", a GitHub noreply address" } else { "" };
-    machine_entry(machine_id, "commit_identity", Pass, &format!("Commits on {machine_id} use {email} (from {from}{noreply})."), None, None)
+    let noreply = if NOREPLY.is_match(email) {
+        ", a GitHub noreply address"
+    } else {
+        ""
+    };
+    machine_entry(
+        machine_id,
+        "commit_identity",
+        Pass,
+        &format!("Commits on {machine_id} use {email} (from {from}{noreply})."),
+        None,
+        None,
+    )
 }
 
 fn gb(bytes: f64) -> String {
@@ -612,7 +890,10 @@ pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
             machine_id,
             "disk",
             Unknown,
-            &format!("Could not read the free space under {} on {machine_id}.", probe.disk_path),
+            &format!(
+                "Could not read the free space under {} on {machine_id}.",
+                probe.disk_path
+            ),
             None,
             None,
         );
@@ -628,9 +909,23 @@ pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
                 probe.disk_path,
                 gb(MIN_FREE_BYTES)
             ),
-            Some(manual(&format!("Free disk space on {machine_id}"), Some(format!("df -h {}", probe.disk_path)))),
+            Some(manual(
+                &format!("Free disk space on {machine_id}"),
+                Some(format!("df -h {}", probe.disk_path)),
+            )),
             None,
         );
     }
-    machine_entry(machine_id, "disk", Pass, &format!("{} free under {}.", gb(probe.disk_free_bytes), probe.disk_path), None, None)
+    machine_entry(
+        machine_id,
+        "disk",
+        Pass,
+        &format!(
+            "{} free under {}.",
+            gb(probe.disk_free_bytes),
+            probe.disk_path
+        ),
+        None,
+        None,
+    )
 }

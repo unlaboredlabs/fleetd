@@ -16,7 +16,12 @@ use std::time::Duration;
 
 pub use super::state::CONTINUE_MESSAGE;
 
-const REPLAYED: &[&str] = &["thread.usage_limited", "thread.started", "usage.breaker", "usage.resumed"];
+const REPLAYED: &[&str] = &[
+    "thread.usage_limited",
+    "thread.started",
+    "usage.breaker",
+    "usage.resumed",
+];
 const FOLLOWED: &[&str] = &["thread.usage_limited", "thread.started"];
 
 /// Who owns a thread, and whether a park still stands (tasks/TaskRecords.ts and leads/LeadRecords.ts).
@@ -29,7 +34,12 @@ pub trait UsageOwners: Send + Sync {
 
 /// queue/WriteQueue.ts `send`: delivered once per `client_message_id`.
 pub trait UsageQueue: Send + Sync {
-    fn send(&self, thread: &ThreadRef, message: &str, client_message_id: &str) -> BoxFut<'_, Result<(), String>>;
+    fn send(
+        &self,
+        thread: &ThreadRef,
+        message: &str,
+        client_message_id: &str,
+    ) -> BoxFut<'_, Result<(), String>>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -79,10 +89,26 @@ pub struct Usage {
 impl Usage {
     /// Replays the log, schedules every pending reset, then follows the log from where the replay stopped.
     pub async fn start(deps: UsageDeps) -> Self {
-        let usage = Usage { inner: Arc::new(Inner { deps, state: Mutex::default(), op: tokio::sync::Mutex::new(0) }) };
+        let usage = Usage {
+            inner: Arc::new(Inner {
+                deps,
+                state: Mutex::default(),
+                op: tokio::sync::Mutex::new(0),
+            }),
+        };
         let mut cursor = 0;
         loop {
-            let page = usage.inner.deps.events.wait(WaitInput { cursor, types: REPLAYED.to_vec(), timeout_sec: 0, ..Default::default() }).await;
+            let page = usage
+                .inner
+                .deps
+                .events
+                .wait(WaitInput {
+                    cursor,
+                    types: REPLAYED.to_vec(),
+                    timeout_sec: 0,
+                    ..Default::default()
+                })
+                .await;
             for event in &page.events {
                 usage.apply(event).await;
             }
@@ -111,7 +137,12 @@ impl Usage {
                     .inner
                     .deps
                     .events
-                    .wait(WaitInput { cursor, types: FOLLOWED.to_vec(), timeout_sec: 3600, ..Default::default() })
+                    .wait(WaitInput {
+                        cursor,
+                        types: FOLLOWED.to_vec(),
+                        timeout_sec: 3600,
+                        ..Default::default()
+                    })
                     .await;
                 follower.drain().await;
             }
@@ -126,7 +157,14 @@ impl Usage {
     async fn apply(&self, event: &HubEvent) {
         let owner = match (event.kind.as_str(), &event.machine_id, &event.thread_id) {
             ("thread.usage_limited", Some(m), Some(t)) if limit_of_event(event).is_some() => {
-                self.inner.deps.owners.owner_of(&ThreadRef { machine_id: m.clone(), thread_id: t.clone() }).await
+                self.inner
+                    .deps
+                    .owners
+                    .owner_of(&ThreadRef {
+                        machine_id: m.clone(),
+                        thread_id: t.clone(),
+                    })
+                    .await
             }
             _ => None,
         };
@@ -143,7 +181,12 @@ impl Usage {
         let wait = parse_ms(at).map_or(0, |t| (t - self.now_ms()).max(0));
         let usage = self.clone();
         tokio::spawn(async move {
-            usage.inner.deps.clock.sleep(Duration::from_millis(wait as u64)).await;
+            usage
+                .inner
+                .deps
+                .clock
+                .sleep(Duration::from_millis(wait as u64))
+                .await;
             let _op = usage.inner.op.lock().await;
             usage.tick().await;
         });
@@ -153,12 +196,19 @@ impl Usage {
     async fn tick(&self) {
         let due = self.inner.state.lock().unwrap().due(self.now_ms());
         for d in due {
-            self.resume_threads(&d.machine_id, d.threads, d.breaker_cleared, "reset").await;
+            self.resume_threads(&d.machine_id, d.threads, d.breaker_cleared, "reset")
+                .await;
         }
     }
 
     /// Sends "continue" in priority order and reports it in one usage.resumed event. Returns how many went out.
-    async fn resume_threads(&self, machine_id: &str, list: Vec<ParkedThread>, breaker_cleared: bool, by: &str) -> usize {
+    async fn resume_threads(
+        &self,
+        machine_id: &str,
+        list: Vec<ParkedThread>,
+        breaker_cleared: bool,
+        by: &str,
+    ) -> usize {
         let ordered = self.inner.state.lock().unwrap().take_in_order(&list);
         let mut sent = Vec::new();
         for p in ordered {
@@ -172,13 +222,25 @@ impl Usage {
                 p.thread.thread_id,
                 parse_ms(&p.parked.since).unwrap_or(0)
             );
-            if let Err(reason) = self.inner.deps.queue.send(&p.thread, CONTINUE_MESSAGE, &id).await {
+            if let Err(reason) = self
+                .inner
+                .deps
+                .queue
+                .send(&p.thread, CONTINUE_MESSAGE, &id)
+                .await
+            {
                 tracing::warn!(thread = %format!("{}/{}", p.thread.machine_id, p.thread.thread_id), %reason, "usage: continue not delivered");
                 continue;
             }
-            sent.push(Resumed { thread_id: p.thread.thread_id.clone(), kind: p.kind.as_str(), task_id: p.task_id.clone() });
+            sent.push(Resumed {
+                thread_id: p.thread.thread_id.clone(),
+                kind: p.kind.as_str(),
+                task_id: p.task_id.clone(),
+            });
         }
-        if let Some(event) = resumed_event(machine_id, &iso(self.now_ms()), &sent, breaker_cleared, by) {
+        if let Some(event) =
+            resumed_event(machine_id, &iso(self.now_ms()), &sent, breaker_cleared, by)
+        {
             self.emit(event).await;
         }
         sent.len()
@@ -186,8 +248,19 @@ impl Usage {
 
     async fn on_live(&self, event: &HubEvent) {
         self.apply(event).await;
-        let Some(machine_id) = event.machine_id.as_deref().filter(|_| event.kind == "thread.usage_limited") else { return };
-        let trip = self.inner.state.lock().unwrap().trip(machine_id, &iso(self.now_ms()));
+        let Some(machine_id) = event
+            .machine_id
+            .as_deref()
+            .filter(|_| event.kind == "thread.usage_limited")
+        else {
+            return;
+        };
+        let trip = self
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .trip(machine_id, &iso(self.now_ms()));
         if let Some((breaker, until)) = trip {
             self.emit(breaker).await;
             if let Some(u) = until {
@@ -202,8 +275,17 @@ impl Usage {
     /// Applies every followed event appended so far. The caller holds the op lock, whose value is the cursor.
     async fn pump(&self, cursor: &mut u64) {
         loop {
-            let page =
-                self.inner.deps.events.wait(WaitInput { cursor: *cursor, types: FOLLOWED.to_vec(), timeout_sec: 0, ..Default::default() }).await;
+            let page = self
+                .inner
+                .deps
+                .events
+                .wait(WaitInput {
+                    cursor: *cursor,
+                    types: FOLLOWED.to_vec(),
+                    timeout_sec: 0,
+                    ..Default::default()
+                })
+                .await;
             for event in &page.events {
                 self.on_live(event).await;
             }
@@ -222,7 +304,11 @@ impl Usage {
 
     /// Why a new turn may not start on the machine now, as a queued reason ("usage: paused until …").
     pub fn gate(&self, machine_id: &str) -> Option<String> {
-        self.inner.state.lock().unwrap().gate(machine_id, self.now_ms())
+        self.inner
+            .state
+            .lock()
+            .unwrap()
+            .gate(machine_id, self.now_ms())
     }
 
     /// `gate`, or why this thread is parked. Lead wakes wait while it is set.
@@ -255,27 +341,44 @@ impl Usage {
     }
 
     /// The machine's usage view; `reading` is its T3 provider status, failing when the machine is offline.
-    pub async fn status(&self, machine_id: &str, reading: Result<UsageReading, String>) -> UsageStatus {
+    pub async fn status(
+        &self,
+        machine_id: &str,
+        reading: Result<UsageReading, String>,
+    ) -> UsageStatus {
         self.drain().await;
         let probes = match &reading {
-            Err(_) => ProbeCounter::not_observable(format!("{machine_id} is offline, so its T3 trace file was not read")),
-            Ok(r) if !r.local => {
-                ProbeCounter::not_observable(format!("T3 on {machine_id} runs on another machine; its trace file is not readable from the hub"))
-            }
-            Ok(UsageReading { logs_dir: None, .. }) => {
-                ProbeCounter::not_observable(format!("T3 on {machine_id} did not report a logs directory"))
-            }
-            Ok(UsageReading { logs_dir: Some(dir), .. }) => {
+            Err(_) => ProbeCounter::not_observable(format!(
+                "{machine_id} is offline, so its T3 trace file was not read"
+            )),
+            Ok(r) if !r.local => ProbeCounter::not_observable(format!(
+                "T3 on {machine_id} runs on another machine; its trace file is not readable from the hub"
+            )),
+            Ok(UsageReading { logs_dir: None, .. }) => ProbeCounter::not_observable(format!(
+                "T3 on {machine_id} did not report a logs directory"
+            )),
+            Ok(UsageReading {
+                logs_dir: Some(dir),
+                ..
+            }) => {
                 let dir = dir.clone();
                 tokio::task::spawn_blocking(move || count_probes(&dir, &user_home()))
                     .await
-                    .unwrap_or_else(|_| ProbeCounter::not_observable("the trace file could not be read"))
+                    .unwrap_or_else(|_| {
+                        ProbeCounter::not_observable("the trace file could not be read")
+                    })
             }
         };
         let s = self.inner.state.lock().unwrap();
         let m = s.machines.get(machine_id);
         let breaker = match m.and_then(|m| m.breaker.as_ref()) {
-            None => UsageBreaker { state: "closed", class: None, since: None, until: None, message: None },
+            None => UsageBreaker {
+                state: "closed",
+                class: None,
+                since: None,
+                until: None,
+                message: None,
+            },
             Some(b) => UsageBreaker {
                 state: "open",
                 class: Some(b.class),
@@ -300,7 +403,12 @@ impl Usage {
         self.pump(&mut cursor).await;
         let (cleared, parked) = {
             let s = self.inner.state.lock().unwrap();
-            (s.machines.get(machine_id).is_some_and(|m| m.breaker.is_some()), s.parked_on(machine_id))
+            (
+                s.machines
+                    .get(machine_id)
+                    .is_some_and(|m| m.breaker.is_some()),
+                s.parked_on(machine_id),
+            )
         };
         self.resume_threads(machine_id, parked, cleared, by).await
     }

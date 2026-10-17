@@ -2,7 +2,9 @@
 //! min; emits one doctor.changed per machine (and one for the hub) whose checks changed status since the last run.
 //! doctor_fix runs only the three safe automatic fixes and refuses the rest with the command a person runs.
 //! TS: apps/hub/src/doctor/Doctor.ts.
-use super::checks::{self, AutoAction, CmdOutcome, DoctorCheck, Entry, HostProbe, MachineView, Probe};
+use super::checks::{
+    self, AutoAction, CmdOutcome, DoctorCheck, Entry, HostProbe, MachineView, Probe,
+};
 use super::config::{HubConfig, MachineSetup, Platform, restart_command};
 use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
@@ -48,7 +50,12 @@ pub struct ActionOutcome {
 pub trait T3Settings: Send + Sync {
     fn read(&self, machine_id: &str) -> BoxFut<'_, Result<Value, String>>;
     /// `patch` is a `ServerSettingsPatch`; `provider_instance_mutation` a `ProviderInstanceMutation`.
-    fn update(&self, machine_id: &str, patch: Value, provider_instance_mutation: Option<Value>) -> BoxFut<'_, Result<Value, String>>;
+    fn update(
+        &self,
+        machine_id: &str,
+        patch: Value,
+        provider_instance_mutation: Option<Value>,
+    ) -> BoxFut<'_, Result<Value, String>>;
 }
 
 /// The hub services the checks read and the fixes act through.
@@ -60,7 +67,11 @@ pub trait DoctorFleet: Send + Sync {
     /// Usage::status with the machine's UsageSource reading.
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus>;
     /// NodeActions::run: `remint_session`, `restart_t3` or `probe`; `Err` is the link's message.
-    fn node_action(&self, machine_id: &str, action: &str) -> BoxFut<'_, Result<ActionOutcome, String>>;
+    fn node_action(
+        &self,
+        machine_id: &str,
+        action: &str,
+    ) -> BoxFut<'_, Result<ActionOutcome, String>>;
 }
 
 pub struct DoctorDeps {
@@ -82,7 +93,11 @@ pub fn self_url(host: &str, port: u16) -> String {
         "::" => "::1",
         h => h,
     };
-    if host.contains(':') { format!("http://[{host}]:{port}") } else { format!("http://{host}:{port}") }
+    if host.contains(':') {
+        format!("http://[{host}]:{port}")
+    } else {
+        format!("http://{host}:{port}")
+    }
 }
 
 fn machine_of(check_id: &str) -> Option<&str> {
@@ -108,13 +123,17 @@ pub struct Doctor {
 /// `<cmd> <args>` with a 30 s timeout and the given environment (`None`: inherited).
 async fn run_cmd(cmd: &str, args: &[&str], env: Option<HashMap<String, String>>) -> CmdOutcome {
     let mut c = tokio::process::Command::new(cmd);
-    c.args(args).stdin(std::process::Stdio::null()).kill_on_drop(true);
+    c.args(args)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
     if let Some(env) = env {
         c.env_clear().envs(env);
     }
     match tokio::time::timeout(Duration::from_secs(30), c.output()).await {
         Err(_) => CmdOutcome::SpawnError(format!("{cmd} timed out after 30 s")),
-        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => CmdOutcome::SpawnError("ENOENT".into()),
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            CmdOutcome::SpawnError("ENOENT".into())
+        }
         Ok(Err(e)) => CmdOutcome::SpawnError(e.to_string()),
         Ok(Ok(out)) => CmdOutcome::Ran {
             exit_code: out.status.code().unwrap_or(1),
@@ -127,10 +146,23 @@ async fn run_cmd(cmd: &str, args: &[&str], env: Option<HashMap<String, String>>)
 /// The intake router's environment allowlist (intake/Router.ts `routerEnv`): the hub's own `CLAUDE*` variables never
 /// reach the child, and without `CLAUDE_CONFIG_DIR` claude reads the user's login from `$HOME/.claude`.
 pub fn router_env() -> HashMap<String, String> {
-    ["HOME", "PATH", "USER", "LANG", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"]
-        .iter()
-        .filter_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()).map(|v| (k.to_string(), v)))
-        .collect()
+    [
+        "HOME",
+        "PATH",
+        "USER",
+        "LANG",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+    ]
+    .iter()
+    .filter_map(|k| {
+        std::env::var(k)
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| (k.to_string(), v))
+    })
+    .collect()
 }
 
 impl Doctor {
@@ -140,7 +172,11 @@ impl Doctor {
             .timeout(Duration::from_secs(5))
             .build()
             .expect("http client");
-        Arc::new(Doctor { deps, state: tokio::sync::Mutex::new(State::default()), http })
+        Arc::new(Doctor {
+            deps,
+            state: tokio::sync::Mutex::new(State::default()),
+            http,
+        })
     }
 
     fn now_ms(&self) -> i64 {
@@ -165,7 +201,10 @@ impl Doctor {
     async fn hub_checks(&self) -> Vec<Entry> {
         let (config, problem) = self.config();
         let own = self_url(&self.deps.listen_host, self.deps.listen_port);
-        let public = config.url.clone().filter(|u| u.starts_with("https://") && problem.is_none());
+        let public = config
+            .url
+            .clone()
+            .filter(|u| u.starts_with("https://") && problem.is_none());
         let (reachable, gh, claude, https) = tokio::join!(
             self.health(&own),
             run_cmd("gh", &["auth", "status"], None),
@@ -179,15 +218,28 @@ impl Doctor {
         );
         let hub_setup = MachineSetup {
             ssh_host: String::new(),
-            platform: if cfg!(target_os = "macos") { Platform::Darwin } else { Platform::Linux },
+            platform: if cfg!(target_os = "macos") {
+                Platform::Darwin
+            } else {
+                Platform::Linux
+            },
             uid: current_uid(),
             unit_suffix: config.unit_suffix.clone().unwrap_or_default(),
         };
         vec![
-            checks::hub_reachable(&format!("{own}/healthz"), &reachable, restart_command("hub", Some(&hub_setup))),
+            checks::hub_reachable(
+                &format!("{own}/healthz"),
+                &reachable,
+                restart_command("hub", Some(&hub_setup)),
+            ),
             checks::gh_auth(&gh),
             checks::claude_login(&claude),
-            checks::https_reachable(&config, problem.as_deref(), self.deps.listen_port, https.as_ref()),
+            checks::https_reachable(
+                &config,
+                problem.as_deref(),
+                self.deps.listen_port,
+                https.as_ref(),
+            ),
         ]
     }
 
@@ -205,7 +257,11 @@ impl Doctor {
         let (settings, usage, probe) = tokio::join!(
             async {
                 if connected && machine.status == "online" {
-                    self.deps.settings.read(id).await.map_err(|e| format!("Could not read T3's settings on {id}: {e}"))
+                    self.deps
+                        .settings
+                        .read(id)
+                        .await
+                        .map_err(|e| format!("Could not read T3's settings on {id}: {e}"))
                 } else {
                     Err(t3_reason.clone())
                 }
@@ -222,11 +278,25 @@ impl Doctor {
                 }
             }
         );
-        let mut out = vec![checks::machine_online(machine, connected, setup), checks::t3_version(machine, setup)];
-        out.extend(checks::instance_checks(id, settings.as_ref().map_err(String::as_str), setup));
+        let mut out = vec![
+            checks::machine_online(machine, connected, setup),
+            checks::t3_version(machine, setup),
+        ];
+        out.extend(checks::instance_checks(
+            id,
+            settings.as_ref().map_err(String::as_str),
+            setup,
+        ));
         out.push(checks::probe_counter(id, &usage.probes));
-        out.push(checks::commit_identity(id, probe.as_ref().map_err(String::as_str), &config));
-        out.push(checks::disk_space(id, probe.as_ref().map_err(String::as_str)));
+        out.push(checks::commit_identity(
+            id,
+            probe.as_ref().map_err(String::as_str),
+            &config,
+        ));
+        out.push(checks::disk_space(
+            id,
+            probe.as_ref().map_err(String::as_str),
+        ));
         out.push(checks::usage_breaker(id, &usage.breaker));
         out
     }
@@ -237,7 +307,9 @@ impl Doctor {
         let mut order: Vec<String> = Vec::new();
         for Entry { check, .. } in after {
             let from = before.get(&check.id).map(|e| e.check.status);
-            if from == Some(check.status) || (from.is_none() && (baseline || check.status == checks::DoctorStatus::Ok)) {
+            if from == Some(check.status)
+                || (from.is_none() && (baseline || check.status == checks::DoctorStatus::Ok))
+            {
                 continue;
             }
             let key = check.machine_id.clone().unwrap_or_else(|| "hub".into());
@@ -255,7 +327,14 @@ impl Doctor {
             let changes = &groups[&key];
             let text: Vec<String> = changes
                 .iter()
-                .map(|c| format!("{} {} → {}", c["id"].as_str().unwrap_or(""), c["from"].as_str().unwrap_or("new"), c["to"].as_str().unwrap_or("")))
+                .map(|c| {
+                    format!(
+                        "{} {} → {}",
+                        c["id"].as_str().unwrap_or(""),
+                        c["from"].as_str().unwrap_or("new"),
+                        c["to"].as_str().unwrap_or("")
+                    )
+                })
                 .collect();
             self.deps
                 .events
@@ -273,18 +352,31 @@ impl Doctor {
 
     /// Replaces the entries of the groups just run (all of them when `machine_ids` is `None`) and emits changes.
     async fn record(&self, state: &mut State, fresh: Vec<Entry>, machine_ids: Option<&[String]>) {
-        let before: HashMap<String, Entry> = state.latest.iter().map(|e| (e.check.id.clone(), e.clone())).collect();
+        let before: HashMap<String, Entry> = state
+            .latest
+            .iter()
+            .map(|e| (e.check.id.clone(), e.clone()))
+            .collect();
         let replaced = |e: &Entry| match machine_ids {
             None => true,
-            Some(ids) => e.check.scope != "hub" && ids.iter().any(|m| Some(m) == e.check.machine_id.as_ref()),
+            Some(ids) => {
+                e.check.scope != "hub" && ids.iter().any(|m| Some(m) == e.check.machine_id.as_ref())
+            }
         };
-        let mut merged: Vec<Entry> = state.latest.iter().filter(|e| !replaced(e)).cloned().collect();
+        let mut merged: Vec<Entry> = state
+            .latest
+            .iter()
+            .filter(|e| !replaced(e))
+            .cloned()
+            .collect();
         merged.extend(fresh.iter().cloned());
-        let (mut hub, mut machines): (Vec<Entry>, Vec<Entry>) = merged.into_iter().partition(|e| e.check.scope == "hub");
+        let (mut hub, mut machines): (Vec<Entry>, Vec<Entry>) =
+            merged.into_iter().partition(|e| e.check.scope == "hub");
         machines.sort_by(|a, b| a.check.machine_id.cmp(&b.check.machine_id));
         hub.append(&mut machines);
         state.latest = hub;
-        self.emit_changes(&before, &fresh, state.checked_at.is_none()).await;
+        self.emit_changes(&before, &fresh, state.checked_at.is_none())
+            .await;
         state.checked_at = Some(iso(self.now_ms()));
     }
 
@@ -295,7 +387,8 @@ impl Doctor {
             let mut out = Vec::new();
             // At most 8 machines at once, as the TS run does.
             for chunk in machines.chunks(8) {
-                for entries in futures_join_all(chunk.iter().map(|m| self.machine_checks(m))).await {
+                for entries in futures_join_all(chunk.iter().map(|m| self.machine_checks(m))).await
+                {
                     out.extend(entries);
                 }
             }
@@ -323,13 +416,20 @@ impl Doctor {
     pub async fn run_if_due(&self) {
         let mut state = self.state.lock().await;
         let now = self.now_ms();
-        if state.last_run_ms.is_none_or(|last| now - last >= DOCTOR_EVERY_MS) {
+        if state
+            .last_run_ms
+            .is_none_or(|last| now - last >= DOCTOR_EVERY_MS)
+        {
             self.run_all(&mut state).await;
         }
     }
 
     fn refused(message: String, fix: Option<String>) -> DoctorRefused {
-        DoctorRefused { code: "invalid", message, fix }
+        DoctorRefused {
+            code: "invalid",
+            message,
+            fix,
+        }
     }
 
     /// Re-applies the fleetd instance (launch args with every required deny) and turns auto-resume off.
@@ -344,24 +444,47 @@ impl Doctor {
             json!({ "operation": "upsert", "instanceId": checks::FLEETD_INSTANCE, "instance": instance })
         });
         let reapplied = mutation.is_some();
-        self.deps.settings.update(machine_id, json!({ "autoResumeLimitedThreads": false }), mutation).await?;
+        self.deps
+            .settings
+            .update(
+                machine_id,
+                json!({ "autoResumeLimitedThreads": false }),
+                mutation,
+            )
+            .await?;
         Ok(if reapplied {
-            format!("re-applied the fleetd instance config on {machine_id} (launch args and auto-resume off)")
+            format!(
+                "re-applied the fleetd instance config on {machine_id} (launch args and auto-resume off)"
+            )
         } else {
             format!("turned off auto-resume of usage-limited threads on {machine_id}")
         })
     }
 
-    async fn run_action(&self, machine_id: &str, action: AutoAction) -> Result<String, DoctorRefused> {
+    async fn run_action(
+        &self,
+        machine_id: &str,
+        action: AutoAction,
+    ) -> Result<String, DoctorRefused> {
         if action == AutoAction::ReapplyInstance {
-            return self
-                .reapply(machine_id)
-                .await
-                .map_err(|e| Self::refused(format!("Re-applying the config on {machine_id} failed: {e}"), None));
+            return self.reapply(machine_id).await.map_err(|e| {
+                Self::refused(
+                    format!("Re-applying the config on {machine_id} failed: {e}"),
+                    None,
+                )
+            });
         }
-        let outcome = self.deps.fleet.node_action(machine_id, action.node_action()).await.map_err(|e| Self::refused(e, None))?;
+        let outcome = self
+            .deps
+            .fleet
+            .node_action(machine_id, action.node_action())
+            .await
+            .map_err(|e| Self::refused(e, None))?;
         if !outcome.ok {
-            return Err(Self::refused(format!("{machine_id}'s node could not do it: {}", outcome.message), None));
+            return Err(Self::refused(
+                format!("{machine_id}'s node could not do it: {}", outcome.message),
+                None,
+            ));
         }
         // The node sends the new session or reports T3 up; wait briefly for the hub's T3 connection before re-checking.
         let _ = tokio::time::timeout(RECONNECT_WAIT, self.deps.fleet.await_live(machine_id)).await;
@@ -373,7 +496,10 @@ impl Doctor {
         let mut state = self.state.lock().await;
         let machine_id = machine_of(check_id).map(str::to_string);
         let machines = self.deps.fleet.machines().await;
-        let machine = machines.iter().find(|m| Some(&m.machine_id) == machine_id.as_ref()).cloned();
+        let machine = machines
+            .iter()
+            .find(|m| Some(&m.machine_id) == machine_id.as_ref())
+            .cloned();
         let list_fix = || Some("Call doctor_list for the current checks.".to_string());
         if let (Some(id), None) = (&machine_id, &machine) {
             return Err(Self::refused(format!("No machine {id}."), list_fix()));
@@ -384,26 +510,54 @@ impl Doctor {
             Some(m) => self.machine_checks(m).await,
         };
         let Some(entry) = before.into_iter().find(|e| e.check.id == check_id) else {
-            return Err(Self::refused(format!("No doctor check {check_id}."), list_fix()));
+            return Err(Self::refused(
+                format!("No doctor check {check_id}."),
+                list_fix(),
+            ));
         };
-        let (Some(fix), Some(action), Some(machine_id), Some(machine)) = (&entry.check.fix, entry.action, &machine_id, &machine) else {
+        let (Some(fix), Some(action), Some(machine_id), Some(machine)) =
+            (&entry.check.fix, entry.action, &machine_id, &machine)
+        else {
             return Err(match &entry.check.fix {
-                None => Self::refused(format!("{check_id} has nothing to fix ({}).", entry.check.status.as_str()), None),
-                Some(f) => Self::refused(format!("{check_id} needs a person: {}.", f.label), f.command.clone()),
+                None => Self::refused(
+                    format!(
+                        "{check_id} has nothing to fix ({}).",
+                        entry.check.status.as_str()
+                    ),
+                    None,
+                ),
+                Some(f) => Self::refused(
+                    format!("{check_id} needs a person: {}.", f.label),
+                    f.command.clone(),
+                ),
             });
         };
         let _ = fix;
         let ran = self.run_action(machine_id, action).await?;
-        let now = self.deps.fleet.machines().await.into_iter().find(|m| &m.machine_id == machine_id).unwrap_or_else(|| machine.clone());
+        let now = self
+            .deps
+            .fleet
+            .machines()
+            .await
+            .into_iter()
+            .find(|m| &m.machine_id == machine_id)
+            .unwrap_or_else(|| machine.clone());
         let after = self.machine_checks(&now).await;
-        let check = after.iter().find(|e| e.check.id == check_id).map(|e| e.check.clone()).unwrap_or(entry.check);
-        self.record(&mut state, after, Some(std::slice::from_ref(machine_id))).await;
+        let check = after
+            .iter()
+            .find(|e| e.check.id == check_id)
+            .map(|e| e.check.clone())
+            .unwrap_or(entry.check);
+        self.record(&mut state, after, Some(std::slice::from_ref(machine_id)))
+            .await;
         Ok((ran, check))
     }
 }
 
 /// Runs the futures concurrently and returns their outputs in order.
-async fn futures_join_all<F: std::future::Future>(futures: impl Iterator<Item = F>) -> Vec<F::Output> {
+async fn futures_join_all<F: std::future::Future>(
+    futures: impl Iterator<Item = F>,
+) -> Vec<F::Output> {
     let mut set = Vec::new();
     for f in futures {
         set.push(Box::pin(f));
@@ -421,7 +575,11 @@ async fn futures_join_all<F: std::future::Future>(futures: impl Iterator<Item = 
                 }
             }
         }
-        if done { std::task::Poll::Ready(()) } else { std::task::Poll::Pending }
+        if done {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
     })
     .await;
     for v in pending {
@@ -435,7 +593,9 @@ fn current_uid() -> u32 {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        std::fs::metadata(crate::hub::usage::probes::user_home()).map(|m| m.uid()).unwrap_or(0)
+        std::fs::metadata(crate::hub::usage::probes::user_home())
+            .map(|m| m.uid())
+            .unwrap_or(0)
     }
     #[cfg(not(unix))]
     {

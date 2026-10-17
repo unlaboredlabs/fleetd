@@ -41,6 +41,11 @@ tracing-subscriber = { workspace = true }
 zeroize = { workspace = true }
 # hub framework
 axum = { workspace = true }
+# usage, doctor, retro, approvals
+regex = { workspace = true }
+chrono-tz = { workspace = true }
+rusqlite = { workspace = true }
+url = { workspace = true }
 
 # attention, wakes
 chrono-tz = { workspace = true, features = ["case-insensitive"] }
