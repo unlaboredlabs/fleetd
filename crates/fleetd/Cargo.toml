@@ -53,6 +53,10 @@ aes-gcm = { workspace = true }
 serde_yaml_ng = { workspace = true }
 unicode-normalization = { workspace = true }
 
+# hub: leads, intake, playbooks
+serde_path_to_error = { workspace = true }
+sha1 = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3"

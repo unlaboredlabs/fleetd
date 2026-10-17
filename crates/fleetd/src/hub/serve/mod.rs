@@ -310,6 +310,30 @@ pub fn build_on(
         leases: leases.clone(),
         policies: policies.clone(),
     });
+    let leads = crate::hub::leads::Area::new(
+        crate::hub::leads::Ctx::new(db.clone(), store.clone(), events.clone(), clock.clone()),
+        crate::hub::leads::AreaOptions {
+            home: &config.home,
+            leads: Default::default(),
+            router_model: config.router_model.clone(),
+            env: std::env::vars().collect(),
+        },
+    )?;
+    crate::hub::leads::wiring::wire_area(
+        &leads,
+        crate::hub::leads::wiring::Links {
+            executors: &executors,
+            queue: &queue,
+            commands: &node_commands,
+            asks: &asks,
+            decisions: &decisions,
+            inbox: &inbox,
+            lead_calls: &lead_calls,
+            digests: &digests,
+            claims: &checks.claims,
+            estimates: &checks.estimates,
+        },
+    );
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -348,6 +372,7 @@ pub fn build_on(
         leases,
         policies,
         tasks,
+        leads,
     });
     checks.ports.bind(&hub);
     Ok(hub)
@@ -389,6 +414,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
             .run(hub.events.clone(), hub.shutdown.clone()),
     ));
     loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
+    loops.extend(hub.leads.run());
     loops
 }
 
