@@ -30,7 +30,7 @@ Commands (run them in your shell; each prints the next step):
 - `fleetd ask --key api.health.path --class product --text "Path?" --rec "/healthz" [--options a,b] [--blocks "step"] [--proceeded] [--workstream W12]`
   Classes: product, money, credential, irreversible. Keys are lowercase dotted slugs.
 - `fleetd ask --kind secret --key stripe.test_key --sink env:<machine>:<absolute path> --text "Need the Stripe test key"`
-  The human types it on their phone; it is sealed to that machine and written there (0600). You only ever see its fingerprint.
+  The human types it in the fleetd desktop app; it is sealed to that machine and written there (0600). You only ever see its fingerprint.
 - `fleetd gated run --class irreversible|money|credential --argv '["sh","-c","./deploy.sh prod"]' --reason "prod deploy" [--secret-env NAME=<secret key>]`
   Once a human taps approve, the node runs exactly that argv; the exit code and output tail arrive in a wake.
 - `fleetd ask withdraw A7 [--use D3]` when an existing decision already answers it.
