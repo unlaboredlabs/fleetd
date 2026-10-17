@@ -10,6 +10,9 @@ pub use lead_calls::{LeadCallHandler, LeadCallRefused, LeadCaller, LeadCalls};
 pub use server::NodeLinkServer;
 
 /// The node WebSocket route (`GET /node/link`): runs one node link until the socket ends.
-pub async fn handle(hub: std::sync::Arc<crate::hub::api::Hub>, socket: axum::extract::ws::WebSocket) {
+pub async fn handle(
+    hub: std::sync::Arc<crate::hub::api::Hub>,
+    socket: axum::extract::ws::WebSocket,
+) {
     hub.link.handle(socket).await;
 }

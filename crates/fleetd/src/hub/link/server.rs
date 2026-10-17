@@ -172,7 +172,10 @@ impl NodeLinkServer {
     pub fn start(self: &Arc<Self>) {
         match self.deps.store.machines_list() {
             Ok(machines) => {
-                for m in machines.iter().filter(|m| m.status != MachineStatus::Offline) {
+                for m in machines
+                    .iter()
+                    .filter(|m| m.status != MachineStatus::Offline)
+                {
                     self.touch(&m.machine_id);
                 }
             }
@@ -741,5 +744,8 @@ pub fn hub_id() -> String {
         .or_else(|_| std::fs::read_to_string("/etc/hostname"))
         .map(|h| h.trim().to_owned())
         .unwrap_or_default();
-    format!("fleetd-{}", if host.is_empty() { "localhost" } else { &host })
+    format!(
+        "fleetd-{}",
+        if host.is_empty() { "localhost" } else { &host }
+    )
 }

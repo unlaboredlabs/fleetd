@@ -11,8 +11,8 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::mcp::{
-    ActionsListInput, ErrorCode, FleetdStatusInput, ProjectGetInput, ProjectsListInput, TailKind, ThreadInterruptInput,
-    ThreadLaunchInput, ThreadSendInput, ThreadTailInput,
+    ActionsListInput, ErrorCode, FleetdStatusInput, ProjectGetInput, ProjectsListInput, TailKind,
+    ThreadInterruptInput, ThreadLaunchInput, ThreadSendInput, ThreadTailInput,
 };
 use fleetd_contracts::model::{Machine, MachineStatus};
 use serde_json::{Map, Value, json};
@@ -20,8 +20,8 @@ use serde_json::{Map, Value, json};
 use super::thread_view::TailRow;
 use super::{ExecutorError, LaunchInput, LaunchOptions, WriteOutcome};
 use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, any_truncated, cap, can_read, clip, limits, offline, readable, require,
-    unknown_machine, unknown_project, unknown_thread,
+    Caller, Hub, Registry, ToolError, any_truncated, can_read, cap, clip, limits, offline,
+    readable, require, unknown_machine, unknown_project, unknown_thread,
 };
 use crate::hub::store::{iso_ms, now_ms};
 
@@ -39,7 +39,11 @@ pub struct ProjectExtra {
 
 type ProjectHook = Arc<dyn Fn(Arc<Hub>, ProjectRef) -> HookFuture<ProjectExtra> + Send + Sync>;
 type StatusHook = Arc<dyn Fn(Arc<Hub>, Caller) -> HookFuture<Map<String, Value>> + Send + Sync>;
-type LaunchGate = Arc<dyn Fn(Arc<Hub>, MachineId) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> + Send + Sync>;
+type LaunchGate = Arc<
+    dyn Fn(Arc<Hub>, MachineId) -> Pin<Box<dyn Future<Output = Option<String>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Where later areas plug into the M1 tools.
 #[derive(Default)]
@@ -64,8 +68,14 @@ impl ToolHooks {
     }
 }
 
-const ATTENTION_TYPES: [&str; 6] =
-    ["thread.failed", "thread.waiting", "thread.usage_limited", "usage.breaker", "change.needs_rebase", "change.ci_failed"];
+const ATTENTION_TYPES: [&str; 6] = [
+    "thread.failed",
+    "thread.waiting",
+    "thread.usage_limited",
+    "usage.breaker",
+    "change.needs_rebase",
+    "change.ci_failed",
+];
 /// How far back fleetd_status looks for attention events.
 const ATTENTION_LOOKBACK: i64 = 1000;
 
@@ -87,7 +97,13 @@ fn now(hub: &Hub) -> String {
 pub fn from_executor(error: ExecutorError) -> ToolError {
     match error {
         ExecutorError::MachineNotConnected { machine_id } => offline(&machine_id),
-        ExecutorError::ThreadNotFound { machine_id, thread_id } => unknown_thread(&ThreadRef { machine_id, thread_id }),
+        ExecutorError::ThreadNotFound {
+            machine_id,
+            thread_id,
+        } => unknown_thread(&ThreadRef {
+            machine_id,
+            thread_id,
+        }),
         e @ ExecutorError::T3RequestFailed { .. } => {
             if let ExecutorError::T3RequestFailed { cause, .. } = &e {
                 tracing::warn!(cause = %cause, "executor: T3 request failed");
@@ -100,9 +116,16 @@ pub fn from_executor(error: ExecutorError) -> ToolError {
 
 /// A machine's cache is fresh only while its node is online and its executor holds a T3 connection.
 fn freshness(hub: &Hub, machine_id: &MachineId) -> Result<(Machine, bool, String), ToolError> {
-    let machine = hub.store.machine_get(machine_id)?.ok_or_else(|| unknown_machine(machine_id))?;
+    let machine = hub
+        .store
+        .machine_get(machine_id)?
+        .ok_or_else(|| unknown_machine(machine_id))?;
     let live = machine.status == MachineStatus::Online && hub.executors.is_connected(machine_id);
-    let as_of = if live { now(hub) } else { machine.last_seen_at.0.clone() };
+    let as_of = if live {
+        now(hub)
+    } else {
+        machine.last_seen_at.0.clone()
+    };
     Ok((machine, !live, as_of))
 }
 
@@ -122,8 +145,10 @@ fn with_truncated(out: &mut Value, truncated: Option<bool>) {
 
 /// The latest attention events the caller may see, oldest first, scanned forward from a bounded lookback.
 fn attention(hub: &Hub, caller: &Caller, head: i64) -> Result<Vec<Value>, ToolError> {
-    let types: Vec<HubEventType> =
-        ATTENTION_TYPES.iter().filter_map(|t| serde_json::from_value(json!(t)).ok()).collect();
+    let types: Vec<HubEventType> = ATTENTION_TYPES
+        .iter()
+        .filter_map(|t| serde_json::from_value(json!(t)).ok())
+        .collect();
     let mut cursor = (head - ATTENTION_LOOKBACK).max(0);
     let mut latest: Vec<Value> = vec![];
     loop {
@@ -141,10 +166,24 @@ fn attention(hub: &Hub, caller: &Caller, head: i64) -> Result<Vec<Value>, ToolEr
     }
 }
 
-async fn fleetd_status(hub: Arc<Hub>, caller: Caller, _: FleetdStatusInput) -> Result<Value, ToolError> {
+async fn fleetd_status(
+    hub: Arc<Hub>,
+    caller: Caller,
+    _: FleetdStatusInput,
+) -> Result<Value, ToolError> {
     let cursor = hub.events.head();
-    let machines: Vec<Machine> = hub.store.machines_list()?.into_iter().filter(|m| readable(&caller, &m.machine_id)).collect();
-    let mut projects: Vec<_> = hub.store.projects_list(None, None)?.into_iter().filter(|p| readable(&caller, &p.machine_id)).collect();
+    let machines: Vec<Machine> = hub
+        .store
+        .machines_list()?
+        .into_iter()
+        .filter(|m| readable(&caller, &m.machine_id))
+        .collect();
+    let mut projects: Vec<_> = hub
+        .store
+        .projects_list(None, None)?
+        .into_iter()
+        .filter(|p| readable(&caller, &p.machine_id))
+        .collect();
     projects.sort_by(|a, b| b.last_activity_at.cmp(&a.last_activity_at));
     let shown = cap(projects, limits::PROJECTS);
     let mut out = json!({
@@ -164,7 +203,11 @@ async fn fleetd_status(hub: Arc<Hub>, caller: Caller, _: FleetdStatusInput) -> R
     Ok(out)
 }
 
-async fn projects_list(hub: Arc<Hub>, caller: Caller, input: ProjectsListInput) -> Result<Value, ToolError> {
+async fn projects_list(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: ProjectsListInput,
+) -> Result<Value, ToolError> {
     if let Some(machine_id) = &input.machine_id {
         require(&caller, Role::Read, Some(machine_id))?;
     }
@@ -183,11 +226,21 @@ async fn projects_list(hub: Arc<Hub>, caller: Caller, input: ProjectsListInput) 
     Ok(out)
 }
 
-async fn project_get(hub: Arc<Hub>, caller: Caller, input: ProjectGetInput) -> Result<Value, ToolError> {
+async fn project_get(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: ProjectGetInput,
+) -> Result<Value, ToolError> {
     require(&caller, Role::Read, Some(&input.machine_id))?;
     let (_, stale, as_of) = freshness(&hub, &input.machine_id)?;
-    let r = ProjectRef { machine_id: input.machine_id.clone(), project_id: input.project_id.clone() };
-    let project = hub.store.project_get(&r)?.ok_or_else(|| unknown_project(&r))?;
+    let r = ProjectRef {
+        machine_id: input.machine_id.clone(),
+        project_id: input.project_id.clone(),
+    };
+    let project = hub
+        .store
+        .project_get(&r)?
+        .ok_or_else(|| unknown_project(&r))?;
     let hooks: Vec<ProjectHook> = hub.executors.hooks.project.read().unwrap().clone();
     let mut extras = vec![];
     for hook in hooks {
@@ -220,16 +273,29 @@ async fn project_get(hub: Arc<Hub>, caller: Caller, input: ProjectGetInput) -> R
     Ok(out)
 }
 
-async fn thread_tail(hub: Arc<Hub>, caller: Caller, input: ThreadTailInput) -> Result<Value, ToolError> {
+async fn thread_tail(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: ThreadTailInput,
+) -> Result<Value, ToolError> {
     require(&caller, Role::Read, Some(&input.machine_id))?;
     let (_, stale, as_of) = freshness(&hub, &input.machine_id)?;
-    let r = ThreadRef { machine_id: input.machine_id.clone(), thread_id: input.thread_id.clone() };
+    let r = ThreadRef {
+        machine_id: input.machine_id.clone(),
+        thread_id: input.thread_id.clone(),
+    };
     let n = input.n.get().max(0) as usize;
     if stale {
         // The hub caches shell rows only, so offline the tail is the cached latest message.
-        let stored = hub.store.thread_get(&r)?.ok_or_else(|| unknown_thread(&r))?;
+        let stored = hub
+            .store
+            .thread_get(&r)?
+            .ok_or_else(|| unknown_thread(&r))?;
         let thread = stored.thread;
-        let wants_messages = input.kinds.as_ref().is_none_or(|k| k.contains(&TailKind::Message));
+        let wants_messages = input
+            .kinds
+            .as_ref()
+            .is_none_or(|k| k.contains(&TailKind::Message));
         let tail = thread.latest_message_tail.as_str();
         let items = if wants_messages && !tail.is_empty() {
             vec![json!({
@@ -248,9 +314,21 @@ async fn thread_tail(hub: Arc<Hub>, caller: Caller, input: ThreadTailInput) -> R
         }));
     }
     let kinds: Option<Vec<&str>> = input.kinds.as_ref().map(|ks| {
-        ks.iter().map(|k| if *k == TailKind::Message { "message" } else { "action" }).collect()
+        ks.iter()
+            .map(|k| {
+                if *k == TailKind::Message {
+                    "message"
+                } else {
+                    "action"
+                }
+            })
+            .collect()
     });
-    let tail = hub.executors.tail(&r, n, kinds.as_deref()).await.map_err(from_executor)?;
+    let tail = hub
+        .executors
+        .tail(&r, n, kinds.as_deref())
+        .await
+        .map_err(from_executor)?;
     let items = cap(tail.items, n);
     let rows: Vec<Value> = items
         .items
@@ -263,19 +341,33 @@ async fn thread_tail(hub: Arc<Hub>, caller: Caller, input: ThreadTailInput) -> R
         })
         .collect();
     let mut out = json!({ "items": rows, "thread": tail.thread });
-    with_truncated(&mut out, any_truncated(&[items.truncated, tail.truncated.then_some(true)]));
+    with_truncated(
+        &mut out,
+        any_truncated(&[items.truncated, tail.truncated.then_some(true)]),
+    );
     Ok(out)
 }
 
-async fn actions_list(hub: Arc<Hub>, caller: Caller, input: ActionsListInput) -> Result<Value, ToolError> {
+async fn actions_list(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: ActionsListInput,
+) -> Result<Value, ToolError> {
     require(&caller, Role::Read, Some(&input.machine_id))?;
     let (_, stale, _) = freshness(&hub, &input.machine_id)?;
     if stale {
         return Err(offline(&input.machine_id));
     }
-    let r = ThreadRef { machine_id: input.machine_id.clone(), thread_id: input.thread_id.clone() };
+    let r = ThreadRef {
+        machine_id: input.machine_id.clone(),
+        thread_id: input.thread_id.clone(),
+    };
     let limit = input.limit.get().max(0) as usize;
-    let actions = hub.executors.actions(&r, limit, input.failed_only == Some(true)).await.map_err(from_executor)?;
+    let actions = hub
+        .executors
+        .actions(&r, limit, input.failed_only == Some(true))
+        .await
+        .map_err(from_executor)?;
     let shown = cap(actions, limit);
     let mut out = json!({ "actions": shown.items });
     with_truncated(&mut out, shown.truncated);
@@ -283,13 +375,24 @@ async fn actions_list(hub: Arc<Hub>, caller: Caller, input: ActionsListInput) ->
 }
 
 fn require_connected(hub: &Hub, machine_id: &MachineId) -> Result<(), ToolError> {
-    if hub.executors.is_connected(machine_id) { Ok(()) } else { Err(offline(machine_id)) }
+    if hub.executors.is_connected(machine_id) {
+        Ok(())
+    } else {
+        Err(offline(machine_id))
+    }
 }
 
-async fn thread_launch(hub: Arc<Hub>, caller: Caller, input: ThreadLaunchInput) -> Result<Value, ToolError> {
+async fn thread_launch(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: ThreadLaunchInput,
+) -> Result<Value, ToolError> {
     require(&caller, Role::Operate, Some(&input.machine_id))?;
     require_connected(&hub, &input.machine_id)?;
-    let r = ProjectRef { machine_id: input.machine_id.clone(), project_id: input.project_id.clone() };
+    let r = ProjectRef {
+        machine_id: input.machine_id.clone(),
+        project_id: input.project_id.clone(),
+    };
     if hub.store.project_get(&r)?.is_none() {
         return Err(unknown_project(&r));
     }
@@ -313,16 +416,27 @@ async fn thread_launch(hub: Arc<Hub>, caller: Caller, input: ThreadLaunchInput) 
         title: input.title.clone(),
         client_request_id: input.client_request_id.as_str().to_owned(),
     };
-    let thread_id = hub.executors.launch(&input.machine_id, &launch, LaunchOptions::default()).await.map_err(from_executor)?;
+    let thread_id = hub
+        .executors
+        .launch(&input.machine_id, &launch, LaunchOptions::default())
+        .await
+        .map_err(from_executor)?;
     Ok(json!({
         "threadId": thread_id,
         "next": format!("Call events_wait with cursor {cursor} and machineId {} to wait for thread.completed.", input.machine_id),
     }))
 }
 
-async fn thread_send(hub: Arc<Hub>, caller: Caller, input: ThreadSendInput) -> Result<Value, ToolError> {
+async fn thread_send(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: ThreadSendInput,
+) -> Result<Value, ToolError> {
     require(&caller, Role::Operate, Some(&input.machine_id))?;
-    let r = ThreadRef { machine_id: input.machine_id.clone(), thread_id: input.thread_id.clone() };
+    let r = ThreadRef {
+        machine_id: input.machine_id.clone(),
+        thread_id: input.thread_id.clone(),
+    };
     // A write that may wait in the queue needs a target the hub has seen, since T3 can't vouch for it offline.
     if hub.store.machine_get(&r.machine_id)?.is_none() {
         return Err(unknown_machine(&r.machine_id));
@@ -338,7 +452,11 @@ async fn thread_send(hub: Arc<Hub>, caller: Caller, input: ThreadSendInput) -> R
             .executors
             .send(&r, message, request_id)
             .await
-            .map(|s| WriteOutcome { run_id: s.run_id, queued: s.queued, queued_until: None }),
+            .map(|s| WriteOutcome {
+                run_id: s.run_id,
+                queued: s.queued,
+                queued_until: None,
+            }),
     }
     .map_err(from_executor)?;
     // As TS: a message queued behind a run T3 is still starting also reads "offline … until undefined".
@@ -361,10 +479,20 @@ async fn thread_send(hub: Arc<Hub>, caller: Caller, input: ThreadSendInput) -> R
     Ok(out)
 }
 
-async fn thread_interrupt(hub: Arc<Hub>, caller: Caller, input: ThreadInterruptInput) -> Result<Value, ToolError> {
+async fn thread_interrupt(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: ThreadInterruptInput,
+) -> Result<Value, ToolError> {
     require(&caller, Role::Operate, Some(&input.machine_id))?;
     require_connected(&hub, &input.machine_id)?;
-    let r = ThreadRef { machine_id: input.machine_id.clone(), thread_id: input.thread_id.clone() };
-    hub.executors.interrupt(&r, input.client_request_id.as_str()).await.map_err(from_executor)?;
+    let r = ThreadRef {
+        machine_id: input.machine_id.clone(),
+        thread_id: input.thread_id.clone(),
+    };
+    hub.executors
+        .interrupt(&r, input.client_request_id.as_str())
+        .await
+        .map_err(from_executor)?;
     Ok(json!({ "ok": true }))
 }
