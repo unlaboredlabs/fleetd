@@ -112,6 +112,7 @@ export const reviewPrompt = (change: ChangeRef, role: ReviewRole): string => {
     "",
     `Rules for tier ${change.tier}:`,
     `- Blocking means the change is wrong, unsafe, or fails the done-when it serves (${change.serves}). Style, naming, polish and nice-to-haves are non-blocking.`,
+    `- It serves ${change.serves} only: the other done-when checks are other PRs' work, never a finding here.`,
     "- One round: report everything you find now. A verdict with 0 blocking ends review for this patch.",
     "- Do not change, commit or push anything.",
     "Finish with exactly one command, filled in:",

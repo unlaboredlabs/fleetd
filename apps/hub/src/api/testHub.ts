@@ -46,6 +46,11 @@ import * as Receipts from "../receipts/Receipts.ts";
 import * as JudgeHook from "../valuebar/JudgeHook.ts";
 import * as PrHeads from "../valuebar/PrHeads.ts";
 import * as ValueBar from "../valuebar/ValueBar.ts";
+import { NodeCommands } from "../checks/NodeCommands.ts";
+import * as ReviewGate from "../train/ReviewGate.ts";
+import * as ChangeRecords from "../train/ChangeRecords.ts";
+import * as Train from "../train/Train.ts";
+import * as TrainGitHub from "../train/TrainGitHub.ts";
 
 export const AT = "2026-10-17T10:00:00.000Z";
 
@@ -171,7 +176,21 @@ export const makeTestHub = () => {
     Layer.provide(Layer.succeed(IntakeRouter, IntakeRouter.of({ route: () => Effect.succeed({ why: "no router in tests", runs: [] }) }))),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake).pipe(
+  // The merge train over the kit's records, never stepped on its own; GitHub and the nodes know of no PR.
+  const layerTrain = Train.layer({ autoRun: false }).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        ReviewGate.layerTierS,
+        TrainGitHub.layer(() => Effect.succeed({ exitCode: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" })),
+        Layer.succeed(
+          NodeCommands,
+          NodeCommands.of({ run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }), attach: () => Effect.void, resolve: () => Effect.void }),
+        ),
+      ),
+    ),
+  );
+
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),
@@ -189,7 +208,7 @@ export const makeTestHub = () => {
     Layer.provideMerge(HubDb.layerMemory),
   );
 
-  type Seeded = HubStore.HubStore | EventLog.EventLog | Auth.Auth | Asks | TaskRecords.TaskRecords;
+  type Seeded = HubStore.HubStore | EventLog.EventLog | Auth.Auth | Asks | TaskRecords.TaskRecords | ChangeRecords.ChangeRecords;
   /** Set once the hub's layer is built, so seeding runs against the same database the server reads. */
   let context: Context.Context<Seeded> | undefined;
   const run = <A>(effect: Effect.Effect<A, unknown, Seeded>) => {
@@ -228,6 +247,13 @@ export const makeTestHub = () => {
     append: (event: Omit<HubEvent, "seq">) => run(Effect.flatMap(EventLog.EventLog, (e) => e.append(event))),
     /** A task record as Tasks would store it, without running anything. */
     addTask: (task: Omit<Task, "taskId">) => run(Effect.flatMap(TaskRecords.TaskRecords, (r) => r.create(task))),
+    /** A repo's merge train for a project, as its first enqueue makes it. */
+    addTrain: (repo: string, machineId: string, projectId: string) =>
+      run(
+        Effect.flatMap(ChangeRecords.ChangeRecords, (r) =>
+          r.ensureTrain(repo, { machineId: machineId as MachineId, projectId: projectId as ProjectId }, Date.parse(AT)),
+        ),
+      ),
     /** `fleetd ask` from the lead of a project: a product decide with a recommendation. */
     fileAsk: (machineId: string, projectId: string, key: string, recommendation: string) =>
       run(

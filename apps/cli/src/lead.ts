@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import {
+  type Change,
   type Claim,
   type Decision,
   LeadCall,
@@ -48,11 +49,15 @@ export const LEAD_USAGE = `  brief create --workstream <W> (--json '<Brief>' | -
              it done (exit 1 when a check did not pass)
   review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
              the last step of a review task
+  change enqueue --pr <url> [--task <T>] [--workstream <W>] [--serves <s>] [--tier S|M|L]
+             put a PR on its repo's merge train (a write task's PR goes on by itself); its body
+             needs a 'Source: <serves>' line. Only the train merges.
+  change status <X>
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
              ~/${NODE_SOCKET_PATH}); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable
 `;
 
-const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task", "claim", "review"]);
+const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task", "claim", "review", "change"]);
 
 export const isLeadCommand = (argv: ReadonlyArray<string>) => argv[0] !== undefined && LEAD_COMMANDS.has(argv[0]);
 
@@ -289,6 +294,25 @@ export const parseLeadArgs = (
       raw = { op: "review_verdict", taskId: v.task, prHeadSha: sha, blocking: Number(v.blocking), nonBlocking: Number(v["non-blocking"]), summary: v.summary };
       break;
     }
+    case "change": {
+      if (sub === "enqueue") {
+        const wrong = only("pr", "task", "workstream", "serves", "tier");
+        if (wrong !== undefined) return wrong;
+        if (rest.length > 1 || (rest.length === 1 && v.pr !== undefined)) return "expected fleetd change enqueue --pr <url>";
+        const prUrl = v.pr ?? rest[0];
+        if (prUrl === undefined) return "--pr is required";
+        raw = definedOnly({ op: "change_enqueue", prUrl, taskId: v.task, workstreamId: v.workstream, serves: v.serves, tier: v.tier });
+        break;
+      }
+      if (sub === "status") {
+        const wrong = only();
+        if (wrong !== undefined) return wrong;
+        if (rest.length !== 1) return "expected fleetd change status <X>";
+        raw = { op: "change_status", changeId: rest[0] };
+        break;
+      }
+      return "expected fleetd change enqueue|status";
+    }
     default:
       return `unknown command '${command ?? ""}'`;
   }
@@ -416,6 +440,20 @@ const taskDetail = (task: Task) => {
   return lines;
 };
 
+/** A Change: where it is on the train, its reviews, and why it is parked if it is. */
+const changeLines = (change: Change) => {
+  const where = change.position === undefined ? "" : `, ${change.position === 0 ? "next in line" : `${change.position} ahead of it`}`;
+  const lines = [
+    `${change.changeId} ${change.repo}#${change.prNumber} ${change.state}${where} (tier ${change.tier}, serves ${change.serves}${change.taskId === undefined ? "" : `, by ${change.taskId}`})`,
+    `  ${change.prUrl} at ${change.headSha.slice(0, 12)}${change.mergedSha === undefined ? "" : `, merged as ${change.mergedSha.slice(0, 12)}`}`,
+  ];
+  if (change.reviews.length > 0) {
+    lines.push(`  reviews: ${change.reviews.map((r) => `${r.taskId} ${r.blocking} blocking at ${r.prHeadSha.slice(0, 12)}`).join(", ")}`);
+  }
+  if (change.lastError !== undefined) lines.push(...quoted(change.lastError));
+  return lines;
+};
+
 /** What happened, then `Next:` with the hub's hint or a default. */
 export const formatResult = (result: LeadCallResult): string => {
   const lines: Array<string> = [];
@@ -524,10 +562,9 @@ export const formatResult = (result: LeadCallResult): string => {
       next = "end with your one-paragraph result and stop.";
       break;
     }
-    // Placeholder lines until `change enqueue` and `change status` land (M7c).
     case "change_enqueue":
     case "change_status":
-      lines.push(`${result.change.changeId} ${result.change.repo}#${result.change.prNumber}: ${result.change.state}${result.change.lastError === undefined ? "" : ` (${result.change.lastError})`}`);
+      lines.push(...changeLines(result.change));
       next = "don't merge it yourself; the train merges and the outcome arrives in a wake.";
       break;
   }
@@ -542,7 +579,7 @@ export interface LeadDeps {
   readonly readFile?: (file: string) => string;
 }
 
-/** `fleetd brief|ask|decide|status|decisions|task|claim|review …`: one call to the hub through the local node. */
+/** `fleetd brief|ask|decide|status|decisions|task|claim|review|change …`: one call to the hub through the local node. */
 export const leadCommand = async (argv: ReadonlyArray<string>, deps: LeadDeps): Promise<CliResult> => {
   const call = parseLeadArgs(argv, deps.readFile);
   if (typeof call === "string") return usage(call);

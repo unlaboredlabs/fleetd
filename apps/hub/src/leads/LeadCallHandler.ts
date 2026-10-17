@@ -1,12 +1,13 @@
-// The hub's answer to lead-side `fleetd` calls (the LeadCallHandler port), over the ledger, leads and tasks services.
+// The hub's answer to lead-side `fleetd` calls (the LeadCallHandler port), over the ledger, leads, tasks and the train.
 // The caller is already attributed to a project by its cwd; every call acts only within that project.
-import type { LeadCallResult, ProjectRef, WorkstreamId } from "@fleetd/contracts";
+import type { Change, LeadCallResult, ProjectRef, WorkstreamId } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
 import { Claims } from "../checks/Claims.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type LeadCallHandler, LeadCallRefused } from "../link/LeadCalls.ts";
 import { Tasks } from "../tasks/Tasks.ts";
+import { Train } from "../train/Train.ts";
 import { ValueBar } from "../valuebar/ValueBar.ts";
 import * as Workstreams from "./Workstreams.ts";
 
@@ -20,6 +21,22 @@ const result = (r: LeadCallResult) => r;
 
 const sameProject = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
+/** What the lead does next about a Change: almost always nothing, since the train and reviews move it on. */
+const changeNext = (change: Change): string => {
+  switch (change.state) {
+    case "merged":
+      return "nothing; it is merged.";
+    case "needs_rebase":
+    case "ci_failed":
+      return `nothing unless its author is gone: the train told ${change.taskId ?? "you"} what to fix, and it retries the new head by itself.`;
+    case "refused":
+    case "abandoned":
+      return "fix what it says and enqueue the PR again, or drop it.";
+    default:
+      return "don't merge it yourself or post the fleetd/train status; the train merges it and the outcome arrives in a wake.";
+  }
+};
+
 export const make = Effect.gen(function* () {
   const workstreams = yield* Workstreams.Workstreams;
   const asks = yield* Asks;
@@ -27,6 +44,7 @@ export const make = Effect.gen(function* () {
   const tasks = yield* Tasks;
   const claims = yield* Claims;
   const valueBar = yield* ValueBar;
+  const train = yield* Train;
 
   /** A workstream named in a call must be one of the caller's own. */
   const ownWorkstream = (ref: ProjectRef, workstreamId: WorkstreamId) =>
@@ -59,14 +77,18 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const ref = caller.projectRef;
       switch (call.op) {
-        // Answered once the merge train is wired here (M7c).
-        case "change_enqueue":
-        case "change_status":
-          return yield* refused({
-            code: "forbidden",
-            message: `fleetd ${call.op.replace("_", " ")} is not available on this hub yet.`,
-            fix: "Carry on without it and mention it in your next status line.",
-          });
+        case "change_enqueue": {
+          const { op: _, ...input } = call;
+          const change = yield* train.enqueue(caller, input);
+          return result({ op: "change_enqueue", change, next: changeNext(change) });
+        }
+        case "change_status": {
+          const change = yield* train.get(call.changeId);
+          if (change === undefined || !sameProject(change.projectRef, ref)) {
+            return yield* refused({ code: "not_found", message: `There is no change ${call.changeId} in your project.`, fix: "Use a change id (X<n>) from your digest." });
+          }
+          return result({ op: "change_status", change, next: changeNext(change) });
+        }
         case "brief_create":
           return yield* workstreams.briefCreate(ref, {
             workstreamId: call.workstreamId,

@@ -1,5 +1,5 @@
 // Changes, trains and reported bypasses in the hub database. Repos are keyed lowercased.
-import { Change, type ChangeId, type ChangeState, type ProjectRef } from "@fleetd/contracts";
+import { Change, type ChangeId, type ChangeState, type ProjectRef, type TrainState } from "@fleetd/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -162,3 +162,16 @@ const make = Effect.gen(function* () {
 
 /** Needs HubDb. */
 export const layer = Layer.effect(ChangeRecords, make);
+
+/** A repo's train as the API shows it: frozen, the Change at its head, and the queue in train order. */
+export const trainState = (records: ChangeRecords["Service"], rawRepo: string) =>
+  Effect.gen(function* () {
+    const repo = rawRepo.toLowerCase();
+    const [head] = yield* records.inTrain(repo, HEAD_STATES);
+    return {
+      repo,
+      frozen: (yield* records.train(repo))?.frozen ?? false,
+      ...(head === undefined ? {} : { head: head.changeId }),
+      queue: (yield* records.inTrain(repo, QUEUED_STATES)).map((c) => c.changeId),
+    } satisfies TrainState;
+  });

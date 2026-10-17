@@ -78,6 +78,11 @@ export const renderTaskPrompt = (input: PromptInput): string => {
     rules.push(
       `- You work in your own worktree on branch ${input.branch ?? "your task branch"}. Commit to your branch; do not merge; do not push to ${base}.`,
     );
+    // M7: only the merge train merges, and it takes a PR only with the Source: line it checks.
+    const branch = input.branch ?? "<your branch>";
+    rules.push(
+      `- If the repo's origin is on GitHub: when your commits are done, \`git push -u origin ${branch}\` and open a pull request with \`gh pr create --base ${input.baseBranch ?? "<default branch>"} --head ${branch}\` whose body has the line \`Source: ${task.serves ?? "<what this serves>"}\`, and put its URL in your result. Never merge it and never post a \`fleetd/train\` commit status: fleetd's merge train merges it. Without a GitHub origin, just commit.`,
+    );
   } else {
     rules.push("- This is a read-only task: do not change, commit or push any files.");
   }

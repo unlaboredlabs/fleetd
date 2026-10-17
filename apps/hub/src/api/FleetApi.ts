@@ -6,6 +6,7 @@ import {
   type Batch,
   type Claim,
   type Decision,
+  type DecisionKey,
   type DecisionScope,
   type HubEvent,
   type HubEventType,
@@ -45,6 +46,9 @@ import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Tasks from "../tasks/Tasks.ts";
 import * as Usage from "../usage/Usage.ts";
 import { UsageSource } from "../usage/UsageSource.ts";
+import { ChangeRecords } from "../train/ChangeRecords.ts";
+import { freezeKey } from "../train/rules.ts";
+import { Train } from "../train/Train.ts";
 
 /** A tool failure in the spec's `{ code, message, fix }` shape. Every one says what to do next. */
 export class ToolError extends Schema.TaggedError<ToolError>()("ToolError", {
@@ -90,6 +94,9 @@ export const IMPLEMENTED_TOOLS = [
   "usage_resume",
   "claims_list",
   "incidents_list",
+  "changes_list",
+  "train_get",
+  "train_freeze",
 ] as const satisfies ReadonlyArray<McpToolName>;
 export type ImplementedTool = (typeof IMPLEMENTED_TOOLS)[number];
 
@@ -107,8 +114,17 @@ export const LIMITS = {
   /** Threads read to fill `outcomeThreads` once task threads are left out. */
   outcomeThreadScan: 200,
   workstreamClaims: 20,
+  trains: 10,
 } as const;
-const ATTENTION_TYPES: ReadonlyArray<HubEventType> = ["thread.failed", "thread.waiting", "thread.usage_limited", "usage.breaker"];
+const ATTENTION_TYPES: ReadonlyArray<HubEventType> = [
+  "thread.failed",
+  "thread.waiting",
+  "thread.usage_limited",
+  "usage.breaker",
+  // The train sent these back to their authors; they need a look if an author is gone.
+  "change.needs_rebase",
+  "change.ci_failed",
+];
 /** How far back fleetd_status looks for attention events. */
 const ATTENTION_LOOKBACK = 1000;
 
@@ -183,6 +199,13 @@ const refusal = (error: { readonly code: ToolError["code"]; readonly message: st
 const unknownTask = (taskId: string): ToolError =>
   new ToolError({ code: "not_found", message: `No task ${taskId}.`, fix: "Call tasks_list to see tasks." });
 
+const unknownTrain = (repo: string): ToolError =>
+  new ToolError({
+    code: "not_found",
+    message: `No merge train for ${repo}; a repo gets one when its first PR is enqueued.`,
+    fix: `To hold it before then, record the decision ${freezeKey(repo)} = true with decisions_record at its project's scope.`,
+  });
+
 const unknownWorkstream = (workstreamId: string): ToolError =>
   new ToolError({ code: "not_found", message: `No workstream ${workstreamId}.`, fix: "Call workstream_list to see workstreams." });
 
@@ -209,6 +232,8 @@ const make = Effect.gen(function* () {
   const incidents = yield* Incidents.Incidents;
   const usage = yield* Usage.Usage;
   const usageSource = yield* UsageSource;
+  const train = yield* Train;
+  const changeRecords = yield* ChangeRecords;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
 
@@ -333,15 +358,18 @@ const make = Effect.gen(function* () {
       const lead = yield* leads.get(input);
       const open = cap(yield* workstreams.list({ ref: input, open: true, limit: LIMITS.outcomeWorkstreams + 1 }), LIMITS.outcomeWorkstreams);
       const recent = cap(yield* tasks.list({ ref: input, limit: LIMITS.outcomeTasks + 1 }), LIMITS.outcomeTasks);
+      const ownTrains = (yield* changeRecords.trains()).filter((t) => t.projectRef.machineId === input.machineId && t.projectRef.projectId === input.projectId);
+      const trains = yield* Effect.forEach(ownTrains.slice(0, LIMITS.trains), (t) => train.state(t.repo));
       return {
         project,
         threads: threads.items.map((t) => markStale(t, fresh)),
         ...(lead === undefined ? {} : { lead }),
         ...(open.items.length === 0 ? {} : { workstreams: open.items }),
         ...(recent.items.length === 0 ? {} : { taskCounts: yield* taskRecords.counts(input), tasks: recent.items }),
+        ...(trains.length === 0 ? {} : { trains }),
         stale: fresh.stale,
         asOf: fresh.asOf,
-        ...withTruncated(threads.truncated ?? open.truncated ?? recent.truncated),
+        ...withTruncated(threads.truncated ?? open.truncated ?? recent.truncated ?? (ownTrains.length > LIMITS.trains ? true : undefined)),
         next: fresh.stale
           ? `Cached as of ${fresh.asOf}: ${input.machineId} is offline.`
           : "Call thread_tail for a thread's latest messages and actions.",
@@ -628,6 +656,65 @@ const make = Effect.gen(function* () {
         incidents: shown.items,
         ...withTruncated(shown.truncated),
         ...(shown.truncated ? { next: "Narrow the list with projectRef, workstreamId or class." } : {}),
+      };
+    }),
+
+    changes_list: Effect.fnUntraced(function* (caller, input) {
+      if (input.projectRef !== undefined) yield* require(caller, "read", input.projectRef.machineId);
+      const scoped = input.projectRef !== undefined;
+      const all = (yield* train.list({
+        ...(input.projectRef === undefined ? {} : { projectRef: input.projectRef }),
+        ...(input.repo === undefined ? {} : { repo: input.repo }),
+        ...(input.state === undefined ? {} : { state: input.state }),
+        limit: scoped ? input.limit + 1 : 1000,
+      })).filter((c) => auth.allows(caller, "read", c.projectRef.machineId));
+      const shown = cap(all, input.limit);
+      return {
+        changes: shown.items,
+        ...withTruncated(shown.truncated),
+        next: shown.truncated ? "Narrow the list with projectRef, repo or state." : "train_get shows a repo's train; only the train merges.",
+      };
+    }),
+
+    train_get: Effect.fnUntraced(function* (caller, input) {
+      const row = yield* changeRecords.train(input.repo);
+      if (row === undefined || !auth.allows(caller, "read", row.projectRef.machineId)) return yield* unknownTrain(input.repo);
+      const state = yield* train.state(input.repo);
+      return {
+        train: state,
+        next: state.frozen
+          ? `Frozen by ${freezeKey(input.repo)}; train_freeze with frozen false resumes it.`
+          : "changes_list with this repo shows each Change; events_wait for pr.merged.",
+      };
+    }),
+
+    train_freeze: Effect.fnUntraced(function* (caller, input) {
+      const row = yield* changeRecords.train(input.repo);
+      if (row === undefined || !auth.allows(caller, "read", row.projectRef.machineId)) return yield* unknownTrain(input.repo);
+      yield* require(caller, "operate", row.projectRef.machineId);
+      const key = freezeKey(input.repo) as DecisionKey;
+      const chain = { projectRef: row.projectRef };
+      if (input.frozen) {
+        yield* decisions.record(
+          { key, scope: { kind: "project", projectRef: row.projectRef }, value: "true", ...(input.reason === undefined ? {} : { why: input.reason }), projectRef: row.projectRef },
+          actorOf(caller),
+        );
+      } else {
+        // Every active freeze along the chain goes: a project one may hide a global one behind it.
+        for (let active = yield* decisions.resolve(key, chain); active !== undefined; active = yield* decisions.resolve(key, chain)) {
+          if (active.scope.kind === "global" && !allowsEverywhere(caller, "operate")) {
+            return yield* new ToolError({
+              code: "forbidden",
+              message: `${active.decisionId} freezes ${input.repo} globally; this key has no operate grant on every machine.`,
+              fix: "Use a key with an operate grant on * machines.",
+            });
+          }
+          yield* decisions.retire(active.decisionId).pipe(Effect.mapError(refusal));
+        }
+      }
+      return {
+        train: { ...(yield* train.state(input.repo)), frozen: input.frozen },
+        next: `The train ${input.frozen ? "holds" : "resumes"} on its next pass (within 15 s) and emits ${input.frozen ? "train.frozen" : "train.resumed"}.`,
       };
     }),
 

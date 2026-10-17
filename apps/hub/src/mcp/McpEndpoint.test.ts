@@ -232,6 +232,34 @@ describe("events_wait", () => {
   });
 });
 
+describe("merge train tools", () => {
+  it("shows trains within the key's grants, freezes and resumes one by its decision, and flags PRs sent back", async () => {
+    const { hub, as } = await fleet();
+    await hub.addTrain("wynn-dev/testbed", "lab-a", "p-lab-a");
+    await hub.addTrain("wynn-dev/other", "lab-b", "p-lab-b");
+    const aOnly = await as("aOnly");
+
+    expect((await call(aOnly, "train_get", { repo: "Wynn-Dev/Testbed" })).body).toMatchObject({ train: { repo: "wynn-dev/testbed", frozen: false, queue: [] } });
+    const hidden = (await call(aOnly, "train_get", { repo: "wynn-dev/other" })).body;
+    expect(hidden).toMatchObject({ code: "not_found", fix: expect.stringContaining("policy.freeze.wynn-dev.other = true") });
+    expect((await call(aOnly, "project_get", { machineId: "lab-a", projectId: "p-lab-a" })).body.trains).toEqual([{ repo: "wynn-dev/testbed", frozen: false, queue: [] }]);
+    expect((await call(aOnly, "changes_list")).body.changes).toEqual([]);
+
+    expect((await call(await as("reader"), "train_freeze", { repo: "wynn-dev/testbed", frozen: true })).body.code).toBe("forbidden");
+    const frozen = (await call(aOnly, "train_freeze", { repo: "wynn-dev/testbed", frozen: true, reason: "release week" })).body;
+    expect(frozen).toMatchObject({ train: { frozen: true }, next: expect.stringContaining("train.frozen") });
+    const found = (await call(aOnly, "decisions_search", { query: "freeze" })).body.decisions;
+    expect(found).toMatchObject([{ key: "policy.freeze.wynn-dev.testbed", value: "true", why: "release week", scope: { kind: "project" } }]);
+    expect((await call(aOnly, "train_freeze", { repo: "wynn-dev/testbed", frozen: false })).body.train.frozen).toBe(false);
+    expect((await call(aOnly, "decisions_search", { query: "freeze" })).body.decisions).toEqual([]);
+
+    for (const type of ["change.needs_rebase", "change.queued"] as const) await hub.append({ at: AT, type, machineId: "lab-a" as MachineId, summary: type });
+    const attention = (await call(aOnly, "fleetd_status")).body.attention.map((e: { type: string }) => e.type);
+    expect(attention).toContain("change.needs_rebase");
+    expect(attention).not.toContain("change.queued");
+  });
+});
+
 describe("webhook subscriptions", () => {
   it("returns the secret once, refuses non-http URLs, and delivers from a subscription made over MCP", async () => {
     const { hub, as } = await fleet();

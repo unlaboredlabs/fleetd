@@ -27,6 +27,9 @@ import * as HubDb from "./store/HubDb.ts";
 import * as HubStore from "./store/HubStore.ts";
 import * as Slots from "./slots/Slots.ts";
 import * as Tasks from "./tasks/Tasks.ts";
+import * as Train from "./train/Train.ts";
+import * as TrainGitHub from "./train/TrainGitHub.ts";
+import * as TrainGate from "./reviews/trainGate.ts";
 import * as PrHeads from "./valuebar/PrHeads.ts";
 import * as ValueBar from "./valuebar/ValueBar.ts";
 import * as Webhooks from "./webhooks/Webhooks.ts";
@@ -84,8 +87,20 @@ export const parseHubArgs = (argv: ReadonlyArray<string>): HubOptions | { readon
 };
 
 /**
- * Node links; lead-side `fleetd` calls they forward are answered over the ledger, leads, tasks and claims. Claims run
- * `cmd` checks on the nodes through the same NodeCommands the links answer.
+ * The merge train with its review gate. The gate spawns reviewers and needs `Train.markReady`, the train needs the
+ * gate, so the train is handed to the gate once built (`layerBindTrain` over `Train.layer` over `layerGate`). The
+ * train runs git on the project's machine through NodeCommands and asks GitHub through the hub machine's `gh`; it
+ * holds a repo while its freeze decision is set and records merges it did not do as `policy_bypass` incidents.
+ */
+const layerTrain = TrainGate.layerBindTrain.pipe(
+  Layer.provideMerge(Train.layer()),
+  Layer.provideMerge(TrainGate.layerGate),
+  Layer.provideMerge(TrainGitHub.layer()),
+);
+
+/**
+ * Node links; lead-side `fleetd` calls they forward are answered over the ledger, leads, tasks, claims and the train.
+ * Claims and the train run commands on the nodes through the same NodeCommands the links answer.
  */
 const layerMachines = Layer.effect(
   NodeLinkServer.NodeLinkServer,
@@ -97,7 +112,7 @@ const layerMachines = Layer.effect(
       commands: yield* NodeCommands.NodeCommands,
     });
   }),
-).pipe(Layer.provideMerge(ChecksLayer.layer()), Layer.provideMerge(NodeCommands.layer));
+).pipe(Layer.provideMerge(layerTrain), Layer.provideMerge(ChecksLayer.layer()), Layer.provideMerge(NodeCommands.layer));
 
 /** The sweep's overdue-wakes check; the wake scheduler does the firing. */
 const layerWakeSweep = Layer.effectDiscard(

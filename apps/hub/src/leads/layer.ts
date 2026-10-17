@@ -9,6 +9,7 @@ import * as LedgerRepo from "../ledger/LedgerRepo.ts";
 import * as Playbooks from "../playbooks/Playbooks.ts";
 import * as Research from "../playbooks/Research.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
+import * as ChangeRecords from "../train/ChangeRecords.ts";
 import * as Usage from "../usage/Usage.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 import * as Leads from "./Leads.ts";
@@ -16,9 +17,9 @@ import * as LeadWakes from "./LeadWakes.ts";
 import * as Workstreams from "./Workstreams.ts";
 
 /**
- * Leads, Workstreams, LeadWakes, TaskRecords, Usage and the ledger's AnswerSink, with the claim records, estimates and
- * incidents the lead digest shows, and the playbooks workstreams pin with their research verdicts. Needs HubDb,
- * HubStore, EventLog, Executors, WriteQueue, Asks and Decisions.
+ * Leads, Workstreams, LeadWakes, TaskRecords, Usage and the ledger's AnswerSink, with the claim records, estimates,
+ * incidents and merge-train Changes the lead digest shows, and the playbooks workstreams pin with their research
+ * verdicts. Needs HubDb, HubStore, EventLog, Executors, WriteQueue, Asks and Decisions.
  */
 export const layer = (options: Leads.LeadsOptions = {}) =>
   Layer.mergeAll(Leads.layer(options), Workstreams.layer, LeadWakes.layerAnswerSink, Research.layer).pipe(
@@ -26,7 +27,7 @@ export const layer = (options: Leads.LeadsOptions = {}) =>
     // M4 usage: parks and paces lead and task threads; LeadWakes, Leads and Tasks consult it.
     Layer.provideMerge(Usage.layer),
     Layer.provideMerge(Layer.merge(Estimates.layer, ClaimRecords.layer)),
-    Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, TaskRecords.layer, Incidents.layer)),
+    Layer.provideMerge(Layer.mergeAll(LeadRecords.layer, TaskRecords.layer, Incidents.layer, ChangeRecords.layer)),
     Layer.provideMerge(Playbooks.layer(options.playbookOverrides === undefined ? {} : { overridesDir: options.playbookOverrides })),
   );
 

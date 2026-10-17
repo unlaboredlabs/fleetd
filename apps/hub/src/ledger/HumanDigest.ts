@@ -17,6 +17,8 @@ export interface DigestInput {
   readonly projectNames: ReadonlyMap<string, string>;
   /** Checks passed and ETAs, as fleetd measured them; absent ones show none. */
   readonly facts?: ReadonlyMap<WorkstreamId, WorkstreamFacts>;
+  /** Lines from `humanTrainLines`: merges since the last digest and the state of each train. */
+  readonly train?: ReadonlyArray<string>;
 }
 
 const DECIDED_MAX = 5;
@@ -106,5 +108,6 @@ export const renderHumanDigest = (input: DigestInput): string => {
     );
   }
   for (const w of running) lines.push(`Running: ${status(w)}${says(w)}${checked(w)}${eta(w)}`);
+  lines.push(...(input.train ?? []));
   return lines.join("\n");
 };

@@ -55,6 +55,7 @@ describe("renderTaskPrompt", () => {
         "## Rules",
         "- Only change files in these areas: docs (docs/**); site (site/**, public/*.html). Changes anywhere else are flagged as out of area.",
         "- You work in your own worktree on branch fleetd/T1-add-file. Commit to your branch; do not merge; do not push to the default branch (main).",
+        "- If the repo's origin is on GitHub: when your commits are done, `git push -u origin fleetd/T1-add-file` and open a pull request with `gh pr create --base main --head fleetd/T1-add-file` whose body has the line `Source: done-when 1`, and put its URL in your result. Never merge it and never post a `fleetd/train` commit status: fleetd's merge train merges it. Without a GitHub origin, just commit.",
         "- Do the task yourself; do not hand it to subagents.",
         "- End with a one-paragraph result: what you did, what is left, and anything the lead must decide.",
       ].join("\n"),

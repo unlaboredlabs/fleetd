@@ -206,6 +206,9 @@ contract! {
         /// Task records as the hub sends them; the app does not show tasks yet.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub tasks: Option<Vec<Value>>,
+        /// Merge trains as the hub sends them; the app does not show them yet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub trains: Option<Vec<Value>>,
         pub stale: bool,
         pub as_of: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -14,10 +14,10 @@ export class Caller extends Context.Service<Caller, AgentKeyInfo>()("fleetd/hub/
 
 const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   fleetd_status:
-    "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events, the slot board (cap, used, queued, per-project shares) and the events cursor. Start here.",
+    "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events and PRs the merge train sent back (needs_rebase, ci_failed), the slot board (cap, used, queued, per-project shares) and the events cursor. Start here.",
   projects_list: "Projects across machines, optionally filtered by machineId or a title/path query.",
   project_get:
-    "One project's outcome in one call: its summary, up to 20 threads (newest activity first) with status, headline and latest message, its lead and open workstreams, and task counts with the 20 newest tasks (task threads are not in the thread list). Marked stale when the machine is offline.",
+    "One project's outcome in one call: its summary, up to 20 threads (newest activity first) with status, headline and latest message, its lead and open workstreams, task counts with the 20 newest tasks (task threads are not in the thread list), and the merge trains of its repos. Marked stale when the machine is offline.",
   thread_tail:
     "A thread's newest messages and actions, newest first (n defaults to 10, max 50; kinds filters to message or action), plus its summary.",
   actions_list: "A thread's commands, file changes and tool calls, newest first (limit defaults to 50); failedOnly keeps failures.",
@@ -66,7 +66,12 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   claims_list:
     "Claims (a lead's `fleetd claim done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
   incidents_list:
-    "Incidents the hub detected (false_claim, estimate_miss, polish_loop, out_of_area, …), newest first, with evidence lines. Filter by projectRef, workstreamId or class.",
+    "Incidents the hub detected (false_claim, estimate_miss, polish_loop, out_of_area, policy_bypass, …), newest first, with evidence lines. Filter by projectRef, workstreamId or class.",
+  changes_list:
+    "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), tier, reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
+  train_get: "One repo's merge train: frozen or not, the Change it is rebasing, checking or merging now, and the queue in order. Only the train merges.",
+  train_freeze:
+    "Hold (frozen true) or resume (frozen false) a repo's merge train by recording or retiring its policy.freeze.<owner>.<name> decision. The train finishes nothing new while frozen; it emits train.frozen or train.resumed on its next pass.",
 };
 
 /** MCP requires an object root, so the empty input becomes an empty object schema and refs go to $defs. */

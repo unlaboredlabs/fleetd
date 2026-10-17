@@ -119,6 +119,10 @@ describe("Leads", () => {
       "Never block on a question",
       "fleetd status set",
       "The digest is the truth, not your memory",
+      "Source: <its --serves>",
+      "only fleetd's merge train merges",
+      "never post the `fleetd/train` status",
+      "fleetd change enqueue",
     ]) {
       expect(prompt).toContain(needle);
     }

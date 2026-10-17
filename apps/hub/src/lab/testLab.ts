@@ -1,5 +1,5 @@
-// `pnpm test:lab [scenario…]`: the M1, M2, M3, M5 and M6 "done when" scenarios, end to end, against the disposable lab (never
-// in CI). Two stock T3 instances (lab/lab.mjs), one hub and two nodes, driven only through a real MCP client.
+// `pnpm test:lab [scenario…]`: the M1, M2, M3, M5, M6 and M7 "done when" scenarios, end to end, against the disposable lab
+// (never in CI); M7 also uses the GitHub testbed wynn-dev/fleetd-testbed. Two stock T3 instances (lab/lab.mjs), one hub and two nodes, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
 // runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
 import fs from "node:fs";
@@ -39,6 +39,7 @@ import { m1Fleet } from "./m1Fleet.ts";
 import { m3Loop } from "./m3Loop.ts";
 import { m5Tasks } from "./m5Tasks.ts";
 import { m6Verify } from "./m6Verify.ts";
+import { m7Train, removeTestbedProject } from "./m7Train.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
@@ -59,6 +60,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m5", run: m5Tasks },
   // After m5: it reuses the lead when there is one.
   { name: "m6", run: m6Verify },
+  // Last: it adds the testbed as a second project on lab-a for its run.
+  { name: "m7", run: m7Train },
 ];
 
 /** Extra `node join` flags per machine. */
@@ -138,6 +141,8 @@ async function main() {
 
   let client: Client | undefined;
   try {
+    // A testbed project left by an interrupted m7 would be taken for lab-a's project by the other scenarios.
+    await removeTestbedProject({ machines: MACHINES, mintT3Bearer });
     fs.rmSync(RUN, { recursive: true, force: true });
     linkLeadShell();
     await startHubProcess();
@@ -243,6 +248,8 @@ async function main() {
 
 main().catch((error: unknown) => {
   log(`FAIL ${error instanceof Error ? error.message : String(error)}`);
+  // A bare "fetch failed" says nothing about which call; the stack and cause do.
+  if (error instanceof Error) log(`${error.stack?.split("\n").slice(1, 6).join("\n") ?? ""}${error.cause === undefined ? "" : `\ncause: ${String(error.cause)}`}`);
   log(`logs: ${path.join(RUN, "logs")}`);
   process.exitCode = 1;
 });
