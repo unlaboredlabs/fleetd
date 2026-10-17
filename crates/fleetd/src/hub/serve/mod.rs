@@ -226,6 +226,33 @@ pub fn build_on(
         events.clone(),
         clock.clone(),
     ));
+    let executors =
+        crate::hub::executor::Executors::new(store.clone(), events.clone(), clock.clone());
+    let node_commands = Arc::new(crate::hub::link::NodeCommands::default());
+    let lead_calls = Arc::new(crate::hub::link::LeadCalls::default());
+    let link = crate::hub::link::NodeLinkServer::new(crate::hub::link::server::LinkDeps {
+        hub_id: crate::hub::link::server::hub_id(),
+        store: store.clone(),
+        events: events.clone(),
+        auth: auth.clone(),
+        executors: executors.clone(),
+        commands: node_commands.clone(),
+        lead_calls: lead_calls.clone(),
+        clock: clock.clone(),
+    });
+    let watchdog = crate::hub::watchdog::Watchdog::new(
+        crate::hub::watchdog::config_from_env(|k| std::env::var(k).ok()),
+        executors.clone(),
+        store.clone(),
+        events.clone(),
+        clock.clone(),
+    );
+    let sweep = crate::hub::sweep::Sweep::new(
+        store.clone(),
+        events.clone(),
+        watchdog.clone(),
+        clock.clone(),
+    );
     Ok(Arc::new(Hub {
         config,
         clock,
@@ -238,6 +265,12 @@ pub fn build_on(
         asks,
         inbox,
         digests,
+        executors,
+        node_commands,
+        lead_calls,
+        link,
+        watchdog,
+        sweep,
     }))
 }
 
@@ -255,6 +288,9 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
             .clone()
             .run(async move { shutdown.wait().await }),
     ));
+    hub.link.start();
+    loops.push(hub.watchdog.start());
+    loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops
 }
 

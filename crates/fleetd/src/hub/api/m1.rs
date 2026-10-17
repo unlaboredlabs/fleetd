@@ -1,7 +1,7 @@
 //! The M1 read tools. `events_wait` needs only the event log; the others need the executor area, which registers
 //! the real handlers (replacing these stubs) from its own module.
 use super::Hub;
-use super::grants::{can_read, not_wired, require};
+use super::grants::{can_read, require};
 use super::registry::{Caller, Registry, ToolError};
 use crate::hub::store::{WaitInput, now_ms};
 use fleetd_contracts::auth::Role;
@@ -11,17 +11,6 @@ use std::sync::Arc;
 
 pub fn register(tools: &mut Registry) {
     tools.add("events_wait", events_wait);
-    for name in [
-        "fleetd_status",
-        "projects_list",
-        "project_get",
-        "thread_tail",
-        "actions_list",
-    ] {
-        tools.add_raw(name, move |_, _, _| async move {
-            Err::<Value, _>(not_wired(name))
-        });
-    }
 }
 
 /// Returns at once if visible events exist after `cursor`, otherwise long-polls to `timeoutSec`, waiting through

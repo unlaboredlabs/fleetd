@@ -1,0 +1,1151 @@
+{
+ "machine": "lab-b",
+ "before": 297,
+ "threads": {
+  "a": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4",
+  "c": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4",
+  "d": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:8ca51a1c-337a-4c68-bc3a-d8d335149b1a"
+ },
+ "items": [
+  {
+   "kind": "snapshot",
+   "snapshot": {
+    "schemaVersion": 2,
+    "snapshotSequence": 297,
+    "threads": [
+     {
+      "createdBy": "user",
+      "creationSource": "web",
+      "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:b18fdf52-c17c-4a70-b69c-6a15419ebe7b",
+      "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+      "title": "s0 e: control tool list",
+      "providerInstanceId": "fleetd",
+      "modelSelection": {
+       "instanceId": "fleetd",
+       "model": "claude-haiku-5-5",
+       "options": [
+        {
+         "id": "effort",
+         "value": "low"
+        }
+       ]
+      },
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "branch": null,
+      "worktreePath": null,
+      "pullRequests": [],
+      "lineage": {
+       "parentThreadId": null,
+       "relationshipToParent": null,
+       "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:b18fdf52-c17c-4a70-b69c-6a15419ebe7b"
+      },
+      "forkedFrom": null,
+      "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253Ab18fdf52-c17c-4a70-b69c-6a15419ebe7b%3Aordinal%3A1",
+      "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ab18fdf52-c17c-4a70-b69c-6a15419ebe7b:ordinal:1",
+      "latestRunRequestedAt": "2026-10-17T10:10:11.598Z",
+      "latestRunStartedAt": "2026-10-17T10:10:11.641Z",
+      "latestRunCompletedAt": "2026-10-17T10:10:21.655Z",
+      "activeRunId": null,
+      "activityRunStartedAt": null,
+      "activityRunStatus": null,
+      "status": "completed",
+      "lastError": null,
+      "lastErrorClass": null,
+      "usageLimitResetAt": null,
+      "pendingRuntimeRequest": null,
+      "latestVisibleMessage": null,
+      "latestUserMessageAt": "2026-10-17T10:10:11.598Z",
+      "latestUserAuthoredMessageAt": "2026-10-17T10:10:11.598Z",
+      "hasActionableProposedPlan": false,
+      "pendingBackgroundTasks": [],
+      "providerInstanceHistory": [
+       "fleetd"
+      ],
+      "goal": null,
+      "itemCount": 5,
+      "visibleItemCount": 5,
+      "createdAt": "2026-10-17T10:10:11.585Z",
+      "updatedAt": "2026-10-17T10:10:33.784Z",
+      "archivedAt": null,
+      "settledOverride": null,
+      "settledAt": null,
+      "unsettledAt": null,
+      "snoozedUntil": null,
+      "snoozedAt": null,
+      "limitRecovery": null,
+      "pinnedAt": null,
+      "autoSettleDisabledAt": null,
+      "pinOrderKey": null,
+      "lastVisitedAt": null,
+      "titleRegeneration": null,
+      "deletedAt": null
+     },
+     {
+      "createdBy": "user",
+      "creationSource": "web",
+      "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:8a891a13-3329-485c-96fe-d5a3b3faa078",
+      "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+      "title": "s0 h: restart mid-turn",
+      "providerInstanceId": "fleetd",
+      "modelSelection": {
+       "instanceId": "fleetd",
+       "model": "claude-haiku-5-5",
+       "options": [
+        {
+         "id": "effort",
+         "value": "low"
+        }
+       ]
+      },
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "branch": null,
+      "worktreePath": null,
+      "pullRequests": [],
+      "lineage": {
+       "parentThreadId": null,
+       "relationshipToParent": null,
+       "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:8a891a13-3329-485c-96fe-d5a3b3faa078"
+      },
+      "forkedFrom": null,
+      "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A8a891a13-3329-485c-96fe-d5a3b3faa078%3Aordinal%3A1",
+      "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A8a891a13-3329-485c-96fe-d5a3b3faa078:ordinal:2",
+      "latestRunRequestedAt": "2026-10-17T10:10:56.053Z",
+      "latestRunStartedAt": "2026-10-17T10:10:56.079Z",
+      "latestRunCompletedAt": "2026-10-17T10:11:22.442Z",
+      "activeRunId": null,
+      "activityRunStartedAt": null,
+      "activityRunStatus": null,
+      "status": "completed",
+      "lastError": null,
+      "lastErrorClass": null,
+      "usageLimitResetAt": null,
+      "pendingRuntimeRequest": null,
+      "latestVisibleMessage": null,
+      "latestUserMessageAt": "2026-10-17T10:10:56.053Z",
+      "latestUserAuthoredMessageAt": "2026-10-17T10:10:31.480Z",
+      "hasActionableProposedPlan": false,
+      "pendingBackgroundTasks": [],
+      "providerInstanceHistory": [
+       "fleetd"
+      ],
+      "goal": null,
+      "itemCount": 8,
+      "visibleItemCount": 8,
+      "createdAt": "2026-10-17T10:10:31.478Z",
+      "updatedAt": "2026-10-17T10:12:16.913Z",
+      "archivedAt": null,
+      "settledOverride": null,
+      "settledAt": null,
+      "unsettledAt": null,
+      "snoozedUntil": null,
+      "snoozedAt": null,
+      "limitRecovery": null,
+      "pinnedAt": null,
+      "autoSettleDisabledAt": null,
+      "pinOrderKey": null,
+      "lastVisitedAt": null,
+      "titleRegeneration": null,
+      "deletedAt": null
+     },
+     {
+      "createdBy": "user",
+      "creationSource": "web",
+      "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:83787929-9c0d-43fc-9716-b8a1789df68d",
+      "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+      "title": "s0 h: restart mid-turn",
+      "providerInstanceId": "fleetd",
+      "modelSelection": {
+       "instanceId": "fleetd",
+       "model": "claude-haiku-5-5",
+       "options": [
+        {
+         "id": "effort",
+         "value": "low"
+        }
+       ]
+      },
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "branch": null,
+      "worktreePath": null,
+      "pullRequests": [],
+      "lineage": {
+       "parentThreadId": null,
+       "relationshipToParent": null,
+       "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:83787929-9c0d-43fc-9716-b8a1789df68d"
+      },
+      "forkedFrom": null,
+      "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A83787929-9c0d-43fc-9716-b8a1789df68d%3Aordinal%3A1",
+      "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A83787929-9c0d-43fc-9716-b8a1789df68d:ordinal:2",
+      "latestRunRequestedAt": "2026-10-17T10:12:16.972Z",
+      "latestRunStartedAt": "2026-10-17T10:12:17.001Z",
+      "latestRunCompletedAt": "2026-10-17T10:12:41.678Z",
+      "activeRunId": null,
+      "activityRunStartedAt": null,
+      "activityRunStatus": null,
+      "status": "completed",
+      "lastError": null,
+      "lastErrorClass": null,
+      "usageLimitResetAt": null,
+      "pendingRuntimeRequest": null,
+      "latestVisibleMessage": null,
+      "latestUserMessageAt": "2026-10-17T10:12:16.972Z",
+      "latestUserAuthoredMessageAt": "2026-10-17T10:12:10.912Z",
+      "hasActionableProposedPlan": false,
+      "pendingBackgroundTasks": [],
+      "providerInstanceHistory": [
+       "fleetd"
+      ],
+      "goal": null,
+      "itemCount": 8,
+      "visibleItemCount": 8,
+      "createdAt": "2026-10-17T10:12:10.909Z",
+      "updatedAt": "2026-10-17T10:13:19.770Z",
+      "archivedAt": null,
+      "settledOverride": null,
+      "settledAt": null,
+      "unsettledAt": null,
+      "snoozedUntil": null,
+      "snoozedAt": null,
+      "limitRecovery": null,
+      "pinnedAt": null,
+      "autoSettleDisabledAt": null,
+      "pinOrderKey": null,
+      "lastVisitedAt": null,
+      "titleRegeneration": null,
+      "deletedAt": null
+     },
+     {
+      "createdBy": "user",
+      "creationSource": "web",
+      "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4",
+      "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+      "title": "fixtures: echo and false",
+      "providerInstanceId": "fleetd",
+      "modelSelection": {
+       "instanceId": "fleetd",
+       "model": "claude-haiku-5-5",
+       "options": [
+        {
+         "id": "effort",
+         "value": "low"
+        }
+       ]
+      },
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "branch": null,
+      "worktreePath": null,
+      "pullRequests": [],
+      "lineage": {
+       "parentThreadId": null,
+       "relationshipToParent": null,
+       "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4"
+      },
+      "forkedFrom": null,
+      "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A5378ddda-9255-4231-8c2d-d28f788e82d4%3Aordinal%3A1",
+      "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A5378ddda-9255-4231-8c2d-d28f788e82d4:ordinal:2",
+      "latestRunRequestedAt": "2026-10-17T10:35:11.622Z",
+      "latestRunStartedAt": "2026-10-17T10:35:11.631Z",
+      "latestRunCompletedAt": "2026-10-17T10:35:12.982Z",
+      "activeRunId": null,
+      "activityRunStartedAt": null,
+      "activityRunStatus": null,
+      "status": "completed",
+      "lastError": null,
+      "lastErrorClass": null,
+      "usageLimitResetAt": null,
+      "pendingRuntimeRequest": null,
+      "latestVisibleMessage": null,
+      "latestUserMessageAt": "2026-10-17T10:35:11.622Z",
+      "latestUserAuthoredMessageAt": "2026-10-17T10:35:11.622Z",
+      "hasActionableProposedPlan": false,
+      "pendingBackgroundTasks": [],
+      "providerInstanceHistory": [
+       "fleetd"
+      ],
+      "goal": null,
+      "itemCount": 10,
+      "visibleItemCount": 10,
+      "createdAt": "2026-10-17T10:35:04.811Z",
+      "updatedAt": "2026-10-17T10:35:12.982Z",
+      "archivedAt": null,
+      "settledOverride": null,
+      "settledAt": null,
+      "unsettledAt": null,
+      "snoozedUntil": null,
+      "snoozedAt": null,
+      "limitRecovery": null,
+      "pinnedAt": null,
+      "autoSettleDisabledAt": null,
+      "pinOrderKey": null,
+      "lastVisitedAt": null,
+      "titleRegeneration": null,
+      "deletedAt": null
+     },
+     {
+      "createdBy": "user",
+      "creationSource": "web",
+      "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:82eec466-f978-4015-9160-eac81235237a",
+      "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+      "title": "fixtures: approval then interrupt",
+      "providerInstanceId": "fleetd",
+      "modelSelection": {
+       "instanceId": "fleetd",
+       "model": "claude-haiku-5-5",
+       "options": [
+        {
+         "id": "effort",
+         "value": "low"
+        }
+       ]
+      },
+      "runtimeMode": "approval-required",
+      "interactionMode": "default",
+      "branch": null,
+      "worktreePath": null,
+      "pullRequests": [],
+      "lineage": {
+       "parentThreadId": null,
+       "relationshipToParent": null,
+       "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:82eec466-f978-4015-9160-eac81235237a"
+      },
+      "forkedFrom": null,
+      "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A82eec466-f978-4015-9160-eac81235237a%3Aordinal%3A1",
+      "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A82eec466-f978-4015-9160-eac81235237a:ordinal:1",
+      "latestRunRequestedAt": "2026-10-17T10:35:15.146Z",
+      "latestRunStartedAt": "2026-10-17T10:35:15.162Z",
+      "latestRunCompletedAt": "2026-10-17T10:35:19.172Z",
+      "activeRunId": null,
+      "activityRunStartedAt": null,
+      "activityRunStatus": null,
+      "status": "completed",
+      "lastError": null,
+      "lastErrorClass": null,
+      "usageLimitResetAt": null,
+      "pendingRuntimeRequest": null,
+      "latestVisibleMessage": null,
+      "latestUserMessageAt": "2026-10-17T10:35:15.146Z",
+      "latestUserAuthoredMessageAt": "2026-10-17T10:35:15.146Z",
+      "hasActionableProposedPlan": false,
+      "pendingBackgroundTasks": [],
+      "providerInstanceHistory": [
+       "fleetd"
+      ],
+      "goal": null,
+      "itemCount": 5,
+      "visibleItemCount": 5,
+      "createdAt": "2026-10-17T10:35:15.144Z",
+      "updatedAt": "2026-10-17T10:35:19.172Z",
+      "archivedAt": null,
+      "settledOverride": null,
+      "settledAt": null,
+      "unsettledAt": null,
+      "snoozedUntil": null,
+      "snoozedAt": null,
+      "limitRecovery": null,
+      "pinnedAt": null,
+      "autoSettleDisabledAt": null,
+      "pinOrderKey": null,
+      "lastVisitedAt": null,
+      "titleRegeneration": null,
+      "deletedAt": null
+     }
+    ],
+    "archivedThreads": [],
+    "projects": [
+     {
+      "id": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+      "title": "s0 lab-b",
+      "workspaceRoot": "/lab/repo-b",
+      "repositoryIdentity": null,
+      "defaultModelSelection": null,
+      "defaultThreadEnvMode": null,
+      "autoPull": false,
+      "faviconPath": null,
+      "projectIcon": null,
+      "scripts": [],
+      "createdAt": "2026-10-17T10:10:11.560Z",
+      "updatedAt": "2026-10-17T10:10:11.560Z"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "snapshot",
+   "snapshot": {
+    "schemaVersion": 2,
+    "snapshotSequence": 297,
+    "threads": [],
+    "archivedThreads": [],
+    "projects": [
+     {
+      "id": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+      "title": "s0 lab-b",
+      "workspaceRoot": "/lab/repo-b",
+      "repositoryIdentity": null,
+      "defaultModelSelection": null,
+      "defaultThreadEnvMode": null,
+      "autoPull": false,
+      "faviconPath": null,
+      "projectIcon": null,
+      "scripts": [],
+      "createdAt": "2026-10-17T10:10:11.560Z",
+      "updatedAt": "2026-10-17T10:10:11.560Z"
+     }
+    ]
+   },
+   "resolvedRepositoryIdentityRoots": [
+    "/lab/repo-b"
+   ]
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 310,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: echo and false",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A5378ddda-9255-4231-8c2d-d28f788e82d4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A5378ddda-9255-4231-8c2d-d28f788e82d4:ordinal:3",
+    "latestRunRequestedAt": "2026-10-17T10:38:55.385Z",
+    "latestRunStartedAt": "2026-10-17T10:38:55.397Z",
+    "latestRunCompletedAt": null,
+    "activeRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A5378ddda-9255-4231-8c2d-d28f788e82d4:ordinal:3",
+    "activityRunStartedAt": "2026-10-17T10:38:55.397Z",
+    "activityRunStatus": "running",
+    "status": "running",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": null,
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:55.385Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:55.385Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 11,
+    "visibleItemCount": 11,
+    "createdAt": "2026-10-17T10:35:04.811Z",
+    "updatedAt": "2026-10-17T10:38:55.414Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 320,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: echo and false",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A5378ddda-9255-4231-8c2d-d28f788e82d4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A5378ddda-9255-4231-8c2d-d28f788e82d4:ordinal:3",
+    "latestRunRequestedAt": "2026-10-17T10:38:55.385Z",
+    "latestRunStartedAt": "2026-10-17T10:38:55.397Z",
+    "latestRunCompletedAt": null,
+    "activeRunId": null,
+    "activityRunStartedAt": "2026-10-17T10:38:55.397Z",
+    "activityRunStatus": "waiting",
+    "status": "waiting",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": null,
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:55.385Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:55.385Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 12,
+    "visibleItemCount": 12,
+    "createdAt": "2026-10-17T10:35:04.811Z",
+    "updatedAt": "2026-10-17T10:38:56.652Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 324,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: echo and false",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:5378ddda-9255-4231-8c2d-d28f788e82d4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A5378ddda-9255-4231-8c2d-d28f788e82d4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A5378ddda-9255-4231-8c2d-d28f788e82d4:ordinal:3",
+    "latestRunRequestedAt": "2026-10-17T10:38:55.385Z",
+    "latestRunStartedAt": "2026-10-17T10:38:55.397Z",
+    "latestRunCompletedAt": "2026-10-17T10:38:56.657Z",
+    "activeRunId": null,
+    "activityRunStartedAt": null,
+    "activityRunStatus": null,
+    "status": "completed",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": null,
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:55.385Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:55.385Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 13,
+    "visibleItemCount": 13,
+    "createdAt": "2026-10-17T10:35:04.811Z",
+    "updatedAt": "2026-10-17T10:38:56.657Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 344,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: approval wait",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "approval-required",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "latestRunRequestedAt": "2026-10-17T10:38:58.909Z",
+    "latestRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "latestRunCompletedAt": null,
+    "activeRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "activityRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "activityRunStatus": "running",
+    "status": "running",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": null,
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:58.909Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:58.909Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 2,
+    "visibleItemCount": 2,
+    "createdAt": "2026-10-17T10:38:58.906Z",
+    "updatedAt": "2026-10-17T10:38:58.929Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 351,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: approval wait",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "approval-required",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "latestRunRequestedAt": "2026-10-17T10:38:58.909Z",
+    "latestRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "latestRunCompletedAt": null,
+    "activeRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "activityRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "activityRunStatus": "running",
+    "status": "running",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": {
+     "id": "runtime-request:provider:claudeAgent:provider-turn:provider-turn%3Aprovider%3AclaudeAgent%3Anative-turn%3Aturn%253Arun-attempt%253Arun%253Arun%25253Athread%25253Athread%2525253Aproject%2525253Ad76b3492-516e-4c8c-9add-067c24e6acc7%2525253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%25253Aordinal%25253A1%253Aattempt%253A1:native-request:toolu_01WYD2RoPjZ1iLR1CPBN3SMU:f3fc19f7-0d37-4224-8f58-66f25323b822",
+     "kind": "command",
+     "createdAt": "2026-10-17T10:39:00.905Z"
+    },
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:58.909Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:58.909Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 4,
+    "visibleItemCount": 4,
+    "createdAt": "2026-10-17T10:38:58.906Z",
+    "updatedAt": "2026-10-17T10:39:00.907Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 352,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: approval wait",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "approval-required",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "latestRunRequestedAt": "2026-10-17T10:38:58.909Z",
+    "latestRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "latestRunCompletedAt": null,
+    "activeRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "activityRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "activityRunStatus": "running",
+    "status": "running",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": {
+     "id": "runtime-request:provider:claudeAgent:provider-turn:provider-turn%3Aprovider%3AclaudeAgent%3Anative-turn%3Aturn%253Arun-attempt%253Arun%253Arun%25253Athread%25253Athread%2525253Aproject%2525253Ad76b3492-516e-4c8c-9add-067c24e6acc7%2525253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%25253Aordinal%25253A1%253Aattempt%253A1:native-request:toolu_01WYD2RoPjZ1iLR1CPBN3SMU:f3fc19f7-0d37-4224-8f58-66f25323b822",
+     "kind": "command",
+     "createdAt": "2026-10-17T10:39:00.905Z"
+    },
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:58.909Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:58.909Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 5,
+    "visibleItemCount": 5,
+    "createdAt": "2026-10-17T10:38:58.906Z",
+    "updatedAt": "2026-10-17T10:39:01.185Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 361,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: approval wait",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "approval-required",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "latestRunRequestedAt": "2026-10-17T10:38:58.909Z",
+    "latestRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "latestRunCompletedAt": "2026-10-17T10:39:01.376Z",
+    "activeRunId": null,
+    "activityRunStartedAt": null,
+    "activityRunStatus": null,
+    "status": "interrupted",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": {
+     "id": "runtime-request:provider:claudeAgent:provider-turn:provider-turn%3Aprovider%3AclaudeAgent%3Anative-turn%3Aturn%253Arun-attempt%253Arun%253Arun%25253Athread%25253Athread%2525253Aproject%2525253Ad76b3492-516e-4c8c-9add-067c24e6acc7%2525253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%25253Aordinal%25253A1%253Aattempt%253A1:native-request:toolu_01WYD2RoPjZ1iLR1CPBN3SMU:f3fc19f7-0d37-4224-8f58-66f25323b822",
+     "kind": "command",
+     "createdAt": "2026-10-17T10:39:00.905Z"
+    },
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:58.909Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:58.909Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 6,
+    "visibleItemCount": 6,
+    "createdAt": "2026-10-17T10:38:58.906Z",
+    "updatedAt": "2026-10-17T10:39:01.376Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 381,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:8ca51a1c-337a-4c68-bc3a-d8d335149b1a",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: bad model",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-nonexistent-0",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:8ca51a1c-337a-4c68-bc3a-d8d335149b1a"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A8ca51a1c-337a-4c68-bc3a-d8d335149b1a%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A8ca51a1c-337a-4c68-bc3a-d8d335149b1a:ordinal:1",
+    "latestRunRequestedAt": "2026-10-17T10:39:01.446Z",
+    "latestRunStartedAt": "2026-10-17T10:39:01.464Z",
+    "latestRunCompletedAt": null,
+    "activeRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A8ca51a1c-337a-4c68-bc3a-d8d335149b1a:ordinal:1",
+    "activityRunStartedAt": "2026-10-17T10:39:01.464Z",
+    "activityRunStatus": "running",
+    "status": "running",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": null,
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:39:01.446Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:39:01.446Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 2,
+    "visibleItemCount": 2,
+    "createdAt": "2026-10-17T10:39:01.443Z",
+    "updatedAt": "2026-10-17T10:39:01.464Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 385,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: approval wait",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-haiku-5-5",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "approval-required",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:e8b2dc52-354b-4973-932f-d81a25ef20b4"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3Ae8b2dc52-354b-4973-932f-d81a25ef20b4:ordinal:1",
+    "latestRunRequestedAt": "2026-10-17T10:38:58.909Z",
+    "latestRunStartedAt": "2026-10-17T10:38:58.929Z",
+    "latestRunCompletedAt": "2026-10-17T10:39:01.376Z",
+    "activeRunId": null,
+    "activityRunStartedAt": null,
+    "activityRunStatus": null,
+    "status": "interrupted",
+    "lastError": null,
+    "lastErrorClass": null,
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": {
+     "id": "runtime-request:provider:claudeAgent:provider-turn:provider-turn%3Aprovider%3AclaudeAgent%3Anative-turn%3Aturn%253Arun-attempt%253Arun%253Arun%25253Athread%25253Athread%2525253Aproject%2525253Ad76b3492-516e-4c8c-9add-067c24e6acc7%2525253Ae8b2dc52-354b-4973-932f-d81a25ef20b4%25253Aordinal%25253A1%253Aattempt%253A1:native-request:toolu_01WYD2RoPjZ1iLR1CPBN3SMU:f3fc19f7-0d37-4224-8f58-66f25323b822",
+     "kind": "command",
+     "createdAt": "2026-10-17T10:39:00.905Z"
+    },
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:38:58.909Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:38:58.909Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 7,
+    "visibleItemCount": 7,
+    "createdAt": "2026-10-17T10:38:58.906Z",
+    "updatedAt": "2026-10-17T10:39:01.385Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  },
+  {
+   "kind": "thread.updated",
+   "sequence": 396,
+   "location": "active",
+   "thread": {
+    "createdBy": "user",
+    "creationSource": "web",
+    "id": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:8ca51a1c-337a-4c68-bc3a-d8d335149b1a",
+    "projectId": "d76b3492-516e-4c8c-9add-067c24e6acc7",
+    "title": "fixtures: bad model",
+    "providerInstanceId": "fleetd",
+    "modelSelection": {
+     "instanceId": "fleetd",
+     "model": "claude-nonexistent-0",
+     "options": [
+      {
+       "id": "effort",
+       "value": "low"
+      }
+     ]
+    },
+    "runtimeMode": "full-access",
+    "interactionMode": "default",
+    "branch": null,
+    "worktreePath": null,
+    "pullRequests": [],
+    "lineage": {
+     "parentThreadId": null,
+     "relationshipToParent": null,
+     "rootThreadId": "thread:project:d76b3492-516e-4c8c-9add-067c24e6acc7:8ca51a1c-337a-4c68-bc3a-d8d335149b1a"
+    },
+    "forkedFrom": null,
+    "activeProviderThreadId": "provider-thread:provider:claudeAgent:native-thread:pending%3Arun%3Athread%3Athread%253Aproject%253Ad76b3492-516e-4c8c-9add-067c24e6acc7%253A8ca51a1c-337a-4c68-bc3a-d8d335149b1a%3Aordinal%3A1",
+    "latestRunId": "run:thread:thread%3Aproject%3Ad76b3492-516e-4c8c-9add-067c24e6acc7%3A8ca51a1c-337a-4c68-bc3a-d8d335149b1a:ordinal:1",
+    "latestRunRequestedAt": "2026-10-17T10:39:01.446Z",
+    "latestRunStartedAt": "2026-10-17T10:39:01.464Z",
+    "latestRunCompletedAt": "2026-10-17T10:39:01.912Z",
+    "activeRunId": null,
+    "activityRunStartedAt": null,
+    "activityRunStatus": null,
+    "status": "failed",
+    "lastError": "Claude gave up after repeated API errors.",
+    "lastErrorClass": "provider_error",
+    "usageLimitResetAt": null,
+    "pendingRuntimeRequest": null,
+    "latestVisibleMessage": null,
+    "latestUserMessageAt": "2026-10-17T10:39:01.446Z",
+    "latestUserAuthoredMessageAt": "2026-10-17T10:39:01.446Z",
+    "hasActionableProposedPlan": false,
+    "pendingBackgroundTasks": [],
+    "providerInstanceHistory": [
+     "fleetd"
+    ],
+    "goal": null,
+    "itemCount": 4,
+    "visibleItemCount": 4,
+    "createdAt": "2026-10-17T10:39:01.443Z",
+    "updatedAt": "2026-10-17T10:39:01.912Z",
+    "archivedAt": null,
+    "settledOverride": null,
+    "settledAt": null,
+    "unsettledAt": null,
+    "snoozedUntil": null,
+    "snoozedAt": null,
+    "limitRecovery": null,
+    "pinnedAt": null,
+    "autoSettleDisabledAt": null,
+    "pinOrderKey": null,
+    "lastVisitedAt": null,
+    "titleRegeneration": null,
+    "deletedAt": null
+   }
+  }
+ ]
+}

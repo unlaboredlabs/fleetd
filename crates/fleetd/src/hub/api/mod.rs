@@ -119,6 +119,12 @@ pub struct Hub {
     pub asks: Arc<crate::hub::ledger::Asks>,
     pub inbox: Arc<crate::hub::ledger::Inbox>,
     pub digests: Arc<crate::hub::digests::HumanDigests>,
+    pub executors: Arc<crate::hub::executor::Executors>,
+    pub node_commands: Arc<crate::hub::link::NodeCommands>,
+    pub lead_calls: Arc<crate::hub::link::LeadCalls>,
+    pub link: Arc<crate::hub::link::NodeLinkServer>,
+    pub watchdog: Arc<crate::hub::watchdog::Watchdog>,
+    pub sweep: Arc<crate::hub::sweep::Sweep>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -126,7 +132,7 @@ pub fn registry() -> Registry {
     let mut tools = Registry::default();
     m1::register(&mut tools);
     // Areas register here, after the M1 stubs so theirs replace them:
-    // crate::hub::executor::register(&mut tools);
     crate::hub::ledger::register(&mut tools);
+    crate::hub::executor::register(&mut tools);
     tools
 }

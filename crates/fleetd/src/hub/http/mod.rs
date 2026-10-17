@@ -5,8 +5,8 @@ use crate::hub::{app_ws, mcp};
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::State;
+use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
-use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
@@ -79,17 +79,7 @@ async fn node_link_route(
     let Ok(upgrade) = upgrade else {
         return expect_upgrade();
     };
-    // The link area replaces this line with `crate::hub::link::handle(server.hub, socket)` (see hub::api docs).
-    upgrade.on_upgrade(move |socket| link_not_wired(server.hub, socket))
-}
-
-/// Stand-in until the link area lands: refuses the node with "try again later".
-async fn link_not_wired(_hub: Arc<Hub>, mut socket: WebSocket) {
-    let close = CloseFrame {
-        code: 1013,
-        reason: "node links are not wired in this hub yet".into(),
-    };
-    let _ = socket.send(Message::Close(Some(close))).await;
+    upgrade.on_upgrade(move |socket| crate::hub::link::handle(server.hub, socket))
 }
 
 /// Serves until `hub.shutdown` fires, then gives open connections [`SHUTDOWN_GRACE`] before returning.

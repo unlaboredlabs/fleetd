@@ -22,6 +22,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 # store
 rusqlite = { workspace = true }
+# hub: executor, link
+t3-wire = { workspace = true }
 # node
 base64 = { workspace = true }
 chrono = { workspace = true }
