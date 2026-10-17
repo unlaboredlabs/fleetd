@@ -64,6 +64,9 @@
         },
         "nodeVersion": {
           "type": "string"
+        },
+        "degradedReason": {
+          "type": "string"
         }
       },
       "required": [
@@ -158,7 +161,13 @@
         "thread.failed",
         "thread.interrupted",
         "thread.waiting",
-        "thread.usage_limited"
+        "thread.usage_limited",
+        "thread.stalled",
+        "wake.fired",
+        "wake.missed",
+        "write.delivered",
+        "write.expired",
+        "webhook.failing"
       ]
     },
     "ThreadId": {

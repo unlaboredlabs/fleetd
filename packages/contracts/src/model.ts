@@ -13,6 +13,8 @@ export const Machine = Schema.Struct({
   /** Null until the node has reported a reachable T3. */
   t3: Schema.NullOr(Schema.Struct({ version: Schema.String, protocol: Schema.Int })),
   nodeVersion: Schema.String,
+  /** Plain language, set while status is "degraded". */
+  degradedReason: Schema.optionalKey(Schema.String),
 }).annotate({ identifier: "Machine" });
 export type Machine = typeof Machine.Type;
 

@@ -204,7 +204,7 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
         tags: hello.tags,
         status: "online",
         lastSeenAt: at,
-        t3: { version: hello.t3.version, protocol: hello.t3.protocol },
+        t3: hello.t3 === undefined ? null : { version: hello.t3.version, protocol: hello.t3.protocol },
         nodeVersion: hello.nodeVersion,
       });
       if (!online.has(machineId)) {
@@ -233,6 +233,8 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
             yield* Effect.flatMap(nowIso, (at) => store.machines.setStatus(machineId, "online", at));
             break;
           case "t3session":
+            // A hello sent while T3 was down carries no URL to attach to.
+            if (hello.t3 === undefined) break;
             yield* executors
               .attach(machineId, { t3Url: hello.t3.url, bearer: frame.bearer })
               .pipe(bestEffort("attach executor", machineId));

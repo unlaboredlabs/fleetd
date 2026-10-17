@@ -3,6 +3,8 @@ import type { Role } from "./auth.ts";
 import { HubEvent, HubEventType } from "./events.ts";
 import { EventSeq, MachineId, ProjectId, ThreadId, Timestamp } from "./ids.ts";
 import { ActionItem, Effort, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary } from "./model.ts";
+import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
+import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
 
 /** Fields every tool result carries: a hint for the next call, and whether lists were trimmed to their limits. */
 const resultFields = {
@@ -117,13 +119,61 @@ export const ThreadSendInput = Schema.Struct({
 });
 export const ThreadSendOutput = Schema.Struct({
   runId: Schema.optionalKey(Schema.String),
+  /** True when the machine is offline and the message waits in the hub's queue. */
   queued: Schema.Boolean,
+  /** When a queued message expires undelivered. */
+  queuedUntil: Schema.optionalKey(Timestamp),
   ...resultFields,
 });
 
 // thread_interrupt
 export const ThreadInterruptInput = Schema.Struct({ machineId: MachineId, threadId: ThreadId, clientRequestId: RequestId });
 export const ThreadInterruptOutput = Schema.Struct({ ok: Schema.Literal(true), ...resultFields });
+
+// wake_set
+export const WakeSetInput = Schema.Struct({
+  target: WakeTarget,
+  schedule: WakeSchedule,
+  message: WakeMessage,
+  once: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
+  catchUp: WakeCatchUp.pipe(Schema.withDecodingDefaultKey(Effect.succeed("fire_once" as const))),
+  clientRequestId: RequestId,
+});
+export const WakeSetOutput = Schema.Struct({ wakeId: Schema.NonEmptyString, nextRunAt: Timestamp, ...resultFields });
+
+// wake_list
+export const WakeListInput = Schema.Struct({
+  machineId: Schema.optionalKey(MachineId),
+  threadId: Schema.optionalKey(ThreadId),
+  state: Schema.optionalKey(WakeState),
+});
+export const WakeListOutput = Schema.Struct({ wakes: Schema.Array(Wake), ...resultFields });
+
+// wake_cancel
+export const WakeCancelInput = Schema.Struct({ wakeId: Schema.NonEmptyString });
+export const WakeCancelOutput = Schema.Struct({ ok: Schema.Literal(true), ...resultFields });
+
+// subscription_set
+export const SubscriptionSetInput = Schema.Struct({
+  url: WebhookUrl,
+  types: SubscriptionTypes.pipe(Schema.withDecodingDefaultKey(Effect.succeed("*" as const))),
+  machines: SubscriptionMachines.pipe(Schema.withDecodingDefaultKey(Effect.succeed("*" as const))),
+  clientRequestId: RequestId,
+});
+export const SubscriptionSetOutput = Schema.Struct({
+  subscriptionId: Schema.NonEmptyString,
+  /** The webhook signing secret. Shown only here; store it now. */
+  secret: Schema.NonEmptyString,
+  ...resultFields,
+});
+
+// subscription_list
+export const SubscriptionListInput = Schema.Struct({});
+export const SubscriptionListOutput = Schema.Struct({ subscriptions: Schema.Array(Subscription), ...resultFields });
+
+// subscription_delete
+export const SubscriptionDeleteInput = Schema.Struct({ subscriptionId: Schema.NonEmptyString });
+export const SubscriptionDeleteOutput = Schema.Struct({ ok: Schema.Literal(true), ...resultFields });
 
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
@@ -136,6 +186,12 @@ export const McpTools = {
   thread_launch: { scope: "operate", input: ThreadLaunchInput, output: ThreadLaunchOutput },
   thread_send: { scope: "operate", input: ThreadSendInput, output: ThreadSendOutput },
   thread_interrupt: { scope: "operate", input: ThreadInterruptInput, output: ThreadInterruptOutput },
+  wake_set: { scope: "operate", input: WakeSetInput, output: WakeSetOutput },
+  wake_list: { scope: "read", input: WakeListInput, output: WakeListOutput },
+  wake_cancel: { scope: "operate", input: WakeCancelInput, output: WakeCancelOutput },
+  subscription_set: { scope: "operate", input: SubscriptionSetInput, output: SubscriptionSetOutput },
+  subscription_list: { scope: "read", input: SubscriptionListInput, output: SubscriptionListOutput },
+  subscription_delete: { scope: "operate", input: SubscriptionDeleteInput, output: SubscriptionDeleteOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;
 export type McpToolName = keyof typeof McpTools;
 

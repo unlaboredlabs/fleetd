@@ -4,5 +4,7 @@ export * from "./model.ts";
 export * from "./events.ts";
 export * from "./auth.ts";
 export * from "./node-link.ts";
+export * from "./wakes.ts";
+export * from "./subscriptions.ts";
 export * from "./mcp.ts";
 export * from "./app.ts";
