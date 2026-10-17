@@ -12,6 +12,7 @@ import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as Leads from "../leads/Leads.ts";
 import * as Leases from "../leases/Leases.ts";
 import * as Policy from "../leases/Policy.ts";
+import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as Slots from "../slots/Slots.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
@@ -78,6 +79,7 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
   const layer = Tasks.layer.pipe(
     Layer.provideMerge(Layer.mergeAll(Slots.layer({ defaultCap: options.cap ?? 40 }), Leases.layer, Policy.layer)),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
+    Layer.provideMerge(WriteQueue.layer()),
     Layer.provideMerge(base),
   );
 
