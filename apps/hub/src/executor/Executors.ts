@@ -48,6 +48,7 @@ import {
 import { connect, type T3Client } from "./T3Connection.ts";
 import { openTool, ThreadWatch } from "./ThreadWatch.ts";
 import { WorkspaceFiles } from "./WorkspaceFiles.ts";
+import { effortOption, ProviderList, routeModel, toInstance } from "./ProviderList.ts";
 import { ThreadWorkspace } from "./ThreadWorkspace.ts";
 import {
   actionsOf,
@@ -356,9 +357,31 @@ const make = Effect.gen(function* () {
       return machine === undefined ? Effect.void : stop(machine);
     });
 
+  const providers = ProviderList.of({
+    instances: (machineId) =>
+      Effect.gen(function* () {
+        const { client } = yield* liveOf(machineId);
+        const config = yield* client[WS_METHODS.serverGetConfig]({}).pipe(
+          Effect.timeout(READ_TIMEOUT),
+          Effect.mapError((cause) => new T3RequestFailed({ machineId, operation: "read", cause })),
+        );
+        return config.providers.map(toInstance);
+      }),
+  });
+
+  /** Claude models go straight to the fleetd instance; anything else looks at the provider list, falling back to fleetd. */
+  const routeOf = (machineId: MachineId, model: string) =>
+    model.startsWith("claude")
+      ? Effect.succeed(routeModel([], model))
+      : providers.instances(machineId).pipe(
+          Effect.map((list) => routeModel(list, model)),
+          Effect.orElseSucceed(() => routeModel([], model)),
+        );
+
   const launch: Executors["Service"]["launch"] = (machineId, input, options) =>
     Effect.gen(function* () {
       const { client } = yield* liveOf(machineId);
+      const route = yield* routeOf(machineId, input.model);
       const title = input.title?.trim() || input.prompt.trim().split("\n", 1)[0]!.slice(0, 80);
       const result = yield* client[M.launchThread]({
         // T3 keeps a receipt per command id, so a retried launch returns the same thread.
@@ -366,8 +389,12 @@ const make = Effect.gen(function* () {
         projectId: T3ProjectId.make(input.projectId),
         title,
         generateTitle: false,
-        // Always the "fleetd" instance (its launch args deny T3's own spawn tools), with explicit effort.
-        modelSelection: { instanceId: ProviderInstanceId.make("fleetd"), model: input.model, options: [{ id: "effort", value: input.effort }] },
+        // The "fleetd" instance (its launch args deny T3's own spawn tools) unless only Codex has the model; explicit effort.
+        modelSelection: {
+          instanceId: ProviderInstanceId.make(route.instanceId),
+          model: input.model,
+          options: [effortOption(route.driver, input.effort)],
+        },
         runtimeMode: input.runtimeMode,
         interactionMode: "default",
         workspaceStrategy: options?.workspace ?? { type: "root" },
@@ -550,6 +577,7 @@ const make = Effect.gen(function* () {
   return {
     files,
     workspace,
+    providers,
     executors: Executors.of({
       attach,
       detach,
@@ -574,13 +602,17 @@ const make = Effect.gen(function* () {
   };
 });
 
-/** Provides Executors, the ThreadWatch the watchdog follows running threads through, WorkspaceFiles, and ThreadWorkspace for tasks. */
+/**
+ * Provides Executors, the ThreadWatch the watchdog follows running threads through, WorkspaceFiles, ThreadWorkspace for
+ * tasks, and each machine's ProviderList.
+ */
 export const layer = Layer.effectContext(
-  Effect.map(make, ({ executors, watch, files, workspace }) =>
+  Effect.map(make, ({ executors, watch, files, workspace, providers }) =>
     Context.make(Executors, executors).pipe(
       Context.add(ThreadWatch, watch),
       Context.add(WorkspaceFiles, files),
       Context.add(ThreadWorkspace, workspace),
+      Context.add(ProviderList, providers),
     ),
   ),
 );
