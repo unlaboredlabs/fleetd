@@ -374,6 +374,7 @@ pub fn build_on(
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     crate::hub::train::calls::register_lead_calls(&hub);
+    crate::hub::checks::hub_ports::wire_misfiled(&hub);
     Ok(hub)
 }
 
