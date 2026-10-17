@@ -51,6 +51,40 @@ describe("LeadWakes", () => {
     );
   });
 
+  it("wakes 60 s after the first trigger even while triggers keep arriving, then starts a fresh window", async () => {
+    const kit = makeKit();
+    await runKit(
+      kit,
+      Effect.gen(function* () {
+        yield* kit.addProject(REF);
+        yield* (yield* Leads.Leads).start(REF);
+        const wakes = yield* LeadWakes.LeadWakes;
+        // A trigger every 8 s never leaves a 10 s quiet window.
+        for (let i = 1; i <= 7; i++) {
+          yield* wakes.trigger(REF, intent(i));
+          yield* advance(8);
+        }
+        // t = 56 s: seven triggers in, none sent.
+        expect(kit.sends).toHaveLength(0);
+        yield* wakes.trigger(REF, intent(8));
+        yield* advance(3);
+        expect(kit.sends).toHaveLength(0);
+        yield* advance(1);
+        // t = 60 s: the max wait fires with all eight.
+        expect(kit.sends).toHaveLength(1);
+        expect(kit.sends[0]!.message.match(/New intent W\d+/gu)).toHaveLength(8);
+
+        // The next trigger opens a new window measured from itself.
+        yield* wakes.trigger(REF, intent(9));
+        yield* advance(9);
+        expect(kit.sends).toHaveLength(1);
+        yield* advance(1);
+        expect(kit.sends).toHaveLength(2);
+        expect(kit.sends[1]!.message.match(/New intent W\d+/gu)).toEqual(["New intent W9"]);
+      }),
+    );
+  });
+
   it("debounces each lead on its own", async () => {
     const kit = makeKit();
     await runKit(

@@ -1,6 +1,7 @@
 // Wakes to a lead: triggers for one lead are debounced and coalesced into a single message, which starts with
 // the code-rendered digest and then says why the lead was woken.
 import type { Decision, DecisionScope, ProjectRef, ThreadRef, WorkstreamId } from "@fleetd/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -15,6 +16,8 @@ import * as LeadRecords from "./LeadRecords.ts";
 import { LedgerPort } from "./LedgerPort.ts";
 
 export const WAKE_DEBOUNCE = Duration.seconds(10);
+/** A steady trigger stream still wakes the lead this long after the first pending trigger. */
+export const WAKE_MAX_WAIT = Duration.seconds(60);
 
 export type Trigger =
   | { readonly kind: "intent"; readonly workstreamId: WorkstreamId; readonly text: string }
@@ -25,7 +28,7 @@ export type Trigger =
 export class LeadWakes extends Context.Service<
   LeadWakes,
   {
-    /** Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE. */
+    /** Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE, or WAKE_MAX_WAIT after the first. */
     readonly trigger: (ref: ProjectRef, trigger: Trigger) => Effect.Effect<void>;
     /** The lead digest as of now, with `answers` as its "since your last wake" list. */
     readonly digest: (ref: ProjectRef, answers?: ReadonlyArray<AnswerNote>) => Effect.Effect<string>;
@@ -65,11 +68,18 @@ interface Pending {
   readonly triggers: Array<Trigger>;
   /** Bumped by each trigger; only the timer started by the latest one flushes. */
   generation: number;
+  /** When the first pending trigger arrived; the wake fires by `firstMs + maxWait` at the latest. */
+  readonly firstMs: number;
 }
 
 const keyOf = (ref: ProjectRef) => `${ref.machineId}/${ref.projectId}`;
 
-export const make = (options: { readonly debounce?: Duration.Input } = {}) =>
+export interface LeadWakesOptions {
+  readonly debounce?: Duration.Input;
+  readonly maxWait?: Duration.Input;
+}
+
+export const make = (options: LeadWakesOptions = {}) =>
   Effect.gen(function* () {
     const records = yield* LeadRecords.LeadRecords;
     const ledger = yield* LedgerPort;
@@ -77,7 +87,8 @@ export const make = (options: { readonly debounce?: Duration.Input } = {}) =>
     const events = yield* EventLog.EventLog;
     const executors = yield* Executors.Executors;
     const scope = yield* Effect.scope;
-    const debounce = Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE);
+    const debounceMs = Duration.toMillis(Duration.fromInputUnsafe(options.debounce ?? WAKE_DEBOUNCE));
+    const maxWaitMs = Duration.toMillis(Duration.fromInputUnsafe(options.maxWait ?? WAKE_MAX_WAIT));
     const pending = new Map<string, Pending>();
     const flushing = Semaphore.makeUnsafe(1);
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -138,17 +149,19 @@ export const make = (options: { readonly debounce?: Duration.Input } = {}) =>
     // Timers are never interrupted: a superseded one wakes, sees a newer generation and does nothing. Taking the
     // entry out of `pending` is synchronous with that check, so a trigger lands either in this wake or the next.
     const trigger: LeadWakes["Service"]["trigger"] = (ref, t) =>
-      Effect.suspend(() => {
+      Effect.flatMap(Clock.currentTimeMillis, (now) => {
         const key = keyOf(ref);
         let entry = pending.get(key);
         if (entry === undefined) {
-          entry = { ref, triggers: [], generation: 0 };
+          entry = { ref, triggers: [], generation: 0, firstMs: now };
           pending.set(key, entry);
         }
         entry.triggers.push(t);
         const p = entry;
         const generation = ++p.generation;
-        return Effect.sleep(debounce).pipe(
+        // The quiet window, cut short so the latest timer never sleeps past the max-wait deadline.
+        const delayMs = Math.max(0, Math.min(debounceMs, p.firstMs + maxWaitMs - now));
+        return Effect.sleep(Duration.millis(delayMs)).pipe(
           Effect.andThen(
             Effect.suspend(() => {
               if (pending.get(key) !== p || p.generation !== generation) return Effect.void;
@@ -166,4 +179,4 @@ export const make = (options: { readonly debounce?: Duration.Input } = {}) =>
     return LeadWakes.of({ trigger, digest });
   });
 
-export const layer = (options: { readonly debounce?: Duration.Input } = {}) => Layer.effect(LeadWakes, make(options));
+export const layer = (options: LeadWakesOptions = {}) => Layer.effect(LeadWakes, make(options));
