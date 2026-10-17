@@ -137,7 +137,6 @@ pub fn registry() -> Registry {
     // Areas register here, after the M1 stubs so theirs replace them:
     crate::hub::ledger::register(&mut tools);
     crate::hub::executor::register(&mut tools);
-    // crate::hub::executor::register(&mut tools);
     crate::hub::wakes::tools::register(&mut tools);
     crate::hub::webhooks::tools::register(&mut tools);
     tools

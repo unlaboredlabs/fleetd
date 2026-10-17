@@ -310,8 +310,8 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     hub.link.start();
     loops.push(hub.watchdog.start());
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
+    loops.push(crate::hub::queue::start_loops(hub));
     loops
-    vec![crate::hub::queue::start_loops(hub)]
 }
 
 #[cfg(test)]
