@@ -271,7 +271,6 @@ pub fn build_on(
     )?;
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let ops = crate::hub::usage::wire::build(&config, clock.clone());
-    let hub = Arc::new(Hub {
     let train_host = Arc::new(crate::hub::train::hub_host::HubHost {
         clock: clock.clone(),
         events: events.clone(),
@@ -284,7 +283,7 @@ pub fn build_on(
         Arc::new(crate::hub::train::github::SystemGh),
         crate::hub::train::TrainOptions::default(),
     );
-    Ok(Arc::new(Hub {
+    let hub = Arc::new(Hub {
         config,
         clock,
         shutdown: Shutdown::default(),
@@ -316,12 +315,11 @@ pub fn build_on(
         doctor: ops.doctor,
         retro: ops.retro,
         approvals: ops.approvals,
+        train,
+        reviews,
     });
     checks.ports.bind(&hub);
     Ok(hub)
-        train,
-        reviews,
-    }))
 }
 
 /// Every area's long-running loop, one tokio task each; they stop with `hub.shutdown` (and are aborted after the
@@ -344,7 +342,6 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::checks::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));
-    loops
     // The train and reviews spawn their own tasks (a repo's loop starts on its first enqueue); this one stops them.
     hub.train.start();
     let reviews = hub.reviews.start();
@@ -353,7 +350,9 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
         shutdown.wait().await;
         train.stop();
     });
-    vec![reviews, stopper]
+    loops.push(reviews);
+    loops.push(stopper);
+    loops
 }
 
 #[cfg(test)]
