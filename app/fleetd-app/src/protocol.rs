@@ -47,9 +47,6 @@ pub enum ClientMessage {
     Snapshot,
     Events { cursor: u64 },
     Call { id: String, tool: String, input: Value },
-    /// Redeem a device pairing token for a human key (M8); the phone PWA uses it, this app not yet.
-    #[serde(rename = "device_pair")]
-    DevicePair { token: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -60,13 +57,9 @@ pub enum ServerMessage {
     Event(HubEvent),
     Result(CallResult),
     Error(ErrorFrame),
-    #[serde(rename = "device_paired")]
-    DevicePaired(DevicePaired),
 }
 
 contract! { pub struct Ready { pub protocol: u64 } }
-
-contract! { pub struct DevicePaired { pub key: String, pub key_id: String } }
 
 contract! {
     pub struct FleetStatus {

@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { MachineId } from "@fleetd/contracts";
@@ -64,17 +63,3 @@ export const gitIdentityEnv = (identity: GitIdentity | undefined): Record<string
         GIT_COMMITTER_EMAIL: identity.email,
       };
 
-/**
- * `<hub home>/vapid.json` (0600) unless it exists: the P-256 pair the hub signs Web Push with, as
- * `{ publicKey, privateKey }` in base64url (65-byte uncompressed point, 32-byte scalar). True if it was created.
- */
-export const ensureVapidKeys = (home: string): boolean => {
-  const file = path.join(home, "vapid.json");
-  if (fs.existsSync(file)) return false;
-  // JWK coordinates are always full width, unlike ECDH.getPrivateKey(), which can drop a leading zero byte.
-  const jwk = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ format: "jwk" });
-  const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x ?? "", "base64url"), Buffer.from(jwk.y ?? "", "base64url")]);
-  const keys = { publicKey: point.toString("base64url"), privateKey: jwk.d ?? "" };
-  fs.writeFileSync(file, JSON.stringify(keys), { mode: 0o600, flag: "wx" });
-  return true;
-};

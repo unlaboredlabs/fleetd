@@ -47,7 +47,7 @@ export const followedUp = (answer: Answer) =>
 /** Kinds only a person may answer: the hub acts on these answers, so an agent's reply must not stand in for a human. */
 const HUMAN_ONLY: ReadonlySet<Ask["kind"]> = new Set(["secret", "approve", "do"]);
 const HUMAN_ONLY_FIX =
-  "Answer it from a paired device (the fleetd phone or desktop app) or with a --human key; agent keys cannot enter secrets, approve commands or tick checklists.";
+  "Answer it from the fleetd desktop app or another client with a --human key; agent keys cannot enter secrets, approve commands or tick checklists.";
 
 /** Drops answers; for tests and until the lead-wake code is wired. */
 export const layerAnswerSinkNoop = Layer.succeed(AnswerSink, AnswerSink.of({ onAnswered: () => Effect.void }));

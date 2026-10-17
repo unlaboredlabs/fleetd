@@ -24,13 +24,7 @@ export const AppCall = Schema.Struct({
   input: Schema.Unknown,
 });
 
-/**
- * M8: redeem a one-time pairing token from `fleetd hub device add` (15 minutes, consumed once) for a new human key,
- * before `auth`. Answered by `device_paired`, or an `error` without an id; then authenticate with the key.
- */
-export const AppDevicePair = Schema.Struct({ t: Schema.tag("device_pair"), token: Schema.NonEmptyString.check(Schema.isMaxLength(200)) });
-
-export const AppClientMessage = Schema.Union([AppAuth, AppSnapshotRequest, AppEventsRequest, AppCall, AppDevicePair])
+export const AppClientMessage = Schema.Union([AppAuth, AppSnapshotRequest, AppEventsRequest, AppCall])
   .pipe(Schema.toTaggedUnion("t"))
   .annotate({ identifier: "AppClientMessage" });
 export type AppClientMessage = typeof AppClientMessage.Type;
@@ -51,10 +45,7 @@ export const AppError = Schema.Struct({
   fix: Schema.optionalKey(Schema.String),
 });
 
-/** The new human key, shown only here; the device stores it. */
-export const AppDevicePaired = Schema.Struct({ t: Schema.tag("device_paired"), key: Schema.NonEmptyString, keyId: Schema.NonEmptyString });
-
-export const AppServerMessage = Schema.Union([AppReady, AppSnapshot, AppEvent, AppResult, AppError, AppDevicePaired])
+export const AppServerMessage = Schema.Union([AppReady, AppSnapshot, AppEvent, AppResult, AppError])
   .pipe(Schema.toTaggedUnion("t"))
   .annotate({ identifier: "AppServerMessage" });
 export type AppServerMessage = typeof AppServerMessage.Type;

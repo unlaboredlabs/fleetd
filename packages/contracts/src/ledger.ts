@@ -323,7 +323,7 @@ export type Decision = typeof Decision.Type;
 
 /**
  * decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the
- * browser seals to the sink's node. approve: a stored command the node runs after a human tap (`fleetd gated run`).
+ * desktop app seals to the sink's node. approve: a stored command the node runs after a human approves it (`fleetd gated run`).
  */
 export const AskKind = Schema.Literals(["decide", "do", "secret", "approve"]);
 export type AskKind = typeof AskKind.Type;

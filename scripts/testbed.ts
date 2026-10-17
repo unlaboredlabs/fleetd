@@ -1,9 +1,9 @@
-// Creates, idempotently, the merge-train testbed `wynn-dev/fleetd-testbed` and clones it into the lab:
+// Creates, idempotently, the merge-train testbed `unlaboredlabs/fleetd-testbed` and clones it into the lab:
 // - a README and a GitHub Actions workflow `ci` whose one check, `ci`, fails iff a file `FAIL` exists at the root;
 // - squash merges only;
 // - a ruleset on main requiring the checks `ci` and `fleetd/train`, with no force-push and no deletion.
 //
-//   node scripts/testbed.ts [--repo wynn-dev/fleetd-testbed] [--clone /home/wynn/src/fleetd-lab/testbed]
+//   node scripts/testbed.ts [--repo unlaboredlabs/fleetd-testbed] [--clone /home/wynn/src/fleetd-lab/testbed]
 //
 // Uses the `gh` login on this machine. It only ever touches the one repo it is given.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -14,7 +14,7 @@ import { parseArgs } from "node:util";
 
 const { values: args } = parseArgs({
   options: {
-    repo: { type: "string", default: "wynn-dev/fleetd-testbed" },
+    repo: { type: "string", default: "unlaboredlabs/fleetd-testbed" },
     clone: { type: "string", default: "/home/wynn/src/fleetd-lab/testbed" },
   },
 });

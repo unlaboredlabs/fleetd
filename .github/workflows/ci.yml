@@ -31,10 +31,8 @@ jobs:
       - name: Built CLI runs
         # The hub reads the lead prompt from beside the bundle.
         run: node apps/cli/dist/bin.js --version && test -s apps/cli/dist/prompt-v2.md
-      - name: Phone web app ships beside the CLI bundle
-        # The hub serves it at / from there. `pnpm build` fails when its initial load is over 60 KB gzipped
-        # (apps/pwa/build.ts).
-        run: test -s apps/cli/dist/pwa/index.html && test -s apps/cli/dist/pwa/app.js && test -s apps/cli/dist/pwa/sw.js && test -s apps/cli/dist/prompt-v4.md
+      - name: Lead prompt ships beside the CLI bundle
+        run: test -s apps/cli/dist/prompt-v4.md
 
   rust:
     strategy:

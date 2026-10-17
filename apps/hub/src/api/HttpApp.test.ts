@@ -1,7 +1,3 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -53,38 +49,5 @@ describe("hub HTTP server", () => {
     expect(await closed).toBe(1001);
     await poll;
     await client.close().catch(() => undefined);
-  });
-});
-
-describe("phone web app at /", () => {
-  it("serves the built files with a same-origin CSP that allows WebAssembly and the page's own style only", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-pwa-"));
-    const css = "body{margin:0}";
-    fs.writeFileSync(path.join(dir, "index.html"), `<!doctype html><style>${css}</style><script type="module" src="/app.js"></script>`);
-    fs.writeFileSync(path.join(dir, "app.js"), "console.log(1)");
-    const hub = makeTestHub();
-    const scope = Effect.runSync(Scope.make());
-    const services = AppSocket.layer.pipe(Layer.provideMerge(FleetApi.layer), Layer.provideMerge(hub.layer));
-    const context = await Effect.runPromise(Layer.buildWithScope(HttpApp.layer({ host: "127.0.0.1", port: 0 }, dir).pipe(Layer.provideMerge(services)), scope));
-    try {
-      const address = Context.get(context, HttpServer.HttpServer).address;
-      if (address._tag === "UnixPathAddress") throw new Error("expected a TCP address");
-      const url = `http://127.0.0.1:${address.port}`;
-      const page = await fetch(`${url}/`);
-      expect(page.status).toBe(200);
-      expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
-      const hash = crypto.createHash("sha256").update(css).digest("base64");
-      expect(page.headers.get("content-security-policy")).toBe(
-        `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'sha256-${hash}'; img-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
-      );
-      expect(await page.text()).toContain("/app.js");
-      const script = await fetch(`${url}/app.js`);
-      expect(script.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
-      expect(await script.text()).toBe("console.log(1)");
-      expect((await fetch(`${url}/../hub.sqlite`)).status).toBe(404);
-      expect((await fetch(`${url}/healthz`)).status).toBe(200);
-    } finally {
-      await Effect.runPromise(Scope.close(scope, Exit.void));
-    }
   });
 });

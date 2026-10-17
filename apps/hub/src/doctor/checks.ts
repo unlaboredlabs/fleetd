@@ -95,18 +95,6 @@ export const claudeLogin = (outcome: ClaudeOutcome): Entry => {
 };
 
 
-/** `undefined`: this hub keeps no push subscriptions. */
-export const pushConfigured = (devices: number | undefined, url: string | undefined): Entry => {
-  if (devices === undefined) return hubEntry("push", "unknown", "This hub keeps no push subscriptions yet.");
-  if (devices > 0) return hubEntry("push", "ok", `${devices} device${devices === 1 ? "" : "s"} get${devices === 1 ? "s" : ""} push.`);
-  return hubEntry(
-    "push",
-    "warn",
-    "No device gets push, so asks only reach you when an app is open.",
-    manual("Pair your phone, open the link, then turn on push in the app", `fleetd hub device add --name phone --url ${url ?? "<hub https url>"}`),
-  );
-};
-
 export const httpsReachable = (config: { readonly config: HubConfig; readonly problem?: string }, port: number, probe: Probe | undefined): Entry => {
   const serve = manual(
     "Serve the hub over HTTPS (Tailscale Serve shown), then stop the hub and run fleetd init --url https://<that address>",
@@ -114,9 +102,9 @@ export const httpsReachable = (config: { readonly config: HubConfig; readonly pr
   );
   if (config.problem !== undefined) return hubEntry("https", "warn", config.problem, serve);
   const url = config.config.url;
-  if (url === undefined) return hubEntry("https", "warn", "The hub has no address set up (fleetd init --url), so phones cannot reach it over HTTPS.", serve);
+  if (url === undefined) return hubEntry("https", "warn", "The hub has no address set up (fleetd init --url), so the desktop app and other machines cannot reach it over HTTPS.", serve);
   if (!url.startsWith("https://")) {
-    return hubEntry("https", "warn", `The hub's address ${url} is not HTTPS; the phone app needs HTTPS for push and offline use.`, serve);
+    return hubEntry("https", "warn", `The hub's address ${url} is not HTTPS; keys from the desktop app and other machines would cross the network unencrypted.`, serve);
   }
   if (probe === undefined || probe.ok) return hubEntry("https", "ok", `The hub is reachable over HTTPS at ${url}.`);
   return hubEntry("https", "fail", `${url} does not answer (${probe.why}).`, manual("Check that HTTPS still points at the hub", "tailscale serve status"));

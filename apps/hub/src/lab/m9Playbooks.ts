@@ -12,7 +12,7 @@ import { type Body, CLI, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts"
 import { removeTestbedProject, t3, TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
-const TESTBED_REPO = "wynn-dev/fleetd-testbed";
+const TESTBED_REPO = "unlaboredlabs/fleetd-testbed";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const QUIET = "Lab run: the harness does the work for this intent; reply to each wake with one short line and run no commands.";

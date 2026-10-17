@@ -69,7 +69,7 @@ const program = Effect.gen(function* () {
     workstream: {
       ...workstream,
       state: "running",
-      brief: { goal: "one PR through the train", why: "M7a check", pointers: [], constraints: [], doneWhen: [{ type: "pr_merged", repo: "wynn-dev/fleetd-testbed" }], tier: "S" },
+      brief: { goal: "one PR through the train", why: "M7a check", pointers: [], constraints: [], doneWhen: [{ type: "pr_merged", repo: "unlaboredlabs/fleetd-testbed" }], tier: "S" },
     },
     amends: [],
   });

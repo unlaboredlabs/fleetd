@@ -53,13 +53,6 @@ export const waitOnline = (machineId: MachineId, sinceMs: number, timeoutMs: num
     return false;
   });
 
-/** A one-time device pairing link (`<url>/#pair=<token>`), as `fleetd hub device add` prints it. */
-export const pairingLink = (name: string, url: string) =>
-  Effect.gen(function* () {
-    const { token, expiresAt } = yield* (yield* Auth.Auth).createPairToken(name);
-    return { link: `${new URL(url).origin}/#pair=${token}`, expiresAt };
-  });
-
 /** PIDs (other than this one) with `file` open: the hub keeps hub.sqlite open while it runs. */
 export const processesHolding = (file: string): ReadonlyArray<number> => {
   if (process.platform === "linux") {

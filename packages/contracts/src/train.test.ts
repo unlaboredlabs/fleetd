@@ -8,9 +8,9 @@ const sha = "0123456789abcdef0123456789abcdef01234567";
 const change = {
   changeId: "X1",
   projectRef: { machineId: "forge", projectId: "p1" },
-  repo: "wynn-dev/fleetd-testbed",
+  repo: "unlaboredlabs/fleetd-testbed",
   prNumber: 7,
-  prUrl: "https://github.com/wynn-dev/fleetd-testbed/pull/7",
+  prUrl: "https://github.com/unlaboredlabs/fleetd-testbed/pull/7",
   branch: "fleetd/T1-add-file",
   taskId: "T1",
   workstreamId: "W1",
@@ -32,14 +32,14 @@ describe("ChangeId", () => {
 
 describe("GitHub repo and PR URL", () => {
   it("takes owner/name", () => {
-    for (const repo of ["wynn-dev/fleetd", "Microsoft/TypeScript", "o/r.js", "o/.github", "o/a_b-c"]) expect(accepts(GitHubRepo, repo), repo).toBe(true);
+    for (const repo of ["unlaboredlabs/fleetd", "Microsoft/TypeScript", "o/r.js", "o/.github", "o/a_b-c"]) expect(accepts(GitHubRepo, repo), repo).toBe(true);
     for (const repo of ["fleetd", "o/", "/r", "o/r/x", "-o/r", "o/.", "o/..", "o/r s", `${"o".repeat(40)}/r`, "https://github.com/o/r"]) {
       expect(accepts(GitHubRepo, repo), repo).toBe(false);
     }
   });
 
   it("takes only https://github.com/<owner>/<name>/pull/<n>", () => {
-    expect(parsePrUrl("https://github.com/wynn-dev/fleetd/pull/12")).toEqual({ repo: "wynn-dev/fleetd", prNumber: 12 });
+    expect(parsePrUrl("https://github.com/unlaboredlabs/fleetd/pull/12")).toEqual({ repo: "unlaboredlabs/fleetd", prNumber: 12 });
     for (const url of [
       "http://github.com/o/r/pull/1",
       "https://github.com/o/r/pull/0",
@@ -60,10 +60,10 @@ describe("GitHub repo and PR URL", () => {
 describe("Change", () => {
   it("needs prUrl to name the same repo and PR number", () => {
     expect(accepts(Change, change)).toBe(true);
-    expect(accepts(Change, { ...change, prUrl: "https://github.com/Wynn-Dev/fleetd-testbed/pull/7" })).toBe(true);
+    expect(accepts(Change, { ...change, prUrl: "https://github.com/UnlaboredLabs/fleetd-testbed/pull/7" })).toBe(true);
     expect(accepts(Change, { ...change, prNumber: 8 })).toBe(false);
-    expect(accepts(Change, { ...change, repo: "wynn-dev/fleetd" })).toBe(false);
-    expect(accepts(Change, { ...change, prNumber: 0, prUrl: "https://github.com/wynn-dev/fleetd-testbed/pull/0" })).toBe(false);
+    expect(accepts(Change, { ...change, repo: "unlaboredlabs/fleetd" })).toBe(false);
+    expect(accepts(Change, { ...change, prNumber: 0, prUrl: "https://github.com/unlaboredlabs/fleetd-testbed/pull/0" })).toBe(false);
   });
 
   it("binds reviews and merges to full lowercase SHAs and patch ids", () => {

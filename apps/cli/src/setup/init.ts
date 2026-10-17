@@ -6,16 +6,15 @@ import { parseListen } from "@fleetd/hub/main.ts";
 import * as HttpApp from "@fleetd/hub/api/HttpApp.ts";
 import * as HubDb from "@fleetd/hub/store/HubDb.ts";
 import * as Effect from "effect/Effect";
-import { openHub, pairingLink, probeListen, processesHolding } from "./hubAccess.ts";
+import { probeListen, processesHolding } from "./hubAccess.ts";
 import { runLocal } from "./ssh.ts";
-import { ensureVapidKeys, isNoreply, parseGitIdentity, readSetup, writeSetup } from "./state.ts";
+import { isNoreply, parseGitIdentity, readSetup, writeSetup } from "./state.ts";
 import { type Platform, renderUnit, serviceManager, type ServiceSpec, unitPath, unitSuffix } from "./units.ts";
 
-export const SETUP_USAGE = `  init [--home <dir>] [--listen <host:port>] [--url <url>] [--name <device>]
+export const SETUP_USAGE = `  init [--home <dir>] [--listen <host:port>] [--url <url>]
        [--git-identity "Name <email>"] [--no-service] [--unit-suffix <s>]
-             set up this machine as the hub: home (default ~/.fleetd/hub), Web Push keys, a user
-             service (systemd or launchd) that keeps it running, and a one-time pairing link for
-             your first device (--name, default phone) at --url (default http://<listen>);
+             set up this machine as the hub: home (default ~/.fleetd/hub) and a user service
+             (systemd or launchd) that keeps it running, reached at --url (default http://<listen>);
              --git-identity is the commit author for every machine (the GitHub noreply address
              for public repos); --no-service prepares everything but leaves starting it to you
   uninstall [--home <dir>] [--purge]
@@ -62,7 +61,6 @@ const initCommand = async (argv: ReadonlyArray<string>): Promise<number> => {
         home: { type: "string" },
         listen: { type: "string" },
         url: { type: "string" },
-        name: { type: "string" },
         "git-identity": { type: "string" },
         "no-service": { type: "boolean" },
         "unit-suffix": { type: "string" },
@@ -99,18 +97,9 @@ const initCommand = async (argv: ReadonlyArray<string>): Promise<number> => {
 
   fs.mkdirSync(home, { recursive: true, mode: 0o700 });
   say(`hub home ${home}`);
-  say(ensureVapidKeys(home) ? "created Web Push (VAPID) keys in vapid.json" : "kept the existing Web Push keys in vapid.json");
   writeSetup(home, { listen: listenText, url, unitSuffix: suffix, ...(identity === undefined ? {} : { gitIdentity: identity }), machines: previous?.machines ?? {} });
   if (identity === undefined) say('no commit identity yet: add one with --git-identity "Name <id+user@users.noreply.github.com>" before adding machines');
   else say(`commit identity ${identity.name} <${identity.email}>${isNoreply(identity) ? "" : " (not a GitHub noreply address: commits in public repos will show it)"}`);
-
-  const hub = openHub(home);
-  let pairing;
-  try {
-    pairing = await hub.runPromise(pairingLink(values.name ?? "phone", url));
-  } finally {
-    await hub.dispose();
-  }
 
   if (withService && platform !== undefined) {
     const cli = fs.realpathSync(process.argv[1] ?? "");
@@ -138,9 +127,8 @@ const initCommand = async (argv: ReadonlyArray<string>): Promise<number> => {
     say(`not installing a service; run the hub yourself with:\n  fleetd hub start --home ${home} --listen ${listenText}`);
   }
 
-  say(`one-time pairing link for ${values.name ?? "phone"}, valid until ${pairing.expiresAt}. Open it on the device:`);
-  process.stdout.write(`${pairing.link}\n`);
-  say("next: fleetd machine add <ssh-host> for each machine that runs agents");
+  say(`next: fleetd hub key create --human --name <device> prints the key the desktop app connects to ${url} with`);
+  say("then: fleetd machine add <ssh-host> for each machine that runs agents");
   return 0;
 };
 

@@ -10,7 +10,7 @@
     "build": "pnpm -r run build",
     "typecheck": "tsc -p scripts && pnpm -r run typecheck",
     "test": "pnpm -r run test",
-    "test:lab": "pnpm --filter @fleetd/pwa build && pnpm --filter fleetd build && node apps/hub/src/lab/testLab.ts",
+    "test:lab": "pnpm --filter fleetd build && node apps/hub/src/lab/testLab.ts",
     "lint": "oxlint --deny-warnings apps packages scripts",
     "sync:t3": "node scripts/sync-t3.ts"
   },

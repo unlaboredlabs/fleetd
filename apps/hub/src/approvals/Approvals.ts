@@ -1,5 +1,5 @@
 // Secrets, approvals and checklists (M8): the asks only a person answers, where the hub acts on the answer.
-// - secret: the browser seals the value to the sink machine's box key; the hub relays the ciphertext to that node
+// - secret: the desktop app seals the value to the sink machine's box key; the hub relays the ciphertext to that node
 //   without storing it and keeps only the fingerprint the node reports.
 // - approve: `fleetd gated run` stores the exact command; once a human answers "go", the project's node runs those
 //   bytes and the exit code and output tail go to the lead as evidence.
@@ -50,7 +50,7 @@ const FINISHED = /^(exit |killed after |not run on )/u;
 export const NOT_RUN_AFTER_RESTART = "not run: hub restarted before execution; answer again to run";
 
 const HUMAN_ONLY_SECRET_FIX =
-  "Enter it from a paired device (the fleetd phone or desktop app) or with a --human key; agent keys never handle secret values.";
+  "Enter it from the fleetd desktop app or another client with a --human key; agent keys never handle secret values.";
 
 export class Approvals extends Context.Service<
   Approvals,

@@ -413,7 +413,7 @@ impl State {
 
     fn on_message(&mut self, message: ServerMessage) -> Out {
         match message {
-            ServerMessage::Ready(_) | ServerMessage::DevicePaired(_) => Vec::new(),
+            ServerMessage::Ready(_) => Vec::new(),
             ServerMessage::Snapshot(status) => self.on_snapshot(status),
             ServerMessage::Event(event) => self.on_event(&event),
             ServerMessage::Result(result) => {

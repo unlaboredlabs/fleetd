@@ -211,7 +211,6 @@
         "usage.resumed",
         "ask.secret_saved",
         "gated.ran",
-        "push.sent",
         "doctor.changed",
         "retro.ran",
         "playbook.changed",
@@ -514,31 +513,6 @@
             "t",
             "code",
             "message"
-          ],
-          "additionalProperties": true
-        },
-        {
-          "type": "object",
-          "properties": {
-            "t": {
-              "type": "string",
-              "enum": [
-                "device_paired"
-              ]
-            },
-            "key": {
-              "type": "string",
-              "minLength": 1
-            },
-            "keyId": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "t",
-            "key",
-            "keyId"
           ],
           "additionalProperties": true
         }

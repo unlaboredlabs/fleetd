@@ -54,11 +54,7 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   inbox_reply:
     "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Each answer becomes a Decision and wakes its lead. Unparseable text changes nothing and returns a hint. Approve asks take only \"<n> go\" (the node runs the stored command) or \"<n> no\"; secret, approve and do asks take answers from human keys only.",
   secret_submit:
-    "Human keys only. Enter a secret ask's value sealed in the browser with libsodium crypto_box_seal to the sink machine's boxPubKey (fleetd_status machines). The hub relays it to that node, which writes the sink (0600) and returns the sha256 fingerprint prefix; the ask closes with it. Refused with machine_offline when the node is down: nothing is queued.",
-  push_vapid_key: "The hub's VAPID public key (base64url, 65 bytes) for PushManager.subscribe's applicationServerKey.",
-  push_subscribe:
-    "Human keys only. Register this device's Web Push subscription (PushSubscription.toJSON() plus a device name). The hub pushes loud items only (money, credential or irreversible asks blocking a step, approvals that never ran, usage.breaker, machine.offline with running work), at most one per 20 minutes with the rest as \"+N more\", held in quiet hours (policy.quiet_hours, 23:00-08:00 in policy.tz by default; \"off\" for none) unless money or irreversible. Payloads are one line with no secrets.",
-  push_unsubscribe: "Human keys only. Remove a Web Push subscription by its endpoint; idempotent.",
+    "Human keys only. Enter a secret ask's value sealed on the client (the desktop app) with libsodium's crypto_box_seal to the sink machine's boxPubKey (fleetd_status machines). The hub relays it to that node, which writes the sink (0600) and returns the sha256 fingerprint prefix; the ask closes with it. Refused with machine_offline when the node is down: nothing is queued.",
   decisions_search: "Full-text search over active decisions (key, value, why), best match first; scope narrows to global, a project or a workstream.",
   decisions_record:
     "Record a decision (key = lowercase dotted slug) at global, project or workstream scope; it supersedes the active one with the same key and scope, so leads never ask it again. A project's lead is woken with it. Global decisions need an operate grant on all machines.",
@@ -87,11 +83,11 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   train_freeze:
     "Hold (frozen true) or resume (frozen false) a repo's merge train by recording or retiring its policy.freeze.<owner>.<name> decision. The train finishes nothing new while frozen; it emits train.frozen or train.resumed on its next pass.",
   doctor_list:
-    "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, push configured, HTTPS. Each machine: online/degraded/offline, T3 at the pinned version, the fleetd instance's launch args and own config dir, auto-resume off, probe counter 0, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
+    "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, claude login, HTTPS. Each machine: online/degraded/offline, T3 at the pinned version, the fleetd instance's launch args and own config dir, auto-resume off, probe counter 0, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
   attention_policy:
     "When to interrupt the human: events carry attention \"loud\" or \"urgent\" when only a person can unblock them. Returns the notification coalescing window (coalesceSec) and the quiet windows under way and next (absolute times from policy.quiet_hours in policy.tz), inside which only urgent events notify.",
   doctor_fix:
-    "Run a check's automatic fix, then the check again: restart T3 with the node's restart command (degraded), re-mint the hub's T3 session (no T3 connection), or re-apply the fleetd instance config (launch args, auto-resume). Manual fixes are refused with the exact command to run. Admin keys, or a person's paired device.",
+    "Run a check's automatic fix, then the check again: restart T3 with the node's restart command (degraded), re-mint the hub's T3 session (no T3 connection), or re-apply the fleetd instance config (launch args, auto-resume). Manual fixes are refused with the exact command to run. Admin keys, or a person's device (a human key).",
 };
 
 /** MCP requires an object root, so the empty input becomes an empty object schema and refs go to $defs. */

@@ -55,8 +55,6 @@ import * as Approvals from "../approvals/Approvals.ts";
 import * as GitHub from "../checks/GitHub.ts";
 import * as FinishAll from "../playbooks/FinishAll.ts";
 import * as ProjectRemovals from "../leads/ProjectRemovals.ts";
-import * as Push from "../push/Push.ts";
-import { generateVapidKeys, type PushRequest } from "../push/webPush.ts";
 import { NodeCommands, type GatedOutcome, type SecretOutcome, unlinked } from "../checks/NodeCommands.ts";
 import * as ReviewGate from "../train/ReviewGate.ts";
 import * as ChangeRecords from "../train/ChangeRecords.ts";
@@ -226,14 +224,6 @@ export const makeTestHub = () => {
     ),
   );
 
-  // Web Push to the push services: every request is recorded and answered with `pushStatus`.
-  const pushes: Array<PushRequest> = [];
-  let pushStatus = 201;
-  const layerPush = Layer.effect(
-    Push.Push,
-    Push.make({ keys: generateVapidKeys(), post: (request) => Effect.sync(() => (pushes.push(request), pushStatus)) }),
-  );
-
   // Finish-all's inventory sees a checkout without a GitHub origin and no TODO markers.
   const layerFinishAll = FinishAll.layer.pipe(
     Layer.provide(
@@ -276,7 +266,7 @@ export const makeTestHub = () => {
     ),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll, ProjectRemovals.layer, layerPush, layerRetro).pipe(
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake, layerTrain, layerApprovals, layerFinishAll, ProjectRemovals.layer, layerRetro).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),
@@ -316,9 +306,6 @@ export const makeTestHub = () => {
       }
     },
     calls,
-    /** Web Push requests the hub sent. */
-    pushes,
-    setPushStatus: (status: number) => void (pushStatus = status),
     /** secret_deliver and gated_run requests the hub sent to nodes. */
     nodeFrames,
     setSecretReply: (reply: typeof secretReply) => void (secretReply = reply),
@@ -337,8 +324,6 @@ export const makeTestHub = () => {
     addThread: (t: ThreadSummary & { readonly lastSequence?: number }) => run(Effect.flatMap(HubStore.HubStore, (s) => s.threads.upsert(t))),
     addKey: (name: string, grants: ReadonlyArray<Grant>, kind?: KeyKind) =>
       run(Effect.flatMap(Auth.Auth, (a) => a.createKey(name, grants, kind))).then(({ key, info }) => ({ key, keyId: info.keyId })),
-    /** A pairing link's token, as `fleetd hub device add` prints it. */
-    pairToken: (name: string) => run(Effect.flatMap(Auth.Auth, (a) => a.createPairToken(name))).then((t) => t.token),
     listKeys: () => run(Effect.flatMap(Auth.Auth, (a) => a.list())),
     revoke: (keyId: string) => run(Effect.flatMap(Auth.Auth, (a) => a.revoke(keyId))),
     append: (event: Omit<HubEvent, "seq">) => run(Effect.flatMap(EventLog.EventLog, (e) => e.append(event))),

@@ -1,7 +1,7 @@
 // `node apps/hub/src/lab/m8Secrets.ts` (after `pnpm --filter fleetd build`): one sealed secret and one approved
 // command through a real `fleetd node` process from the bundled CLI. Runs a bare hub in-process (node link, ledger,
 // leads and approvals) on a lab port; the node links as degraded, since no T3 and no claude turns are needed. Seals
-// the value with libsodium as the browser does, then searches the hub's files, events and logs and the node's log
+// the value with libsodium as the desktop app does, then searches the hub's files, events and logs and the node's log
 // for it. Never used in CI.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -142,7 +142,7 @@ const program = Effect.gen(function* () {
   const keyFile = path.join(DIR, "node", "node-box-key.pem");
   check(machine?.boxPubKey !== undefined && (fs.statSync(keyFile).mode & 0o777) === 0o600, `node linked with boxPubKey ${machine?.boxPubKey}, key file 0600`);
 
-  // 1. fleetd ask --kind secret, then the phone seals and submits.
+  // 1. fleetd ask --kind secret, then a human key seals and submits.
   const sinkPath = path.join(WORKSPACE, ".env");
   fs.writeFileSync(sinkPath, "OTHER=1\nSTRIPE_TEST_KEY=old\n");
   const { ask } = yield* asks.create(

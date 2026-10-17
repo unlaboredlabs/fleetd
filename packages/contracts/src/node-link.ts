@@ -49,7 +49,7 @@ export const NodeHello = Schema.Struct({
   sig: Schema.NonEmptyString,
   /** One-time token from `fleetd hub token create`; sent only until the hub has registered `pubKey`. */
   enrollToken: Schema.optionalKey(Schema.NonEmptyString),
-  /** M8: the X25519 key browsers seal this machine's secrets to. Absent on nodes from before M8, which take no secrets. */
+  /** M8: the X25519 key the desktop app seals this machine's secrets to. Absent on nodes from before M8, which take no secrets. */
   boxPubKey: Schema.optionalKey(BoxPublicKey),
 });
 export type NodeHello = typeof NodeHello.Type;
@@ -110,7 +110,7 @@ export type CmdResult = typeof CmdResult.Type;
 
 const FrameError = Schema.NonEmptyString.check(Schema.isMaxLength(500));
 
-/** Hub -> node: a secret sealed in the browser to this node's `boxPubKey`; the hub never sees the plaintext. */
+/** Hub -> node: a secret sealed in the desktop app to this node's `boxPubKey`; the hub never sees the plaintext. */
 export const SecretDeliver = Schema.Struct({
   t: Schema.tag("secret_deliver"),
   id: Schema.NonEmptyString,

@@ -29,7 +29,6 @@ import { Approvals } from "../approvals/Approvals.ts";
 import { quietPolicy } from "../attention/policy.ts";
 import { COALESCE_MS, quietWindows } from "../attention/rules.ts";
 import { isoAt } from "../ledger/LedgerRepo.ts";
-import { Push } from "../push/Push.ts";
 import * as Auth from "../auth/Auth.ts";
 import * as ClaimRecords from "../checks/ClaimRecords.ts";
 import * as Estimates from "../estimates/Estimates.ts";
@@ -96,9 +95,6 @@ export const IMPLEMENTED_TOOLS = [
   "asks_list",
   "inbox_reply",
   "secret_submit",
-  "push_subscribe",
-  "push_unsubscribe",
-  "push_vapid_key",
   "decisions_search",
   "decisions_record",
   "digest_get",
@@ -257,7 +253,6 @@ const make = Effect.gen(function* () {
   const approvals = yield* Approvals;
   const finishAll = yield* FinishAll;
   const doctor = yield* Doctor;
-  const push = yield* Push;
   const retro = yield* Retro;
 
   const now = Effect.map(Clock.currentTimeMillis, (ms) => new Date(ms).toISOString());
@@ -878,20 +873,6 @@ const make = Effect.gen(function* () {
 
     secret_submit: (caller, input) => approvals.submitSecret(caller, input).pipe(Effect.mapError(refusal)),
 
-    push_vapid_key: () => Effect.map(push.vapidKey(), (publicKey) => ({ publicKey, next: "Pass it to PushManager.subscribe, then call push_subscribe with the subscription." })),
-
-    push_subscribe: (caller, input) =>
-      push.subscribe(caller, input).pipe(
-        Effect.mapError(refusal),
-        Effect.as({ ok: true as const, next: "This device gets a push for each loud item: at most one per 20 minutes, quiet hours from policy.quiet_hours (23:00-08:00 by default)." }),
-      ),
-
-    push_unsubscribe: (caller, input) =>
-      push.unsubscribe(caller, input.endpoint).pipe(
-        Effect.mapError(refusal),
-        Effect.map((removed) => ({ removed, ...(removed ? {} : { next: "No subscription had that endpoint; nothing to do." }) })),
-      ),
-
     decisions_search: Effect.fnUntraced(function* (caller, input) {
       const scoped = input.scope === undefined ? undefined : yield* decisionProject(input.scope);
       if (scoped !== undefined) yield* require(caller, "read", scoped.machineId);
@@ -1044,12 +1025,12 @@ const make = Effect.gen(function* () {
     doctor_fix: Effect.fnUntraced(function* (caller, input) {
       const scope = input.checkId.slice(0, input.checkId.indexOf("/"));
       const machineId = scope === "hub" ? undefined : (scope as MachineId);
-      // The fixes are safe but act on machines: admin keys, or a person's own paired device.
+      // The fixes are safe but act on machines: admin keys, or a person's own device (a human key).
       if (!auth.allows(caller, "admin", machineId) && !(caller.kind === "human" && auth.allows(caller, "operate", machineId))) {
         return yield* new ToolError({
           code: "forbidden",
-          message: "doctor_fix needs an admin key, or a person's paired device with operate on the machine.",
-          fix: "Run it from the phone app, or with a key from fleetd hub key create --role admin.",
+          message: "doctor_fix needs an admin key, or a person's device (a human key) with operate on the machine.",
+          fix: "Run it from the desktop app, or with a key from fleetd hub key create --role admin.",
         });
       }
       const { ran, check } = yield* doctor.fix(input.checkId).pipe(Effect.mapError(refusal));

@@ -211,7 +211,6 @@
         "usage.resumed",
         "ask.secret_saved",
         "gated.ran",
-        "push.sent",
         "doctor.changed",
         "retro.ran",
         "playbook.changed",
@@ -3038,10 +3037,6 @@
     "SealedSecret": {
       "type": "string"
     },
-    "PushEndpoint": {
-      "type": "string",
-      "maxLength": 2000
-    },
     "DoctorCheckId": {
       "type": "string",
       "pattern": "^[a-z0-9-]{1,32}\\/[a-z0-9_]{1,40}$"
@@ -5221,116 +5216,6 @@
           ],
           "additionalProperties": true
         },
-        "push_subscribe.input": {
-          "type": "object",
-          "properties": {
-            "endpoint": {
-              "$ref": "#/$defs/PushEndpoint"
-            },
-            "keys": {
-              "type": "object",
-              "properties": {
-                "p256dh": {
-                  "type": "string"
-                },
-                "auth": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "p256dh",
-                "auth"
-              ],
-              "additionalProperties": true
-            },
-            "deviceName": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 80,
-              "pattern": "^[^\\r\\n]*$"
-            }
-          },
-          "required": [
-            "endpoint",
-            "keys",
-            "deviceName"
-          ],
-          "additionalProperties": true
-        },
-        "push_subscribe.output": {
-          "type": "object",
-          "properties": {
-            "ok": {
-              "type": "boolean",
-              "enum": [
-                true
-              ]
-            },
-            "next": {
-              "type": "string"
-            },
-            "truncated": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "ok"
-          ],
-          "additionalProperties": true
-        },
-        "push_unsubscribe.input": {
-          "type": "object",
-          "properties": {
-            "endpoint": {
-              "$ref": "#/$defs/PushEndpoint"
-            }
-          },
-          "required": [
-            "endpoint"
-          ],
-          "additionalProperties": true
-        },
-        "push_unsubscribe.output": {
-          "type": "object",
-          "properties": {
-            "removed": {
-              "type": "boolean"
-            },
-            "next": {
-              "type": "string"
-            },
-            "truncated": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "removed"
-          ],
-          "additionalProperties": true
-        },
-        "push_vapid_key.input": {
-          "not": {
-            "type": "null"
-          }
-        },
-        "push_vapid_key.output": {
-          "type": "object",
-          "properties": {
-            "publicKey": {
-              "type": "string"
-            },
-            "next": {
-              "type": "string"
-            },
-            "truncated": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "publicKey"
-          ],
-          "additionalProperties": true
-        },
         "doctor_list.input": {
           "type": "object",
           "properties": {
@@ -5531,12 +5416,6 @@
         "train_freeze.output",
         "secret_submit.input",
         "secret_submit.output",
-        "push_subscribe.input",
-        "push_subscribe.output",
-        "push_unsubscribe.input",
-        "push_unsubscribe.output",
-        "push_vapid_key.input",
-        "push_vapid_key.output",
         "doctor_list.input",
         "doctor_list.output",
         "attention_policy.input",

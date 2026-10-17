@@ -93,27 +93,6 @@
             "input"
           ],
           "additionalProperties": true
-        },
-        {
-          "type": "object",
-          "properties": {
-            "t": {
-              "type": "string",
-              "enum": [
-                "device_pair"
-              ]
-            },
-            "token": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200
-            }
-          },
-          "required": [
-            "t",
-            "token"
-          ],
-          "additionalProperties": true
         }
       ]
     }

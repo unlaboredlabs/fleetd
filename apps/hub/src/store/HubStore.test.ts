@@ -163,4 +163,21 @@ describe("HubDb", () => {
     expect(await once()).toEqual({ seq: 2, mode: "wal", version: HubDb.SCHEMA_VERSION });
     expect(fs.statSync(home).mode & 0o777).toBe(0o700);
   });
+
+  it("drops the phone app's pairing and push tables, and its push.sent events, which no longer decode", async () => {
+    const home = path.join(dir, "hub");
+    const opened = <A>(f: (db: HubDb.HubDb["Service"]["db"]) => A) =>
+      Effect.runPromise(Effect.map(HubDb.HubDb, ({ db }) => f(db)).pipe(Effect.provide(HubDb.layer(home))));
+    // A hub from before the removal: the previous schema version, with the tables and a push.sent event in its log.
+    await opened((db) => {
+      db.exec(`PRAGMA user_version = ${HubDb.SCHEMA_VERSION - 1}`);
+      db.exec("CREATE TABLE pair_tokens (hash TEXT PRIMARY KEY); CREATE TABLE push_subscriptions (endpoint TEXT PRIMARY KEY)");
+      db.prepare("INSERT INTO events (created_ms, type, data) VALUES (0, 'push.sent', '{}')").run();
+    });
+    const after = await opened((db) => ({
+      tables: db.prepare("SELECT name FROM sqlite_master WHERE name IN ('pair_tokens', 'push_subscriptions')").all().length,
+      pushSent: db.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'push.sent'").get()?.n,
+    }));
+    expect(after).toEqual({ tables: 0, pushSent: 0 });
+  });
 });

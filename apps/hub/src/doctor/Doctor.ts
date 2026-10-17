@@ -15,7 +15,6 @@ import { NodeActions } from "../checks/NodeCommands.ts";
 import { Executors } from "../executor/Executors.ts";
 import { FLEETD_INSTANCE } from "../executor/ProviderList.ts";
 import * as EventLog from "../store/EventLog.ts";
-import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { Sweep } from "../sweep/Sweep.ts";
 import * as Usage from "../usage/Usage.ts";
@@ -64,8 +63,6 @@ export interface DoctorDeps {
   readonly gh: GhRunner;
   /** `claude <args>` in the router's environment. */
   readonly claude: GhRunner;
-  /** Push subscriptions the hub keeps; undefined when it keeps none at all (no push store). */
-  readonly pushDevices: Effect.Effect<number | undefined>;
   /** GET `url`/healthz with a short timeout. */
   readonly health: (url: string) => Effect.Effect<Checks.Probe>;
   readonly append: EventLog.EventLog["Service"]["append"];
@@ -98,12 +95,11 @@ export const make = (deps: DoctorDeps) =>
       const config = deps.config();
       const self = `${selfUrl(deps.listen)}/healthz`;
       const publicUrl = config.config.url;
-      const [reachable, gh, claude, devices, https] = yield* Effect.all(
+      const [reachable, gh, claude, https] = yield* Effect.all(
         [
           deps.health(selfUrl(deps.listen)),
           deps.gh(["auth", "status"]).pipe(Effect.catch((error) => Effect.succeed(error))),
           deps.claude(["auth", "status", "--json"]).pipe(Effect.catch((error) => Effect.succeed(error))),
-          deps.pushDevices,
           publicUrl?.startsWith("https://") && config.problem === undefined ? deps.health(publicUrl.replace(/\/+$/u, "")) : Effect.succeed(undefined),
         ],
         { concurrency: "unbounded" },
@@ -112,7 +108,6 @@ export const make = (deps: DoctorDeps) =>
         Checks.hubReachable(self, reachable, restartCommand("hub", { ...deps.hubPlatform, unitSuffix: config.config.unitSuffix ?? "" })),
         Checks.ghAuth(gh),
         Checks.claudeLogin(claude),
-        Checks.pushConfigured(devices, publicUrl),
         Checks.httpsReachable(config, deps.listen.port, https),
       ];
     });
@@ -288,18 +283,8 @@ const fetchHealth = (url: string): Effect.Effect<Checks.Probe> =>
     },
   }).pipe(Effect.catch((why) => Effect.succeed({ ok: false, why } as const)));
 
-/** Rows of the push store, when this hub has one (M8's `push_subscriptions`). */
-const pushDevicesOf = (db: HubDb.HubDb["Service"]["db"]) =>
-  Effect.sync(() => {
-    try {
-      return Number(db.prepare("SELECT COUNT(*) AS n FROM push_subscriptions").get()?.n ?? 0);
-    } catch {
-      return undefined;
-    }
-  });
-
 /**
- * The doctor over the hub's services, registered with the sweep. Needs HubStore, EventLog, HubDb, Executors (with its
+ * The doctor over the hub's services, registered with the sweep. Needs HubStore, EventLog, Executors (with its
  * T3Settings), NodeActions, Usage with its UsageSource, and the Sweep.
  */
 export const layer = (options: { readonly home: string; readonly listen: DoctorDeps["listen"] }) =>
@@ -308,7 +293,6 @@ export const layer = (options: { readonly home: string; readonly listen: DoctorD
     Effect.gen(function* () {
       const store = yield* HubStore.HubStore;
       const events = yield* EventLog.EventLog;
-      const { db } = yield* HubDb.HubDb;
       const executors = yield* Executors;
       const usage = yield* Usage.Usage;
       const usageSource = yield* UsageSource;
@@ -324,7 +308,6 @@ export const layer = (options: { readonly home: string; readonly listen: DoctorD
         actions: yield* NodeActions,
         gh: ghRunner,
         claude: claudeRunner,
-        pushDevices: pushDevicesOf(db),
         health: fetchHealth,
         append: events.append,
       });

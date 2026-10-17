@@ -22,7 +22,7 @@ fresh checkout; it does not touch any T3 server, proxy or other app on the Mac.
 
 ```sh
 mkdir -p ~/src && cd ~/src
-git clone https://github.com/wynn-dev/fleetd.git fleetd-bench
+git clone https://github.com/unlaboredlabs/fleetd.git fleetd-bench
 cd fleetd-bench
 git log -1 --format='%h %s'
 ```

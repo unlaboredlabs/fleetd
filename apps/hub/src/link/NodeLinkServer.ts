@@ -317,7 +317,7 @@ export const make = Effect.fn("NodeLinkServer.make")(function* (options: NodeLin
         // A machine whose T3 is down keeps the version it last reported.
         t3: t3 === undefined ? (stored?.t3 ?? null) : { version: t3.version, protocol: t3.protocol },
         nodeVersion: hello.nodeVersion,
-        // Browsers seal this machine's secrets to it; a node from before M8 sends none and takes none.
+        // The desktop app seals this machine's secrets to it; a node from before M8 sends none and takes none.
         ...(hello.boxPubKey === undefined ? {} : { boxPubKey: hello.boxPubKey }),
         ...(t3 === undefined ? { degradedReason: helloReason } : {}),
       });

@@ -147,12 +147,6 @@ describe("hub checks", () => {
     expect(Checks.claudeLogin({ exitCode: 1, stdout: "error: boom", stderr: "" }).check.status).toBe("unknown");
   });
 
-  it("push needs a subscription", () => {
-    expect(Checks.pushConfigured(2, undefined).check).toMatchObject({ status: "ok", message: "2 devices get push." });
-    expect(Checks.pushConfigured(0, "https://hub.ts.net").check).toMatchObject({ status: "warn", fix: { command: "fleetd hub device add --name phone --url https://hub.ts.net" } });
-    expect(Checks.pushConfigured(undefined, undefined).check.status).toBe("unknown");
-  });
-
   it("warns without an HTTPS public URL and fails when it does not answer", () => {
     expect(Checks.httpsReachable({ config: {} }, 4790, undefined).check).toMatchObject({ status: "warn", fix: { command: "tailscale serve --bg 4790" } });
     expect(Checks.httpsReachable({ config: { url: "http://forge:4790" } }, 4790, undefined).check).toMatchObject({ status: "warn", message: expect.stringContaining("not HTTPS") });
