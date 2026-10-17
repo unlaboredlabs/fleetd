@@ -122,17 +122,24 @@ export async function m9Playbooks(lab: Lab) {
   // (d) Finish-all on the testbed, which has no open issues.
   const open = JSON.parse(spawnSync("gh", ["issue", "list", "-R", TESTBED_REPO, "--state", "open", "--json", "number"], { cwd: LAB, encoding: "utf8", env: scrubbedEnv() }).stdout) as Array<Body>;
   check(open.length === 0, `${TESTBED_REPO} has no open issues: ${JSON.stringify(open)}`);
+  let wf: string | undefined;
+  let tbRef: { machineId: string; projectId: string } | undefined;
   try {
-    await t3(lab, "POST", "/api/projects/mutate", { type: "project.create", commandId: randomUUID(), projectId: randomUUID(), title: "fleetd-testbed", workspaceRoot: TESTBED });
-    const tb = await lab.until("the hub sees the testbed project", 60_000, async () => {
-      const found = ((await callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>).find((p) => p.workspaceRoot === TESTBED);
+    // The hub keeps m7's deleted testbed project in its list, so this run's is the one with the new id.
+    const testbedIds = async () =>
+      ((await callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>).filter((p) => p.workspaceRoot === TESTBED).map((p) => p.projectId as string);
+    const earlier = new Set(await testbedIds());
+    const tbId = randomUUID();
+    await t3(lab, "POST", "/api/projects/mutate", { type: "project.create", commandId: randomUUID(), projectId: tbId, title: "fleetd-testbed", workspaceRoot: TESTBED });
+    const tb = await lab.until("the hub sees the new testbed project", 60_000, async () => {
+      const found = (await testbedIds()).find((id) => !earlier.has(id));
       if (found === undefined) await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 3 });
-      return found?.projectId as string | undefined;
+      return found;
     });
-    const tbRef = { machineId: MACHINE, projectId: tb };
-    const f = await callTool("intake_submit", { text: "finish: @fleetd-testbed everything still open", clientRequestId: randomUUID() });
+    tbRef = { machineId: MACHINE, projectId: tb };
+    const f = await callTool("intake_submit", { ...tbRef, text: "finish: everything still open", clientRequestId: randomUUID() });
     check(!f.isError && f.body.echo?.template === "finish-all" && f.body.echo.projectRef.projectId === tb, `finish-all intake: ${JSON.stringify(f.body)}`);
-    const wf = f.body.workstreamId as string;
+    wf = f.body.workstreamId as string;
     cursor = await lab.cursor();
     const started = await callTool("lead_start", { ...tbRef, model: MODEL, effort: "low" });
     check(!started.isError, `lead_start on the testbed: ${JSON.stringify(started.body)}`);
@@ -142,14 +149,15 @@ export async function m9Playbooks(lab: Lab) {
     if (state === "idle") {
       ok(`(d) the testbed lead ran fleetd inventory itself in its first turn; ${wf} is idle`);
     } else {
+      const before = state;
       const inventory = shell(TESTBED).run("inventory");
       check(inventory.code === 0 && inventory.stdout.includes(FINISH_ALL_IDLE), `fleetd inventory on the testbed: ${JSON.stringify(inventory)}`);
       state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
-      ok(`(d) the lead left ${wf} ${state === "idle" ? "draft" : state}; the harness ran fleetd inventory: ${inventory.stdout.trim().replace(/\n/gu, " | ")}`);
+      ok(`(d) the lead left ${wf} ${before}; the harness ran fleetd inventory: ${inventory.stdout.trim().replace(/\n/gu, " | ")}`);
     }
     check(state === "idle", `${wf} is idle: ${state}`);
     const digest = (await callTool("digest_get")).body.text as string;
-    const line = digest.split("\n").find((l) => l.startsWith(`Idle: ${wf} `));
+    const line = digest.split("\n").find((l) => l.startsWith(`Idle: ${wf} fleetd-testbed: `));
     check(line?.endsWith(`· ${FINISH_ALL_IDLE}`), `the human digest shows ${wf} idle with "${FINISH_ALL_IDLE}": ${digest}`);
     ok(`(d) digest: ${line}`);
   } finally {
@@ -169,7 +177,11 @@ export async function m9Playbooks(lab: Lab) {
     if (!page.more) break;
     at = page.cursor;
   }
-  const tasks = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.workstreamId === wa || t.workstreamId === wr);
+  const ours = [wa, wr, wf];
+  const tasks: Array<Body> = [];
+  for (const projectRef of tbRef === undefined ? [ref] : [ref, tbRef]) {
+    tasks.push(...((await callTool("tasks_list", { projectRef, limit: 100 })).body.tasks as Array<Body>).filter((t) => ours.includes(t.workstreamId)));
+  }
   const taskTurns = tasks.reduce((n, t) => n + (t.attempt as number), 0);
   const total = routerRuns.length + leadTurns + taskTurns;
   ok(`M9 used ${routerRuns.length} router run + ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${total} claude turns (${MODEL})`);

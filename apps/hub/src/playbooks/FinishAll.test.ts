@@ -29,6 +29,8 @@ const makeFinishAllKit = () => {
       Effect.succeed(
         input.argv.join(" ") === "git remote get-url origin" ? { exitCode: 0, outputTail: "git@github.com:Wynn-Dev/lab.git\n", timedOut: false } : todo,
       ),
+    deliverSecret: () => Effect.die("no secrets in this kit"),
+    runGated: () => Effect.die("no gated runs in this kit"),
     attach: () => Effect.void,
     resolve: () => Effect.void,
   });
@@ -141,10 +143,18 @@ describe("finish-all", () => {
         const human = renderHumanDigest({ nowMs: 0, tz: "UTC", asks: [], workstreams: [w1], decidedWithoutYou: [], projectNames: new Map([["lab-a/p1", "lab"]]) });
         expect(human).toContain(`Idle: W1 lab: finish: everything open · ${FINISH_ALL_IDLE}`);
 
+        // Freezing a brief now does not reopen it.
+        const frozen = yield* workstreams.briefCreate(REF, {
+          workstreamId: W(1),
+          brief: { goal: "finish the open work", why: "lab", pointers: [], constraints: [], doneWhen: [{ type: "judge", criteria: "nothing is left" }] },
+        });
+        expect(frozen.state).toBe("idle");
+        expect((yield* workstreams.get(W(1)))?.state).toBe("idle");
+
         // The way back: new work with a value source reopens it.
         k.setIssues([issue(9, "Docs link is broken")]);
         expect(yield* finishAll.inventory(LEAD)).toMatchObject({ spawnable: 1, idle: false });
-        expect((yield* workstreams.get(W(1)))?.state).toBe("draft");
+        expect((yield* workstreams.get(W(1)))?.state).toBe("running");
       }),
     );
   });

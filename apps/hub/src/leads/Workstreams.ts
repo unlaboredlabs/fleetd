@@ -211,6 +211,13 @@ export const make = Effect.gen(function* () {
         return { op: "brief_create", workstreamId: w.workstreamId, briefHash: hash, state: w.state, next: `Unchanged: this brief is already frozen. ${running}` };
       }
       const at = yield* nowIso;
+      if (w.brief === undefined && w.state === "idle") {
+        // An idle finish-all stays idle: only new work with a value source reopens it (FinishAll).
+        const next: Workstream = { ...w, brief, briefHash: hash, updatedAt: at };
+        yield* records.workstreams.put({ workstream: next, amends: stored.amends });
+        yield* event(next, "workstream.state", `${w.workstreamId} brief frozen while idle`, { workstreamId: w.workstreamId, state: "idle", briefHash: hash });
+        return { op: "brief_create", workstreamId: w.workstreamId, briefHash: hash, state: "idle", next: `Brief frozen; ${w.workstreamId} stays idle. Nothing to do until new work comes in.` };
+      }
       if (w.brief === undefined) {
         const next: Workstream = { ...w, brief, briefHash: hash, state: "running", updatedAt: at };
         yield* records.workstreams.put({ workstream: next, amends: stored.amends });

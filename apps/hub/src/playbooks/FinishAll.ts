@@ -214,7 +214,8 @@ export const make = Effect.gen(function* () {
       };
       const idle = shouldIdle(input);
       const spawnable = items.filter(isSpawnable).length;
-      if (parent !== undefined && idle) yield* setState(parent, "idle", FINISH_ALL_IDLE);
+      // Not while a claim on it runs its checks; that claim decides.
+      if (parent !== undefined && idle && parent.state !== "verifying") yield* setState(parent, "idle", FINISH_ALL_IDLE);
       if (parent !== undefined && spawnable > 0) yield* reopen(parent, `${spawnable} item${spawnable === 1 ? "" : "s"} with a value source`);
       return { text: [renderInventory(input), ...notes].join("\n"), spawnable, idle };
     });
