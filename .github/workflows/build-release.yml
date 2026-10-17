@@ -124,7 +124,9 @@ jobs:
 
   app-macos:
     needs: plan
-    if: needs.plan.outputs.build-app == 'true'
+    # Mac minutes cost 10x Linux ones: only builds that publish (pull request dry runs skip it). PR CI still
+    # bundles the app on GitHub-hosted macOS.
+    if: needs.plan.outputs.build-app == 'true' && inputs.publish
     runs-on: blacksmith-6vcpu-macos-latest
     timeout-minutes: 60
     env:
