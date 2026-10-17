@@ -832,6 +832,9 @@
       "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "description": "<playbook name>@<full lowercase hex git blob SHA>"
     },
+    "Serves": {
+      "type": "string"
+    },
     "MetricValues": {
       "type": "object",
       "properties": {
@@ -980,6 +983,22 @@
         "playbook": {
           "$ref": "#/$defs/PlaybookRef"
         },
+        "parent": {
+          "type": "object",
+          "properties": {
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            },
+            "serves": {
+              "$ref": "#/$defs/Serves"
+            }
+          },
+          "required": [
+            "workstreamId",
+            "serves"
+          ],
+          "additionalProperties": true
+        },
         "outcome": {
           "type": "string",
           "enum": [
@@ -1018,9 +1037,6 @@
       "maxLength": 40,
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
       "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40"
-    },
-    "Serves": {
-      "type": "string"
     },
     "Receipts": {
       "type": "object",

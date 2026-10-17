@@ -8,6 +8,7 @@ import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as LeadWakes from "../leads/LeadWakes.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Inbox } from "../ledger/Inbox.ts";
+import { Playbooks } from "../playbooks/Playbooks.ts";
 import * as EventLog from "../store/EventLog.ts";
 import { Claims, INLINE_WAIT } from "./Claims.ts";
 import { makeChecksKit, runChecksKit } from "./testKit.ts";
@@ -29,6 +30,24 @@ const stateOf = Effect.map(
 );
 
 describe("claim done", () => {
+  it("refuses a claim on an idle finish-all workstream: it ends idle, not done", async () => {
+    const kit = makeChecksKit();
+    await runChecksKit(
+      kit,
+      Effect.gen(function* () {
+        yield* kit.setup([DOC_CHECK]);
+        const records = yield* LeadRecords.LeadRecords;
+        const stored = (yield* records.workstreams.get(W1))!;
+        const pinned = yield* (yield* Playbooks).pin("finish-all");
+        yield* records.workstreams.put({ ...stored, workstream: { ...stored.workstream, playbook: pinned.ref, state: "idle" } });
+        expect(yield* Effect.flip((yield* Claims).claimDone(W1, LEAD_BY))).toMatchObject({
+          message: "W1 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done.",
+        });
+        expect(yield* stateOf).toBe("idle");
+      }),
+    );
+  });
+
   it("fails while the file is missing, wakes the lead with the evidence, then passes and marks the workstream done", async () => {
     const kit = makeChecksKit();
     await runChecksKit(

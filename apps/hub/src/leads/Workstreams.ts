@@ -38,6 +38,8 @@ export interface IntakeInput {
   readonly by: string;
   /** M9: the playbook to pin; absent leaves the workstream unpinned, as before M9. */
   readonly template?: PlaybookName;
+  /** M9 finish-all: the workstream that spawns this one, and what it serves there. */
+  readonly parent?: Workstream["parent"];
 }
 
 export class Workstreams extends Context.Service<
@@ -134,6 +136,7 @@ export const make = Effect.gen(function* () {
         source: { text: input.text, channel: input.channel, by: input.by, at: yield* nowIso },
         clientRequestId: input.clientRequestId,
         ...(pinned === undefined ? {} : { playbook: pinned.ref }),
+        ...(input.parent === undefined ? {} : { parent: input.parent }),
       });
       if (created) {
         yield* event(workstream, "workstream.created", `New intent ${workstream.workstreamId}: ${workstream.title}`);
@@ -208,6 +211,13 @@ export const make = Effect.gen(function* () {
         return { op: "brief_create", workstreamId: w.workstreamId, briefHash: hash, state: w.state, next: `Unchanged: this brief is already frozen. ${running}` };
       }
       const at = yield* nowIso;
+      if (w.brief === undefined && w.state === "idle") {
+        // An idle finish-all stays idle: only new work with a value source reopens it (FinishAll).
+        const next: Workstream = { ...w, brief, briefHash: hash, updatedAt: at };
+        yield* records.workstreams.put({ workstream: next, amends: stored.amends });
+        yield* event(next, "workstream.state", `${w.workstreamId} brief frozen while idle`, { workstreamId: w.workstreamId, state: "idle", briefHash: hash });
+        return { op: "brief_create", workstreamId: w.workstreamId, briefHash: hash, state: "idle", next: `Brief frozen; ${w.workstreamId} stays idle. Nothing to do until new work comes in.` };
+      }
       if (w.brief === undefined) {
         const next: Workstream = { ...w, brief, briefHash: hash, state: "running", updatedAt: at };
         yield* records.workstreams.put({ workstream: next, amends: stored.amends });

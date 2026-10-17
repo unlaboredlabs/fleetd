@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { ProjectRef, Timestamp } from "./ids.ts";
-import { Tier, WorkstreamId } from "./ledger.ts";
-import { Serves, TaskId } from "./tasks.ts";
+import { Serves, Tier, WorkstreamId } from "./ledger.ts";
+import { TaskId } from "./tasks.ts";
 import { CommitSha } from "./verification.ts";
 
 // M7 objects: Changes (PRs on the merge train) and each repo's train.

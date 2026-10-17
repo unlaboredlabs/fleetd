@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { ProjectRef, ThreadRef, Timestamp } from "./ids.ts";
-import { Tier, WorkstreamId } from "./ledger.ts";
+import { Serves, SERVES_FIX, Tier, WorkstreamId } from "./ledger.ts";
 import { Effort } from "./effort.ts";
 import { isHttpUrl } from "./subscriptions.ts";
 import { UsageParked } from "./usage.ts";
@@ -43,33 +43,6 @@ export const taskAreasRule = Schema.makeFilter(
       ? { path: ["areas"], issue: "a write task needs at least one area" }
       : undefined,
 );
-
-/** What a write task must serve, as `--serves` takes it. */
-export const SERVES_FIX = "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>";
-
-const isServes = (serves: string): boolean => {
-  const [, kind = "", ref = ""] = /^(done|issue|defect|ask):(.*)$/su.exec(serves) ?? [];
-  switch (kind) {
-    case "done":
-      return /^(?:0|[1-9][0-9]*)$/u.test(ref);
-    case "issue":
-      return /^#[1-9][0-9]*$/u.test(ref) || isHttpUrl(ref);
-    case "defect":
-      return ref.length <= 200 && ref.trim() !== "" && !/[\r\n]/u.test(ref);
-    case "ask":
-      return /^A[1-9][0-9]*$/u.test(ref);
-    default:
-      return false;
-  }
-};
-
-/**
- * What a task works towards: `done:<n>` (0-based index into the brief's doneWhen, same as CheckResult.checkIndex),
- * `issue:<url|#n>`, `defect:<one line, at most 200>` or `ask:A<n>`.
- */
-export const Serves = Schema.String.check(Schema.makeFilter(isServes, { expected: SERVES_FIX })).annotate({
-  identifier: "Serves",
-});
 
 /** A write task must say what it serves; a review task names its PR; only review tasks may be QA runs. */
 export const taskSpawnRule = Schema.makeFilter(

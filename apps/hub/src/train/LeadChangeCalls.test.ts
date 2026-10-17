@@ -6,6 +6,7 @@ import { Claims } from "../checks/Claims.ts";
 import * as LeadCallHandler from "../leads/LeadCallHandler.ts";
 import { makeTrainKit, REF, REPO, runTrainKit } from "./testKit.ts";
 import { Train } from "./Train.ts";
+import { FinishAll } from "../playbooks/FinishAll.ts";
 
 const caller = { projectRef: REF, by: "lead:lab-a/p1", cwd: "/w/p1" };
 const other = { projectRef: { machineId: "lab-a" as MachineId, projectId: "p2" as ProjectId }, by: "lead:lab-a/p2", cwd: "/w/p2" };
@@ -20,6 +21,7 @@ describe("change lead calls", () => {
         const handler = yield* LeadCallHandler.make.pipe(
           Effect.provideService(Claims, Claims.of({ claimDone: () => Effect.die("no claims here"), get: () => Effect.succeed(undefined), list: () => Effect.succeed([]) })),
           Effect.provideService(Approvals, Approvals.of({ submitSecret: () => Effect.die("no approvals here"), gatedRun: () => Effect.die("no approvals here") })),
+          Effect.provideService(FinishAll, FinishAll.of({ spawn: () => Effect.die("no finish-all here"), inventory: () => Effect.die("no finish-all here") })),
         );
         const call = (c: Record<string, unknown>, who = caller) => handler.handle(who, c as LeadCall);
 

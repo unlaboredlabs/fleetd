@@ -51,6 +51,7 @@ export class LeadRecords extends Context.Service<
         readonly source: Workstream["source"];
         readonly clientRequestId?: string;
         readonly playbook?: Workstream["playbook"];
+        readonly parent?: Workstream["parent"];
       }) => Effect.Effect<{ readonly workstream: Workstream; readonly created: boolean }>;
       readonly get: (workstreamId: WorkstreamId) => Effect.Effect<StoredWorkstream | undefined>;
       readonly put: (stored: StoredWorkstream) => Effect.Effect<void>;
@@ -151,7 +152,7 @@ const make = Effect.gen(function* () {
         }),
     },
     workstreams: {
-      create: ({ ref, title, source, clientRequestId, playbook }) =>
+      create: ({ ref, title, source, clientRequestId, playbook, parent }) =>
         Effect.sync(() =>
           HubDb.transaction(db, () => {
             if (clientRequestId !== undefined) {
@@ -166,6 +167,7 @@ const make = Effect.gen(function* () {
               source,
               state: "draft",
               ...(playbook === undefined ? {} : { playbook }),
+              ...(parent === undefined ? {} : { parent }),
               createdAt: source.at,
               updatedAt: source.at,
             });

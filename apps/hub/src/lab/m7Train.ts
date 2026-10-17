@@ -74,7 +74,7 @@ const prepareCheckout = () => {
 };
 
 /** T3's own project API on lab-a, with a short-lived bearer minted by its CLI. */
-const t3 = async (lab: Pick<Lab, "mintT3Bearer" | "machines">, method: "GET" | "POST", route: string, body?: unknown) => {
+export const t3 = async (lab: Pick<Lab, "mintT3Bearer" | "machines">, method: "GET" | "POST", route: string, body?: unknown) => {
   const machine = lab.machines.find((m) => m.id === MACHINE)!;
   const response = await fetch(`${machine.t3Url}${route}`, {
     method,

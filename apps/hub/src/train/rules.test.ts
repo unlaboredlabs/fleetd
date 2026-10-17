@@ -21,6 +21,15 @@ describe("train rules", () => {
     expect(checkSource("Source: done:3", undefined, ws)).toMatchObject({ fix: "add 'Source: done:<n>' to the PR body; use done:0 to done:2" });
   });
 
+  it("lets a PR without Source: serve the task's serves when the pinned playbook does not require the line", () => {
+    expect(checkSource("Adds docs.", "done:2", ws, false)).toEqual({ serves: "done:2" });
+    // Nothing to serve without the line: still refused.
+    expect(checkSource("Adds docs.", undefined, ws, false)).toMatchObject({ message: "The PR body has no 'Source:' line." });
+    // A line that is there is still checked.
+    expect(checkSource("Source: done:1", "done:2", ws, false)).toMatchObject({ fix: "change the PR body's line to 'Source: done:2'" });
+    expect(checkSource("Adds docs.", "done:2", ws, true)).toMatchObject({ fix: "add 'Source: done:2' to the PR body" });
+  });
+
   it("takes the highest of the brief's, task's and caller's tier, and refuses a caller lowering it", () => {
     expect(checkTier("M", undefined, undefined)).toEqual({ tier: "M" });
     expect(checkTier("S", "L", "M")).toEqual({ tier: "L" });

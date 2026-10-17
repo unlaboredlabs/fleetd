@@ -16,6 +16,7 @@ import { Incidents } from "../incidents/Incidents.ts";
 import { LeadError } from "../leads/LeadError.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as LeadWakes from "../leads/LeadWakes.ts";
+import { FINISH_ALL_IDLE, isFinishAll } from "../playbooks/finishAllRules.ts";
 import * as EventLog from "../store/EventLog.ts";
 import { CheckRunner, ranByOf } from "./CheckRunner.ts";
 import * as ClaimRecords from "./ClaimRecords.ts";
@@ -112,6 +113,8 @@ export const make = (options: ClaimsOptions = {}) =>
         const stored = yield* leadRecords.workstreams.get(claim.workstreamId);
         if (stored === undefined) return;
         const w = stored.workstream;
+        // A research judge's numbers already made it done, with its verdict.
+        if (w.state === "done") return;
         const passed = claim.outcome === "pass";
         const label = `${claim.claimId} on ${w.workstreamId}`;
         if (passed) {
@@ -168,6 +171,13 @@ export const make = (options: ClaimsOptions = {}) =>
         if (projectRef !== undefined && !sameProject(w.projectRef, projectRef)) return yield* notFound(workstreamId);
         if (w.state === "done") {
           return yield* new LeadError({ code: "invalid", message: `${workstreamId} is already done.`, fix: "Open a new intent if there is more to do." });
+        }
+        if (w.state === "idle" && isFinishAll(w)) {
+          return yield* new LeadError({
+            code: "invalid",
+            message: `${workstreamId} is idle: ${FINISH_ALL_IDLE}. A finish-all run ends idle, not done.`,
+            fix: "Nothing to claim. Run `fleetd inventory` again when new work comes in.",
+          });
         }
         if (w.state === "stopped" || w.state === "failed") {
           return yield* new LeadError({ code: "invalid", message: `${workstreamId} is ${w.state}; there is nothing to claim.` });

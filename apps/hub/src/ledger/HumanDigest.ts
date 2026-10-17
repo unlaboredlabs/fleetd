@@ -1,5 +1,6 @@
 import type { Ask, Decision, Workstream, WorkstreamId } from "@fleetd/contracts";
 import type { WorkstreamFacts } from "../leads/digest.ts";
+import { FINISH_ALL_IDLE, isFinishAll } from "../playbooks/finishAllRules.ts";
 import { batchN, projectKey } from "./LedgerRepo.ts";
 
 /** What the 09:00/18:00 digest is rendered from; the caller gathers it. */
@@ -108,6 +109,8 @@ export const renderHumanDigest = (input: DigestInput): string => {
     );
   }
   for (const w of running) lines.push(`Running: ${status(w)}${says(w)}${checked(w)}${eta(w)}`);
+  // Finish-all's finish line; other idle workstreams stay quiet.
+  for (const w of input.workstreams.filter((w) => w.state === "idle" && isFinishAll(w))) lines.push(`Idle: ${status(w)} · ${FINISH_ALL_IDLE}`);
   lines.push(...(input.train ?? []));
   return lines.join("\n");
 };

@@ -58,16 +58,24 @@ export const LEAD_USAGE = `  brief create --workstream <W> (--json '<Brief>' | -
              fleetd runs the workstream's done-when checks itself; only all of them passing makes
              it done (exit 1 when a check did not pass)
   review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
-             the last step of a review task
+      [--baseline <n> --candidate <n>]
+             the last step of a review task; a research judge also reports its metric for the
+             baseline and the candidate, and fleetd computes GO, STOP or INCONCLUSIVE
   change enqueue --pr <url> [--task <T>] [--workstream <W>] [--serves <s>] [--tier S|M|L]
              put a PR on its repo's merge train (a write task's PR goes on by itself); its body
              needs a 'Source: <serves>' line. Only the train merges.
   change status <X>
+  inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
+             TODO/FIXME markers; with nothing left that has a value source and no open child, the
+             project's finish-all workstream goes idle
+  workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n>
+      [--template bugfix|feature|research]
+             a finish-all lead starts a child workstream for one item with a value source
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
              ~/${NODE_SOCKET_PATH}); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable
 `;
 
-const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task", "claim", "review", "change", "gated"]);
+const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task", "claim", "review", "change", "gated", "workstream", "inventory"]);
 
 export const isLeadCommand = (argv: ReadonlyArray<string>) => argv[0] !== undefined && LEAD_COMMANDS.has(argv[0]);
 
@@ -138,6 +146,9 @@ export const parseLeadArgs = (
         cwd: { type: "string" },
         "secret-env": { type: "string", multiple: true },
         timeout: { type: "string" },
+        baseline: { type: "string" },
+        candidate: { type: "string" },
+        template: { type: "string" },
       },
     });
   } catch (error) {
@@ -308,15 +319,27 @@ export const parseLeadArgs = (
     }
     case "review": {
       if (sub !== "verdict" || rest.length > 0) return `expected fleetd review verdict --task <T> --sha <sha> --blocking <n> --non-blocking <n> --summary "<s>"`;
-      const wrong = only("task", "sha", "blocking", "non-blocking", "summary");
+      const wrong = only("task", "sha", "blocking", "non-blocking", "summary", "baseline", "candidate");
       if (wrong !== undefined) return wrong;
+      if ((v.baseline === undefined) !== (v.candidate === undefined)) return "give --baseline and --candidate together: the metric measured for each";
+      for (const flag of ["baseline", "candidate"] as const) {
+        if (v[flag] !== undefined && !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/iu.test(v[flag]!.trim())) return `--${flag} is a number, got '${v[flag]}'`;
+      }
       for (const flag of ["task", "sha", "blocking", "non-blocking", "summary"] as const) if (v[flag] === undefined) return `--${flag} is required`;
       const sha = v.sha!.trim().toLowerCase();
       if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(sha)) {
         return `--sha must be the full commit SHA (40 hex characters; \`git rev-parse HEAD\` or \`gh pr view <url> --json headRefOid\`), got '${v.sha}'`;
       }
       for (const flag of ["blocking", "non-blocking"] as const) if (!/^\d+$/u.test(v[flag]!)) return `--${flag} is a count of findings, got '${v[flag]}'`;
-      raw = { op: "review_verdict", taskId: v.task, prHeadSha: sha, blocking: Number(v.blocking), nonBlocking: Number(v["non-blocking"]), summary: v.summary };
+      raw = {
+        op: "review_verdict",
+        taskId: v.task,
+        prHeadSha: sha,
+        blocking: Number(v.blocking),
+        nonBlocking: Number(v["non-blocking"]),
+        summary: v.summary,
+        ...(v.baseline === undefined ? {} : { metricValues: { baseline: Number(v.baseline), candidate: Number(v.candidate) } }),
+      };
       break;
     }
     case "change": {
@@ -365,6 +388,21 @@ export const parseLeadArgs = (
         timeoutSec: v.timeout === undefined ? undefined : Number(v.timeout),
         workstreamId: v.workstream,
       });
+      break;
+    }
+    case "workstream": {
+      if (sub !== "spawn" || rest.length > 0) return `expected fleetd workstream spawn --text "<intent>" --serves <value source>`;
+      const wrong = only("text", "serves", "template");
+      if (wrong !== undefined) return wrong;
+      for (const flag of ["text", "serves"] as const) if (v[flag] === undefined) return `--${flag} is required`;
+      raw = definedOnly({ op: "workstream_spawn", text: v.text, serves: v.serves, template: v.template });
+      break;
+    }
+    case "inventory": {
+      if (sub !== undefined) return "expected fleetd inventory";
+      const wrong = only();
+      if (wrong !== undefined) return wrong;
+      raw = { op: "inventory" };
       break;
     }
     default:
@@ -612,10 +650,23 @@ export const formatResult = (result: LeadCallResult): string => {
     }
     case "review_verdict": {
       const v = result.verdict;
-      lines.push(`Recorded the verdict of ${v.taskId} at ${v.prHeadSha.slice(0, 12)}: ${v.blocking} blocking, ${v.nonBlocking} non-blocking.`);
+      const metric = v.metricValues === undefined ? "" : ` Metric: baseline ${v.metricValues.baseline}, candidate ${v.metricValues.candidate}.`;
+      lines.push(`Recorded the verdict of ${v.taskId} at ${v.prHeadSha.slice(0, 12)}: ${v.blocking} blocking, ${v.nonBlocking} non-blocking.${metric}`);
       next = "end with your one-paragraph result and stop.";
       break;
     }
+    case "workstream_spawn":
+      lines.push(`Spawned ${result.workstreamId}, a child of ${result.parent}${result.playbook === undefined ? "" : ` on ${result.playbook.split("@")[0]}`}.`);
+      next = `register its brief with fleetd brief create --workstream ${result.workstreamId} when its intent wake arrives.`;
+      break;
+    case "inventory":
+      lines.push(result.text);
+      next = result.idle
+        ? "stop: nothing is left with a value source."
+        : result.spawnable === 0
+          ? "nothing new to spawn; wait for the open children."
+          : 'fleetd workstream spawn --text "<intent>" --serves <the item\'s value source>, highest first.';
+      break;
     case "change_enqueue":
     case "change_status":
       lines.push(...changeLines(result.change));
@@ -637,7 +688,7 @@ export interface LeadDeps {
   readonly readFile?: (file: string) => string;
 }
 
-/** `fleetd brief|ask|decide|status|decisions|task|claim|review|change|gated …`: one call to the hub through the local node. */
+/** `fleetd brief|ask|decide|status|decisions|task|claim|review|change|gated|workstream|inventory …`: one call to the hub through the local node. */
 export const leadCommand = async (argv: ReadonlyArray<string>, deps: LeadDeps): Promise<CliResult> => {
   const call = parseLeadArgs(argv, deps.readFile);
   if (typeof call === "string") return usage(call);

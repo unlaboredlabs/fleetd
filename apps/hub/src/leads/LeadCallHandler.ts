@@ -7,6 +7,7 @@ import { Claims } from "../checks/Claims.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type LeadCallHandler, LeadCallRefused } from "../link/LeadCalls.ts";
+import { FinishAll } from "../playbooks/FinishAll.ts";
 import { Tasks } from "../tasks/Tasks.ts";
 import { Train } from "../train/Train.ts";
 import { ValueBar } from "../valuebar/ValueBar.ts";
@@ -47,6 +48,7 @@ export const make = Effect.gen(function* () {
   const valueBar = yield* ValueBar;
   const train = yield* Train;
   const approvals = yield* Approvals;
+  const finishAll = yield* FinishAll;
 
   /** A workstream named in a call must be one of the caller's own. */
   const ownWorkstream = (ref: ProjectRef, workstreamId: WorkstreamId) =>
@@ -189,16 +191,27 @@ export const make = Effect.gen(function* () {
           const outcome = yield* claims.claimDone(call.workstreamId, caller.by, { projectRef: ref });
           return result({ op: "claim_done", ...outcome });
         }
+        case "workstream_spawn": {
+          const spawned = yield* finishAll.spawn(caller, {
+            text: call.text,
+            serves: call.serves,
+            ...(call.template === undefined ? {} : { template: call.template }),
+          });
+          return result({ op: "workstream_spawn", ...spawned });
+        }
+        case "inventory":
+          return result({ op: "inventory", ...(yield* finishAll.inventory(caller)) });
         case "review_verdict": {
           const { op: _, ...verdict } = call;
           const recorded = yield* valueBar.recordVerdict(caller, verdict);
+          const stop =
+            recorded.verdict.blocking === 0
+              ? "end with your one-paragraph result and stop; this commit will not be reviewed again."
+              : "end with your one-paragraph result listing each blocking finding, then stop; the lead gets it.";
           return result({
             op: "review_verdict",
-            verdict: recorded,
-            next:
-              recorded.blocking === 0
-                ? "end with your one-paragraph result and stop; this commit will not be reviewed again."
-                : "end with your one-paragraph result listing each blocking finding, then stop; the lead gets it.",
+            verdict: recorded.verdict,
+            next: recorded.research === undefined ? stop : `${recorded.research} ${stop}`,
           });
         }
       }

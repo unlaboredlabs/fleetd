@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 import { makeChecksKit, runChecksKit } from "../checks/testKit.ts";
 import * as LeadCallHandler from "../leads/LeadCallHandler.ts";
 import * as EventLog from "../store/EventLog.ts";
+import { FinishAll } from "../playbooks/FinishAll.ts";
 import { Train } from "../train/Train.ts";
 import { REF } from "./testKit.ts";
 
 // Change calls are covered in train/LeadChangeCalls.test.ts, over the real train.
 const handlerOf = LeadCallHandler.make.pipe(
   Effect.provideService(Approvals, Approvals.of({ submitSecret: () => Effect.die("no approvals here"), gatedRun: () => Effect.die("no approvals here") })),
+  Effect.provideService(FinishAll, FinishAll.of({ spawn: () => Effect.die("no finish-all here"), inventory: () => Effect.die("no finish-all here") })),
   Effect.provideService(
     Train,
     Train.of({

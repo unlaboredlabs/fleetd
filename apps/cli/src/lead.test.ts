@@ -40,6 +40,9 @@ describe("parseLeadArgs", () => {
     expect(
       parseLeadArgs(["brief", "create", "--workstream", "W12", "--file", "b.json", "--amend", "A4"], () => JSON.stringify(brief)),
     ).toMatchObject({ op: "brief_create", amend: "A4" });
+    // The tier may be left to the pinned playbook's default; the hub fills or refuses it.
+    const { tier: _tier, ...untiered } = brief;
+    expect(parseLeadArgs(["brief", "create", "--workstream", "W12", "--json", JSON.stringify(untiered)])).toEqual({ op: "brief_create", workstreamId: "W12", brief: untiered });
     expect(
       parseLeadArgs([
         "ask", "--key", "api.health.path", "--class", "product", "--text", "Path?", "--rec", "/healthz",
@@ -437,6 +440,44 @@ describe("claim and review commands", () => {
     );
     expect(formatResult({ op: "review_verdict", verdict: { taskId: "T3" as never, prHeadSha: SHA, blocking: 0, nonBlocking: 2, summary: "ok" } })).toBe(
       "Recorded the verdict of T3 at 0123456789ab: 0 blocking, 2 non-blocking.\nNext: end with your one-paragraph result and stop.\n",
+    );
+  });
+});
+
+describe("research judges and finish-all commands", () => {
+  const verdict = ["review", "verdict", "--task", "T3", "--sha", SHA, "--blocking", "0", "--non-blocking", "0", "--summary", "measured"];
+
+  it("takes a research judge's baseline and candidate together, as numbers", () => {
+    expect(parseLeadArgs([...verdict, "--baseline", "0.5", "--candidate=-1.2e-3"])).toMatchObject({
+      op: "review_verdict",
+      metricValues: { baseline: 0.5, candidate: -0.0012 },
+    });
+    expect(parseLeadArgs([...verdict, "--baseline", "0.5"])).toBe("give --baseline and --candidate together: the metric measured for each");
+    expect(parseLeadArgs([...verdict, "--baseline", "half", "--candidate", "1"])).toBe("--baseline is a number, got 'half'");
+    expect(
+      formatResult({
+        op: "review_verdict",
+        verdict: { taskId: "T3" as never, prHeadSha: SHA, blocking: 0, nonBlocking: 0, summary: "ok", metricValues: { baseline: 0.5, candidate: 0.52 } },
+        next: "W2 research verdict STOP: … end with your one-paragraph result and stop.",
+      }),
+    ).toBe(
+      "Recorded the verdict of T3 at 0123456789ab: 0 blocking, 0 non-blocking. Metric: baseline 0.5, candidate 0.52.\nNext: W2 research verdict STOP: … end with your one-paragraph result and stop.\n",
+    );
+  });
+
+  it("parses workstream spawn with its value source, and inventory", () => {
+    expect(parseLeadArgs(["workstream", "spawn", "--text", "Fix the login loop", "--serves", "issue:#3", "--template", "bugfix"])).toEqual({
+      op: "workstream_spawn",
+      text: "Fix the login loop",
+      serves: "issue:#3",
+      template: "bugfix",
+    });
+    expect(parseLeadArgs(["workstream", "spawn", "--text", "x"])).toBe("--serves is required");
+    expect(parseLeadArgs(["workstream", "spawn", "--text", "x", "--serves", "whatever"])).toMatch(/^invalid input: .*--serves done:<n>/u);
+    expect(parseLeadArgs(["inventory"])).toEqual({ op: "inventory" });
+    expect(parseLeadArgs(["inventory", "--text", "x"])).toBe("--text does not apply to fleetd inventory");
+    expect(formatResult({ op: "inventory", text: "Inventory of lab:\nNothing with a value source.", spawnable: 0, idle: true })).toBe(
+      "Inventory of lab:\nNothing with a value source.\nNext: stop: nothing is left with a value source.\n",
     );
   });
 });
