@@ -75,9 +75,22 @@ DESIGN §3.2 should change in four places:
 1. **"Outside agents capped below full access"**: verified, not just claimed (the cap is MCP-OAuth only).
 2. **Slot board**: the "fleetd" instance's `launchArgs` must deny every T3 spawn tool, not just `delegate_task`.
    The simplest version is `--disallowedTools mcp__t3-code__*`, since leads reach fleetd through the `fleetd` CLI.
-   The wildcard deny is untested and should be checked in M1.
+   Verified in M1 (below); `lab/lab.mjs` now gives lab-a's instance the wildcard.
 3. **Receipts**: exit status comes from item `status` plus the output text. Numeric exit codes come only from the
    node's own `cmd` checks.
 4. **Restart**: continuation is automatic, but it re-runs the in-flight tool call, so drain before planned restarts
    matters more. The node can treat "restart dead T3" as just "start it again"; a crash loses nothing beyond what a
    graceful stop loses.
+
+## M1 follow-up: the wildcard deny (2026-10-17)
+
+**`--disallowedTools mcp__t3-code__*` hides every T3 tool: PASS.** lab-a's "fleetd" instance got
+`launchArgs: --disallowedTools mcp__t3-code__*` (`lab/lab.mjs`, which now rewrites the instance on every `up`).
+`node apps/hub/test/record-fixtures.ts wildcard` launched one `claude-haiku-5-5` turn asking for its tool names:
+- the spawned CLI's argv carried `--disallowedTools mcp__t3-code__*` literally (no shell, so no glob expansion);
+- the agent listed **0** `mcp__t3-code__*` tools (the same instance listed 82 with only `delegate_task` denied);
+- its built-in tools (Bash, Read, Edit, Write, WebFetch, Agent, …) were all still there.
+
+Claude's own spawn paths (`Agent` subagents, `CronCreate`, `ScheduleWakeup`) are not T3 tools and stay available;
+native subagents are capped by `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=2`.
+

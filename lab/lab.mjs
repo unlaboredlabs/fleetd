@@ -14,9 +14,10 @@ const T3_SRC = process.env.T3_SRC ?? path.join(LAB, "t3-src");
 const T3_PIN = "2fbd4318fc";
 const HOST = "127.0.0.1";
 
-// lab-a hides T3's delegate_task from its "fleetd" Claude instance; lab-b is the control.
+// lab-a's "fleetd" Claude instance denies every T3 tool (the wildcard form DESIGN §3.2 calls for);
+// lab-b is the control with no launch args.
 const INSTANCES = [
-  { name: "lab-a", port: 4711, launchArgs: "--disallowedTools mcp__t3-code__delegate_task" },
+  { name: "lab-a", port: 4711, launchArgs: "--disallowedTools mcp__t3-code__*" },
   { name: "lab-b", port: 4712, launchArgs: "" },
 ];
 
@@ -59,18 +60,19 @@ function scrubbedEnv(i) {
   };
 }
 
+/** Writes the "fleetd" instance into settings.json, keeping whatever else T3 stored there. */
 function seedSettings(i) {
   const settingsPath = path.join(homeDir(i), "userdata", "settings.json");
-  if (fs.existsSync(settingsPath)) return;
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  const settings = {
-    enableProviderUpdateChecks: false,
-    providerInstances: {
-      fleetd: {
-        driver: "claudeAgent",
-        displayName: "fleetd",
-        config: { homePath: claudeDir(i), launchArgs: i.launchArgs },
-      },
+  const settings = fs.existsSync(settingsPath)
+    ? JSON.parse(fs.readFileSync(settingsPath, "utf8"))
+    : { enableProviderUpdateChecks: false };
+  settings.providerInstances = {
+    ...settings.providerInstances,
+    fleetd: {
+      driver: "claudeAgent",
+      displayName: "fleetd",
+      config: { homePath: claudeDir(i), launchArgs: i.launchArgs },
     },
   };
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
