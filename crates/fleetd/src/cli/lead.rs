@@ -27,7 +27,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              ask the human; answers already in the decision log come back at once
   ask --kind secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
       --text <t> [--class credential]
-             the human enters it on their phone, sealed to that machine; an env: sink writes the line
+             the human enters it in the desktop app, sealed to that machine; an env: sink writes the line
              <N>=<value> (N defaults to the key uppercased, . and - as _). You get its fingerprint, never the value
   gated run --class irreversible|money|credential --argv '<json array>' --reason <r> [--cwd <abs>]
       [--secret-env NAME=<secret key> ...] [--timeout <sec>] [--workstream <W>]
