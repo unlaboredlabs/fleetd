@@ -11,7 +11,9 @@ use serde_json::Value;
 use super::OpenTool;
 use super::limit::{normalize_iso, parse_ms};
 use super::shell_mapper::{js_len, js_take, keep_tail};
-use super::t3::{Message, Run, RuntimeRequest, ThreadEvent, ThreadStreamItem, TurnItem, TurnItemKind};
+use super::t3::{
+    Message, Run, RuntimeRequest, ThreadEvent, ThreadStreamItem, TurnItem, TurnItemKind,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct ThreadView {
@@ -42,7 +44,11 @@ pub struct Action {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TailRow {
     #[serde(rename = "message")]
-    Message { at: String, role: String, text: String },
+    Message {
+        at: String,
+        role: String,
+        text: String,
+    },
     #[serde(rename = "action")]
     Action { at: String, action: Action },
 }
@@ -60,14 +66,23 @@ pub fn apply_thread_item(view: &mut ThreadView, item: &ThreadStreamItem) {
     match item {
         ThreadStreamItem::Snapshot(snap) => {
             let p = &snap.projection;
-            view.messages = p.messages.iter().map(|m| (m.id.clone(), m.clone())).collect();
-            view.items = p.turn_items.iter().map(|i| (i.id.clone(), i.clone())).collect();
+            view.messages = p
+                .messages
+                .iter()
+                .map(|m| (m.id.clone(), m.clone()))
+                .collect();
+            view.items = p
+                .turn_items
+                .iter()
+                .map(|i| (i.id.clone(), i.clone()))
+                .collect();
             view.runs = p.runs.iter().map(|r| (r.id.clone(), r.clone())).collect();
             view.ready = true;
         }
         ThreadStreamItem::Event(e) => match &e.event {
             ThreadEvent::MessageUpdated(m) => {
-                view.messages.insert(m.payload.id.clone(), m.payload.clone());
+                view.messages
+                    .insert(m.payload.id.clone(), m.payload.clone());
             }
             ThreadEvent::TurnItemUpdated(i) => {
                 view.items.insert(i.payload.id.clone(), i.payload.clone());
@@ -97,12 +112,18 @@ pub fn latest_assistant_text(view: &ThreadView) -> Option<String> {
 pub fn active_run_id(view: &ThreadView) -> Option<String> {
     view.runs
         .values()
-        .filter(|r| matches!(r.status.as_str(), "preparing" | "queued" | "starting" | "running" | "waiting"))
+        .filter(|r| {
+            matches!(
+                r.status.as_str(),
+                "preparing" | "queued" | "starting" | "running" | "waiting"
+            )
+        })
         .max_by_key(|r| r.ordinal)
         .map(|r| r.id.clone())
 }
 
-static EXIT_CODE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bExit code (\d+)\b").expect("static regex"));
+static EXIT_CODE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\bExit code (\d+)\b").expect("static regex"));
 
 /// Parses the "Exit code N" T3's Claude adapter puts in a failed command's output.
 pub fn parse_exit_code(output: Option<&str>) -> Option<i64> {
@@ -127,16 +148,27 @@ fn stringify(v: Option<&Value>) -> Option<String> {
 /// The action a turn item records, or None for messages, reasoning, plans and bookkeeping (T3's own workspace step
 /// included).
 pub fn to_action(item: &TurnItem) -> Option<Action> {
-    let at = normalize_iso(item.completed_at.as_deref().or(item.started_at.as_deref()).unwrap_or(&item.updated_at));
+    let at = normalize_iso(
+        item.completed_at
+            .as_deref()
+            .or(item.started_at.as_deref())
+            .unwrap_or(&item.updated_at),
+    );
     let status = item_status(&item.status);
-    let base = |kind: &'static str, summary: &str, output: Option<String>, exit_code: Option<i64>, failed: bool| {
+    let base = |kind: &'static str,
+                summary: &str,
+                output: Option<String>,
+                exit_code: Option<i64>,
+                failed: bool| {
         let failed = status == "failed" || failed || exit_code.is_some_and(|c| c != 0);
         Action {
             at: at.clone(),
             kind,
             status,
             summary: js_take(summary, 200).to_owned(),
-            output_tail: output.filter(|o| !o.is_empty()).map(|o| keep_tail(&o, 1024)),
+            output_tail: output
+                .filter(|o| !o.is_empty())
+                .map(|o| keep_tail(&o, 1024)),
             exit_code,
             failed,
         }
@@ -149,30 +181,56 @@ pub fn to_action(item: &TurnItem) -> Option<Action> {
                 return None;
             }
             let exit_code = c.exit_code.or_else(|| parse_exit_code(c.output.as_deref()));
-            base("command", &c.input, c.output.clone(), exit_code, c.output_indicates_failure == Some(true))
+            base(
+                "command",
+                &c.input,
+                c.output.clone(),
+                exit_code,
+                c.output_indicates_failure == Some(true),
+            )
         }
         TurnItemKind::FileChange(f) => base("file_change", &f.file_name, None, None, false),
         TurnItemKind::DynamicTool(d) => base(
             "tool_call",
-            d.tool_name.as_deref().or(item.title.as_deref()).unwrap_or("tool"),
+            d.tool_name
+                .as_deref()
+                .or(item.title.as_deref())
+                .unwrap_or("tool"),
             stringify(d.output.as_ref()),
             None,
             false,
         ),
-        TurnItemKind::FileSearch(f) => {
-            base("tool_call", &format!("file search: {}", f.pattern.as_deref().unwrap_or("")), None, None, false)
-        }
-        TurnItemKind::WebSearch(w) => base(
+        TurnItemKind::FileSearch(f) => base(
             "tool_call",
-            &format!("web search: {}", w.patterns.as_deref().unwrap_or_default().join(", ")),
+            &format!("file search: {}", f.pattern.as_deref().unwrap_or("")),
             None,
             None,
             false,
         ),
-        TurnItemKind::Subagent(a) => base("tool_call", &format!("subagent: {}", a.prompt), a.result.clone(), None, false),
+        TurnItemKind::WebSearch(w) => base(
+            "tool_call",
+            &format!(
+                "web search: {}",
+                w.patterns.as_deref().unwrap_or_default().join(", ")
+            ),
+            None,
+            None,
+            false,
+        ),
+        TurnItemKind::Subagent(a) => base(
+            "tool_call",
+            &format!("subagent: {}", a.prompt),
+            a.result.clone(),
+            None,
+            false,
+        ),
         TurnItemKind::Error(e) => {
             let summary = format!("{}: {}", e.failure.class, e.failure.message);
-            Action { status: "failed", failed: true, ..base("other", &summary, None, None, false) }
+            Action {
+                status: "failed",
+                failed: true,
+                ..base("other", &summary, None, None, false)
+            }
         }
         _ => return None,
     })
@@ -202,7 +260,11 @@ pub fn actions_of(view: &ThreadView, limit: usize, failed_only: bool) -> Vec<(St
     let mut out: Vec<(String, Action)> = view
         .items
         .values()
-        .filter_map(|item| to_action(item).filter(|a| !failed_only || a.failed).map(|a| (item.id.clone(), a)))
+        .filter_map(|item| {
+            to_action(item)
+                .filter(|a| !failed_only || a.failed)
+                .map(|a| (item.id.clone(), a))
+        })
         .collect();
     // HashMap order is arbitrary where TS kept insertion order; order equal timestamps by id so output is stable.
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -212,7 +274,11 @@ pub fn actions_of(view: &ThreadView, limit: usize, failed_only: bool) -> Vec<(St
 }
 
 /// Newest-first tail rows with their ids, and whether any text was trimmed to its limit.
-pub fn tail_of(view: &ThreadView, n: usize, kinds: Option<&[&str]>) -> (Vec<(String, TailRow)>, bool) {
+pub fn tail_of(
+    view: &ThreadView,
+    n: usize,
+    kinds: Option<&[&str]>,
+) -> (Vec<(String, TailRow)>, bool) {
     let want = |k: &str| kinds.is_none_or(|ks| ks.is_empty() || ks.contains(&k));
     let mut truncated = false;
     let mut rows: Vec<(String, TailRow)> = vec![];
@@ -228,13 +294,23 @@ pub fn tail_of(view: &ThreadView, n: usize, kinds: Option<&[&str]>) -> (Vec<(Str
             }
             rows.push((
                 m.id.clone(),
-                TailRow::Message { at: normalize_iso(&m.created_at), role: m.role.clone(), text: keep_tail(&m.text, 2000) },
+                TailRow::Message {
+                    at: normalize_iso(&m.created_at),
+                    role: m.role.clone(),
+                    text: keep_tail(&m.text, 2000),
+                },
             ));
         }
     }
     if want("action") {
         for (id, action) in actions_of(view, usize::MAX, false) {
-            rows.push((id, TailRow::Action { at: action.at.clone(), action }));
+            rows.push((
+                id,
+                TailRow::Action {
+                    at: action.at.clone(),
+                    action,
+                },
+            ));
         }
     }
     newest_first(&mut rows, |(_, r)| r.at());
@@ -246,8 +322,11 @@ const QUESTION_MAX: usize = 1500;
 
 /// What a thread waiting on a human is asking, from its pending runtime request and the turn item that shows it: the
 /// questions of a user-input request (with their options), or an approval's prompt. None when nothing is pending.
-pub fn pending_question_text(runtime_requests: &[RuntimeRequest], turn_items: &[TurnItem]) -> Option<String> {
-    let pending = runtime_requests.iter().filter(|r| r.status == "pending").last()?;
+pub fn pending_question_text(
+    runtime_requests: &[RuntimeRequest],
+    turn_items: &[TurnItem],
+) -> Option<String> {
+    let pending = runtime_requests.iter().rfind(|r| r.status == "pending")?;
     let item = turn_items.iter().find(|i| match &i.kind {
         TurnItemKind::UserInputRequest(u) => u.request_id == pending.id,
         TurnItemKind::ApprovalRequest(a) => a.request_id == pending.id,
@@ -258,22 +337,38 @@ pub fn pending_question_text(runtime_requests: &[RuntimeRequest], turn_items: &[
             .questions
             .iter()
             .map(|q| {
-                let options = q.options.iter().map(|o| o.label.as_str()).collect::<Vec<_>>().join(" | ");
-                if options.is_empty() { q.question.clone() } else { format!("{} (options: {options})", q.question) }
+                let options = q
+                    .options
+                    .iter()
+                    .map(|o| o.label.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                if options.is_empty() {
+                    q.question.clone()
+                } else {
+                    format!("{} (options: {options})", q.question)
+                }
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        Some(TurnItemKind::ApprovalRequest(a)) => {
-            a.prompt.clone().unwrap_or_else(|| format!("approve a {} request", a.request_kind))
-        }
+        Some(TurnItemKind::ApprovalRequest(a)) => a
+            .prompt
+            .clone()
+            .unwrap_or_else(|| format!("approve a {} request", a.request_kind)),
         _ => format!("a pending {} request", pending.kind),
     };
-    Some(if js_len(&text) > QUESTION_MAX { format!("{}…", js_take(&text, QUESTION_MAX - 1)) } else { text })
+    Some(if js_len(&text) > QUESTION_MAX {
+        format!("{}…", js_take(&text, QUESTION_MAX - 1))
+    } else {
+        text
+    })
 }
 
 /// A tool's own `timeout` (ms), as Claude's tools take it, when T3 passes the input through.
 fn stated_timeout(item: &TurnItem) -> Option<u64> {
-    let TurnItemKind::DynamicTool(d) = &item.kind else { return None };
+    let TurnItemKind::DynamicTool(d) = &item.kind else {
+        return None;
+    };
     let t = d.input.as_object()?.get("timeout")?.as_f64()?;
     (t.is_finite() && t > 0.0).then_some(t as u64)
 }
@@ -304,7 +399,10 @@ pub fn open_tool(view: &ThreadView, run_id: Option<&str>) -> Option<OpenTool> {
             Some(ms) => stated = Some(stated.unwrap_or(0).max(ms)),
         }
     }
-    open.then_some(OpenTool { stated_timeout_ms: stated, unstated })
+    open.then_some(OpenTool {
+        stated_timeout_ms: stated,
+        unstated,
+    })
 }
 
 /// Distinct sorted checkpoint paths (ThreadWorkspace.changes).

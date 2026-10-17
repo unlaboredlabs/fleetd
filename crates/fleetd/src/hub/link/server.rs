@@ -8,20 +8,23 @@ use std::time::Duration;
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::hello::{PROTOCOL_VERSION, ProtocolVersion};
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::{Machine, MachineStatus, MachineT3};
-use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeT3Endpoint, NodeToHub, T3RunState, close};
+use fleetd_contracts::node_link::{
+    HubToNode, NodeHello, NodeT3Endpoint, NodeToHub, T3RunState, close,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::commands::NodeCommands;
-use super::lead_calls::{LeadCaller, LeadCalls, lead_by, op_of, outside_every_project, project_for_cwd};
+use super::lead_calls::{
+    LeadCaller, LeadCalls, lead_by, op_of, outside_every_project, project_for_cwd,
+};
 use crate::clock::Clock;
 use crate::hub::auth::{Auth, AuthError};
 use crate::hub::executor::{Executors, T3Session};
@@ -49,7 +52,7 @@ enum Announced {
 }
 
 enum Out {
-    Frame(HubToNode),
+    Frame(Box<HubToNode>),
     Close(u16, String),
 }
 
@@ -80,7 +83,10 @@ struct Refused {
 }
 
 fn refuse<T>(code: u16, reason: impl Into<String>) -> Result<T, Refused> {
-    Err(Refused { code, reason: reason.into() })
+    Err(Refused {
+        code,
+        reason: reason.into(),
+    })
 }
 
 /// WebSocket close reasons are capped at 123 bytes.
@@ -97,11 +103,21 @@ fn close_reason(reason: &str) -> String {
 
 /// Raw 32-byte ed25519 public key (base64) verifying `sig` (base64) over the nonce's UTF-8 bytes.
 pub fn verify_nonce_signature(pub_key: &str, nonce: &str, sig: &str) -> bool {
-    let Ok(raw) = B64.decode(pub_key) else { return false };
-    let Ok(raw): Result<[u8; 32], _> = raw.try_into() else { return false };
-    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&raw) else { return false };
-    let Ok(sig) = B64.decode(sig) else { return false };
-    let Ok(sig) = ed25519_dalek::Signature::from_slice(&sig) else { return false };
+    let Ok(raw) = B64.decode(pub_key) else {
+        return false;
+    };
+    let Ok(raw): Result<[u8; 32], _> = raw.try_into() else {
+        return false;
+    };
+    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(&raw) else {
+        return false;
+    };
+    let Ok(sig) = B64.decode(sig) else {
+        return false;
+    };
+    let Ok(sig) = ed25519_dalek::Signature::from_slice(&sig) else {
+        return false;
+    };
     key.verify_strict(nonce.as_bytes(), &sig).is_ok()
 }
 
@@ -111,10 +127,16 @@ fn nonce() -> String {
 }
 
 fn send(tx: &LinkTx, frame: HubToNode) {
-    let _ = tx.send(Out::Frame(frame));
+    let _ = tx.send(Out::Frame(Box::new(frame)));
 }
 
-fn event(at: &str, kind: &str, machine_id: &MachineId, summary: String, data: Option<serde_json::Value>) -> Option<NewEvent> {
+fn event(
+    at: &str,
+    kind: &str,
+    machine_id: &MachineId,
+    summary: String,
+    data: Option<serde_json::Value>,
+) -> Option<NewEvent> {
     let draft = json!({ "at": at, "type": kind, "machineId": machine_id, "summary": summary, "data": data });
     match serde_json::from_value(draft) {
         Ok(e) => Some(e),
@@ -132,11 +154,25 @@ impl NodeLinkServer {
         Self::with_timings(deps, HEARTBEAT_EVERY, SILENCE_TIMEOUT, HELLO_TIMEOUT)
     }
 
-    pub fn with_timings(deps: LinkDeps, heartbeat_every: Duration, silence_timeout: Duration, hello_timeout: Duration) -> Arc<Self> {
-        let server = Arc::new(Self { deps, state: Mutex::default(), heartbeat_every, silence_timeout, hello_timeout });
+    pub fn with_timings(
+        deps: LinkDeps,
+        heartbeat_every: Duration,
+        silence_timeout: Duration,
+        hello_timeout: Duration,
+    ) -> Arc<Self> {
+        let server = Arc::new(Self {
+            deps,
+            state: Mutex::default(),
+            heartbeat_every,
+            silence_timeout,
+            hello_timeout,
+        });
         match server.deps.store.machines_list() {
             Ok(machines) => {
-                for m in machines.iter().filter(|m| m.status != MachineStatus::Offline) {
+                for m in machines
+                    .iter()
+                    .filter(|m| m.status != MachineStatus::Offline)
+                {
                     server.touch(&m.machine_id);
                 }
             }
@@ -167,25 +203,51 @@ impl NodeLinkServer {
             clock.sleep(timeout).await;
             this.mark_offline(&id).await;
         });
-        if let Some(old) = self.state.lock().unwrap().watchdogs.insert(machine_id.clone(), handle) {
+        if let Some(old) = self
+            .state
+            .lock()
+            .unwrap()
+            .watchdogs
+            .insert(machine_id.clone(), handle)
+        {
             old.abort();
         }
     }
 
     /// Rewrites the stored machine's status (and T3 info, when given); `degraded_reason` is kept only while degraded.
-    fn write_status(&self, machine_id: &MachineId, at: &str, status: MachineStatus, reason: Option<&str>, t3: Option<&NodeT3Endpoint>) {
+    fn write_status(
+        &self,
+        machine_id: &MachineId,
+        at: &str,
+        status: MachineStatus,
+        reason: Option<&str>,
+        t3: Option<&NodeT3Endpoint>,
+    ) {
         let stored = match self.deps.store.machine_get(machine_id) {
             Ok(Some(m)) => m,
             Ok(None) => return,
             Err(e) => return tracing::error!(error = %e, "node link: machine read failed"),
         };
         let previous = stored.degraded_reason.clone();
-        let mut machine = Machine { status, last_seen_at: Timestamp(at.to_owned()), degraded_reason: None, ..stored };
+        let mut machine = Machine {
+            status,
+            last_seen_at: Timestamp(at.to_owned()),
+            degraded_reason: None,
+            ..stored
+        };
         if let Some(t3) = t3 {
-            machine.t3 = Some(MachineT3 { version: t3.version.clone(), protocol: t3.protocol });
+            machine.t3 = Some(MachineT3 {
+                version: t3.version.clone(),
+                protocol: t3.protocol,
+            });
         }
         if status == MachineStatus::Degraded {
-            machine.degraded_reason = Some(reason.map(str::to_owned).or(previous).unwrap_or_else(|| "T3 is down".into()));
+            machine.degraded_reason = Some(
+                reason
+                    .map(str::to_owned)
+                    .or(previous)
+                    .unwrap_or_else(|| "T3 is down".into()),
+            );
         }
         if let Err(e) = self.deps.store.machine_upsert(&machine, None) {
             tracing::error!(error = %e, "node link: machine write failed");
@@ -202,7 +264,13 @@ impl NodeLinkServer {
             state.announced.insert(machine_id.clone(), status);
         }
         self.append(match status {
-            Announced::Online => event(at, "machine.online", machine_id, format!("{machine_id} is online"), None),
+            Announced::Online => event(
+                at,
+                "machine.online",
+                machine_id,
+                format!("{machine_id} is online"),
+                None,
+            ),
             Announced::Degraded => {
                 let reason = reason.unwrap_or_default();
                 event(
@@ -235,33 +303,53 @@ impl NodeLinkServer {
         ));
         self.deps.executors.detach(machine_id).await;
         if let Some((_, tx)) = live {
-            let _ = tx.send(Out::Close(close::HEARTBEAT_TIMEOUT, format!("no frame for {seconds} s")));
+            let _ = tx.send(Out::Close(
+                close::HEARTBEAT_TIMEOUT,
+                format!("no frame for {seconds} s"),
+            ));
         }
         tracing::info!(machine_id = %machine_id, "node link: machine offline");
     }
 
     /// Attributes a forwarded call to the project its cwd is in, on the machine whose node sent it, and answers it.
-    async fn answer_lead_call(&self, machine_id: &MachineId, frame: LeadCallFrame) -> LeadResultFrame {
+    async fn answer_lead_call(
+        &self,
+        machine_id: &MachineId,
+        frame: LeadCallFrame,
+    ) -> LeadResultFrame {
         let id = frame.id.clone();
         let outcome = async {
             let projects = self
                 .deps
                 .store
                 .projects_list(Some(machine_id), None)
-                .map_err(|_| McpToolError::new(ErrorCode::T3Error, "the hub failed while handling this call").with_fix("try again shortly"))?;
+                .map_err(|_| {
+                    McpToolError::new(
+                        ErrorCode::T3Error,
+                        "the hub failed while handling this call",
+                    )
+                    .with_fix("try again shortly")
+                })?;
             let cwd = frame.cwd.as_str();
             let Some(project) = project_for_cwd(&projects, cwd) else {
                 return Err(outside_every_project(machine_id, cwd, &projects));
             };
             let Some(handler) = self.deps.lead_calls.handler(&op_of(&frame.call)) else {
-                return Err(McpToolError::new(ErrorCode::Forbidden, "this hub does not take lead-side calls yet")
-                    .with_fix("carry on without this call and mention it in your next status line"));
+                return Err(McpToolError::new(
+                    ErrorCode::Forbidden,
+                    "this hub does not take lead-side calls yet",
+                )
+                .with_fix("carry on without this call and mention it in your next status line"));
             };
             let project_ref: fleetd_contracts::ids::ProjectRef = serde_json::from_value(json!({
                 "machineId": machine_id, "projectId": project.project_id,
             }))
             .expect("a stored project's ref decodes");
-            let caller = LeadCaller { by: lead_by(&project_ref), project_ref, cwd: cwd.to_owned() };
+            let caller = LeadCaller {
+                by: lead_by(&project_ref),
+                project_ref,
+                cwd: cwd.to_owned(),
+            };
             handler.handle(caller, frame.call).await
         }
         .await;
@@ -269,14 +357,24 @@ impl NodeLinkServer {
             Ok(result) => json!({ "id": id, "result": result }),
             Err(error) => json!({ "id": id, "error": error }),
         };
-        serde_json::from_value(frame).expect("a lead result frame with exactly one of result and error")
+        serde_json::from_value(frame)
+            .expect("a lead result frame with exactly one of result and error")
     }
 
     async fn handshake(&self, ws: &mut Rx, tx: &LinkTx) -> Result<NodeHello, Refused> {
         let nonce = nonce();
-        send(tx, serde_json::from_value(json!({ "t": "challenge", "nonce": nonce })).expect("challenge frame"));
+        send(
+            tx,
+            serde_json::from_value(json!({ "t": "challenge", "nonce": nonce }))
+                .expect("challenge frame"),
+        );
         let first = match tokio::time::timeout(self.hello_timeout, next_text(ws)).await {
-            Err(_) => return refuse(close::BAD_FRAME, format!("no hello within {} s", self.hello_timeout.as_secs())),
+            Err(_) => {
+                return refuse(
+                    close::BAD_FRAME,
+                    format!("no hello within {} s", self.hello_timeout.as_secs()),
+                );
+            }
             Ok(None) => return refuse(0, "socket ended"),
             Ok(Some(text)) => text,
         };
@@ -287,45 +385,82 @@ impl NodeLinkServer {
         if hello.protocol.get() != PROTOCOL_VERSION {
             return refuse(
                 close::PROTOCOL_MISMATCH,
-                format!("hub speaks protocol {PROTOCOL_VERSION}, node speaks {}: install matching fleetd versions", hello.protocol.get()),
+                format!(
+                    "hub speaks protocol {PROTOCOL_VERSION}, node speaks {}: install matching fleetd versions",
+                    hello.protocol.get()
+                ),
             );
         }
         let machine_id = hello.machine_id.clone();
         // Checked before the token, so a bad signature cannot burn someone's enroll token.
         if !verify_nonce_signature(hello.pub_key.as_str(), &nonce, hello.sig.as_str()) {
-            return refuse(close::UNAUTHORIZED, "signature does not verify against the hello's key");
+            return refuse(
+                close::UNAUTHORIZED,
+                "signature does not verify against the hello's key",
+            );
         }
         if let Some(token) = &hello.enroll_token {
-            return match self.deps.auth.consume_enroll_token(token.as_str(), &machine_id, hello.pub_key.as_str()) {
+            return match self.deps.auth.consume_enroll_token(
+                token.as_str(),
+                &machine_id,
+                hello.pub_key.as_str(),
+            ) {
                 Ok(()) => Ok(hello),
-                Err(AuthError::Unauthorized(e)) => {
-                    refuse(close::UNAUTHORIZED, format!("{}: run fleetd hub token create --machine {machine_id}", e.message))
-                }
+                Err(AuthError::Unauthorized(e)) => refuse(
+                    close::UNAUTHORIZED,
+                    format!(
+                        "{}: run fleetd hub token create --machine {machine_id}",
+                        e.message
+                    ),
+                ),
                 Err(e) => {
                     tracing::error!(error = %e, "node link: enroll token check failed");
-                    refuse(close::UNAUTHORIZED, "the hub could not check the enroll token")
+                    refuse(
+                        close::UNAUTHORIZED,
+                        "the hub could not check the enroll token",
+                    )
                 }
             };
         }
         match self.deps.auth.node_pub_key(&machine_id) {
             Ok(None) => refuse(
                 close::UNAUTHORIZED,
-                format!("{machine_id} is not enrolled: run fleetd hub token create --machine {machine_id}, then fleetd node join"),
+                format!(
+                    "{machine_id} is not enrolled: run fleetd hub token create --machine {machine_id}, then fleetd node join"
+                ),
             ),
-            Ok(Some(key)) if key != hello.pub_key.as_str() => {
-                refuse(close::UNAUTHORIZED, format!("key does not match the key enrolled for {machine_id}"))
-            }
+            Ok(Some(key)) if key != hello.pub_key.as_str() => refuse(
+                close::UNAUTHORIZED,
+                format!("key does not match the key enrolled for {machine_id}"),
+            ),
             Ok(Some(_)) => Ok(hello),
             Err(e) => {
                 tracing::error!(error = %e, "node link: node key read failed");
-                refuse(close::UNAUTHORIZED, "the hub could not read the enrolled key")
+                refuse(
+                    close::UNAUTHORIZED,
+                    "the hub could not read the enrolled key",
+                )
             }
         }
     }
 
-    async fn attach_executor(&self, machine_id: &MachineId, t3: &Option<NodeT3Endpoint>, bearer: &Option<String>) {
+    async fn attach_executor(
+        &self,
+        machine_id: &MachineId,
+        t3: &Option<NodeT3Endpoint>,
+        bearer: &Option<String>,
+    ) {
         if let (Some(t3), Some(bearer)) = (t3, bearer) {
-            self.deps.executors.attach(machine_id, T3Session { t3_url: t3.url.clone(), bearer: bearer.clone() }).await;
+            self.deps
+                .executors
+                .attach(
+                    machine_id,
+                    T3Session {
+                        t3_url: t3.url.clone(),
+                        bearer: bearer.clone(),
+                    },
+                )
+                .await;
         }
     }
 
@@ -340,9 +475,16 @@ impl NodeLinkServer {
             (id, state.links.insert(machine_id.clone(), (id, tx.clone())))
         };
         if let Some((_, previous)) = previous {
-            let _ = previous.send(Out::Close(close::REPLACED, "a newer link for this machine took over".into()));
+            let _ = previous.send(Out::Close(
+                close::REPLACED,
+                "a newer link for this machine took over".into(),
+            ));
         }
-        let _unlink = Unlink { server: self.clone(), machine_id: machine_id.clone(), id };
+        let _unlink = Unlink {
+            server: self.clone(),
+            machine_id: machine_id.clone(),
+            id,
+        };
 
         // The T3 to attach while the node reports it up; None while it is down.
         let mut t3 = hello.t3.clone();
@@ -367,12 +509,23 @@ impl NodeLinkServer {
             "boxPubKey": hello.box_pub_key,
             "degradedReason": if t3.is_none() { Some(hello_reason) } else { None },
         }))
-        .map_err(|e| Refused { code: close::BAD_FRAME, reason: format!("hello does not make a machine: {e}") })?;
+        .map_err(|e| Refused {
+            code: close::BAD_FRAME,
+            reason: format!("hello does not make a machine: {e}"),
+        })?;
         if let Err(e) = self.deps.store.machine_upsert(&machine, None) {
             tracing::error!(error = %e, "node link: machine write failed");
         }
         self.touch(&machine_id);
-        send(tx, HubToNode::Welcome(serde_json::from_value(json!({ "hubId": self.deps.hub_id, "protocol": ProtocolVersion::CURRENT })).expect("welcome")));
+        send(
+            tx,
+            HubToNode::Welcome(
+                serde_json::from_value(
+                    json!({ "hubId": self.deps.hub_id, "protocol": ProtocolVersion::CURRENT }),
+                )
+                .expect("welcome"),
+            ),
+        );
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<HubToNode>();
         let forward = {
             let tx = tx.clone();
@@ -400,20 +553,33 @@ impl NodeLinkServer {
                 loop {
                     clock.sleep(every).await;
                     let at = iso_ms(now_ms(clock.as_ref()));
-                    send(&tx, serde_json::from_value(json!({ "t": "hb", "at": at })).expect("hb frame"));
+                    send(
+                        &tx,
+                        serde_json::from_value(json!({ "t": "hb", "at": at })).expect("hb frame"),
+                    );
                 }
             })
         };
         let _heartbeat = AbortOnDrop(heartbeat);
 
         loop {
-            let Some(text) = next_text(ws).await else { return Ok(()) };
+            let Some(text) = next_text(ws).await else {
+                return Ok(());
+            };
             let frame = match serde_json::from_str::<NodeToHub>(&text) {
                 Ok(f) => f,
                 Err(_) => return refuse(close::BAD_FRAME, "frame does not decode"),
             };
             // A replaced or timed-out link must not keep the machine alive.
-            if self.state.lock().unwrap().links.get(&machine_id).map(|l| l.0) != Some(id) {
+            if self
+                .state
+                .lock()
+                .unwrap()
+                .links
+                .get(&machine_id)
+                .map(|l| l.0)
+                != Some(id)
+            {
                 return Ok(());
             }
             self.touch(&machine_id);
@@ -441,16 +607,33 @@ impl NodeLinkServer {
                     let at = self.now_iso();
                     if state.state == T3RunState::Up {
                         t3 = state.t3.clone().or_else(|| hello.t3.clone());
-                        self.write_status(&machine_id, &at, MachineStatus::Online, None, t3.as_ref());
+                        self.write_status(
+                            &machine_id,
+                            &at,
+                            MachineStatus::Online,
+                            None,
+                            t3.as_ref(),
+                        );
                         self.announce(&machine_id, &at, Announced::Online, None);
                         // The node re-mints right after this, and that session reattaches; the last one may still work.
                         self.attach_executor(&machine_id, &t3, &bearer).await;
                     } else {
                         t3 = None;
                         let reason = state.reason.clone().unwrap_or_else(|| {
-                            if state.state == T3RunState::Restarting { "T3 is restarting" } else { "T3 is down" }.into()
+                            if state.state == T3RunState::Restarting {
+                                "T3 is restarting"
+                            } else {
+                                "T3 is down"
+                            }
+                            .into()
                         });
-                        self.write_status(&machine_id, &at, MachineStatus::Degraded, Some(&reason), None);
+                        self.write_status(
+                            &machine_id,
+                            &at,
+                            MachineStatus::Degraded,
+                            Some(&reason),
+                            None,
+                        );
                         self.announce(&machine_id, &at, Announced::Degraded, Some(&reason));
                         self.deps.executors.detach(&machine_id).await;
                     }
@@ -483,13 +666,15 @@ impl NodeLinkServer {
         let writer = tokio::spawn(async move {
             while let Some(out) = rx.recv().await {
                 let message = match out {
-                    Out::Frame(frame) => match serde_json::to_string(&frame) {
+                    Out::Frame(frame) => match serde_json::to_string(&*frame) {
                         Ok(text) => Message::Text(text.into()),
                         Err(_) => continue,
                     },
                     Out::Close(code, reason) => {
                         let reason = Utf8Bytes::from(close_reason(&reason));
-                        let _ = sink.send(Message::Close(Some(CloseFrame { code, reason }))).await;
+                        let _ = sink
+                            .send(Message::Close(Some(CloseFrame { code, reason })))
+                            .await;
                         return;
                     }
                 };
@@ -517,7 +702,9 @@ async fn next_text(rx: &mut Rx) -> Option<String> {
     while let Some(message) = rx.next().await {
         match message {
             Ok(Message::Text(text)) => return Some(text.to_string()),
-            Ok(Message::Binary(bytes)) => return Some(String::from_utf8_lossy(&bytes).into_owned()),
+            Ok(Message::Binary(bytes)) => {
+                return Some(String::from_utf8_lossy(&bytes).into_owned());
+            }
             Ok(Message::Ping(_) | Message::Pong(_)) => {}
             Ok(Message::Close(_)) | Err(_) => return None,
         }

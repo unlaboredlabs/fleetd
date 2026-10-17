@@ -34,7 +34,13 @@ pub fn to_instance(p: &ServerProvider) -> ProviderInstance {
             && p.status != "error"
             && p.status != "disabled"
             && p.auth.status != "unauthenticated",
-        models: p.models.iter().flat_map(|m| std::iter::once(m.slug.clone()).chain(m.aliases.clone().unwrap_or_default())).collect(),
+        models: p
+            .models
+            .iter()
+            .flat_map(|m| {
+                std::iter::once(m.slug.clone()).chain(m.aliases.clone().unwrap_or_default())
+            })
+            .collect(),
         default_model: preferred.map(|m| m.slug.clone()),
     }
 }
@@ -46,7 +52,9 @@ pub fn is_fleetd_codex(i: &ProviderInstance) -> bool {
 
 /// The first fleetd Codex instance with a model to run, if the machine has one.
 pub fn codex_instance(instances: &[ProviderInstance]) -> Option<&ProviderInstance> {
-    instances.iter().find(|i| is_fleetd_codex(i) && i.default_model.is_some())
+    instances
+        .iter()
+        .find(|i| is_fleetd_codex(i) && i.default_model.is_some())
 }
 
 /// Usable Codex instances fleetd does not use, because their ids do not start with "fleetd".
@@ -66,12 +74,24 @@ pub struct Route {
 
 /// Claude models never leave the fleetd instance; a model only a fleetd Codex instance lists runs on it.
 pub fn route_model(instances: &[ProviderInstance], model: &str) -> Route {
-    let fleetd = Route { instance_id: FLEETD_INSTANCE.into(), driver: "claudeAgent".into() };
-    if instances.iter().any(|i| i.driver != CODEX_DRIVER && i.models.iter().any(|m| m == model)) {
+    let fleetd = Route {
+        instance_id: FLEETD_INSTANCE.into(),
+        driver: "claudeAgent".into(),
+    };
+    if instances
+        .iter()
+        .any(|i| i.driver != CODEX_DRIVER && i.models.iter().any(|m| m == model))
+    {
         return fleetd;
     }
-    match instances.iter().find(|i| is_fleetd_codex(i) && i.models.iter().any(|m| m == model)) {
-        Some(codex) => Route { instance_id: codex.instance_id.clone(), driver: codex.driver.clone() },
+    match instances
+        .iter()
+        .find(|i| is_fleetd_codex(i) && i.models.iter().any(|m| m == model))
+    {
+        Some(codex) => Route {
+            instance_id: codex.instance_id.clone(),
+            driver: codex.driver.clone(),
+        },
         None => fleetd,
     }
 }
@@ -79,7 +99,14 @@ pub fn route_model(instances: &[ProviderInstance], model: &str) -> Route {
 /// T3's effort option for the driver. Codex calls it `reasoningEffort` and its top level `xhigh`.
 pub fn effort_option(driver: &str, effort: &str) -> (&'static str, String) {
     if driver == CODEX_DRIVER {
-        ("reasoningEffort", if effort == "max" { "xhigh".into() } else { effort.to_owned() })
+        (
+            "reasoningEffort",
+            if effort == "max" {
+                "xhigh".into()
+            } else {
+                effort.to_owned()
+            },
+        )
     } else {
         ("effort", effort.to_owned())
     }

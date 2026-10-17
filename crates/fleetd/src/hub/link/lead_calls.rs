@@ -25,7 +25,8 @@ pub struct LeadCaller {
 /// The hub said no; `fix` tells the lead what to do instead. Sent to the CLI as the result frame's error.
 pub type LeadCallRefused = McpToolError;
 
-pub type LeadCallFuture = Pin<Box<dyn Future<Output = Result<LeadCallResult, LeadCallRefused>> + Send>>;
+pub type LeadCallFuture =
+    Pin<Box<dyn Future<Output = Result<LeadCallResult, LeadCallRefused>> + Send>>;
 
 /// One area's handler for the lead calls it registered.
 pub trait LeadCallHandler: Send + Sync + 'static {
@@ -49,7 +50,10 @@ pub struct LeadCalls {
 
 impl LeadCalls {
     pub fn register(&self, op: &str, handler: Arc<dyn LeadCallHandler>) {
-        self.handlers.write().unwrap().insert(op.to_owned(), handler);
+        self.handlers
+            .write()
+            .unwrap()
+            .insert(op.to_owned(), handler);
     }
 
     pub fn handler(&self, op: &str) -> Option<Arc<dyn LeadCallHandler>> {
@@ -59,7 +63,10 @@ impl LeadCalls {
 
 /// The call's `op` tag, as on the wire.
 pub fn op_of(call: &LeadCall) -> String {
-    serde_json::to_value(call).ok().and_then(|v| v.get("op")?.as_str().map(str::to_owned)).unwrap_or_default()
+    serde_json::to_value(call)
+        .ok()
+        .and_then(|v| v.get("op")?.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 pub fn lead_by(r: &ProjectRef) -> String {
@@ -68,12 +75,20 @@ pub fn lead_by(r: &ProjectRef) -> String {
 
 /// The project whose workspace root is `cwd` or one of its ancestors, so worktrees under the root count. With nested
 /// roots the deepest wins; with equal roots, the first in `projects` (newest activity first from the store).
-pub fn project_for_cwd<'a>(projects: &'a [ProjectSummary], cwd: &str) -> Option<&'a ProjectSummary> {
-    cwd::project_index_for_cwd(projects.iter().map(|p| p.workspace_root.as_str()), cwd).map(|i| &projects[i])
+pub fn project_for_cwd<'a>(
+    projects: &'a [ProjectSummary],
+    cwd: &str,
+) -> Option<&'a ProjectSummary> {
+    cwd::project_index_for_cwd(projects.iter().map(|p| p.workspace_root.as_str()), cwd)
+        .map(|i| &projects[i])
 }
 
 /// Refusal for a cwd outside every project on the machine.
-pub fn outside_every_project(machine_id: &MachineId, cwd: &str, projects: &[ProjectSummary]) -> LeadCallRefused {
+pub fn outside_every_project(
+    machine_id: &MachineId,
+    cwd: &str,
+    projects: &[ProjectSummary],
+) -> LeadCallRefused {
     let roots: Vec<&str> = projects.iter().map(|p| p.workspace_root.as_str()).collect();
     let (message, fix) = cwd::outside_every_project(machine_id.as_str(), cwd, &roots);
     McpToolError::new(ErrorCode::Forbidden, message).with_fix(fix)

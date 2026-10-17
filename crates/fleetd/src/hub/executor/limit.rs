@@ -59,24 +59,31 @@ fn re(pattern: &str) -> Regex {
 }
 
 // CLIProxyAPI: a model no enabled credential offers, or every credential signed out.
-static UNKNOWN_PROVIDER: LazyLock<Regex> = LazyLock::new(|| re(r#"(?i)unknown provider for model\s+["']?([^\s"'\\,}]+)"#));
-static NO_ACCOUNT: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)no available account|no auth available|auth_unavailable"));
+static UNKNOWN_PROVIDER: LazyLock<Regex> =
+    LazyLock::new(|| re(r#"(?i)unknown provider for model\s+["']?([^\s"'\\,}]+)"#));
+static NO_ACCOUNT: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)no available account|no auth available|auth_unavailable"));
 // CLIProxyAPI: every credential for the model is cooling down; it says when in reset_seconds.
 static COOLDOWN: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)model_cooldown|are cooling down"));
 static RESET_SECONDS: LazyLock<Regex> = LazyLock::new(|| re(r#""reset_seconds"\s*:\s*(\d+)"#));
 static RATE: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)rate[ _-]?limit|\[429\]|\b(?:api error|status|error)\W{0,3}429\b"));
 static USAGE: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?i)usage limit|hit your (?:usage )?limit|(?:5-hour|weekly|session|opus) limit reached|out of extra usage")
+    re(
+        r"(?i)usage limit|hit your (?:usage )?limit|(?:5-hour|weekly|session|opus) limit reached|out of extra usage",
+    )
 });
 // The CLI's "Claude AI usage limit reached|<epoch seconds>".
 static PIPE_EPOCH: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)limit reached\|(\d{10})\b"));
 // A proxy's "(reset after 1h2m3s)".
-static RESET_AFTER: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?"));
+static RESET_AFTER: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?"));
 
 /// Epoch ms of an ISO timestamp, as `Date.parse` reads the ones T3 and fleetd write.
 pub fn parse_ms(iso: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(iso).ok().map(|d| d.timestamp_millis())
+    chrono::DateTime::parse_from_rfc3339(iso)
+        .ok()
+        .map(|d| d.timestamp_millis())
 }
 
 /// `new Date(ms).toISOString()`.
@@ -88,7 +95,9 @@ pub fn iso_of_ms(ms: i64) -> String {
 
 /// T3's DateTimeUtc as fleetd formats it (`DateTime.formatIso`): UTC with milliseconds.
 pub fn normalize_iso(iso: &str) -> String {
-    parse_ms(iso).map(iso_of_ms).unwrap_or_else(|| iso.to_owned())
+    parse_ms(iso)
+        .map(iso_of_ms)
+        .unwrap_or_else(|| iso.to_owned())
 }
 
 fn plus(at: &str, ms: i64) -> String {
@@ -98,13 +107,19 @@ fn plus(at: &str, ms: i64) -> String {
 /// The first reset that lies after the failure.
 fn reset_of(input: &LimitInput, class: UsageClass) -> String {
     let failed_ms = parse_ms(input.at).unwrap_or(0);
-    let after = |iso: Option<String>| iso.filter(|iso| parse_ms(iso).is_some_and(|ms| ms > failed_ms));
-    let num = |c: &regex::Captures, i: usize| c.get(i).map_or(0, |m| m.as_str().parse::<i64>().unwrap_or(0));
-    let epoch = PIPE_EPOCH.captures(input.message).map(|c| iso_of_ms(num(&c, 1) * 1000));
-    let seconds = RESET_SECONDS.captures(input.message).map(|c| num(&c, 1));
-    let span_ms = RESET_AFTER
+    let after =
+        |iso: Option<String>| iso.filter(|iso| parse_ms(iso).is_some_and(|ms| ms > failed_ms));
+    let num = |c: &regex::Captures, i: usize| {
+        c.get(i)
+            .map_or(0, |m| m.as_str().parse::<i64>().unwrap_or(0))
+    };
+    let epoch = PIPE_EPOCH
         .captures(input.message)
-        .map_or(0, |c| (num(&c, 1) * 3600 + num(&c, 2) * 60 + num(&c, 3)) * 1000);
+        .map(|c| iso_of_ms(num(&c, 1) * 1000));
+    let seconds = RESET_SECONDS.captures(input.message).map(|c| num(&c, 1));
+    let span_ms = RESET_AFTER.captures(input.message).map_or(0, |c| {
+        (num(&c, 1) * 3600 + num(&c, 2) * 60 + num(&c, 3)) * 1000
+    });
     after(input.reset_at.map(str::to_owned))
         .or_else(|| after(epoch))
         .or_else(|| seconds.filter(|s| *s > 0).map(|s| plus(input.at, s * 1000)))
@@ -117,13 +132,25 @@ pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
     let text = input.message;
     let model = input.model.filter(|m| !m.is_empty()).map(str::to_owned);
     if let Some(c) = UNKNOWN_PROVIDER.captures(text) {
-        return Some(Limit { class: UsageClass::PoolExhausted, resume_at: None, model: Some(c[1].to_owned()) });
+        return Some(Limit {
+            class: UsageClass::PoolExhausted,
+            resume_at: None,
+            model: Some(c[1].to_owned()),
+        });
     }
     if NO_ACCOUNT.is_match(text) {
-        return Some(Limit { class: UsageClass::PoolExhausted, resume_at: None, model });
+        return Some(Limit {
+            class: UsageClass::PoolExhausted,
+            resume_at: None,
+            model,
+        });
     }
     if COOLDOWN.is_match(text) {
-        return Some(Limit { class: UsageClass::UsageLimit, resume_at: Some(reset_of(input, UsageClass::UsageLimit)), model });
+        return Some(Limit {
+            class: UsageClass::UsageLimit,
+            resume_at: Some(reset_of(input, UsageClass::UsageLimit)),
+            model,
+        });
     }
     let class = if RATE.is_match(text) {
         UsageClass::RateLimit
@@ -132,7 +159,11 @@ pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
     } else {
         return None;
     };
-    Some(Limit { class, resume_at: Some(reset_of(input, class)), model })
+    Some(Limit {
+        class,
+        resume_at: Some(reset_of(input, class)),
+        model,
+    })
 }
 
 /// A failed thread's limit, read off its summary.

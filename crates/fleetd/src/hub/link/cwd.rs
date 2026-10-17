@@ -27,12 +27,20 @@ pub fn normalize(p: &str) -> String {
 }
 
 fn contains(root: &str, cwd: &str) -> bool {
-    cwd == root || cwd.starts_with(&if root == "/" { "/".to_owned() } else { format!("{root}/") })
+    cwd == root
+        || cwd.starts_with(&if root == "/" {
+            "/".to_owned()
+        } else {
+            format!("{root}/")
+        })
 }
 
 /// The index of the project whose workspace root is `cwd` or one of its ancestors, so worktrees under the root count.
 /// With nested roots the deepest wins; with equal roots, the first (newest activity first from the store).
-pub fn project_index_for_cwd<'a>(roots: impl IntoIterator<Item = &'a str>, cwd: &str) -> Option<usize> {
+pub fn project_index_for_cwd<'a>(
+    roots: impl IntoIterator<Item = &'a str>,
+    cwd: &str,
+) -> Option<usize> {
     let target = normalize(cwd);
     let mut best: Option<(usize, usize)> = None;
     for (i, root) in roots.into_iter().enumerate() {
@@ -55,12 +63,25 @@ const MAX_LISTED_ROOTS: usize = 5;
 pub fn outside_every_project(machine_id: &str, cwd: &str, roots: &[&str]) -> (String, String) {
     if roots.is_empty() {
         return (
-            format!("the hub knows no projects on {machine_id} yet, so it cannot tell which project {cwd} belongs to"),
-            format!("check that T3 is up on {machine_id} (fleetd_status), then run the command again"),
+            format!(
+                "the hub knows no projects on {machine_id} yet, so it cannot tell which project {cwd} belongs to"
+            ),
+            format!(
+                "check that T3 is up on {machine_id} (fleetd_status), then run the command again"
+            ),
         );
     }
-    let listed = roots.iter().take(MAX_LISTED_ROOTS).copied().collect::<Vec<_>>().join(", ");
-    let more = if roots.len() > MAX_LISTED_ROOTS { format!(" and {} more", roots.len() - MAX_LISTED_ROOTS) } else { String::new() };
+    let listed = roots
+        .iter()
+        .take(MAX_LISTED_ROOTS)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = if roots.len() > MAX_LISTED_ROOTS {
+        format!(" and {} more", roots.len() - MAX_LISTED_ROOTS)
+    } else {
+        String::new()
+    };
     (
         format!("{cwd} is not inside any project workspace on {machine_id}"),
         format!("run fleetd from the project's workspace or a worktree under it ({listed}{more})"),
@@ -75,13 +96,20 @@ mod tests {
         project_index_for_cwd(projects.iter().map(|p| p.1), cwd).map(|i| projects[i].0)
     }
 
-    const PROJECTS: [(&str, &str); 3] = [("ab", "/a/b"), ("abc", "/a/bc"), ("nested", "/a/b/tools/sub")];
+    const PROJECTS: [(&str, &str); 3] = [
+        ("ab", "/a/b"),
+        ("abc", "/a/bc"),
+        ("nested", "/a/b/tools/sub"),
+    ];
 
     #[test]
     fn matches_the_root_and_anything_under_it() {
         assert_eq!(resolve(&PROJECTS, "/a/b"), Some("ab"));
         assert_eq!(resolve(&PROJECTS, "/a/b/src"), Some("ab"));
-        assert_eq!(resolve(&PROJECTS, "/a/b/.t3/worktrees/w12/apps"), Some("ab"));
+        assert_eq!(
+            resolve(&PROJECTS, "/a/b/.t3/worktrees/w12/apps"),
+            Some("ab")
+        );
     }
 
     #[test]
@@ -133,8 +161,14 @@ mod tests {
         let roots: Vec<&str> = roots.iter().map(String::as_str).collect();
         let (message, fix) = outside_every_project("lab-a", "/tmp", &roots);
         assert_eq!(message, "/tmp is not inside any project workspace on lab-a");
-        assert_eq!(fix, "run fleetd from the project's workspace or a worktree under it (/src/p0, /src/p1, /src/p2, /src/p3, /src/p4 and 2 more)");
+        assert_eq!(
+            fix,
+            "run fleetd from the project's workspace or a worktree under it (/src/p0, /src/p1, /src/p2, /src/p3, /src/p4 and 2 more)"
+        );
         let (_, fix) = outside_every_project("lab-a", "/src/api", &[]);
-        assert_eq!(fix, "check that T3 is up on lab-a (fleetd_status), then run the command again");
+        assert_eq!(
+            fix,
+            "check that T3 is up on lab-a (fleetd_status), then run the command again"
+        );
     }
 }

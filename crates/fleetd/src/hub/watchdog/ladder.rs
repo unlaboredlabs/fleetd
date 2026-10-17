@@ -21,8 +21,12 @@ pub struct WatchdogConfig {
 }
 
 const MIN: u64 = 60_000;
-pub const DEFAULT_CONFIG: WatchdogConfig =
-    WatchdogConfig { outside_tool_ms: 10 * MIN, tool_timeout_ms: 10 * MIN, inside_tool_grace_ms: 10 * MIN, check_every_ms: 30_000 };
+pub const DEFAULT_CONFIG: WatchdogConfig = WatchdogConfig {
+    outside_tool_ms: 10 * MIN,
+    tool_timeout_ms: 10 * MIN,
+    inside_tool_grace_ms: 10 * MIN,
+    check_every_ms: 30_000,
+};
 
 pub const NUDGE: &str = "You seem stalled; continue the task from where you stopped.";
 
@@ -39,7 +43,10 @@ pub fn config_from_env(get: impl Fn(&str) -> Option<String>) -> WatchdogConfig {
     };
     read("FLEETD_STALL_OUTSIDE_SEC", &mut config.outside_tool_ms);
     read("FLEETD_STALL_TOOL_TIMEOUT_SEC", &mut config.tool_timeout_ms);
-    read("FLEETD_STALL_INSIDE_GRACE_SEC", &mut config.inside_tool_grace_ms);
+    read(
+        "FLEETD_STALL_INSIDE_GRACE_SEC",
+        &mut config.inside_tool_grace_ms,
+    );
     read("FLEETD_WATCHDOG_EVERY_SEC", &mut config.check_every_ms);
     config
 }
@@ -55,7 +62,13 @@ pub struct Tool {
 pub fn threshold_ms(config: &WatchdogConfig, tool: Option<Tool>) -> u64 {
     match tool {
         None => config.outside_tool_ms,
-        Some(t) => t.stated_timeout_ms.unwrap_or(0).max(if t.unstated { config.tool_timeout_ms } else { 0 }) + config.inside_tool_grace_ms,
+        Some(t) => {
+            t.stated_timeout_ms.unwrap_or(0).max(if t.unstated {
+                config.tool_timeout_ms
+            } else {
+                0
+            }) + config.inside_tool_grace_ms
+        }
     }
 }
 
@@ -71,10 +84,25 @@ pub trait WatchPort: Send + Sync {
     fn release(&self, key: &Key);
     /// `(last_frame_ms, open tool)`; None when no stream is open.
     fn progress(&self, key: &Key) -> Option<(u64, Option<Tool>)>;
-    fn interrupt(&self, key: &Key, client_request_id: &str) -> impl Future<Output = Result<(), String>> + Send;
-    fn send(&self, key: &Key, message: &str, client_request_id: &str) -> impl Future<Output = Result<(), String>> + Send;
+    fn interrupt(
+        &self,
+        key: &Key,
+        client_request_id: &str,
+    ) -> impl Future<Output = Result<(), String>> + Send;
+    fn send(
+        &self,
+        key: &Key,
+        message: &str,
+        client_request_id: &str,
+    ) -> impl Future<Output = Result<(), String>> + Send;
     /// Appends a thread event; the port fills in the thread's title and project from the store.
-    fn emit(&self, key: &Key, kind: &'static str, detail: String, data: Value) -> impl Future<Output = ()> + Send;
+    fn emit(
+        &self,
+        key: &Key,
+        kind: &'static str,
+        detail: String,
+        data: Value,
+    ) -> impl Future<Output = ()> + Send;
 }
 
 /// Where a thread is on the ladder. No entry means no stall in its current chain.
@@ -91,7 +119,9 @@ enum Chain {
 impl Chain {
     fn at(&self) -> u64 {
         match self {
-            Self::Interrupting { at, .. } | Self::Nudged { at, .. } | Self::Failed { at, .. } => *at,
+            Self::Interrupting { at, .. } | Self::Nudged { at, .. } | Self::Failed { at, .. } => {
+                *at
+            }
         }
     }
 }
@@ -104,11 +134,19 @@ struct State {
 }
 
 fn minutes(ms: u64) -> String {
-    if ms % MIN == 0 { format!("{} min", ms / MIN) } else { format!("{} s", (ms as f64 / 1000.0).round() as u64) }
+    if ms.is_multiple_of(MIN) {
+        format!("{} min", ms / MIN)
+    } else {
+        format!("{} s", (ms as f64 / 1000.0).round() as u64)
+    }
 }
 
 fn where_(in_tool: bool) -> &'static str {
-    if in_tool { "inside a tool" } else { "outside a tool" }
+    if in_tool {
+        "inside a tool"
+    } else {
+        "outside a tool"
+    }
 }
 
 pub struct Ladder<P> {
@@ -119,7 +157,11 @@ pub struct Ladder<P> {
 
 impl<P: WatchPort> Ladder<P> {
     pub fn new(config: WatchdogConfig, port: P) -> Self {
-        Self { config, port, state: Mutex::new(State::default()) }
+        Self {
+            config,
+            port,
+            state: Mutex::new(State::default()),
+        }
     }
 
     async fn follow(&self, state: &mut State, key: &Key) -> bool {
@@ -133,8 +175,13 @@ impl<P: WatchPort> Ladder<P> {
     /// Opens a stream for every running thread without one; returns how many it opened.
     pub async fn resubscribe(&self) -> usize {
         let mut state = self.state.lock().await;
-        let missing: Vec<Key> =
-            self.port.running().into_iter().map(|(k, _)| k).filter(|k| self.port.progress(k).is_none()).collect();
+        let missing: Vec<Key> = self
+            .port
+            .running()
+            .into_iter()
+            .map(|(k, _)| k)
+            .filter(|k| self.port.progress(k).is_none())
+            .collect();
         let mut opened = 0;
         for key in missing {
             if self.follow(&mut state, &key).await {
@@ -144,7 +191,17 @@ impl<P: WatchPort> Ladder<P> {
         opened
     }
 
-    async fn stall(&self, state: &mut State, key: &Key, run_id: &str, idle: u64, limit: u64, in_tool: bool, now: u64) {
+    #[allow(clippy::too_many_arguments)]
+    async fn stall(
+        &self,
+        state: &mut State,
+        key: &Key,
+        run_id: &str,
+        idle: u64,
+        limit: u64,
+        in_tool: bool,
+        now: u64,
+    ) {
         let detail = format!(
             "stalled: no progress for {} {}; interrupting and nudging once",
             minutes(idle),
@@ -158,15 +215,36 @@ impl<P: WatchPort> Ladder<P> {
             "thresholdSec": (limit as f64 / 1000.0).round() as u64,
         });
         self.port.emit(key, "thread.stalled", detail, data).await;
-        state.chains.insert(key.clone(), Chain::Interrupting { run_id: run_id.to_owned(), at: now });
-        if let Err(e) = self.port.interrupt(key, &format!("watchdog:{run_id}:interrupt")).await {
+        state.chains.insert(
+            key.clone(),
+            Chain::Interrupting {
+                run_id: run_id.to_owned(),
+                at: now,
+            },
+        );
+        if let Err(e) = self
+            .port
+            .interrupt(key, &format!("watchdog:{run_id}:interrupt"))
+            .await
+        {
             tracing::warn!(machine_id = %key.0, thread_id = %key.1, error = %e, "watchdog: interrupt failed");
         }
     }
 
-    async fn fail(&self, state: &mut State, key: &Key, run_id: &str, idle: u64, in_tool: bool, now: u64) {
-        let detail =
-            format!("failed: stalled again after a nudge (no progress for {} {})", minutes(idle), where_(in_tool));
+    async fn fail(
+        &self,
+        state: &mut State,
+        key: &Key,
+        run_id: &str,
+        idle: u64,
+        in_tool: bool,
+        now: u64,
+    ) {
+        let detail = format!(
+            "failed: stalled again after a nudge (no progress for {} {})",
+            minutes(idle),
+            where_(in_tool)
+        );
         let data = json!({
             "status": "failed",
             "runId": run_id,
@@ -174,8 +252,18 @@ impl<P: WatchPort> Ladder<P> {
             "error": { "class": "stalled", "message": "stalled twice; the watchdog interrupted it and will not retry" },
         });
         self.port.emit(key, "thread.failed", detail, data).await;
-        state.chains.insert(key.clone(), Chain::Failed { run_id: run_id.to_owned(), at: now });
-        if let Err(e) = self.port.interrupt(key, &format!("watchdog:{run_id}:fail")).await {
+        state.chains.insert(
+            key.clone(),
+            Chain::Failed {
+                run_id: run_id.to_owned(),
+                at: now,
+            },
+        );
+        if let Err(e) = self
+            .port
+            .interrupt(key, &format!("watchdog:{run_id}:fail"))
+            .await
+        {
             tracing::warn!(machine_id = %key.0, thread_id = %key.1, error = %e, "watchdog: interrupt failed");
         }
     }
@@ -189,7 +277,10 @@ impl<P: WatchPort> Ladder<P> {
         if let Some(Chain::Interrupting { run_id: r, at }) = &chain
             && r != run_id
         {
-            chain = Some(Chain::Nudged { stalled_run_id: r.clone(), at: *at });
+            chain = Some(Chain::Nudged {
+                stalled_run_id: r.clone(),
+                at: *at,
+            });
         }
         match &chain {
             None => {
@@ -213,7 +304,8 @@ impl<P: WatchPort> Ladder<P> {
         }
         let in_tool = tool.is_some();
         if chain.is_none() {
-            self.stall(state, key, run_id, idle, limit, in_tool, now).await;
+            self.stall(state, key, run_id, idle, limit, in_tool, now)
+                .await;
         } else {
             self.fail(state, key, run_id, idle, in_tool, now).await;
         }
@@ -228,9 +320,19 @@ impl<P: WatchPort> Ladder<P> {
             return;
         }
         if let (Some(Chain::Interrupting { run_id, .. }), Some(_)) = (&chain, &latest) {
-            match self.port.send(key, NUDGE, &format!("watchdog:{run_id}:continue")).await {
+            match self
+                .port
+                .send(key, NUDGE, &format!("watchdog:{run_id}:continue"))
+                .await
+            {
                 Ok(()) => {
-                    state.chains.insert(key.clone(), Chain::Nudged { stalled_run_id: run_id.clone(), at: now });
+                    state.chains.insert(
+                        key.clone(),
+                        Chain::Nudged {
+                            stalled_run_id: run_id.clone(),
+                            at: now,
+                        },
+                    );
                 }
                 Err(e) => {
                     tracing::warn!(machine_id = %key.0, thread_id = %key.1, error = %e, "watchdog: nudge failed; retrying next check");

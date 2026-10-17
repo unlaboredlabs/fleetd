@@ -41,8 +41,20 @@ pub struct Sweep {
 }
 
 impl Sweep {
-    pub fn new(store: Arc<HubStore>, events: Arc<EventLog>, watchdog: Arc<Watchdog>, clock: Arc<dyn Clock>) -> Arc<Self> {
-        Arc::new(Self { store, events, watchdog, clock, checks: Mutex::default(), reported: Mutex::default() })
+    pub fn new(
+        store: Arc<HubStore>,
+        events: Arc<EventLog>,
+        watchdog: Arc<Watchdog>,
+        clock: Arc<dyn Clock>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            store,
+            events,
+            watchdog,
+            clock,
+            checks: Mutex::default(),
+            reported: Mutex::default(),
+        })
     }
 
     /// Sweeps every `every_ms` from now on, in its own task.
@@ -77,12 +89,20 @@ impl Sweep {
                 self.reported.lock().unwrap().remove(&machine.machine_id);
                 continue;
             }
-            let threads: Vec<_> = running.iter().filter(|t| t.machine_id == machine.machine_id).collect();
+            let threads: Vec<_> = running
+                .iter()
+                .filter(|t| t.machine_id == machine.machine_id)
+                .collect();
             let since = machine.last_seen_at.0.clone();
-            if threads.is_empty() || self.reported.lock().unwrap().get(&machine.machine_id) == Some(&since) {
+            if threads.is_empty()
+                || self.reported.lock().unwrap().get(&machine.machine_id) == Some(&since)
+            {
                 continue;
             }
-            self.reported.lock().unwrap().insert(machine.machine_id.clone(), since.clone());
+            self.reported
+                .lock()
+                .unwrap()
+                .insert(machine.machine_id.clone(), since.clone());
             let n = threads.len();
             let event = json!({
                 "at": iso_ms(now_ms(self.clock.as_ref())),
@@ -118,7 +138,9 @@ impl Sweep {
         let checks = self.checks.lock().unwrap().clone();
         for check in checks {
             // Isolated: a panicking check is a failed check, not a dead sweep.
-            let result = tokio::spawn((check.run)()).await.unwrap_or_else(|e| Err(e.to_string()));
+            let result = tokio::spawn((check.run)())
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()));
             report(&check.name, result);
         }
     }

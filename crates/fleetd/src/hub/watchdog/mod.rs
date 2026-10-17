@@ -38,11 +38,21 @@ impl WatchPort for HubWatch {
         self.executors
             .running()
             .into_iter()
-            .map(|r| ((r.thread_ref.machine_id.to_string(), r.thread_ref.thread_id.to_string()), r.run_id))
+            .map(|r| {
+                (
+                    (
+                        r.thread_ref.machine_id.to_string(),
+                        r.thread_ref.thread_id.to_string(),
+                    ),
+                    r.run_id,
+                )
+            })
             .collect()
     }
     fn latest_run(&self, key: &Key) -> Option<(Option<String>, bool)> {
-        self.executors.latest_run(&thread_ref(key)?).map(|l| (l.run_id, l.running))
+        self.executors
+            .latest_run(&thread_ref(key)?)
+            .map(|l| (l.run_id, l.running))
     }
     async fn follow(&self, key: &Key) -> bool {
         match thread_ref(key) {
@@ -57,19 +67,34 @@ impl WatchPort for HubWatch {
     }
     fn progress(&self, key: &Key) -> Option<(u64, Option<Tool>)> {
         let p = self.executors.progress(&thread_ref(key)?)?;
-        Some((p.last_frame_ms, p.tool.map(|t| Tool { stated_timeout_ms: t.stated_timeout_ms, unstated: t.unstated })))
+        Some((
+            p.last_frame_ms,
+            p.tool.map(|t| Tool {
+                stated_timeout_ms: t.stated_timeout_ms,
+                unstated: t.unstated,
+            }),
+        ))
     }
     async fn interrupt(&self, key: &Key, client_request_id: &str) -> Result<(), String> {
         let r = thread_ref(key).ok_or("bad thread ref")?;
-        self.executors.interrupt(&r, client_request_id).await.map_err(|e| e.to_string())
+        self.executors
+            .interrupt(&r, client_request_id)
+            .await
+            .map_err(|e| e.to_string())
     }
     async fn send(&self, key: &Key, message: &str, client_request_id: &str) -> Result<(), String> {
         let r = thread_ref(key).ok_or("bad thread ref")?;
-        self.executors.send(&r, message, client_request_id).await.map(|_| ()).map_err(|e| e.to_string())
+        self.executors
+            .send(&r, message, client_request_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
     async fn emit(&self, key: &Key, kind: &'static str, detail: String, data: Value) {
         let summary = thread_ref(key).and_then(|r| self.store.thread_get(&r).ok().flatten());
-        let title = summary.as_ref().map_or(key.1.as_str(), |s| s.thread.title.as_str());
+        let title = summary
+            .as_ref()
+            .map_or(key.1.as_str(), |s| s.thread.title.as_str());
         let mut event = json!({
             "at": iso_ms(now_ms(self.clock.as_ref())),
             "type": kind,
@@ -104,7 +129,17 @@ impl Watchdog {
         events: Arc<EventLog>,
         clock: Arc<dyn Clock>,
     ) -> Arc<Self> {
-        Arc::new(Self { ladder: Ladder::new(config, HubWatch { executors, store, events, clock }) })
+        Arc::new(Self {
+            ladder: Ladder::new(
+                config,
+                HubWatch {
+                    executors,
+                    store,
+                    events,
+                    clock,
+                },
+            ),
+        })
     }
 
     /// Checks every `config.check_every_ms`, in its own task.

@@ -14,14 +14,21 @@ const SCRIPT: &str = concat!(
     "git -c core.quotePath=false diff --name-only --no-renames \"$mb\" \"refs/heads/$2\"",
 );
 
-static BRANCH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$").expect("static regex"));
+static BRANCH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$").expect("static regex"));
 /// The node keeps this much of the output; a list that fills it may have lost its first names.
 const OUTPUT_MAX: usize = 2000;
 
 pub fn branch_diff_argv(base: &str, branch: &str) -> Option<Vec<String>> {
-    [base, branch].iter().all(|b| BRANCH.is_match(b) && !b.contains("..")).then(|| {
-        ["sh", "-c", SCRIPT, "fleetd-branch-diff", base, branch].iter().map(|s| (*s).to_owned()).collect()
-    })
+    [base, branch]
+        .iter()
+        .all(|b| BRANCH.is_match(b) && !b.contains(".."))
+        .then(|| {
+            ["sh", "-c", SCRIPT, "fleetd-branch-diff", base, branch]
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect()
+        })
 }
 
 /// The changed paths from the command's result, sorted; None when the node could not say in full (a failed command,
@@ -30,7 +37,31 @@ pub fn parse_branch_diff(exit_code: Option<i64>, output_tail: &str) -> Option<Ve
     if exit_code != Some(0) || super::shell_mapper::js_len(output_tail) >= OUTPUT_MAX {
         return None;
     }
-    let mut paths: Vec<String> = output_tail.split('\n').map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
+    let mut paths: Vec<String> = output_tail
+        .split('\n')
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect();
     paths.sort();
     Some(paths)
+}
+
+/// The branch's changed paths, sorted; None when the node could not say in full (offline, unknown branch, a list
+/// longer than the output it keeps).
+pub async fn branch_diff(
+    commands: &crate::hub::link::NodeCommands,
+    machine_id: &fleetd_contracts::ids::MachineId,
+    cwd: &str,
+    base: &str,
+    branch: &str,
+) -> Option<Vec<String>> {
+    let argv = branch_diff_argv(base, branch)?;
+    let input = crate::hub::link::commands::CommandInput {
+        cwd: cwd.to_owned(),
+        argv,
+        timeout_sec: Some(60),
+    };
+    let out = commands.run(machine_id, input).await.ok()?;
+    parse_branch_diff(out.exit_code.map(|c| c.get()), out.output_tail.as_str())
 }

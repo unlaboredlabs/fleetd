@@ -36,7 +36,11 @@ impl WatchPort for &Fake {
     }
     fn running(&self) -> Vec<(Key, String)> {
         let t = self.thread.lock().unwrap();
-        if t.running { vec![(key(), t.run_id.clone())] } else { vec![] }
+        if t.running {
+            vec![(key(), t.run_id.clone())]
+        } else {
+            vec![]
+        }
     }
     fn latest_run(&self, _: &Key) -> Option<(Option<String>, bool)> {
         let t = self.thread.lock().unwrap();
@@ -57,18 +61,27 @@ impl WatchPort for &Fake {
         t.stream_open.then_some((t.last_frame_ms, t.tool))
     }
     async fn interrupt(&self, _: &Key, client_request_id: &str) -> Result<(), String> {
-        self.calls.lock().unwrap().push(format!("interrupt {client_request_id}"));
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("interrupt {client_request_id}"));
         Ok(())
     }
     async fn send(&self, _: &Key, message: &str, client_request_id: &str) -> Result<(), String> {
         let m = if message == NUDGE { "NUDGE" } else { message };
-        self.calls.lock().unwrap().push(format!("send {client_request_id} {m}"));
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("send {client_request_id} {m}"));
         Ok(())
     }
     async fn emit(&self, key: &Key, kind: &'static str, detail: String, data: Value) {
         // The real port reads the title from the store: "sleepy".
         let summary = format!("\"sleepy\" on {} {detail}", key.0);
-        self.events.lock().unwrap().push((kind.into(), data, summary));
+        self.events
+            .lock()
+            .unwrap()
+            .push((kind.into(), data, summary));
     }
 }
 
@@ -96,13 +109,22 @@ impl Run<'_> {
         self.to(m * MIN).await;
     }
     fn types(&self) -> Vec<String> {
-        self.fake.events.lock().unwrap().iter().map(|e| e.0.clone()).collect()
+        self.fake
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| e.0.clone())
+            .collect()
     }
     fn calls(&self) -> Vec<String> {
         self.fake.calls.lock().unwrap().clone()
     }
     fn sends(&self) -> Vec<String> {
-        self.calls().into_iter().filter(|c| c.starts_with("send")).collect()
+        self.calls()
+            .into_iter()
+            .filter(|c| c.starts_with("send"))
+            .collect()
     }
     fn set(&self, f: impl FnOnce(&mut Thread)) {
         f(&mut self.fake.thread.lock().unwrap());
@@ -111,15 +133,25 @@ impl Run<'_> {
 
 fn fake() -> Fake {
     let f = Fake::default();
-    *f.thread.lock().unwrap() = Thread { run_id: "r1".into(), running: true, ..Thread::default() };
+    *f.thread.lock().unwrap() = Thread {
+        run_id: "r1".into(),
+        running: true,
+        ..Thread::default()
+    };
     f
 }
 
 fn ladder(fake: &Fake, config: WatchdogConfig) -> Run<'_> {
-    Run { fake, ladder: Ladder::new(config, fake) }
+    Run {
+        fake,
+        ladder: Ladder::new(config, fake),
+    }
 }
 
-const EVERY_MINUTE: WatchdogConfig = WatchdogConfig { check_every_ms: MIN, ..DEFAULT_CONFIG };
+const EVERY_MINUTE: WatchdogConfig = WatchdogConfig {
+    check_every_ms: MIN,
+    ..DEFAULT_CONFIG
+};
 
 #[tokio::test]
 async fn stalls_interrupts_nudges_once_then_fails_without_retrying() {
@@ -132,9 +164,18 @@ async fn stalls_interrupts_nudges_once_then_fails_without_retrying() {
     r.to_minute(11).await;
     let (kind, data, summary) = f.events.lock().unwrap()[0].clone();
     assert_eq!(kind, "thread.stalled");
-    assert_eq!((data["runId"].as_str(), data["inTool"].as_bool()), (Some("r1"), Some(false)));
-    assert_eq!((data["idleSec"].as_u64(), data["thresholdSec"].as_u64()), (Some(600), Some(600)));
-    assert_eq!(summary, r#""sleepy" on lab-a stalled: no progress for 10 min outside a tool; interrupting and nudging once"#);
+    assert_eq!(
+        (data["runId"].as_str(), data["inTool"].as_bool()),
+        (Some("r1"), Some(false))
+    );
+    assert_eq!(
+        (data["idleSec"].as_u64(), data["thresholdSec"].as_u64()),
+        (Some(600), Some(600))
+    );
+    assert_eq!(
+        summary,
+        r#""sleepy" on lab-a stalled: no progress for 10 min outside a tool; interrupting and nudging once"#
+    );
     assert_eq!(r.calls()[1..], ["interrupt watchdog:r1:interrupt"]);
 
     // The nudge waits for the interrupted run to end, and goes out once.
@@ -156,7 +197,14 @@ async fn stalls_interrupts_nudges_once_then_fails_without_retrying() {
     r.to_minute(28).await;
     let (kind, data, _) = f.events.lock().unwrap()[1].clone();
     assert_eq!(kind, "thread.failed");
-    assert_eq!((data["runId"].as_str(), data["reason"].as_str(), data["status"].as_str()), (Some("r2"), Some("stalled"), Some("failed")));
+    assert_eq!(
+        (
+            data["runId"].as_str(),
+            data["reason"].as_str(),
+            data["status"].as_str()
+        ),
+        (Some("r2"), Some("stalled"), Some("failed"))
+    );
     assert_eq!(r.calls().last().unwrap(), "interrupt watchdog:r2:fail");
 
     // Even if the interrupt does not take, nothing more happens to this run.
@@ -208,12 +256,24 @@ async fn frames_keep_a_run_alive() {
 async fn inside_a_tool_waits_for_its_timeout_plus_grace() {
     let f = fake();
     let r = ladder(&f, EVERY_MINUTE);
-    r.set(|t| t.tool = Some(Tool { stated_timeout_ms: None, unstated: true }));
+    r.set(|t| {
+        t.tool = Some(Tool {
+            stated_timeout_ms: None,
+            unstated: true,
+        })
+    });
     r.to_minute(20).await;
     assert!(r.types().is_empty());
     r.to_minute(21).await;
     let (kind, data, _) = f.events.lock().unwrap()[0].clone();
-    assert_eq!((kind.as_str(), data["inTool"].as_bool(), data["thresholdSec"].as_u64()), ("thread.stalled", Some(true), Some(1200)));
+    assert_eq!(
+        (
+            kind.as_str(),
+            data["inTool"].as_bool(),
+            data["thresholdSec"].as_u64()
+        ),
+        ("thread.stalled", Some(true), Some(1200))
+    );
 }
 
 #[tokio::test]
@@ -230,7 +290,12 @@ async fn short_thresholds_from_env_as_the_lab_uses() {
     };
     let f = fake();
     let r = ladder(&f, config_from_env(env));
-    r.set(|t| t.tool = Some(Tool { stated_timeout_ms: None, unstated: true }));
+    r.set(|t| {
+        t.tool = Some(Tool {
+            stated_timeout_ms: None,
+            unstated: true,
+        })
+    });
     r.to(30_000).await;
     assert!(r.types().is_empty());
     r.to(31_000).await;
@@ -240,10 +305,37 @@ async fn short_thresholds_from_env_as_the_lab_uses() {
 #[test]
 fn thresholds() {
     assert_eq!(threshold_ms(&DEFAULT_CONFIG, None), 10 * MIN);
-    assert_eq!(threshold_ms(&DEFAULT_CONFIG, Some(Tool { stated_timeout_ms: None, unstated: true })), 20 * MIN);
-    assert_eq!(threshold_ms(&DEFAULT_CONFIG, Some(Tool { stated_timeout_ms: Some(30 * MIN), unstated: false })), 40 * MIN);
+    assert_eq!(
+        threshold_ms(
+            &DEFAULT_CONFIG,
+            Some(Tool {
+                stated_timeout_ms: None,
+                unstated: true
+            })
+        ),
+        20 * MIN
+    );
+    assert_eq!(
+        threshold_ms(
+            &DEFAULT_CONFIG,
+            Some(Tool {
+                stated_timeout_ms: Some(30 * MIN),
+                unstated: false
+            })
+        ),
+        40 * MIN
+    );
     // A short stated timeout next to a tool that states none still gets the default.
-    assert_eq!(threshold_ms(&DEFAULT_CONFIG, Some(Tool { stated_timeout_ms: Some(MIN), unstated: true })), 20 * MIN);
+    assert_eq!(
+        threshold_ms(
+            &DEFAULT_CONFIG,
+            Some(Tool {
+                stated_timeout_ms: Some(MIN),
+                unstated: true
+            })
+        ),
+        20 * MIN
+    );
 }
 
 #[test]
@@ -258,5 +350,11 @@ fn env_seconds_ignore_junk() {
         }
         .map(str::to_owned)
     };
-    assert_eq!(config_from_env(env), WatchdogConfig { outside_tool_ms: 20_000, ..DEFAULT_CONFIG });
+    assert_eq!(
+        config_from_env(env),
+        WatchdogConfig {
+            outside_tool_ms: 20_000,
+            ..DEFAULT_CONFIG
+        }
+    );
 }

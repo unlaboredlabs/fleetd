@@ -1,1 +1,1 @@
-//! TS spec: apps/hub/src/executor (port in progress).
+//! The M1 MCP tools this area serves: fleetd_status, projects_list, project_get (base), thread_tail, actions_list, thread_launch, thread_send, thread_interrupt. Registered once the framework`s Registry lands.
