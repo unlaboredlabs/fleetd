@@ -148,7 +148,8 @@ export const DecisionScope = Schema.Union([
   .annotate({ identifier: "DecisionScope" });
 export type DecisionScope = typeof DecisionScope.Type;
 
-export const DecisionSource = Schema.Literals(["human", "lead"]);
+/** Filled by the hub from the caller: a human device, an agent key, or a lead-side call. */
+export const DecisionSource = Schema.Literals(["human", "lead", "agent"]);
 export type DecisionSource = typeof DecisionSource.Type;
 
 export const DecisionState = Schema.Literals(["active", "superseded", "retired"]);
@@ -163,6 +164,8 @@ export const Decision = Schema.Struct({
   value: DecisionValue,
   why: Schema.optionalKey(DecisionWhy),
   source: DecisionSource,
+  /** Who recorded it: the agent key name, "lead:<machineId>/<projectId>" or "human:<device>". */
+  by: Schema.optionalKey(Schema.String),
   /** The ask this answers, when it came from one. */
   askId: Schema.optionalKey(AskId),
   /** The earlier active decision on the same key and scope that this one replaced. */

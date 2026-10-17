@@ -4,6 +4,7 @@ import { HubEvent, HubEventType } from "./events.ts";
 import { EventSeq, MachineId, ProjectId, ThreadId, Timestamp } from "./ids.ts";
 import {
   Ask,
+  DecisionSource,
   AskId,
   AskState,
   Batch,
@@ -260,6 +261,9 @@ export const InboxReplyApplied = Schema.Struct({
   outcome: Schema.Literals(["answered", "withdrawn", "later", "retired", "pref"]),
   value: Schema.optionalKey(Schema.String),
   decisionId: Schema.optionalKey(DecisionId),
+  /** The written decision's source and by, filled by the hub from the caller (human device or agent key). */
+  source: Schema.optionalKey(DecisionSource),
+  by: Schema.optionalKey(Schema.String),
 });
 export const InboxReplyOutput = Schema.Struct({
   /** False: nothing changed; see `hint`. */
@@ -286,7 +290,7 @@ export const DecisionsSearchOutput = Schema.Struct({
   ...resultFields,
 });
 
-// decisions_record
+// decisions_record: the hub fills the decision's source and by from the caller (human device or agent key).
 export const DecisionsRecordInput = Schema.Struct({
   key: DecisionKey,
   value: DecisionValue,

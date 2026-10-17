@@ -129,8 +129,12 @@
           "type": "string",
           "enum": [
             "human",
-            "lead"
+            "lead",
+            "agent"
           ]
+        },
+        "by": {
+          "type": "string"
         },
         "askId": {
           "$ref": "#/$defs/AskId"
