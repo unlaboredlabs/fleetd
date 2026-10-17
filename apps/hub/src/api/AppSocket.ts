@@ -94,6 +94,10 @@ const make = Effect.gen(function* () {
         return yield* send(errorFrame({ code: "invalid", message: "Unknown or malformed message.", fix: "Send {t:auth|snapshot|events}." }));
       }
       const message = decoded.success;
+      // Pairing arrives with M8c.
+      if (message.t === "device_pair") {
+        return yield* send(errorFrame({ code: "not_found", message: "This hub does not pair devices yet.", fix: "Use a key from fleetd hub key create --human." }));
+      }
       if (message.t === "auth") {
         const verified = yield* Effect.result(auth.verify(message.key));
         if (verified._tag === "Failure") {

@@ -1,6 +1,7 @@
 export * from "./hello.ts";
 export * from "./ids.ts";
 export * from "./ledger.ts";
+export * from "./secrets.ts";
 export * from "./playbooks.ts";
 export * from "./effort.ts";
 export * from "./tasks.ts";

@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { MachineId, ProjectId, ThreadId, Timestamp } from "./ids.ts";
 import { Lead, Workstream } from "./ledger.ts";
+import { BoxPublicKey } from "./secrets.ts";
 import { Task } from "./tasks.ts";
 import { TrainState } from "./train.ts";
 
@@ -18,6 +19,8 @@ export const Machine = Schema.Struct({
   nodeVersion: Schema.String,
   /** Plain language, set while status is "degraded". */
   degradedReason: Schema.optionalKey(Schema.String),
+  /** M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no secrets. */
+  boxPubKey: Schema.optionalKey(BoxPublicKey),
 }).annotate({ identifier: "Machine" });
 export type Machine = typeof Machine.Type;
 

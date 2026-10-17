@@ -79,6 +79,12 @@ export const HubEventType = Schema.Literals([
   "usage.breaker",
   /** M4: parked threads were sent "continue" at their reset or on usage_resume; `data.breakerCleared`. */
   "usage.resumed",
+  /** M8: the node wrote a secret's sink. `data.askId`, `data.fingerprint`, `data.by` (the human who submitted it). */
+  "ask.secret_saved",
+  /** M8: the node ran an approved command. `data.askId`, `data.exitCode`, `data.timedOut`, `data.by` (the approver). */
+  "gated.ran",
+  /** M8: a Web Push went out; no item content. `data.items` (how many it covers, "+N more" folded in), `data.devices`. */
+  "push.sent",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

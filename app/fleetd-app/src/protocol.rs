@@ -47,6 +47,9 @@ pub enum ClientMessage {
     Snapshot,
     Events { cursor: u64 },
     Call { id: String, tool: String, input: Value },
+    /// Redeem a device pairing token for a human key (M8); the phone PWA uses it, this app not yet.
+    #[serde(rename = "device_pair")]
+    DevicePair { token: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,9 +60,13 @@ pub enum ServerMessage {
     Event(HubEvent),
     Result(CallResult),
     Error(ErrorFrame),
+    #[serde(rename = "device_paired")]
+    DevicePaired(DevicePaired),
 }
 
 contract! { pub struct Ready { pub protocol: u64 } }
+
+contract! { pub struct DevicePaired { pub key: String, pub key_id: String } }
 
 contract! {
     pub struct FleetStatus {
@@ -132,6 +139,9 @@ contract! {
         pub node_version: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub degraded_reason: Option<String>,
+        /// The node's X25519 key for sealed secrets (M8).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub box_pub_key: Option<String>,
     }
 }
 
@@ -393,7 +403,7 @@ literals! {
 }
 
 literals! {
-    pub enum AskKind { Decide = "decide", Do = "do" }
+    pub enum AskKind { Decide = "decide", Do = "do", Secret = "secret", Approve = "approve" }
 }
 
 literals! {
@@ -418,6 +428,18 @@ contract! {
         pub recommendation: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub steps: Option<Vec<Step>>,
+        /// M8: a do ask's re-check, a secret ask's sink and fingerprint, an approve ask's stored command (not shown
+        /// yet) and what closed or reopened the ask.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub verify: Option<CheckSpec>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub sink: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub fingerprint: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub gated: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub evidence: Option<String>,
         pub blocks: String,
         pub proceeded_on_rec: bool,
         pub state: AskState,

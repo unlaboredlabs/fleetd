@@ -77,6 +77,13 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const ref = caller.projectRef;
       switch (call.op) {
+        // Answered once secrets and approvals are wired here (M8a).
+        case "gated_run":
+          return yield* refused({
+            code: "forbidden",
+            message: "fleetd gated run is not available on this hub yet.",
+            fix: "Ask the human with fleetd ask --kind do and the exact command as a step.",
+          });
         case "change_enqueue": {
           const { op: _, ...input } = call;
           const change = yield* train.enqueue(caller, input);
@@ -96,6 +103,13 @@ export const make = Effect.gen(function* () {
             ...(call.amend === undefined ? {} : { amend: call.amend }),
           });
         case "ask": {
+          if (call.kind === "secret") {
+            return yield* refused({
+              code: "forbidden",
+              message: "Secret asks are not available on this hub yet.",
+              fix: "Ask the human with fleetd ask --kind do to put the secret in place, without sending its value.",
+            });
+          }
           const workstreamId = call.workstreamId === undefined ? undefined : yield* ownWorkstream(ref, call.workstreamId);
           const outcome = yield* asks.create(
             {

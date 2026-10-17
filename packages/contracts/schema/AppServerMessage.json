@@ -11,6 +11,9 @@
       "type": "string",
       "format": "date-time"
     },
+    "BoxPublicKey": {
+      "type": "string"
+    },
     "Machine": {
       "type": "object",
       "properties": {
@@ -67,6 +70,9 @@
         },
         "degradedReason": {
           "type": "string"
+        },
+        "boxPubKey": {
+          "$ref": "#/$defs/BoxPublicKey"
         }
       },
       "required": [
@@ -201,7 +207,10 @@
         "intake.routed",
         "research.verdict",
         "usage.breaker",
-        "usage.resumed"
+        "usage.resumed",
+        "ask.secret_saved",
+        "gated.ran",
+        "push.sent"
       ]
     },
     "ThreadId": {
@@ -486,6 +495,31 @@
             "t",
             "code",
             "message"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "device_paired"
+              ]
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "keyId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "t",
+            "key",
+            "keyId"
           ],
           "additionalProperties": true
         }

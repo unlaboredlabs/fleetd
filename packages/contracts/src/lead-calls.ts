@@ -2,7 +2,6 @@ import { Effect, Schema } from "effect";
 import {
   AskBlocks,
   AskId,
-  AskKind,
   AskOptions,
   AskState,
   AskSteps,
@@ -10,17 +9,25 @@ import {
   askKindRule,
   Brief,
   BriefHash,
+  CheckSpec,
   Decision,
   DecisionId,
   DecisionKey,
   DecisionValue,
   DecisionWhy,
+  GatedArgv,
+  GatedClass,
+  GatedCwd,
+  GatedTimeoutSec,
+  GATED_MAX_TIMEOUT_SEC,
   Headline,
+  SecretEnv,
   WorkstreamId,
   Tier,
   WorkstreamState,
 } from "./ledger.ts";
 import { McpToolError } from "./mcp.ts";
+import { SecretSink } from "./secrets.ts";
 import { Effort } from "./effort.ts";
 import { PrUrl, Serves, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
 import { Claim, ClaimId, ReviewVerdict } from "./verification.ts";
@@ -43,10 +50,14 @@ export const BriefCreateCall = Schema.Struct({
   amend: Schema.optionalKey(AskId),
 });
 
-/** `fleetd ask --key k --class c --text t --rec r [--options a,b] [--blocks "step"] [--proceeded] [--workstream W12]`. */
+/**
+ * `fleetd ask [--kind decide|do|secret] --key k --class c --text t --rec r [--options a,b] [--steps '<json>']
+ * [--verify '<CheckSpec>'] [--sink env:<machine>:<path>] [--blocks "step"] [--proceeded] [--workstream W12]`. Approve
+ * asks come only from `fleetd gated run`, so the command they run is stored with them.
+ */
 export const AskCall = Schema.Struct({
   op: Schema.tag("ask"),
-  kind: AskKind.pipe(Schema.withDecodingDefaultKey(Effect.succeed("decide" as const))),
+  kind: Schema.Literals(["decide", "do", "secret"]).pipe(Schema.withDecodingDefaultKey(Effect.succeed("decide" as const))),
   key: DecisionKey,
   /** Any string: the hub refuses classes outside AskClass with the "decide this yourself" fix text. */
   class: Schema.NonEmptyString,
@@ -54,10 +65,30 @@ export const AskCall = Schema.Struct({
   recommendation: Schema.optionalKey(DecisionValue),
   options: Schema.optionalKey(AskOptions),
   steps: Schema.optionalKey(AskSteps),
+  /** do only. */
+  verify: Schema.optionalKey(CheckSpec),
+  /** Required for secret; the ask's key names the secret. */
+  sink: Schema.optionalKey(SecretSink),
   blocks: AskBlocks.pipe(Schema.withDecodingDefaultKey(Effect.succeed("nothing" as const))),
   proceededOnRec: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
   workstreamId: Schema.optionalKey(WorkstreamId),
 }).check(askKindRule);
+
+/**
+ * `fleetd gated run --class irreversible|money|credential --argv '<json array>' --reason r [--cwd /abs]
+ * [--secret-env NAME=<secret key>]... [--timeout <sec>] [--workstream W12]`. Creates an approve ask storing exactly this
+ * command; the project's node runs it after a human answers "go", and the result arrives in a wake.
+ */
+export const GatedRunCall = Schema.Struct({
+  op: Schema.tag("gated_run"),
+  argv: GatedArgv,
+  cwd: Schema.optionalKey(GatedCwd),
+  class: GatedClass,
+  reason: AskText,
+  secretEnv: Schema.optionalKey(SecretEnv),
+  timeoutSec: GatedTimeoutSec.pipe(Schema.withDecodingDefaultKey(Effect.succeed(GATED_MAX_TIMEOUT_SEC))),
+  workstreamId: Schema.optionalKey(WorkstreamId),
+});
 
 /** `fleetd ask withdraw A7 [--use D3]`. */
 export const AskWithdrawCall = Schema.Struct({
@@ -173,6 +204,7 @@ export const LeadCall = Schema.Union([
   ReviewVerdictCall,
   ChangeEnqueueCall,
   ChangeStatusCall,
+  GatedRunCall,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCall" });
@@ -246,6 +278,9 @@ export const ChangeEnqueueResult = Schema.Struct({ op: Schema.tag("change_enqueu
 
 export const ChangeStatusResult = Schema.Struct({ op: Schema.tag("change_status"), change: Change, ...next });
 
+/** The approve ask, open until a human answers it. */
+export const GatedRunResult = Schema.Struct({ op: Schema.tag("gated_run"), askId: AskId, state: AskState, ...next });
+
 export const LeadCallResult = Schema.Union([
   BriefCreateResult,
   AskResult,
@@ -262,6 +297,7 @@ export const LeadCallResult = Schema.Union([
   ReviewVerdictResult,
   ChangeEnqueueResult,
   ChangeStatusResult,
+  GatedRunResult,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCallResult" });

@@ -64,6 +64,270 @@
       ],
       "additionalProperties": true
     },
+    "CheckSpec": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "pr_merged"
+              ]
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "pr": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "ci_green"
+              ]
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "http"
+              ]
+            },
+            "url": {
+              "type": "string"
+            },
+            "status": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "contains": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "status"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "cmd"
+              ]
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1
+            },
+            "expectExit": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "type",
+            "machineId",
+            "argv",
+            "expectExit"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "test"
+              ]
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "testId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "repo",
+            "testId"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "judge"
+              ]
+            },
+            "criteria": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "type",
+            "criteria"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "human"
+              ]
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "question"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "SecretSink": {
+      "type": "string"
+    },
+    "SecretFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$",
+      "description": "8 lowercase hex characters: the sha256 prefix of the plaintext"
+    },
+    "EnvName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+    },
+    "GatedRunSpec": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1
+        },
+        "cwd": {
+          "type": "string",
+          "maxLength": 1000,
+          "pattern": "^\\/"
+        },
+        "class": {
+          "type": "string",
+          "enum": [
+            "irreversible",
+            "money",
+            "credential"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "secretEnv": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/EnvName"
+              },
+              "secretKey": {
+                "$ref": "#/$defs/DecisionKey"
+              }
+            },
+            "required": [
+              "name",
+              "secretKey"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 20
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1800
+        }
+      },
+      "required": [
+        "argv",
+        "class",
+        "reason",
+        "timeoutSec"
+      ],
+      "additionalProperties": true
+    },
     "BatchId": {
       "type": "string",
       "pattern": "^B[1-9][0-9]*$"
@@ -105,7 +369,9 @@
           "type": "string",
           "enum": [
             "decide",
-            "do"
+            "do",
+            "secret",
+            "approve"
           ]
         },
         "key": {
@@ -145,6 +411,22 @@
             "$ref": "#/$defs/Step"
           },
           "maxItems": 20
+        },
+        "verify": {
+          "$ref": "#/$defs/CheckSpec"
+        },
+        "sink": {
+          "$ref": "#/$defs/SecretSink"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint"
+        },
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec"
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 2000
         },
         "blocks": {
           "anyOf": [

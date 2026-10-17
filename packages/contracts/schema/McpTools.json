@@ -11,6 +11,9 @@
       "type": "string",
       "format": "date-time"
     },
+    "BoxPublicKey": {
+      "type": "string"
+    },
     "Machine": {
       "type": "object",
       "properties": {
@@ -67,6 +70,9 @@
         },
         "degradedReason": {
           "type": "string"
+        },
+        "boxPubKey": {
+          "$ref": "#/$defs/BoxPublicKey"
         }
       },
       "required": [
@@ -201,7 +207,10 @@
         "intake.routed",
         "research.verdict",
         "usage.breaker",
-        "usage.resumed"
+        "usage.resumed",
+        "ask.secret_saved",
+        "gated.ran",
+        "push.sent"
       ]
     },
     "ThreadId": {
@@ -1752,6 +1761,81 @@
       ],
       "additionalProperties": true
     },
+    "SecretSink": {
+      "type": "string"
+    },
+    "SecretFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$",
+      "description": "8 lowercase hex characters: the sha256 prefix of the plaintext"
+    },
+    "EnvName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+    },
+    "GatedRunSpec": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1
+        },
+        "cwd": {
+          "type": "string",
+          "maxLength": 1000,
+          "pattern": "^\\/"
+        },
+        "class": {
+          "type": "string",
+          "enum": [
+            "irreversible",
+            "money",
+            "credential"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "secretEnv": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/EnvName"
+              },
+              "secretKey": {
+                "$ref": "#/$defs/DecisionKey"
+              }
+            },
+            "required": [
+              "name",
+              "secretKey"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 20
+        },
+        "timeoutSec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1800
+        }
+      },
+      "required": [
+        "argv",
+        "class",
+        "reason",
+        "timeoutSec"
+      ],
+      "additionalProperties": true
+    },
     "BatchId": {
       "type": "string",
       "pattern": "^B[1-9][0-9]*$"
@@ -1789,7 +1873,9 @@
           "type": "string",
           "enum": [
             "decide",
-            "do"
+            "do",
+            "secret",
+            "approve"
           ]
         },
         "key": {
@@ -1829,6 +1915,22 @@
             "$ref": "#/$defs/Step"
           },
           "maxItems": 20
+        },
+        "verify": {
+          "$ref": "#/$defs/CheckSpec"
+        },
+        "sink": {
+          "$ref": "#/$defs/SecretSink"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint"
+        },
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec"
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 2000
         },
         "blocks": {
           "anyOf": [
@@ -2559,6 +2661,13 @@
         "updatedAt"
       ],
       "additionalProperties": true
+    },
+    "SealedSecret": {
+      "type": "string"
+    },
+    "PushEndpoint": {
+      "type": "string",
+      "maxLength": 2000
     },
     "McpTools": {
       "type": "object",
@@ -4383,6 +4492,131 @@
             "train"
           ],
           "additionalProperties": true
+        },
+        "secret_submit.input": {
+          "type": "object",
+          "properties": {
+            "askId": {
+              "$ref": "#/$defs/AskId"
+            },
+            "sealed": {
+              "$ref": "#/$defs/SealedSecret"
+            }
+          },
+          "required": [
+            "askId",
+            "sealed"
+          ],
+          "additionalProperties": true
+        },
+        "secret_submit.output": {
+          "type": "object",
+          "properties": {
+            "askId": {
+              "$ref": "#/$defs/AskId"
+            },
+            "fingerprint": {
+              "$ref": "#/$defs/SecretFingerprint"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "askId",
+            "fingerprint"
+          ],
+          "additionalProperties": true
+        },
+        "push_subscribe.input": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "$ref": "#/$defs/PushEndpoint"
+            },
+            "keys": {
+              "type": "object",
+              "properties": {
+                "p256dh": {
+                  "type": "string"
+                },
+                "auth": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "p256dh",
+                "auth"
+              ],
+              "additionalProperties": true
+            },
+            "deviceName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[^\\r\\n]*$"
+            }
+          },
+          "required": [
+            "endpoint",
+            "keys",
+            "deviceName"
+          ],
+          "additionalProperties": true
+        },
+        "push_subscribe.output": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": true
+        },
+        "push_unsubscribe.input": {
+          "type": "object",
+          "properties": {
+            "endpoint": {
+              "$ref": "#/$defs/PushEndpoint"
+            }
+          },
+          "required": [
+            "endpoint"
+          ],
+          "additionalProperties": true
+        },
+        "push_unsubscribe.output": {
+          "type": "object",
+          "properties": {
+            "removed": {
+              "type": "boolean"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "removed"
+          ],
+          "additionalProperties": true
         }
       },
       "required": [
@@ -4455,7 +4689,13 @@
         "train_get.input",
         "train_get.output",
         "train_freeze.input",
-        "train_freeze.output"
+        "train_freeze.output",
+        "secret_submit.input",
+        "secret_submit.output",
+        "push_subscribe.input",
+        "push_subscribe.output",
+        "push_unsubscribe.input",
+        "push_unsubscribe.output"
       ],
       "additionalProperties": true
     }
