@@ -21,6 +21,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
+import { NodeCommands } from "../checks/NodeCommands.ts";
 import * as Executors from "../executor/Executors.ts";
 import { ThreadWorkspace } from "../executor/ThreadWorkspace.ts";
 import { fromExecutor, LeadError } from "../leads/LeadError.ts";
@@ -35,6 +36,7 @@ import * as Slots from "../slots/Slots.ts";
 import { parkedOf } from "../usage/classify.ts";
 import * as Usage from "../usage/Usage.ts";
 import * as ValueBar from "../valuebar/ValueBar.ts";
+import { branchDiff } from "./branchDiff.ts";
 import { outsideGlobs } from "./glob.ts";
 import { branchFor, findPrUrl, renderTaskPrompt, tailOf } from "./render.ts";
 import { resolveModelEffort } from "./resolve.ts";
@@ -110,6 +112,7 @@ export const make = Effect.gen(function* () {
   const valueBar = yield* ValueBar.ValueBar;
   const receipts = yield* Receipts.Receipts;
   const usage = yield* Usage.Usage;
+  const commands = yield* NodeCommands;
   const scope = yield* Effect.scope;
   // Every state change goes through this, so a release, a completion and a lead call never interleave.
   const lock = Semaphore.makeUnsafe(1);
@@ -265,6 +268,15 @@ export const make = Effect.gen(function* () {
 
   const retryLater = Effect.asVoid(Effect.forkIn(lock.withPermit(retryQueue), scope));
 
+  /** The files `branch` changes against the project's base branch, read by the node; undefined if it can't say. */
+  const branchPaths = (ref: ProjectRef, branch: string) =>
+    Effect.gen(function* () {
+      const project = yield* store.projects.get(ref);
+      if (project === undefined) return undefined;
+      const base = yield* workspace.defaultBranch(ref.machineId, project.workspaceRoot);
+      return yield* branchDiff(commands, { machineId: ref.machineId, cwd: project.workspaceRoot, base, branch });
+    }).pipe(Effect.orElseSucceed(() => undefined));
+
   const finish = (stored: TaskRecords.StoredTask, status: TaskResultStatus) =>
     Effect.gen(function* () {
       const { task } = stored;
@@ -299,10 +311,15 @@ export const make = Effect.gen(function* () {
       };
       yield* records.put({ task: next });
 
-      if (changes?._tag === "Some") {
+      // The PR's diff when the node can read it; T3's checkpoint paths (which include whatever a rebase brought in)
+      // only when it can't.
+      const prPaths = write && branch !== undefined ? yield* branchPaths(task.projectRef, branch) : undefined;
+      if (prPaths === undefined && write) yield* Effect.logWarning("task: branch diff not read; areas checked on T3 checkpoint paths", { taskId: task.taskId });
+      const paths = prPaths ?? (changes?._tag === "Some" ? changes.value.paths : undefined);
+      if (paths !== undefined) {
         const policy = yield* Effect.option(policies.get(task.projectRef));
         if (policy._tag === "Some") {
-          const outside = outsideGlobs(changes.value.paths, Object.values(globsOf(policy.value, task.areas)).flat());
+          const outside = outsideGlobs(paths, Object.values(globsOf(policy.value, task.areas)).flat());
           if (outside.length > 0) {
             yield* emit(
               next,
@@ -517,5 +534,5 @@ export const make = Effect.gen(function* () {
   });
 });
 
-/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace, Slots, Leases, Policies, ValueBar, Receipts and Usage. */
+/** Needs TaskRecords, LeadRecords, LeadWakes, HubStore, EventLog, Executors, ThreadWorkspace, Slots, Leases, Policies, ValueBar, Receipts, Usage and NodeCommands. */
 export const layer = Layer.effect(Tasks, make);

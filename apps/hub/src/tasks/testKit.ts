@@ -5,6 +5,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
+import { NodeCommands } from "../checks/NodeCommands.ts";
 import * as Executors from "../executor/Executors.ts";
 import * as Incidents from "../incidents/Incidents.ts";
 import { type ThreadChanges, ThreadWorkspace } from "../executor/ThreadWorkspace.ts";
@@ -45,6 +46,8 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
   /** Thread id → its actions; threads not in it ran one `gh pr create`. */
   const actions = new Map<string, ReadonlyArray<ActionItem>>();
   const questions = new Map<string, string>();
+  /** Task branch → the files its PR diff names, as the node's `git diff --name-only` would; unknown branches fail. */
+  const branchDiffs = new Map<string, ReadonlyArray<string>>();
   let offline = false;
   let live = Deferred.makeUnsafe<void>();
 
@@ -96,7 +99,18 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
     },
   });
 
+  const node = NodeCommands.of({
+    run: (_machineId, input) =>
+      Effect.sync(() => {
+        const paths = branchDiffs.get(input.argv.at(-1) ?? "");
+        return paths === undefined ? { exitCode: 128, outputTail: "fatal: bad revision", timedOut: false } : { exitCode: 0, outputTail: `${paths.join("\n")}\n`, timedOut: false };
+      }),
+    attach: () => Effect.void,
+    resolve: () => Effect.void,
+  });
+
   const layer = Tasks.layer.pipe(
+    Layer.provide(Layer.succeed(NodeCommands, node)),
     Layer.provideMerge(
       Layer.mergeAll(Slots.layer({ defaultCap: options.cap ?? 40 }), Leases.layer, Policy.layer, ValueBar.layer, Receipts.layer),
     ),
@@ -175,6 +189,7 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
     sends,
     interrupts,
     changes,
+    branchDiffs,
     prHeads,
     actions,
     /** Thread id → what it is waiting on a human for. */

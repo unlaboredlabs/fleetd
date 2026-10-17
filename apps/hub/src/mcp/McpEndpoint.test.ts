@@ -526,4 +526,33 @@ describe("usage tools", () => {
     expect(resumed.isError).toBe(false);
     expect(resumed.body).toMatchObject({ resumed: 0, status: { breaker: { state: "closed" } } });
   });
+
+  it("refuses thread_launch on a paused machine with the pause and a fix, and launches again after usage_resume", async () => {
+    const { hub, as } = await fleet();
+    const admin = await as("admin");
+    await hub.append({
+      at: AT,
+      type: "thread.usage_limited",
+      machineId: "lab-a" as MachineId,
+      threadId: "x1" as ThreadId,
+      summary: '"x1" on lab-a hit the usage limit: your proxy has no account available for claude-opus-5-5',
+      data: { status: "failed", usageClass: "pool_exhausted", model: "claude-opus-5-5" },
+    });
+    // usage_status drains the usage layer, so the breaker is open before the launch.
+    expect((await call(admin, "usage_status", { machineId: "lab-a" })).body.machines[0].breaker.state).toBe("open");
+    expect(await call(admin, "thread_launch", { machineId: "lab-a", ...launch })).toEqual({
+      isError: true,
+      body: {
+        code: "invalid",
+        message: "Not launched: usage: paused until usage_resume (your proxy has no account for claude-opus-5-5).",
+        fix: "Wait for the reset (usage_status shows it), or run usage_resume with machineId lab-a once the login has capacity again.",
+      },
+    });
+    expect(hub.calls).toEqual([]);
+    // Only lab-a's login is paused.
+    expect((await call(admin, "thread_launch", { machineId: "lab-b", ...launch, projectId: "p-lab-b" })).isError).toBe(false);
+
+    await call(admin, "usage_resume", { machineId: "lab-a" });
+    expect((await call(admin, "thread_launch", { machineId: "lab-a", ...launch, clientRequestId: "r2" })).body.threadId).toBe("t-new");
+  });
 });

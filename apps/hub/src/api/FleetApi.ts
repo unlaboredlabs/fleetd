@@ -443,6 +443,15 @@ const make = Effect.gen(function* () {
       yield* require(caller, "operate", input.machineId);
       yield* requireConnected(input.machineId);
       if ((yield* store.projects.get(input)) === undefined) return yield* unknownProject(input);
+      // M4 usage: no new turn goes into a login fleetd knows is exhausted.
+      const paused = yield* usage.gate(input.machineId);
+      if (paused !== undefined) {
+        return yield* new ToolError({
+          code: "invalid",
+          message: `Not launched: ${paused}.`,
+          fix: `Wait for the reset (usage_status shows it), or run usage_resume with machineId ${input.machineId} once the login has capacity again.`,
+        });
+      }
       const cursor = yield* events.head();
       const { threadId } = yield* executors.launch(input.machineId, input).pipe(Effect.mapError(fromExecutor));
       return {
@@ -867,7 +876,7 @@ const make = Effect.gen(function* () {
 
     digest_get: Effect.fnUntraced(function* (caller) {
       const digest = yield* digests.render((machineId) => auth.allows(caller, "read", machineId));
-      return { ...digest, next: "Answer open items with inbox_reply. The hub also emits this as digest.ready at 09:00 and 18:00 (policy.tz)." };
+      return { ...digest, next: "Answer open items with inbox_reply. The hub emits digest.ready at 09:00 and 18:00 (policy.tz) as the cue to call this again." };
     }),
   };
 

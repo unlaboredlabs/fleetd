@@ -159,6 +159,11 @@ export const makeTestHub = () => {
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(Policy.PolicySource, Policy.PolicySource.of({ read: () => Effect.succeed(undefined) })),
+        // No node answers: tasks fall back to T3's checkpoint paths for their area check.
+        Layer.succeed(
+          NodeCommands,
+          NodeCommands.of({ run: () => Effect.succeed({ exitCode: 1, outputTail: "", timedOut: false }), attach: () => Effect.void, resolve: () => Effect.void }),
+        ),
         Layer.succeed(
           ThreadWorkspace,
           ThreadWorkspace.of({

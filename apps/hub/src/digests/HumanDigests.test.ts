@@ -42,7 +42,7 @@ describe("human digests", () => {
         yield* TestClock.adjust(Duration.minutes(1));
         const first = (yield* digests(0)).events;
         expect(first.map((e: HubEvent) => e.at)).toEqual(["1970-01-01T14:00:00.000Z"]);
-        expect(first[0]!.data).toMatchObject({ text: expect.stringContaining("fleetd digest · Thu 1 Jan, 09:00") });
+        expect(first[0]!.data).toEqual({ at: "1970-01-01T14:00:00.000Z", fullText: "digest_get" });
 
         // The zone changes to UTC: the evening digest follows it, at 18:00 UTC.
         yield* recordTz("UTC");
@@ -52,28 +52,33 @@ describe("human digests", () => {
     );
   });
 
-  it("filters to the caller's machines and keeps the event within the 2 KB cap", async () => {
+  it("filters to the caller's machines, and digest.ready carries no project content any key could read", async () => {
     const kit = makeKit();
     await runKit(
       kit,
       Effect.scoped(Effect.gen(function* () {
+        yield* recordTz("UTC");
         yield* kit.addProject(REF, "Mine");
         yield* kit.addProject({ ...OTHER, machineId: "lab-b" as MachineId }, "Theirs");
         const ws = yield* Workstreams.Workstreams;
-        for (let i = 0; i < 30; i++) {
-          yield* ws.intake({ ref: REF, text: `intent number ${i} with a fairly long description of the work`, clientRequestId: `m${i}`, channel: "mcp", by: "lab" });
-        }
+        yield* ws.intake({ ref: REF, text: "add a /health endpoint", clientRequestId: "m", channel: "mcp", by: "lab" });
         yield* ws.intake({ ref: { ...OTHER, machineId: "lab-b" as MachineId }, text: "secret plan", clientRequestId: "o", channel: "mcp", by: "lab" });
         const service = yield* startDigests;
 
         const all = (yield* service.render()).text;
         expect(all).toContain("secret plan");
-        expect((yield* service.render((m) => m === REF.machineId)).text).not.toContain("secret plan");
+        const mine = (yield* service.render((m) => m === REF.machineId)).text;
+        expect(mine).toContain("add a /health endpoint");
+        expect(mine).not.toContain("secret plan");
 
-        const data = HumanDigests.eventData(all, "2026-10-17T09:00:00.000Z");
-        expect(Buffer.byteLength(JSON.stringify(data))).toBeLessThanOrEqual(2048);
-        expect(data).toMatchObject({ truncated: true, fullText: "digest_get" });
-        expect(all.startsWith(data.text.slice(0, -2))).toBe(true);
+        // Events carry no grant filter of their own (a read key on lab-a gets every machine-less event).
+        yield* TestClock.adjust(Duration.hours(9));
+        const [ready] = (yield* digests(0)).events;
+        expect(ready).toBeDefined();
+        expect(ready!.machineId).toBeUndefined();
+        const json = JSON.stringify(ready);
+        for (const leak of ["secret plan", "Theirs", "add a /health endpoint", "Mine"]) expect(json).not.toContain(leak);
+        expect(ready!.data).toEqual({ at: "1970-01-01T09:00:00.000Z", fullText: "digest_get" });
       })),
     );
   });
