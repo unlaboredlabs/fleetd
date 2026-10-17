@@ -50,7 +50,7 @@ describe("renderLeadDigest", () => {
           workstream(3),
         ],
         openAsks: [ask(4, "db.engine", { batchId: "B1" as never, number: 2, recommendation: "sqlite", proceededOnRec: true })],
-        answers: [{ ask: ask(1, "api.health.path", { state: "answered" }), decision: d1 }],
+        answers: [{ ask: ask(1, "api.health.path", { state: "answered" }), outcome: "answered", value: "/healthz", decision: d1 }],
         decisions: [d1],
       }),
     );
@@ -104,7 +104,7 @@ describe("renderLeadDigest", () => {
       input({
         workstreams: Array.from({ length: 40 }, (_, i) => workstream(i + 1, { title: long, headline: long, state: "running" })),
         openAsks: Array.from({ length: 40 }, (_, i) => ask(100 + i, `ask.key${i}`, { text: long })),
-        answers: Array.from({ length: 5 }, (_, i) => ({ ask: ask(i + 1, `answered.k${i}`), decision: decision(i + 1, `answered.k${i}`, "fine") })),
+        answers: Array.from({ length: 5 }, (_, i) => ({ ask: ask(i + 1, `answered.k${i}`), outcome: "answered" as const, value: "fine", decision: decision(i + 1, `answered.k${i}`, "fine") })),
         decisions: Array.from({ length: 300 }, (_, i) => decision(200 + i, `decided.key.number${i}`, long)),
       }),
     );

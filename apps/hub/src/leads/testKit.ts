@@ -1,16 +1,17 @@
 // Test kit for the leads area: the real store, event log and lead records on an in-memory database, under a
-// TestClock, with fake executors and an in-memory ledger port.
-import type { Ask, AskId, Decision, DecisionId, MachineId, ProjectId, ProjectRef, ThreadId, ThreadLaunchInput } from "@fleetd/contracts";
+// TestClock, with the real ledger and fake executors.
+import type { Ask, AskId, Decision, DecisionId, DecisionKey, MachineId, ProjectId, ProjectRef, ThreadId, ThreadLaunchInput } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 import * as Executors from "../executor/Executors.ts";
+import { Asks } from "../ledger/Asks.ts";
+import { Inbox } from "../ledger/Inbox.ts";
+import type { Actor } from "../ledger/LedgerRepo.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubDb from "../store/HubDb.ts";
 import * as HubStore from "../store/HubStore.ts";
-import type { AnswerNote } from "./digest.ts";
 import * as LeadsLayer from "./layer.ts";
-import { LedgerPort } from "./LedgerPort.ts";
 import type { LeadsOptions } from "./Leads.ts";
 
 export const REF: ProjectRef = { machineId: "lab-a" as MachineId, projectId: "p1" as ProjectId };
@@ -58,9 +59,6 @@ type LaunchInput = typeof ThreadLaunchInput.Type;
 export const makeKit = (options: LeadsOptions = { prompt: "You are the lead of project {{project}} ({{projectRef}})." }) => {
   const launches: Array<{ readonly machineId: MachineId; readonly input: LaunchInput }> = [];
   const sends: Array<{ readonly threadId: ThreadId; readonly message: string; readonly clientRequestId: string }> = [];
-  const asks = new Map<string, Ask>();
-  const decisions = new Map<string, Decision>();
-  const handlers: Array<(note: AnswerNote) => Effect.Effect<void>> = [];
   let offline = false;
 
   const executors = Executors.Executors.of({
@@ -85,37 +83,17 @@ export const makeKit = (options: LeadsOptions = { prompt: "You are the lead of p
     actions: () => Effect.succeed([]),
   });
 
-  const ledger = LedgerPort.of({
-    getAsk: (id) => Effect.sync(() => asks.get(id)),
-    getDecision: (id) => Effect.sync(() => decisions.get(id)),
-    openAsks: (ref) =>
-      Effect.sync(() =>
-        [...asks.values()].filter((a) => a.state === "open" && a.projectRef.machineId === ref.machineId && a.projectRef.projectId === ref.projectId),
-      ),
-    activeDecisions: (scopes) =>
-      Effect.sync(() =>
-        [...decisions.values()].filter(
-          (d) => d.state === "active" && scopes.some((s) => JSON.stringify(s) === JSON.stringify(d.scope)),
-        ),
-      ),
-    onAnswered: (handler) => Effect.sync(() => void handlers.push(handler)),
-  });
-
-  const base = Layer.mergeAll(HubStore.layer, EventLog.layer, Layer.succeed(Executors.Executors, executors), Layer.succeed(LedgerPort, ledger)).pipe(
+  const base = Layer.mergeAll(HubStore.layer, EventLog.layer, Layer.succeed(Executors.Executors, executors)).pipe(
     Layer.provideMerge(HubDb.layerMemory),
     Layer.provideMerge(TestClock.layer()),
   );
-  const layer = LeadsLayer.layer(options).pipe(Layer.provideMerge(base));
+  const layer = LeadsLayer.layerWithLedger(options).pipe(Layer.provideMerge(base));
 
   return {
     layer,
     launches,
     sends,
-    asks,
-    decisions,
     setOffline: (value: boolean) => void (offline = value),
-    /** Plays the ledger committing a human answer. */
-    answer: (note: AnswerNote) => Effect.forEach(handlers, (h) => h(note), { discard: true }),
     addProject: (ref: ProjectRef, title?: string) =>
       Effect.flatMap(HubStore.HubStore, (s) => s.projects.upsertMany(ref.machineId, [project(ref, title) as never])),
   };
@@ -123,3 +101,26 @@ export const makeKit = (options: LeadsOptions = { prompt: "You are the lead of p
 
 export const runKit = <A, E>(kit: ReturnType<typeof makeKit>, effect: Effect.Effect<A, E, Layer.Success<ReturnType<typeof makeKit>["layer"]>>) =>
   Effect.runPromise(Effect.scoped(Effect.provide(effect, kit.layer)));
+
+export const HUMAN: Actor = { source: "human", by: "human:phone" };
+export const LEAD: Actor = { source: "lead", by: "lead:lab-a/p1" };
+
+/** `fleetd ask` from the lead of REF: a product decide with a recommendation. */
+export const fileAsk = (key: string, over: { readonly recommendation?: string; readonly text?: string } = {}) =>
+  Effect.flatMap(Asks, (a) =>
+    a.create(
+      {
+        projectRef: REF,
+        kind: "decide",
+        key: key as DecisionKey,
+        class: "product",
+        text: over.text ?? `${key}?`,
+        recommendation: over.recommendation ?? "yes",
+        blocks: "nothing",
+        proceededOnRec: true,
+      },
+      LEAD.by,
+    ),
+  );
+
+export const reply = (raw: string, actor: Actor = HUMAN) => Effect.flatMap(Inbox, (i) => i.reply({ raw }, actor));

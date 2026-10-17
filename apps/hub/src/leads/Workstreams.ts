@@ -16,13 +16,14 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import { Asks } from "../ledger/Asks.ts";
+import { Decisions } from "../ledger/Decisions.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
 import { briefHash } from "./brief.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 import { LeadError } from "./LeadError.ts";
 import * as LeadWakes from "./LeadWakes.ts";
-import { LedgerPort } from "./LedgerPort.ts";
 
 export interface IntakeInput {
   readonly ref: ProjectRef;
@@ -73,7 +74,8 @@ export const make = Effect.gen(function* () {
   const store = yield* HubStore.HubStore;
   const events = yield* EventLog.EventLog;
   const wakes = yield* LeadWakes.LeadWakes;
-  const ledger = yield* LedgerPort;
+  const asks = yield* Asks;
+  const decisions = yield* Decisions;
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
   /** The caller's own workstream, or a refusal that says why. */
@@ -146,12 +148,12 @@ export const make = Effect.gen(function* () {
           message,
           fix: `File \`fleetd ask --class product --key ${w.workstreamId.toLowerCase()}.brief --text "<the change and why>" --rec "<your proposal>" --workstream ${w.workstreamId}\` and rerun with --amend once the human answers it.`,
         });
-      const ask = yield* ledger.getAsk(askId);
+      const ask = yield* asks.get(askId);
       if (ask === undefined || !sameProject(ask.projectRef, w.projectRef)) return yield* refuse(`There is no ask ${askId} in this project.`);
       if (ask.workstreamId !== undefined && ask.workstreamId !== w.workstreamId) {
         return yield* refuse(`${askId} is about ${ask.workstreamId}, not ${w.workstreamId}.`);
       }
-      const decision = ask.decisionId === undefined ? undefined : yield* ledger.getDecision(ask.decisionId);
+      const decision = ask.decisionId === undefined ? undefined : yield* decisions.get(ask.decisionId);
       if (ask.state !== "answered" || decision?.source !== "human") return yield* refuse(`${askId} has no answer from the human yet.`);
       if (stored.amends.includes(askId)) return yield* refuse(`${askId} was already used to amend ${w.workstreamId}.`);
     });

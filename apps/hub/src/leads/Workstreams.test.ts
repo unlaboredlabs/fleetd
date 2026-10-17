@@ -7,7 +7,7 @@ import * as EventLog from "../store/EventLog.ts";
 import { briefHash, canonicalJson } from "./brief.ts";
 import * as Leads from "./Leads.ts";
 import * as Workstreams from "./Workstreams.ts";
-import { ask, decision, makeKit, OTHER, REF, runKit } from "./testKit.ts";
+import { fileAsk, makeKit, OTHER, REF, reply, runKit } from "./testKit.ts";
 
 const brief = {
   goal: "Serve a health endpoint",
@@ -113,11 +113,12 @@ describe("Workstreams", () => {
         expect(refused).toMatchObject({ code: "invalid" });
         expect(refused.fix).toContain("--amend");
 
-        kit.asks.set("A1", ask(1, "w1.brief"));
-        kit.asks.set("A2", ask(2, "w1.brief", { state: "answered", decisionId: "D2" as never }));
-        kit.decisions.set("D2", decision(2, "w1.brief", "go", { source: "lead" }));
-        kit.asks.set("A3", ask(3, "w1.brief", { state: "answered", decisionId: "D3" as never }));
-        kit.decisions.set("D3", decision(3, "w1.brief", "go"));
+        // A1 stays open, A2 is answered by an agent key, A3 by the human.
+        yield* fileAsk("w1.brief.a");
+        yield* fileAsk("w1.brief.b");
+        yield* fileAsk("w1.brief.c");
+        yield* reply("2 go", { source: "agent", by: "script" });
+        yield* reply("3 go");
         for (const id of ["A1", "A2", "A9"]) {
           expect((yield* Effect.flip(ws.briefCreate(REF, { workstreamId: W1, brief: changed, amend: id as AskId }))).code).toBe("invalid");
         }

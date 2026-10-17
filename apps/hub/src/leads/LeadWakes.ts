@@ -9,11 +9,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
 import * as Executors from "../executor/Executors.ts";
+import { Asks } from "../ledger/Asks.ts";
+import { Decisions } from "../ledger/Decisions.ts";
+import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
-import { type AnswerNote, renderLeadDigest } from "./digest.ts";
+import { renderLeadDigest } from "./digest.ts";
 import * as LeadRecords from "./LeadRecords.ts";
-import { LedgerPort } from "./LedgerPort.ts";
 
 export const WAKE_DEBOUNCE = Duration.seconds(10);
 /** A steady trigger stream still wakes the lead this long after the first pending trigger. */
@@ -21,7 +23,7 @@ export const WAKE_MAX_WAIT = Duration.seconds(60);
 
 export type Trigger =
   | { readonly kind: "intent"; readonly workstreamId: WorkstreamId; readonly text: string }
-  | { readonly kind: "answer"; readonly note: AnswerNote }
+  | { readonly kind: "answer"; readonly answer: Answer }
   /** A decision the human recorded that touches the lead's project. */
   | { readonly kind: "decision"; readonly decision: Decision };
 
@@ -31,7 +33,7 @@ export class LeadWakes extends Context.Service<
     /** Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE, or WAKE_MAX_WAIT after the first. */
     readonly trigger: (ref: ProjectRef, trigger: Trigger) => Effect.Effect<void>;
     /** The lead digest as of now, with `answers` as its "since your last wake" list. */
-    readonly digest: (ref: ProjectRef, answers?: ReadonlyArray<AnswerNote>) => Effect.Effect<string>;
+    readonly digest: (ref: ProjectRef, answers?: ReadonlyArray<Answer>) => Effect.Effect<string>;
   }
 >()("fleetd/leads/LeadWakes") {}
 
@@ -82,7 +84,8 @@ export interface LeadWakesOptions {
 export const make = (options: LeadWakesOptions = {}) =>
   Effect.gen(function* () {
     const records = yield* LeadRecords.LeadRecords;
-    const ledger = yield* LedgerPort;
+    const asks = yield* Asks;
+    const decisions = yield* Decisions;
     const store = yield* HubStore.HubStore;
     const events = yield* EventLog.EventLog;
     const executors = yield* Executors.Executors;
@@ -101,18 +104,14 @@ export const make = (options: LeadWakesOptions = {}) =>
       Effect.gen(function* () {
         const project = yield* store.projects.get(ref);
         const workstreams = yield* records.workstreams.list({ ref, open: true, limit: 50 });
-        const scopes: ReadonlyArray<DecisionScope> = [
-          { kind: "global" },
-          { kind: "project", projectRef: ref },
-          ...workstreams.map((w) => ({ kind: "workstream" as const, workstreamId: w.workstreamId })),
-        ];
         return renderLeadDigest({
           project: { ref, title: project?.title ?? ref.projectId },
           at: yield* nowIso,
           workstreams,
-          openAsks: yield* ledger.openAsks(ref),
+          openAsks: yield* asks.list({ state: "open", projectRef: ref, limit: 50 }),
           answers,
-          decisions: yield* ledger.activeDecisions(scopes),
+          // Global, project and every workstream-scoped decision in the project; the digest ranks them.
+          decisions: yield* decisions.list({ chain: { projectRef: ref }, limit: 500 }),
         });
       });
 
@@ -125,7 +124,7 @@ export const make = (options: LeadWakesOptions = {}) =>
           yield* Effect.logInfo("lead wake dropped: project has no lead", { project: keyOf(p.ref), triggers: triggers.length });
           return;
         }
-        const answers = triggers.flatMap((t) => (t.kind === "answer" ? [t.note] : []));
+        const answers = triggers.flatMap((t) => (t.kind === "answer" ? [t.answer] : []));
         const message = renderWake(yield* digest(p.ref, answers), triggers);
         const at = yield* nowIso;
         const thread = { machineId: p.ref.machineId, threadId: lead.threadId };
@@ -174,9 +173,17 @@ export const make = (options: LeadWakesOptions = {}) =>
         );
       });
 
-    yield* ledger.onAnswered((note) => trigger(note.ask.projectRef, { kind: "answer", note }));
-
     return LeadWakes.of({ trigger, digest });
   });
 
 export const layer = (options: LeadWakesOptions = {}) => Layer.effect(LeadWakes, make(options));
+
+/** The ledger's AnswerSink: each applied answer becomes a trigger for its project's lead. */
+export const layerAnswerSink = Layer.effect(
+  AnswerSink,
+  Effect.map(LeadWakes, (wakes) =>
+    AnswerSink.of({
+      onAnswered: (ref, answers) => Effect.forEach(answers, (answer) => wakes.trigger(ref, { kind: "answer", answer }), { discard: true }),
+    }),
+  ),
+);

@@ -7,7 +7,7 @@ import * as EventLog from "../store/EventLog.ts";
 import * as LeadRecords from "./LeadRecords.ts";
 import * as Leads from "./Leads.ts";
 import * as LeadWakes from "./LeadWakes.ts";
-import { ask, decision, makeKit, OTHER, REF, runKit } from "./testKit.ts";
+import { fileAsk, makeKit, OTHER, REF, reply, runKit } from "./testKit.ts";
 
 const intent = (n: number) => ({ kind: "intent" as const, workstreamId: `W${n}` as WorkstreamId, text: `intent ${n}` });
 const advance = (seconds: number) => TestClock.adjust(Duration.seconds(seconds));
@@ -107,21 +107,23 @@ describe("LeadWakes", () => {
     );
   });
 
-  it("wakes the lead with the answer inline when the ledger reports one", async () => {
+  it("wakes the lead with the human's answers inline after an inbox reply", async () => {
     const kit = makeKit();
     await runKit(
       kit,
       Effect.gen(function* () {
         yield* kit.addProject(REF);
         yield* (yield* Leads.Leads).start(REF);
-        const d1 = decision(1, "api.health.path", "/healthz", { askId: "A1" as never });
-        kit.decisions.set("D1", d1);
-        yield* kit.answer({ ask: ask(1, "api.health.path", { state: "answered", decisionId: d1.decisionId }), decision: d1 });
-        yield* kit.answer({ ask: ask(2, "db.engine", { state: "withdrawn" }) });
-        yield* advance(10);
+        yield* fileAsk("api.health.path", { text: "Path?", recommendation: "/healthz" });
+        yield* fileAsk("db.engine");
+        expect((yield* reply("1 go 2 nvm")).echo).toBe("Logged: 1 → /healthz (D1), 2 → dropped");
+        yield* advance(9);
+        expect(kit.sends).toHaveLength(0);
+        yield* advance(1);
         expect(kit.sends).toHaveLength(1);
         const message = kit.sends[0]!.message;
         expect(message).toContain("## Answers since your last wake\n- A1 api.health.path → /healthz (D1)\n- A2 db.engine: dropped by the human");
+        expect(message).toContain("- D1 api.health.path = /healthz (project, human)");
         expect(message).toContain("The human settled 2 of your asks");
       }),
     );

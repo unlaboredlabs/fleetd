@@ -1,6 +1,7 @@
 // The lead digest: the code-rendered project state at the top of every wake. It is the lead's real memory, so it
 // must stay small (DIGEST_MAX_TOKENS) and say plainly what was left out.
 import type { Ask, CheckSpec, Decision, ProjectRef, Workstream, WorkstreamId } from "@fleetd/contracts";
+import type { Answer } from "../ledger/Inbox.ts";
 
 export const DIGEST_MAX_TOKENS = 1500;
 /** Decisions listed by full value; the rest only appear by key under "do not re-ask". */
@@ -12,20 +13,14 @@ export const DIGEST_DECISIONS = 10;
  */
 export const estimateTokens = (text: string) => Math.ceil(text.length / 3);
 
-/** An ask the human answered or dropped since the lead's last wake. */
-export interface AnswerNote {
-  readonly ask: Ask;
-  /** Absent when the human dropped the ask instead of answering it. */
-  readonly decision?: Decision;
-}
-
 export interface DigestInput {
   readonly project: { readonly ref: ProjectRef; readonly title: string };
   readonly at: string;
   /** Open workstreams, newest first. */
   readonly workstreams: ReadonlyArray<Workstream>;
   readonly openAsks: ReadonlyArray<Ask>;
-  readonly answers: ReadonlyArray<AnswerNote>;
+  /** Asks the human answered or dropped since the lead's last wake. */
+  readonly answers: ReadonlyArray<Answer>;
   /** Active decisions along the project's scope chain, any order. */
   readonly decisions: ReadonlyArray<Decision>;
 }
@@ -80,10 +75,10 @@ const askLine = (a: Ask) => {
   return `- ${a.askId} (${where}) [${a.class}] ${a.key}: ${oneLine(a.text, 200)}${rec}${proceeded}`;
 };
 
-const answerLine = ({ ask, decision }: AnswerNote) =>
-  decision === undefined
+const answerLine = ({ ask, outcome, value, decision }: Answer) =>
+  outcome === "withdrawn"
     ? `- ${ask.askId} ${ask.key}: dropped by the human; do not pursue it`
-    : `- ${ask.askId} ${ask.key} → ${oneLine(decision.value, 300)} (${decision.decisionId})`;
+    : `- ${ask.askId} ${ask.key} → ${oneLine(value ?? decision?.value ?? "", 300)}${decision === undefined ? "" : ` (${decision.decisionId})`}`;
 
 const decisionLine = (d: Decision) => `- ${d.decisionId} ${d.key} = ${oneLine(d.value, 200)} (${scopeLabel(d)}, ${d.source})`;
 
