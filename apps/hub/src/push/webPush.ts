@@ -26,9 +26,9 @@ const hmac = (key: Uint8Array, data: Uint8Array) => crypto.createHmac("sha256", 
 const RECORD_SIZE = 4096;
 
 export const generateVapidKeys = (): VapidKeys => {
-  const ecdh = crypto.createECDH("prime256v1");
-  ecdh.generateKeys();
-  return { publicKey: b64url(ecdh.getPublicKey()), privateKey: b64url(ecdh.getPrivateKey()) };
+  // JWK coordinates are always full width; ECDH.getPrivateKey() drops a leading zero byte.
+  const jwk = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ format: "jwk" });
+  return { publicKey: b64url(Buffer.concat([Buffer.from([4]), unb64url(jwk.x!), unb64url(jwk.y!)])), privateKey: jwk.d! };
 };
 
 /**
