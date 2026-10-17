@@ -4,6 +4,7 @@
 import {
   type ActionItem,
   type MachineId,
+  ProjectId,
   type TailKind,
   ThreadId,
   type ThreadLaunchInput,
@@ -41,6 +42,7 @@ import * as HubStore from "../store/HubStore.ts";
 import {
   applyShellItem,
   emptyShellState,
+  removedProjects,
   type ShellState,
   transitionEvent,
   withAssistantText,
@@ -274,6 +276,21 @@ const make = Effect.gen(function* () {
       }
       for (const t of upserts.values()) yield* store.threads.upsert(t);
       if (applied.projects.length > 0) yield* store.projects.upsertMany(machineId, applied.projects);
+      if (item.kind === "project.removed" || item.kind === "snapshot") {
+        const cached = yield* store.projects.list({ machineId });
+        for (const projectId of removedProjects(machine.shell, item, cached.map((p) => p.projectId))) {
+          const title = cached.find((p) => p.projectId === projectId)?.title ?? projectId;
+          yield* store.projects.remove({ machineId, projectId: ProjectId.make(projectId) });
+          yield* events.append({
+            at: yield* nowIso,
+            type: "project.removed",
+            machineId,
+            projectId: ProjectId.make(projectId),
+            summary: `Project "${title}" on ${machineId} was deleted in T3`.slice(0, 200),
+            data: { title },
+          });
+        }
+      }
       for (const t of applied.transitions) {
         const tracked = machine.shell.threads.get(t.threadId);
         if (tracked !== undefined) yield* events.append(transitionEvent(t, tracked, machineId));

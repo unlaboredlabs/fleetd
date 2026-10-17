@@ -41,8 +41,9 @@ export class Leads extends Context.Service<
   }
 >()("fleetd/leads/Leads") {}
 
-/** The lead's state, read off its thread as the shell stream last reported it. */
-export const leadState = (thread: ThreadSummary | undefined): LeadState => {
+/** The lead's state, read off its thread as the shell stream last reported it; stopped once T3 deleted the project. */
+export const leadState = (thread: ThreadSummary | undefined, projectGone = false): LeadState => {
+  if (projectGone) return "stopped";
   if (thread === undefined) return "starting";
   switch (thread.status) {
     case "running":
@@ -73,7 +74,8 @@ export const make = (options: LeadsOptions = {}) =>
         const thread = yield* store.threads.get(ref);
         // M4 usage: a lead whose thread hit a limit shows it is parked and until when.
         const parked = yield* usage.parkedOf(ref);
-        return { ...lead, state: leadState(thread), ...(parked === undefined ? {} : { parked }) } satisfies Lead;
+        const gone = (yield* store.projects.get(lead.projectRef)) === undefined;
+        return { ...lead, state: leadState(thread, gone), ...(parked === undefined ? {} : { parked }) } satisfies Lead;
       });
 
     const projectOf = (ref: ProjectRef) =>

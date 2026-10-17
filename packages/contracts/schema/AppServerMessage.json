@@ -162,6 +162,7 @@
         "machine.online",
         "machine.offline",
         "machine.degraded",
+        "project.removed",
         "thread.started",
         "thread.completed",
         "thread.failed",
