@@ -271,13 +271,10 @@ pub fn build_on(
         clock.clone(),
     )?;
     let checks = crate::hub::checks::build(&db, &events, &clock);
-    let train_host = Arc::new(crate::hub::train::hub_host::HubHost {
-        clock: clock.clone(),
-        events: events.clone(),
-        store: store.clone(),
-    });
+    let train_host =
+        crate::hub::train::hub_host::HubHost::new(clock.clone(), events.clone(), store.clone());
     let (train, reviews) = crate::hub::reviews::build(
-        train_host,
+        train_host.clone(),
         clock.clone(),
         db.clone(),
         Arc::new(crate::hub::train::github::SystemGh),
@@ -375,6 +372,8 @@ pub fn build_on(
         leads,
     });
     checks.ports.bind(&hub);
+    train_host.bind(&hub);
+    crate::hub::train::calls::register_lead_calls(&hub);
     Ok(hub)
 }
 
