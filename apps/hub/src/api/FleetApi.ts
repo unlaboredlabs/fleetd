@@ -876,7 +876,7 @@ const make = Effect.gen(function* () {
 
     digest_get: Effect.fnUntraced(function* (caller) {
       const digest = yield* digests.render((machineId) => auth.allows(caller, "read", machineId));
-      return { ...digest, next: "Answer open items with inbox_reply. The hub also emits this as digest.ready at 09:00 and 18:00 (policy.tz)." };
+      return { ...digest, next: "Answer open items with inbox_reply. The hub emits digest.ready at 09:00 and 18:00 (policy.tz) as the cue to call this again." };
     }),
   };
 

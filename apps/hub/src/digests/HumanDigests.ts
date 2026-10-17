@@ -1,4 +1,6 @@
-// The human digest at 09:00 and 18:00 in `policy.tz`, emitted as `digest.ready`, and on demand for digest_get.
+// The human digest at 09:00 and 18:00 in `policy.tz`, announced by `digest.ready`, and on demand for digest_get.
+// The event carries no project content: one hub-wide event can't be filtered per key, so each reader fetches its own
+// view with digest_get, which keeps to the key's machines.
 import type { Decision, MachineId, ProjectRef, Workstream } from "@fleetd/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -19,8 +21,6 @@ import { nextCron, parseCron } from "../wakes/schedule.ts";
 /** The global Decision key holding the IANA zone digests follow. */
 export const POLICY_TZ_KEY = "policy.tz";
 const SLOTS = parseCron("0 9,18 * * *");
-/** HubEvent.data is capped at 2 KB of JSON; the full text stays available through digest_get. */
-const EVENT_DATA_MAX_BYTES = 2048;
 const LIST_LIMIT = 200;
 
 export const isZone = (tz: string) => {
@@ -46,19 +46,6 @@ export const previousSlot = (nowMs: number, tz: string) => {
 };
 
 export const nextSlot = (nowMs: number, tz: string) => nextCron(SLOTS, nowMs, tz) ?? nowMs + 12 * 3_600_000;
-
-/** `data` for digest.ready: the text, cut at a line so the JSON stays within the event cap. */
-export const eventData = (text: string, at: string) => {
-  const fits = (data: object) => Buffer.byteLength(JSON.stringify(data)) <= EVENT_DATA_MAX_BYTES;
-  if (fits({ text, at })) return { text, at };
-  const lines = text.split("\n");
-  while (lines.length > 1) {
-    lines.pop();
-    const data = { text: `${lines.join("\n")}\n…`, at, truncated: true, fullText: "digest_get" };
-    if (fits(data)) return data;
-  }
-  return { text: "", at, truncated: true, fullText: "digest_get" };
-};
 
 export class HumanDigests extends Context.Service<
   HumanDigests,
@@ -124,8 +111,8 @@ const make = Effect.gen(function* () {
           yield* Effect.sleep(Duration.millis(Math.min(due - now, 3_600_000)));
           continue;
         }
-        const { text, at } = yield* renderAt(due, tz);
-        yield* events.append({ at, type: "digest.ready", summary: text.split("\n")[1] ?? "fleetd digest", data: eventData(text, at) });
+        const at = new Date(due).toISOString();
+        yield* events.append({ at, type: "digest.ready", summary: "The fleetd digest is ready; read it with digest_get", data: { at, fullText: "digest_get" } });
         after = Math.max(due, now);
       }
     }),

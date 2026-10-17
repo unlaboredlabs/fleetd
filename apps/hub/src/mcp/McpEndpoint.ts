@@ -53,7 +53,7 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   decisions_record:
     "Record a decision (key = lowercase dotted slug) at global, project or workstream scope; it supersedes the active one with the same key and scope, so leads never ask it again. A project's lead is woken with it. Global decisions need an operate grant on all machines.",
   digest_get:
-    "The human digest now, as plain text: what needs you (numbered asks), what is running and done, and what leads decided without you. The same text goes out as digest.ready at 09:00 and 18:00 in policy.tz.",
+    "The human digest now, as plain text: what needs you (numbered asks), what is running and done, and what leads decided without you. Limited to this key's machines. The hub emits digest.ready at 09:00 and 18:00 in policy.tz as the cue to call this; the event itself carries no project content.",
   tasks_list:
     "Tasks (the subagent runs leads spawn with fleetd task spawn), newest first, optionally for one projectRef and state (queued, running, idle, done, failed, cancelled). Queued tasks say why; ended ones carry their result.",
   task_get: "One task: its model and effort, areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",

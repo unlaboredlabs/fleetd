@@ -34,7 +34,7 @@ export const HubEventType = Schema.Literals([
   "decision.recorded",
   "lead.started",
   "lead.woken",
-  /** The human digest; its text is in `data`. */
+  /** The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`. */
   "digest.ready",
   /** `data.queuedReason`. */
   "task.queued",
