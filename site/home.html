@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fleetd: an open-source software factory</title>
+<meta name="description" content="fleetd runs coding agents across your own machines: one lead per project, tasks, checks and a merge train, and a native app that asks you only when it matters.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+  :root { color-scheme: dark; --bg: #1b1c1f; --panel: #222327; --border: #33353a; --text: #d6d7da; --muted: #7d8089; --accent: #6ea8fe; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: min(640px, 100% - 48px); padding: 48px 0; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  header img { width: 52px; height: 52px; }
+  h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .install { margin: 32px 0 16px; display: flex; align-items: center; gap: 8px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 12px 12px 16px; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; }
+  .install code { flex: 1; font-size: 15px; line-height: 1.4; white-space: nowrap; overflow-x: auto; }
+  .install code::before { content: "$ "; color: var(--muted); }
+  button { font: inherit; font-size: 14px; color: var(--text); background: #2f3238; border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .small { font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="/icon.svg" alt="">
+    <h1>fleetd</h1>
+  </header>
+  <p>An open-source software factory that runs on your own machines.</p>
+  <p class="muted">A hub drives Claude Code through stock T3 Code on every machine you own: one lead per project, tasks
+    with checks, a merge train, and a native app that asks you only when it matters.</p>
+  <div class="install">
+    <code id="cmd">curl -fsSL https://fleetd.sh | sh</code>
+    <button type="button" id="copy">Copy</button>
+  </div>
+  <p class="small muted">macOS and Linux. Installs the <code>fleetd</code> CLI and the desktop app
+    into your home directory. Then run <code>fleetd init</code>.
+    <a href="/install.sh">Read the script</a>.</p>
+  <p class="small"><a href="https://github.com/unlaboredlabs/fleetd">GitHub</a> &middot;
+    <a href="https://github.com/unlaboredlabs/fleetd/releases">Releases</a> &middot; MIT</p>
+</main>
+<script>
+  document.getElementById("copy").addEventListener("click", async (e) => {
+    await navigator.clipboard.writeText(document.getElementById("cmd").textContent);
+    e.target.textContent = "Copied";
+    setTimeout(() => (e.target.textContent = "Copy"), 1500);
+  });
+</script>
+</body>
+</html>

@@ -102,6 +102,7 @@ pub struct Shell {
     follow: bool,
     focus: FocusHandle,
     bench: Option<(LogStream, Probe)>,
+    update: Option<String>,
 }
 
 impl Shell {
@@ -127,12 +128,14 @@ impl Shell {
             follow: true,
             focus,
             bench: None,
+            update: None,
         };
         match Mode::from_env() {
             Some(mode) => shell.start_bench(mode, window, cx),
             None => {
                 shell.on_notification_click(window, cx);
                 shell.load_saved(cx);
+                crate::update::watch(cx, |shell, text| shell.update = Some(text));
             }
         }
         shell
@@ -538,6 +541,7 @@ impl Shell {
         let bench_status = status.clone();
         pane(px(220.))
             .child(header("fleetd", String::new()))
+            .when_some(self.update.clone(), |d, text| d.child(div().px_3().py_1().whitespace_normal().text_color(rgb(Theme::ACCENT)).child(text)))
             .child(nav("Inbox", if inbox > 0 { inbox.to_string() } else { String::new() }, SHORTCUTS[0], Screen::Inbox, cx))
             .child(nav("Projects", self.state.projects.len().to_string(), SHORTCUTS[1], Screen::Projects, cx))
             .child(nav(

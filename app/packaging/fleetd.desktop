@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=fleetd
+Comment=Watch and steer your software factory
+Exec=fleetd-app
+Icon=fleetd
+Terminal=false
+Categories=Development;
+StartupWMClass=fleetd

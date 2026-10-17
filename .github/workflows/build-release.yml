@@ -1,0 +1,230 @@
+# Builds every release asset and publishes them. Called by nightly.yml (rolling `nightly` prerelease, every push to
+# main) and release.yml (`v*` tags). Asset names carry no version, so
+# releases/download/nightly/<name> and releases/latest/download/<name> stay stable for the installer and
+# `fleetd update`.
+name: Build release
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: nightly or stable
+        type: string
+        required: true
+      publish:
+        description: false builds everything and publishes nothing (pull request dry runs)
+        type: boolean
+        default: true
+      force-app:
+        description: build the app even when app/ is unchanged since the last nightly
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      has-cli: ${{ steps.plan.outputs.has-cli }}
+      build-app: ${{ steps.plan.outputs.build-app }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          PUBLISH: ${{ inputs.publish }}
+          FORCE_APP: ${{ inputs.force-app }}
+        run: |
+          if [ "$CHANNEL" = stable ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            base="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
+            base="${base#v}"
+            version="${base:-0.0.0}-nightly.$(date -u +%Y%m%d).${GITHUB_SHA::7}"
+          fi
+          # crates/fleetd lands during the Rust port; until then there is no CLI to build.
+          has_cli=false
+          if [ -f crates/fleetd/Cargo.toml ]; then has_cli=true; fi
+          # Nightly rebuilds the app only when it changed since the build the nightly release carries. Comparing
+          # with that build, not the previous push, means a cancelled run never drops an app change. Cargo.lock is
+          # left out on purpose: it changes on most merges. Ship a dependency bump with force-app or a tag.
+          build_app=true
+          if [ "$CHANNEL" = nightly ] && [ "$PUBLISH" = true ] && [ "$FORCE_APP" != true ]; then
+            prev="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/nightly/release.json" 2>/dev/null | jq -r '.appCommit // empty' || true)"
+            if [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null &&
+              git diff --quiet "$prev" HEAD -- app crates/fleetd-contracts; then
+              build_app=false
+            fi
+            echo "app last built from: ${prev:-none}"
+          fi
+          echo "version=$version has-cli=$has_cli build-app=$build_app"
+          {
+            echo "version=$version"
+            echo "has-cli=$has_cli"
+            echo "build-app=$build_app"
+          } >> "$GITHUB_OUTPUT"
+
+  cli:
+    needs: plan
+    if: needs.plan.outputs.has-cli == 'true'
+    # The release critical path: 8 vCPU builds the three targets in parallel in about half the time of 4 vCPU,
+    # for the same cost per run.
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 30
+    env:
+      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-apple-darwin,x86_64-apple-darwin
+          components: llvm-tools
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # One static musl binary for every Linux, and both darwin binaries, all from this Linux box. zig supplies the
+      # C toolchain for SQLite and ring; it has no macOS SDK, which is why fleetd must not link a macOS framework.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild@0.23.4
+      - name: No macOS framework dependencies
+        run: .github/release/check-darwin-deps.sh
+      - name: Build
+        run: cargo zigbuild --release --locked -p fleetd --target x86_64-unknown-linux-musl --target aarch64-apple-darwin --target x86_64-apple-darwin
+      - name: Check and stage the binaries
+        run: |
+          objdump="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-objdump"
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-musl/release/fleetd dist/fleetd-linux-x64
+          cp target/aarch64-apple-darwin/release/fleetd dist/fleetd-darwin-arm64
+          cp target/x86_64-apple-darwin/release/fleetd dist/fleetd-darwin-x64
+          if "$objdump" -p dist/fleetd-linux-x64 | grep NEEDED; then
+            echo "::error::fleetd-linux-x64 is not static"; exit 1
+          fi
+          for bin in dist/fleetd-darwin-*; do
+            "$objdump" --macho --dylibs-used "$bin"
+            if "$objdump" --macho --dylibs-used "$bin" | grep -F '.framework/'; then
+              echo "::error::$bin links a macOS framework; see .github/release/check-darwin-deps.sh"; exit 1
+            fi
+          done
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli
+          path: dist/
+          if-no-files-found: error
+
+  app-macos:
+    needs: plan
+    # Mac minutes cost 10x Linux ones: only builds that publish (pull request dry runs skip it). PR CI still
+    # bundles the app on GitHub-hosted macOS.
+    if: needs.plan.outputs.build-app == 'true' && inputs.publish
+    runs-on: blacksmith-6vcpu-macos-latest
+    timeout-minutes: 60
+    env:
+      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
+      # Developer ID signing and notarization run only when these secrets exist; otherwise the app keeps the
+      # ad-hoc signature from macos-bundle.sh. See .github/release/macos-sign.sh.
+      APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+      APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # fleetd-app only: built together with fleetd, cargo would unify their features (serde_json preserve_order).
+      - name: Build arm64 and x86_64
+        run: cargo build --release --locked -p fleetd-app --target aarch64-apple-darwin --target x86_64-apple-darwin
+      - name: Bundle a universal fleetd.app
+        run: |
+          app="$(app/packaging/macos-bundle.sh target/aarch64-apple-darwin/release/fleetd-app target/x86_64-apple-darwin/release/fleetd-app)"
+          lipo -info "$app/Contents/MacOS/fleetd-app"
+          mkdir -p dist
+          mv "$app" dist/fleetd.app
+      - name: Sign and notarize
+        if: env.APPLE_DEVELOPER_ID_P12 != ''
+        run: .github/release/macos-sign.sh dist/fleetd.app
+      - name: Zip
+        run: |
+          ditto -c -k --keepParent dist/fleetd.app dist/fleetd-app-macos-universal.zip
+          rm -rf dist/fleetd.app
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-macos
+          path: dist/
+          if-no-files-found: error
+
+  app-linux:
+    needs: plan
+    if: needs.plan.outputs.build-app == 'true'
+    # 22.04, not 24.04: the binary needs the glibc it was linked against, and 22.04's 2.35 covers older distros.
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    timeout-minutes: 60
+    env:
+      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: GPUI build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev libwayland-dev libvulkan-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build
+        run: cargo build --release --locked -p fleetd-app
+      - name: Package
+        run: |
+          echo "needs glibc $(objdump -T target/release/fleetd-app | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+          mkdir -p dist
+          app/packaging/linux-package.sh target/release/fleetd-app dist/fleetd-app-linux-x64.tar.gz
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-linux
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, cli, app-macos, app-linux]
+    # Skipped builds (no CLI yet, app unchanged) must not skip publishing; failed or cancelled ones must.
+    if: >-
+      always() && inputs.publish && needs.plan.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          APP_BUILT: ${{ needs.plan.outputs.build-app }}
+          # crates/fleetd is a stub until the Rust cutover; set this repo variable to true to ship the CLI.
+          CLI_PUBLISH: ${{ vars.FLEETD_RELEASE_CLI == 'true' }}
+        run: .github/release/publish.sh

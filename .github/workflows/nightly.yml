@@ -1,0 +1,36 @@
+# Every push to main updates the rolling `nightly` prerelease. A newer push cancels a running nightly; the app
+# change check compares with what the release carries, so nothing a cancelled run would have shipped is lost.
+# Pull requests that change the release pipeline itself get a dry run on Linux (CLI and Linux app), publishing
+# nothing. The paid mac job runs only for a main push that changed the app, a tag, or a manual dispatch.
+name: Nightly
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+      - .github/workflows/build-release.yml
+      - .github/release/**
+      - app/packaging/**
+  workflow_dispatch:
+    inputs:
+      force-app:
+        description: Rebuild the app even if app/ is unchanged
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('release-dry-run-{0}', github.ref) || 'release-nightly' }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    uses: ./.github/workflows/build-release.yml
+    with:
+      channel: nightly
+      publish: ${{ github.event_name != 'pull_request' }}
+      force-app: ${{ inputs.force-app == true }}
+    permissions:
+      contents: write
+    secrets: inherit
