@@ -40,7 +40,8 @@ pnpm typecheck   # scripts + every workspace package, vendored T3 included
 pnpm lint        # oxlint
 pnpm test        # vitest per package
 pnpm build       # rolldown bundles into apps/*/dist
-cargo clippy --workspace --all-targets && cargo test --workspace   # crates/*, the GPUI app and its bench
+cargo clippy --workspace --exclude fleetd-app --exclude fleetd-bench --all-targets && cargo test --workspace --exclude fleetd-app --exclude fleetd-bench
+cargo clippy -p fleetd-app -p fleetd-bench --all-targets && cargo test -p fleetd-app -p fleetd-bench   # the GPUI app, separately as in CI
 ```
 
 Run the checks for what you touched; CI runs all of them on every PR.
