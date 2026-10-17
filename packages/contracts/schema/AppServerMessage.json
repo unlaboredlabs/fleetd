@@ -177,7 +177,13 @@
         "decision.recorded",
         "lead.started",
         "lead.woken",
-        "digest.ready"
+        "digest.ready",
+        "task.queued",
+        "task.started",
+        "task.completed",
+        "task.failed",
+        "task.cancelled",
+        "task.out_of_area"
       ]
     },
     "ThreadId": {
@@ -216,6 +222,80 @@
         "at",
         "type",
         "summary"
+      ],
+      "additionalProperties": true
+    },
+    "SlotState": {
+      "type": "object",
+      "properties": {
+        "cap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reservedBand": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "perProject": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "projectRef": {
+                "type": "object",
+                "properties": {
+                  "machineId": {
+                    "$ref": "#/$defs/MachineId"
+                  },
+                  "projectId": {
+                    "$ref": "#/$defs/ProjectId"
+                  }
+                },
+                "required": [
+                  "machineId",
+                  "projectId"
+                ],
+                "additionalProperties": true
+              },
+              "share": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "used": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "projectRef",
+              "share",
+              "used"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 50
+        }
+      },
+      "required": [
+        "cap",
+        "used",
+        "queued",
+        "reservedBand",
+        "perProject"
       ],
       "additionalProperties": true
     },
@@ -273,6 +353,9 @@
             },
             "cursor": {
               "$ref": "#/$defs/EventSeq"
+            },
+            "slots": {
+              "$ref": "#/$defs/SlotState"
             }
           },
           "required": [

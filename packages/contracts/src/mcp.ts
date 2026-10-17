@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import type { Role } from "./auth.ts";
 import { HubEvent, HubEventType } from "./events.ts";
-import { EventSeq, MachineId, ProjectId, ThreadId, Timestamp } from "./ids.ts";
+import { EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp } from "./ids.ts";
 import {
   Ask,
   DecisionSource,
@@ -22,6 +22,7 @@ import {
   WorkstreamState,
 } from "./ledger.ts";
 import { ActionItem, Effort, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary } from "./model.ts";
+import { SlotState, Task, TaskId, TaskState } from "./tasks.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";
 import { Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget } from "./wakes.ts";
 
@@ -45,6 +46,8 @@ export const FleetStatus = Schema.Struct({
   /** Latest failed, waiting and usage-limited events. */
   attention: Schema.Array(HubEvent).check(Schema.isMaxLength(10)),
   cursor: EventSeq,
+  /** Absent until the hub runs the slot board (M5). */
+  slots: Schema.optionalKey(SlotState),
 }).annotate({ identifier: "FleetStatus" });
 export type FleetStatus = typeof FleetStatus.Type;
 
@@ -303,6 +306,33 @@ export const DecisionsRecordOutput = Schema.Struct({ decision: Decision, ...resu
 export const DigestGetInput = Schema.Struct({});
 export const DigestGetOutput = Schema.Struct({ text: Schema.String, at: Timestamp, ...resultFields });
 
+// tasks_list
+export const TasksListInput = Schema.Struct({
+  projectRef: Schema.optionalKey(ProjectRef),
+  state: Schema.optionalKey(TaskState),
+  limit: intDefault(1, 100, 50),
+});
+export const TasksListOutput = Schema.Struct({
+  /** Newest first. */
+  tasks: Schema.Array(Task).check(Schema.isMaxLength(100)),
+  ...resultFields,
+});
+
+// task_get
+export const TaskGetInput = Schema.Struct({ taskId: TaskId });
+export const TaskGetOutput = Schema.Struct({ task: Task, ...resultFields });
+
+// cap_set: the global cap, a project's share, or both.
+export const CapSetInput = Schema.Struct({
+  cap: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 }))),
+  share: Schema.optionalKey(
+    Schema.Struct({ projectRef: ProjectRef, share: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1000 })) }),
+  ),
+}).check(
+  Schema.makeFilter((input) => input.cap !== undefined || input.share !== undefined, { expected: "cap, share or both" }),
+);
+export const CapSetOutput = Schema.Struct({ slots: SlotState, ...resultFields });
+
 /** The static MCP tool list. Keys are the tool names; `scope` is the minimum grant role. */
 export const McpTools = {
   fleetd_status: { scope: "read", input: FleetdStatusInput, output: FleetdStatusOutput },
@@ -330,6 +360,9 @@ export const McpTools = {
   decisions_search: { scope: "read", input: DecisionsSearchInput, output: DecisionsSearchOutput },
   decisions_record: { scope: "operate", input: DecisionsRecordInput, output: DecisionsRecordOutput },
   digest_get: { scope: "read", input: DigestGetInput, output: DigestGetOutput },
+  tasks_list: { scope: "read", input: TasksListInput, output: TasksListOutput },
+  task_get: { scope: "read", input: TaskGetInput, output: TaskGetOutput },
+  cap_set: { scope: "admin", input: CapSetInput, output: CapSetOutput },
 } as const satisfies Record<string, { scope: Role; input: Schema.Top; output: Schema.Top }>;
 export type McpToolName = keyof typeof McpTools;
 

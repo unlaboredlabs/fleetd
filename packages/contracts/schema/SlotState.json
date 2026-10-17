@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/SlotState",
+  "$defs": {
+    "MachineId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "description": "Machine slug, [a-z0-9-]{1,32}"
+    },
+    "ProjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "SlotState": {
+      "type": "object",
+      "properties": {
+        "cap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reservedBand": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "perProject": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "projectRef": {
+                "type": "object",
+                "properties": {
+                  "machineId": {
+                    "$ref": "#/$defs/MachineId"
+                  },
+                  "projectId": {
+                    "$ref": "#/$defs/ProjectId"
+                  }
+                },
+                "required": [
+                  "machineId",
+                  "projectId"
+                ],
+                "additionalProperties": true
+              },
+              "share": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "used": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "projectRef",
+              "share",
+              "used"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 50
+        }
+      },
+      "required": [
+        "cap",
+        "used",
+        "queued",
+        "reservedBand",
+        "perProject"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

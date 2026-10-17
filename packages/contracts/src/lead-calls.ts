@@ -17,9 +17,12 @@ import {
   DecisionWhy,
   Headline,
   WorkstreamId,
+  Tier,
   WorkstreamState,
 } from "./ledger.ts";
 import { McpToolError } from "./mcp.ts";
+import { Effort } from "./model.ts";
+import { Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule } from "./tasks.ts";
 
 // Lead-side `fleetd` CLI calls. The CLI connects to the local node's unix socket, writes one LeadCallFrame as a
 // line of JSON, reads one LeadResultFrame line back, and closes. The node forwards the frame over its link to the
@@ -85,7 +88,58 @@ export const DecisionsSearchCall = Schema.Struct({
   query: Schema.NonEmptyString.check(Schema.isMaxLength(200)),
 });
 
-export const LeadCall = Schema.Union([BriefCreateCall, AskCall, AskWithdrawCall, DecideCall, StatusSetCall, DecisionsSearchCall])
+/**
+ * `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
+ * [--effort e] [--tier S|M|L] [--estimate <min>] [--serves s]`. Absent model and effort resolve from the policy file,
+ * then the project, then claude-opus-5-5/high.
+ */
+export const TaskSpawnCall = Schema.Struct({
+  op: Schema.tag("task_spawn"),
+  workstreamId: WorkstreamId,
+  title: TaskTitle,
+  kind: TaskKind.pipe(Schema.withDecodingDefaultKey(Effect.succeed("write" as const))),
+  prompt: TaskPrompt,
+  areas: TaskAreas.pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
+  model: Schema.optionalKey(Schema.NonEmptyString),
+  effort: Schema.optionalKey(Effort),
+  tier: Schema.optionalKey(Tier),
+  estimateMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+  serves: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
+}).check(taskAreasRule);
+
+/** `fleetd task list [--state s] [--workstream W1]`, within the calling project. */
+export const TaskListCall = Schema.Struct({
+  op: Schema.tag("task_list"),
+  state: Schema.optionalKey(TaskState),
+  workstreamId: Schema.optionalKey(WorkstreamId),
+});
+
+/** `fleetd task status T1`. */
+export const TaskStatusCall = Schema.Struct({ op: Schema.tag("task_status"), taskId: TaskId });
+
+/** `fleetd task message T1 "<text>"`. Continues the task's thread, which re-takes a slot. */
+export const TaskMessageCall = Schema.Struct({ op: Schema.tag("task_message"), taskId: TaskId, message: TaskPrompt });
+
+/** `fleetd task cancel T1 [--reason r]`. Interrupts the thread and releases its slot and leases. */
+export const TaskCancelCall = Schema.Struct({
+  op: Schema.tag("task_cancel"),
+  taskId: TaskId,
+  reason: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
+});
+
+export const LeadCall = Schema.Union([
+  BriefCreateCall,
+  AskCall,
+  AskWithdrawCall,
+  DecideCall,
+  StatusSetCall,
+  DecisionsSearchCall,
+  TaskSpawnCall,
+  TaskListCall,
+  TaskStatusCall,
+  TaskMessageCall,
+  TaskCancelCall,
+])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCall" });
 export type LeadCall = typeof LeadCall.Type;
@@ -125,6 +179,23 @@ export const DecisionsSearchResult = Schema.Struct({
   ...next,
 });
 
+/** The task as stored: queued with `queuedReason`, or running. */
+export const TaskSpawnResult = Schema.Struct({ op: Schema.tag("task_spawn"), task: Task, ...next });
+
+export const TaskListResult = Schema.Struct({
+  op: Schema.tag("task_list"),
+  /** Newest first. */
+  tasks: Schema.Array(Task).check(Schema.isMaxLength(50)),
+  truncated: Schema.optionalKey(Schema.Boolean),
+  ...next,
+});
+
+export const TaskStatusResult = Schema.Struct({ op: Schema.tag("task_status"), task: Task, ...next });
+
+export const TaskMessageResult = Schema.Struct({ op: Schema.tag("task_message"), task: Task, ...next });
+
+export const TaskCancelResult = Schema.Struct({ op: Schema.tag("task_cancel"), task: Task, ...next });
+
 export const LeadCallResult = Schema.Union([
   BriefCreateResult,
   AskResult,
@@ -132,6 +203,11 @@ export const LeadCallResult = Schema.Union([
   DecideResult,
   StatusSetResult,
   DecisionsSearchResult,
+  TaskSpawnResult,
+  TaskListResult,
+  TaskStatusResult,
+  TaskMessageResult,
+  TaskCancelResult,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCallResult" });

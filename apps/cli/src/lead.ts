@@ -10,6 +10,7 @@ import {
   type LeadCallResult,
   LeadResultFrame,
   NODE_SOCKET_PATH,
+  type Task,
 } from "@fleetd/contracts";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
@@ -254,6 +255,9 @@ const scopeLabel = (decision: Decision) =>
 const decisionLine = (decision: Decision) =>
   `${decision.decisionId} ${decision.key} = ${decision.value} (${scopeLabel(decision)}, by ${decision.source})`;
 
+const taskLine = (task: Task) =>
+  `${task.taskId} ${task.state}${task.queuedReason === undefined ? "" : ` (${task.queuedReason})`}: ${task.title}`;
+
 /** What happened, then `Next:` with the hub's hint or a default. */
 export const formatResult = (result: LeadCallResult): string => {
   const lines: Array<string> = [];
@@ -307,6 +311,18 @@ export const formatResult = (result: LeadCallResult): string => {
         lines.push(...result.decisions.map(decisionLine));
         next = "use these answers; do not ask about these keys again.";
       }
+      break;
+    // Placeholder lines until the `task *` subcommands land (M5c).
+    case "task_spawn":
+    case "task_status":
+    case "task_message":
+    case "task_cancel":
+      lines.push(taskLine(result.task));
+      next = "carry on; the task's result arrives in a later wake.";
+      break;
+    case "task_list":
+      lines.push(...(result.tasks.length === 0 ? ["No tasks."] : result.tasks.map(taskLine)));
+      next = "carry on.";
       break;
   }
   return `${lines.join("\n")}\nNext: ${result.next ?? next}\n`;

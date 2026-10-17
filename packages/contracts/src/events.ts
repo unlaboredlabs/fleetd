@@ -36,6 +36,14 @@ export const HubEventType = Schema.Literals([
   "lead.woken",
   /** The human digest; its text is in `data`. */
   "digest.ready",
+  /** `data.queuedReason`. */
+  "task.queued",
+  "task.started",
+  "task.completed",
+  "task.failed",
+  "task.cancelled",
+  /** A write task's diff touched files outside its leased areas; `data.paths`. */
+  "task.out_of_area",
 ]).annotate({ identifier: "HubEventType" });
 export type HubEventType = typeof HubEventType.Type;
 

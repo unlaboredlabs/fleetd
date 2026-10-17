@@ -1,6 +1,7 @@
 export * from "./hello.ts";
 export * from "./ids.ts";
 export * from "./ledger.ts";
+export * from "./tasks.ts";
 export * from "./model.ts";
 export * from "./events.ts";
 export * from "./auth.ts";
