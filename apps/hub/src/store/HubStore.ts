@@ -1,0 +1,196 @@
+import {
+  Machine,
+  ProjectSummary,
+  ThreadSummary,
+  type MachineId,
+  type MachineStatus,
+  type ProjectRef,
+  type ThreadRef,
+  type Timestamp,
+} from "@fleetd/contracts";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as HubDb from "./HubDb.ts";
+
+export type StoredThread = ThreadSummary & { readonly lastSequence?: number };
+
+/** Caches of what the hub has seen of each machine. Reads return what was written; staleness is the reader's call. */
+export class HubStore extends Context.Service<
+  HubStore,
+  {
+    readonly machines: {
+      /** `pubKey`, when given, replaces the machine's node key. */
+      readonly upsert: (machine: Machine & { readonly pubKey?: string }) => Effect.Effect<void>;
+      readonly get: (machineId: MachineId) => Effect.Effect<Machine | undefined>;
+      readonly list: () => Effect.Effect<ReadonlyArray<Machine>>;
+      /** Sets the status and `lastSeenAt = at`. A no-op for an unknown machine. */
+      readonly setStatus: (machineId: MachineId, status: MachineStatus, at: Timestamp) => Effect.Effect<void>;
+    };
+    readonly projects: {
+      readonly upsertMany: (machineId: MachineId, projects: ReadonlyArray<ProjectSummary>) => Effect.Effect<void>;
+      /** Newest activity first. `query` matches title or workspace root, case-insensitively. */
+      readonly list: (filter?: {
+        readonly machineId?: MachineId;
+        readonly query?: string;
+      }) => Effect.Effect<ReadonlyArray<ProjectSummary>>;
+      readonly get: (ref: ProjectRef) => Effect.Effect<ProjectSummary | undefined>;
+    };
+    readonly threads: {
+      /** An absent `lastSequence` keeps the stored one. */
+      readonly upsert: (thread: StoredThread) => Effect.Effect<void>;
+      readonly get: (ref: ThreadRef) => Effect.Effect<StoredThread | undefined>;
+      /** Newest progress first. */
+      readonly listByProject: (ref: ProjectRef, limit: number) => Effect.Effect<ReadonlyArray<ThreadSummary>>;
+    };
+    /** T3 shell `afterSequence` per machine. */
+    readonly cursors: {
+      readonly get: (machineId: MachineId) => Effect.Effect<number | undefined>;
+      readonly set: (machineId: MachineId, seq: number) => Effect.Effect<void>;
+    };
+  }
+>()("fleetd/store/HubStore") {}
+
+const decodeMachine = Schema.decodeSync(Schema.fromJsonString(Machine));
+const encodeMachine = Schema.encodeSync(Schema.fromJsonString(Machine));
+const decodeProject = Schema.decodeSync(Schema.fromJsonString(ProjectSummary));
+const encodeProject = Schema.encodeSync(Schema.fromJsonString(ProjectSummary));
+const decodeThread = Schema.decodeSync(Schema.fromJsonString(ThreadSummary));
+const encodeThread = Schema.encodeSync(Schema.fromJsonString(ThreadSummary));
+
+const escapeLike = (s: string) => s.replace(/[\\%_]/gu, (c) => `\\${c}`);
+
+const make = Effect.gen(function* () {
+  const { db } = yield* HubDb.HubDb;
+
+  const sql = {
+    machineUpsert: db.prepare(
+      "INSERT INTO machines (machine_id, data) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET data = excluded.data",
+    ),
+    nodeKeyUpsert: db.prepare(
+      "INSERT INTO node_keys (machine_id, pub_key) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET pub_key = excluded.pub_key",
+    ),
+    machineGet: db.prepare("SELECT data FROM machines WHERE machine_id = ?"),
+    machineList: db.prepare("SELECT data FROM machines ORDER BY machine_id"),
+    projectUpsert: db.prepare(
+      `INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (machine_id, project_id) DO UPDATE SET
+         search = excluded.search, last_activity_at = excluded.last_activity_at, data = excluded.data`,
+    ),
+    projectList: db.prepare(
+      `SELECT data FROM projects
+       WHERE ($machine IS NULL OR machine_id = $machine) AND ($query IS NULL OR search LIKE $query ESCAPE '\\')
+       ORDER BY last_activity_at DESC`,
+    ),
+    projectGet: db.prepare("SELECT data FROM projects WHERE machine_id = ? AND project_id = ?"),
+    threadUpsert: db.prepare(
+      `INSERT INTO threads (machine_id, thread_id, project_id, last_progress_at, last_sequence, data) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (machine_id, thread_id) DO UPDATE SET
+         project_id = excluded.project_id, last_progress_at = excluded.last_progress_at,
+         last_sequence = COALESCE(excluded.last_sequence, threads.last_sequence), data = excluded.data`,
+    ),
+    threadGet: db.prepare("SELECT data, last_sequence FROM threads WHERE machine_id = ? AND thread_id = ?"),
+    threadsByProject: db.prepare(
+      "SELECT data FROM threads WHERE machine_id = ? AND project_id = ? ORDER BY last_progress_at DESC LIMIT ?",
+    ),
+    cursorGet: db.prepare("SELECT seq FROM shell_cursors WHERE machine_id = ?"),
+    cursorSet: db.prepare(
+      "INSERT INTO shell_cursors (machine_id, seq) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET seq = excluded.seq",
+    ),
+  };
+
+  const getMachine = (machineId: MachineId) => {
+    const row = sql.machineGet.get(machineId);
+    return row ? decodeMachine(String(row.data)) : undefined;
+  };
+
+  return HubStore.of({
+    machines: {
+      upsert: ({ pubKey, ...machine }) =>
+        Effect.sync(() =>
+          HubDb.transaction(db, () => {
+            sql.machineUpsert.run(machine.machineId, encodeMachine(machine));
+            if (pubKey !== undefined) sql.nodeKeyUpsert.run(machine.machineId, pubKey);
+          }),
+        ),
+      get: (machineId) => Effect.sync(() => getMachine(machineId)),
+      list: () => Effect.sync(() => sql.machineList.all().map((row) => decodeMachine(String(row.data)))),
+      setStatus: (machineId, status, at) =>
+        Effect.sync(() =>
+          HubDb.transaction(db, () => {
+            const machine = getMachine(machineId);
+            if (machine) sql.machineUpsert.run(machineId, encodeMachine({ ...machine, status, lastSeenAt: at }));
+          }),
+        ),
+    },
+    projects: {
+      upsertMany: (machineId, projects) =>
+        Effect.sync(() =>
+          HubDb.transaction(db, () => {
+            for (const project of projects) {
+              const row = { ...project, machineId };
+              sql.projectUpsert.run(
+                machineId,
+                row.projectId,
+                `${row.title}\n${row.workspaceRoot}`,
+                row.lastActivityAt,
+                encodeProject(row),
+              );
+            }
+          }),
+        ),
+      list: (filter = {}) =>
+        Effect.sync(() =>
+          sql.projectList
+            .all({
+              machine: filter.machineId ?? null,
+              query: filter.query ? `%${escapeLike(filter.query)}%` : null,
+            })
+            .map((row) => decodeProject(String(row.data))),
+        ),
+      get: (ref) =>
+        Effect.sync(() => {
+          const row = sql.projectGet.get(ref.machineId, ref.projectId);
+          return row ? decodeProject(String(row.data)) : undefined;
+        }),
+    },
+    threads: {
+      upsert: ({ lastSequence, ...thread }) =>
+        Effect.sync(() => {
+          sql.threadUpsert.run(
+            thread.machineId,
+            thread.threadId,
+            thread.projectId,
+            thread.lastProgressAt,
+            lastSequence ?? null,
+            encodeThread(thread),
+          );
+        }),
+      get: (ref) =>
+        Effect.sync(() => {
+          const row = sql.threadGet.get(ref.machineId, ref.threadId);
+          if (!row) return undefined;
+          const thread: StoredThread = decodeThread(String(row.data));
+          return row.last_sequence === null ? thread : { ...thread, lastSequence: Number(row.last_sequence) };
+        }),
+      listByProject: (ref, limit) =>
+        Effect.sync(() =>
+          sql.threadsByProject.all(ref.machineId, ref.projectId, limit).map((row) => decodeThread(String(row.data))),
+        ),
+    },
+    cursors: {
+      get: (machineId) =>
+        Effect.sync(() => {
+          const row = sql.cursorGet.get(machineId);
+          return row ? Number(row.seq) : undefined;
+        }),
+      set: (machineId, seq) =>
+        Effect.sync(() => {
+          sql.cursorSet.run(machineId, seq);
+        }),
+    },
+  });
+});
+
+export const layer = Layer.effect(HubStore, make);

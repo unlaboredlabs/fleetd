@@ -12,7 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fleetd/contracts": "workspace:*"
+    "@fleetd/contracts": "workspace:*",
+    "@fleetd/hub": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "rolldown": "1.2.14"

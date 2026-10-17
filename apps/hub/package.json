@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
   "scripts": {
     "build": "rolldown src/main.ts --file dist/main.js --platform node --format esm",
     "typecheck": "tsc --noEmit",
