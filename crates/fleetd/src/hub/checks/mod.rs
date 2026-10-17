@@ -14,6 +14,9 @@ pub mod render;
 pub mod runner;
 pub mod tools;
 
+#[cfg(test)]
+mod tests;
+
 pub use claims::{ClaimDoneOutcome, Claims, FALSE_CLAIM_AT, INLINE_WAIT};
 pub use github::{GH_AUTH_FIX, GhCli, GhError, GhErrorKind, GhRunner, GitHub};
 pub use judges::{JUDGE_BY, JudgeVerdicts, Judges};
