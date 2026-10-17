@@ -151,7 +151,6 @@ pub fn registry() -> Registry {
     crate::hub::wakes::tools::register(&mut tools);
     crate::hub::webhooks::tools::register(&mut tools);
     crate::hub::checks::tools::register(&mut tools);
-    // crate::hub::executor::register(&mut tools);
     crate::hub::usage::tools::register(&mut tools);
     crate::hub::doctor::tools::register(&mut tools);
     crate::hub::retro::tools::register(&mut tools);
