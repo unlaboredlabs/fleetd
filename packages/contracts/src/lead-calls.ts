@@ -10,6 +10,7 @@ import {
   Brief,
   BriefHash,
   CheckSpec,
+  EnvName,
   Decision,
   DecisionId,
   DecisionKey,
@@ -52,7 +53,7 @@ export const BriefCreateCall = Schema.Struct({
 
 /**
  * `fleetd ask [--kind decide|do|secret] --key k --class c --text t --rec r [--options a,b] [--steps '<json>']
- * [--verify '<CheckSpec>'] [--sink env:<machine>:<path>] [--blocks "step"] [--proceeded] [--workstream W12]`. Approve
+ * [--verify '<CheckSpec>'] [--sink env:<machine>:<path> [--env-name N]] [--blocks "step"] [--proceeded] [--workstream W12]`. Approve
  * asks come only from `fleetd gated run`, so the command they run is stored with them.
  */
 export const AskCall = Schema.Struct({
@@ -69,6 +70,8 @@ export const AskCall = Schema.Struct({
   verify: Schema.optionalKey(CheckSpec),
   /** Required for secret; the ask's key names the secret. */
   sink: Schema.optionalKey(SecretSink),
+  /** `--env-name`: an env: sink's variable, when the key's own name (`secretEnvName`) is not wanted or not valid. */
+  envName: Schema.optionalKey(EnvName),
   blocks: AskBlocks.pipe(Schema.withDecodingDefaultKey(Effect.succeed("nothing" as const))),
   proceededOnRec: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
   workstreamId: Schema.optionalKey(WorkstreamId),

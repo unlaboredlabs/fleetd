@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { ProtocolVersion } from "./hello.ts";
 import { MachineId, Timestamp } from "./ids.ts";
 import { LeadCallFrame, LeadResultFrame } from "./lead-calls.ts";
-import { AskId, DecisionKey, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv } from "./ledger.ts";
+import { AskId, DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv } from "./ledger.ts";
 import { BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink } from "./secrets.ts";
 
 // Node link: WebSocket JSON, one message per frame, discriminated by "t".
@@ -119,6 +119,8 @@ export const SecretDeliver = Schema.Struct({
   sealed: SealedSecret,
   /** The ask's key; `secretEnv` entries name the secret by it. */
   secretKey: DecisionKey,
+  /** An env: sink's variable; absent means `secretEnvName(secretKey)`. */
+  envName: Schema.optionalKey(EnvName),
 });
 export type SecretDeliver = typeof SecretDeliver.Type;
 

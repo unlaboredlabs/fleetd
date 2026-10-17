@@ -435,6 +435,8 @@ contract! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub sink: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub env_name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub fingerprint: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub gated: Option<GatedRunSpec>,

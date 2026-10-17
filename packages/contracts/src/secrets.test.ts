@@ -12,6 +12,7 @@ import {
   SecretSink,
   base64Bytes,
   parseSecretSink,
+  secretEnvName,
 } from "./index.ts";
 
 const accepts = (schema: Schema.Top, value: unknown) => Schema.decodeUnknownResult(schema as Schema.Codec<unknown>)(value)._tag === "Success";
@@ -85,6 +86,21 @@ const ask = {
   createdAt: at,
 };
 const gated = { argv: ["sh", "-c", "echo deployed"], class: "irreversible", reason: "prod deploy test", timeoutSec: 1800 };
+
+describe("secretEnvName", () => {
+  it("uppercases the key and turns . and - into _", () => {
+    expect(secretEnvName("stripe.test_key")).toBe("STRIPE_TEST_KEY");
+    expect(secretEnvName("gh.deploy-token")).toBe("GH_DEPLOY_TOKEN");
+    expect(secretEnvName("1password.token")).toBeUndefined();
+  });
+
+  it("lets only a secret ask with an env: sink carry an env name", () => {
+    const base = { op: "ask", key: "stripe.test_key", class: "credential", text: "Need the key", kind: "secret" };
+    expect(accepts(LeadCall, { ...base, sink: "env:forge:/srv/app/.env", envName: "STRIPE_KEY" })).toBe(true);
+    expect(accepts(LeadCall, { ...base, sink: "file:forge:/srv/app/key", envName: "STRIPE_KEY" })).toBe(false);
+    expect(accepts(LeadCall, { ...base, sink: "env:forge:/srv/app/.env", envName: "1BAD" })).toBe(false);
+  });
+});
 
 describe("Ask kinds", () => {
   it("needs each kind's field and refuses another kind's", () => {

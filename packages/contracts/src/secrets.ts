@@ -92,3 +92,14 @@ export const SecretSink = Schema.String.check(
   }),
 ).annotate({ identifier: "SecretSink" });
 export type SecretSink = typeof SecretSink.Type;
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
+
+/**
+ * The variable an `env:` sink writes for a secret ask without `--env-name`: its key uppercased, with `.` and `-` as
+ * `_` (`stripe.test_key` is `STRIPE_TEST_KEY`). Undefined when that is no valid name (a key starting with a digit).
+ */
+export const secretEnvName = (secretKey: string): string | undefined => {
+  const name = secretKey.toUpperCase().replace(/[.-]/gu, "_");
+  return ENV_NAME.test(name) ? name : undefined;
+};
