@@ -40,7 +40,7 @@ pnpm typecheck   # scripts + every workspace package, vendored T3 included
 pnpm lint        # oxlint
 pnpm test        # vitest per package
 pnpm build       # rolldown bundles into apps/*/dist
-cd app && cargo check && cargo test
+cargo clippy --workspace --all-targets && cargo test --workspace   # crates/*, the GPUI app and its bench
 ```
 
 Run the checks for what you touched; CI runs all of them on every PR.

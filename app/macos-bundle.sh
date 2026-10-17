@@ -4,12 +4,12 @@
 #
 #   app/macos-bundle.sh [binary]    # default: build release; writes fleetd.app next to the binary
 set -euo pipefail
-cd "$(dirname "$0")"
+here="$(cd "$(dirname "$0")" && pwd)"
 
 bin="${1:-}"
 if [ -z "$bin" ]; then
-  cargo build --release --locked -p fleetd-app >&2
-  bin="${CARGO_TARGET_DIR:-target}/release/fleetd-app"
+  (cd "$here" && cargo build --release --locked -p fleetd-app >&2)
+  bin="${CARGO_TARGET_DIR:-$here/../target}/release/fleetd-app"
 fi
 app="$(dirname "$bin")/fleetd.app"
 rm -rf "$app"

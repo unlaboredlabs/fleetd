@@ -9,8 +9,7 @@ use crypto_box::PublicKey;
 use crypto_box::aead::OsRng;
 use zeroize::Zeroizing;
 
-/// Matches `SECRET_MAX_BYTES` in `packages/contracts/src/secrets.ts`.
-pub const SECRET_MAX_BYTES: usize = 8192;
+pub use fleetd_contracts::secrets::SECRET_MAX_BYTES;
 
 /// A secret being typed. The buffer is allocated once at full size so it never reallocates, which
 /// would leave copies of the value behind in freed memory; dropping it zeroes it.

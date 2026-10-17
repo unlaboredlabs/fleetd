@@ -1,11 +1,15 @@
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use fleetd_contracts::app::AppClientMessage;
+use fleetd_contracts::doctor::{DoctorFixKind, DoctorStatus};
+use fleetd_contracts::ledger::{Ask, AskClass, AskKind, AskState, BatchId, CheckSpec, LeadState, Workstream, WorkstreamState};
+use fleetd_contracts::mcp::{TailAction, TailItem, TailMessage, TailRole};
+use fleetd_contracts::model::MachineStatus;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use gpui::{
-    AnyElement, App, ClipboardItem, Context, Div, FocusHandle, KeyDownEvent, Keystroke, ScrollDelta, ScrollStrategy,
-    ScrollWheelEvent, SharedString, Stateful, SystemNotification, Task, UniformListScrollHandle, Window, div, point,
-    prelude::*, px, rgb, uniform_list,
+    AnyElement, App, ClipboardItem, Context, Div, FocusHandle, KeyDownEvent, Keystroke, ScrollDelta, ScrollStrategy, ScrollWheelEvent, SharedString,
+    Stateful, SystemNotification, Task, UniformListScrollHandle, Window, div, point, prelude::*, px, rgb, uniform_list,
 };
 use zeroize::Zeroize;
 
@@ -14,7 +18,6 @@ use crate::client;
 use crate::fake::{self, LogKind, LogStream};
 use crate::keychain::{self, Saved};
 use crate::notify::unix_secs;
-use crate::protocol::*;
 use crate::seal::{self, Secret};
 use crate::state::{Conn, Echo, ProjectKey, ProjectRow, State};
 
@@ -75,7 +78,7 @@ struct LogRow {
 /// The live link to the hub. Dropping it stops the client.
 struct HubLink {
     url: String,
-    tx: UnboundedSender<ClientMessage>,
+    tx: UnboundedSender<AppClientMessage>,
     _tasks: [Task<()>; 3],
 }
 
@@ -156,7 +159,12 @@ impl Shell {
         let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
         if let Some(n) = self.state.take_notification(now_ms) {
             // One tag: a newer notification replaces an older one still on screen.
-            cx.show_system_notification(SystemNotification { tag: "fleetd-needs-you".into(), title: n.title.into(), body: n.body.into(), actions: Vec::new() });
+            cx.show_system_notification(SystemNotification {
+                tag: "fleetd-needs-you".into(),
+                title: n.title.into(),
+                body: n.body.into(),
+                actions: Vec::new(),
+            });
         }
     }
 
@@ -223,7 +231,7 @@ impl Shell {
         self.selected = 0;
     }
 
-    fn send(&self, out: Vec<ClientMessage>) {
+    fn send(&self, out: Vec<AppClientMessage>) {
         if let Some(hub) = &self.hub {
             for message in out {
                 hub.tx.unbounded_send(message).ok();
@@ -286,7 +294,7 @@ impl Shell {
             self.screen = Screen::Connect;
         }
         // The ask was answered or withdrawn elsewhere: drop (and wipe) what was typed for it.
-        if self.secret.as_ref().is_some_and(|(id, _)| !self.state.asks.get(id).is_some_and(|a| a.state == AskState::Open)) {
+        if self.secret.as_ref().is_some_and(|(id, _)| !self.state.asks.get(id.as_str()).is_some_and(|a| a.state == AskState::Open)) {
             self.secret = None;
         }
         let version = self.state.detail.as_ref().map_or(0, |d| d.version);
@@ -405,7 +413,8 @@ impl Shell {
         }
         match key {
             "up" | "down" => {
-                self.selected = if key == "up" { self.selected.saturating_sub(1) } else { (self.selected + 1).min(self.list_len().saturating_sub(1)) };
+                self.selected =
+                    if key == "up" { self.selected.saturating_sub(1) } else { (self.selected + 1).min(self.list_len().saturating_sub(1)) };
                 if self.screen == Screen::Projects {
                     self.projects_scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
                 }
@@ -459,7 +468,7 @@ impl Shell {
             self.secret = Some((ask_id, secret));
             return;
         }
-        let Some(ask) = self.state.asks.get(&ask_id) else { return };
+        let Some(ask) = self.state.asks.get(ask_id.as_str()) else { return };
         match self.state.secret_target(ask).and_then(|(machine, key)| Ok((machine, seal::seal(&key, secret.bytes())?))) {
             Ok((machine, sealed)) => {
                 let out = self.state.submit_secret(&ask_id, &machine, sealed);
@@ -469,7 +478,7 @@ impl Shell {
         }
     }
 
-    fn quick_reply(&mut self, batch_id: String, raw: String, cx: &mut Context<Self>) {
+    fn quick_reply(&mut self, batch_id: BatchId, raw: String, cx: &mut Context<Self>) {
         let out = self.state.reply(&raw, Some(&batch_id));
         self.send(out);
         cx.notify();
@@ -548,7 +557,13 @@ impl Shell {
                         .gap_1()
                         .border_t_1()
                         .border_color(rgb(Theme::BORDER))
-                        .child(div().flex().gap_2().child(div().text_color(rgb(dot)).child("●")).child(div().flex_1().min_w_0().whitespace_normal().child(muted(status))))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .child(div().text_color(rgb(dot)).child("●"))
+                                .child(div().flex_1().min_w_0().whitespace_normal().child(muted(status))),
+                        )
                         .child(muted(self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default()))
                         .child(button("disconnect", "Disconnect and forget key", cx.listener(|this, _, _, cx| this.disconnect(cx)))),
                 )
@@ -560,29 +575,20 @@ impl Shell {
         let focused = self.focus.is_focused(window);
         let field = |label: &'static str, which: Field, value: String, placeholder: &'static str| {
             let active = focused && self.form.field == which;
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(muted(label))
-                .child(
-                    div()
-                        .h(px(32.))
-                        .px_2()
-                        .flex()
-                        .items_center()
-                        .border_1()
-                        .rounded_sm()
-                        .border_color(rgb(if active { Theme::ACCENT } else { Theme::BORDER }))
-                        .bg(rgb(Theme::BG))
-                        .font_family(MONO_FONT)
-                        .child(if value.is_empty() {
-                            div().text_color(rgb(Theme::MUTED)).child(placeholder)
-                        } else {
-                            div().child(value)
-                        })
-                        .when(active, |d| d.child(caret())),
-                )
+            div().flex().flex_col().gap_1().child(muted(label)).child(
+                div()
+                    .h(px(32.))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .border_1()
+                    .rounded_sm()
+                    .border_color(rgb(if active { Theme::ACCENT } else { Theme::BORDER }))
+                    .bg(rgb(Theme::BG))
+                    .font_family(MONO_FONT)
+                    .child(if value.is_empty() { div().text_color(rgb(Theme::MUTED)).child(placeholder) } else { div().child(value) })
+                    .when(active, |d| d.child(caret())),
+            )
         };
         let masked = if self.form.key.is_empty() {
             String::new()
@@ -655,7 +661,7 @@ impl Shell {
             .into_any_element()
     }
 
-    fn ask_card(&self, batch_id: &str, number: u32, ask: &Ask, cx: &mut Context<Self>) -> impl IntoElement {
+    fn ask_card(&self, batch_id: &BatchId, number: i64, ask: &Ask, cx: &mut Context<Self>) -> impl IntoElement {
         let project = match &ask.project_ref {
             Some(p) => format!("{}/{}", p.machine_id, p.project_id),
             None => format!("{batch_id} · no project yet"),
@@ -666,17 +672,18 @@ impl Shell {
             _ => Theme::YELLOW,
         };
         let reply = |label: String, raw: String, cx: &mut Context<Self>| {
-            let batch_id = batch_id.to_string();
-            button(SharedString::from(format!("{}-{number}-{raw}", ask.ask_id)), label, cx.listener(move |this, _, _, cx| {
-                this.quick_reply(batch_id.clone(), raw.clone(), cx)
-            }))
+            let batch_id = batch_id.clone();
+            button(
+                SharedString::from(format!("{}-{number}-{raw}", ask.ask_id)),
+                label,
+                cx.listener(move |this, _, _, cx| this.quick_reply(batch_id.clone(), raw.clone(), cx)),
+            )
         };
         let mut buttons = div().flex().flex_wrap().gap_2().pt_1();
         match ask.kind {
             AskKind::Approve => {
-                buttons = buttons
-                    .child(reply("Approve".into(), format!("{number} go"), cx))
-                    .child(reply("Reject".into(), format!("{number} no"), cx));
+                buttons =
+                    buttons.child(reply("Approve".into(), format!("{number} go"), cx)).child(reply("Reject".into(), format!("{number} no"), cx));
             }
             AskKind::Secret => buttons = buttons.child(reply("decline".into(), format!("{number} no"), cx)),
             _ => {
@@ -707,29 +714,36 @@ impl Shell {
                     .gap_2()
                     .items_center()
                     .child(div().text_color(rgb(Theme::ACCENT)).child(format!("{number}")))
-                    .child(div().text_color(rgb(class_color)).text_size(px(11.5)).child(ask.class.as_str()))
+                    .child(div().text_color(rgb(class_color)).text_size(px(11.5)).child(label(&ask.class)))
                     .child(muted(project))
                     .when(ask.proceeded_on_rec, |d| d.child(muted("· went ahead on the recommendation")))
-                    .when(ask.blocks != "nothing", |d| d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child(format!("blocks: {}", ask.blocks)))),
+                    .when(ask.blocks != "nothing", |d| {
+                        d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child(format!("blocks: {}", ask.blocks)))
+                    }),
             )
-            .child(div().whitespace_normal().child(ask.text.clone()));
+            .child(div().whitespace_normal().child(ask.text.to_string()));
         for (i, step) in ask.steps.iter().flatten().enumerate() {
-            card = card.child(div().whitespace_normal().child(format!("{}. {}", i + 1, step.text)).child(muted(format!("on {}", step.place))));
+            card =
+                card.child(div().whitespace_normal().child(format!("{}. {}", i + 1, step.text)).child(muted(format!("on {}", label(&step.r#where)))));
             if let Some(command) = &step.command {
                 let copied = self.copied.as_deref() == Some(command.as_str());
-                let to_copy = command.clone();
+                let to_copy = command.to_string();
                 card = card.child(
                     div()
                         .pl_4()
                         .flex()
                         .gap_2()
                         .items_center()
-                        .child(div().flex_1().min_w_0().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()))
-                        .child(button(SharedString::from(format!("{}-copy-{i}", ask.ask_id)), if copied { "Copied" } else { "Copy" }, cx.listener(move |this, _, _, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(to_copy.clone()));
-                            this.copied = Some(to_copy.clone());
-                            cx.notify();
-                        }))),
+                        .child(div().flex_1().min_w_0().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.to_string()))
+                        .child(button(
+                            SharedString::from(format!("{}-copy-{i}", ask.ask_id)),
+                            if copied { "Copied" } else { "Copy" },
+                            cx.listener(move |this, _, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(to_copy.clone()));
+                                this.copied = Some(to_copy.clone());
+                                cx.notify();
+                            }),
+                        )),
                 );
             }
             if let Some(expect) = &step.expect {
@@ -742,8 +756,8 @@ impl Shell {
             card = card
                 .child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(argv))
                 .child(muted(format!("in {}", gated.cwd.as_deref().unwrap_or("the project workspace"))))
-                .child(muted(format!("{} · {} · up to {} min", gated.class.as_str(), gated.reason, gated.timeout_sec.div_ceil(60))));
-            let env: Vec<String> = gated.secret_env.iter().flatten().map(|e| format!("{} ← {}", e.name, e.secret_key)).collect();
+                .child(muted(format!("{} · {} · up to {} min", label(&gated.class), gated.reason, (gated.timeout_sec.get() + 59) / 60)));
+            let env: Vec<String> = gated.secret_env.iter().flat_map(|e| e.0.iter()).map(|e| format!("{} ← {}", e.name, e.secret_key)).collect();
             if !env.is_empty() {
                 card = card.child(muted(format!("secret env: {}", env.join(", "))));
             }
@@ -752,7 +766,7 @@ impl Shell {
             card = card.child(self.secret_entry(ask, cx));
         }
         if let Some(evidence) = &ask.evidence {
-            card = card.child(muted(evidence.clone()));
+            card = card.child(muted(evidence.to_string()));
         }
         card.child(buttons)
     }
@@ -765,9 +779,9 @@ impl Shell {
             Ok((machine, _)) => machine,
             Err(reason) => return col.child(div().text_color(rgb(Theme::YELLOW)).whitespace_normal().child(reason)),
         };
-        let typed = self.secret.as_ref().filter(|(id, _)| *id == ask.ask_id).map(|(_, s)| s.chars());
+        let typed = self.secret.as_ref().filter(|(id, _)| id == ask.ask_id.as_str()).map(|(_, s)| s.chars());
         let sending = self.state.secret_submitting(&ask.ask_id);
-        let open = ask.ask_id.clone();
+        let open = ask.ask_id.to_string();
         let field = div()
             .id(SharedString::from(format!("{}-secret", ask.ask_id)))
             .flex_1()
@@ -793,10 +807,14 @@ impl Shell {
                 None => div().text_color(rgb(Theme::MUTED)).child("Click to enter the value"),
             })
             .when(typed.is_some(), |d| d.child(caret()));
-        let send = button(SharedString::from(format!("{}-seal", ask.ask_id)), if sending { "Sending…" } else { "Seal & send" }, cx.listener(|this, _, _, cx| {
-            this.submit_secret();
-            cx.notify();
-        }));
+        let send = button(
+            SharedString::from(format!("{}-seal", ask.ask_id)),
+            if sending { "Sending…" } else { "Seal & send" },
+            cx.listener(|this, _, _, cx| {
+                this.submit_secret();
+                cx.notify();
+            }),
+        );
         col = col
             .child(div().flex().gap_2().items_center().child(field).when(typed.is_some_and(|n| n > 0), |d| d.child(send)))
             .child(muted(format!("Encrypted here to {machine}'s key; the hub never sees the value.")));
@@ -814,9 +832,7 @@ impl Shell {
                 uniform_list(
                     "projects",
                     self.state.projects.len(),
-                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                        range.map(|ix| this.project_row(ix, cx)).collect::<Vec<_>>()
-                    }),
+                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| range.map(|ix| this.project_row(ix, cx)).collect::<Vec<_>>()),
                 )
                 .track_scroll(&self.projects_scroll)
                 .flex_1(),
@@ -848,7 +864,16 @@ impl Shell {
                 this.open_project(key.clone());
                 cx.notify();
             }))
-            .child(div().w(px(90.)).flex_none().flex().gap_1().items_center().child(div().text_color(rgb(lead_color)).child("●")).child(muted(lead_label)))
+            .child(
+                div()
+                    .w(px(90.))
+                    .flex_none()
+                    .flex()
+                    .gap_1()
+                    .items_center()
+                    .child(div().text_color(rgb(lead_color)).child("●"))
+                    .child(muted(lead_label)),
+            )
             .child(div().w(px(180.)).flex_none().overflow_hidden().text_ellipsis().child(row.summary.title.clone()))
             .child(
                 div()
@@ -910,18 +935,18 @@ impl Shell {
             .min_w_0()
             .child(
                 pane(px(440.))
-                    .child(
-                        header_el(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .items_center()
-                                .child(title)
-                                .child(self.machine_chip(&key.0))
-                                .when(row.is_some_and(ProjectRow::stale), |d| d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child("stale"))),
-                            muted("Esc back"),
-                        ),
-                    )
+                    .child(header_el(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .items_center()
+                            .child(title)
+                            .child(self.machine_chip(&key.0))
+                            .when(row.is_some_and(ProjectRow::stale), |d| {
+                                d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child("stale"))
+                            }),
+                        muted("Esc back"),
+                    ))
                     .child(left),
             )
             .child(self.log_pane(log_title, lead_color, lead_label, tail_error, window, cx))
@@ -986,11 +1011,10 @@ impl Shell {
                 MachineStatus::Online => (Theme::GREEN, "online"),
                 MachineStatus::Degraded => (Theme::YELLOW, "degraded"),
                 MachineStatus::Offline => (Theme::RED, "offline"),
-                MachineStatus::Other => (Theme::MUTED, "unknown"),
             };
             let detail = match (&m.degraded_reason, m.status) {
                 (Some(reason), _) => reason.clone(),
-                (None, MachineStatus::Offline) => format!("last seen {}", ago(&m.last_seen_at)),
+                (None, MachineStatus::Offline) => format!("last seen {}", ago(m.last_seen_at.as_str())),
                 _ => String::new(),
             };
             let t3 = m.t3.as_ref().map_or("T3 not reachable".to_string(), |t| format!("T3 {}", t.version));
@@ -1003,12 +1027,28 @@ impl Shell {
                     .items_center()
                     .gap_3()
                     .when(ix == self.selected, |d| d.bg(rgb(Theme::SELECTED)))
-                    .child(div().w(px(110.)).flex_none().flex().gap_1().items_center().child(div().text_color(rgb(color)).child("●")).child(muted(label)))
+                    .child(
+                        div()
+                            .w(px(110.))
+                            .flex_none()
+                            .flex()
+                            .gap_1()
+                            .items_center()
+                            .child(div().text_color(rgb(color)).child("●"))
+                            .child(muted(label)),
+                    )
                     .child(div().w(px(160.)).flex_none().child(m.name.clone()))
-                    .child(div().flex_1().min_w_0().whitespace_normal().text_color(rgb(if m.degraded_reason.is_some() { Theme::YELLOW } else { Theme::MUTED })).child(detail))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .whitespace_normal()
+                            .text_color(rgb(if m.degraded_reason.is_some() { Theme::YELLOW } else { Theme::MUTED }))
+                            .child(detail),
+                    )
                     .child(muted(t3))
                     .child(muted(format!("node {}", m.node_version)))
-                    .child(muted(ago(&m.last_seen_at))),
+                    .child(muted(ago(m.last_seen_at.as_str()))),
             );
         }
         list = list.child(self.doctor_section(cx));
@@ -1018,15 +1058,19 @@ impl Shell {
     fn doctor_section(&self, cx: &mut Context<Self>) -> Div {
         let doctor = self.state.doctor.as_ref();
         let rerunning = self.state.doctor_rerunning();
-        let checked = match doctor.and_then(|d| d.checked_at.as_deref()) {
+        let checked = match doctor.and_then(|d| d.checked_at.as_ref().map(|t| t.as_str())) {
             Some(at) => format!("checked {}", ago(at)),
             None => "checking…".into(),
         };
-        let rerun = button("doctor-rerun", if rerunning { "Re-running…" } else { "Re-run" }, cx.listener(|this, _, _, cx| {
-            let out = this.state.rerun_doctor();
-            this.send(out);
-            cx.notify();
-        }));
+        let rerun = button(
+            "doctor-rerun",
+            if rerunning { "Re-running…" } else { "Re-run" },
+            cx.listener(|this, _, _, cx| {
+                let out = this.state.rerun_doctor();
+                this.send(out);
+                cx.notify();
+            }),
+        );
         let mut section = div()
             .p_3()
             .flex()
@@ -1050,21 +1094,25 @@ impl Shell {
                 .gap_3()
                 .items_start()
                 .child(div().text_color(rgb(color)).child("●"))
-                .child(div().w(px(180.)).flex_none().font_family(MONO_FONT).text_size(px(12.)).child(check.id.clone()))
-                .child(div().flex_1().min_w_0().whitespace_normal().child(check.message.clone()));
+                .child(div().w(px(180.)).flex_none().font_family(MONO_FONT).text_size(px(12.)).child(check.id.to_string()))
+                .child(div().flex_1().min_w_0().whitespace_normal().child(check.message.to_string()));
             if let Some(fix) = check.fix.as_ref().filter(|_| check.status != DoctorStatus::Ok) {
-                let mut fix_col = div().w(px(320.)).flex_none().flex().flex_col().gap_1().child(muted(fix.label.clone()));
+                let mut fix_col = div().w(px(320.)).flex_none().flex().flex_col().gap_1().child(muted(fix.label.to_string()));
                 if let Some(command) = fix.command.as_ref().filter(|_| fix.kind == DoctorFixKind::Manual) {
-                    fix_col = fix_col.child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()));
+                    fix_col = fix_col.child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.to_string()));
                 }
                 if fix.kind == DoctorFixKind::Auto {
                     let id = check.id.clone();
                     let label = if self.state.doctor_fixing(&id) { "Fixing…" } else { "Fix" };
-                    fix_col = fix_col.child(div().flex().child(button(SharedString::from(format!("fix-{id}")), label, cx.listener(move |this, _, _, cx| {
-                        let out = this.state.fix_doctor(&id);
-                        this.send(out);
-                        cx.notify();
-                    }))));
+                    fix_col = fix_col.child(div().flex().child(button(
+                        SharedString::from(format!("fix-{id}")),
+                        label,
+                        cx.listener(move |this, _, _, cx| {
+                            let out = this.state.fix_doctor(&id);
+                            this.send(out);
+                            cx.notify();
+                        }),
+                    )));
                 }
                 row = row.child(fix_col);
             }
@@ -1097,7 +1145,16 @@ impl Shell {
             .when(focused, |d| d.child(caret()))
             .child(div().flex_1())
             .when_some(echo, |d, e| {
-                d.child(div().max_w(px(600.)).overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(rgb(if e.ok { Theme::GREEN } else { Theme::YELLOW })).font_family(UI_FONT).child(e.text.clone()))
+                d.child(
+                    div()
+                        .max_w(px(600.))
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .text_color(rgb(if e.ok { Theme::GREEN } else { Theme::YELLOW }))
+                        .font_family(UI_FONT)
+                        .child(e.text.clone()),
+                )
             })
     }
 
@@ -1204,16 +1261,17 @@ fn workstream_card(w: &Workstream) -> impl IntoElement {
                 .flex()
                 .gap_2()
                 .items_center()
-                .child(muted(w.workstream_id.clone()))
-                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(w.title.clone()))
-                .child(div().text_color(rgb(state_color)).text_size(px(11.5)).child(w.state.as_str())),
+                .child(muted(w.workstream_id.to_string()))
+                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(w.title.to_string()))
+                .child(div().text_color(rgb(state_color)).text_size(px(11.5)).child(label(&w.state))),
         )
         .when_some(w.headline.clone(), |d, h| d.child(div().text_color(rgb(Theme::MUTED)).whitespace_normal().child(format!("lead says: {h}"))));
     match &w.brief {
         // ✓ comes only from checks the hub ran (M6); until then every item is open.
         Some(brief) => {
             for check in &brief.done_when {
-                card = card.child(div().pl_3().flex().gap_2().child(muted("○")).child(div().whitespace_normal().text_size(px(12.)).child(check.describe())));
+                card = card
+                    .child(div().pl_3().flex().gap_2().child(muted("○")).child(div().whitespace_normal().text_size(px(12.)).child(describe(check))));
             }
         }
         None => card = card.child(div().pl_3().child(muted("draft: the lead hasn't written the brief yet"))),
@@ -1230,7 +1288,6 @@ fn lead_badge(row: &ProjectRow) -> (u32, &'static str) {
         Some(LeadState::Starting) => (Theme::YELLOW, "starting"),
         Some(LeadState::Stalled) => (Theme::RED, "stalled"),
         Some(LeadState::Stopped) => (Theme::MUTED, "stopped"),
-        Some(LeadState::Other) => (Theme::MUTED, "?"),
     }
 }
 
@@ -1240,15 +1297,16 @@ fn tail_rows(items: &[TailItem]) -> Vec<LogRow> {
     let mut push = |kind, text: String| rows.push(LogRow { kind, text: text.into() });
     for item in items {
         match item {
-            TailItem::Message { at, role, text } => {
-                let kind = if role == "user" { LogKind::User } else { LogKind::Thought };
+            TailItem::Message(TailMessage { at, role, text }) => {
+                let kind = if *role == TailRole::User { LogKind::User } else { LogKind::Thought };
+                let role = label(role);
                 for (i, line) in text.lines().enumerate() {
-                    push(kind, if i == 0 { format!("{}  {role}: {line}", clock(at)) } else { format!("          {line}") });
+                    push(kind, if i == 0 { format!("{}  {role}: {line}", clock(at.as_str())) } else { format!("          {line}") });
                 }
             }
-            TailItem::Action { at, action } => {
+            TailItem::Action(TailAction { at, action }) => {
                 let kind = if action.failed { LogKind::Error } else { LogKind::Tool };
-                push(kind, format!("{}  ● {} [{}]", clock(at), action.summary, action.status));
+                push(kind, format!("{}  ● {} [{}]", clock(at.as_str()), action.summary, label(&action.status)));
                 for line in action.output_tail.iter().flat_map(|o| o.lines()) {
                     push(if action.failed { LogKind::Error } else { LogKind::Output }, format!("            {line}"));
                 }
@@ -1256,6 +1314,32 @@ fn tail_rows(items: &[TailItem]) -> Vec<LogRow> {
         }
     }
     rows
+}
+
+/// A contract enum's wire value, e.g. "irreversible".
+fn label<T: serde::Serialize>(value: &T) -> String {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(s)) => s,
+        _ => "?".into(),
+    }
+}
+
+/// One line for a done-when list.
+fn describe(check: &CheckSpec) -> String {
+    match check {
+        CheckSpec::PrMerged { repo, pr } => match pr {
+            Some(pr) => format!("PR #{pr} merged in {repo}"),
+            None => format!("PR merged in {repo}"),
+        },
+        CheckSpec::CiGreen { repo, r#ref } => format!("CI green on {repo}{}", r#ref.as_ref().map(|r| format!(" @ {r}")).unwrap_or_default()),
+        CheckSpec::Http { url, status, contains } => {
+            format!("GET {url} → {status}{}", contains.as_ref().map(|c| format!(" containing \"{c}\"")).unwrap_or_default())
+        }
+        CheckSpec::Cmd { machine_id, argv, expect_exit } => format!("`{}` on {machine_id} exits {expect_exit}", argv.join(" ")),
+        CheckSpec::Test { repo, test_id } => format!("test {test_id} passes in {repo}"),
+        CheckSpec::Judge { criteria } => format!("judge: {criteria}"),
+        CheckSpec::Human { question } => format!("you confirm: {question}"),
+    }
 }
 
 /// "2026-10-17T10:04:05.123Z" → "10:04:05".
@@ -1461,21 +1545,12 @@ mod tests {
 
     #[test]
     fn tail_rows_split_messages_and_show_action_output() {
-        let items = vec![
-            TailItem::Message { at: "2026-10-17T10:04:05.000Z".into(), role: "assistant".into(), text: "Plan:\n1. read".into() },
-            TailItem::Action {
-                at: "2026-10-17T10:04:06.000Z".into(),
-                action: ActionItem {
-                    at: "2026-10-17T10:04:06.000Z".into(),
-                    kind: "command".into(),
-                    status: "failed".into(),
-                    summary: "pnpm test".into(),
-                    output_tail: Some("1 failed".into()),
-                    exit_code: Some(1),
-                    failed: true,
-                },
-            },
-        ];
+        let items: Vec<TailItem> = serde_json::from_value(serde_json::json!([
+            { "kind": "message", "at": "2026-10-17T10:04:05.000Z", "role": "assistant", "text": "Plan:\n1. read" },
+            { "kind": "action", "at": "2026-10-17T10:04:06.000Z", "action": { "at": "2026-10-17T10:04:06.000Z", "kind": "command",
+              "status": "failed", "summary": "pnpm test", "outputTail": "1 failed", "exitCode": 1, "failed": true } },
+        ]))
+        .unwrap();
         let rows: Vec<(LogKind, String)> = tail_rows(&items).into_iter().map(|r| (r.kind, r.text.to_string())).collect();
         assert_eq!(rows[0], (LogKind::Thought, "10:04:05  assistant: Plan:".into()));
         assert_eq!(rows[1].1.trim(), "1. read");

@@ -178,10 +178,10 @@ Prerequisites:
 
 ```sh
 git clone https://github.com/unlaboredlabs/fleetd ~/src/fleetd && cd ~/src/fleetd
-app/macos-bundle.sh                               # builds release (several minutes the first time) into app/target/release/fleetd.app
+app/macos-bundle.sh                               # builds release (several minutes the first time) into target/release/fleetd.app
 # make a key for this device on forge, printed once:
 ssh forge 'node ~/opt/fleetd/apps/cli/dist/bin.js hub key create --human --name mac'
-open app/target/release/fleetd.app
+open target/release/fleetd.app
 ```
 
 Wynn's part:

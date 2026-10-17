@@ -28,18 +28,46 @@ impl Rng {
 }
 
 const PROJECTS: &[&str] = &[
-    "fleetd", "t3-fork-plan", "hermes", "adri", "cliproxy", "forge-infra", "dotfiles", "zed-notes",
-    "pwa-push", "merge-train", "lab-harness", "billing-site", "docs-site", "mobile-shell", "ingest",
-    "search-api", "metrics", "auth-gateway", "design-system", "release-bot",
+    "fleetd",
+    "t3-fork-plan",
+    "hermes",
+    "adri",
+    "cliproxy",
+    "forge-infra",
+    "dotfiles",
+    "zed-notes",
+    "pwa-push",
+    "merge-train",
+    "lab-harness",
+    "billing-site",
+    "docs-site",
+    "mobile-shell",
+    "ingest",
+    "search-api",
+    "metrics",
+    "auth-gateway",
+    "design-system",
+    "release-bot",
 ];
 const MACHINES: &[&str] = &["forge", "mac", "forge", "forge", "mac"];
-const VERBS: &[&str] = &[
-    "Fix", "Add", "Wire", "Speed up", "Remove", "Test", "Rename", "Split", "Harden", "Document",
-];
+const VERBS: &[&str] = &["Fix", "Add", "Wire", "Speed up", "Remove", "Test", "Rename", "Split", "Harden", "Document"];
 const NOUNS: &[&str] = &[
-    "merge train rebase", "lead digest", "slot board", "wake scheduler", "ask batching",
-    "node heartbeat", "diff endpoint", "event cursor", "usage parking", "PWA push", "doctor checks",
-    "policy leases", "brief freezer", "verifier job", "thread tail", "secret sealing",
+    "merge train rebase",
+    "lead digest",
+    "slot board",
+    "wake scheduler",
+    "ask batching",
+    "node heartbeat",
+    "diff endpoint",
+    "event cursor",
+    "usage parking",
+    "PWA push",
+    "doctor checks",
+    "policy leases",
+    "brief freezer",
+    "verifier job",
+    "thread tail",
+    "secret sealing",
 ];
 const AT: &str = "2026-10-17T10:00:00.000Z";
 
@@ -124,9 +152,14 @@ pub struct LogLine {
 }
 
 const FILES: &[&str] = &[
-    "apps/hub/src/train.ts", "apps/hub/src/wake.ts", "apps/hub/src/lead/digest.ts",
-    "apps/node/src/handshake.ts", "packages/contracts/src/events.ts", "apps/hub/src/slots.ts",
-    "apps/cli/src/cli.ts", "app/fleetd-app/src/shell.rs",
+    "apps/hub/src/train.ts",
+    "apps/hub/src/wake.ts",
+    "apps/hub/src/lead/digest.ts",
+    "apps/node/src/handshake.ts",
+    "packages/contracts/src/events.ts",
+    "apps/hub/src/slots.ts",
+    "apps/cli/src/cli.ts",
+    "app/fleetd-app/src/shell.rs",
 ];
 const THOUGHTS: &[&str] = &[
     "The rebase fails because the lease check runs before the fetch; moving it after.",
@@ -137,9 +170,14 @@ const THOUGHTS: &[&str] = &[
     "Checking whether the node already scrubs secrets from command output before adding it.",
 ];
 const TESTS: &[&str] = &[
-    "train rebases before merge", "train parks on red CI", "wake fires once at T",
-    "digest renders open asks", "lease blocks second writer", "cursor resumes after reconnect",
-    "node restarts dead t3", "ask batches by key",
+    "train rebases before merge",
+    "train parks on red CI",
+    "wake fires once at T",
+    "digest renders open asks",
+    "lease blocks second writer",
+    "cursor resumes after reconnect",
+    "node restarts dead t3",
+    "ask batches by key",
 ];
 
 /// Produces realistic agent transcript lines, endlessly.

@@ -151,9 +151,11 @@ index 1111111..2222222 100644
         let rows = parse_unified(&text);
         assert!(rows.len() >= 1000, "fixture should be ~1k lines, got {}", rows.len());
         // Every body line was claimed by a hunk header: no `+`/`-` lines leak out as file headers.
-        assert!(rows
-            .iter()
-            .filter(|r| r.kind == DiffKind::File)
-            .all(|r| r.text.starts_with("diff --git") || r.text.starts_with("index ") || r.text.starts_with("--- ") || r.text.starts_with("+++ ")));
+        assert!(
+            rows.iter().filter(|r| r.kind == DiffKind::File).all(|r| r.text.starts_with("diff --git")
+                || r.text.starts_with("index ")
+                || r.text.starts_with("--- ")
+                || r.text.starts_with("+++ "))
+        );
     }
 }

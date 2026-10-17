@@ -6,9 +6,6 @@ mod diff;
 mod fake;
 mod keychain;
 mod notify;
-mod protocol;
-#[cfg(test)]
-mod schema_check;
 mod seal;
 mod shell;
 mod state;
