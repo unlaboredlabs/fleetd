@@ -44,6 +44,7 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
   const prHeads = new Map<string, string>();
   /** Thread id → its actions; threads not in it ran one `gh pr create`. */
   const actions = new Map<string, ReadonlyArray<ActionItem>>();
+  const questions = new Map<string, string>();
   let offline = false;
   let live = Deferred.makeUnsafe<void>();
 
@@ -76,6 +77,7 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
   const workspace = ThreadWorkspace.of({
     defaultBranch: () => Effect.succeed("main"),
     changes: (ref) => Effect.succeed(changes.get(ref.threadId) ?? { paths: [], pullRequestUrls: [] }),
+    pendingQuestion: (ref) => Effect.succeed(questions.get(ref.threadId)),
   });
 
   const policySource = Policy.PolicySource.of({ read: () => Effect.succeed(options.policy ?? POLICY) });
@@ -175,6 +177,8 @@ export const makeKit = (options: { readonly cap?: number; readonly policy?: stri
     changes,
     prHeads,
     actions,
+    /** Thread id → what it is waiting on a human for. */
+    questions,
     setup,
     threadEvent,
     setOffline: (value: boolean) =>

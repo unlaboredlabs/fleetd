@@ -15,7 +15,7 @@ import { type Answer, AnswerSink } from "../ledger/Inbox.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as EventLog from "../store/EventLog.ts";
 import * as HubStore from "../store/HubStore.ts";
-import { taskDigestLines, taskResultLines } from "../tasks/render.ts";
+import { taskDigestLines, taskResultLines, taskWaitingLines } from "../tasks/render.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import { renderLeadDigest } from "./digest.ts";
 import * as LeadRecords from "./LeadRecords.ts";
@@ -34,7 +34,9 @@ export type Trigger =
   /** A claim had checks that did not pass; each one's evidence goes into the wake inline. */
   | { readonly kind: "claim_failed"; readonly claimId: ClaimId; readonly workstreamId: WorkstreamId; readonly failures: ReadonlyArray<CheckResult> }
   /** A claim passed after its `claim done` call had already returned. */
-  | { readonly kind: "claim_passed"; readonly claimId: ClaimId; readonly workstreamId: WorkstreamId };
+  | { readonly kind: "claim_passed"; readonly claimId: ClaimId; readonly workstreamId: WorkstreamId }
+  /** A task's thread stopped to ask for input or approval; the question goes into the wake inline. */
+  | { readonly kind: "task_waiting"; readonly taskId: TaskId; readonly title: string; readonly question: string };
 
 export class LeadWakes extends Context.Service<
   LeadWakes,
@@ -71,6 +73,8 @@ export const triggerLines = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<st
       lines.push(claimFailedLines(t));
     } else if (t.kind === "claim_passed") {
       lines.push(claimPassedLine(t));
+    } else if (t.kind === "task_waiting") {
+      lines.push(taskWaitingLines(t));
     }
   }
   const answers = triggers.filter((t) => t.kind === "answer").length;

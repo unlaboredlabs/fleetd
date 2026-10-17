@@ -21,7 +21,7 @@ import {
   WorkstreamState,
 } from "./ledger.ts";
 import { McpToolError } from "./mcp.ts";
-import { Effort } from "./model.ts";
+import { Effort } from "./effort.ts";
 import { PrUrl, Serves, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
 import { Claim, ClaimId, ReviewVerdict } from "./verification.ts";
 

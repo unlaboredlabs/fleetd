@@ -31,11 +31,21 @@ export const LEAD_USAGE = `  brief create --workstream <W> (--json '<Brief>' | -
              log a decision you made yourself
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
+  task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
+      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L] [--estimate <min>]
+      [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa]
+             delegate work to a subagent; writers need --areas and --serves and get their own
+             branch; a review task needs --pr, and --qa marks it a QA run
+  task list [--state <s>] [--workstream <W>]
+  task status <T>
+  task message <T> "<text>"
+             steer a running task, answer a waiting one, or continue an ended one
+  task cancel <T> [--reason <r>]
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
              ~/${NODE_SOCKET_PATH}); exit 0 ok, 2 usage, 3 refused, 4 hub unreachable
 `;
 
-const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions"]);
+const LEAD_COMMANDS: ReadonlySet<string> = new Set(["brief", "ask", "decide", "status", "decisions", "task"]);
 
 export const isLeadCommand = (argv: ReadonlyArray<string>) => argv[0] !== undefined && LEAD_COMMANDS.has(argv[0]);
 
@@ -82,6 +92,18 @@ export const parseLeadArgs = (
         value: { type: "string" },
         why: { type: "string" },
         scope: { type: "string" },
+        title: { type: "string" },
+        prompt: { type: "string" },
+        areas: { type: "string" },
+        model: { type: "string" },
+        effort: { type: "string" },
+        tier: { type: "string" },
+        estimate: { type: "string" },
+        serves: { type: "string" },
+        pr: { type: "string" },
+        qa: { type: "boolean" },
+        state: { type: "string" },
+        reason: { type: "string" },
       },
     });
   } catch (error) {
@@ -174,6 +196,64 @@ export const parseLeadArgs = (
       raw = { op: "decisions_search", query: rest.join(" ") };
       break;
     }
+    case "task": {
+      switch (sub) {
+        case "spawn": {
+          if (rest.length > 0) return `unexpected '${rest[0]}': put the task's instructions in --prompt`;
+          const wrong = only("workstream", "title", "prompt", "kind", "areas", "model", "effort", "tier", "estimate", "serves", "pr", "qa");
+          if (wrong !== undefined) return wrong;
+          for (const flag of ["workstream", "title", "prompt"] as const) if (v[flag] === undefined) return `--${flag} is required`;
+          if (v.estimate !== undefined && !/^\d+(\.\d+)?$/u.test(v.estimate)) return `--estimate is minutes, got '${v.estimate}'`;
+          raw = definedOnly({
+            op: "task_spawn",
+            workstreamId: v.workstream,
+            title: v.title,
+            prompt: v.prompt,
+            kind: v.kind,
+            areas: v.areas?.split(",").map((area) => area.trim()).filter((area) => area.length > 0),
+            model: v.model,
+            effort: v.effort,
+            tier: v.tier,
+            estimateMinutes: v.estimate === undefined ? undefined : Number(v.estimate),
+            serves: v.serves,
+            pr: v.pr,
+            qa: v.qa,
+          });
+          break;
+        }
+        case "list": {
+          const wrong = only("state", "workstream");
+          if (wrong !== undefined) return wrong;
+          if (rest.length > 0) return `unexpected '${rest[0]}': filter with --state or --workstream`;
+          raw = definedOnly({ op: "task_list", state: v.state, workstreamId: v.workstream });
+          break;
+        }
+        case "status": {
+          const wrong = only();
+          if (wrong !== undefined) return wrong;
+          if (rest.length !== 1) return "expected fleetd task status <T>";
+          raw = { op: "task_status", taskId: rest[0] };
+          break;
+        }
+        case "message": {
+          const wrong = only();
+          if (wrong !== undefined) return wrong;
+          if (rest.length < 2) return `expected fleetd task message <T> "<text>"`;
+          raw = { op: "task_message", taskId: rest[0], message: rest.slice(1).join(" ") };
+          break;
+        }
+        case "cancel": {
+          const wrong = only("reason");
+          if (wrong !== undefined) return wrong;
+          if (rest.length !== 1) return "expected fleetd task cancel <T> [--reason <r>]";
+          raw = definedOnly({ op: "task_cancel", taskId: rest[0], reason: v.reason });
+          break;
+        }
+        default:
+          return `expected fleetd task spawn|list|status|message|cancel`;
+      }
+      break;
+    }
     default:
       return `unknown command '${command ?? ""}'`;
   }
@@ -255,8 +335,44 @@ const scopeLabel = (decision: Decision) =>
 const decisionLine = (decision: Decision) =>
   `${decision.decisionId} ${decision.key} = ${decision.value} (${scopeLabel(decision)}, by ${decision.source})`;
 
-const taskLine = (task: Task) =>
-  `${task.taskId} ${task.state}${task.queuedReason === undefined ? "" : ` (${task.queuedReason})`}: ${task.title}`;
+const taskLine = (task: Task) => {
+  const where = task.kind === "write" ? `, ${task.areas.join(",")}` : "";
+  const why = task.state === "queued" && task.queuedReason !== undefined ? ` (${task.queuedReason})` : "";
+  return `${task.taskId} ${task.state}${why} [${task.kind}${where}, ${task.model}/${task.effort}] ${task.title}${task.branch === undefined ? "" : ` on ${task.branch}`}`;
+};
+
+const quoted = (text: string) => text.trim().split("\n").map((line) => `  > ${line}`.trimEnd());
+
+/** The next step for a task in this state. */
+const taskNext = (task: Task) => {
+  switch (task.state) {
+    case "queued":
+      return `nothing to do; ${task.taskId} starts by itself once that clears, and its result arrives inline in a later wake. End your turn when you have nothing else to do.`;
+    case "running":
+      return `don't poll it. ${task.taskId}'s result arrives inline in a later wake; end your turn when you have nothing else to do.`;
+    case "idle":
+      return `${task.taskId} is waiting for input: answer it with fleetd task message ${task.taskId} "<answer>", or fleetd task cancel ${task.taskId}.`;
+    case "done":
+    case "failed":
+      return `judge the result. fleetd task message ${task.taskId} "<text>" continues the same thread; or spawn a follow-up task.`;
+    case "cancelled":
+      return "nothing; spawn a new task if the work is still needed.";
+  }
+};
+
+/** Every field the lead may need about one task, then its result if it has one. */
+const taskDetail = (task: Task) => {
+  const lines = [
+    taskLine(task),
+    `  workstream ${task.workstreamId}${task.serves === undefined ? "" : `, serves ${task.serves}`}${task.pr === undefined ? "" : `, reviews ${task.pr}${task.qa === true ? " (QA)" : ""}`}, attempt ${task.attempt}`,
+  ];
+  if (task.threadRef !== undefined) lines.push(`  thread ${task.threadRef.machineId}/${task.threadRef.threadId}`);
+  if (task.result !== undefined) {
+    const { result } = task;
+    lines.push(`  result (${result.status}${result.prUrl === undefined ? "" : `, PR ${result.prUrl}`}):`, ...(result.tail.trim() === "" ? ["  > (no final message)"] : quoted(result.tail)));
+  }
+  return lines;
+};
 
 /** What happened, then `Next:` with the hub's hint or a default. */
 export const formatResult = (result: LeadCallResult): string => {
@@ -312,17 +428,38 @@ export const formatResult = (result: LeadCallResult): string => {
         next = "use these answers; do not ask about these keys again.";
       }
       break;
-    // Placeholder lines until the `task *` subcommands land (M5c).
-    case "task_spawn":
+    case "task_spawn": {
+      const { task } = result;
+      if (task.state === "failed") {
+        lines.push(`${task.taskId} could not start.`, ...taskDetail(task));
+        next = "fix what the result says, then spawn it again.";
+        break;
+      }
+      lines.push(`Spawned ${task.taskId}: ${task.state === "queued" ? `queued (${task.queuedReason ?? "waiting"})` : task.state}.`, taskLine(task));
+      next = taskNext(task);
+      break;
+    }
     case "task_status":
+      lines.push(...taskDetail(result.task));
+      next = taskNext(result.task);
+      break;
     case "task_message":
+      lines.push(
+        result.task.state === "queued"
+          ? `Message for ${result.task.taskId} held until it starts (${result.task.queuedReason ?? "queued"}).`
+          : `Message sent to ${result.task.taskId}.`,
+        taskLine(result.task),
+      );
+      next = result.task.state === "queued" ? taskNext(result.task) : `don't poll it. ${result.task.taskId}'s result arrives inline in a later wake.`;
+      break;
     case "task_cancel":
-      lines.push(taskLine(result.task));
-      next = "carry on; the task's result arrives in a later wake.";
+      lines.push(`${result.task.taskId} cancelled; its slot and areas are free.`);
+      next = taskNext(result.task);
       break;
     case "task_list":
       lines.push(...(result.tasks.length === 0 ? ["No tasks."] : result.tasks.map(taskLine)));
-      next = "carry on.";
+      if (result.truncated === true) lines.push("(older tasks not shown; filter with --state or --workstream)");
+      next = result.tasks.length === 0 ? "spawn work with fleetd task spawn." : "fleetd task status <T> shows one task's result.";
       break;
     // Placeholder lines until `claim done` and `review verdict` land (M6c).
     case "claim_done":
@@ -345,7 +482,7 @@ export interface LeadDeps {
   readonly readFile?: (file: string) => string;
 }
 
-/** `fleetd brief|ask|decide|status|decisions …`: one call to the hub through the local node. */
+/** `fleetd brief|ask|decide|status|decisions|task …`: one call to the hub through the local node. */
 export const leadCommand = async (argv: ReadonlyArray<string>, deps: LeadDeps): Promise<CliResult> => {
   const call = parseLeadArgs(argv, deps.readFile);
   if (typeof call === "string") return usage(call);

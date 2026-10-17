@@ -21,7 +21,8 @@ import {
   WorkstreamId,
   WorkstreamState,
 } from "./ledger.ts";
-import { ActionItem, Effort, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary } from "./model.ts";
+import { Effort } from "./effort.ts";
+import { ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary } from "./model.ts";
 import { SlotState, Task, TaskId, TaskState } from "./tasks.ts";
 import { Claim, Eta, Incident, IncidentClass } from "./verification.ts";
 import { Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl } from "./subscriptions.ts";

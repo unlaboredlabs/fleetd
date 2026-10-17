@@ -1,4 +1,4 @@
-// `pnpm test:lab [scenario…]`: the M1, M2 and M3 "done when" scenarios, end to end, against the disposable lab (never
+// `pnpm test:lab [scenario…]`: the M1, M2, M3 and M5 "done when" scenarios, end to end, against the disposable lab (never
 // in CI). Two stock T3 instances (lab/lab.mjs), one hub and two nodes, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
 // runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
@@ -37,6 +37,7 @@ import {
 } from "./harness.ts";
 import { m1Fleet } from "./m1Fleet.ts";
 import { m3Loop } from "./m3Loop.ts";
+import { m5Tasks } from "./m5Tasks.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
@@ -53,6 +54,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "queue", run: offlineQueue },
   // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above.
   { name: "m3", run: m3Loop },
+  // After m3: it reuses m3's lead and workstream when they exist.
+  { name: "m5", run: m5Tasks },
 ];
 
 /** Extra `node join` flags per machine. */

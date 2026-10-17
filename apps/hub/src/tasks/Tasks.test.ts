@@ -36,7 +36,7 @@ describe("Tasks", () => {
         expect(task).toMatchObject({ taskId: "T1", state: "running", model: "claude-opus-5-5", effort: "high", branch: "fleetd/T1-add-file" });
         const launch = kit.launches[1]!;
         expect(launch.options).toEqual({ workspace: { type: "worktree", baseRef: "main", branch: "fleetd/T1-add-file" } });
-        expect(launch.input).toMatchObject({ model: "claude-opus-5-5", effort: "high", runtimeMode: "full-access", title: "T1: add file", clientRequestId: "fleetd-task:T1:1" });
+        expect(launch.input).toMatchObject({ model: "claude-opus-5-5", effort: "high", runtimeMode: "full-access", title: "T1: add file", clientRequestId: "fleetd-task:T1:0:1" });
         expect(launch.input.prompt).toContain("Only change files in these areas: docs (docs/**).");
         expect(launch.input.prompt).toContain("Goal: a docs page");
         expect((yield* nextEvent(cursor, "task.started")).data).toMatchObject({ taskId: "T1", branch: "fleetd/T1-add-file" });
@@ -270,6 +270,33 @@ describe("Tasks", () => {
         expect((yield* tasks.get(T(1)))?.state).toBe("idle");
         expect(yield* leaseOwners).toEqual({ docs: "T1" });
         expect(yield* slotsUsed).toBe(0);
+      }),
+    );
+  });
+
+  it("wakes the lead with the question inline when a task waits for input", async () => {
+    const kit = makeKit();
+    await runKit(
+      kit,
+      Effect.gen(function* () {
+        const ws = yield* kit.setup;
+        yield* (yield* Tasks.Tasks).spawn(LEAD, spawnInput(ws));
+        kit.questions.set("t2", "Which name should the file have? (options: x.md | y.md)");
+        const before = yield* head;
+        yield* kit.threadEvent("t2", "thread.waiting");
+        // Handled in order: once the completion is handled, so is the wait before it.
+        yield* kit.threadEvent("t2", "thread.completed", "Created docs/x.md.");
+        yield* nextEvent(before, "task.completed", "T1");
+        yield* TestClock.adjust(LeadWakes.WAKE_DEBOUNCE);
+        expect(kit.sends).toHaveLength(1);
+        expect(kit.sends[0]!.message).toContain(
+          [
+            "- T1 is waiting for input: add file",
+            "  question:",
+            "  > Which name should the file have? (options: x.md | y.md)",
+            '  next: answer it with `fleetd task message T1 "<answer>"`',
+          ].join("\n"),
+        );
       }),
     );
   });

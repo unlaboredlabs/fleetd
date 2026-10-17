@@ -10,6 +10,7 @@ import {
   latestAssistantText,
   omittedOutputs,
   parseExitCode,
+  pendingQuestionText,
   tailOf,
 } from "./ThreadView.ts";
 
@@ -96,5 +97,40 @@ describe("parseExitCode", () => {
     expect(parseExitCode("some output\nExit code 127")).toBe(127);
     expect(parseExitCode("hi")).toBeUndefined();
     expect(parseExitCode(undefined)).toBeUndefined();
+  });
+});
+
+describe("pending question", () => {
+  const request = (id: string, status: string, kind = "user_input") => ({ id, status, kind }) as never;
+  const item = (fields: Record<string, unknown>) => fields as never;
+
+  it("reads the questions of the pending user-input request, with their options", () => {
+    const text = pendingQuestionText({
+      runtimeRequests: [request("r1", "resolved"), request("r2", "pending")],
+      turnItems: [
+        item({ type: "user_input_request", requestId: "r1", questions: [{ question: "Old?", options: [] }] }),
+        item({
+          type: "user_input_request",
+          requestId: "r2",
+          questions: [
+            { question: "Which name?", options: [{ label: "x.md" }, { label: "y.md" }] },
+            { question: "Commit now?", options: [] },
+          ],
+        }),
+      ],
+    });
+    expect(text).toBe("Which name? (options: x.md | y.md)\nCommit now?");
+  });
+
+  it("reads an approval's prompt, says what kind of request it is without one, and is undefined when nothing is pending", () => {
+    const approval = (prompt?: string) =>
+      pendingQuestionText({
+        runtimeRequests: [request("r1", "pending", "command")],
+        turnItems: [item({ type: "approval_request", requestId: "r1", requestKind: "command", ...(prompt === undefined ? {} : { prompt }) })],
+      });
+    expect(approval("Run rm -rf build?")).toBe("Run rm -rf build?");
+    expect(approval()).toBe("approve a command request");
+    expect(pendingQuestionText({ runtimeRequests: [request("r1", "pending", "auth_refresh")], turnItems: [] })).toBe("a pending auth_refresh request");
+    expect(pendingQuestionText({ runtimeRequests: [request("r1", "resolved")], turnItems: [] })).toBeUndefined();
   });
 });

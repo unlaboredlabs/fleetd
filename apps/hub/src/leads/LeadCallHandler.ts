@@ -1,13 +1,15 @@
-// The hub's answer to lead-side `fleetd` calls (the LeadCallHandler port), over the ledger and leads services.
+// The hub's answer to lead-side `fleetd` calls (the LeadCallHandler port), over the ledger, leads and tasks services.
 // The caller is already attributed to a project by its cwd; every call acts only within that project.
 import type { LeadCallResult, ProjectRef, WorkstreamId } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
 import { Asks } from "../ledger/Asks.ts";
 import { Decisions } from "../ledger/Decisions.ts";
 import { type LeadCallHandler, LeadCallRefused } from "../link/LeadCalls.ts";
+import { Tasks } from "../tasks/Tasks.ts";
 import * as Workstreams from "./Workstreams.ts";
 
 const SEARCH_LIMIT = 20;
+const TASK_LIST_LIMIT = 50;
 
 const refused = (error: { readonly code: LeadCallRefused["code"]; readonly message: string; readonly fix?: string }) =>
   new LeadCallRefused({ code: error.code, message: error.message, ...(error.fix === undefined ? {} : { fix: error.fix }) });
@@ -20,6 +22,7 @@ export const make = Effect.gen(function* () {
   const workstreams = yield* Workstreams.Workstreams;
   const asks = yield* Asks;
   const decisions = yield* Decisions;
+  const tasks = yield* Tasks;
 
   /** A workstream named in a call must be one of the caller's own. */
   const ownWorkstream = (ref: ProjectRef, workstreamId: WorkstreamId) =>
@@ -110,13 +113,43 @@ export const make = Effect.gen(function* () {
             op: "decisions_search",
             decisions: yield* decisions.search(call.query, { chain: { projectRef: ref }, limit: SEARCH_LIMIT }),
           });
+        case "task_spawn": {
+          const { op: _, ...input } = call;
+          return result({ op: "task_spawn", task: yield* tasks.spawn(caller, input) });
+        }
+        case "task_list": {
+          const listed = yield* tasks.list({
+            ref,
+            ...(call.state === undefined ? {} : { state: call.state }),
+            ...(call.workstreamId === undefined ? {} : { workstreamId: call.workstreamId }),
+            limit: TASK_LIST_LIMIT + 1,
+          });
+          return result({
+            op: "task_list",
+            tasks: listed.slice(0, TASK_LIST_LIMIT),
+            ...(listed.length > TASK_LIST_LIMIT ? { truncated: true } : {}),
+          });
+        }
+        case "task_status": {
+          const task = yield* tasks.get(call.taskId);
+          if (task === undefined || !sameProject(task.projectRef, ref)) {
+            return yield* refused({ code: "not_found", message: `There is no task ${call.taskId} in your project.`, fix: "Run `fleetd task list`." });
+          }
+          return result({ op: "task_status", task });
+        }
+        case "task_message":
+          return result({ op: "task_message", task: yield* tasks.message(caller, call.taskId, call.message) });
+        case "task_cancel":
+          return result({ op: "task_cancel", task: yield* tasks.cancel(caller, call.taskId, call.reason) });
+        // Answered once verification is wired here (M6).
+        case "claim_done":
+        case "review_verdict":
+          return yield* refused({
+            code: "forbidden",
+            message: `fleetd ${call.op.replace("_", " ")} is not available on this hub yet.`,
+            fix: "Carry on without it and mention it in your next status line.",
+          });
       }
-      // Task calls (M5) are answered once the task service is wired here.
-      return yield* refused({
-        code: "forbidden",
-        message: `fleetd ${call.op.replace("_", " ")} is not available on this hub yet.`,
-        fix: "Carry on without it and mention it in your next status line.",
-      });
     }).pipe(Effect.catchTags({ LeadError: (e) => Effect.fail(refused(e)), LedgerError: (e) => Effect.fail(refused(e)) }));
 
   return { handle } satisfies LeadCallHandler;

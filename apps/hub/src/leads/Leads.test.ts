@@ -103,12 +103,15 @@ describe("Leads", () => {
     );
   });
 
-  it("ships a v0 prompt that states every rule the spec lists", () => {
+  it("ships a prompt that states every rule the specs list", () => {
     const prompt = readLeadPrompt();
     for (const needle of [
       "{{project}}",
-      "never write code yourself",
+      "never write code",
       "delegate",
+      "fleetd task spawn",
+      "explicit areas",
+      "arrives inline in a later wake",
       "fleetd brief create",
       "product, money, credentials or irreversible",
       "fleetd ask",

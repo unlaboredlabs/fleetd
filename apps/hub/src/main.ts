@@ -8,13 +8,24 @@ import * as FleetApi from "./api/FleetApi.ts";
 import * as HttpApp from "./api/HttpApp.ts";
 import * as Auth from "./auth/Auth.ts";
 import * as HumanDigests from "./digests/HumanDigests.ts";
+import * as Judges from "./checks/Judges.ts";
+import * as NodeCommands from "./checks/NodeCommands.ts";
+import * as Estimates from "./estimates/Estimates.ts";
 import * as Executors from "./executor/Executors.ts";
+import * as Incidents from "./incidents/Incidents.ts";
 import * as LeadCallHandler from "./leads/LeadCallHandler.ts";
 import * as LeadsLayer from "./leads/layer.ts";
+import * as Leases from "./leases/Leases.ts";
+import * as Policy from "./leases/Policy.ts";
 import * as NodeLinkServer from "./link/NodeLinkServer.ts";
+import * as Receipts from "./receipts/Receipts.ts";
 import * as EventLog from "./store/EventLog.ts";
 import * as HubDb from "./store/HubDb.ts";
 import * as HubStore from "./store/HubStore.ts";
+import * as Slots from "./slots/Slots.ts";
+import * as Tasks from "./tasks/Tasks.ts";
+import * as PrHeads from "./valuebar/PrHeads.ts";
+import * as ValueBar from "./valuebar/ValueBar.ts";
 import * as Webhooks from "./webhooks/Webhooks.ts";
 import * as WriteQueue from "./queue/WriteQueue.ts";
 import * as Sweep from "./sweep/Sweep.ts";
@@ -68,9 +79,10 @@ const layerMachines = Layer.effect(
       hubId: `fleetd-${os.hostname()}`,
       executors: yield* Executors.Executors,
       leadCalls: yield* LeadCallHandler.make,
+      commands: yield* NodeCommands.NodeCommands,
     });
   }),
-);
+).pipe(Layer.provideMerge(NodeCommands.layer));
 
 /** The sweep's overdue-wakes check; the wake scheduler does the firing. */
 const layerWakeSweep = Layer.effectDiscard(
@@ -81,18 +93,39 @@ const layerWakeSweep = Layer.effectDiscard(
   }),
 );
 
+/**
+ * Tasks with the slot board, area leases, the repo policy file read through each machine's T3, and the value bar
+ * with receipts, incidents and estimates; recorded verdicts complete waiting judges.
+ */
+const layerTasks = Tasks.layer.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      Slots.layer(),
+      Leases.layer,
+      Policy.layer.pipe(Layer.provide(Policy.layerSourceT3)),
+      ValueBar.layer,
+      Receipts.layer,
+      Estimates.layerStartOnRunning.pipe(Layer.provideMerge(Estimates.layer)),
+    ),
+  ),
+  Layer.provideMerge(
+    Layer.mergeAll(Incidents.layer, PrHeads.layerGh, Judges.layerJudgeHook.pipe(Layer.provideMerge(Judges.layerVerdicts))),
+  ),
+);
+
 /** The whole hub over the database in `home` (already resolved by `HubDb.resolveHubHome`). */
 export const hubLayer = (home: string, options: HubOptions) =>
   HttpApp.layer(options.listen).pipe(
     Layer.provide(
       AppSocket.layer.pipe(
         Layer.provideMerge(FleetApi.layer),
-        Layer.provideMerge(layerWakeSweep),
+        Layer.provideMerge(Layer.merge(layerWakeSweep, Leases.layerSweep)),
         // The sweep reports failing webhooks, so it sits above them.
         Layer.provideMerge(Sweep.layer().pipe(Layer.provideMerge(Watchdog.layer()))),
         Layer.provideMerge(Webhooks.layer(home)),
         Layer.provideMerge(layerMachines),
         Layer.provideMerge(HumanDigests.layer),
+        Layer.provideMerge(layerTasks),
         // Leads and the ledger; lead wakes go out through the write queue below.
         Layer.provideMerge(LeadsLayer.layerWithLedger()),
         Layer.provideMerge(Wakes.layer),

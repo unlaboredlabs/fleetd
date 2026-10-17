@@ -406,3 +406,55 @@ describe("M3 tools", () => {
     expect((await call(await as("reader"), "digest_get")).body.text).toContain("p-lab-b");
   });
 });
+
+describe("M5 tools", () => {
+  const task = (machineId: string, projectId: string, over: Record<string, unknown> = {}) =>
+    ({
+      projectRef: { machineId, projectId },
+      workstreamId: "W1",
+      title: "add file",
+      kind: "write",
+      prompt: "create docs/x.md",
+      areas: ["docs"],
+      model: "claude-haiku-5-5",
+      effort: "low",
+      state: "running",
+      attempt: 1,
+      createdAt: AT,
+      ...over,
+    }) as never;
+
+  it("shows tasks as counts and a list in project_get, never in its threads, and lists them within the key's grants", async () => {
+    const { hub, as } = await fleet();
+    await hub.addThread(thread("lab-a", "p-lab-a", "t-lead"));
+    await hub.addThread(thread("lab-a", "p-lab-a", "t-task"));
+    await hub.addTask(task("lab-a", "p-lab-a", { threadRef: { machineId: "lab-a", threadId: "t-task" }, branch: "fleetd/T1-add-file" }));
+    // Not "queued": the live task service would pick that up and start it.
+    await hub.addTask(task("lab-a", "p-lab-a", { title: "second", state: "failed" }));
+    await hub.addTask(task("lab-b", "p-lab-b", { state: "done" }));
+    const aOnly = await as("aOnly");
+
+    const outcome = (await call(aOnly, "project_get", { machineId: "lab-a", projectId: "p-lab-a" })).body;
+    expect(outcome.threads.map((t: { threadId: string }) => t.threadId)).toEqual(["t-lead"]);
+    expect(outcome.taskCounts).toEqual({ queued: 0, running: 1, idle: 0, done: 0, failed: 1, cancelled: 0 });
+    expect(outcome.tasks.map((t: { taskId: string }) => t.taskId)).toEqual(["T2", "T1"]);
+
+    expect((await call(aOnly, "tasks_list")).body.tasks.map((t: { taskId: string }) => t.taskId)).toEqual(["T2", "T1"]);
+    expect((await call(aOnly, "tasks_list", { state: "failed" })).body.tasks).toMatchObject([{ taskId: "T2", title: "second" }]);
+    expect((await call(aOnly, "tasks_list", { projectRef: { machineId: "lab-b", projectId: "p-lab-b" } })).body.code).toBe("forbidden");
+    expect((await call(aOnly, "task_get", { taskId: "T1" })).body).toMatchObject({ task: { branch: "fleetd/T1-add-file" }, next: expect.stringContaining("t-task") });
+    expect((await call(aOnly, "task_get", { taskId: "T3" })).body.code).toBe("not_found");
+    expect((await call(await as("reader"), "task_get", { taskId: "T3" })).body.task.state).toBe("done");
+  });
+
+  it("sets the cap and a project's share for admins only, and shows the board in fleetd_status", async () => {
+    const { as } = await fleet();
+    expect((await call(await as("aOnly"), "cap_set", { cap: 1 })).body.code).toBe("forbidden");
+    const admin = await as("admin");
+    const set = (await call(admin, "cap_set", { cap: 10, share: { projectRef: { machineId: "lab-a", projectId: "p-lab-a" }, share: 3 } })).body;
+    expect(set.slots).toMatchObject({ cap: 10, used: 0, queued: 0, reservedBand: 1, perProject: [{ projectRef: { projectId: "p-lab-a" }, share: 3 }] });
+    expect((await call(admin, "cap_set", { share: { projectRef: { machineId: "lab-a", projectId: "nope" }, share: 1 } })).body.code).toBe("not_found");
+    expect((await call(admin, "cap_set", {})).isError).toBe(true);
+    expect((await call(await as("reader"), "fleetd_status")).body.slots).toMatchObject({ cap: 10, used: 0 });
+  });
+});
