@@ -9,6 +9,9 @@ import type { CliResult } from "./cli.ts";
 
 export const HUB_KEY_USAGE = `  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--home <dir>]
              create an agent key for the MCP endpoint; prints the key once
+  hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--home <dir>]
+             a key for a person's device (the desktop app): what it answers is recorded as the
+             human's; role defaults to operate on every machine
   hub key list [--home <dir>]
   hub key revoke <keyId> [--home <dir>]
              takes effect at once, also on a running hub
@@ -26,7 +29,7 @@ const row = (info: AgentKeyInfo) =>
   [
     info.keyId,
     info.prefix,
-    info.name,
+    info.kind === "human" ? `${info.name} (human)` : info.name,
     describeGrants(info.grants),
     info.createdAt,
     info.lastUsedAt ?? "-",
@@ -70,6 +73,7 @@ export const hubKey = (argv: ReadonlyArray<string>): CliResult => {
         name: { type: "string" },
         role: { type: "string" },
         machines: { type: "string" },
+        human: { type: "boolean" },
       },
     });
   } catch (error) {
@@ -80,14 +84,17 @@ export const hubKey = (argv: ReadonlyArray<string>): CliResult => {
   switch (command) {
     case "create": {
       if (!values.name) return usage("--name is required");
-      const grant = parseGrant(values.role, values.machines);
+      const human = values.human === true;
+      const grant = human
+        ? parseGrant(values.role ?? "operate", values.machines ?? "*")
+        : parseGrant(values.role, values.machines);
       if (typeof grant === "string") return usage(grant);
       const name = values.name;
       return withAuth(values.home, (auth) =>
-        Effect.map(auth.createKey(name, [grant]), ({ key, info }) =>
+        Effect.map(auth.createKey(name, [grant], human ? "human" : "agent"), ({ key, info }) =>
           ok(
             `${key}\n`,
-            `created ${info.keyId} (${info.prefix}, ${describeGrants(info.grants)}). The key above is shown only once.\n`,
+            `created ${info.keyId} (${info.prefix}, ${describeGrants(info.grants)}${human ? ", human" : ""}). The key above is shown only once.\n`,
           ),
         ),
       );

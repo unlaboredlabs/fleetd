@@ -154,6 +154,8 @@ const MIGRATIONS: ReadonlyArray<string> = [
   CREATE INDEX tasks_by_thread ON tasks (machine_id, thread_id) WHERE thread_id IS NOT NULL;
   CREATE INDEX tasks_queued ON tasks (n) WHERE state = 'queued';
   `,
+  // Human keys (a person's device): their answers are recorded as the human's.
+  `ALTER TABLE agent_keys ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent';`,
 ];
 
 /** The `user_version` of a fully migrated database. */

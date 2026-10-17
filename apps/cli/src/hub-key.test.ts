@@ -46,6 +46,15 @@ describe("fleetd hub key", () => {
     }
   });
 
+  it("creates human keys for a person's device, operate on every machine unless told otherwise", () => {
+    const created = run(["hub", "key", "create", "--home", home, "--human", "--name", "wynn-laptop"]);
+    expect(created).toMatchObject({ code: 0, stderr: expect.stringContaining("operate:*, human") });
+    const listed = run(["hub", "key", "list", "--home", home]).stdout;
+    expect(listed).toContain("\twynn-laptop (human)\toperate:*\t");
+    const narrow = run(["hub", "key", "create", "--home", home, "--human", "--name", "phone", "--role", "read", "--machines", "lab-a"]);
+    expect(narrow.stderr).toContain("read:lab-a, human");
+  });
+
   it("rejects bad grants, unknown keys and homes inside ~/.t3", () => {
     const create = (...args: string[]) => run(["hub", "key", "create", "--home", home, "--name", "x", ...args]);
     expect(create("--role", "root", "--machines", "*")).toMatchObject({ code: 2 });

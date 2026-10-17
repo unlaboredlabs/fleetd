@@ -189,8 +189,9 @@ const make = Effect.gen(function* () {
   const allowsEverywhere = (caller: AgentKeyInfo, role: Role) =>
     caller.grants.some((grant) => grant.machines === "*" && auth.allows({ ...caller, grants: [grant] }, role));
 
-  /** Decisions written over MCP come from an agent key, recorded by its name. */
-  const actorOf = (caller: AgentKeyInfo) => ({ source: "agent" as const, by: caller.name });
+  /** Who a decision written with this key comes from: the human for a human key (a person's device), else the agent. */
+  const actorOf = (caller: AgentKeyInfo) =>
+    caller.kind === "human" ? { source: "human" as const, by: `human:${caller.name}` } : { source: "agent" as const, by: caller.name };
 
   /** The project a decision scope belongs to: undefined for global, a not_found for an unknown workstream. */
   const decisionProject = Effect.fnUntraced(function* (scope: DecisionScope) {

@@ -7,7 +7,9 @@
 use std::time::{Duration, Instant};
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{ConnectionExt as _, ImageFormat, InputFocus, KEY_PRESS_EVENT, KEY_RELEASE_EVENT};
+use x11rb::protocol::xproto::{
+    BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _, ImageFormat, InputFocus, KEY_PRESS_EVENT, KEY_RELEASE_EVENT, MOTION_NOTIFY_EVENT,
+};
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 
@@ -100,5 +102,56 @@ pub fn screenshot(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         out.extend_from_slice(&[px[2], px[1], px[0]]);
     }
     std::fs::write(path, out)?;
+    Ok(())
+}
+
+/// Left-clicks at root coordinates (for driving the app in lab checks).
+pub fn click(x: i16, y: i16) -> Result<(), Box<dyn std::error::Error>> {
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, x11rb::CURRENT_TIME, root, x, y, 0)?;
+    conn.sync()?;
+    std::thread::sleep(Duration::from_millis(50));
+    conn.xtest_fake_input(BUTTON_PRESS_EVENT, 1, x11rb::CURRENT_TIME, root, 0, 0, 0)?;
+    conn.xtest_fake_input(BUTTON_RELEASE_EVENT, 1, x11rb::CURRENT_TIME, root, 0, 0, 0)?;
+    conn.sync()?;
+    Ok(())
+}
+
+/// Types printable ASCII, plus `\t` (Tab), `\n` (Return) and `\u{8}` (BackSpace), into the focused window (for lab checks).
+pub fn type_text(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let (min, max) = (conn.setup().min_keycode, conn.setup().max_keycode);
+    let map = conn.get_keyboard_mapping(min, max - min + 1)?.reply()?;
+    let per = map.keysyms_per_keycode as usize;
+    let shift = map.keysyms.chunks(per).position(|s| s.first() == Some(&0xffe1)).map(|ix| min + ix as u8).ok_or("no Shift key")?;
+    for ch in text.chars() {
+        let sym = match ch {
+            '\t' => 0xff09,
+            '\n' => 0xff0d,
+            '\u{8}' => 0xff08,
+            c if c.is_ascii_graphic() || c == ' ' => c as u32,
+            c => return Err(format!("can't type {c:?}").into()),
+        };
+        // Column 0 is the unshifted symbol, column 1 the shifted one.
+        let (ix, shifted) = map
+            .keysyms
+            .chunks(per)
+            .enumerate()
+            .find_map(|(ix, syms)| syms.iter().take(2).position(|&s| s == sym).map(|col| (ix, col == 1)))
+            .ok_or_else(|| format!("no key for {ch:?}"))?;
+        let code = min + ix as u8;
+        if shifted {
+            conn.xtest_fake_input(KEY_PRESS_EVENT, shift, x11rb::CURRENT_TIME, root, 0, 0, 0)?;
+        }
+        conn.xtest_fake_input(KEY_PRESS_EVENT, code, x11rb::CURRENT_TIME, root, 0, 0, 0)?;
+        conn.xtest_fake_input(KEY_RELEASE_EVENT, code, x11rb::CURRENT_TIME, root, 0, 0, 0)?;
+        if shifted {
+            conn.xtest_fake_input(KEY_RELEASE_EVENT, shift, x11rb::CURRENT_TIME, root, 0, 0, 0)?;
+        }
+        conn.sync()?;
+        std::thread::sleep(Duration::from_millis(15));
+    }
     Ok(())
 }

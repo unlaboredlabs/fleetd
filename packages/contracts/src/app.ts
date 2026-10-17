@@ -6,12 +6,25 @@ import { ErrorCode, FleetStatus } from "./mcp.ts";
 
 // App WebSocket at /app: JSON, one message per frame, discriminated by "t".
 
+/** Chosen by the client; echoed on the call's `result` or `error`. */
+export const AppCallId = Schema.NonEmptyString.check(Schema.isMaxLength(64)).annotate({ identifier: "AppCallId" });
+
 export const AppAuth = Schema.Struct({ t: Schema.tag("auth"), key: Schema.NonEmptyString });
 export const AppSnapshotRequest = Schema.Struct({ t: Schema.tag("snapshot") });
 /** Stream HubEvents after `cursor` as they happen. */
 export const AppEventsRequest = Schema.Struct({ t: Schema.tag("events"), cursor: EventSeq });
+/**
+ * Call one MCP tool with the session's key: same tools, grants and limits as /mcp. `input` is the
+ * tool's input (see McpTools); answered by a `result` or an `error` carrying the same `id`.
+ */
+export const AppCall = Schema.Struct({
+  t: Schema.tag("call"),
+  id: AppCallId,
+  tool: Schema.NonEmptyString,
+  input: Schema.Unknown,
+});
 
-export const AppClientMessage = Schema.Union([AppAuth, AppSnapshotRequest, AppEventsRequest])
+export const AppClientMessage = Schema.Union([AppAuth, AppSnapshotRequest, AppEventsRequest, AppCall])
   .pipe(Schema.toTaggedUnion("t"))
   .annotate({ identifier: "AppClientMessage" });
 export type AppClientMessage = typeof AppClientMessage.Type;
@@ -21,14 +34,18 @@ export const AppReady = Schema.Struct({ t: Schema.tag("ready"), protocol: Protoc
 /** Answer to `snapshot`: the fleetd_status data. */
 export const AppSnapshot = Schema.Struct({ t: Schema.tag("snapshot"), ...FleetStatus.fields });
 export const AppEvent = Schema.Struct({ t: Schema.tag("event"), ...HubEvent.fields });
+/** A `call` succeeded; `output` is the tool's output. */
+export const AppResult = Schema.Struct({ t: Schema.tag("result"), id: AppCallId, output: Schema.Unknown });
 export const AppError = Schema.Struct({
   t: Schema.tag("error"),
+  /** Present when this answers a `call`. */
+  id: Schema.optionalKey(AppCallId),
   code: ErrorCode,
   message: Schema.String,
   fix: Schema.optionalKey(Schema.String),
 });
 
-export const AppServerMessage = Schema.Union([AppReady, AppSnapshot, AppEvent, AppError])
+export const AppServerMessage = Schema.Union([AppReady, AppSnapshot, AppEvent, AppResult, AppError])
   .pipe(Schema.toTaggedUnion("t"))
   .annotate({ identifier: "AppServerMessage" });
 export type AppServerMessage = typeof AppServerMessage.Type;

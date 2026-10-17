@@ -18,10 +18,11 @@ struct Args {
 
 fn main() {
     #[cfg(target_os = "linux")]
-    if let [_, cmd, path] = std::env::args().collect::<Vec<_>>().as_slice()
-        && cmd == "screenshot"
-    {
-        return xtest::screenshot(path).expect("screenshot");
+    match std::env::args().collect::<Vec<_>>().as_slice() {
+        [_, cmd, path] if cmd == "screenshot" => return xtest::screenshot(path).expect("screenshot"),
+        [_, cmd, x, y] if cmd == "click" => return xtest::click(x.parse().expect("x"), y.parse().expect("y")).expect("click"),
+        [_, cmd, text] if cmd == "type" => return xtest::type_text(text).expect("type"),
+        _ => {}
     }
     let mut it = std::env::args().skip(1);
     let mut args = Args { app: String::new(), runs: 10, label: String::new() };

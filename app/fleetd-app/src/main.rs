@@ -1,7 +1,15 @@
 mod bench;
+mod client;
+// The workstream diff view; the hub serves no diffs yet.
+#[allow(dead_code)]
 mod diff;
 mod fake;
+mod keychain;
+mod protocol;
+#[cfg(test)]
+mod schema_check;
 mod shell;
+mod state;
 
 use std::borrow::Cow;
 

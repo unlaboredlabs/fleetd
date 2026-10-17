@@ -35,6 +35,46 @@ What shapes these numbers, besides the app:
   Xvfb), so a key waits on average half a frame (about 8 ms) before its frame starts. Scroll holds 60 fps
   under lavapipe.
 
+## Linux (forge): A1, the app as a hub client, software-rendered
+
+Since A1 the bench runs the real app on fixture data, with no hub and no keychain: the project
+detail screen (workstreams, plus the 20k-line log as the lead's tail), the sidebar and the reply bar.
+The scaffold's three panes are gone. Same machine and method as above.
+
+**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T12:42Z, fleetd 3c22727, gpui zed v1.24.2 (fb69067).
+
+| Metric | Value |
+|---|---|
+| Binary size (release, stripped) | 25.0 MiB |
+| Idle RSS, empty log, 10 s after first frame | 125.8 MiB |
+| Idle RSS, 20k-line log loaded, 10 s after first frame | 131.1 MiB |
+| RSS, 20k-line log + streaming 50 lines/s, after 10 s | 144.1 MiB |
+| Cold start, exec -> first frame presented, warm cache (10 runs) | median 69.9 ms, p90 71.0 ms, max 71.6 ms |
+|   of which: exec -> first frame draw starts | median 49.9 ms, p90 51.7 ms, max 52.0 ms |
+| Cold start, binary + 36 mapped files evicted from page cache (10 runs) | median 212.4 ms, p90 213.1 ms, max 229.5 ms |
+| Input latency in-app, key handler -> echo frame presented (200 keys, gpui dispatch) | median 10.7 ms, p90 15.9 ms, max 23.0 ms |
+| Input latency in-app, key handler -> echo frame presented (200 XTEST keys) | median 12.3 ms, p90 14.2 ms, max 22.7 ms |
+| Input latency external, XTEST send -> echo pixels readable from X (200 keys) | median 13.6 ms, p90 15.5 ms, max 28.5 ms |
+| Scroll 20k-line log for 5 s: presented frames/s | 62.4 |
+| Scroll 20k-line log for 5 s: worst frame interval | 24.7 ms |
+
+Against the scaffold baseline, everything is within run-to-run noise except binary size:
+- +2.3 MiB binary: keyring (Secret Service over zbus), async-tungstenite and serde.
+- Idle RSS: -4.0 / -4.2 / -3.6 MiB.
+- Cold start: -3.3 ms median (warm), -2.8 ms median (evicted).
+- Input latency medians: -1.8 / +0.1 / -0.1 ms.
+- Scroll: 62.4 fps either way; worst frame 24.7 vs 23.5 ms.
+
+The bench can't cover the connected path, so it was measured by hand in the lab (not part of `run.sh`):
+release build, Xvfb, a seeded lab hub with 6 projects and 4 open asks, VmRSS 12 s after spawn, 3 runs.
+
+| Connected path | Value |
+|---|---|
+| Idle RSS, key from `FLEETD_HUB_URL`/`FLEETD_AGENT_KEY`, on the inbox | 134.7-135.1 MiB |
+| Idle RSS, key loaded from the OS keychain (gnome-keyring in a private D-Bus session), on the inbox | 136.8-137.6 MiB |
+
+Reading the keychain happens off the UI thread after the first frame, so it doesn't delay cold start.
+
 ## Linux (forge): GPU (RADV)
 
 Pending: `wynn` is not in the `render`/`video` groups yet (`getent group render` shows no members). Once

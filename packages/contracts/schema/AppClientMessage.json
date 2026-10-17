@@ -7,6 +7,11 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "AppCallId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "AppClientMessage": {
       "anyOf": [
         {
@@ -60,6 +65,32 @@
           "required": [
             "t",
             "cursor"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
+                "call"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/AppCallId"
+            },
+            "tool": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input": {}
+          },
+          "required": [
+            "t",
+            "id",
+            "tool",
+            "input"
           ],
           "additionalProperties": true
         }
