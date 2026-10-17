@@ -87,67 +87,69 @@ pub struct Usage {
 }
 
 impl Usage {
-    /// Replays the log, schedules every pending reset, then follows the log from where the replay stopped.
-    pub async fn start(deps: UsageDeps) -> Self {
-        let usage = Usage {
+    pub fn new(deps: UsageDeps) -> Self {
+        Usage {
             inner: Arc::new(Inner {
                 deps,
                 state: Mutex::default(),
                 op: tokio::sync::Mutex::new(0),
             }),
-        };
-        let mut cursor = 0;
-        loop {
-            let page = usage
-                .inner
-                .deps
-                .events
-                .wait(WaitInput {
-                    cursor,
-                    types: REPLAYED.to_vec(),
-                    timeout_sec: 0,
-                    ..Default::default()
-                })
-                .await;
-            for event in &page.events {
-                usage.apply(event).await;
-            }
-            cursor = page.cursor;
-            if !page.more {
-                break;
-            }
         }
-        *usage.inner.op.lock().await = cursor;
-        let resets: Vec<String> = {
-            let s = usage.inner.state.lock().unwrap();
-            s.machines
-                .values()
-                .filter_map(|m| m.breaker.as_ref()?.until.clone())
-                .chain(s.all_parked().filter_map(|p| p.parked.resume_at.clone()))
-                .collect()
-        };
-        for at in resets {
-            usage.schedule(&at);
-        }
-        let follower = usage.clone();
-        tokio::spawn(async move {
+    }
+
+    /// Replays the log, schedules every pending reset, then follows the log from where the replay stopped. Runs
+    /// until the hub stops; `drain`, `status` and `resume` wait for the replay.
+    pub async fn serve(&self) {
+        {
+            let mut op = self.inner.op.lock().await;
+            let mut cursor = 0;
             loop {
-                let cursor = *follower.inner.op.lock().await;
-                follower
+                let page = self
                     .inner
                     .deps
                     .events
                     .wait(WaitInput {
                         cursor,
-                        types: FOLLOWED.to_vec(),
-                        timeout_sec: 3600,
+                        types: REPLAYED.to_vec(),
+                        timeout_sec: 0,
                         ..Default::default()
                     })
                     .await;
-                follower.drain().await;
+                for event in &page.events {
+                    self.apply(event).await;
+                }
+                cursor = page.cursor;
+                if !page.more {
+                    break;
+                }
             }
-        });
-        usage
+            *op = cursor;
+            let resets: Vec<String> = {
+                let s = self.inner.state.lock().unwrap();
+                s.machines
+                    .values()
+                    .filter_map(|m| m.breaker.as_ref()?.until.clone())
+                    .chain(s.all_parked().filter_map(|p| p.parked.resume_at.clone()))
+                    .collect()
+            };
+            for at in resets {
+                self.schedule(&at);
+            }
+        }
+        loop {
+            let cursor = *self.inner.op.lock().await;
+            self.inner
+                .deps
+                .events
+                .wait(WaitInput {
+                    cursor,
+                    types: FOLLOWED.to_vec(),
+                    timeout_sec: 3600,
+                    ..Default::default()
+                })
+                .await;
+            self.drain().await;
+        }
     }
 
     fn now_ms(&self) -> i64 {

@@ -800,41 +800,41 @@ impl Retro {
         }
     }
 
-    /// The retro with its weekly and end-of-window scheduler, its threshold trigger and the gate asks' answers.
-    pub async fn start(deps: RetroDeps) -> Arc<Self> {
-        let retro = Arc::new(Retro {
+    pub fn new(deps: RetroDeps) -> Arc<Self> {
+        Arc::new(Retro {
             deps,
             lock: tokio::sync::Mutex::new(()),
             threshold_lock: tokio::sync::Mutex::new(()),
-        });
-        tokio::spawn(retro.clone().schedule());
-        let follower = retro.clone();
-        let mut cursor = retro.deps.events.head().await;
-        tokio::spawn(async move {
-            loop {
-                let page = follower
-                    .deps
-                    .events
-                    .wait(WaitInput {
-                        cursor,
-                        types: vec!["decision.recorded", "incident.recorded"],
-                        timeout_sec: 3600,
-                        ..Default::default()
-                    })
-                    .await;
-                cursor = page.cursor;
-                for event in page.events {
-                    if event.kind == "decision.recorded" {
-                        follower.on_decision(&event).await;
-                    } else {
-                        // A run takes a claude turn; it must not hold up the answers behind it.
-                        let r = follower.clone();
-                        tokio::spawn(async move { r.on_incident(&event).await });
-                    }
+        })
+    }
+
+    /// The weekly and end-of-window scheduler, the threshold trigger and the gate asks' answers. Runs until the hub
+    /// stops.
+    pub async fn serve(self: Arc<Self>) {
+        tokio::spawn(self.clone().schedule());
+        let mut cursor = self.deps.events.head().await;
+        loop {
+            let page = self
+                .deps
+                .events
+                .wait(WaitInput {
+                    cursor,
+                    types: vec!["decision.recorded", "incident.recorded"],
+                    timeout_sec: 3600,
+                    ..Default::default()
+                })
+                .await;
+            cursor = page.cursor;
+            for event in page.events {
+                if event.kind == "decision.recorded" {
+                    self.on_decision(&event).await;
+                } else {
+                    // A run takes a claude turn; it must not hold up the answers behind it.
+                    let r = self.clone();
+                    tokio::spawn(async move { r.on_incident(&event).await });
                 }
             }
-        });
-        retro
+        }
     }
 }
 

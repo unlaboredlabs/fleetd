@@ -231,9 +231,14 @@ pub struct Approvals {
 
 impl Approvals {
     /// Reopens approvals the hub accepted but never finished before it stopped (never run late, never silently
-    /// lost), then acts on answers recorded from now on.
-    pub async fn start(deps: ApprovalsDeps) -> Arc<Self> {
-        let approvals = Arc::new(Approvals { deps });
+    /// lost); `serve` then acts on answers recorded from now on.
+    pub fn new(deps: ApprovalsDeps) -> Arc<Self> {
+        Arc::new(Approvals { deps })
+    }
+
+    /// Runs until the hub stops: the restart sweep, then the answers' follower.
+    pub async fn serve(self: Arc<Self>) {
+        let approvals = self;
         for ask in approvals.deps.asks.list_answered().await {
             if s(&ask, "kind") != Some("approve")
                 || ask.pointer("/answer/value").and_then(Value::as_str) != Some("go")
@@ -249,8 +254,7 @@ impl Approvals {
                 let _ = approvals.deps.asks.reopen(id, &why).await;
             }
         }
-        approvals.clone().follow_answers().await;
-        approvals
+        approvals.follow_answers().await;
     }
 
     fn now(&self) -> String {
@@ -283,7 +287,7 @@ impl Approvals {
     /// runs twice.
     async fn follow_answers(self: Arc<Self>) {
         let mut cursor = self.deps.events.head().await;
-        tokio::spawn(async move {
+        {
             loop {
                 let page = self
                     .deps
@@ -321,7 +325,7 @@ impl Approvals {
                     });
                 }
             }
-        });
+        }
     }
 
     /// `secret_submit`: relays the sealed value to the sink's node and closes the ask with the node's fingerprint.
