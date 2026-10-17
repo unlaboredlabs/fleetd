@@ -1,5 +1,6 @@
 import {
   AppClientMessage,
+  McpTools,
   PROTOCOL_VERSION,
   ProtocolVersion,
   type AgentKeyInfo,
@@ -9,6 +10,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FiberHandle from "effect/FiberHandle";
+import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -19,9 +21,12 @@ import * as Auth from "../auth/Auth.ts";
 /** Close code for a connection whose key was refused. */
 export const CLOSE_UNAUTHORIZED = 4401;
 
+/** Calls one connection may have running at once; more are refused rather than queued without bound. */
+export const MAX_CALLS_IN_FLIGHT = 32;
+
 /**
- * The minimal M1 app WebSocket at /app: `auth` with an agent key, then `snapshot` for the
- * fleetd_status data and `events` to stream HubEvents after a cursor as they happen.
+ * The app WebSocket at /app: `auth` with an agent key, then `snapshot` for the fleetd_status data,
+ * `events` to stream HubEvents after a cursor as they happen, and `call` to run any MCP tool.
  */
 export class AppSocket extends Context.Service<
   AppSocket,
@@ -31,23 +36,48 @@ export class AppSocket extends Context.Service<
 const decodeMessage = Schema.decodeUnknownResult(Schema.fromJsonString(AppClientMessage));
 const textDecoder = new TextDecoder();
 
-const errorFrame = (error: McpToolError): AppServerMessage => ({
+const errorFrame = (error: McpToolError, id?: string): AppServerMessage => ({
   t: "error",
+  ...(id === undefined ? {} : { id }),
   code: error.code,
   message: error.message,
   ...(error.fix === undefined ? {} : { fix: error.fix }),
 });
 
+const isImplemented = (tool: string): tool is FleetApi.ImplementedTool =>
+  (FleetApi.IMPLEMENTED_TOOLS as ReadonlyArray<string>).includes(tool);
+
 const make = Effect.gen(function* () {
   const auth = yield* Auth.Auth;
   const api = yield* FleetApi.FleetApi;
+
+  /**
+   * One tool call, checked like an MCP request: the key is verified again (so a revoked key stops at its
+   * next call), the input is decoded against the tool's schema, and FleetApi applies grants and limits.
+   */
+  const call = Effect.fnUntraced(function* (key: string, tool: string, input: unknown) {
+    const info = yield* auth.verify(key);
+    if (!isImplemented(tool)) {
+      return yield* Effect.fail<McpToolError>({ code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
+    }
+    const decoded = yield* Effect.result(Schema.decodeUnknownEffect(McpTools[tool].input as Schema.Codec<FleetApi.ToolInput<typeof tool>, unknown>)(input));
+    if (decoded._tag === "Failure") {
+      return yield* Effect.fail<McpToolError>({
+        code: "invalid",
+        message: `Invalid ${tool} input: ${decoded.failure.message}`.slice(0, 1000),
+        fix: "Check the input against the tool's input schema.",
+      });
+    }
+    return yield* api.call(info, tool, decoded.success) as Effect.Effect<unknown, McpToolError>;
+  });
 
   const handle = Effect.fnUntraced(function* (socket: Socket.Socket) {
     const reader = yield* socket.reader;
     const writer = yield* socket.writer;
     const send = (message: AppServerMessage) => writer.write(JSON.stringify(message));
     const stream = yield* FiberHandle.make();
-    let caller: AgentKeyInfo | undefined;
+    const calls = yield* FiberSet.make();
+    let caller: { readonly key: string; readonly info: AgentKeyInfo } | undefined;
 
     const streamEvents = Effect.fnUntraced(function* (who: AgentKeyInfo, from: number) {
       let cursor = from;
@@ -70,15 +100,34 @@ const make = Effect.gen(function* () {
           yield* send(errorFrame(verified.failure));
           return yield* writer.write(new Socket.CloseEvent(CLOSE_UNAUTHORIZED, "unauthorized"));
         }
-        caller = verified.success;
+        caller = { key: message.key, info: verified.success };
         return yield* send({ t: "ready", protocol: ProtocolVersion.make(PROTOCOL_VERSION) });
       }
       const who = caller;
       if (who === undefined) {
-        return yield* send(errorFrame({ code: "forbidden", message: "Not authenticated.", fix: "Send {t:auth,key} first." }));
+        const notAuthed: McpToolError = { code: "forbidden", message: "Not authenticated.", fix: "Send {t:auth,key} first." };
+        return yield* send(errorFrame(notAuthed, message.t === "call" ? message.id : undefined));
+      }
+      if (message.t === "call") {
+        if ((yield* FiberSet.size(calls)) >= MAX_CALLS_IN_FLIGHT) {
+          return yield* send(
+            errorFrame({ code: "invalid", message: `Over ${MAX_CALLS_IN_FLIGHT} calls in flight.`, fix: "Wait for a result before sending more calls." }, message.id),
+          );
+        }
+        yield* FiberSet.run(
+          calls,
+          call(who.key, message.tool, message.input).pipe(
+            Effect.matchEffect({
+              onFailure: (error) => send(errorFrame(error, message.id)),
+              onSuccess: (output) => send({ t: "result", id: message.id, output }),
+            }),
+            Effect.ignore,
+          ),
+        );
+        return;
       }
       if (message.t === "snapshot") {
-        const status = yield* Effect.result(api.call(who, "fleetd_status", {}));
+        const status = yield* Effect.result(api.call(who.info, "fleetd_status", {}));
         if (status._tag === "Failure") return yield* send(errorFrame(status.failure));
         const { machines, projects, attention, cursor } = status.success;
         return yield* send({ t: "snapshot", machines, projects, attention, cursor });
@@ -86,7 +135,7 @@ const make = Effect.gen(function* () {
       // A new `events` request replaces the running stream.
       yield* FiberHandle.run(
         stream,
-        streamEvents(who, message.cursor).pipe(
+        streamEvents(who.info, message.cursor).pipe(
           Effect.catchTags({ ToolError: (error) => send(errorFrame(error)) }),
           Effect.ignore,
         ),

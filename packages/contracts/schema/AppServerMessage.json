@@ -305,6 +305,11 @@
       ],
       "additionalProperties": true
     },
+    "AppCallId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "AppServerMessage": {
       "anyOf": [
         {
@@ -421,8 +426,32 @@
             "t": {
               "type": "string",
               "enum": [
+                "result"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/AppCallId"
+            },
+            "output": {}
+          },
+          "required": [
+            "t",
+            "id",
+            "output"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t": {
+              "type": "string",
+              "enum": [
                 "error"
               ]
+            },
+            "id": {
+              "$ref": "#/$defs/AppCallId"
             },
             "code": {
               "type": "string",

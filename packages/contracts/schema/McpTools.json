@@ -1,0 +1,3673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/McpTools",
+  "$defs": {
+    "MachineId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "description": "Machine slug, [a-z0-9-]{1,32}"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Machine": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "online",
+            "offline",
+            "degraded"
+          ]
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "t3": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "protocol": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "version",
+                "protocol"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nodeVersion": {
+          "type": "string"
+        },
+        "degradedReason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "tags",
+        "status",
+        "lastSeenAt",
+        "t3",
+        "nodeVersion"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ProjectSummary": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        },
+        "threads": {
+          "type": "object",
+          "properties": {
+            "running": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "waiting": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "idle": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "running",
+            "waiting",
+            "idle",
+            "failed"
+          ],
+          "additionalProperties": true
+        },
+        "lastActivityAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "workspaceRoot",
+        "threads",
+        "lastActivityAt"
+      ],
+      "additionalProperties": true
+    },
+    "EventSeq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "HubEventType": {
+      "type": "string",
+      "enum": [
+        "machine.online",
+        "machine.offline",
+        "machine.degraded",
+        "thread.started",
+        "thread.completed",
+        "thread.failed",
+        "thread.interrupted",
+        "thread.waiting",
+        "thread.usage_limited",
+        "thread.stalled",
+        "wake.fired",
+        "wake.missed",
+        "write.delivered",
+        "write.expired",
+        "webhook.failing",
+        "workstream.created",
+        "workstream.running",
+        "workstream.state",
+        "ask.created",
+        "ask.auto",
+        "batch.ready",
+        "decision.recorded",
+        "lead.started",
+        "lead.woken",
+        "digest.ready",
+        "task.queued",
+        "task.started",
+        "task.completed",
+        "task.failed",
+        "task.cancelled",
+        "task.out_of_area",
+        "lease.stale",
+        "claim.failed",
+        "claim.passed",
+        "workstream.done",
+        "review.verdict",
+        "incident.recorded"
+      ]
+    },
+    "ThreadId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "HubEvent": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "type": {
+          "$ref": "#/$defs/HubEventType"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "data": {}
+      },
+      "required": [
+        "seq",
+        "at",
+        "type",
+        "summary"
+      ],
+      "additionalProperties": true
+    },
+    "SlotState": {
+      "type": "object",
+      "properties": {
+        "cap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reservedBand": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "perProject": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "projectRef": {
+                "type": "object",
+                "properties": {
+                  "machineId": {
+                    "$ref": "#/$defs/MachineId"
+                  },
+                  "projectId": {
+                    "$ref": "#/$defs/ProjectId"
+                  }
+                },
+                "required": [
+                  "machineId",
+                  "projectId"
+                ],
+                "additionalProperties": true
+              },
+              "share": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "used": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "projectRef",
+              "share",
+              "used"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 50
+        }
+      },
+      "required": [
+        "cap",
+        "used",
+        "queued",
+        "reservedBand",
+        "perProject"
+      ],
+      "additionalProperties": true
+    },
+    "ThreadSummary": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "waiting",
+            "idle",
+            "completed",
+            "failed",
+            "interrupted",
+            "cancelled"
+          ]
+        },
+        "headline": {
+          "type": "string",
+          "maxLength": 280
+        },
+        "latestMessageTail": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "lastError": {
+          "type": "object",
+          "properties": {
+            "class": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "class",
+            "message"
+          ],
+          "additionalProperties": true
+        },
+        "usageLimitResetAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastProgressAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "projectId",
+        "title",
+        "status",
+        "headline",
+        "latestMessageTail",
+        "lastProgressAt",
+        "stale",
+        "asOf"
+      ],
+      "additionalProperties": true
+    },
+    "Lead": {
+      "type": "object",
+      "properties": {
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "idle",
+            "working",
+            "stalled",
+            "stopped"
+          ]
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastWakeAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "projectRef",
+        "threadId",
+        "state",
+        "startedAt",
+        "sessionGeneration"
+      ],
+      "additionalProperties": true
+    },
+    "WorkstreamId": {
+      "type": "string",
+      "pattern": "^W[1-9][0-9]*$"
+    },
+    "CheckSpec": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "pr_merged"
+              ]
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "pr": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "ci_green"
+              ]
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "http"
+              ]
+            },
+            "url": {
+              "type": "string"
+            },
+            "status": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "contains": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "status"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "cmd"
+              ]
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1
+            },
+            "expectExit": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "type",
+            "machineId",
+            "argv",
+            "expectExit"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "test"
+              ]
+            },
+            "repo": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "testId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "repo",
+            "testId"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "judge"
+              ]
+            },
+            "criteria": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "type",
+            "criteria"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "human"
+              ]
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "question"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "Estimate": {
+      "type": "object",
+      "properties": {
+        "rawMinutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "maxItems": 20
+        }
+      },
+      "required": [
+        "rawMinutes",
+        "gates"
+      ],
+      "additionalProperties": true
+    },
+    "Brief": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "pointers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 20
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 20
+        },
+        "doneWhen": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckSpec"
+          },
+          "maxItems": 20,
+          "minItems": 1
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "S",
+            "M",
+            "L"
+          ]
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "agentHours": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "additionalProperties": true
+        },
+        "estimate": {
+          "$ref": "#/$defs/Estimate"
+        }
+      },
+      "required": [
+        "goal",
+        "why",
+        "pointers",
+        "constraints",
+        "doneWhen",
+        "tier"
+      ],
+      "additionalProperties": true
+    },
+    "BriefHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Headline": {
+      "type": "string",
+      "maxLength": 280,
+      "pattern": "^[^\\r\\n]*$"
+    },
+    "Workstream": {
+      "type": "object",
+      "properties": {
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "channel": {
+              "type": "string",
+              "enum": [
+                "app",
+                "phone",
+                "mcp",
+                "lead"
+              ]
+            },
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            }
+          },
+          "required": [
+            "text",
+            "channel",
+            "by",
+            "at"
+          ],
+          "additionalProperties": true
+        },
+        "brief": {
+          "$ref": "#/$defs/Brief"
+        },
+        "briefHash": {
+          "$ref": "#/$defs/BriefHash"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "running",
+            "converging",
+            "verifying",
+            "done",
+            "idle",
+            "stopped",
+            "failed"
+          ]
+        },
+        "headline": {
+          "$ref": "#/$defs/Headline"
+        },
+        "headlineAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "estimateActual": {
+          "type": "object",
+          "properties": {
+            "actualMinutes": {
+              "type": "number",
+              "minimum": 0
+            },
+            "ratioAtStart": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "required": [
+            "ratioAtStart"
+          ],
+          "additionalProperties": true
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "projectRef",
+        "title",
+        "source",
+        "state",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectOutcome": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/ProjectSummary"
+        },
+        "threads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ThreadSummary"
+          },
+          "maxItems": 20
+        },
+        "lead": {
+          "$ref": "#/$defs/Lead"
+        },
+        "workstreams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Workstream"
+          },
+          "maxItems": 20
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project",
+        "threads",
+        "stale",
+        "asOf"
+      ],
+      "additionalProperties": true
+    },
+    "ActionItem": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "command",
+            "file_change",
+            "tool_call",
+            "other"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "completed",
+            "failed",
+            "running"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "outputTail": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "failed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "status",
+        "summary",
+        "failed"
+      ],
+      "additionalProperties": true
+    },
+    "WakeTarget": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "additionalProperties": true
+    },
+    "TimeZone": {
+      "type": "string"
+    },
+    "WakeSchedule": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "at"
+              ]
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "tz": {
+              "$ref": "#/$defs/TimeZone"
+            }
+          },
+          "required": [
+            "kind",
+            "at",
+            "tz"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "every"
+              ]
+            },
+            "everySec": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "kind",
+            "everySec"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "cron"
+              ]
+            },
+            "cron": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tz": {
+              "$ref": "#/$defs/TimeZone"
+            }
+          },
+          "required": [
+            "kind",
+            "cron",
+            "tz"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "Wake": {
+      "type": "object",
+      "properties": {
+        "wakeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "$ref": "#/$defs/WakeTarget"
+        },
+        "schedule": {
+          "$ref": "#/$defs/WakeSchedule"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "once": {
+          "type": "boolean"
+        },
+        "catchUp": {
+          "type": "string",
+          "enum": [
+            "fire_once",
+            "skip"
+          ]
+        },
+        "nextRunAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastFiredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "done",
+            "cancelled"
+          ]
+        }
+      },
+      "required": [
+        "wakeId",
+        "target",
+        "schedule",
+        "message",
+        "once",
+        "catchUp",
+        "createdBy",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "WebhookUrl": {
+      "type": "string"
+    },
+    "Subscription": {
+      "type": "object",
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "webhook"
+          ]
+        },
+        "url": {
+          "$ref": "#/$defs/WebhookUrl"
+        },
+        "types": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "*"
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HubEventType"
+              }
+            }
+          ]
+        },
+        "machines": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "*"
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MachineId"
+              }
+            }
+          ]
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        },
+        "lastDeliveredSeq": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "failingSince": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "kind",
+        "url",
+        "types",
+        "machines",
+        "createdBy",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "AskId": {
+      "type": "string",
+      "pattern": "^A[1-9][0-9]*$"
+    },
+    "DecisionKey": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80"
+    },
+    "Step": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "where": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "browser",
+                "phone"
+              ]
+            },
+            {
+              "$ref": "#/$defs/MachineId"
+            }
+          ]
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "expect": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "text",
+        "where"
+      ],
+      "additionalProperties": true
+    },
+    "BatchId": {
+      "type": "string",
+      "pattern": "^B[1-9][0-9]*$"
+    },
+    "DecisionId": {
+      "type": "string",
+      "pattern": "^D[1-9][0-9]*$"
+    },
+    "Ask": {
+      "type": "object",
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "decide",
+            "do"
+          ]
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "class": {
+          "type": "string",
+          "enum": [
+            "product",
+            "money",
+            "credential",
+            "irreversible"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "maxItems": 6
+        },
+        "recommendation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "maxItems": 20
+        },
+        "blocks": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "nothing"
+              ]
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          ]
+        },
+        "proceededOnRec": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "auto",
+            "answered",
+            "defaulted",
+            "withdrawn"
+          ]
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "answer": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string"
+            },
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "raw": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "value",
+            "by",
+            "at",
+            "raw"
+          ],
+          "additionalProperties": true
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "askId",
+        "projectRef",
+        "kind",
+        "key",
+        "class",
+        "text",
+        "blocks",
+        "proceededOnRec",
+        "state",
+        "createdAt"
+      ],
+      "additionalProperties": true
+    },
+    "DecisionScope": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "global"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "project"
+              ]
+            },
+            "projectRef": {
+              "type": "object",
+              "properties": {
+                "machineId": {
+                  "$ref": "#/$defs/MachineId"
+                },
+                "projectId": {
+                  "$ref": "#/$defs/ProjectId"
+                }
+              },
+              "required": [
+                "machineId",
+                "projectId"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "kind",
+            "projectRef"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "workstream"
+              ]
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "Decision": {
+      "type": "object",
+      "properties": {
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "scope": {
+          "$ref": "#/$defs/DecisionScope"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "human",
+            "lead",
+            "agent"
+          ]
+        },
+        "by": {
+          "type": "string"
+        },
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "superseded",
+            "retired"
+          ]
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "decisionId",
+        "key",
+        "scope",
+        "value",
+        "source",
+        "state",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "Eta": {
+      "type": "object",
+      "properties": {
+        "rawMinutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "calibratedMinutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "p80Minutes": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "rawMinutes",
+        "calibratedMinutes",
+        "ratio",
+        "samples"
+      ],
+      "additionalProperties": true
+    },
+    "ClaimId": {
+      "type": "string",
+      "pattern": "^C[1-9][0-9]*$"
+    },
+    "CheckResult": {
+      "type": "object",
+      "properties": {
+        "checkIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spec": {
+          "$ref": "#/$defs/CheckSpec"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "error"
+          ]
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "ranBy": {
+          "type": "string",
+          "enum": [
+            "hub",
+            "node",
+            "judge",
+            "human"
+          ]
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "checkIndex",
+        "spec",
+        "result",
+        "evidence",
+        "ranBy",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "Claim": {
+      "type": "object",
+      "properties": {
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "by": {
+          "type": "string"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "maxItems": 20
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        }
+      },
+      "required": [
+        "claimId",
+        "workstreamId",
+        "by",
+        "at",
+        "results",
+        "outcome"
+      ],
+      "additionalProperties": true
+    },
+    "Batch": {
+      "type": "object",
+      "properties": {
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "askId": {
+                "$ref": "#/$defs/AskId"
+              }
+            },
+            "required": [
+              "number",
+              "askId"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed"
+          ]
+        }
+      },
+      "required": [
+        "batchId",
+        "createdAt",
+        "items",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "TaskId": {
+      "type": "string",
+      "pattern": "^T[1-9][0-9]*$"
+    },
+    "AreaName": {
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40"
+    },
+    "Serves": {
+      "type": "string"
+    },
+    "Receipts": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "commandsFailed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "filesChanged": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "toolCalls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "commands",
+        "commandsFailed",
+        "filesChanged",
+        "toolCalls"
+      ],
+      "additionalProperties": true
+    },
+    "TaskResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "tail": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prUrl": {
+          "type": "string"
+        },
+        "receipts": {
+          "$ref": "#/$defs/Receipts"
+        },
+        "claimsUnverified": {
+          "type": "boolean"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "status",
+        "tail",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "Task": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "write",
+            "read",
+            "review"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "areas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AreaName"
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "max"
+          ]
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "S",
+            "M",
+            "L"
+          ]
+        },
+        "estimateMinutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "serves": {
+          "$ref": "#/$defs/Serves"
+        },
+        "qa": {
+          "type": "boolean"
+        },
+        "pr": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "idle",
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "queuedReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "threadRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            }
+          },
+          "required": [
+            "machineId",
+            "threadId"
+          ],
+          "additionalProperties": true
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worktreePath": {
+          "type": "string",
+          "pattern": "^\\/"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "result": {
+          "$ref": "#/$defs/TaskResult"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "taskId",
+        "projectRef",
+        "workstreamId",
+        "title",
+        "kind",
+        "prompt",
+        "areas",
+        "model",
+        "effort",
+        "state",
+        "attempt",
+        "createdAt"
+      ],
+      "additionalProperties": true
+    },
+    "IncidentId": {
+      "type": "string",
+      "pattern": "^I[1-9][0-9]*$"
+    },
+    "Incident": {
+      "type": "object",
+      "properties": {
+        "incidentId": {
+          "$ref": "#/$defs/IncidentId"
+        },
+        "class": {
+          "type": "string",
+          "enum": [
+            "false_claim",
+            "estimate_miss",
+            "polish_loop",
+            "misfiled_ask",
+            "out_of_area",
+            "stall"
+          ]
+        },
+        "projectRef": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "maxItems": 20
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "incidentId",
+        "class",
+        "projectRef",
+        "evidence",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "McpTools": {
+      "type": "object",
+      "properties": {
+        "fleetd_status.input": {
+          "not": {
+            "type": "null"
+          }
+        },
+        "fleetd_status.output": {
+          "type": "object",
+          "properties": {
+            "machines": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Machine"
+              }
+            },
+            "projects": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ProjectSummary"
+              },
+              "maxItems": 50
+            },
+            "attention": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HubEvent"
+              },
+              "maxItems": 10
+            },
+            "cursor": {
+              "$ref": "#/$defs/EventSeq"
+            },
+            "slots": {
+              "$ref": "#/$defs/SlotState"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "machines",
+            "projects",
+            "attention",
+            "cursor"
+          ],
+          "additionalProperties": true
+        },
+        "projects_list.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "projects_list.output": {
+          "type": "object",
+          "properties": {
+            "projects": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ProjectSummary"
+              }
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "projects"
+          ],
+          "additionalProperties": true
+        },
+        "project_get.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "project_get.output": {
+          "$ref": "#/$defs/ProjectOutcome"
+        },
+        "thread_tail.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "n": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "message",
+                  "action"
+                ]
+              }
+            }
+          },
+          "required": [
+            "machineId",
+            "threadId"
+          ],
+          "additionalProperties": true
+        },
+        "thread_tail.output": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "message"
+                        ]
+                      },
+                      "at": {
+                        "$ref": "#/$defs/Timestamp"
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "assistant",
+                          "system"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "at",
+                      "role",
+                      "text"
+                    ],
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "action"
+                        ]
+                      },
+                      "at": {
+                        "$ref": "#/$defs/Timestamp"
+                      },
+                      "action": {
+                        "$ref": "#/$defs/ActionItem"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "at",
+                      "action"
+                    ],
+                    "additionalProperties": true
+                  }
+                ]
+              },
+              "maxItems": 50
+            },
+            "thread": {
+              "$ref": "#/$defs/ThreadSummary"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "items",
+            "thread"
+          ],
+          "additionalProperties": true
+        },
+        "actions_list.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "failedOnly": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "machineId",
+            "threadId"
+          ],
+          "additionalProperties": true
+        },
+        "actions_list.output": {
+          "type": "object",
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ActionItem"
+              },
+              "maxItems": 50
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "actions"
+          ],
+          "additionalProperties": true
+        },
+        "events_wait.input": {
+          "type": "object",
+          "properties": {
+            "cursor": {
+              "$ref": "#/$defs/EventSeq"
+            },
+            "types": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HubEventType"
+              }
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "timeoutSec": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50
+            }
+          },
+          "additionalProperties": true
+        },
+        "events_wait.output": {
+          "type": "object",
+          "properties": {
+            "events": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HubEvent"
+              },
+              "maxItems": 100
+            },
+            "cursor": {
+              "$ref": "#/$defs/EventSeq"
+            },
+            "more": {
+              "type": "boolean"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "events",
+            "cursor",
+            "more"
+          ],
+          "additionalProperties": true
+        },
+        "thread_launch.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "effort": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "max"
+              ]
+            },
+            "runtimeMode": {
+              "type": "string",
+              "enum": [
+                "full-access",
+                "approval-required"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "clientRequestId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId",
+            "prompt",
+            "model",
+            "effort",
+            "clientRequestId"
+          ],
+          "additionalProperties": true
+        },
+        "thread_launch.output": {
+          "type": "object",
+          "properties": {
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "threadId"
+          ],
+          "additionalProperties": true
+        },
+        "thread_send.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clientRequestId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "machineId",
+            "threadId",
+            "message",
+            "clientRequestId"
+          ],
+          "additionalProperties": true
+        },
+        "thread_send.output": {
+          "type": "object",
+          "properties": {
+            "runId": {
+              "type": "string"
+            },
+            "queued": {
+              "type": "boolean"
+            },
+            "queuedUntil": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "queued"
+          ],
+          "additionalProperties": true
+        },
+        "thread_interrupt.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "clientRequestId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "machineId",
+            "threadId",
+            "clientRequestId"
+          ],
+          "additionalProperties": true
+        },
+        "thread_interrupt.output": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": true
+        },
+        "wake_set.input": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "$ref": "#/$defs/WakeTarget"
+            },
+            "schedule": {
+              "$ref": "#/$defs/WakeSchedule"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "once": {
+              "type": "boolean"
+            },
+            "catchUp": {
+              "type": "string",
+              "enum": [
+                "fire_once",
+                "skip"
+              ]
+            },
+            "clientRequestId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "target",
+            "schedule",
+            "message",
+            "clientRequestId"
+          ],
+          "additionalProperties": true
+        },
+        "wake_set.output": {
+          "type": "object",
+          "properties": {
+            "wakeId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nextRunAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "wakeId",
+            "nextRunAt"
+          ],
+          "additionalProperties": true
+        },
+        "wake_list.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "active",
+                "done",
+                "cancelled"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "wake_list.output": {
+          "type": "object",
+          "properties": {
+            "wakes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Wake"
+              }
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "wakes"
+          ],
+          "additionalProperties": true
+        },
+        "wake_cancel.input": {
+          "type": "object",
+          "properties": {
+            "wakeId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "wakeId"
+          ],
+          "additionalProperties": true
+        },
+        "wake_cancel.output": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": true
+        },
+        "subscription_set.input": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "$ref": "#/$defs/WebhookUrl"
+            },
+            "types": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "*"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/HubEventType"
+                  }
+                }
+              ]
+            },
+            "machines": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "*"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MachineId"
+                  }
+                }
+              ]
+            },
+            "clientRequestId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "url",
+            "clientRequestId"
+          ],
+          "additionalProperties": true
+        },
+        "subscription_set.output": {
+          "type": "object",
+          "properties": {
+            "subscriptionId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secret": {
+              "type": "string",
+              "minLength": 1
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "subscriptionId",
+            "secret"
+          ],
+          "additionalProperties": true
+        },
+        "subscription_list.input": {
+          "not": {
+            "type": "null"
+          }
+        },
+        "subscription_list.output": {
+          "type": "object",
+          "properties": {
+            "subscriptions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Subscription"
+              }
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "subscriptions"
+          ],
+          "additionalProperties": true
+        },
+        "subscription_delete.input": {
+          "type": "object",
+          "properties": {
+            "subscriptionId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "subscriptionId"
+          ],
+          "additionalProperties": true
+        },
+        "subscription_delete.output": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok"
+          ],
+          "additionalProperties": true
+        },
+        "lead_start.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "effort": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "max"
+              ]
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "lead_start.output": {
+          "type": "object",
+          "properties": {
+            "projectRef": {
+              "type": "object",
+              "properties": {
+                "machineId": {
+                  "$ref": "#/$defs/MachineId"
+                },
+                "projectId": {
+                  "$ref": "#/$defs/ProjectId"
+                }
+              },
+              "required": [
+                "machineId",
+                "projectId"
+              ],
+              "additionalProperties": true
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "starting",
+                "idle",
+                "working",
+                "stalled",
+                "stopped"
+              ]
+            },
+            "startedAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "lastWakeAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "sessionGeneration": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "projectRef",
+            "threadId",
+            "state",
+            "startedAt",
+            "sessionGeneration"
+          ],
+          "additionalProperties": true
+        },
+        "lead_restart.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "effort": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "max"
+              ]
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId"
+          ],
+          "additionalProperties": true
+        },
+        "lead_restart.output": {
+          "type": "object",
+          "properties": {
+            "projectRef": {
+              "type": "object",
+              "properties": {
+                "machineId": {
+                  "$ref": "#/$defs/MachineId"
+                },
+                "projectId": {
+                  "$ref": "#/$defs/ProjectId"
+                }
+              },
+              "required": [
+                "machineId",
+                "projectId"
+              ],
+              "additionalProperties": true
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "starting",
+                "idle",
+                "working",
+                "stalled",
+                "stopped"
+              ]
+            },
+            "startedAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "lastWakeAt": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "sessionGeneration": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "projectRef",
+            "threadId",
+            "state",
+            "startedAt",
+            "sessionGeneration"
+          ],
+          "additionalProperties": true
+        },
+        "intake_submit.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "clientRequestId": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "machineId",
+            "projectId",
+            "text",
+            "clientRequestId"
+          ],
+          "additionalProperties": true
+        },
+        "intake_submit.output": {
+          "type": "object",
+          "properties": {
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "workstreamId"
+          ],
+          "additionalProperties": true
+        },
+        "workstream_list.input": {
+          "type": "object",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "running",
+                "converging",
+                "verifying",
+                "done",
+                "idle",
+                "stopped",
+                "failed"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": true
+        },
+        "workstream_list.output": {
+          "type": "object",
+          "properties": {
+            "workstreams": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Workstream"
+              },
+              "maxItems": 100
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "workstreams"
+          ],
+          "additionalProperties": true
+        },
+        "workstream_get.input": {
+          "type": "object",
+          "properties": {
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "workstreamId"
+          ],
+          "additionalProperties": true
+        },
+        "workstream_get.output": {
+          "type": "object",
+          "properties": {
+            "workstream": {
+              "$ref": "#/$defs/Workstream"
+            },
+            "asks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Ask"
+              },
+              "maxItems": 50
+            },
+            "decisions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Decision"
+              },
+              "maxItems": 50
+            },
+            "eta": {
+              "$ref": "#/$defs/Eta"
+            },
+            "claims": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Claim"
+              },
+              "maxItems": 20
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "workstream",
+            "asks",
+            "decisions"
+          ],
+          "additionalProperties": true
+        },
+        "asks_list.input": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "open",
+                "auto",
+                "answered",
+                "defaulted",
+                "withdrawn"
+              ]
+            },
+            "batchId": {
+              "$ref": "#/$defs/BatchId"
+            }
+          },
+          "additionalProperties": true
+        },
+        "asks_list.output": {
+          "type": "object",
+          "properties": {
+            "batches": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Batch"
+              },
+              "maxItems": 20
+            },
+            "asks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Ask"
+              },
+              "maxItems": 100
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "batches",
+            "asks"
+          ],
+          "additionalProperties": true
+        },
+        "inbox_reply.input": {
+          "type": "object",
+          "properties": {
+            "raw": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "batchId": {
+              "$ref": "#/$defs/BatchId"
+            }
+          },
+          "required": [
+            "raw"
+          ],
+          "additionalProperties": true
+        },
+        "inbox_reply.output": {
+          "type": "object",
+          "properties": {
+            "parsed": {
+              "type": "boolean"
+            },
+            "batchId": {
+              "$ref": "#/$defs/BatchId"
+            },
+            "echo": {
+              "type": "string"
+            },
+            "applied": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "askId": {
+                    "$ref": "#/$defs/AskId"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "answered",
+                      "withdrawn",
+                      "later",
+                      "retired",
+                      "pref"
+                    ]
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "decisionId": {
+                    "$ref": "#/$defs/DecisionId"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "human",
+                      "lead",
+                      "agent"
+                    ]
+                  },
+                  "by": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "outcome"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "hint": {
+              "type": "string"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "parsed",
+            "applied"
+          ],
+          "additionalProperties": true
+        },
+        "decisions_search.input": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "scope": {
+              "$ref": "#/$defs/DecisionScope"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": true
+        },
+        "decisions_search.output": {
+          "type": "object",
+          "properties": {
+            "decisions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Decision"
+              },
+              "maxItems": 50
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "decisions"
+          ],
+          "additionalProperties": true
+        },
+        "decisions_record.input": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/DecisionKey"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "why": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "scope": {
+              "$ref": "#/$defs/DecisionScope"
+            }
+          },
+          "required": [
+            "key",
+            "value",
+            "scope"
+          ],
+          "additionalProperties": true
+        },
+        "decisions_record.output": {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "$ref": "#/$defs/Decision"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "decision"
+          ],
+          "additionalProperties": true
+        },
+        "digest_get.input": {
+          "not": {
+            "type": "null"
+          }
+        },
+        "digest_get.output": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "text",
+            "at"
+          ],
+          "additionalProperties": true
+        },
+        "tasks_list.input": {
+          "type": "object",
+          "properties": {
+            "projectRef": {
+              "type": "object",
+              "properties": {
+                "machineId": {
+                  "$ref": "#/$defs/MachineId"
+                },
+                "projectId": {
+                  "$ref": "#/$defs/ProjectId"
+                }
+              },
+              "required": [
+                "machineId",
+                "projectId"
+              ],
+              "additionalProperties": true
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "idle",
+                "done",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": true
+        },
+        "tasks_list.output": {
+          "type": "object",
+          "properties": {
+            "tasks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Task"
+              },
+              "maxItems": 100
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "tasks"
+          ],
+          "additionalProperties": true
+        },
+        "task_get.input": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "$ref": "#/$defs/TaskId"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "additionalProperties": true
+        },
+        "task_get.output": {
+          "type": "object",
+          "properties": {
+            "task": {
+              "$ref": "#/$defs/Task"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "task"
+          ],
+          "additionalProperties": true
+        },
+        "cap_set.input": {
+          "type": "object",
+          "properties": {
+            "cap": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "share": {
+              "type": "object",
+              "properties": {
+                "projectRef": {
+                  "type": "object",
+                  "properties": {
+                    "machineId": {
+                      "$ref": "#/$defs/MachineId"
+                    },
+                    "projectId": {
+                      "$ref": "#/$defs/ProjectId"
+                    }
+                  },
+                  "required": [
+                    "machineId",
+                    "projectId"
+                  ],
+                  "additionalProperties": true
+                },
+                "share": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000
+                }
+              },
+              "required": [
+                "projectRef",
+                "share"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "cap_set.output": {
+          "type": "object",
+          "properties": {
+            "slots": {
+              "$ref": "#/$defs/SlotState"
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "slots"
+          ],
+          "additionalProperties": true
+        },
+        "claims_list.input": {
+          "type": "object",
+          "properties": {
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            },
+            "projectRef": {
+              "type": "object",
+              "properties": {
+                "machineId": {
+                  "$ref": "#/$defs/MachineId"
+                },
+                "projectId": {
+                  "$ref": "#/$defs/ProjectId"
+                }
+              },
+              "required": [
+                "machineId",
+                "projectId"
+              ],
+              "additionalProperties": true
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "pass",
+                "fail"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": true
+        },
+        "claims_list.output": {
+          "type": "object",
+          "properties": {
+            "claims": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Claim"
+              },
+              "maxItems": 100
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "claims"
+          ],
+          "additionalProperties": true
+        },
+        "incidents_list.input": {
+          "type": "object",
+          "properties": {
+            "projectRef": {
+              "type": "object",
+              "properties": {
+                "machineId": {
+                  "$ref": "#/$defs/MachineId"
+                },
+                "projectId": {
+                  "$ref": "#/$defs/ProjectId"
+                }
+              },
+              "required": [
+                "machineId",
+                "projectId"
+              ],
+              "additionalProperties": true
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            },
+            "class": {
+              "type": "string",
+              "enum": [
+                "false_claim",
+                "estimate_miss",
+                "polish_loop",
+                "misfiled_ask",
+                "out_of_area",
+                "stall"
+              ]
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": true
+        },
+        "incidents_list.output": {
+          "type": "object",
+          "properties": {
+            "incidents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Incident"
+              },
+              "maxItems": 100
+            },
+            "next": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "incidents"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "fleetd_status.input",
+        "fleetd_status.output",
+        "projects_list.input",
+        "projects_list.output",
+        "project_get.input",
+        "project_get.output",
+        "thread_tail.input",
+        "thread_tail.output",
+        "actions_list.input",
+        "actions_list.output",
+        "events_wait.input",
+        "events_wait.output",
+        "thread_launch.input",
+        "thread_launch.output",
+        "thread_send.input",
+        "thread_send.output",
+        "thread_interrupt.input",
+        "thread_interrupt.output",
+        "wake_set.input",
+        "wake_set.output",
+        "wake_list.input",
+        "wake_list.output",
+        "wake_cancel.input",
+        "wake_cancel.output",
+        "subscription_set.input",
+        "subscription_set.output",
+        "subscription_list.input",
+        "subscription_list.output",
+        "subscription_delete.input",
+        "subscription_delete.output",
+        "lead_start.input",
+        "lead_start.output",
+        "lead_restart.input",
+        "lead_restart.output",
+        "intake_submit.input",
+        "intake_submit.output",
+        "workstream_list.input",
+        "workstream_list.output",
+        "workstream_get.input",
+        "workstream_get.output",
+        "asks_list.input",
+        "asks_list.output",
+        "inbox_reply.input",
+        "inbox_reply.output",
+        "decisions_search.input",
+        "decisions_search.output",
+        "decisions_record.input",
+        "decisions_record.output",
+        "digest_get.input",
+        "digest_get.output",
+        "tasks_list.input",
+        "tasks_list.output",
+        "task_get.input",
+        "task_get.output",
+        "cap_set.input",
+        "cap_set.output",
+        "claims_list.input",
+        "claims_list.output",
+        "incidents_list.input",
+        "incidents_list.output"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

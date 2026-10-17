@@ -14,6 +14,7 @@ import {
   Incident,
   Lead,
   Machine,
+  McpTools,
   ProjectOutcome,
   ProjectSummary,
   SlotState,
@@ -41,6 +42,15 @@ const appFacing = {
   SlotState,
   Claim,
   Incident,
+  // Every tool's input and output, keyed "<tool>.input" / "<tool>.output", for clients of the app call frame.
+  McpTools: Schema.Struct(
+    Object.fromEntries(
+      Object.entries(McpTools).flatMap(([name, tool]) => [
+        [`${name}.input`, tool.input],
+        [`${name}.output`, tool.output],
+      ]),
+    ) as Record<string, Schema.Top>,
+  ).annotate({ identifier: "McpTools" }),
 };
 
 /** File name -> file contents. */
