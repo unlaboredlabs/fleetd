@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { parseArgs } from "node:util";
 import * as FleetdNode from "@fleetd/node";
 import * as Cause from "effect/Cause";
@@ -5,11 +6,13 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 
-export const NODE_USAGE = `  node join --hub <url> --token <token> --machine <id> --t3-home <dir> --t3-url <url>
-            [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>] [--home <dir>]
+export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> --t3-home <dir>
+            --t3-url <url> [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>]
+            [--home <dir>] [--enroll-only]
              enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
              --t3-restart-cmd (e.g. "t3 service restart") runs when T3 fails 3 health checks, else T3 is
-             only reported down
+             only reported down; --token-file - reads the token from stdin; --enroll-only exits once
+             the hub has accepted this node
   node run [--home <dir>]
              keep the link up for a machine that has joined
 `;
@@ -18,6 +21,8 @@ const options = {
   home: { type: "string" },
   hub: { type: "string" },
   token: { type: "string" },
+  "token-file": { type: "string" },
+  "enroll-only": { type: "boolean" },
   machine: { type: "string" },
   "t3-home": { type: "string" },
   "t3-url": { type: "string" },
@@ -62,7 +67,16 @@ export const nodeCommand = (argv: ReadonlyArray<string>): Promise<number> => {
   }
   switch (command) {
     case "join": {
-      const { hub, token, machine } = values;
+      const { hub, machine } = values;
+      const tokenFile = values["token-file"];
+      let token = values.token;
+      if (token === undefined && tokenFile !== undefined) {
+        try {
+          token = fs.readFileSync(tokenFile === "-" ? 0 : tokenFile, "utf8").trim();
+        } catch (error) {
+          return Promise.resolve(usage(`cannot read --token-file: ${error instanceof Error ? error.message : String(error)}`));
+        }
+      }
       const t3Home = values["t3-home"];
       const t3Url = values["t3-url"];
       const missing = Object.entries({ hub, token, machine, "t3-home": t3Home, "t3-url": t3Url }).find(([, v]) => !v)?.[0];
@@ -81,6 +95,7 @@ export const nodeCommand = (argv: ReadonlyArray<string>): Promise<number> => {
           ...(values.tags === undefined ? {} : { tags: values.tags.split(",").map((tag) => tag.trim()).filter(Boolean) }),
           ...(values.name === undefined ? {} : { name: values.name }),
           ...(values.home === undefined ? {} : { home: values.home }),
+          ...(values["enroll-only"] === true ? { exitWhenEnrolled: true } : {}),
         }),
       );
     }

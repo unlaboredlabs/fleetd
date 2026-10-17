@@ -33,6 +33,8 @@ export class HubStore extends Context.Service<
       readonly list: () => Effect.Effect<ReadonlyArray<Machine>>;
       /** Sets the status and `lastSeenAt = at`. A no-op for an unknown machine. */
       readonly setStatus: (machineId: MachineId, status: MachineStatus, at: Timestamp) => Effect.Effect<void>;
+      /** Drops the machine's record (`fleetd machine remove`); its projects and threads stay cached. */
+      readonly remove: (machineId: MachineId) => Effect.Effect<void>;
     };
     readonly projects: {
       readonly upsertMany: (machineId: MachineId, projects: ReadonlyArray<ProjectSummary>) => Effect.Effect<void>;
@@ -83,6 +85,7 @@ const make = Effect.gen(function* () {
     ),
     machineGet: db.prepare("SELECT data FROM machines WHERE machine_id = ?"),
     machineList: db.prepare("SELECT data FROM machines ORDER BY machine_id"),
+    machineDelete: db.prepare("DELETE FROM machines WHERE machine_id = ?"),
     projectUpsert: db.prepare(
       `INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (machine_id, project_id) DO UPDATE SET
@@ -141,6 +144,7 @@ const make = Effect.gen(function* () {
             if (machine) sql.machineUpsert.run(machineId, encodeMachine({ ...machine, status, lastSeenAt: at }));
           }),
         ),
+      remove: (machineId) => Effect.sync(() => void sql.machineDelete.run(machineId)),
     },
     projects: {
       upsertMany: (machineId, projects) =>

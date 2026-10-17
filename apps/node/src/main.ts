@@ -1,5 +1,5 @@
 import { MachineId } from "@fleetd/contracts";
-import { Data, Effect, Exit, Schema } from "effect";
+import { Data, Deferred, Effect, Exit, Schema } from "effect";
 import * as Socket from "effect/socket/Socket";
 import pkg from "../package.json" with { type: "json" };
 import { defaultNodeHome, type NodeConfig, readConfig, writeConfig } from "./config.ts";
@@ -26,12 +26,15 @@ export interface JoinInput {
   readonly tags?: ReadonlyArray<string>;
   readonly name?: string;
   readonly home?: string;
+  /** Stop once the hub has accepted the node's key, instead of keeping the link up (`fleetd machine add` enrolls, then starts the service). */
+  readonly exitWhenEnrolled?: boolean;
 }
 
 const splitArgv = (command: string) => command.split(/\s+/u).filter((part) => part.length > 0);
 
-const run = (home: string, config: NodeConfig, enrollToken?: string) =>
+const run = (home: string, config: NodeConfig, enrollToken?: string, exitWhenEnrolled = false) =>
   Effect.gen(function* () {
+    const enrolled = yield* Deferred.make<void>();
     const identity = yield* Effect.try({
       try: () => loadOrCreateIdentity(home),
       catch: () => new NodeSetupError({ message: `cannot read or create the node key in ${home}` }),
@@ -45,7 +48,7 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
     );
     const leadCalls = yield* makeLeadRelay();
     yield* serveLeadSocket(leadSocketPath(home), leadCalls.call);
-    return yield* runNode({
+    const node = runNode({
       settings: { machineId: config.machineId, name: config.name, tags: config.tags, nodeVersion: pkg.version, t3Url: config.t3Url },
       identity,
       dial: Socket.makeWebSocket(linkUrl(config.hub)).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal)),
@@ -60,9 +63,11 @@ const run = (home: string, config: NodeConfig, enrollToken?: string) =>
             enrollToken,
             onEnrolled: Effect.sync(() => writeConfig(home, { ...config, enrolled: true })).pipe(
               Effect.andThen(Effect.logInfo("enrolled with the hub; later starts use `fleetd node run`")),
+              Effect.andThen(Deferred.succeed(enrolled, undefined)),
             ),
           }),
     });
+    return yield* exitWhenEnrolled ? Effect.raceFirst(node, Deferred.await(enrolled)) : node;
   }).pipe(Effect.scoped, Effect.provide(T3Sessions.layerCli({ t3Cmd: config.t3Cmd, t3Home: config.t3Home })));
 
 /** `fleetd node join`: creates the node key and config, enrolls with the one-time token, then keeps the link up. */
@@ -88,7 +93,7 @@ export const join = (input: JoinInput) =>
       try: () => writeConfig(home, config),
       catch: () => new NodeSetupError({ message: `cannot write the node config in ${home}` }),
     });
-    return yield* run(home, config, input.token);
+    return yield* run(home, config, input.token, input.exitWhenEnrolled);
   });
 
 /** `fleetd node run`: keeps the link up for a node that has joined. */
