@@ -574,17 +574,28 @@ impl Shell {
             }))
         };
         let mut buttons = div().flex().flex_wrap().gap_2().pt_1();
-        if ask.kind == AskKind::Do {
-            buttons = buttons.child(reply("done".into(), format!("{number} done"), cx));
-        } else {
-            let rec = ask.recommendation.clone().unwrap_or_default();
-            buttons = buttons.child(reply(format!("go: {}", clip(&rec, 40)), format!("{number} go"), cx));
+        match ask.kind {
+            AskKind::Approve => {
+                buttons = buttons
+                    .child(reply("Approve".into(), format!("{number} go"), cx))
+                    .child(reply("Reject".into(), format!("{number} no"), cx));
+            }
+            // Secrets are sealed in a browser to the node's key; this app never handles the value.
+            AskKind::Secret => buttons = buttons.child(reply("decline".into(), format!("{number} no"), cx)),
+            _ => {
+                if ask.kind == AskKind::Do {
+                    buttons = buttons.child(reply("✓ done".into(), format!("{number} done"), cx));
+                } else {
+                    let rec = ask.recommendation.clone().unwrap_or_default();
+                    buttons = buttons.child(reply(format!("go: {}", clip(&rec, 40)), format!("{number} go"), cx));
+                }
+                for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
+                    let letter = (b'a' + i as u8) as char;
+                    buttons = buttons.child(reply(format!("{letter}: {}", clip(option, 40)), format!("{number} {letter}"), cx));
+                }
+                buttons = buttons.child(reply("no".into(), format!("{number} no"), cx));
+            }
         }
-        for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
-            let letter = (b'a' + i as u8) as char;
-            buttons = buttons.child(reply(format!("{letter}: {}", clip(option, 40)), format!("{number} {letter}"), cx));
-        }
-        buttons = buttons.child(reply("no".into(), format!("{number} no"), cx));
         let mut card = div()
             .p_3()
             .flex()
@@ -611,6 +622,22 @@ impl Shell {
             if let Some(command) = &step.command {
                 card = card.child(div().pl_4().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()));
             }
+        }
+        if let Some(gated) = &ask.gated {
+            // The exact stored argv, as JSON so spaces and quotes stay visible.
+            let argv = serde_json::to_string(&gated.argv).unwrap_or_default();
+            card = card
+                .child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(argv))
+                .child(muted(format!("in {}", gated.cwd.as_deref().unwrap_or("the project workspace"))))
+                .child(muted(format!("{} · {} · up to {} min", gated.class.as_str(), gated.reason, gated.timeout_sec.div_ceil(60))));
+        }
+        if let (AskKind::Secret, Some(sink)) = (ask.kind, &ask.sink) {
+            card = card
+                .child(muted(format!("{} → {sink}", ask.key)))
+                .child(div().text_color(rgb(Theme::YELLOW)).child("Open on phone or web to enter"));
+        }
+        if let Some(evidence) = &ask.evidence {
+            card = card.child(muted(evidence.clone()));
         }
         card.child(buttons)
     }
