@@ -30,6 +30,8 @@ import * as Webhooks from "../webhooks/Webhooks.ts";
 import * as WriteQueue from "../queue/WriteQueue.ts";
 import * as Wakes from "../wakes/Wakes.ts";
 import * as HumanDigests from "../digests/HumanDigests.ts";
+import * as Intake from "../intake/Intake.ts";
+import { IntakeRouter } from "../intake/Router.ts";
 import * as LeadsLayer from "../leads/layer.ts";
 import { Asks } from "../ledger/Asks.ts";
 import { ThreadWorkspace } from "../executor/ThreadWorkspace.ts";
@@ -164,7 +166,12 @@ export const makeTestHub = () => {
     ),
   );
 
-  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer).pipe(
+  // No model in unit tests: the router never places an intent, so unrouted intake files the routing ask.
+  const layerIntake = Intake.layer.pipe(
+    Layer.provide(Layer.succeed(IntakeRouter, IntakeRouter.of({ route: () => Effect.succeed({ why: "no router in tests", runs: [] }) }))),
+  );
+
+  const layer = Layer.mergeAll(layerWebhooks, Wakes.layer, HumanDigests.layer, layerIntake).pipe(
     Layer.provideMerge(layerTasks),
     Layer.provideMerge(LeadsLayer.layerWithLedger({ prompt: "You lead {{project}}." })),
     Layer.provideMerge(WriteQueue.layer()),

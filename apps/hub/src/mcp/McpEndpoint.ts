@@ -41,7 +41,7 @@ const DESCRIPTIONS: { readonly [N in FleetApi.ImplementedTool]: string } = {
   lead_restart:
     "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays in T3. Takes model and effort like lead_start.",
   intake_submit:
-    "Give a project one intent in plain words (e.g. \"add a /health endpoint\"). Creates a draft workstream and wakes the lead, which registers a brief and moves it to running. Idempotent per clientRequestId.",
+    "Give one intent in plain words (e.g. \"fix: the README has a typo\"). Without machineId and projectId, a leading @<project> (title or folder name) picks the project, else a one-shot claude router does; when it cannot, you get an askId for the human to pick the project. Prefixes bug:/fix:, research: and finish: set the template. Creates a draft workstream, wakes the lead, and echoes where it went and why. Idempotent per clientRequestId.",
   workstream_list: "Workstreams newest first, filtered by machineId, projectId and state (limit defaults to 50).",
   workstream_get:
     "One workstream with its frozen brief and headline (the lead's own words), its open asks, the decisions scoped to it, its ETA (raw estimate × the tier's measured ratio) and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",

@@ -362,11 +362,19 @@ describe("M3 tools", () => {
     expect((await call(client, "lead_start", { machineId: "lab-b", projectId: "p-lab-b" })).body.code).toBe("forbidden");
 
     const intake = await call(client, "intake_submit", { ...ref, text: "add a /health endpoint", clientRequestId: "i1" });
-    expect(intake.body).toMatchObject({ workstreamId: "W1" });
+    expect(intake.body).toMatchObject({ workstreamId: "W1", echo: { projectRef: ref, template: "feature" } });
     const outcome = (await call(client, "project_get", ref)).body;
     expect(outcome.lead).toMatchObject({ threadId: "t-new" });
     expect(outcome.workstreams).toMatchObject([{ workstreamId: "W1", state: "draft", source: { channel: "mcp", text: "add a /health endpoint" } }]);
     expect((await call(client, "workstream_get", { workstreamId: "W1" })).body).toMatchObject({ workstream: { state: "draft" }, asks: [], decisions: [] });
+    // No project: @<name> picks one of the key's projects; otherwise the router (none in tests) leaves an unrouted ask.
+    expect((await call(client, "intake_submit", { text: "@p-lab-a fix: typo", clientRequestId: "i2" })).body).toMatchObject({
+      workstreamId: "W2",
+      echo: { projectRef: ref, template: "bugfix" },
+    });
+    expect((await call(client, "intake_submit", { text: "@p-lab-b fix: typo", clientRequestId: "i3" })).body.code).toBe("not_found");
+    expect((await call(client, "intake_submit", { text: "tidy the docs", clientRequestId: "i4" })).body).toMatchObject({ askId: "A1" });
+    expect((await call(client, "asks_list")).body.asks).toMatchObject([{ askId: "A1", key: expect.stringMatching(/^intake\.route\./u), options: ["p-lab-a on lab-a"] }]);
   });
 
   it("shows and answers only asks on the key's machines, recording the key as the decision's author", async () => {

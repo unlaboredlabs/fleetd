@@ -1857,7 +1857,6 @@
       },
       "required": [
         "askId",
-        "projectRef",
         "kind",
         "key",
         "class",

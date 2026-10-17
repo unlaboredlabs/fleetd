@@ -341,9 +341,20 @@ export const askKindRule = Schema.makeFilter(
   },
 );
 
+/** Asks with this key prefix ask which project an intent belongs to, so they alone have no project. */
+export const UNROUTED_ASK_PREFIX = "intake.route.";
+
+/** Only the router's fallback ask may leave out its project. */
+export const askProjectRule = Schema.makeFilter((ask: { readonly projectRef?: ProjectRef; readonly key: string }) =>
+  ask.projectRef === undefined && !ask.key.startsWith(UNROUTED_ASK_PREFIX)
+    ? { path: ["projectRef"], issue: `only an ${UNROUTED_ASK_PREFIX}* ask may leave out projectRef` }
+    : undefined,
+);
+
 export const Ask = Schema.Struct({
   askId: AskId,
-  projectRef: ProjectRef,
+  /** Absent only on an `intake.route.*` ask: the human picks the project by answering it. */
+  projectRef: Schema.optionalKey(ProjectRef),
   workstreamId: Schema.optionalKey(WorkstreamId),
   kind: AskKind,
   key: DecisionKey,
@@ -373,7 +384,7 @@ export const Ask = Schema.Struct({
   decisionId: Schema.optionalKey(DecisionId),
   createdAt: Timestamp,
 })
-  .check(askKindRule)
+  .check(askKindRule, askProjectRule)
   .annotate({ identifier: "Ask" });
 export type Ask = typeof Ask.Type;
 

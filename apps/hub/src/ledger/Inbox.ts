@@ -128,7 +128,10 @@ const make = Effect.gen(function* () {
         if (denied) {
           throw new LedgerError({
             code: "forbidden",
-            message: `Item ${denied.number} is about ${projectKey(denied.ask.projectRef)}, where this caller may not answer.`,
+            message:
+              denied.ask.projectRef === undefined
+                ? `Item ${denied.number} picks a project for a new intent, which needs a grant on every machine.`
+                : `Item ${denied.number} is about ${projectKey(denied.ask.projectRef)}, where this caller may not answer.`,
             fix: "Answer only the items of your own machines, or ask the hub admin for an operate grant there.",
           });
         }
@@ -143,7 +146,8 @@ const make = Effect.gen(function* () {
             const decision = repo.recordDecision(
               {
                 key: ask.key,
-                scope: { kind: "project", projectRef: ask.projectRef },
+                // An unrouted ask has no project yet; its answer names one, and intake acts on it.
+                scope: ask.projectRef === undefined ? { kind: "global" } : { kind: "project", projectRef: ask.projectRef },
                 value: action.value,
                 ...(action.note === undefined ? {} : { why: action.note }),
                 askId: ask.askId,
@@ -206,8 +210,11 @@ const make = Effect.gen(function* () {
       for (const { decision, projectRef } of done.decisions) yield* events.append(recordedEvent(decision, projectRef));
       const byProject = new Map<string, { projectRef: ProjectRef; answers: Array<Answer> }>();
       for (const answer of done.answers) {
-        const key = projectKey(answer.ask.projectRef);
-        const group = byProject.get(key) ?? { projectRef: answer.ask.projectRef, answers: [] };
+        // No lead to wake for an unrouted ask: intake follows its decision.recorded instead.
+        const projectRef = answer.ask.projectRef;
+        if (projectRef === undefined) continue;
+        const key = projectKey(projectRef);
+        const group = byProject.get(key) ?? { projectRef, answers: [] };
         group.answers.push(answer);
         byProject.set(key, group);
       }

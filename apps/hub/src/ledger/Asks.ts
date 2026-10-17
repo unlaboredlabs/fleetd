@@ -1,6 +1,7 @@
 import {
   AskClass,
   StepCommand,
+  UNROUTED_ASK_PREFIX,
   type Ask,
   type AskId,
   type AskKind,
@@ -26,6 +27,7 @@ import * as EventLog from "../store/EventLog.ts";
 import {
   type LedgerError,
   LedgerRepo,
+  askProjectKey,
   type StoredBatch,
   batchN,
   invalid,
@@ -43,7 +45,8 @@ export const DECIDE_YOURSELF = "decide this yourself and log it with `fleetd dec
 
 /** What the lead files with `fleetd ask`; `class` is unchecked so the refusal can name the fix. */
 export interface AskInput {
-  readonly projectRef: ProjectRef;
+  /** Absent only for an `intake.route.*` ask (the router's fallback). */
+  readonly projectRef?: ProjectRef;
   readonly workstreamId?: WorkstreamId;
   readonly kind: AskKind;
   readonly key: DecisionKey;
@@ -101,6 +104,9 @@ const isStepCommand = Schema.is(StepCommand);
 
 /** Step 1 of the ask path. */
 export const validateAsk = (input: AskInput): LedgerError | undefined => {
+  if (input.projectRef === undefined && !input.key.startsWith(UNROUTED_ASK_PREFIX)) {
+    return invalid(`Only an ${UNROUTED_ASK_PREFIX}* ask may leave out its project.`, "Name the project the ask is about.");
+  }
   if (!isAskClass(input.class)) {
     return invalid(
       `"${input.class}" is not something fleetd asks the human about (only product, money, credential, irreversible): ${DECIDE_YOURSELF}.`,
@@ -128,7 +134,7 @@ export const validateAsk = (input: AskInput): LedgerError | undefined => {
 /** Money, credential and irreversible asks that hold a step back skip the quiet window. */
 const isUrgent = (ask: Ask) => ask.class !== "product" && ask.blocks !== "nothing";
 
-const projectFields = (ref: ProjectRef) => ({ machineId: ref.machineId, projectId: ref.projectId });
+const projectFields = (ref: ProjectRef | undefined) => (ref === undefined ? {} : { machineId: ref.machineId, projectId: ref.projectId });
 
 export const batchReadyEvent = (stored: StoredBatch, nowMs: number): Omit<HubEvent, "seq"> => ({
   at: isoAt(nowMs),
@@ -181,11 +187,12 @@ const make = Effect.gen(function* () {
       const refused = validateAsk(input);
       if (refused) return yield* refused;
       const now = yield* Clock.currentTimeMillis;
-      const chain = { projectRef: input.projectRef, ...(input.workstreamId ? { workstreamId: input.workstreamId } : {}) };
+      const projectRef = input.projectRef;
+      const chain = projectRef && { projectRef, ...(input.workstreamId ? { workstreamId: input.workstreamId } : {}) };
       const created = yield* write(repo, (): Created => {
         const base = (askId: AskId, state: AskState): Ask => ({
           askId,
-          projectRef: input.projectRef,
+          ...(projectRef ? { projectRef } : {}),
           ...(input.workstreamId ? { workstreamId: input.workstreamId } : {}),
           kind: input.kind,
           key: input.key,
@@ -199,7 +206,8 @@ const make = Effect.gen(function* () {
           state,
           createdAt: isoAt(now),
         });
-        const decision = repo.resolve(input.key, chain);
+        // An unrouted ask has no project to look decisions up in, so it is always asked.
+        const decision = chain && repo.resolve(input.key, chain);
         if (decision) {
           const ask = repo.insertAsk(input.projectRef, input.key, input.workstreamId, by, now, (askId) => ({
             ...base(askId, "auto"),
@@ -212,7 +220,7 @@ const make = Effect.gen(function* () {
         const fresh = repo.insertAsk(input.projectRef, input.key, input.workstreamId, by, now, (askId) => base(askId, "open"));
         const { ask, batch } = repo.addToCollecting(fresh, now);
         const publishedNow = isUrgent(ask) && repo.publishBatch(batch.n, now);
-        const candidates = repo.searchDecisions(`${input.key} ${input.text}`, { chain, limit: 5 });
+        const candidates = chain ? repo.searchDecisions(`${input.key} ${input.text}`, { chain, limit: 5 }) : [];
         return { tag: "new", ask, candidates, batch: repo.getBatch(batch.n)!, publishedNow };
       });
 
@@ -252,7 +260,7 @@ const make = Effect.gen(function* () {
   const withdraw = (askId: AskId, options: { readonly use?: DecisionId; readonly projectRef?: ProjectRef } = {}) =>
     write(repo, () => {
       const row = repo.getAskRow(askId);
-      if (!row || (options.projectRef && projectKey(options.projectRef) !== projectKey(row.ask.projectRef))) {
+      if (!row || (options.projectRef && projectKey(options.projectRef) !== askProjectKey(row.ask.projectRef))) {
         throw notFound(`No ask ${askId} in this project.`);
       }
       if (row.ask.state !== "open") throw invalid(`${askId} is already ${row.ask.state}.`);

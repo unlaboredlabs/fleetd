@@ -223,6 +223,11 @@ const MIGRATIONS: ReadonlyArray<string> = [
   `
   CREATE TABLE playbook_versions (ref TEXT PRIMARY KEY, text TEXT NOT NULL);
   `,
+  // M9 intake: each intent the router placed or asked about, so a retry returns the same answer and the routing
+  // ask's answer finds its intent.
+  `
+  CREATE TABLE intake_routes (client_request_id TEXT PRIMARY KEY, ask_id TEXT UNIQUE, data TEXT NOT NULL);
+  `,
 ];
 
 /** The `user_version` of a fully migrated database. */
