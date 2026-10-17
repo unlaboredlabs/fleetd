@@ -1,0 +1,516 @@
+//! Wakes to a lead: triggers for one lead are debounced and coalesced into a single message, which starts with the
+//! code-rendered digest and then says why the lead was woken.
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::ledger::{Decision, DecisionScope, DecisionSource, PlaybookRef, WorkstreamId};
+
+use super::digest::{DigestInput, DigestPlaybook, WorkstreamFacts, one_line, render_lead_digest};
+use super::error::LeadError;
+use super::hooks::BoxFuture;
+use super::records::{LeadRecords, WorkstreamFilter};
+use super::{Ctx, now_iso};
+use crate::clock::Clock;
+use crate::hub::ledger::{Answer, AnswerOutcome, AskFilter, DecisionFilter};
+use crate::hub::playbooks::Playbooks;
+use crate::hub::store::{NewEvent, now_ms};
+
+pub const WAKE_DEBOUNCE: Duration = Duration::from_secs(10);
+/// A steady trigger stream still wakes the lead this long after the first pending trigger.
+pub const WAKE_MAX_WAIT: Duration = Duration::from_secs(60);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineKind {
+    TaskResult,
+    ClaimFailed,
+    ClaimPassed,
+    TaskWaiting,
+    Train,
+    ResearchVerdict,
+}
+
+#[derive(Debug, Clone)]
+pub enum Trigger {
+    Intent {
+        workstream_id: WorkstreamId,
+        text: String,
+        /// M9: the playbook it pinned, whose instructions go into this wake.
+        playbook: Option<DigestPlaybook>,
+    },
+    Answer(Answer),
+    /// A decision the human recorded that touches the lead's project.
+    Decision(Decision),
+    /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
+    /// that raises it renders its own "why" line(s), as the TS render helpers did.
+    Line { kind: LineKind, text: String },
+}
+
+impl Trigger {
+    /// M7 merge train: a merge, or a PR the train refused or gave up on, as one line.
+    pub fn train(line: &str) -> Self {
+        Trigger::Line { kind: LineKind::Train, text: format!("- {line}") }
+    }
+
+    /// M9: a research workstream's computed verdict, as one line.
+    pub fn research_verdict(line: &str) -> Self {
+        Trigger::Line { kind: LineKind::ResearchVerdict, text: format!("- {line}") }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Trigger::Intent { .. } => "intent",
+            Trigger::Answer(_) => "answer",
+            Trigger::Decision(_) => "decision",
+            Trigger::Line { kind, .. } => match kind {
+                LineKind::TaskResult => "task_result",
+                LineKind::ClaimFailed => "claim_failed",
+                LineKind::ClaimPassed => "claim_passed",
+                LineKind::TaskWaiting => "task_waiting",
+                LineKind::Train => "train",
+                LineKind::ResearchVerdict => "research_verdict",
+            },
+        }
+    }
+}
+
+fn quote(text: &str) -> String {
+    one_line(text, 300)
+}
+
+fn scope_text(scope: &DecisionScope) -> String {
+    match scope {
+        DecisionScope::Workstream { workstream_id } => workstream_id.to_string(),
+        DecisionScope::Project { .. } => "project".into(),
+        DecisionScope::Global => "global".into(),
+    }
+}
+
+/// The "why you are woken" lines. Answers are already listed in the digest, so they get one summary line; so do
+/// playbook instructions the digest already shows.
+pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    for t in triggers {
+        match t {
+            Trigger::Intent { workstream_id, text, playbook } => {
+                lines.push(format!(
+                    "- New intent {workstream_id}: '{}'. Register it with `fleetd brief create --workstream {workstream_id} --json '<Brief>'`.",
+                    quote(text)
+                ));
+                if let Some(p) = playbook {
+                    let instructions = one_line(&p.lead_instructions, 600);
+                    lines.push(if digest.contains(&instructions) {
+                        format!("  It follows the {} playbook; its instructions are under \"Playbooks\" above.", p.name)
+                    } else {
+                        format!("  It follows the {} playbook: {instructions}", p.name)
+                    });
+                }
+            }
+            Trigger::Decision(d) => {
+                let who = if d.source == DecisionSource::Human {
+                    "The human".to_string()
+                } else {
+                    format!("Agent {}, for the human,", d.by.as_deref().unwrap_or("(unnamed)"))
+                };
+                lines.push(format!(
+                    "- {who} recorded {}: {} = {} ({}). Follow it.",
+                    d.decision_id,
+                    d.key,
+                    quote(d.value.as_ref()),
+                    scope_text(&d.scope)
+                ));
+            }
+            Trigger::Line { text, .. } => lines.push(text.clone()),
+            Trigger::Answer(_) => {}
+        }
+    }
+    let answers = triggers.iter().filter(|t| matches!(t, Trigger::Answer(_))).count();
+    if answers > 0 {
+        lines.push(format!("- The human settled {answers} of your asks; see \"Answers since your last wake\" above."));
+    }
+    lines
+}
+
+pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {
+    format!("{digest}\n\n## Why you are woken\n{}", trigger_lines(triggers, digest).join("\n"))
+}
+
+/// Coalesces items per key: a key flushes once no new item arrived for `debounce`, or `max_wait` after its first
+/// pending item. Timers are never cancelled: a superseded one wakes, sees a newer generation and does nothing.
+/// Taking the entry out is under the same lock as that check, so an item lands either in this flush or the next.
+pub struct Debouncer<K, T> {
+    clock: Arc<dyn Clock>,
+    debounce_ms: i64,
+    max_wait_ms: i64,
+    pending: Mutex<HashMap<K, Pending<T>>>,
+    next_entry: AtomicU64,
+}
+
+struct Pending<T> {
+    entry: u64,
+    items: Vec<T>,
+    generation: u64,
+    first_ms: i64,
+}
+
+impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
+    pub fn new(clock: Arc<dyn Clock>, debounce: Duration, max_wait: Duration) -> Arc<Self> {
+        Arc::new(Self {
+            clock,
+            debounce_ms: debounce.as_millis() as i64,
+            max_wait_ms: max_wait.as_millis() as i64,
+            pending: Mutex::new(HashMap::new()),
+            next_entry: AtomicU64::new(0),
+        })
+    }
+
+    /// Queues `item`; `flush` runs with every pending item of `key` when its window closes.
+    pub fn push<F>(self: &Arc<Self>, key: K, item: T, flush: F)
+    where
+        F: FnOnce(K, Vec<T>) -> BoxFuture<()> + Send + 'static,
+    {
+        let now = now_ms(self.clock.as_ref());
+        let (entry, generation, delay_ms) = {
+            let mut pending = self.pending.lock().unwrap();
+            let p = pending.entry(key.clone()).or_insert_with(|| Pending {
+                entry: self.next_entry.fetch_add(1, Ordering::Relaxed),
+                items: Vec::new(),
+                generation: 0,
+                first_ms: now,
+            });
+            p.items.push(item);
+            p.generation += 1;
+            // The quiet window, cut short so the latest timer never sleeps past the max-wait deadline.
+            let delay = self.debounce_ms.min(p.first_ms + self.max_wait_ms - now).max(0);
+            (p.entry, p.generation, delay)
+        };
+        let this = Arc::clone(self);
+        tokio::spawn(async move {
+            this.clock.sleep(Duration::from_millis(delay_ms as u64)).await;
+            let items = {
+                let mut pending = this.pending.lock().unwrap();
+                match pending.get(&key) {
+                    Some(p) if p.entry == entry && p.generation == generation => pending.remove(&key).map(|p| p.items),
+                    _ => None,
+                }
+            };
+            if let Some(items) = items {
+                flush(key, items).await;
+            }
+        });
+    }
+}
+
+/// Where a wake goes: the executor's `send`, which goes through the queue area's offline writer when it is set, so a
+/// wake to an offline machine waits for it instead of being dropped. A seam so the debounce can be tested alone.
+pub trait WakeSender: Send + Sync {
+    /// `Ok(queued)`, or why it was not delivered.
+    fn send(&self, thread: ThreadRef, message: String, client_request_id: String) -> BoxFuture<Result<bool, String>>;
+}
+
+/// Production sender: the hub's executors.
+pub struct ExecutorSender(pub Arc<crate::hub::executor::Executors>);
+
+impl WakeSender for ExecutorSender {
+    fn send(&self, thread: ThreadRef, message: String, client_request_id: String) -> BoxFuture<Result<bool, String>> {
+        let executors = Arc::clone(&self.0);
+        Box::pin(async move {
+            executors.send(&thread, &message, &client_request_id).await.map(|o| o.queued).map_err(|e| e.to_string())
+        })
+    }
+}
+
+fn key_of(r: &ProjectRef) -> String {
+    format!("{}/{}", r.machine_id, r.project_id)
+}
+
+pub struct LeadWakes {
+    ctx: Arc<Ctx>,
+    records: Arc<LeadRecords>,
+    playbooks: Arc<Playbooks>,
+    sender: Arc<dyn WakeSender>,
+    debouncer: Arc<Debouncer<ProjectRef, Trigger>>,
+    flushing: tokio::sync::Mutex<()>,
+}
+
+impl LeadWakes {
+    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, playbooks: Arc<Playbooks>, sender: Arc<dyn WakeSender>) -> Arc<Self> {
+        let debouncer = Debouncer::new(Arc::clone(&ctx.clock), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        Arc::new(Self { ctx, records, playbooks, sender, debouncer, flushing: tokio::sync::Mutex::new(()) })
+    }
+
+    /// Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE, or WAKE_MAX_WAIT after
+    /// the first.
+    pub fn trigger(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
+        let this = Arc::clone(self);
+        self.debouncer.push(r.clone(), trigger, move |r, triggers| Box::pin(async move { this.flush(r, triggers).await }));
+    }
+
+    /// The lead digest as of now, with `answers` as its "since your last wake" list.
+    pub async fn digest(&self, r: &ProjectRef, answers: &[Answer]) -> Result<String, LeadError> {
+        let ctx = &self.ctx;
+        let project = ctx.store.project_get(r)?;
+        let workstreams =
+            self.records.workstreams_list(&WorkstreamFilter { project_ref: Some(r.clone()), open: true, limit: 50, ..Default::default() })?;
+        let since = self.records.lead_get(r)?.and_then(|l| l.last_wake_at);
+        let mut pinned: HashMap<PlaybookRef, DigestPlaybook> = HashMap::new();
+        let refs: HashSet<&PlaybookRef> = workstreams.iter().filter_map(|w| w.playbook.as_ref()).collect();
+        for p in refs {
+            if let Some(loaded) = self.playbooks.by_ref(p)? {
+                pinned.insert(
+                    p.clone(),
+                    DigestPlaybook { name: loaded.playbook.name.as_str().into(), lead_instructions: loaded.playbook.lead_instructions.to_string() },
+                );
+            }
+        }
+        let open_asks = ctx.asks.list(&AskFilter { state: Some(fleetd_contracts::ledger::AskState::Open), project_ref: Some(r.clone()), limit: 50, ..Default::default() })?;
+        // Global, project and every workstream-scoped decision in the project; the digest ranks them.
+        let decisions = ctx.decisions.list(&DecisionFilter { chain: Some(r.clone()), limit: 500, ..Default::default() })?;
+        let tasks = ctx.hooks.tasks.get().map(|t| t.digest_lines(r, since.as_ref(), 50));
+        let train = ctx.hooks.train.get().and_then(|t| t.lead_lines(r, since.as_ref()));
+        let facts = self.workstream_facts(&workstreams);
+        let at = now_iso(ctx);
+        Ok(render_lead_digest(&DigestInput {
+            project_ref: r,
+            title: project.as_ref().map_or(r.project_id.as_str(), |p| p.title.as_str()),
+            at: &at,
+            workstreams: &workstreams,
+            open_asks: &open_asks,
+            answers,
+            decisions: &decisions,
+            tasks,
+            train,
+            facts: &facts,
+            playbooks: &pinned,
+        }))
+    }
+
+    /// Per workstream with a brief: the checks its latest finished claim passed, and its ETA.
+    pub fn workstream_facts(&self, workstreams: &[fleetd_contracts::ledger::Workstream]) -> HashMap<WorkstreamId, WorkstreamFacts> {
+        let hooks = &self.ctx.hooks;
+        let mut facts = HashMap::new();
+        for w in workstreams.iter().filter(|w| w.brief.is_some()) {
+            let passed = hooks
+                .claims
+                .get()
+                .and_then(|c| c.latest(&w.workstream_id))
+                .map(|claim| {
+                    claim
+                        .results
+                        .iter()
+                        .filter(|r| r.result == fleetd_contracts::verification::CheckOutcome::Pass)
+                        .map(|r| r.check_index.get() as usize)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let eta = hooks.estimates.get().and_then(|e| e.eta(w).map(|eta| e.eta_text(&eta)));
+            facts.insert(w.workstream_id.clone(), WorkstreamFacts { passed, eta });
+        }
+        facts
+    }
+
+    async fn flush(self: Arc<Self>, r: ProjectRef, triggers: Vec<Trigger>) {
+        let _guard = self.flushing.lock().await;
+        if let Err(error) = self.flush_inner(&r, triggers).await {
+            tracing::warn!(project = %key_of(&r), %error, "lead wake failed");
+        }
+    }
+
+    async fn flush_inner(self: &Arc<Self>, r: &ProjectRef, triggers: Vec<Trigger>) -> Result<(), LeadError> {
+        let Some(lead) = self.records.lead_get(r)? else {
+            // No lead yet: lead_start's first message carries the digest, which shows the same state.
+            tracing::info!(project = %key_of(r), triggers = triggers.len(), "lead wake dropped: project has no lead");
+            return Ok(());
+        };
+        let thread = ThreadRef { machine_id: r.machine_id.clone(), thread_id: lead.thread_id.clone() };
+        // M4 usage: a wake is a turn, so it waits while the login is paused or the lead is parked, then goes again.
+        if let Some(usage) = self.ctx.hooks.usage.get() {
+            if usage.hold(&thread).is_some() {
+                let clear = usage.when_clear(&thread);
+                let this = Arc::clone(self);
+                let r = r.clone();
+                tokio::spawn(async move {
+                    clear.await;
+                    for t in triggers {
+                        this.trigger(&r, t);
+                    }
+                });
+                return Ok(());
+            }
+        }
+        let answers: Vec<Answer> = triggers
+            .iter()
+            .filter_map(|t| match t {
+                Trigger::Answer(a) => Some(a.clone()),
+                _ => None,
+            })
+            .collect();
+        let message = render_wake(&self.digest(r, &answers).await?, &triggers);
+        let at = now_iso(&self.ctx);
+        let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
+        let queued = match self.sender.send(thread, message, crid).await {
+            Ok(queued) => queued,
+            Err(reason) => {
+                tracing::warn!(project = %key_of(r), %reason, "lead wake not delivered");
+                return Ok(());
+            }
+        };
+        let n = triggers.len();
+        self.records.lead_put(&super::records::StoredLead { last_wake_at: Some(at.clone().into()), ..lead.clone() })?;
+        let mut data = serde_json::json!({ "triggers": triggers.iter().map(Trigger::kind).collect::<Vec<_>>() });
+        if queued {
+            data["queued"] = serde_json::Value::Bool(true);
+        }
+        self.ctx.events.append(NewEvent {
+            at: at.into(),
+            r#type: HubEventType::LeadWoken,
+            machine_id: Some(r.machine_id.clone()),
+            project_id: Some(r.project_id.clone()),
+            thread_id: Some(lead.thread_id),
+            summary: format!(
+                "Lead of {} {} with {n} trigger{}",
+                r.project_id,
+                if queued { "wake queued" } else { "woken" },
+                if n == 1 { "" } else { "s" }
+            ),
+            data: Some(data),
+        })?;
+        Ok(())
+    }
+
+    /// The ledger's AnswerSink: each applied answer becomes a trigger for its project's lead. An approved command or a
+    /// checklist with a verify check reaches the lead later, from the approvals follow-up, with its outcome.
+    pub fn on_answered(self: &Arc<Self>, r: &ProjectRef, answers: &[Answer]) {
+        for answer in answers {
+            if !crate::hub::ledger::followed_up(answer) {
+                self.trigger(r, Trigger::Answer(answer.clone()));
+            }
+        }
+    }
+
+    /// Wakes a lead when someone other than a lead records a decision in its project (decisions_record from a human
+    /// or an outside agent). Answers to asks are left out: the AnswerSink already delivers those. Follows the event
+    /// log from the hub's start, so it sees every path that records a decision.
+    pub async fn run_decision_wakes(self: Arc<Self>) {
+        let events = Arc::clone(&self.ctx.events);
+        let mut cursor = events.head();
+        loop {
+            let page = match events
+                .wait(crate::hub::store::WaitInput {
+                    cursor: Some(cursor),
+                    types: Some(vec![HubEventType::DecisionRecorded]),
+                    machine_id: None,
+                    timeout_sec: 3600,
+                })
+                .await
+            {
+                Ok(page) => page,
+                Err(error) => {
+                    tracing::warn!(%error, "decision wakes: event log read failed");
+                    self.ctx.clock.sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            cursor = page.cursor;
+            for event in page.events {
+                let (Some(machine_id), Some(project_id)) = (event.machine_id.clone(), event.project_id.clone()) else { continue };
+                // A global decision touches every project; leads see it in their next digest instead.
+                let id = event.data.as_ref().and_then(|d| d.get("decisionId")).and_then(|v| serde_json::from_value(v.clone()).ok());
+                let Some(decision) = id.and_then(|id| self.ctx.decisions.get(&id).ok().flatten()) else { continue };
+                if matches!(decision.scope, DecisionScope::Global) || decision.source == DecisionSource::Lead || decision.ask_id.is_some() {
+                    continue;
+                }
+                self.trigger(&ProjectRef { machine_id, project_id }, Trigger::Decision(decision));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hub::store::test_clock::ManualClock;
+
+    type Flushes = Arc<Mutex<Vec<(u32, Vec<u32>, u64)>>>;
+
+    async fn settle() {
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    fn push(d: &Arc<Debouncer<u32, u32>>, clock: &Arc<ManualClock>, flushes: &Flushes, key: u32, item: u32) {
+        let flushes = Arc::clone(flushes);
+        let clock = Arc::clone(clock);
+        d.push(key, item, move |key, items| {
+            Box::pin(async move { flushes.lock().unwrap().push((key, items, now_ms(clock.as_ref()) as u64)) })
+        });
+    }
+
+    async fn advance(clock: &ManualClock, secs: u64) {
+        clock.advance(Duration::from_secs(secs));
+        settle().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn coalesces_into_one_flush_ten_seconds_after_the_last_trigger() {
+        let clock = ManualClock::at(0);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let flushes: Flushes = Default::default();
+        push(&d, &clock, &flushes, 1, 1);
+        advance(&clock, 5).await;
+        push(&d, &clock, &flushes, 1, 2);
+        advance(&clock, 9).await;
+        push(&d, &clock, &flushes, 1, 3);
+        advance(&clock, 9).await;
+        assert!(flushes.lock().unwrap().is_empty());
+        advance(&clock, 1).await;
+        assert_eq!(*flushes.lock().unwrap(), vec![(1, vec![1, 2, 3], 24_000)]);
+        // Quiet afterwards: nothing flushes again.
+        advance(&clock, 60).await;
+        assert_eq!(flushes.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn flushes_sixty_seconds_after_the_first_trigger_under_a_steady_stream_then_opens_a_fresh_window() {
+        let clock = ManualClock::at(0);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let flushes: Flushes = Default::default();
+        // A trigger every 8 s never leaves a 10 s quiet window.
+        for i in 1..=7 {
+            push(&d, &clock, &flushes, 1, i);
+            advance(&clock, 8).await;
+        }
+        assert!(flushes.lock().unwrap().is_empty());
+        push(&d, &clock, &flushes, 1, 8);
+        advance(&clock, 3).await;
+        assert!(flushes.lock().unwrap().is_empty());
+        advance(&clock, 1).await;
+        assert_eq!(*flushes.lock().unwrap(), vec![(1, (1..=8).collect(), 60_000)]);
+
+        // The next trigger opens a new window measured from itself.
+        push(&d, &clock, &flushes, 1, 9);
+        advance(&clock, 9).await;
+        assert_eq!(flushes.lock().unwrap().len(), 1);
+        advance(&clock, 1).await;
+        assert_eq!(flushes.lock().unwrap()[1], (1, vec![9], 70_000));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn debounces_each_key_on_its_own() {
+        let clock = ManualClock::at(0);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let flushes: Flushes = Default::default();
+        push(&d, &clock, &flushes, 1, 1);
+        advance(&clock, 6).await;
+        push(&d, &clock, &flushes, 2, 2);
+        advance(&clock, 4).await;
+        assert_eq!(flushes.lock().unwrap().iter().map(|f| f.0).collect::<Vec<_>>(), vec![1]);
+        advance(&clock, 6).await;
+        assert_eq!(flushes.lock().unwrap().iter().map(|f| f.0).collect::<Vec<_>>(), vec![1, 2]);
+    }
+}
