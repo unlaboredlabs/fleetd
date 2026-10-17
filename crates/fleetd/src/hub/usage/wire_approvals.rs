@@ -7,9 +7,9 @@ use crate::hub::approvals::{
     ApprovalAsks, ApprovalHub, ApprovalNodes, ApprovalRefused, GatedOutcome, NodeCommandError,
     SecretOutcome,
 };
-use crate::hub::ledger::{AskFilter, AskInput, LedgerError};
+use crate::hub::ledger::{AskFilter, LedgerError};
 use crate::hub::link::commands::NodeCommandErrorReason;
-use fleetd_contracts::ledger::{Ask, AskKind, AskState, CheckSpec, DecisionKey};
+use fleetd_contracts::ledger::{Ask, AskState, CheckSpec};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
@@ -31,40 +31,6 @@ fn invalid(message: String) -> ApprovalRefused {
 
 fn ask_json(ask: &Ask) -> Value {
     serde_json::to_value(ask).unwrap_or_default()
-}
-
-/// One field of an `AskInput` in wire JSON: absent or null reads as None.
-fn field<T: DeserializeOwned>(input: &Value, key: &str) -> Result<Option<T>, ApprovalRefused> {
-    match input.get(key) {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => serde_json::from_value(v.clone())
-            .map(Some)
-            .map_err(|e| invalid(format!("{key}: {e}"))),
-    }
-}
-
-fn required<T: DeserializeOwned>(input: &Value, key: &str) -> Result<T, ApprovalRefused> {
-    field(input, key)?.ok_or_else(|| invalid(format!("{key} is missing")))
-}
-
-fn ask_input(input: &Value) -> Result<AskInput, ApprovalRefused> {
-    Ok(AskInput {
-        project_ref: field(input, "projectRef")?,
-        workstream_id: field(input, "workstreamId")?,
-        kind: required::<AskKind>(input, "kind")?,
-        key: required::<DecisionKey>(input, "key")?,
-        class: required(input, "class")?,
-        text: required(input, "text")?,
-        recommendation: field(input, "recommendation")?,
-        options: field(input, "options")?,
-        steps: field(input, "steps")?,
-        verify: field(input, "verify")?,
-        sink: field(input, "sink")?,
-        env_name: field(input, "envName")?,
-        gated: field(input, "gated")?,
-        blocks: required(input, "blocks")?,
-        proceeded_on_rec: field(input, "proceededOnRec")?.unwrap_or(false),
-    })
 }
 
 impl ApprovalAsks for OpsPorts {
@@ -93,7 +59,7 @@ impl ApprovalAsks for OpsPorts {
     fn create(&self, input: Value, by: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
         let by = by.to_owned();
         Box::pin(async move {
-            let input = ask_input(&input)?;
+            let input = super::wire_retro::ask_input_of(&input).map_err(invalid)?;
             let outcome = self.hub().asks.create(&input, &by).map_err(refused)?;
             Ok(ask_json(&outcome.ask))
         })
