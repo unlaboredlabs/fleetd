@@ -82,6 +82,23 @@ describe("HubStore", () => {
       }),
     ));
 
+  it("keeps a thread's last run when an update omits it, and lists running threads", () =>
+    run(
+      Effect.gen(function* () {
+        const { threads } = yield* HubStore.HubStore;
+        yield* threads.upsert({ ...thread("t1", 1), status: "running", lastRunId: "r1", lastRunStatus: "running" });
+        yield* threads.upsert({ ...thread("t2", 2), status: "completed", lastRunId: "r9", lastRunStatus: "completed" });
+        expect((yield* threads.listRunning()).map((t) => t.threadId)).toEqual(["t1"]);
+        yield* threads.upsert({ ...thread("t1", 3), status: "completed" });
+        expect(yield* threads.get({ machineId, threadId: ThreadId.make("t1") })).toMatchObject({
+          status: "completed",
+          lastRunId: "r1",
+          lastRunStatus: "running",
+        });
+        expect(yield* threads.listRunning()).toEqual([]);
+      }),
+    ));
+
   it("sets a known machine's status and ignores unknown machines", () =>
     run(
       Effect.gen(function* () {
