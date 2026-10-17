@@ -17,9 +17,9 @@ describe("task lead calls", () => {
         const handler = yield* LeadCallHandler.make;
         const call = (c: Record<string, unknown>, who = caller) => handler.handle(who, c as LeadCall);
 
-        const spawned = yield* call({ op: "task_spawn", workstreamId, title: "add file", kind: "write", prompt: "create docs/x.md", areas: ["docs"], effort: "low" });
+        const spawned = yield* call({ op: "task_spawn", workstreamId, title: "add file", kind: "write", prompt: "create docs/x.md", areas: ["docs"], serves: "done:0", effort: "low" });
         expect(spawned).toMatchObject({ op: "task_spawn", task: { taskId: "T1", state: "running", effort: "low", model: "claude-opus-5-5" } });
-        const second = yield* call({ op: "task_spawn", workstreamId, title: "more docs", kind: "write", prompt: "create docs/y.md", areas: ["docs"] });
+        const second = yield* call({ op: "task_spawn", workstreamId, title: "more docs", kind: "write", prompt: "create docs/y.md", areas: ["docs"], serves: "done:0" });
         expect(second).toMatchObject({ task: { taskId: "T2", state: "queued", queuedReason: "lease: docs held by T1" } });
 
         expect(yield* call({ op: "task_list", state: "queued" })).toMatchObject({ op: "task_list", tasks: [{ taskId: "T2" }] });
@@ -34,7 +34,7 @@ describe("task lead calls", () => {
         expect(yield* call({ op: "task_cancel", taskId: "T1", reason: "not needed" })).toMatchObject({ task: { state: "cancelled", result: { tail: "not needed" } } });
         // The cancelled writer's lease went to the queued one.
         expect(yield* call({ op: "task_status", taskId: "T2" })).toMatchObject({ task: { state: "running" } });
-        const refused = yield* Effect.flip(call({ op: "task_spawn", workstreamId, title: "x", kind: "write", prompt: "y", areas: ["nope"] }));
+        const refused = yield* Effect.flip(call({ op: "task_spawn", workstreamId, title: "x", kind: "write", prompt: "y", areas: ["nope"], serves: "done:0" }));
         expect(refused).toMatchObject({ code: "invalid", fix: expect.stringContaining("docs, hub") });
       }),
     );

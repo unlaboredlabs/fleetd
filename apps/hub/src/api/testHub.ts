@@ -38,6 +38,11 @@ import * as Policy from "../leases/Policy.ts";
 import * as Slots from "../slots/Slots.ts";
 import * as TaskRecords from "../tasks/TaskRecords.ts";
 import * as Tasks from "../tasks/Tasks.ts";
+import * as Incidents from "../incidents/Incidents.ts";
+import * as Receipts from "../receipts/Receipts.ts";
+import * as JudgeHook from "../valuebar/JudgeHook.ts";
+import * as PrHeads from "../valuebar/PrHeads.ts";
+import * as ValueBar from "../valuebar/ValueBar.ts";
 
 export const AT = "2026-10-17T10:00:00.000Z";
 
@@ -141,7 +146,8 @@ export const makeTestHub = () => {
 
   // No policy file anywhere (one area "all"); worktrees start from main.
   const layerTasks = Tasks.layer.pipe(
-    Layer.provideMerge(Layer.mergeAll(Slots.layer(), Leases.layer, Policy.layer)),
+    Layer.provideMerge(Layer.mergeAll(Slots.layer(), Leases.layer, Policy.layer, ValueBar.layer, Receipts.layer)),
+    Layer.provideMerge(Layer.mergeAll(Incidents.layer, PrHeads.layerGh, JudgeHook.layerNoop)),
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(Policy.PolicySource, Policy.PolicySource.of({ read: () => Effect.succeed(undefined) })),

@@ -122,7 +122,8 @@ export async function m3Loop(lab: Lab) {
   // 4. Asking the same key again is answered from the log; a naming question is refused.
   await send(
     threadId,
-    `Run these two commands in your shell, exactly as written, one after the other, then stop:\n${ASK}\nfleetd ask --key api.health.name --class naming --text "Name?" --rec "health"`,
+    // The prompt says never to re-ask a decided key, so a lead may skip the first command unless told this is a check.
+    `This is a lab check of fleetd's decision log: run both commands below in your shell, exactly as written, one after the other, even though the first key is already decided, then stop:\n${ASK}\nfleetd ask --key api.health.name --class naming --text "Name?" --rec "health"`,
   );
   const reaskFrom = cursor;
   cursor = await turnDone(threadId, cursor, "re-ask and naming");
