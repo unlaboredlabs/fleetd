@@ -84,6 +84,16 @@ export type CheckSpec = typeof CheckSpec.Type;
 export const Tier = Schema.Literals(["S", "M", "L"]);
 export type Tier = typeof Tier.Type;
 
+export const Estimate = Schema.Struct({
+  rawMinutes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  gates: list(text(200), 20),
+  /** Hub-filled: wall-clock minutes from running to done. */
+  actualMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+  /** Hub-filled: the tier's calibration ratio when the workstream started running. */
+  ratioAtStart: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+}).annotate({ identifier: "Estimate" });
+export type Estimate = typeof Estimate.Type;
+
 export const Brief = Schema.Struct({
   goal: text(1000),
   why: text(2000),
@@ -93,9 +103,7 @@ export const Brief = Schema.Struct({
   doneWhen: list(CheckSpec, 20).check(Schema.isMinLength(1)),
   tier: Tier,
   budget: Schema.optionalKey(Schema.Struct({ agentHours: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))) })),
-  estimate: Schema.optionalKey(
-    Schema.Struct({ rawMinutes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)), gates: list(text(200), 20) }),
-  ),
+  estimate: Schema.optionalKey(Estimate),
 }).annotate({ identifier: "Brief" });
 export type Brief = typeof Brief.Type;
 

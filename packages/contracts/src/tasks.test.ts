@@ -4,7 +4,7 @@ import { CapSetInput, DEFAULT_POLICY, LeadCall, PolicyFile, Task, TaskId } from 
 
 const accepts = (schema: Schema.Top, value: unknown) => Schema.decodeUnknownResult(schema as Schema.Codec<unknown>)(value)._tag === "Success";
 const at = "2026-10-17T10:00:00.000Z";
-const spawn = { op: "task_spawn", workstreamId: "W1", title: "add file", areas: ["docs"], prompt: "create docs/x.md" };
+const spawn = { op: "task_spawn", workstreamId: "W1", title: "add file", areas: ["docs"], prompt: "create docs/x.md", serves: "done:0" };
 
 describe("TaskId", () => {
   it("is T plus a positive integer", () => {

@@ -22,7 +22,8 @@ import {
 } from "./ledger.ts";
 import { McpToolError } from "./mcp.ts";
 import { Effort } from "./model.ts";
-import { Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule } from "./tasks.ts";
+import { Serves, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, taskAreasRule, taskSpawnRule } from "./tasks.ts";
+import { Claim, ClaimId, ReviewVerdict } from "./verification.ts";
 
 // Lead-side `fleetd` CLI calls. The CLI connects to the local node's unix socket, writes one LeadCallFrame as a
 // line of JSON, reads one LeadResultFrame line back, and closes. The node forwards the frame over its link to the
@@ -90,8 +91,8 @@ export const DecisionsSearchCall = Schema.Struct({
 
 /**
  * `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
- * [--effort e] [--tier S|M|L] [--estimate <min>] [--serves s]`. Absent model and effort resolve from the policy file,
- * then the project, then claude-opus-5-5/high.
+ * [--effort e] [--tier S|M|L] [--estimate <min>] [--serves s] [--qa]`. Absent model and effort resolve from the policy
+ * file, then the project, then claude-opus-5-5/high. A write task needs `--serves`; `--qa` marks a review task as a QA run.
  */
 export const TaskSpawnCall = Schema.Struct({
   op: Schema.tag("task_spawn"),
@@ -104,8 +105,9 @@ export const TaskSpawnCall = Schema.Struct({
   effort: Schema.optionalKey(Effort),
   tier: Schema.optionalKey(Tier),
   estimateMinutes: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
-  serves: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
-}).check(taskAreasRule);
+  serves: Schema.optionalKey(Serves),
+  qa: Schema.optionalKey(Schema.Boolean),
+}).check(taskAreasRule, taskSpawnRule);
 
 /** `fleetd task list [--state s] [--workstream W1]`, within the calling project. */
 export const TaskListCall = Schema.Struct({
@@ -127,6 +129,15 @@ export const TaskCancelCall = Schema.Struct({
   reason: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(200))),
 });
 
+/** `fleetd claim done --workstream W1`. Moves the workstream to verifying and runs its frozen done-when checks. */
+export const ClaimDoneCall = Schema.Struct({ op: Schema.tag("claim_done"), workstreamId: WorkstreamId });
+
+/**
+ * `fleetd review verdict --task T3 --sha <head> --blocking 0 --non-blocking 2 --summary s`, the last step of a review
+ * task.
+ */
+export const ReviewVerdictCall = Schema.Struct({ op: Schema.tag("review_verdict"), ...ReviewVerdict.fields });
+
 export const LeadCall = Schema.Union([
   BriefCreateCall,
   AskCall,
@@ -139,6 +150,8 @@ export const LeadCall = Schema.Union([
   TaskStatusCall,
   TaskMessageCall,
   TaskCancelCall,
+  ClaimDoneCall,
+  ReviewVerdictCall,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCall" });
@@ -196,6 +209,18 @@ export const TaskMessageResult = Schema.Struct({ op: Schema.tag("task_message"),
 
 export const TaskCancelResult = Schema.Struct({ op: Schema.tag("task_cancel"), task: Task, ...next });
 
+/** `claim` is present when every check finished within the call; otherwise the outcome arrives in a wake. */
+export const ClaimDoneResult = Schema.Struct({
+  op: Schema.tag("claim_done"),
+  claimId: ClaimId,
+  workstreamId: WorkstreamId,
+  state: WorkstreamState,
+  claim: Schema.optionalKey(Claim),
+  ...next,
+});
+
+export const ReviewVerdictResult = Schema.Struct({ op: Schema.tag("review_verdict"), verdict: ReviewVerdict, ...next });
+
 export const LeadCallResult = Schema.Union([
   BriefCreateResult,
   AskResult,
@@ -208,6 +233,8 @@ export const LeadCallResult = Schema.Union([
   TaskStatusResult,
   TaskMessageResult,
   TaskCancelResult,
+  ClaimDoneResult,
+  ReviewVerdictResult,
 ])
   .pipe(Schema.toTaggedUnion("op"))
   .annotate({ identifier: "LeadCallResult" });
