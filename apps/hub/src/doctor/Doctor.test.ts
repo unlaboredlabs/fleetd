@@ -18,7 +18,7 @@ const machine = (id: string, patch: Partial<Machine> = {}): Machine => ({
   tags: [],
   status: "online",
   lastSeenAt: AT,
-  t3: { version: "0.1.0", protocol: 2 },
+  t3: { version: "0.1.1-nightly.20261017.3238", protocol: 2 },
   nodeVersion: "0.0.0",
   ...patch,
 });
@@ -59,7 +59,8 @@ const fakeFleet = () => {
   });
   const doctor = make({
     listen: { host: "127.0.0.1", port: 4790 },
-    config: () => ({ config: { publicUrl: "https://hub.ts.net", commitIdentity: { email: "1+w@users.noreply.github.com" } } }),
+    hubPlatform: { platform: "linux", uid: 1000 },
+    config: () => ({ config: { url: "https://hub.ts.net", gitIdentity: { name: "w", email: "1+w@users.noreply.github.com" } } }),
     machines: () => Effect.sync(() => (state.runs++, state.machines)),
     connected: (id) => Effect.sync(() => state.connected.has(id)),
     awaitLive: () => Effect.void,
@@ -78,7 +79,7 @@ const fakeFleet = () => {
     actions: {
       run: (_id, action) =>
         Effect.sync(() => {
-          if (action === "probe") return { ok: true, message: "probed", probe: { gitEmail: "1+w@users.noreply.github.com", diskPath: "/home/lab", diskFreeBytes: state.diskFreeBytes } };
+          if (action === "probe") return { ok: true, message: "probed", probe: { gitEmail: "1+w@users.noreply.github.com", gitEmailFrom: "env" as const, diskPath: "/home/lab", diskFreeBytes: state.diskFreeBytes } };
           state.actions.push(action);
           return state.onAction(action);
         }),

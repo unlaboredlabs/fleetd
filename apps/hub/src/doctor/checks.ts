@@ -4,8 +4,8 @@
 import type { DoctorCheck, DoctorFix, DoctorStatus, Machine, MachineId, ProbeCounter, UsageBreaker } from "@fleetd/contracts";
 import type { ProviderInstanceConfig, ServerSettings } from "@t3tools/contracts";
 import { FLEETD_INSTANCE } from "../executor/ProviderList.ts";
-import { T3_PIN, T3_VERSION } from "../t3.ts";
-import type { HubConfig } from "./config.ts";
+import { T3_NPM_VERSION } from "../t3.ts";
+import { type HubConfig, type MachineSetup, restartCommand } from "./config.ts";
 
 export type AutoAction = "restart_t3" | "remint_session" | "reapply_instance";
 
@@ -17,9 +17,6 @@ export interface Entry {
 
 /** The disk floor: below this a machine cannot hold more worktrees. */
 export const MIN_FREE_BYTES = 5e9;
-/** The service units `fleetd init` and `fleetd machine add` install. */
-export const HUB_UNIT = "fleetd-hub.service";
-export const NODE_UNIT = "fleetd-node.service";
 /** Every tool the fleetd instance must deny: T3's own (they spawn and schedule outside fleetd's slots) and Claude's subagents. */
 export const REQUIRED_DISALLOWED = ["mcp__t3-code__*", "Task", "Workflow"] as const;
 const DISALLOWED_FLAGS = new Set(["--disallowedTools", "--disallowed-tools"]);
@@ -37,16 +34,17 @@ const machineEntry = (machineId: MachineId, name: string, status: DoctorStatus, 
   ...(action === undefined ? {} : { action }),
 });
 
-const setupAgain = (machineId: MachineId) => manual(`Run machine setup again from the hub; it is idempotent`, `fleetd machine add <ssh host of ${machineId}>`);
+const setupAgain = (machineId: MachineId, setup: MachineSetup | undefined) =>
+  manual(`Run machine setup again from the hub; it is idempotent`, `fleetd machine add ${setup?.sshHost ?? `<ssh host of ${machineId}>`}`);
 
 // Hub checks
 
 export type Probe = { readonly ok: true } | { readonly ok: false; readonly why: string };
 
-export const hubReachable = (url: string, probe: Probe): Entry =>
+export const hubReachable = (url: string, probe: Probe, restart: string): Entry =>
   probe.ok
     ? hubEntry("reachable", "ok", `The hub answers at ${url}.`)
-    : hubEntry("reachable", "fail", `The hub does not answer at its own address ${url} (${probe.why}).`, manual("Restart the hub service", `systemctl --user restart ${HUB_UNIT}`));
+    : hubEntry("reachable", "fail", `The hub does not answer at its own address ${url} (${probe.why}).`, manual("Restart the hub service", restart));
 
 export type GhOutcome = { readonly exitCode: number; readonly stdout: string; readonly stderr: string } | { readonly spawnError: string };
 
@@ -63,24 +61,27 @@ export const ghAuth = (outcome: GhOutcome): Entry => {
 };
 
 /** `undefined`: this hub keeps no push subscriptions. */
-export const pushConfigured = (devices: number | undefined, publicUrl: string | undefined): Entry => {
+export const pushConfigured = (devices: number | undefined, url: string | undefined): Entry => {
   if (devices === undefined) return hubEntry("push", "unknown", "This hub keeps no push subscriptions yet.");
   if (devices > 0) return hubEntry("push", "ok", `${devices} device${devices === 1 ? "" : "s"} get${devices === 1 ? "s" : ""} push.`);
   return hubEntry(
     "push",
     "warn",
     "No device gets push, so asks only reach you when an app is open.",
-    manual("Pair your phone, open the link, then turn on push in the app", `fleetd hub device add --name phone --url ${publicUrl ?? "<hub https url>"}`),
+    manual("Pair your phone, open the link, then turn on push in the app", `fleetd hub device add --name phone --url ${url ?? "<hub https url>"}`),
   );
 };
 
 export const httpsReachable = (config: { readonly config: HubConfig; readonly problem?: string }, port: number, probe: Probe | undefined): Entry => {
-  const serve = manual("Serve the hub over HTTPS (Tailscale Serve shown), then set publicUrl in hub.json", `tailscale serve --bg ${port}`);
+  const serve = manual(
+    "Serve the hub over HTTPS (Tailscale Serve shown), then stop the hub and run fleetd init --url https://<that address>",
+    `tailscale serve --bg ${port}`,
+  );
   if (config.problem !== undefined) return hubEntry("https", "warn", config.problem, serve);
-  const url = config.config.publicUrl;
-  if (url === undefined) return hubEntry("https", "warn", "No public URL is configured, so phones cannot reach the hub over HTTPS.", serve);
+  const url = config.config.url;
+  if (url === undefined) return hubEntry("https", "warn", "The hub has no address set up (fleetd init --url), so phones cannot reach it over HTTPS.", serve);
   if (!url.startsWith("https://")) {
-    return hubEntry("https", "warn", `The hub's public URL ${url} is not HTTPS; the phone app needs HTTPS for push and offline use.`, serve);
+    return hubEntry("https", "warn", `The hub's address ${url} is not HTTPS; the phone app needs HTTPS for push and offline use.`, serve);
   }
   if (probe === undefined || probe.ok) return hubEntry("https", "ok", `The hub is reachable over HTTPS at ${url}.`);
   return hubEntry("https", "fail", `${url} does not answer (${probe.why}).`, manual("Check that HTTPS still points at the hub", "tailscale serve status"));
@@ -88,11 +89,11 @@ export const httpsReachable = (config: { readonly config: HubConfig; readonly pr
 
 // Machine checks
 
-export const machineOnline = (machine: Machine, connected: boolean): Entry => {
+export const machineOnline = (machine: Machine, connected: boolean, setup: MachineSetup | undefined): Entry => {
   const id = machine.machineId;
   switch (machine.status) {
     case "offline":
-      return machineEntry(id, "online", "fail", `${id} is offline (last seen ${machine.lastSeenAt}).`, manual(`Start the fleetd node on ${id}`, `systemctl --user restart ${NODE_UNIT}`));
+      return machineEntry(id, "online", "fail", `${id} is offline (last seen ${machine.lastSeenAt}).`, manual(`Start the fleetd node on ${id}`, restartCommand("node", setup)));
     case "degraded":
       return machineEntry(id, "online", "fail", `${id} is degraded: ${machine.degradedReason ?? "T3 is down"}.`, { kind: "auto", label: `Restart T3 on ${id} with its node's restart command` }, "restart_t3");
     case "online":
@@ -109,12 +110,11 @@ export const machineOnline = (machine: Machine, connected: boolean): Entry => {
   }
 };
 
-export const t3Version = (machine: Machine): Entry => {
+export const t3Version = (machine: Machine, setup: MachineSetup | undefined): Entry => {
   const id = machine.machineId;
-  const pin = `pin ${T3_PIN.slice(0, 10)}`;
   if (machine.t3 === null) return machineEntry(id, "t3_version", "unknown", `T3 on ${id} has not reported its version yet.`);
-  if (machine.t3.version === T3_VERSION) return machineEntry(id, "t3_version", "ok", `T3 ${T3_VERSION} (${pin}).`);
-  return machineEntry(id, "t3_version", "fail", `T3 ${machine.t3.version} runs on ${id}; fleetd needs ${T3_VERSION} (${pin}).`, setupAgain(id));
+  if (machine.t3.version === T3_NPM_VERSION) return machineEntry(id, "t3_version", "ok", `T3 ${T3_NPM_VERSION}, the version setup installs.`);
+  return machineEntry(id, "t3_version", "fail", `T3 ${machine.t3.version} runs on ${id}; setup installs ${T3_NPM_VERSION}.`, setupAgain(id, setup));
 };
 
 const tokens = (args: string) => args.split(/\s+/u).filter((t) => t.length > 0);
@@ -165,7 +165,11 @@ export const reapplicable = (settings: ServerSettings): ProviderInstanceConfig |
 };
 
 /** `instance_args` and `auto_resume`, from the machine's T3 settings, or why they could not be read. */
-export const instanceChecks = (machineId: MachineId, settings: ServerSettings | { readonly unreadable: string }): ReadonlyArray<Entry> => {
+export const instanceChecks = (
+  machineId: MachineId,
+  settings: ServerSettings | { readonly unreadable: string },
+  setup: MachineSetup | undefined,
+): ReadonlyArray<Entry> => {
   if ("unreadable" in settings) {
     return ["instance_args", "auto_resume"].map((name) => machineEntry(machineId, name, "unknown", settings.unreadable));
   }
@@ -177,13 +181,13 @@ export const instanceChecks = (machineId: MachineId, settings: ServerSettings | 
   const missing = REQUIRED_DISALLOWED.filter((tool) => !disallowedTools(args).includes(tool));
   const instanceArgs =
     instance === undefined
-      ? machineEntry(machineId, "instance_args", "fail", `T3 on ${machineId} has no "${FLEETD_INSTANCE}" Claude instance.`, setupAgain(machineId))
+      ? machineEntry(machineId, "instance_args", "fail", `T3 on ${machineId} has no "${FLEETD_INSTANCE}" Claude instance.`, setupAgain(machineId, setup))
       : instance.driver !== "claudeAgent"
-        ? machineEntry(machineId, "instance_args", "fail", `The "${FLEETD_INSTANCE}" instance on ${machineId} runs ${instance.driver}, not Claude.`, setupAgain(machineId))
+        ? machineEntry(machineId, "instance_args", "fail", `The "${FLEETD_INSTANCE}" instance on ${machineId} runs ${instance.driver}, not Claude.`, setupAgain(machineId, setup))
         : home.length === 0
-          ? machineEntry(machineId, "instance_args", "fail", `The fleetd instance on ${machineId} has no config dir of its own (CLAUDE_CONFIG_DIR).`, setupAgain(machineId))
+          ? machineEntry(machineId, "instance_args", "fail", `The fleetd instance on ${machineId} has no config dir of its own (CLAUDE_CONFIG_DIR).`, setupAgain(machineId, setup))
           : reapplicable(settings) === undefined
-            ? machineEntry(machineId, "instance_args", "fail", `The fleetd instance on ${machineId} shares your own Claude config dir (${home}).`, setupAgain(machineId))
+            ? machineEntry(machineId, "instance_args", "fail", `The fleetd instance on ${machineId} shares your own Claude config dir (${home}).`, setupAgain(machineId, setup))
             : missing.length > 0
               ? machineEntry(
                   machineId,
@@ -227,6 +231,8 @@ export const usageBreaker = (machineId: MachineId, breaker: UsageBreaker): Entry
 
 export interface HostProbe {
   readonly gitEmail?: string;
+  /** `env`: the node's service environment (GIT_AUTHOR_EMAIL), which setup gives T3 too; else git's global config. */
+  readonly gitEmailFrom?: "env" | "git_config";
   readonly diskPath: string;
   readonly diskFreeBytes: number;
 }
@@ -235,17 +241,21 @@ const NOREPLY = /@users\.noreply\.github\.com$/iu;
 
 export const commitIdentity = (machineId: MachineId, probe: HostProbe | { readonly unreadable: string }, config: HubConfig): Entry => {
   if ("unreadable" in probe) return machineEntry(machineId, "commit_identity", "unknown", probe.unreadable);
-  const want = config.commitIdentity?.email;
-  const set = manual(`Set the commit identity on ${machineId}`, `git config --global user.email '${want ?? "<id>+<user>@users.noreply.github.com"}'`);
+  const want = config.gitIdentity?.email;
+  // Setup writes the identity into the T3 and node units; by hand, git's global config is the place.
+  const set = want === undefined
+    ? manual(`Set the commit identity on ${machineId}`, "git config --global user.email '<id>+<user>@users.noreply.github.com'")
+    : manual(`Run machine setup again from the hub to write the hub's identity into ${machineId}'s services`, `fleetd machine add ${config.machines?.[machineId]?.sshHost ?? `<ssh host of ${machineId}>`}`);
   if (probe.gitEmail === undefined) return machineEntry(machineId, "commit_identity", "fail", `No git commit identity is set on ${machineId}.`, set);
+  const from = probe.gitEmailFrom === "env" ? "the service environment" : "git's global config";
   if (want !== undefined && probe.gitEmail.toLowerCase() !== want.toLowerCase()) {
-    return machineEntry(machineId, "commit_identity", "warn", `Commits on ${machineId} use ${probe.gitEmail}; the hub's identity is ${want}.`, set);
+    return machineEntry(machineId, "commit_identity", "warn", `Commits on ${machineId} use ${probe.gitEmail} (from ${from}); the hub's identity is ${want}.`, set);
   }
   return machineEntry(
     machineId,
     "commit_identity",
     "ok",
-    `Commits on ${machineId} use ${probe.gitEmail}${NOREPLY.test(probe.gitEmail) ? " (a GitHub noreply address)" : ""}.`,
+    `Commits on ${machineId} use ${probe.gitEmail} (from ${from}${NOREPLY.test(probe.gitEmail) ? ", a GitHub noreply address" : ""}).`,
   );
 };
 

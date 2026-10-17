@@ -1,7 +1,7 @@
 import os from "node:os";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { probeHost, runNodeAction } from "./NodeActions.ts";
+import { commitEmail, probeHost, runNodeAction } from "./NodeActions.ts";
 import { T3RestartFailed } from "./T3Supervisor.ts";
 
 const deps = { remint: Effect.void, probe: Effect.succeed({ diskPath: "/", diskFreeBytes: 1 }) };
@@ -11,6 +11,14 @@ describe("node actions", () => {
     const probe = await Effect.runPromise(probeHost(os.tmpdir()));
     expect(probe.diskPath).toBe(os.tmpdir());
     expect(probe.diskFreeBytes).toBeGreaterThan(0);
+  });
+
+  it("reads the commit email from the service environment before git's config", async () => {
+    expect(await Effect.runPromise(commitEmail({ GIT_AUTHOR_EMAIL: "1+w@users.noreply.github.com" }))).toEqual({
+      gitEmail: "1+w@users.noreply.github.com",
+      gitEmailFrom: "env",
+    });
+    expect(await Effect.runPromise(commitEmail({ GIT_COMMITTER_EMAIL: "c@example.com" }))).toMatchObject({ gitEmailFrom: "env" });
   });
 
   it("runs the configured T3 restart command and reports its failure in plain words", async () => {

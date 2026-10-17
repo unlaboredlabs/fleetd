@@ -168,8 +168,8 @@ export type GatedResult = typeof GatedResult.Type;
 
 /**
  * Hub -> node, M11 doctor: `remint_session` mints a fresh T3 session for the hub now; `restart_t3` runs the node's
- * own T3 restart command (none configured: refused); `probe` reads the node user's git commit email and the free
- * space on the filesystem holding its home directory.
+ * own T3 restart command (none configured: refused); `probe` reads the commit email the node's services use and the
+ * free space on the filesystem holding its home directory.
  */
 export const NodeAction = Schema.Struct({
   t: Schema.tag("node_action"),
@@ -188,8 +188,9 @@ export const NodeActionResult = Schema.Struct({
   /** `probe` only. */
   probe: Schema.optionalKey(
     Schema.Struct({
-      /** `git config --global user.email`; absent when unset. */
+      /** The node's GIT_AUTHOR_EMAIL (setup puts the identity in the T3 and node units), else `git config --global user.email`; absent when neither is set. */
       gitEmail: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(320))),
+      gitEmailFrom: Schema.optionalKey(Schema.Literals(["env", "git_config"])),
       diskPath: Schema.String,
       diskFreeBytes: Schema.Number,
     }),

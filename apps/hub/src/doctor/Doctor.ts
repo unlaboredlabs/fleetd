@@ -20,7 +20,7 @@ import { Sweep } from "../sweep/Sweep.ts";
 import * as Usage from "../usage/Usage.ts";
 import { UsageSource } from "../usage/UsageSource.ts";
 import * as Checks from "./checks.ts";
-import { type HubConfig, readHubConfig } from "./config.ts";
+import { type HubConfig, readHubConfig, restartCommand } from "./config.ts";
 import { T3Settings } from "./T3Settings.ts";
 
 export const DOCTOR_EVERY_MS = 15 * 60_000;
@@ -50,6 +50,9 @@ export class Doctor extends Context.Service<
 export interface DoctorDeps {
   /** Where the hub listens, for its own reachability check. */
   readonly listen: { readonly host: string; readonly port: number };
+  /** The hub machine's service manager, for the restart command. */
+  readonly hubPlatform: { readonly platform: "linux" | "darwin"; readonly uid: number };
+  /** `<hub home>/setup.json`, read at each run. */
   readonly config: () => { readonly config: HubConfig; readonly problem?: string };
   readonly machines: () => Effect.Effect<ReadonlyArray<Machine>>;
   readonly connected: (machineId: MachineId) => Effect.Effect<boolean>;
@@ -91,7 +94,7 @@ export const make = (deps: DoctorDeps) =>
     const hubChecks = Effect.gen(function* () {
       const config = deps.config();
       const self = `${selfUrl(deps.listen)}/healthz`;
-      const publicUrl = config.config.publicUrl;
+      const publicUrl = config.config.url;
       const [reachable, gh, devices, https] = yield* Effect.all(
         [
           deps.health(selfUrl(deps.listen)),
@@ -102,7 +105,7 @@ export const make = (deps: DoctorDeps) =>
         { concurrency: "unbounded" },
       );
       return [
-        Checks.hubReachable(self, reachable),
+        Checks.hubReachable(self, reachable, restartCommand("hub", { ...deps.hubPlatform, unitSuffix: config.config.unitSuffix ?? "" })),
         Checks.ghAuth(gh),
         Checks.pushConfigured(devices, publicUrl),
         Checks.httpsReachable(config, deps.listen.port, https),
@@ -112,6 +115,8 @@ export const make = (deps: DoctorDeps) =>
     const machineChecks = (machine: Machine) =>
       Effect.gen(function* () {
         const id = machine.machineId;
+        const config = deps.config().config;
+        const setup = config.machines?.[id];
         const connected = yield* deps.connected(id);
         const t3Reason =
           machine.status === "offline"
@@ -135,11 +140,11 @@ export const make = (deps: DoctorDeps) =>
           { concurrency: "unbounded" },
         );
         return [
-          Checks.machineOnline(machine, connected),
-          Checks.t3Version(machine),
-          ...Checks.instanceChecks(id, settings),
+          Checks.machineOnline(machine, connected, setup),
+          Checks.t3Version(machine, setup),
+          ...Checks.instanceChecks(id, settings, setup),
           Checks.probeCounter(id, usage.probes),
-          Checks.commitIdentity(id, probe, deps.config().config),
+          Checks.commitIdentity(id, probe, config),
           Checks.diskSpace(id, probe),
           Checks.usageBreaker(id, usage.breaker),
         ];
@@ -304,6 +309,7 @@ export const layer = (options: { readonly home: string; readonly listen: DoctorD
       const usageSource = yield* UsageSource;
       const doctor = yield* make({
         listen: options.listen,
+        hubPlatform: { platform: process.platform === "darwin" ? "darwin" : "linux", uid: process.getuid?.() ?? 0 },
         config: () => readHubConfig(options.home),
         machines: () => store.machines.list(),
         connected: executors.isConnected,

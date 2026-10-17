@@ -10,7 +10,7 @@ const machine = (patch: Partial<Machine> = {}): Machine => ({
   tags: [],
   status: "online",
   lastSeenAt: "2026-10-17T10:00:00.000Z",
-  t3: { version: "0.1.0", protocol: 2 },
+  t3: { version: "0.1.1-nightly.20261017.3238", protocol: 2 },
   nodeVersion: "0.0.0",
   ...patch,
 });
@@ -35,7 +35,7 @@ describe("launch args", () => {
 });
 
 describe("instance checks", () => {
-  const [ok, offAuto] = Checks.instanceChecks(id, settings(claude({ homePath: "/lab/claude-a", launchArgs: ARGS })));
+  const [ok, offAuto] = Checks.instanceChecks(id, settings(claude({ homePath: "/lab/claude-a", launchArgs: ARGS })), undefined);
 
   it("passes a fleetd Claude instance with its own config dir, the denies and auto-resume off", () => {
     expect(ok!.check).toMatchObject({ id: "lab-a/instance_args", scope: "machine", machineId: "lab-a", status: "ok" });
@@ -43,7 +43,7 @@ describe("instance checks", () => {
   });
 
   it("offers the automatic re-apply for missing denies and for auto-resume on", () => {
-    const [args, auto] = Checks.instanceChecks(id, settings(claude({ homePath: "/lab/claude-a", launchArgs: "--disallowedTools Task" }), true));
+    const [args, auto] = Checks.instanceChecks(id, settings(claude({ homePath: "/lab/claude-a", launchArgs: "--disallowedTools Task" }), true), undefined);
     expect(args).toMatchObject({ action: "reapply_instance", check: { status: "fail", fix: { kind: "auto" } } });
     expect(args!.check.message).toContain("mcp__t3-code__*, Workflow");
     expect(auto).toMatchObject({ action: "reapply_instance", check: { status: "fail" } });
@@ -51,7 +51,7 @@ describe("instance checks", () => {
 
   it("sends a missing instance, a missing or shared config dir back to setup, by hand", () => {
     for (const s of [settings(undefined), settings(claude({ launchArgs: ARGS })), settings(claude({ homePath: "/home/w/.claude", launchArgs: ARGS }))]) {
-      const [args] = Checks.instanceChecks(id, s);
+      const [args] = Checks.instanceChecks(id, s, undefined);
       expect(args!.action).toBeUndefined();
       expect(args!.check).toMatchObject({ status: "fail", fix: { kind: "manual", command: "fleetd machine add <ssh host of lab-a>" } });
     }
@@ -59,27 +59,41 @@ describe("instance checks", () => {
   });
 
   it("is unknown when the settings could not be read", () => {
-    expect(Checks.instanceChecks(id, { unreadable: "lab-a is offline." }).map((e) => e.check.status)).toEqual(["unknown", "unknown"]);
+    // The ssh host comes from setup.json when the machine was set up with fleetd machine add.
+    expect(Checks.instanceChecks(id, settings(undefined), { sshHost: "wynn@mac", platform: "darwin", uid: 501, unitSuffix: "" })[0]!.check.fix?.command).toBe(
+      "fleetd machine add wynn@mac",
+    );
+    expect(Checks.instanceChecks(id, { unreadable: "lab-a is offline." }, undefined).map((e) => e.check.status)).toEqual(["unknown", "unknown"]);
   });
 });
 
 describe("machine checks", () => {
   it("online, degraded with a T3 restart, linked without T3 with a re-mint, offline by hand", () => {
-    expect(Checks.machineOnline(machine(), true).check.status).toBe("ok");
-    expect(Checks.machineOnline(machine({ status: "degraded", degradedReason: "T3 failed 3 health checks" }), false)).toMatchObject({
+    expect(Checks.machineOnline(machine(), true, undefined).check.status).toBe("ok");
+    expect(Checks.machineOnline(machine({ status: "degraded", degradedReason: "T3 failed 3 health checks" }), false, undefined)).toMatchObject({
       action: "restart_t3",
       check: { status: "fail", message: "lab-a is degraded: T3 failed 3 health checks." },
     });
-    expect(Checks.machineOnline(machine(), false)).toMatchObject({ action: "remint_session", check: { status: "fail" } });
-    const offline = Checks.machineOnline(machine({ status: "offline" }), false);
+    expect(Checks.machineOnline(machine(), false, undefined)).toMatchObject({ action: "remint_session", check: { status: "fail" } });
+    const offline = Checks.machineOnline(machine({ status: "offline" }), false, undefined);
     expect(offline.action).toBeUndefined();
     expect(offline.check.fix).toEqual({ kind: "manual", label: "Start the fleetd node on lab-a", command: "systemctl --user restart fleetd-node.service" });
+    // Named the way setup names its units: a suffix, and launchd on a Mac.
+    expect(Checks.machineOnline(machine({ status: "offline" }), false, { sshHost: "lab", platform: "linux", uid: 1000, unitSuffix: "-lab" }).check.fix?.command).toBe(
+      "systemctl --user restart fleetd-node-lab.service",
+    );
+    expect(Checks.machineOnline(machine({ status: "offline" }), false, { sshHost: "mac", platform: "darwin", uid: 501, unitSuffix: "" }).check.fix?.command).toBe(
+      "launchctl kickstart -k gui/501/sh.fleetd.node",
+    );
   });
 
-  it("holds T3 to the pinned version", () => {
-    expect(Checks.t3Version(machine()).check.status).toBe("ok");
-    expect(Checks.t3Version(machine({ t3: { version: "0.0.9", protocol: 2 } })).check).toMatchObject({ status: "fail", message: expect.stringContaining("needs 0.1.0") });
-    expect(Checks.t3Version(machine({ t3: null })).check.status).toBe("unknown");
+  it("holds T3 to the version setup installs", () => {
+    expect(Checks.t3Version(machine(), undefined).check.status).toBe("ok");
+    expect(Checks.t3Version(machine({ t3: { version: "0.1.0", protocol: 2 } }), undefined).check).toMatchObject({
+      status: "fail",
+      message: "T3 0.1.0 runs on lab-a; setup installs 0.1.1-nightly.20261017.3238.",
+    });
+    expect(Checks.t3Version(machine({ t3: null }), undefined).check.status).toBe("unknown");
   });
 
   it("needs at least 5 GB free", () => {
@@ -90,10 +104,14 @@ describe("machine checks", () => {
 
   it("wants a commit identity, the hub's when it has one", () => {
     const noreply = "1+wynn@users.noreply.github.com";
-    expect(Checks.commitIdentity(id, { diskPath: "/", diskFreeBytes: 1, gitEmail: noreply }, {}).check).toMatchObject({ status: "ok", message: expect.stringContaining("noreply") });
-    expect(Checks.commitIdentity(id, { diskPath: "/", diskFreeBytes: 1 }, {}).check.status).toBe("fail");
-    const other = Checks.commitIdentity(id, { diskPath: "/", diskFreeBytes: 1, gitEmail: "w@example.com" }, { commitIdentity: { email: noreply } });
-    expect(other.check).toMatchObject({ status: "warn", fix: { kind: "manual", command: `git config --global user.email '${noreply}'` } });
+    expect(Checks.commitIdentity(id, { diskPath: "/", diskFreeBytes: 1, gitEmail: noreply, gitEmailFrom: "env" }, {}).check).toMatchObject({
+      status: "ok",
+      message: `Commits on lab-a use ${noreply} (from the service environment, a GitHub noreply address).`,
+    });
+    expect(Checks.commitIdentity(id, { diskPath: "/", diskFreeBytes: 1 }, {}).check).toMatchObject({ status: "fail", fix: { command: expect.stringContaining("git config --global") } });
+    const setup = { gitIdentity: { name: "wynn", email: noreply }, machines: { "lab-a": { sshHost: "lab@box", platform: "linux", uid: 1000, unitSuffix: "" } } } as const;
+    const other = Checks.commitIdentity(id, { diskPath: "/", diskFreeBytes: 1, gitEmail: "w@example.com", gitEmailFrom: "git_config" }, setup);
+    expect(other.check).toMatchObject({ status: "warn", message: expect.stringContaining("from git's global config"), fix: { kind: "manual", command: "fleetd machine add lab@box" } });
   });
 
   it("probe counter 0 passes, any probe fails, unobservable is unknown; an open breaker warns", () => {
@@ -125,16 +143,15 @@ describe("hub checks", () => {
 
   it("warns without an HTTPS public URL and fails when it does not answer", () => {
     expect(Checks.httpsReachable({ config: {} }, 4790, undefined).check).toMatchObject({ status: "warn", fix: { command: "tailscale serve --bg 4790" } });
-    expect(Checks.httpsReachable({ config: { publicUrl: "http://forge:4790" } }, 4790, undefined).check).toMatchObject({ status: "warn", message: expect.stringContaining("not HTTPS") });
-    expect(Checks.httpsReachable({ config: { publicUrl: "https://forge.ts.net" } }, 4790, { ok: true }).check.status).toBe("ok");
-    expect(Checks.httpsReachable({ config: { publicUrl: "https://forge.ts.net" } }, 4790, { ok: false, why: "ECONNREFUSED" }).check.status).toBe("fail");
-    expect(Checks.httpsReachable({ config: {}, problem: "hub.json is not valid" }, 4790, undefined).check.message).toBe("hub.json is not valid");
+    expect(Checks.httpsReachable({ config: { url: "http://forge:4790" } }, 4790, undefined).check).toMatchObject({ status: "warn", message: expect.stringContaining("not HTTPS") });
+    expect(Checks.httpsReachable({ config: { url: "https://forge.ts.net" } }, 4790, { ok: true }).check.status).toBe("ok");
+    expect(Checks.httpsReachable({ config: { url: "https://forge.ts.net" } }, 4790, { ok: false, why: "ECONNREFUSED" }).check.status).toBe("fail");
+    expect(Checks.httpsReachable({ config: {}, problem: "setup.json is not valid" }, 4790, undefined).check.message).toBe("setup.json is not valid");
   });
 
   it("the hub answers on its own address, or should be restarted", () => {
-    expect(Checks.hubReachable("http://127.0.0.1:4790/healthz", { ok: true }).check.status).toBe("ok");
-    expect(Checks.hubReachable("http://127.0.0.1:4790/healthz", { ok: false, why: "ECONNREFUSED" }).check.fix?.command).toBe(
-      "systemctl --user restart fleetd-hub.service",
-    );
+    const restart = "systemctl --user restart fleetd-hub.service";
+    expect(Checks.hubReachable("http://127.0.0.1:4790/healthz", { ok: true }, restart).check.status).toBe("ok");
+    expect(Checks.hubReachable("http://127.0.0.1:4790/healthz", { ok: false, why: "ECONNREFUSED" }, restart).check.fix?.command).toBe(restart);
   });
 });

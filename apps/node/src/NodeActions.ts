@@ -21,12 +21,25 @@ export interface NodeActionDeps {
 const REMINT_WAIT = Duration.seconds(30);
 
 /** `git config --global user.email`, absent when unset or git is missing. */
-const gitEmail = Effect.callback<string | undefined>((resume, signal) => {
+const gitConfigEmail = Effect.callback<string | undefined>((resume, signal) => {
   execFile("git", ["config", "--global", "user.email"], { env: scrubbedEnv(), signal, timeout: 10_000 }, (error, stdout) => {
     const email = String(stdout).trim();
     resume(Effect.succeed(error === null && email.length > 0 ? email.slice(0, 320) : undefined));
   });
 });
+
+/**
+ * The email commits made here carry: `fleetd machine add` puts the hub's identity in the T3 and node units'
+ * GIT_AUTHOR_* / GIT_COMMITTER_* environment, which wins over git's global config.
+ */
+export const commitEmail = (
+  env: NodeJS.ProcessEnv = process.env,
+): Effect.Effect<{ readonly gitEmail?: string; readonly gitEmailFrom?: "env" | "git_config" }> => {
+  const fromEnv = (env.GIT_AUTHOR_EMAIL ?? env.GIT_COMMITTER_EMAIL)?.trim();
+  return fromEnv
+    ? Effect.succeed({ gitEmail: fromEnv.slice(0, 320), gitEmailFrom: "env" as const })
+    : Effect.map(gitConfigEmail, (email) => (email === undefined ? {} : { gitEmail: email, gitEmailFrom: "git_config" as const }));
+};
 
 /** Free bytes for this user on the filesystem holding `dir`. */
 const diskFree = (dir: string) =>
@@ -36,8 +49,8 @@ const diskFree = (dir: string) =>
   );
 
 export const probeHost = (home: string = os.homedir()) =>
-  Effect.all({ gitEmail: gitEmail, diskFreeBytes: diskFree(home) }).pipe(
-    Effect.map(({ gitEmail: email, diskFreeBytes }) => ({ ...(email === undefined ? {} : { gitEmail: email }), diskPath: home, diskFreeBytes })),
+  Effect.all({ identity: commitEmail(), diskFreeBytes: diskFree(home) }).pipe(
+    Effect.map(({ identity, diskFreeBytes }) => ({ ...identity, diskPath: home, diskFreeBytes })),
   );
 
 export const runNodeAction = (frame: NodeAction, deps: NodeActionDeps): Effect.Effect<NodeActionResult> =>

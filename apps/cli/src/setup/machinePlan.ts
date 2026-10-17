@@ -5,11 +5,7 @@ import { gitIdentityEnv, type GitIdentity } from "./state.ts";
 import { applyFleetdSettings } from "./t3Settings.ts";
 import { type Platform, q, renderUnit, type Role, serviceManager, type ServiceSpec, unitPath } from "./units.ts";
 
-/**
- * npm `t3` release installed on machines. vendor/t3/PIN (2fbd4318fc) has no published build of its own; this is the
- * newest one at or before it (nightly 3238 = commit 70d60e03a7). Move both together.
- */
-export const T3_NPM_VERSION = "0.1.1-nightly.20261017.3238";
+export { T3_NPM_VERSION } from "@fleetd/hub/t3.ts";
 export const DEFAULT_T3_PORT = 3774;
 const MIN_NODE_MAJOR = 24;
 
