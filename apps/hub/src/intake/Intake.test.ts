@@ -68,12 +68,15 @@ describe("Intake", () => {
         });
         const w1 = yield* (yield* Workstreams.Workstreams).get("W1" as never);
         expect(w1).toMatchObject({ projectRef: REF, state: "draft", source: { text: "fix: the lab README has a typo", channel: "mcp", by: "k1" } });
+        // The workstream pins the chosen template's playbook at creation.
+        expect(w1?.playbook).toMatch(/^bugfix@[0-9a-f]{40}$/u);
 
         const [event] = yield* routedEvents();
         expect(event).toMatchObject({ machineId: "lab-a", projectId: "p1", summary: "W1 → repo-a (bugfix): repo-a holds the lab README (template bugfix from the fix: prefix)" });
         expect(dataOf(event)).toMatchObject({
           workstreamId: "W1",
           template: "bugfix",
+          playbook: w1?.playbook,
           usage: [{ kind: "orchestrator", model: "claude-haiku-5-5", ok: true, inputTokens: 120, outputTokens: 30 }],
         });
 
@@ -100,6 +103,9 @@ describe("Intake", () => {
         expect(yield* submit("compare two caches", { ref: REF, template: "research" })).toMatchObject({
           echo: { template: "research", reason: "project given by the caller; template research given by the caller" },
         });
+        const ws = yield* Workstreams.Workstreams;
+        const pinned = yield* Effect.forEach(["W1", "W2", "W3"], (id) => Effect.map(ws.get(id as never), (w) => w?.playbook?.split("@")[0]));
+        expect(pinned).toEqual(["research", "feature", "research"]);
         expect(fake.calls()).toHaveLength(0);
       }),
     );
@@ -149,6 +155,7 @@ describe("Intake", () => {
         expect(dataOf(placed.events[0])).toMatchObject({ workstreamId: "W1", askId: "A1", template: "feature", reason: "the human picked it in A1" });
         const w1 = yield* (yield* Workstreams.Workstreams).get("W1" as never);
         expect(w1).toMatchObject({ projectRef: OTHER, source: { text: "tidy up the docs", by: "k1" } });
+        expect(w1?.playbook).toMatch(/^feature@/u);
         expect(yield* submit("tidy up the docs", { clientRequestId: "req-7" })).toMatchObject({ workstreamId: "W1", echo: { projectRef: OTHER } });
       }),
     );

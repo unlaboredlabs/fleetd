@@ -1,6 +1,7 @@
 // Where a new intent goes. The caller's project, or a leading `@<project>`, decides the project; otherwise the router
 // picks it, and when the router cannot, an unrouted ask lets the human pick. A template prefix (`fix:`) or the
-// caller's template beats the router's; with the project known and no template given, it is `feature`.
+// caller's template beats the router's; with the project known and no template given, it is `feature`. The workstream
+// pins the chosen template's playbook.
 import {
   DecisionKey,
   PlaybookName,
@@ -11,6 +12,7 @@ import {
   type IntakeChannel,
   type IntakeEcho,
   type MachineId,
+  type PlaybookRef,
   type ProjectSummary,
   type WorkstreamId,
 } from "@fleetd/contracts";
@@ -123,6 +125,7 @@ export const make = Effect.gen(function* () {
   const routed = (input: {
     readonly echo?: IntakeEcho;
     readonly workstreamId?: WorkstreamId;
+    readonly playbook?: PlaybookRef;
     readonly askId?: AskId;
     readonly summary: string;
     readonly runs?: ReadonlyArray<RouterRun>;
@@ -138,6 +141,7 @@ export const make = Effect.gen(function* () {
           ...(input.workstreamId === undefined ? {} : { workstreamId: input.workstreamId }),
           ...(input.askId === undefined ? {} : { askId: input.askId }),
           ...(input.echo === undefined ? {} : { template: input.echo.template, reason: input.echo.reason }),
+          ...(input.playbook === undefined ? {} : { playbook: input.playbook }),
           ...(input.error === undefined ? {} : { error: input.error }),
           // Each router run is orchestrator usage: what routing costs, apart from any project's work.
           ...(input.runs === undefined || input.runs.length === 0 ? {} : { usage: input.runs }),
@@ -152,11 +156,19 @@ export const make = Effect.gen(function* () {
     extra: { readonly runs?: ReadonlyArray<RouterRun>; readonly askId?: AskId } = {},
   ) =>
     Effect.gen(function* () {
-      const created = yield* workstreams.intake({ ref: echo.projectRef, text: input.text, clientRequestId: input.clientRequestId, channel: input.channel, by: input.by });
+      const created = yield* workstreams.intake({
+        ref: echo.projectRef,
+        text: input.text,
+        clientRequestId: input.clientRequestId,
+        channel: input.channel,
+        by: input.by,
+        template: echo.template,
+      });
       const project = (yield* store.projects.get(echo.projectRef))?.title ?? echo.projectRef.projectId;
       yield* routed({
         echo,
         workstreamId: created.workstreamId,
+        ...(created.playbook === undefined ? {} : { playbook: created.playbook }),
         ...extra,
         summary: clip(`${created.workstreamId} → ${project} (${echo.template}): ${echo.reason}`, 200),
       });
