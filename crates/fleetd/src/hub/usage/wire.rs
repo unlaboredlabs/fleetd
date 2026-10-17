@@ -170,7 +170,6 @@ use crate::hub::doctor::service::ActionOutcome;
 use crate::hub::doctor::{DoctorFleet, T3Settings};
 use crate::hub::retro::records::SqlRunner;
 use crate::hub::usage::service::UsageStatus;
-use serde_json::Map;
 
 impl DoctorFleet for OpsPorts {
     fn machines(&self) -> BoxFut<'_, Vec<MachineView>> {
