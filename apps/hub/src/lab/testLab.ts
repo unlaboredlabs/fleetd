@@ -22,6 +22,7 @@ import {
   launchTiny,
   log,
   MACHINES,
+  mintT3Bearer,
   ok,
   QUEUE_TTL_SEC,
   RUN,
@@ -68,8 +69,8 @@ const takeLabLock = () => {
 };
 const nodeHome = (id: LabMachine) => path.join(RUN, `node-${id}`);
 
-const startHubProcess = async () => {
-  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)]);
+const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
+  startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
   await until("hub /healthz", 30_000, async () => {
     try {
       return (await fetch(`${HUB_URL}/healthz`)).ok ? true : undefined;
@@ -157,13 +158,18 @@ async function main() {
       cursor,
       stopNode: (machineId: LabMachine) => stopCli(`node-${machineId}`),
       startNode: (machineId: LabMachine) => void startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)]),
+      machines: MACHINES,
+      mintT3Bearer,
       stopHub: async () => {
-        await client?.close();
+        await client?.close().catch(() => undefined);
         await stopCli("hub");
       },
-      startHub: async () => {
-        await startHubProcess();
+      startHub: async (env = {}) => {
+        await client?.close().catch(() => undefined);
+        await stopCli("hub");
+        await startHubProcess(env);
         client = await connectClient(key);
+        ok(`hub (re)started${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
       },
       idleThread: async (machineId: LabMachine) => {
         const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === machineId)?.projectId;

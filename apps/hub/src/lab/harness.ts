@@ -53,6 +53,18 @@ export async function until<A>(what: string, ms: number, probe: () => Promise<A 
 export const cli = (...args: Array<string>) =>
   execFileSync(process.execPath, [CLI, ...args], { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+/** Mints a 1 h session on a lab T3 with its own CLI, as the node would. */
+export const mintT3Bearer = (machine: (typeof MACHINES)[number]) =>
+  execFileSync(
+    process.execPath,
+    [path.join(T3_SRC, "apps/server/src/bin.ts"), "auth", "session", "issue", "--base-dir", machine.t3Home, "--ttl", "1h", "--label", "fleetd-lab", "--token-only"],
+    { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+  )
+    .trim()
+    .split("\n")
+    .at(-1)!
+    .trim();
+
 export const lab = (command: "up" | "down", instance: string) =>
   execFileSync(process.execPath, [path.join(REPO, "lab/lab.mjs"), command, instance], { env: scrubbedEnv(), encoding: "utf8" });
 
@@ -103,9 +115,13 @@ export interface Lab {
   readonly stopNode: (machineId: LabMachine) => Promise<void>;
   /** Starts the machine's node again (`node run`, since it has joined). */
   readonly startNode: (machineId: LabMachine) => void;
-  /** Starts the hub on the same home and port after `stopHub`, and reconnects the MCP client. */
-  readonly startHub: () => Promise<void>;
+  /** (Re)starts the hub on the same home and port with `env` added, waits for /healthz and reconnects the MCP client. */
+  readonly startHub: (env?: Readonly<Record<string, string>>) => Promise<void>;
+  /** Stops the hub by its PID, leaving nodes and T3 running. */
   readonly stopHub: () => Promise<void>;
+  readonly machines: typeof MACHINES;
+  /** A short-lived bearer for a lab T3 itself, to watch it while the hub is down. */
+  readonly mintT3Bearer: (machine: (typeof MACHINES)[number]) => string;
   /** Waits for the first event after `cursor` that matches, long-polling events_wait. */
   readonly waitEvent: (
     what: string,

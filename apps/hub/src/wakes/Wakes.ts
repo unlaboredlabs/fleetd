@@ -38,6 +38,11 @@ export class Wakes extends Context.Service<
     readonly get: (wakeId: string) => Effect.Effect<Wake | undefined>;
     /** A no-op for a wake that is already done or cancelled. */
     readonly cancel: (wakeId: string) => Effect.Effect<void>;
+    /**
+     * The sweep's check: counts active wakes overdue by more than `olderThanMs` and wakes the scheduler, which fires
+     * them per their catchUp. Firing from here instead would race the scheduler.
+     */
+    readonly sweepOverdue: (olderThanMs: number) => Effect.Effect<number>;
   }
 >()("fleetd/wakes/Wakes") {}
 
@@ -73,6 +78,7 @@ const make = Effect.gen(function* () {
     // Only an active wake moves on, so a cancel that lands mid-firing sticks.
     advance: db.prepare("UPDATE wakes SET state = ?, next_run_ms = ?, fired = ?, data = ? WHERE wake_id = ? AND state = 'active'"),
     cancel: db.prepare("UPDATE wakes SET state = 'cancelled', next_run_ms = NULL, data = ? WHERE wake_id = ? AND state = 'active'"),
+    overdue: db.prepare("SELECT COUNT(*) AS n FROM wakes WHERE state = 'active' AND next_run_ms < ?"),
   };
 
   let changed = Deferred.makeUnsafe<void>();
@@ -242,6 +248,14 @@ const make = Effect.gen(function* () {
       ),
     get: (wakeId) => Effect.sync(() => getWake(wakeId)),
     cancel,
+    sweepOverdue: (olderThanMs) =>
+      Effect.gen(function* () {
+        const n = Number(sql.overdue.get((yield* Clock.currentTimeMillis) - olderThanMs)?.n ?? 0);
+        if (n === 0) return 0;
+        yield* Effect.logWarning("sweep: wakes overdue; waking the scheduler", { overdue: n });
+        yield* signal;
+        return n;
+      }),
   });
 });
 
