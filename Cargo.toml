@@ -1,8 +1,7 @@
-# The product workspace. The GPUI app under app/ stays its own workspace until it moves in.
+# The product workspace: the crates, the GPUI app and its bench.
 [workspace]
 resolver = "3"
-members = ["crates/*"]
-exclude = ["app"]
+members = ["crates/*", "app/fleetd-app", "app/bench"]
 
 [workspace.package]
 version = "0.0.0"
@@ -49,7 +48,14 @@ zeroize = "1"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+# Same shape as Zed's own release profile, so the app's bench numbers compare with what Zed ships.
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# gpui comes from zed's workspace, whose [patch] does not apply to a git dependency. Mirror the
+# patches gpui itself relies on (zed's Cargo.toml at the pinned rev in app/fleetd-app/Cargo.toml).
+[patch.crates-io]
+async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
+calloop = { git = "https://github.com/zed-industries/calloop", rev = "3759371fee14c40066d64777e2a36b6ffcc22590" }
