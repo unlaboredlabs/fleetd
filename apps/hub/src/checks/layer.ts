@@ -6,9 +6,10 @@ import * as GitHub from "./GitHub.ts";
 import * as Judges from "./Judges.ts";
 
 /**
- * Claims with the check runner, judges and GitHub through `gh`. NodeCommands is left to the caller, because the node
- * link needs the same instance. Needs NodeCommands, Tasks, Asks, EventLog, HubStore, HubDb, LeadRecords, LeadWakes,
- * EstimatesPort and IncidentsPort.
+ * Claims with the check runner, judges and GitHub through `gh`. Left to the caller: NodeCommands, because the node
+ * link needs the same instance, and JudgeVerdicts, because the value bar's JudgeHook (`Judges.layerJudgeHook`) sits on
+ * it below Tasks. Needs NodeCommands, JudgeVerdicts, Tasks, Asks, EventLog, HubStore, HubDb, LeadRecords, LeadWakes,
+ * Estimates and Incidents.
  */
 export const layer = (options: { readonly gh?: GitHub.GhRunner; readonly claims?: Claims.ClaimsOptions } = {}) =>
   Claims.layer(options.claims).pipe(

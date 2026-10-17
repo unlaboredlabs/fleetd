@@ -11,7 +11,7 @@ import * as EventLog from "../store/EventLog.ts";
 import * as Tasks from "../tasks/Tasks.ts";
 import { CheckRunner } from "./CheckRunner.ts";
 import { GH_AUTH_FIX } from "./GitHub.ts";
-import { Judges } from "./Judges.ts";
+import { JudgeVerdicts } from "./Judges.ts";
 import { json, makeChecksKit, runChecksKit } from "./testKit.ts";
 
 const C1 = "C1" as ClaimId;
@@ -238,7 +238,7 @@ describe("judge checks", () => {
         expect(prompt).toContain("fleetd review verdict --task");
         expect(prompt).not.toContain("trust me");
 
-        const judges = yield* Judges;
+        const judges = yield* JudgeVerdicts;
         expect(yield* judges.complete({ taskId: "T99" as TaskId, prHeadSha: SHA, blocking: 0, nonBlocking: 0, summary: "x" })).toBe(false);
         expect(yield* judges.complete({ taskId: task.taskId, prHeadSha: SHA, blocking: 1, nonBlocking: 2, summary: "Setup takes 14 steps." })).toBe(true);
         expect(yield* Fiber.join(fiber)).toMatchObject({

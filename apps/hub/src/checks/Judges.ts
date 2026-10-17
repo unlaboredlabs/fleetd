@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
 import * as EventLog from "../store/EventLog.ts";
 import * as Tasks from "../tasks/Tasks.ts";
+import { JudgeHook } from "../valuebar/JudgeHook.ts";
 
 /** Recorded as the spawner of judge tasks. */
 export const JUDGE_BY = "hub:judge";
@@ -29,10 +30,52 @@ export class Judges extends Context.Service<
   {
     /** Spawns the judge task and waits for its verdict, or for it to end without one. Never fails. */
     readonly judge: (input: JudgeInput) => Effect.Effect<JudgeOutcome>;
-    /** The hook for `review_verdict`: completes the judge check waiting on this task. False when none is. */
-    readonly complete: (verdict: ReviewVerdict) => Effect.Effect<boolean>;
   }
 >()("fleetd/checks/Judges") {}
+
+/**
+ * The judge checks waiting on their tasks' verdicts. Has no dependencies, so the value bar's JudgeHook can sit on it
+ * below Tasks, which Judges itself needs.
+ */
+export class JudgeVerdicts extends Context.Service<
+  JudgeVerdicts,
+  {
+    /** Runs `spawn` and registers a waiter for the task it returns before any verdict for that task is taken. */
+    readonly register: <E>(
+      spawn: Effect.Effect<Task, E>,
+    ) => Effect.Effect<{ readonly task: Task; readonly verdict: Deferred.Deferred<ReviewVerdict> }, E>;
+    readonly forget: (taskId: TaskId) => Effect.Effect<void>;
+    /** Completes the judge check waiting on `verdict.taskId`. False when none is. */
+    readonly complete: (verdict: ReviewVerdict) => Effect.Effect<boolean>;
+  }
+>()("fleetd/checks/JudgeVerdicts") {}
+
+export const layerVerdicts = Layer.sync(JudgeVerdicts, () => {
+  const waiting = new Map<TaskId, Deferred.Deferred<ReviewVerdict>>();
+  // Spawning and registering hold this, so a verdict that arrives as soon as the task exists still finds its waiter.
+  const lock = Semaphore.makeUnsafe(1);
+  return JudgeVerdicts.of({
+    register: (spawn) =>
+      Effect.gen(function* () {
+        const task = yield* spawn;
+        const verdict = yield* Deferred.make<ReviewVerdict>();
+        waiting.set(task.taskId, verdict);
+        return { task, verdict };
+      }).pipe(lock.withPermit),
+    forget: (taskId) => Effect.sync(() => void waiting.delete(taskId)),
+    complete: (verdict) =>
+      Effect.suspend(() => {
+        const waiter = waiting.get(verdict.taskId);
+        return waiter === undefined ? Effect.succeed(false) : Effect.as(Deferred.succeed(waiter, verdict), true);
+      }).pipe(lock.withPermit),
+  });
+});
+
+/** The value bar's hook for every recorded verdict; only judge tasks' verdicts complete anything. */
+export const layerJudgeHook = Layer.effect(
+  JudgeHook,
+  Effect.map(JudgeVerdicts, (verdicts) => JudgeHook.of({ onVerdict: (_, verdict) => Effect.asVoid(verdicts.complete(verdict)) })),
+);
 
 const ENDED: ReadonlyArray<HubEventType> = ["task.completed", "task.failed", "task.cancelled"];
 
@@ -73,9 +116,7 @@ export const verdictOutcome = (taskId: TaskId, verdict: ReviewVerdict): JudgeOut
 export const make = Effect.gen(function* () {
   const tasks = yield* Tasks.Tasks;
   const events = yield* EventLog.EventLog;
-  const waiting = new Map<TaskId, Deferred.Deferred<ReviewVerdict>>();
-  // Spawning and registering hold this, so a verdict that arrives as soon as the task exists still finds its waiter.
-  const registering = Semaphore.makeUnsafe(1);
+  const verdicts = yield* JudgeVerdicts;
 
   /** Resolves with the task's end state from the event log. */
   const ended = (cursor: number, taskId: TaskId) =>
@@ -94,8 +135,8 @@ export const make = Effect.gen(function* () {
       const w = input.workstream;
       const cursor = yield* events.head();
       const artifacts = artifactLines(yield* tasks.list({ ref: w.projectRef, workstreamId: w.workstreamId, limit: 20 }));
-      const started = yield* Effect.gen(function* () {
-        const spawned = yield* Effect.result(
+      const spawned = yield* Effect.result(
+        verdicts.register(
           tasks.spawn(
             { projectRef: w.projectRef, by: JUDGE_BY },
             {
@@ -106,16 +147,16 @@ export const make = Effect.gen(function* () {
               areas: [],
             },
           ),
-        );
-        if (spawned._tag === "Failure") return { error: `could not start the judge task: ${spawned.failure.message}` } as const;
-        const task = spawned.success;
-        if (task.state === "failed") return { error: `the judge task ${task.taskId} failed to start: ${task.result?.tail ?? ""}` } as const;
-        const verdict = yield* Deferred.make<ReviewVerdict>();
-        waiting.set(task.taskId, verdict);
-        return { task, verdict } as const;
-      }).pipe(registering.withPermit);
-      if ("error" in started) return { result: "error", evidence: started.error.slice(0, 2000) } satisfies JudgeOutcome;
-      const { task, verdict } = started;
+        ),
+      );
+      if (spawned._tag === "Failure") {
+        return { result: "error", evidence: `could not start the judge task: ${spawned.failure.message}`.slice(0, 2000) } satisfies JudgeOutcome;
+      }
+      const { task, verdict } = spawned.success;
+      if (task.state === "failed") {
+        yield* verdicts.forget(task.taskId);
+        return { result: "error", evidence: `the judge task ${task.taskId} failed to start: ${task.result?.tail ?? ""}`.slice(0, 2000) } satisfies JudgeOutcome;
+      }
       return yield* Effect.raceFirst(
         Effect.map(Deferred.await(verdict), (v) => verdictOutcome(task.taskId, v)),
         Effect.map(
@@ -125,17 +166,11 @@ export const make = Effect.gen(function* () {
             evidence: `the judge task ${task.taskId} ended (${state}) without \`fleetd review verdict\``,
           }),
         ),
-      ).pipe(Effect.ensuring(Effect.sync(() => waiting.delete(task.taskId))));
+      ).pipe(Effect.ensuring(verdicts.forget(task.taskId)));
     });
 
-  const complete: Judges["Service"]["complete"] = (verdict) =>
-    Effect.suspend(() => {
-      const waiter = waiting.get(verdict.taskId);
-      return waiter === undefined ? Effect.succeed(false) : Effect.as(Deferred.succeed(waiter, verdict), true);
-    }).pipe(registering.withPermit);
-
-  return Judges.of({ judge, complete });
+  return Judges.of({ judge });
 });
 
-/** Needs Tasks and EventLog. */
+/** Needs Tasks, EventLog and JudgeVerdicts. */
 export const layer = Layer.effect(Judges, make);

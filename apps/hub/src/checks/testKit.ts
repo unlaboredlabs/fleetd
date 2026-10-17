@@ -1,14 +1,15 @@
 // Test kit for checks: the tasks kit (real store, leads, ledger, tasks on an in-memory database under a TestClock)
-// plus the checks layer with a fake node, a fake `gh` binary and recording estimate and incident ports.
+// plus the checks layer with a fake node, a fake `gh` binary and an Estimates that records which workstreams were done.
 import type { Brief, CheckSpec, MachineId, WorkstreamId } from "@fleetd/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { Estimates } from "../estimates/Estimates.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
 import { makeKit, REF } from "../tasks/testKit.ts";
 import type { GhRunner } from "./GitHub.ts";
+import * as Judges from "./Judges.ts";
 import * as ChecksLayer from "./layer.ts";
 import { type CommandInput, type CommandOutcome, NodeCommandError, NodeCommands } from "./NodeCommands.ts";
-import { EstimatesPort, type IncidentInput, IncidentsPort } from "./ports.ts";
 
 export { REF };
 
@@ -22,7 +23,6 @@ export const makeChecksKit = () => {
   const ghCalls: Array<ReadonlyArray<string>> = [];
   let gh: (path: string) => GhReply | "missing" = () => ({ exitCode: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" });
   const done: Array<WorkstreamId> = [];
-  const incidents: Array<IncidentInput> = [];
 
   const fakeNode = NodeCommands.of({
     run: (machineId, input) =>
@@ -47,8 +47,11 @@ export const makeChecksKit = () => {
     Layer.provideMerge(
       Layer.mergeAll(
         Layer.succeed(NodeCommands, fakeNode),
-        Layer.succeed(EstimatesPort, EstimatesPort.of({ recordDone: (id) => Effect.sync(() => void done.push(id)) })),
-        Layer.succeed(IncidentsPort, IncidentsPort.of({ record: (i) => Effect.sync(() => void incidents.push(i)) })),
+        Judges.layerVerdicts,
+        Layer.succeed(
+          Estimates,
+          Estimates.of({ recordStart: () => Effect.void, recordDone: (id) => Effect.sync(() => void done.push(id)), eta: () => Effect.succeed(undefined) }),
+        ),
       ),
     ),
     Layer.provideMerge(tasksKit.layer),
@@ -71,7 +74,6 @@ export const makeChecksKit = () => {
     commands,
     ghCalls,
     done,
-    incidents,
     setup,
     setNode: (f: typeof node) => {
       node = f;

@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
+import { Incidents } from "../incidents/Incidents.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as LeadWakes from "../leads/LeadWakes.ts";
 import { Asks } from "../ledger/Asks.ts";
@@ -83,11 +84,13 @@ describe("claim done", () => {
         yield* kit.setup([DOC_CHECK]);
         const claims = yield* Claims;
         kit.setNode(() => missing);
+        const incidents = Effect.flatMap(Incidents, (i) => i.list({ limit: 10 }));
         for (let i = 0; i < 2; i++) yield* claims.claimDone(W1, LEAD_BY);
-        expect(kit.incidents).toEqual([]);
+        expect(yield* incidents).toEqual([]);
         yield* claims.claimDone(W1, LEAD_BY);
-        expect(kit.incidents).toEqual([
+        expect(yield* incidents).toMatchObject([
           {
+            incidentId: "I1",
             class: "false_claim",
             projectRef: { machineId: "lab-a", projectId: "p1" },
             workstreamId: "W1",
@@ -95,7 +98,7 @@ describe("claim done", () => {
           },
         ]);
         yield* claims.claimDone(W1, LEAD_BY);
-        expect(kit.incidents).toHaveLength(1);
+        expect(yield* incidents).toHaveLength(1);
         expect(yield* stateOf).toBe("verifying");
       }),
     );

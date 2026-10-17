@@ -11,13 +11,14 @@ import * as Fiber from "effect/Fiber";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
+import { Estimates } from "../estimates/Estimates.ts";
+import { Incidents } from "../incidents/Incidents.ts";
 import { LeadError } from "../leads/LeadError.ts";
 import * as LeadRecords from "../leads/LeadRecords.ts";
 import * as LeadWakes from "../leads/LeadWakes.ts";
 import * as EventLog from "../store/EventLog.ts";
 import { CheckRunner, ranByOf } from "./CheckRunner.ts";
 import * as ClaimRecords from "./ClaimRecords.ts";
-import { EstimatesPort, IncidentsPort } from "./ports.ts";
 import { failedClaimEvidence } from "./render.ts";
 
 /** Under the node's 30 s answer timeout for lead calls; slower claims report through a wake. */
@@ -67,8 +68,8 @@ export const make = (options: ClaimsOptions = {}) =>
     const runner = yield* CheckRunner;
     const events = yield* EventLog.EventLog;
     const wakes = yield* LeadWakes.LeadWakes;
-    const estimates = yield* EstimatesPort;
-    const incidents = yield* IncidentsPort;
+    const estimates = yield* Estimates;
+    const incidents = yield* Incidents;
     const scope = yield* Effect.scope;
     const running = yield* FiberMap.make<WorkstreamId, Claim>();
     // Workstream state changes go through this, so a claim's start and another's end never interleave.
@@ -235,5 +236,5 @@ export const make = (options: ClaimsOptions = {}) =>
     return Claims.of({ claimDone, get: records.get, list: records.list });
   });
 
-/** Needs ClaimRecords, LeadRecords, CheckRunner, EventLog, LeadWakes, EstimatesPort and IncidentsPort. */
+/** Needs ClaimRecords, LeadRecords, CheckRunner, EventLog, LeadWakes, Estimates and Incidents. */
 export const layer = (options: ClaimsOptions = {}) => Layer.effect(Claims, make(options));
