@@ -14,6 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
+mod wire;
+
 pub const HUB_START_USAGE: &str = "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--router-model <model>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h, intents without a project
@@ -376,6 +378,7 @@ pub fn build_on(
     crate::hub::train::calls::register_lead_calls(&hub);
     crate::hub::checks::hub_ports::wire_misfiled(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
+    wire::wire(&hub);
     Ok(hub)
 }
 
