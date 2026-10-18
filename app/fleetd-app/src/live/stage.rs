@@ -61,6 +61,13 @@ pub fn agents_at_work(lanes: &[AgentLane]) -> bool {
     lanes.iter().any(|l| l.role != AgentRole::Lead && !super::state::is_final(l.status))
 }
 
+/// The lead's "next" note, only while nothing else speaks for the order: no agent at work and no PR on its way
+/// through the train (their lanes and tracks are newer than the note).
+pub fn lead_note<'a>(next: Option<&'a str>, lanes: &[AgentLane], prs: &[PrRef]) -> Option<&'a str> {
+    let moving = prs.iter().any(|p| p.state != fleetd_contracts::train::ChangeState::Merged);
+    next.filter(|_| !agents_at_work(lanes) && !moving)
+}
+
 pub fn stage(t: &Theme, s: Stage) -> Div {
     let card = s.card;
     let busy = agents_at_work(s.agents);
@@ -90,7 +97,7 @@ pub fn stage(t: &Theme, s: Stage) -> Div {
         Some(f) => title.on_click(f),
         None => title,
     };
-    let lead = lead_line(t, s.lead.as_ref(), s.lead_state, (!busy).then_some(card.next.as_deref()).flatten());
+    let lead = lead_line(t, s.lead.as_ref(), s.lead_state, lead_note(card.next.as_deref(), s.agents, &card.prs));
     let prs = (!card.prs.is_empty())
         .then(|| div().pt_2().px_2().flex().flex_wrap().items_center().gap_x_6().gap_y_1().children(card.prs.iter().map(|p| pr_progress(t, p))));
     div()
@@ -160,5 +167,18 @@ mod tests {
         lanes[0].status = LaneStatus::Working;
         lanes[0].role = AgentRole::Lead;
         assert!(!agents_at_work(&lanes), "the lead alone is not the fleet");
+    }
+
+    #[test]
+    fn the_leads_note_waits_while_agents_or_prs_are_moving() {
+        let order = crate::live::fixture::order_fixture().order;
+        let mut lanes = order.lanes.to_vec();
+        let mut prs = order.prs.to_vec();
+        let note = Some("merge after one clean review");
+        assert_eq!(lead_note(note, &lanes, &prs), None, "agents at work");
+        lanes.iter_mut().for_each(|l| l.status = LaneStatus::Done);
+        assert_eq!(lead_note(note, &lanes, &prs), None, "#212 is still reviewing");
+        prs.iter_mut().for_each(|p| p.state = fleetd_contracts::train::ChangeState::Merged);
+        assert_eq!(lead_note(note, &lanes, &prs), note);
     }
 }

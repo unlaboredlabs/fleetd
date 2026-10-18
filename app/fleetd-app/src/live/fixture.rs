@@ -29,7 +29,7 @@ use serde_json::Value;
 use super::chips::phase_chip;
 use super::lanes::{Density, FleetLanes};
 use super::motion::{self, MotionPref};
-use super::stage::{STAGE_W, Stage, agents_at_work, lead_lane, pr_progress, stage};
+use super::stage::{STAGE_W, Stage, agents_at_work, lead_lane, lead_note, pr_progress, stage};
 use super::state::{LiveState, fleet_activity, fmt_iso, parse_ms};
 use super::strips::{TrainStrip, machine_strip};
 use crate::bench::Probe;
@@ -531,13 +531,13 @@ const SCRIPT: &[(u64, Beat)] = &[
     (56, Beat::Check("T47", 222)),
     (59, Beat::Check("T48", 222)),
     (62, Beat::Check("T49", 222)),
-    (62, Beat::Pr(222, ChangeState::Queued)),
+    (62, Beat::Pr(222, ChangeState::Ready)),
     (66, Beat::Pr(221, ChangeState::Merged)),
     (66, Beat::Pr(222, ChangeState::Ci)),
     (68, Beat::Check("T50", 223)),
     (71, Beat::Check("T51", 223)),
     (74, Beat::Check("T52", 223)),
-    (74, Beat::Pr(223, ChangeState::Queued)),
+    (74, Beat::Pr(223, ChangeState::Ready)),
     (80, Beat::Pr(222, ChangeState::Merged)),
     (80, Beat::Pr(223, ChangeState::Ci)),
     (92, Beat::Pr(223, ChangeState::Merged)),
@@ -946,7 +946,7 @@ impl BenchBoard {
             doing if busy && o.phase == OrderPhase::Working && !doing.is_empty() => phase_chip(&t, OrderPhase::Working, Some(&doing)),
             _ => phase_chip(&t, o.phase, o.phase_detail.as_deref()),
         };
-        let next = o.next.as_ref().filter(|_| !busy);
+        let next = lead_note(o.next.as_deref(), &agents, &o.prs);
         div()
             .w_full()
             .flex()

@@ -211,7 +211,7 @@ impl FleetLanes {
     }
 
     fn has_clock(&self) -> bool {
-        let stage = self.density == Density::Stage && self.started_ms.is_some();
+        let stage = self.density == Density::Stage && self.started_ms.is_some() && !self.lanes.is_empty();
         stage || self.lanes.iter().any(|l| is_running(l.status) && l.started_at.is_some() && l.ended_at.is_none())
     }
 
@@ -278,7 +278,8 @@ impl FleetLanes {
                     return h + metric::LINE;
                 }
             }
-            Density::Stage => h += STAGE_HEAD_H,
+            Density::Stage if !rows.is_empty() => h += STAGE_HEAD_H,
+            Density::Stage => {}
             Density::Card => {}
         }
         let g = geom(self.density, rows.len());
@@ -593,7 +594,8 @@ impl Render for FleetLanes {
                 );
             }
         }
-        if self.density == Density::Stage {
+        // The fleet line heads the agents; with none listed, the title row's chip says where the order is.
+        if self.density == Density::Stage && !rows.is_empty() {
             list = list.child(self.stage_header(&t));
         }
         let g = geom(self.density, rows.len());

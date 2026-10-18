@@ -12,7 +12,7 @@ use gpui::{AnyElement, Context, Div, ExternalPaths, Focusable, SharedString, Sta
 
 use crate::live;
 use crate::live::lanes::Density;
-use crate::live::stage::{Stage, agents_at_work, lead_lane, pr_progress};
+use crate::live::stage::{Stage, agents_at_work, lead_lane, lead_note, pr_progress};
 use crate::live::state::{fleet_activity, parse_ms};
 use crate::notify::unix_secs;
 use crate::shell::{Shell, ago_short};
@@ -398,8 +398,7 @@ impl Shell {
         let age = ago_short(card.created_at.as_str(), self.now_secs());
         let agents = self.state.live.lanes(&card.workstream_id);
         let busy = agents_at_work(&agents);
-        // While agents work, their lanes say what is happening; the lead's "next" note lags them, so it waits.
-        let next = card.next.as_ref().filter(|_| !busy).map(|n| format!("next: {n}"));
+        let next = lead_note(card.next.as_deref(), &agents, &card.prs).map(|n| format!("next: {n}"));
         let detail_line = (!collapsed && !done && (!card.prs.is_empty() || next.is_some())).then(|| {
             div()
                 .flex()
