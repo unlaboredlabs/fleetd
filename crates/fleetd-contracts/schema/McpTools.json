@@ -6,7 +6,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "exitCode": {
-          "description": "Only when T3 reports one or the output says \"Exit code N\"; T3's Claude adapter sets none itself.",
+          "description": "Only when the runner reports one or the output says \"Exit code N\".",
           "maximum": 9007199254740991,
           "minimum": -9007199254740991,
           "type": "integer"
@@ -169,6 +169,10 @@
           },
           "maxItems": 6,
           "type": "array"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "approve: the session prompt it answers, instead of `gated`."
         },
         "proceededOnRec": {
           "description": "The lead carried on with the recommendation; the answer confirms or overrides it.",
@@ -1811,7 +1815,7 @@
         },
         {
           "const": "project.removed",
-          "description": "T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
+          "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
         },
         {
@@ -2386,7 +2390,7 @@
         },
         "threadId": {
           "$ref": "#/$defs/ThreadId",
-          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+          "description": "The current lead thread on the project's machine; earlier ones stay on the node as history."
         }
       },
       "required": [
@@ -2450,7 +2454,7 @@
         },
         "threadId": {
           "$ref": "#/$defs/ThreadId",
-          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+          "description": "The current lead thread on the project's machine; earlier ones stay on the node as history."
         },
         "truncated": {
           "type": "boolean"
@@ -2476,7 +2480,7 @@
       "type": "string"
     },
     "LoginKind": {
-      "description": "Read from the T3 provider instance status and its env var names, never from credentials.",
+      "description": "Read from the runner's login kind, never from credentials.",
       "enum": [
         "subscription",
         "api_key",
@@ -2510,17 +2514,6 @@
         "status": {
           "$ref": "#/$defs/MachineStatus"
         },
-        "t3": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MachineT3"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Null until the node has reported a reachable T3."
-        },
         "tags": {
           "items": {
             "type": "string"
@@ -2534,7 +2527,6 @@
         "tags",
         "status",
         "lastSeenAt",
-        "t3",
         "nodeVersion"
       ],
       "type": "object"
@@ -2551,23 +2543,6 @@
         "degraded"
       ],
       "type": "string"
-    },
-    "MachineT3": {
-      "properties": {
-        "protocol": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "version": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "version",
-        "protocol"
-      ],
-      "type": "object"
     },
     "McpTools": {
       "properties": {
@@ -2685,11 +2660,23 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "project_add.input": {
+          "$ref": "#/$defs/ProjectAddInput"
+        },
+        "project_add.output": {
+          "$ref": "#/$defs/ProjectAddOutput"
+        },
         "project_get.input": {
           "$ref": "#/$defs/ProjectGetInput"
         },
         "project_get.output": {
           "$ref": "#/$defs/ProjectOutcome"
+        },
+        "project_remove.input": {
+          "$ref": "#/$defs/ProjectRemoveInput"
+        },
+        "project_remove.output": {
+          "$ref": "#/$defs/ProjectRemoveOutput"
         },
         "projects_list.input": {
           "$ref": "#/$defs/ProjectsListInput"
@@ -2744,6 +2731,12 @@
         },
         "tasks_list.output": {
           "$ref": "#/$defs/TasksListOutput"
+        },
+        "thread_answer.input": {
+          "$ref": "#/$defs/ThreadAnswerInput"
+        },
+        "thread_answer.output": {
+          "$ref": "#/$defs/ThreadAnswerOutput"
         },
         "thread_interrupt.input": {
           "$ref": "#/$defs/ThreadInterruptInput"
@@ -2869,8 +2862,12 @@
         "lead_restart.output",
         "lead_start.input",
         "lead_start.output",
+        "project_add.input",
+        "project_add.output",
         "project_get.input",
         "project_get.output",
+        "project_remove.input",
+        "project_remove.output",
         "projects_list.input",
         "projects_list.output",
         "retro_proposals.input",
@@ -2889,6 +2886,8 @@
         "task_get.output",
         "tasks_list.input",
         "tasks_list.output",
+        "thread_answer.input",
+        "thread_answer.output",
         "thread_interrupt.input",
         "thread_interrupt.output",
         "thread_launch.input",
@@ -3005,6 +3004,13 @@
       "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
+    "PermissionAnswer": {
+      "enum": [
+        "allow",
+        "deny"
+      ],
+      "type": "string"
+    },
     "PlaybookChangeKind": {
       "enum": [
         "wording",
@@ -3027,28 +3033,47 @@
       "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
-    "ProbeCounter": {
-      "description": "Direct usage or reset-credit calls seen in the machine's T3 trace file. Must be 0.",
+    "ProjectAddInput": {
       "properties": {
-        "count": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
         },
-        "observable": {
-          "type": "boolean"
-        },
-        "reason": {
-          "description": "Why it is not observable.",
+        "path": {
+          "pattern": "^/.",
           "type": "string"
         },
-        "source": {
-          "description": "The trace directory read, when observable.",
+        "title": {
+          "description": "Absent means the directory's name.",
+          "maxLength": 200,
+          "minLength": 1,
           "type": "string"
         }
       },
       "required": [
-        "observable"
+        "machineId",
+        "path"
+      ],
+      "type": "object"
+    },
+    "ProjectAddOutput": {
+      "properties": {
+        "created": {
+          "description": "False when the directory was already a project (it is renamed when a title is given).",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectId",
+        "created"
       ],
       "type": "object"
     },
@@ -3154,6 +3179,41 @@
       ],
       "type": "object"
     },
+    "ProjectRemoveInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
     "ProjectSummary": {
       "properties": {
         "lastActivityAt": {
@@ -3232,7 +3292,7 @@
       "type": "object"
     },
     "Receipts": {
-      "description": "Counted by the hub from the task's T3 items, never from its prose.",
+      "description": "Counted by the hub from the task's thread items, never from its prose.",
       "properties": {
         "commands": {
           "maximum": 9007199254740991,
@@ -4427,6 +4487,62 @@
       ],
       "type": "object"
     },
+    "ThreadAnswerInput": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/PermissionAnswer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "message": {
+          "description": "Deny only: what claude is told instead of running the tool.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "description": "The prompt answered, from the thread.waiting event; absent means the one open now.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "ThreadAnswerOutput": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId",
+          "description": "The tool_permission ask this answer closed, if one was open."
+        },
+        "decision": {
+          "$ref": "#/$defs/PermissionAnswer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestId",
+        "decision"
+      ],
+      "type": "object"
+    },
     "ThreadCounts": {
       "properties": {
         "failed": {
@@ -4657,7 +4773,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "effort": {
-          "description": "As reported by T3; not narrowed to Effort because T3 may report other levels.",
+          "description": "As reported by the runner; not narrowed to Effort because it may report other levels.",
           "type": "string"
         },
         "headline": {
@@ -4781,6 +4897,34 @@
     "Timestamp": {
       "format": "date-time",
       "type": "string"
+    },
+    "ToolPermission": {
+      "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
+      "properties": {
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "summary": {
+          "description": "The command, the path, or the tool's own description.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "toolName": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "requestId",
+        "toolName",
+        "summary"
+      ],
+      "type": "object"
     },
     "TrainFreezeInput": {
       "properties": {
@@ -4988,9 +5132,6 @@
         },
         "parked": {
           "$ref": "#/$defs/ParkedCounts"
-        },
-        "probes": {
-          "$ref": "#/$defs/ProbeCounter"
         }
       },
       "required": [
@@ -4998,8 +5139,7 @@
         "login",
         "breaker",
         "parked",
-        "lastEvents",
-        "probes"
+        "lastEvents"
       ],
       "type": "object"
     },

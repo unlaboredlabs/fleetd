@@ -27,6 +27,8 @@ pub enum Line {
 pub struct System {
     pub subtype: String,
     pub session_id: Option<String>,
+    /// The line's own id; fleetd uses it as the item id of compactions and retries.
+    pub uuid: Option<String>,
     // init
     pub claude_code_version: Option<String>,
     pub model: Option<String>,
@@ -121,6 +123,8 @@ pub struct UserMessage {
 pub struct StreamEvent {
     pub event: Value,
     pub parent_tool_use_id: Option<String>,
+    /// The id of the assistant message being streamed; the complete message carries the same id.
+    pub api_message_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

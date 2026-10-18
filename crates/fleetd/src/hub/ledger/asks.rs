@@ -7,7 +7,7 @@ use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{
     Ask, AskAnswer, AskBlocks, AskClass, AskId, AskKind, AskOptions, AskState, AskSteps, AskText,
     Batch, BatchId, BatchState, CheckSpec, Decision, DecisionId, DecisionKey, DecisionState,
-    DecisionValue, EnvName, GatedRunSpec, WorkstreamId,
+    DecisionValue, EnvName, GatedRunSpec, ToolPermission, WorkstreamId,
 };
 use fleetd_contracts::secrets::SecretSink;
 use rusqlite::Connection;
@@ -54,6 +54,8 @@ pub struct AskInput {
     pub env_name: Option<EnvName>,
     /// approve: the stored command; its key is always `gated.<askId>`.
     pub gated: Option<GatedRunSpec>,
+    /// approve: a session's tool permission prompt instead of a command; its key is always `permission.<askId>`.
+    pub permission: Option<ToolPermission>,
     pub blocks: AskBlocks,
     pub proceeded_on_rec: bool,
 }
@@ -170,6 +172,7 @@ pub fn validate_ask(input: &AskInput) -> Option<LedgerError> {
         }
     }
     if input.kind == AskKind::Approve
+        && input.permission.is_none()
         && input
             .gated
             .as_ref()
@@ -414,6 +417,7 @@ impl Asks {
                 env_name: input.env_name.clone(),
                 fingerprint: None,
                 gated: input.gated.clone(),
+                permission: input.permission.clone(),
                 evidence: None,
                 blocks: input.blocks.clone(),
                 proceeded_on_rec: input.proceeded_on_rec,
@@ -427,12 +431,18 @@ impl Asks {
             let project_ref = input.project_ref.as_ref();
             let workstream_id = input.workstream_id.as_ref();
             let key = input.key.as_str();
-            // Each approve ask is its own question: a stored command is never answered from the log or merged with another.
+            // Each approve ask is its own question: a stored command or a tool prompt is never answered from the log or
+            // merged with another.
             if input.kind == AskKind::Approve {
+                let prefix = if input.permission.is_some() {
+                    "permission"
+                } else {
+                    "gated"
+                };
                 let fresh =
                     repo::insert_ask(db, project_ref, key, workstream_id, by, now, |ask_id| {
                         let gated_key =
-                            DecisionKey::unchecked(format!("gated.{}", ask_id.to_lowercase()));
+                            DecisionKey::unchecked(format!("{prefix}.{}", ask_id.to_lowercase()));
                         Ask {
                             key: gated_key,
                             ..base(ask_id, AskState::Open)

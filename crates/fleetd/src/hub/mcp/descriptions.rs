@@ -62,11 +62,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one T3 thread that turns intents into briefs, asks only product/money/credential/irreversible questions, and never writes code. Returns the existing lead if there is one. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
+        "Start the project's lead: one thread that turns intents into briefs, asks only product/money/credential/irreversible questions, and never writes code. Returns the existing lead if there is one. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
     ),
     (
         "lead_restart",
-        "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays in T3. Takes model and effort like lead_start.",
+        "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays on the node. Takes model and effort like lead_start.",
     ),
     (
         "intake_submit",
@@ -126,7 +126,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "usage_status",
-        "Per machine: the fleetd Claude login kind (subscription, api_key, custom_base_url; from T3's provider status, never credentials), the usage breaker (open/closed, until when, its plain message), parked lead and task counts, the latest limit events, and the probe counter of direct usage API calls seen in T3's trace file, which must be 0.",
+        "Per machine: the fleetd Claude login kind (subscription, api_key, custom_base_url; from the node's runner, never credentials), the usage breaker (open/closed, until when, its plain message), parked lead and task counts, and the latest limit events.",
     ),
     (
         "usage_resume",
@@ -162,7 +162,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "doctor_list",
-        "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, claude login, HTTPS. Each machine: online/degraded/offline, T3 at the pinned version, the fleetd instance's launch args and own config dir, auto-resume off, probe counter 0, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
+        "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, claude login, HTTPS. Each machine: online/degraded/offline, claude in the supported version range, claude logged in, the runner's conformance, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
     ),
     (
         "attention_policy",
@@ -170,6 +170,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "doctor_fix",
-        "Run a check's automatic fix, then the check again: restart T3 with the node's restart command (degraded), re-mint the hub's T3 session (no T3 connection), or re-apply the fleetd instance config (launch args, auto-resume). Manual fixes are refused with the exact command to run. Admin keys, or a person's device (a human key).",
+        "Run a check's automatic fix, then the check again. Manual fixes are refused with the exact command to run. Admin keys, or a person's device (a human key).",
     ),
 ];

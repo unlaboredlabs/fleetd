@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 pub use count::receipts_line;
 
-/// Every action of a task thread, as far as T3's bounded thread snapshot reaches.
+/// Every action of a task thread, as far as the node's bounded thread snapshot reaches.
 const MAX_ACTIONS: usize = 1000;
 
 pub struct Receipts {

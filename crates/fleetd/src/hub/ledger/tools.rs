@@ -44,7 +44,7 @@ fn code(code: LedgerCode) -> ErrorCode {
         LedgerCode::NotFound => ErrorCode::NotFound,
         LedgerCode::Invalid => ErrorCode::Invalid,
         LedgerCode::Forbidden => ErrorCode::Forbidden,
-        LedgerCode::Internal => ErrorCode::T3Error,
+        LedgerCode::Internal => ErrorCode::Failed,
     }
 }
 
@@ -292,6 +292,7 @@ pub fn lead_call(
                     sink: call.sink,
                     env_name: call.env_name,
                     gated: None,
+                    permission: None,
                     blocks: call.blocks,
                     proceeded_on_rec: call.proceeded_on_rec,
                 },

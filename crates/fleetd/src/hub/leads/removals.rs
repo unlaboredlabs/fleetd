@@ -1,4 +1,4 @@
-//! When T3 deletes a project, the executor drops it from the hub's cache and emits project.removed. Nothing can run
+//! When a project is removed from its node, the executor drops it from the hub's cache and emits project.removed. Nothing can run
 //! there any more, so the project's live work ends: open asks are withdrawn (they leave the inbox), live tasks are
 //! cancelled (their slots and leases go back), and open workstreams stop. Its lead reads as stopped (`lead_state`).
 //!
@@ -18,7 +18,7 @@ use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::hub::store::{NewEvent, WaitInput};
 
-pub const STOPPED_REASON: &str = "its project was deleted in T3";
+pub const STOPPED_REASON: &str = "its project was removed";
 pub const ASK_REASON: &str = "project deleted";
 const SCAN_LIMIT: usize = 10_000;
 

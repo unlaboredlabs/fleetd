@@ -1,8 +1,8 @@
-//! The hub link: challenge, signed hello, welcome, then the current T3 state and session, heartbeats and the hub's
-//! requests until the socket ends or the hub goes silent. Reconnects with backoff (1 s doubling to 30 s, ±20%
-//! jitter, reset by each welcome) whether or not T3 is up, and only gives up when the hub refuses the node.
+//! The hub link: challenge, signed hello, welcome, then heartbeats and the hub's requests until the socket ends or the
+//! hub goes silent. Reconnects with backoff (1 s doubling to 30 s, ±20% jitter, reset by each welcome), and only gives
+//! up when the hub refuses the node.
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -10,18 +10,16 @@ use rand::Rng;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::actions::{NodeActionDeps, run_node_action};
+use super::actions::run_node_action;
 use super::cmd::run_cmd_check;
 use super::identity::{NodeBoxKey, NodeIdentity};
 use super::lead::LeadRelay;
 use super::secrets::{SecretsContext, deliver_secret, run_gated};
-use super::sessions::{SessionKeeper, SessionService};
-use super::supervisor::{Probe, Restart, T3Info, T3State, T3Supervisor, T3Unreachable};
+use super::sessions::SessionService;
 use super::util::now_iso;
 use super::wire::{
-    Heartbeat, HubToNode, MachineId, NodeHello, NodeT3Endpoint, NodeT3Session, NodeT3State,
-    NodeToHub, PROTOCOL_VERSION, ProtocolVersion, T3RunState, Text, Timestamp, close,
-    decode_hub_frame, to_json,
+    Heartbeat, HubToNode, MachineId, NodeHello, NodeToHub, PROTOCOL_VERSION, ProtocolVersion, Text,
+    Timestamp, close, decode_hub_frame, to_json,
 };
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
@@ -58,106 +56,12 @@ pub fn link_url(hub: &str) -> Result<String, String> {
     Ok(format!("{scheme}{rest}"))
 }
 
-/// The commit of the checkout `t3_cmd` runs T3 from source in (`<checkout>/apps/server/src/bin.ts`). T3 from source
-/// reports its package version whatever the commit, so the node adds the commit as semver build metadata.
-pub fn t3_source_commit(t3_cmd: &[String]) -> Option<String> {
-    let bin = t3_cmd
-        .iter()
-        .find(|arg| arg.ends_with("/apps/server/src/bin.ts"))?;
-    let dir = std::path::Path::new(bin).parent()?;
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
-}
-
-/// fetch()'s useful part: "connect ECONNREFUSED 127.0.0.1:4712", "HTTP 503", a timeout.
-fn describe(error: &reqwest::Error, url: &reqwest::Url) -> String {
-    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
-    while let Some(cause) = source {
-        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
-            let host = url.host_str().unwrap_or_default();
-            let port = url.port_or_known_default().unwrap_or_default();
-            let why = match io.kind() {
-                std::io::ErrorKind::ConnectionRefused => {
-                    format!("connect ECONNREFUSED {host}:{port}")
-                }
-                _ => io.to_string(),
-            };
-            return why.chars().take(120).collect();
-        }
-        source = cause.source();
-    }
-    if error.is_timeout() {
-        return "The operation was aborted due to timeout".into();
-    }
-    error.to_string().chars().take(120).collect()
-}
-
-/// T3's version (plus `+<commit>` when run from source) and orchestration protocol from its public environment
-/// descriptor.
-pub fn t3_info_probe(t3_url: String, source_commit: Option<String>) -> Probe {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        // Like Node's fetch: T3 is local or on the tailnet, never behind the user's HTTP proxy.
-        .no_proxy()
-        .build()
-        .unwrap_or_default();
-    Arc::new(move || {
-        let client = client.clone();
-        let t3_url = t3_url.clone();
-        let source_commit = source_commit.clone();
-        Box::pin(async move {
-            let unreachable = |why: String| T3Unreachable {
-                url: t3_url.clone(),
-                why,
-            };
-            let url = reqwest::Url::parse(&t3_url)
-                .and_then(|base| base.join("/.well-known/t3/environment"))
-                .map_err(|e| unreachable(e.to_string()))?;
-            let response = client
-                .get(url.clone())
-                .send()
-                .await
-                .map_err(|e| unreachable(describe(&e, &url)))?;
-            if !response.status().is_success() {
-                return Err(unreachable(format!("HTTP {}", response.status().as_u16())));
-            }
-            let body: serde_json::Value = response
-                .json()
-                .await
-                .map_err(|e| unreachable(describe(&e, &url)))?;
-            let version = body
-                .get("serverVersion")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let protocol = body
-                .get("orchestrationProtocolVersion")
-                .and_then(serde_json::Value::as_f64)
-                .unwrap_or(0.0);
-            Ok(T3Info {
-                version: match &source_commit {
-                    Some(commit) => format!("{version}+{commit}"),
-                    None => version.to_owned(),
-                },
-                protocol: protocol as i64,
-            })
-        })
-    })
-}
-
 pub struct LinkSettings {
     pub hub: String,
     pub machine_id: String,
     pub name: String,
     pub tags: Vec<String>,
     pub node_version: String,
-    pub t3_url: String,
 }
 
 pub struct NodeSecrets {
@@ -169,13 +73,10 @@ pub struct NodeSecrets {
 pub struct RunNodeOptions {
     pub settings: LinkSettings,
     pub identity: NodeIdentity,
-    pub t3_info: Probe,
-    pub t3_restart: Option<Restart>,
     /// Sent on links until the hub first welcomes this node, then forgotten.
     pub enroll_token: Option<zeroize::Zeroizing<String>>,
     /// Runs after the first welcome of a link that carried the enroll token.
     pub on_enrolled: Option<Box<dyn FnOnce() + Send>>,
-    pub sessions: Arc<dyn super::sessions::T3Sessions>,
     /// Runs the hub's `session_call`s and feeds the machine and thread streams.
     pub node_sessions: SessionService,
     pub lead_calls: LeadRelay,
@@ -188,48 +89,13 @@ pub struct RunNodeOptions {
 struct Shared {
     settings: LinkSettings,
     identity: NodeIdentity,
-    t3: T3Supervisor,
-    keeper: SessionKeeper,
     node_sessions: SessionService,
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
-    actions: NodeActionDeps,
 }
 
 impl Shared {
-    fn endpoint(&self, info: &T3Info) -> NodeT3Endpoint {
-        NodeT3Endpoint {
-            url: self.settings.t3_url.clone(),
-            version: info.version.clone(),
-            protocol: fleetd_contracts::prim::AnyInt::unchecked(info.protocol),
-        }
-    }
-
-    fn t3state(&self, current: &T3State) -> NodeToHub {
-        let at = Timestamp::from(now_iso());
-        NodeToHub::T3State(match current {
-            T3State::Up(info) => NodeT3State {
-                state: T3RunState::Up,
-                reason: None,
-                t3: Some(self.endpoint(info)),
-                at,
-            },
-            T3State::Down(reason) => NodeT3State {
-                state: T3RunState::Down,
-                reason: Some(reason.clone()),
-                t3: None,
-                at,
-            },
-            T3State::Restarting(reason) => NodeT3State {
-                state: T3RunState::Restarting,
-                reason: Some(reason.clone()),
-                t3: None,
-                at,
-            },
-        })
-    }
-
     fn secrets_ctx(&self) -> SecretsContext<'_> {
         SecretsContext {
             machine_id: &self.settings.machine_id,
@@ -243,26 +109,15 @@ impl Shared {
     }
 }
 
-/// The node's main loop: supervise the local T3 and keep a link to the hub, reconnecting with backoff. Only ends by
-/// returning the hub's refusal.
+/// The node's main loop: keep a link to the hub, reconnecting with backoff. Only ends by returning the hub's refusal.
 pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
-    let (t3, _supervising) =
-        super::supervisor::T3Supervisor::start(options.t3_info, options.t3_restart.clone()).await;
-    let keeper = SessionKeeper::start(options.sessions, t3.clone());
-    let remint_keeper = keeper.remint_handle();
     let shared = Arc::new(Shared {
         settings: options.settings,
         identity: options.identity,
-        t3,
-        keeper,
         node_sessions: options.node_sessions,
         lead_calls: options.lead_calls,
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
-        actions: NodeActionDeps {
-            remint: Box::new(move || Box::pin(remint_keeper.remint_now())),
-            restart: options.t3_restart,
-        },
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
@@ -396,17 +251,12 @@ async fn run_link_once(
         Ok(other) => return LinkEnd::Lost(format!("expected a challenge, got {}", tag(&other))),
         Err(end) => return end,
     };
-    let t3 = shared.t3.current();
     send(NodeToHub::Hello(NodeHello {
         machine_id: MachineId::unchecked(shared.settings.machine_id.clone()),
         name: shared.settings.name.clone(),
         tags: shared.settings.tags.clone(),
         node_version: shared.settings.node_version.clone(),
         protocol: ProtocolVersion::CURRENT,
-        t3: match &t3 {
-            T3State::Up(info) => Some(shared.endpoint(info)),
-            _ => None,
-        },
         pub_key: Text::unchecked(shared.identity.pub_key()),
         sig: Text::unchecked(shared.identity.sign(&challenge)),
         enroll_token: enroll_token.filter(|t| !t.is_empty()).map(Text::unchecked),
@@ -432,59 +282,6 @@ async fn run_link_once(
     on_welcome();
     tracing::info!(%hub_id, machine_id = %shared.settings.machine_id, "linked to hub");
 
-    // An up hello already said it all; a T3-less one still owes the hub the reason. Sends go out under this lock so
-    // a session never overtakes the "up" it depends on.
-    let reported = Arc::new(Mutex::new(t3.is_up().then_some(t3)));
-    let report = {
-        let shared = shared.clone();
-        let reported = reported.clone();
-        let tx = tx.clone();
-        move |current: T3State| {
-            let mut last = reported
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if last.as_ref() != Some(&current) {
-                let _ = tx.send(to_json(&shared.t3state(&current)));
-                *last = Some(current);
-            }
-        }
-    };
-    {
-        let mut changes = shared.t3.subscribe();
-        let report = report.clone();
-        tasks.spawn(async move {
-            loop {
-                let current = changes.borrow_and_update().clone();
-                report(current);
-                if changes.changed().await.is_err() {
-                    return;
-                }
-            }
-        });
-    }
-    {
-        let mut sessions = shared.keeper.subscribe();
-        let shared = shared.clone();
-        let tx = tx.clone();
-        tasks.spawn(async move {
-            loop {
-                let kept = sessions.borrow_and_update().clone();
-                if let Some(kept) = kept {
-                    // The hub attaches a session only to a T3 it knows is up, so a fresh "up" goes first.
-                    report(shared.t3.current());
-                    let frame = NodeToHub::T3Session(NodeT3Session {
-                        bearer: Text::unchecked(kept.session.bearer.as_str()),
-                        expires_at: Timestamp::from(kept.session.expires_at.clone()),
-                    });
-                    let _ = tx.send(to_json(&frame));
-                    kept.mark_delivered();
-                }
-                if sessions.changed().await.is_err() {
-                    return;
-                }
-            }
-        });
-    }
     {
         let tx = tx.clone();
         tasks.spawn(async move {
@@ -534,10 +331,9 @@ async fn run_link_once(
                 });
             }
             HubToNode::NodeAction(action) => {
-                let shared = shared.clone();
                 let tx = tx.clone();
                 tasks.spawn(async move {
-                    let result = run_node_action(action, &shared.actions).await;
+                    let result = run_node_action(action).await;
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
                 });
             }

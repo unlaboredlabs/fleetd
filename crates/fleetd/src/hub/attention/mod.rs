@@ -26,6 +26,10 @@ pub fn ask_attention(ask: &Ask, reopened: bool) -> Option<Attention> {
     if ask.state != AskState::Open || !(blocking || unrun_approval) {
         return None;
     }
+    // A tool prompt holds a run until someone answers: loud, but not through quiet hours.
+    if ask.permission.is_some() {
+        return Some(Attention::Loud);
+    }
     Some(
         if matches!(ask.class, AskClass::Money | AskClass::Irreversible) {
             Attention::Urgent

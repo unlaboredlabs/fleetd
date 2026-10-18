@@ -104,17 +104,18 @@ pub fn from_executor(error: ExecutorError) -> ToolError {
             machine_id,
             thread_id,
         }),
-        e @ ExecutorError::T3RequestFailed { .. } => {
-            if let ExecutorError::T3RequestFailed { cause, .. } = &e {
-                tracing::warn!(cause = %cause, "executor: T3 request failed");
-            }
-            ToolError::new(ErrorCode::T3Error, e.to_string())
-                .with_fix("Retry; if it keeps failing, check the machine with fleetd_status.")
+        e @ ExecutorError::NodeRequestFailed { .. } => {
+            let fix = match &e {
+                ExecutorError::NodeRequestFailed { fix: Some(fix), .. } => fix.clone(),
+                _ => "Retry; if it keeps failing, check the machine with fleetd_status.".to_owned(),
+            };
+            tracing::warn!(error = %e, "executor: node request failed");
+            ToolError::new(ErrorCode::Failed, e.to_string()).with_fix(fix)
         }
     }
 }
 
-/// A machine's cache is fresh only while its node is online and its executor holds a T3 connection.
+/// A machine's cache is fresh only while its node is online and its session stream is live.
 fn freshness(hub: &Hub, machine_id: &MachineId) -> Result<(Machine, bool, String), ToolError> {
     let machine = hub
         .store
@@ -437,7 +438,7 @@ async fn thread_send(
         machine_id: input.machine_id.clone(),
         thread_id: input.thread_id.clone(),
     };
-    // A write that may wait in the queue needs a target the hub has seen, since T3 can't vouch for it offline.
+    // A write that may wait in the queue needs a target the hub has seen, since the node can't vouch for it offline.
     if hub.store.machine_get(&r.machine_id)?.is_none() {
         return Err(unknown_machine(&r.machine_id));
     }
@@ -459,12 +460,14 @@ async fn thread_send(
             }),
     }
     .map_err(from_executor)?;
-    // As in older hubs: a message queued behind a run T3 is still starting also reads "offline … until undefined".
-    let next = if sent.queued {
+    let next = if sent.queued && sent.queued_until.is_none() {
+        "Queued behind the thread's active run; it starts when that run ends. Call events_wait to wait for it."
+            .to_owned()
+    } else if sent.queued {
         format!(
             "{} is offline: the message is queued until {}. Wait for write.delivered or write.expired with events_wait.",
             input.machine_id,
-            sent.queued_until.as_deref().unwrap_or("undefined")
+            sent.queued_until.as_deref().unwrap_or_default()
         )
     } else {
         "Call events_wait to wait for the thread to finish.".to_owned()

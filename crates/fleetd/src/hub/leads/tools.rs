@@ -92,7 +92,7 @@ impl Area {
         .map_err(refusal)?;
         let next = if restart {
             format!(
-                "Fresh lead thread {} (session {}) started from the current digest; the old thread stays in T3 as history.",
+                "Fresh lead thread {} (session {}) started from the current digest; the old thread stays on the node as history.",
                 lead.thread_id, lead.session_generation
             )
         } else {

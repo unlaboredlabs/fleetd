@@ -5,12 +5,20 @@
 //!   bytes and the exit code and output tail go to the lead as evidence.
 //! - do with verify: once ticked done, the hub runs the check; a failure reopens the ask with the evidence.
 //!
+//! - approve from a tool prompt (`tool_permission`): a session's permission prompt, answered on its node (permissions.rs).
+//!
 //! Asks travel as their wire JSON (`Ask` in contracts/ledger).
+pub mod permissions;
 pub mod tools;
+
+#[cfg(test)]
+mod permissions_tests;
 
 use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, system_ms};
+use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
+pub use permissions::{ThreadAnswer, ToolRules};
 use regex::Regex;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -133,9 +141,11 @@ pub fn restart_reopen_reason(evidence: Option<&str>, machine_id: &str) -> Option
 /// A node command's failure.
 #[derive(Clone, Debug)]
 pub struct NodeCommandError {
-    /// "offline", "lost", "no_reply" or "invalid".
+    /// "offline", "lost", "no_reply", "invalid", "not_found" or "failed".
     pub reason: String,
     pub message: String,
+    /// The node's own fix, when it gave one.
+    pub fix: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -164,6 +174,12 @@ pub trait ApprovalAsks: Send + Sync {
         patch: Map<String, Value>,
     ) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
     fn reopen(&self, ask_id: &str, evidence: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
+    /// Open tool_permission asks.
+    fn list_open(&self) -> BoxFut<'_, Vec<Value>>;
+    /// Answered and withdrawn tool_permission asks.
+    fn list_closed_permissions(&self) -> BoxFut<'_, Vec<Value>>;
+    /// Closes an open ask nobody needs to answer any more, recording `reason` as the hub's answer.
+    fn withdraw(&self, ask_id: &str, reason: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
 }
 
 /// The node link's request/reply commands.
@@ -180,6 +196,22 @@ pub trait ApprovalNodes: Send + Sync {
         machine_id: &str,
         input: Value,
     ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>>;
+    /// `session_call answer`: the decision for the prompt `request_id` the thread's run waits on.
+    fn answer_permission(
+        &self,
+        machine_id: &str,
+        thread_id: &str,
+        request_id: &str,
+        decision: PermissionDecision,
+    ) -> BoxFut<'_, Result<(), NodeCommandError>>;
+    /// The machine's node is linked and its session stream subscribed.
+    fn is_linked(&self, machine_id: &str) -> BoxFut<'_, bool>;
+    /// The prompt the thread's run waits on now, from the machine stream.
+    fn pending_permission(
+        &self,
+        machine_id: &str,
+        thread_id: &str,
+    ) -> BoxFut<'_, Option<PendingPermission>>;
 }
 
 /// The rest of the hub approvals reads or wakes.
@@ -197,6 +229,11 @@ pub trait ApprovalHub: Send + Sync {
         workstream_id: Option<String>,
         verify: Value,
     ) -> BoxFut<'_, (String, String)>;
+    /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
+    fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
+    /// The project's current lead thread.
+    fn lead_thread(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
+    fn thread_project(&self, machine_id: &str, thread_id: &str) -> BoxFut<'_, Option<ProjectRef>>;
 }
 
 pub struct ApprovalsDeps {
@@ -229,20 +266,27 @@ fn project_of(ask: &Value) -> Option<ProjectRef> {
 
 pub struct Approvals {
     deps: ApprovalsDeps,
+    /// Tool prompts still waiting on an answer, whatever became of their asks.
+    prompts: permissions::Prompts,
 }
 
 impl Approvals {
     /// Reopens approvals the hub accepted but never finished before it stopped (never run late, never silently
     /// lost); `serve` then acts on answers recorded from now on.
     pub fn new(deps: ApprovalsDeps) -> Arc<Self> {
-        Arc::new(Approvals { deps })
+        Arc::new(Approvals {
+            deps,
+            prompts: Default::default(),
+        })
     }
 
-    /// Runs until the hub stops: the restart sweep, then the answers' follower.
+    /// Runs until the hub stops: the restart sweep, then the answers' and threads' followers and the prompt reminders.
     pub async fn serve(self: Arc<Self>) {
         let approvals = self;
         for ask in approvals.deps.asks.list_answered().await {
+            // A tool prompt's answer is delivered or put back by `answer_from_ask` itself, never re-run.
             if s(&ask, "kind") != Some("approve")
+                || ask.get("permission").is_some()
                 || ask.pointer("/answer/value").and_then(Value::as_str) != Some("go")
             {
                 continue;
@@ -256,7 +300,11 @@ impl Approvals {
                 let _ = approvals.deps.asks.reopen(id, &why).await;
             }
         }
-        approvals.follow_answers().await;
+        tokio::join!(
+            approvals.clone().follow_answers(),
+            approvals.clone().follow_threads(),
+            approvals.watch_prompts(),
+        );
     }
 
     fn now(&self) -> String {
@@ -320,6 +368,9 @@ impl Approvals {
                     let me = self.clone();
                     tokio::spawn(async move {
                         match s(&ask, "kind") {
+                            Some("approve") if ask.get("permission").is_some() => {
+                                me.answer_from_ask(&ask).await
+                            }
                             Some("approve") => me.run_approved(&ask).await,
                             Some("do") => me.recheck(&ask).await,
                             _ => {}
@@ -729,6 +780,15 @@ mod tests {
         fn reopen(&self, _: &str, _: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
             unreachable!()
         }
+        fn list_open(&self) -> BoxFut<'_, Vec<Value>> {
+            unreachable!()
+        }
+        fn list_closed_permissions(&self) -> BoxFut<'_, Vec<Value>> {
+            unreachable!()
+        }
+        fn withdraw(&self, _: &str, _: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
+            unreachable!()
+        }
     }
     impl ApprovalNodes for Fake {
         fn deliver_secret(
@@ -751,6 +811,21 @@ mod tests {
         ) -> BoxFut<'_, Result<GatedOutcome, NodeCommandError>> {
             unreachable!()
         }
+        fn answer_permission(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: PermissionDecision,
+        ) -> BoxFut<'_, Result<(), NodeCommandError>> {
+            unreachable!()
+        }
+        fn pending_permission(&self, _: &str, _: &str) -> BoxFut<'_, Option<PendingPermission>> {
+            unreachable!()
+        }
+        fn is_linked(&self, _: &str) -> BoxFut<'_, bool> {
+            unreachable!()
+        }
     }
     impl ApprovalHub for Fake {
         fn box_key(&self, _: &str) -> BoxFut<'_, Option<Option<String>>> {
@@ -768,6 +843,15 @@ mod tests {
             _: Option<String>,
             _: Value,
         ) -> BoxFut<'_, (String, String)> {
+            unreachable!()
+        }
+        fn tool_rules(&self, _: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
+            unreachable!()
+        }
+        fn lead_thread(&self, _: &ProjectRef) -> BoxFut<'_, Option<String>> {
+            unreachable!()
+        }
+        fn thread_project(&self, _: &str, _: &str) -> BoxFut<'_, Option<ProjectRef>> {
             unreachable!()
         }
     }
@@ -804,6 +888,7 @@ mod tests {
             "sink": "env:lab-a:/w/p1/.env", "projectRef": { "machineId": "lab-a", "projectId": "p1" },
         }));
         let approvals = Approvals {
+            prompts: Default::default(),
             deps: ApprovalsDeps {
                 asks: fake.clone(),
                 nodes: fake.clone(),

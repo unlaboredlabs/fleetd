@@ -1,6 +1,7 @@
 // Lab check: an intent without a project is routed by a hub installed the way users get it (`fleetd init`'s systemd
 // user unit, so only HOME, PATH and LANG in its environment), proving the router reaches Claude through the user's own
-// `claude` login. Lab only: its own hub home, port and unit suffix; lab T3s on 4711/4712 (FLEETD_LAB_SLOT shifts both). One haiku router run.
+// `claude` login. Lab only: its own hub home, port (FLEETD_LAB_SLOT shifts it) and unit suffix, and the two lab machines
+// with their test repos as projects. One haiku router run.
 //
 //   node tests/lab/hubUnitRouter.ts
 import { execFileSync } from "node:child_process";
@@ -10,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, check, cli, lab, LAB, MACHINES, ok, slotPort, SLOT, startCli, stopAll, T3_SRC, until, waitEventWith } from "./harness.ts";
+import { type Body, callToolWith, check, cleanupMachineHomes, cli, joinNode, LAB, machineHome, MACHINES, ok, seedRepo, slotPort, SLOT, stopAll, until, waitEventWith, writeFleetdWrapper } from "./harness.ts";
 
 const PORT = slotPort(4784);
 const URL_ = `http://127.0.0.1:${PORT}`;
@@ -21,11 +22,12 @@ const UNIT = `fleetd-hub${SUFFIX}.service`;
 
 const main = async () => {
   if (fs.existsSync(path.join(LAB, "test-lab.lock"))) throw new Error("another test:lab run holds the lab lock");
-  const labStarted: Array<string> = [];
-  for (const m of MACHINES) if (!/already running/u.test(lab("up", m.id))) labStarted.push(m.id);
   let client: Client | undefined;
   try {
     fs.rmSync(RUN, { recursive: true, force: true });
+    // The machines' homes live in the lab's shared run dir, which no run is using (the lock above): start them fresh.
+    for (const m of MACHINES) fs.rmSync(machineHome(m.id), { recursive: true, force: true });
+    writeFleetdWrapper();
     cli("init", "--home", HOME, "--listen", `127.0.0.1:${PORT}`, "--url", URL_, "--unit-suffix", SUFFIX.slice(1));
     const unitEnv = execFileSync("systemctl", ["--user", "show", UNIT, "-p", "Environment", "--value"], { encoding: "utf8" });
     check(!/ANTHROPIC|CLAUDE/u.test(unitEnv), `the installed unit carries no Claude login variables (${unitEnv.trim()})`);
@@ -35,16 +37,22 @@ const main = async () => {
     const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", HOME, "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
     check(key !== undefined, "an agent key");
     for (const m of MACHINES) {
-      const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", HOME, "--machine", m.id))?.[0];
-      check(token !== undefined, `an enrollment token for ${m.id}`);
-      startCli(`node-${m.id}`, [
-        "node", "join", "--hub", URL_, "--token", token!, "--machine", m.id, "--t3-home", m.t3Home, "--t3-url", m.t3Url,
-        "--t3-cmd", `${process.execPath} ${path.join(T3_SRC, "apps/server/src/bin.ts")}`, "--home", path.join(RUN, `node-${m.id}`),
-      ]);
+      seedRepo(m.repo, m.id);
+      joinNode(URL_, HOME, m.id);
     }
     client = new Client({ name: "lab-hub-unit", version: "0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(`${URL_}/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }) as Transport);
     const callTool = callToolWith(() => client!);
+    for (const m of MACHINES) {
+      await until(`${m.id} online`, 120_000, async () => {
+        const s = (await callTool("fleetd_status")).body;
+        if ((s.machines as Array<Body>).some((x) => x.machineId === m.id && x.status === "online")) return true;
+        await callTool("events_wait", { cursor: s.cursor, timeoutSec: 3 });
+        return undefined;
+      });
+      const added = await callTool("project_add", { machineId: m.id, path: m.repo, title: path.basename(m.repo) });
+      check(!added.isError, `project_add ${m.id}: ${JSON.stringify(added.body)}`);
+    }
     const projects = await until("both lab projects listed", 120_000, async () => {
       const s = (await callTool("fleetd_status")).body;
       return s.projects.length >= 2 ? (s.projects as Array<Body>) : undefined;
@@ -74,7 +82,7 @@ const main = async () => {
     } catch (error) {
       process.stdout.write(`uninstall failed: ${String(error)}\n`);
     }
-    for (const id of labStarted) lab("down", id);
+    cleanupMachineHomes();
   }
 };
 

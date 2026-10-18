@@ -63,6 +63,10 @@
           "maxItems": 6,
           "type": "array"
         },
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "approve: the session prompt it answers, instead of `gated`."
+        },
         "proceededOnRec": {
           "description": "The lead carried on with the recommendation; the answer confirms or overrides it.",
           "type": "boolean"
@@ -500,9 +504,40 @@
       ],
       "description": "A machineId or \"browser\"."
     },
+    "ThreadId": {
+      "type": "string"
+    },
     "Timestamp": {
       "format": "date-time",
       "type": "string"
+    },
+    "ToolPermission": {
+      "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
+      "properties": {
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "summary": {
+          "description": "The command, the path, or the tool's own description.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "toolName": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "requestId",
+        "toolName",
+        "summary"
+      ],
+      "type": "object"
     },
     "WorkstreamId": {
       "pattern": "^W[1-9][0-9]*$",

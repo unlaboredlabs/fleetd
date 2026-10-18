@@ -1,5 +1,5 @@
 //! The files a task branch changes as its PR would show them: `git diff --name-only <merge-base>..<branch>`, run by
-//! the node in the project's checkout. Unlike T3's checkpoint paths, a writer that rebased onto a newer base is not
+//! the node in the project's checkout. Unlike the thread's changed paths, a writer that rebased onto a newer base is not
 //! charged with the base's files.
 use std::sync::LazyLock;
 

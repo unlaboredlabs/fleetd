@@ -156,12 +156,12 @@ pub fn hub_start(argv: &[String]) -> ExitCode {
     }
 }
 
-/// Runs the hub until SIGTERM/SIGINT. Refuses a home inside ~/.t3.
+/// Runs the hub until SIGTERM/SIGINT.
 pub async fn run(options: HubOptions) -> anyhow::Result<()> {
     let user_home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();
-    let home = resolve_hub_home(options.home.as_deref(), &user_home)?;
+    let home = resolve_hub_home(options.home.as_deref(), &user_home);
     let config = HubConfig {
         home,
         listen: options.listen.clone(),
@@ -293,11 +293,12 @@ pub fn build_on(
         crate::hub::slots::SlotsOptions::default(),
     )?;
     let leases = crate::hub::leases::Leases::new(db.clone(), events.clone(), clock.clone());
-    let source = crate::hub::leases::policy::T3PolicySource {
+    let source = crate::hub::leases::policy::NodePolicySource {
         store: store.clone(),
         ports: task_ports.clone(),
     };
     let policies = crate::hub::leases::Policies::new(Arc::new(source), clock.clone());
+    executors.set_tool_policy(policies.clone());
     let tasks = crate::hub::tasks::Tasks::new(crate::hub::tasks::TaskDeps {
         db: db.clone(),
         store: store.clone(),

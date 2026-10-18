@@ -6,7 +6,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::sessions::{
-    MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, SessionSummary, ThreadItem,
+    MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, RunnerInfo, SessionSummary, ThreadItem,
     ThreadMessage,
 };
 use rusqlite::{Connection, OptionalExtension, params};
@@ -65,6 +65,11 @@ pub struct SessionLocal {
     /// The live process, so a node that crashed can kill it on start (and never a reused pid).
     pub pid: Option<u32>,
     pub pid_start: Option<String>,
+    /// The launch's tool rules from the project's policy, kept so every respawn passes the same ones.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub disallowed_tools: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -138,6 +143,11 @@ impl NodeStore {
             )?;
             self.append(conn, MachineEvent::ProjectUpserted(project.clone()))
         })
+    }
+
+    /// Logs the runner's changed state, so a hub that reconnects with a cursor replays it.
+    pub fn runner_info(&self, info: &RunnerInfo) -> StoreResult<MachineEventFrame> {
+        self.tx(|conn| self.append(conn, MachineEvent::RunnerInfo(info.clone())))
     }
 
     /// `None` when there was no such project.

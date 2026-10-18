@@ -1,8 +1,5 @@
 # Things fleetd no longer has. CI (.github/site-check.mjs) fails when a line of site/home.html, site/fleetd.txt or
 # site/README.md matches one of these: a case-insensitive JavaScript regex per line, # starts a comment.
-#
-# T3 is not on the list yet: the node still runs stock T3 and `fleetd machine add` installs it from npm, so the page's
-# T3 steps are true today. The PR that drops T3 adds \bT3\b, \bt3code\b, T3 Code and "from npm" here.
 
 # The phone app (a PWA with web push) is gone: fleetd is the CLI and the desktop app.
 \bphone\b
@@ -21,3 +18,9 @@ home screen
 \bnpm (i|install|add)\b
 \b(pnpm|yarn) (add|dlx)\b
 install(ed|s|ing)? (fleetd )?(via|with|through|using) npm
+
+# T3 Code is gone: the node runs the claude CLI itself, and `fleetd machine add` installs nothing from npm.
+\bT3\b
+\bt3code\b
+T3 Code
+from npm

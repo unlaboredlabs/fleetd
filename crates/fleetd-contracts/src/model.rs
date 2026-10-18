@@ -17,12 +17,6 @@ pub enum MachineStatus {
     Degraded,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct MachineT3 {
-    pub version: String,
-    pub protocol: AnyInt,
-}
-
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -32,10 +26,6 @@ pub struct Machine {
     pub tags: Vec<String>,
     pub status: MachineStatus,
     pub last_seen_at: Timestamp,
-    /// Null until the node has reported a reachable T3.
-    #[serialize_always]
-    #[schemars(with = "crate::prim::NullOr<MachineT3>")]
-    pub t3: Option<MachineT3>,
     pub node_version: String,
     /// Plain language, set while status is "degraded".
     pub degraded_reason: Option<String>,
@@ -108,7 +98,7 @@ pub struct ThreadSummary {
     pub usage_limit_reset_at: Option<Timestamp>,
     pub last_progress_at: Timestamp,
     pub model: Option<String>,
-    /// As reported by T3; not narrowed to Effort because T3 may report other levels.
+    /// As reported by the runner; not narrowed to Effort because it may report other levels.
     pub effort: Option<String>,
     pub stale: bool,
     pub as_of: Timestamp,
@@ -167,7 +157,7 @@ pub struct ActionItem {
     /// The command, path or tool.
     pub summary: Text<0, 200>,
     pub output_tail: Option<Text<0, 1024>>,
-    /// Only when T3 reports one or the output says "Exit code N"; T3's Claude adapter sets none itself.
+    /// Only when the runner reports one or the output says "Exit code N".
     pub exit_code: Option<AnyInt>,
     pub failed: bool,
 }

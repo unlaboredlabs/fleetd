@@ -11,7 +11,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import sodium from "libsodium-wrappers";
-import { type Body, cli, fleetdCommand, HUB_PORT, LAB, type Lab, MODEL, RUN, scrubbedEnv } from "./harness.ts";
+import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MACHINES, MODEL, nodeHome, nodeSock, RUN, scrubbedEnv } from "./harness.ts";
 import { TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -80,7 +80,7 @@ export async function m8Desktop(lab: Lab) {
     const out = spawnSync(...fleetdCommand(args), {
       cwd: root,
       encoding: "utf8",
-      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },
+      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
     });
     check(out.status === 0, `fleetd ${args.slice(0, 3).join(" ")}: exit ${out.status} ${out.stdout}${out.stderr}`);
     return out.stdout;
@@ -201,7 +201,7 @@ export async function m8Desktop(lab: Lab) {
     const places: Array<[string, string]> = [
       ...filesUnder(lab.hubHome),
       ...filesUnder(path.join(RUN, "logs")),
-      ...fs.readdirSync(RUN).filter((d) => d.startsWith("node-")).flatMap((d) => filesUnder(path.join(RUN, d))),
+      ...MACHINES.flatMap((m) => filesUnder(nodeHome(m.id))),
       ["events", JSON.stringify(events)],
     ];
     const hits = places.filter(([, text]) => text.includes(VALUE)).map(([where]) => where);

@@ -72,6 +72,7 @@ fn ask(k: &str, project_ref: &ProjectRef) -> AskInput {
         sink: None,
         env_name: None,
         gated: None,
+        permission: None,
         blocks: Text::new("nothing").unwrap(),
         proceeded_on_rec: true,
     }

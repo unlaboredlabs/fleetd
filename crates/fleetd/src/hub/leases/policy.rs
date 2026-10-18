@@ -1,4 +1,4 @@
-//! The repo policy file `.fleetd/policy.yaml`, read from the project's workspace through T3's file RPC. Cached
+//! The repo policy file `.fleetd/policy.yaml`, read from the project's workspace through the node. Cached
 //! per project for 60 s; `invalidate` drops an entry at once (say, after a merge that touched the file). No file
 //! means DEFAULT_POLICY, one area "all" = ["**"]. A broken file is an error with a fix, never a silent fallback, so
 //! a typo can't widen what a writer may touch.
@@ -188,7 +188,7 @@ pub fn parse_policy(text: &str) -> Result<PolicyFile, LeadError> {
 }
 
 /// Where the policy text comes from: `None` when the project has no policy file. The hub's source reads it through
-/// the machine's T3 (`Executors::read_file`); tests use a fake.
+/// the machine's node (`Executors::read_file`); tests use a fake.
 pub trait PolicySource: Send + Sync {
     fn read<'a>(
         &'a self,
@@ -196,14 +196,14 @@ pub trait PolicySource: Send + Sync {
     ) -> BoxFut<'a, Result<Option<String>, LeadError>>;
 }
 
-/// Reads the file from the project's workspace root through the machine's T3.
-pub struct T3PolicySource {
+/// Reads the file from the project's workspace root through the machine's node.
+pub struct NodePolicySource {
     pub store: Arc<crate::hub::store::HubStore>,
     /// WorkspaceFiles.read, over the executor.
     pub ports: Arc<dyn TaskPorts>,
 }
 
-impl PolicySource for T3PolicySource {
+impl PolicySource for NodePolicySource {
     fn read<'a>(
         &'a self,
         project_ref: &'a ProjectRef,
@@ -211,7 +211,7 @@ impl PolicySource for T3PolicySource {
         Box::pin(async move {
             let project = self.store.project_get(project_ref).map_err(|e| {
                 tracing::error!(error = %e, "policy: project not read");
-                LeadError::new(ErrorCode::T3Error, "The hub failed to answer that request.")
+                LeadError::new(ErrorCode::Failed, "The hub failed to answer that request.")
             })?;
             let Some(project) = project else {
                 return Err(LeadError::new(

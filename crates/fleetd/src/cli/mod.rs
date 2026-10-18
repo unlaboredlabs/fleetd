@@ -119,14 +119,14 @@ pub fn run(argv: &[String]) -> CliResult {
 fn is_long_running(argv: &[String]) -> bool {
     matches!(
         argv.first().map(String::as_str),
-        Some("init" | "uninstall" | "machine" | "node" | "listen" | "retro" | "update")
+        Some("init" | "doctor" | "uninstall" | "machine" | "node" | "listen" | "retro" | "update")
     )
 }
 
 async fn run_long_running(argv: &[String]) -> u8 {
     let rest = &argv[1..];
     match argv[0].as_str() {
-        "init" | "uninstall" => setup::setup_command(&argv[0], rest).await,
+        "init" | "doctor" | "uninstall" => setup::setup_command(&argv[0], rest).await,
         "machine" => setup::machine::machine_command(rest).await,
         "node" => node::node_command(rest).await,
         "listen" => listen::listen_command(rest).await,

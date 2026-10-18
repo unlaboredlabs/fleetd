@@ -3,9 +3,9 @@
 //! The hub sends [`SessionCallFrame`]s; the node answers each with exactly one [`SessionReplyFrame`] carrying the same
 //! `id`. Two streams flow back without being asked for, once the hub has subscribed:
 //! - [`MachineEventFrame`]: projects and session summaries for the whole machine, numbered by `seq` so the hub can
-//!   resume after its stored cursor (the shell stream T3 used to provide).
-//! - [`ThreadEventFrame`]: messages, items, runs and live text deltas, only for sessions the hub follows (the thread
-//!   stream T3 used to provide). Deltas are never stored or replayed.
+//!   resume after its stored cursor and miss nothing while it was away.
+//! - [`ThreadEventFrame`]: messages, items, runs and live text deltas, only for sessions the hub follows. Deltas are
+//!   never stored or replayed.
 //!
 //! A session's id is the thread id the rest of fleetd already uses, and also the `claude --session-id`, so a session
 //! survives a node restart through `claude --resume <id>` in the same cwd and config dir.
@@ -61,6 +61,12 @@ pub struct SessionLaunch {
     pub prompt: NonEmpty,
     /// Minted by the hub (a UUID); the first run's id and the claude user-message uuid.
     pub run_id: NonEmpty,
+    /// `--allowedTools` rules from the project's policy (`tools.allow`), in claude's own syntax: these never prompt.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    /// `--disallowedTools` rules from the project's policy (`tools.deny`), on top of the tools fleetd always denies.
+    #[serde(default)]
+    pub disallowed_tools: Vec<String>,
 }
 
 /// A person's or policy's answer to a tool permission prompt.
@@ -77,7 +83,9 @@ pub enum PermissionDecision {
     },
 }
 
-/// Hub -> node operations. Each maps one T3 RPC fleetd used before (see docs/build/native-runner-spec.md §5).
+/// Hub -> node operations: add and remove projects; launch, send to, interrupt, stop and answer sessions; subscribe to
+/// and follow their streams; read items, files, default branches and changes; and the runner's state (see
+/// docs/build/native-runner-spec.md §5).
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -442,6 +450,8 @@ pub enum MachineEvent {
         project_id: ProjectId,
     },
     SessionUpdated(SessionSummary),
+    /// The runner's state changed: a probe (at start, every 6 h), a login that expired, or one that came back.
+    RunnerInfo(RunnerInfo),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

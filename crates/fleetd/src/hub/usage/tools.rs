@@ -42,7 +42,7 @@ async fn usage_status(
         .map(|s| s.machine_id.as_str())
         .collect();
     let next = if open.is_empty() {
-        "No login is paused. fleetd never calls a usage API; probes.count must stay 0.".to_string()
+        "No login is paused.".to_string()
     } else {
         format!(
             "Paused: {}. It lifts at the reset, or run usage_resume once the login has capacity.",

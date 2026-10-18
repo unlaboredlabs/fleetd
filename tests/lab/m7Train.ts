@@ -1,5 +1,5 @@
 // M7 "done when" 1-5 on lab-a against the public testbed unlaboredlabs/fleetd-testbed (CI fails iff a file FAIL exists;
-// main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a second T3 project on lab-a,
+// main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a second project on lab-a,
 // with its policy file kept untracked, so nothing but the train ever lands on main. With the train frozen by a
 // Decision, two M-tier writers (areas alpha, beta, files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
 // PR that conflicts with alpha's and one that adds FAIL. A harness PR without `Source:` is refused at enqueue. Thawed
@@ -10,8 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, LAB, type Lab, LEAD_PROMPT_VERSION, MODEL, scrubbedEnv } from "./harness.ts";
-import { providerLog } from "./m5Tasks.ts";
+import { type Body, fleetdCommand, LAB, type Lab, LEAD_PROMPT_VERSION, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const REPO = "unlaboredlabs/fleetd-testbed";
@@ -59,6 +58,8 @@ const cleanTestbed = () => {
 /** The lab clone at origin/main, without task worktrees or branches from an earlier run, and with the policy file. */
 const prepareCheckout = () => {
   git("fetch", "-q", "--prune", "origin");
+  // An earlier run's machine homes, and the task worktrees in them, are gone; git forgets those first.
+  git("worktree", "prune");
   for (const entry of git("worktree", "list", "--porcelain").split("\n\n")) {
     const wt = /^worktree (.+)$/mu.exec(entry)?.[1];
     if (wt !== undefined && /^branch refs\/heads\/fleetd\//mu.test(entry)) git("worktree", "remove", "--force", wt);
@@ -73,54 +74,37 @@ const prepareCheckout = () => {
   fs.writeFileSync(path.join(TESTBED, ".fleetd/policy.yaml"), POLICY);
 };
 
-/** T3's own project API on lab-a, with a short-lived bearer minted by its CLI. */
-export const t3 = async (lab: Pick<Lab, "mintT3Bearer" | "machines">, method: "GET" | "POST", route: string, body?: unknown) => {
-  const machine = lab.machines.find((m) => m.id === MACHINE)!;
-  const response = await fetch(`${machine.t3Url}${route}`, {
-    method,
-    headers: { authorization: `Bearer ${lab.mintT3Bearer(machine)}`, "content-type": "application/json" },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`T3 ${method} ${route}: HTTP ${response.status} ${text.slice(0, 300)}`);
-  return JSON.parse(text) as Body;
-};
-
-/** Deletes lab-a's testbed project if one is left, so scenarios that take lab-a's project find repo-a. */
-export const removeTestbedProject = async (lab: Pick<Lab, "mintT3Bearer" | "machines">) => {
-  const snapshot = await t3(lab, "GET", "/api/projects");
-  for (const p of (snapshot.projects as Array<Body>).filter((p) => p.workspaceRoot === TESTBED)) {
-    await t3(lab, "POST", "/api/projects/mutate", { type: "project.delete", commandId: randomUUID(), projectId: p.id, force: true });
+/** Removes lab-a's testbed project if one is registered, so scenarios that take lab-a's project find repo-a. */
+export const removeTestbedProject = async (lab: Pick<Lab, "callTool">) => {
+  const listed = (await lab.callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>;
+  for (const p of listed.filter((p) => p.workspaceRoot === TESTBED)) {
+    const removed = await lab.callTool("project_remove", { machineId: MACHINE, projectId: p.projectId });
+    if (removed.isError) throw new Error(`project_remove ${p.projectId}: ${JSON.stringify(removed.body)}`);
   }
 };
 
 export async function m7Train(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
+  requireGhLogin();
   check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run node tests/lab/testbed.ts --clone ${TESTBED})`);
   cleanTestbed();
   prepareCheckout();
   ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked .fleetd/policy.yaml (alpha, beta, gamma, ci); no fleetd/* branches on ${REPO}`);
 
-  const home = lab.machines.find((m) => m.id === MACHINE)!.t3Home;
   const scenarioStart = await lab.cursor();
   const opened: Array<number> = [];
   try {
     // The testbed as a second project on lab-a.
-    await t3(lab, "POST", "/api/projects/mutate", { type: "project.create", commandId: randomUUID(), projectId: randomUUID(), title: "fleetd-testbed", workspaceRoot: TESTBED });
-    const projectId = await lab.until("the hub sees the testbed project", 60_000, async () => {
-      const found = ((await callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>).find((p) => p.workspaceRoot === TESTBED);
-      if (found === undefined) await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 3 });
-      return found?.projectId as string | undefined;
-    });
+    const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
     const ref = { machineId: MACHINE, projectId };
-    ok(`T3 project ${projectId} on ${MACHINE} at ${TESTBED}`);
+    ok(`project_add: ${projectId} on ${MACHINE} at ${TESTBED}`);
 
     const fleetd = (...args: Array<string>) => {
       const out = spawnSync(...fleetdCommand(args), {
         cwd: TESTBED,
         encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: TESTBED, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },
+        env: { ...scrubbedEnv(), PWD: TESTBED, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
       });
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
@@ -278,7 +262,7 @@ export async function m7Train(lab: Lab) {
     const told = async (taskId: string, needles: ReadonlyArray<string>) => {
       const thread = (await task(taskId)).threadRef.threadId as string;
       await lab.until(`${taskId} gets the train's message`, 120_000, async () => {
-        if (needles.every((n) => providerLog(home, thread).includes(n))) return true;
+        if (needles.every((n) => sessionText(MACHINE, thread).includes(n))) return true;
         await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 5 });
         return undefined;
       });
@@ -303,7 +287,7 @@ export async function m7Train(lab: Lab) {
     ok(`3. ${cd.changeId} stayed ${(await change(cd.changeId)).state}; ${cd.prUrl} closed unmerged`);
 
     // What the lead, project_get and the human digest show.
-    const leadText = providerLog(home, leadThread);
+    const leadText = sessionText(MACHINE, leadThread);
     check(leadText.includes(`${first!.changeId} merged by the train`), `the lead was woken with ${first!.changeId}'s merge inline`);
     const outcome = (await callTool("project_get", ref)).body;
     check((outcome.trains as Array<Body> | undefined)?.some((t) => t.repo === REPO && t.frozen === false), `project_get trains: ${JSON.stringify(outcome.trains)}`);

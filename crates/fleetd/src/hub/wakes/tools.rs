@@ -22,7 +22,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("wake_cancel", wake_cancel);
 }
 
-/// A write that may wait in the queue needs a target the hub has seen, since T3 can't vouch for it offline.
+/// A write that may wait in the queue needs a target the hub has seen, since the node can't vouch for it offline.
 fn require_known_thread(hub: &Hub, target: &ThreadRef) -> Result<(), ToolError> {
     if hub.store.machine_get(&target.machine_id)?.is_none() {
         return Err(unknown_machine(&target.machine_id));

@@ -98,6 +98,7 @@ checked!(AskCall, |call| ask_kind_rule(
     call.env_name.is_some(),
     false,
     None,
+    false,
     call.verify.is_some(),
 ));
 
@@ -289,7 +290,7 @@ pub enum LeadCall {
     TaskMessage(TaskMessageCall),
     TaskCancel(TaskCancelCall),
     ClaimDone(ClaimDoneCall),
-    /// `fleetd review verdict --task T3 --sha <head> --blocking 0 --non-blocking 2 --summary s`, the last step of a
+    /// `fleetd review verdict --task T4 --sha <head> --blocking 0 --non-blocking 2 --summary s`, the last step of a
     /// review task.
     ReviewVerdict(ReviewVerdict),
     ChangeEnqueue(ChangeEnqueueCall),

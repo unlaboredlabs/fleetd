@@ -44,7 +44,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "effort": {
-          "description": "As reported by T3; not narrowed to Effort because T3 may report other levels.",
+          "description": "As reported by the runner; not narrowed to Effort because it may report other levels.",
           "type": "string"
         },
         "headline": {

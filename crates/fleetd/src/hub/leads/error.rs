@@ -40,17 +40,17 @@ impl LeadError {
     pub fn machine_offline(machine_id: &fleetd_contracts::ids::MachineId) -> Self {
         Self::new(
             ErrorCode::MachineOffline,
-            format!("Machine {machine_id} has no live T3 connection."),
+            format!("Machine {machine_id} has no live node link."),
             "Wait for the machine to come back online (fleetd_status shows it), then retry.",
         )
     }
 
     /// Any other executor failure.
-    pub fn t3_error(message: impl Into<String>) -> Self {
+    pub fn failed(message: impl Into<String>) -> Self {
         Self::new(
-            ErrorCode::T3Error,
+            ErrorCode::Failed,
             message,
-            "Retry; if it keeps failing, check the machine's T3 with fleetd_status.",
+            "Retry; if it keeps failing, check the machine with fleetd_status.",
         )
     }
 
@@ -66,7 +66,7 @@ impl LeadError {
 impl From<StoreError> for LeadError {
     fn from(error: StoreError) -> Self {
         tracing::error!(%error, "hub database failure in leads");
-        LeadError::bare(ErrorCode::T3Error, "The hub failed to answer that request.")
+        LeadError::bare(ErrorCode::Failed, "The hub failed to answer that request.")
     }
 }
 

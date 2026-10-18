@@ -5,7 +5,6 @@
 //! it.
 use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, HubEvent, NewEvent, ThreadRef, WaitInput};
-use super::probes::{ProbeCounter, count_probes, user_home};
 use super::source::{LoginKind, UsageReading};
 use super::state::{Owner, ParkedCounts, ParkedThread, Resumed, UsageState, resumed_event};
 use super::time::{iso, parse_ms, system_ms};
@@ -64,7 +63,6 @@ pub struct UsageStatus {
     pub breaker: UsageBreaker,
     pub parked: ParkedCounts,
     pub last_events: Vec<HubEvent>,
-    pub probes: ProbeCounter,
 }
 
 pub struct UsageDeps {
@@ -342,35 +340,13 @@ impl Usage {
         }
     }
 
-    /// The machine's usage view; `reading` is its T3 provider status, failing when the machine is offline.
+    /// The machine's usage view; `reading` is its runner's login, failing when the machine is offline.
     pub async fn status(
         &self,
         machine_id: &str,
         reading: Result<UsageReading, String>,
     ) -> UsageStatus {
         self.drain().await;
-        let probes = match &reading {
-            Err(_) => ProbeCounter::not_observable(format!(
-                "{machine_id} is offline, so its T3 trace file was not read"
-            )),
-            Ok(r) if !r.local => ProbeCounter::not_observable(format!(
-                "T3 on {machine_id} runs on another machine; its trace file is not readable from the hub"
-            )),
-            Ok(UsageReading { logs_dir: None, .. }) => ProbeCounter::not_observable(format!(
-                "T3 on {machine_id} did not report a logs directory"
-            )),
-            Ok(UsageReading {
-                logs_dir: Some(dir),
-                ..
-            }) => {
-                let dir = dir.clone();
-                tokio::task::spawn_blocking(move || count_probes(&dir, &user_home()))
-                    .await
-                    .unwrap_or_else(|_| {
-                        ProbeCounter::not_observable("the trace file could not be read")
-                    })
-            }
-        };
         let s = self.inner.state.lock().unwrap();
         let m = s.machines.get(machine_id);
         let breaker = match m.and_then(|m| m.breaker.as_ref()) {
@@ -395,7 +371,6 @@ impl Usage {
             breaker,
             parked: s.counts_on(machine_id),
             last_events: m.map(|m| m.last_events.clone()).unwrap_or_default(),
-            probes,
         }
     }
 

@@ -26,7 +26,7 @@
         },
         "threadId": {
           "$ref": "#/$defs/ThreadId",
-          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+          "description": "The current lead thread on the project's machine; earlier ones stay on the node as history."
         }
       },
       "required": [

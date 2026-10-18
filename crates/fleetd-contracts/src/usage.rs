@@ -1,5 +1,5 @@
 //! M4 usage clarity: limit classes, parked work, the per-login breaker and the usage_status view. fleetd never calls
-//! a model or usage API; everything here is read off T3's thread errors, its provider status and its trace file.
+//! a model or usage API; everything here is read off the runner's failures and the login kind it reports.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub enum UsageClass {
     PoolExhausted,
 }
 
-/// Read from the T3 provider instance status and its env var names, never from credentials.
+/// Read from the runner's login kind, never from credentials.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LoginKind {
@@ -61,19 +61,6 @@ pub struct UsageBreaker {
     pub message: Option<String>,
 }
 
-/// Direct usage or reset-credit calls seen in the machine's T3 trace file. Must be 0.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ProbeCounter {
-    pub observable: bool,
-    pub count: Option<Count>,
-    /// The trace directory read, when observable.
-    pub source: Option<String>,
-    /// Why it is not observable.
-    pub reason: Option<String>,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ParkedCounts {
@@ -90,7 +77,6 @@ pub struct UsageStatus {
     pub parked: ParkedCounts,
     /// The latest thread.usage_limited, usage.breaker and usage.resumed events for the machine, oldest first.
     pub last_events: List<HubEvent, 0, 10>,
-    pub probes: ProbeCounter,
 }
 
 #[skip_serializing_none]

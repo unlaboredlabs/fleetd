@@ -22,8 +22,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 # store
 rusqlite = { workspace = true }
-# hub: executor, link
-t3-wire = { workspace = true }
 # node
 base64 = { workspace = true }
 chrono = { workspace = true }
@@ -56,6 +54,7 @@ unicode-normalization = { workspace = true }
 # hub: leads, intake, playbooks
 serde_path_to_error = { workspace = true }
 sha1 = { workspace = true }
+dialoguer = { version = "0.12.0", default-features = false }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

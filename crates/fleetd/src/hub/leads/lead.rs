@@ -1,4 +1,4 @@
-//! One lead per project: a T3 thread on the project's machine, started with the lead prompt plus the digest.
+//! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest.
 use std::sync::Arc;
 
 use fleetd_contracts::effort::Effort;
@@ -26,7 +26,7 @@ pub struct LeadsOptions {
     pub effort: Option<Effort>,
 }
 
-/// The lead's state, read off its thread as the shell stream last reported it; stopped once T3 deleted the project.
+/// The lead's state, read off its thread as the shell stream last reported it; stopped once the project was removed.
 pub fn lead_state(thread: Option<&ThreadSummary>, project_gone: bool) -> LeadState {
     if project_gone {
         return LeadState::Stopped;
@@ -74,7 +74,7 @@ impl Leads {
         self.launch(r, &project, 0).await
     }
 
-    /// A fresh lead thread from the current digest; bumps `sessionGeneration`. The old thread stays in T3.
+    /// A fresh lead thread from the current digest; bumps `sessionGeneration`. The old thread stays on the node.
     pub async fn restart(&self, r: &ProjectRef) -> Result<Lead, LeadError> {
         let _guard = self.lock.lock().await;
         let Some(existing) = self.records.lead_get(r)? else {
@@ -182,7 +182,7 @@ impl Leads {
             "effort": effort,
             "runtimeMode": "full-access",
             "title": title,
-            // T3 keeps a receipt per command id forever, so the id names this launch: a hub started on a fresh
+            // The node's launch is idempotent on the id, so the id names this launch: a hub started on a fresh
             // database must get a new thread, not the one an earlier hub launched for the same project.
             "clientRequestId": format!("fleetd-lead:{}/{}:{session_generation}:{launched_ms}", r.machine_id, r.project_id),
         }))

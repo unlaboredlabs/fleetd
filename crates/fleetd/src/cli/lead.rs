@@ -681,8 +681,8 @@ fn normalize(path: &str) -> String {
     out
 }
 
-/// The working directory as the caller's shell names it. T3 keeps workspace roots as written, symlinks included, and
-/// starts agents there, so the shell's logical `PWD` matches a root where the kernel's resolved path may not.
+/// The working directory as the caller's shell names it. The node keeps workspace roots as written, symlinks included,
+/// and starts agents there, so the shell's logical `PWD` matches a root where the kernel's resolved path may not.
 pub fn caller_cwd(pwd: Option<&str>, physical: &Path) -> String {
     let physical_text = physical.to_string_lossy().into_owned();
     let Some(logical) = pwd.filter(|p| p.starts_with('/')) else {

@@ -11,7 +11,7 @@
 //!    filters fleet-wide results with [`readable`] / [`can_read`], and trims lists with
 //!    [`cap`] and texts with [`clip`] to [`limits`]. Every refusal is a [`ToolError`] with a `fix`; every result
 //!    carries a `next` hint where there is a next step. Store failures can be returned with `?` (they become the
-//!    `t3_error` "The hub failed to answer that request." result and are logged), and a panic in a handler is
+//!    `failed` "The hub failed to answer that request." result and are logged), and a panic in a handler is
 //!    turned into the same result, so one failed request never takes a connection down.
 //! 4. Registering a tool that is already registered replaces it, so an area can take over one of the
 //!    "not wired" stubs in `m1.rs` by registering after it (delete the stub when you do).
@@ -62,7 +62,7 @@ impl std::fmt::Display for Listen {
 /// The hub's settings from `fleetd hub start`.
 #[derive(Clone, Debug)]
 pub struct HubConfig {
-    /// Resolved by `store::resolve_hub_home` (never inside ~/.t3).
+    /// Resolved by `store::resolve_hub_home`.
     pub home: PathBuf,
     pub listen: Listen,
     /// The hub's public URL when one is configured (`fleetd init --url`); absent means `http://<listen>`.
@@ -162,6 +162,7 @@ pub fn registry() -> Registry {
     crate::hub::doctor::tools::register(&mut tools);
     crate::hub::retro::tools::register(&mut tools);
     crate::hub::approvals::tools::register(&mut tools);
+    crate::hub::sessions_tools::register(&mut tools);
     crate::hub::train::tools::register(&mut tools);
     crate::hub::tasks::tools::register(&mut tools);
     crate::hub::leads::tools::register(&mut tools);

@@ -128,46 +128,22 @@ impl UsageSource for OpsPorts {
         let m = machine(machine_id);
         Box::pin(async move {
             let m = m.ok_or("not a machine id")?;
-            let hub = self.hub();
-            let config = hub
+            let info = self
+                .hub()
                 .executors
-                .server_config(&m)
+                .runner_info(&m)
                 .await
                 .map_err(|e| e.to_string())?;
-            let fleetd_instance = crate::hub::doctor::checks::FLEETD_INSTANCE;
-            let fleetd = config
-                .providers
-                .iter()
-                .find(|p| p.instance_id == fleetd_instance);
-            let env: Vec<String> = config
-                .settings
-                .provider_instances
-                .as_ref()
-                .and_then(|i| i.get(fleetd_instance))
-                .and_then(|i| i.environment.clone())
-                .unwrap_or_default()
-                .into_iter()
-                .map(|v| v.name)
-                .collect();
-            let names: Vec<&str> = env.iter().map(String::as_str).collect();
             Ok(UsageReading {
-                login: super::source::login_kind_of(
-                    fleetd.and_then(|p| p.auth.kind.as_deref()),
-                    fleetd.map(|p| p.auth.status.as_str()),
-                    &names,
-                ),
-                logs_dir: Some(config.observability.logs_directory_path.clone()),
-                local: super::source::is_loopback_url(
-                    &hub.executors.t3_url(&m).unwrap_or_default(),
-                ),
+                login: super::source::login_kind_of(info.login_kind.as_deref()),
             })
         })
     }
 }
 
+use crate::hub::doctor::DoctorFleet;
 use crate::hub::doctor::checks::MachineView;
 use crate::hub::doctor::service::ActionOutcome;
-use crate::hub::doctor::{DoctorFleet, T3Settings};
 use crate::hub::retro::records::SqlRunner;
 use crate::hub::usage::service::UsageStatus;
 
@@ -181,19 +157,6 @@ impl DoctorFleet for OpsPorts {
                 .unwrap_or_default()
         })
     }
-    fn connected(&self, machine_id: &str) -> BoxFut<'_, bool> {
-        let m = machine(machine_id);
-        Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
-    }
-    fn await_live(&self, machine_id: &str) -> BoxFut<'_, ()> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            match m {
-                Some(m) => self.hub().executors.await_live(&m).await,
-                None => std::future::pending().await,
-            }
-        })
-    }
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus> {
         let m = machine_id.to_string();
         Box::pin(async move {
@@ -201,6 +164,21 @@ impl DoctorFleet for OpsPorts {
             hub.usage
                 .status(&m, UsageSource::read(self, &m).await)
                 .await
+        })
+    }
+    /// The runner as the node last reported it (pushed events keep it fresh), else asked for now.
+    fn runner_info(
+        &self,
+        machine_id: &str,
+    ) -> BoxFut<'_, Option<fleetd_contracts::sessions::RunnerInfo>> {
+        let m = machine(machine_id);
+        Box::pin(async move {
+            let m = m?;
+            let executors = &self.hub().executors;
+            match executors.cached_runner(&m) {
+                Some(info) => Some(info),
+                None => executors.runner_info(&m).await.ok(),
+            }
         })
     }
     fn node_action(
@@ -226,63 +204,6 @@ impl DoctorFleet for OpsPorts {
                 message: result.message.to_string(),
                 probe: result.probe.as_ref().and_then(convert),
             })
-        })
-    }
-}
-
-fn settings_json(s: &t3_wire::types::ServerSettings) -> Value {
-    serde_json::json!({
-        "providerInstances": s.provider_instances.clone().unwrap_or_default(),
-        "autoResumeLimitedThreads": s.auto_resume_limited_threads.unwrap_or(false),
-    })
-}
-
-impl T3Settings for OpsPorts {
-    fn read(&self, machine_id: &str) -> BoxFut<'_, Result<Value, String>> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            let s = self
-                .hub()
-                .executors
-                .settings_read(&m.ok_or("not a machine id")?)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(settings_json(&s))
-        })
-    }
-    fn update(
-        &self,
-        machine_id: &str,
-        patch: Value,
-        mutation: Option<Value>,
-    ) -> BoxFut<'_, Result<Value, String>> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            use t3_wire::types::{
-                ProviderInstanceMutation, ProviderInstanceUpsert, SettingsPatch,
-                UpdateSettingsInput,
-            };
-            let provider_instance_mutation = match mutation {
-                None => None,
-                Some(v) => Some(ProviderInstanceMutation::Upsert(ProviderInstanceUpsert {
-                    instance_id: v["instanceId"].as_str().unwrap_or_default().to_string(),
-                    instance: serde_json::from_value(v["instance"].clone())
-                        .map_err(|e| e.to_string())?,
-                })),
-            };
-            let input = UpdateSettingsInput {
-                patch: SettingsPatch {
-                    auto_resume_limited_threads: patch["autoResumeLimitedThreads"].as_bool(),
-                },
-                provider_instance_mutation,
-            };
-            let s = self
-                .hub()
-                .executors
-                .settings_update(&m.ok_or("not a machine id")?, &input)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(settings_json(&s))
         })
     }
 }
@@ -343,7 +264,6 @@ pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::C
         listen_port: config.listen.port,
         home: config.home.clone(),
         fleet: ports.clone(),
-        settings: ports.clone(),
         events: ports.clone(),
         clock: clock.clone(),
     });

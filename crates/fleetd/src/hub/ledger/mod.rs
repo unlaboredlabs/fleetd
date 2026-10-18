@@ -68,7 +68,7 @@ impl LedgerCode {
             LedgerCode::NotFound => "not_found",
             LedgerCode::Invalid => "invalid",
             LedgerCode::Forbidden => "forbidden",
-            LedgerCode::Internal => "t3_error",
+            LedgerCode::Internal => "failed",
         }
     }
 }

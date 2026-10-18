@@ -36,7 +36,7 @@ impl From<LedgerError> for LeadError {
             LedgerCode::NotFound => fleetd_contracts::mcp::ErrorCode::NotFound,
             LedgerCode::Invalid => fleetd_contracts::mcp::ErrorCode::Invalid,
             LedgerCode::Forbidden => fleetd_contracts::mcp::ErrorCode::Forbidden,
-            LedgerCode::Internal => fleetd_contracts::mcp::ErrorCode::T3Error,
+            LedgerCode::Internal => fleetd_contracts::mcp::ErrorCode::Failed,
         };
         LeadError {
             code,
@@ -51,7 +51,7 @@ fn from_executor(error: ExecutorError) -> LeadError {
         ExecutorError::MachineNotConnected { machine_id } => {
             LeadError::machine_offline(&machine_id)
         }
-        other => LeadError::t3_error(other.to_string()),
+        other => LeadError::failed(other.to_string()),
     }
 }
 
@@ -109,7 +109,15 @@ impl LeadPorts for HubPorts {
                     crate::hub::queue::ports::ExecutorError::MachineNotConnected { machine_id } => {
                         LeadError::machine_offline(&machine_id)
                     }
-                    other => LeadError::t3_error(other.to_string()),
+                    // The node's own words and fix, e.g. claude not logged in and how to log it in.
+                    crate::hub::queue::ports::ExecutorError::NodeRequestFailed {
+                        fix: Some(ref fix),
+                        ..
+                    } => LeadError {
+                        fix: Some(fix.clone()),
+                        ..LeadError::failed(error.to_string())
+                    },
+                    other => LeadError::failed(other.to_string()),
                 })
         })
     }
@@ -180,6 +188,7 @@ impl LeadPorts for HubPorts {
                 sink: None,
                 env_name: None,
                 gated: None,
+                permission: None,
                 blocks: wire(input.blocks)?,
                 proceeded_on_rec: false,
             },

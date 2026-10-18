@@ -1,7 +1,6 @@
 //! Usage classification, parking and the breaker (M4).
 pub mod classify;
 pub mod ports;
-pub mod probes;
 pub mod service;
 pub mod source;
 pub mod state;

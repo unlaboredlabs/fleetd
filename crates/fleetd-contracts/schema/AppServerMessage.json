@@ -126,7 +126,7 @@
         "not_found",
         "forbidden",
         "invalid",
-        "t3_error"
+        "failed"
       ],
       "type": "string"
     },
@@ -245,7 +245,7 @@
         },
         {
           "const": "project.removed",
-          "description": "T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
+          "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
         },
         {
@@ -455,17 +455,6 @@
         "status": {
           "$ref": "#/$defs/MachineStatus"
         },
-        "t3": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MachineT3"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Null until the node has reported a reachable T3."
-        },
         "tags": {
           "items": {
             "type": "string"
@@ -479,7 +468,6 @@
         "tags",
         "status",
         "lastSeenAt",
-        "t3",
         "nodeVersion"
       ],
       "type": "object"
@@ -496,23 +484,6 @@
         "degraded"
       ],
       "type": "string"
-    },
-    "MachineT3": {
-      "properties": {
-        "protocol": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "version": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "version",
-        "protocol"
-      ],
-      "type": "object"
     },
     "ProjectId": {
       "type": "string"

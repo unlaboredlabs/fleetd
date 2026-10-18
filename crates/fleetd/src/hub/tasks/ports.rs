@@ -27,18 +27,18 @@ impl PortError {
         match self {
             Self::Offline => McpToolError::new(
                 ErrorCode::MachineOffline,
-                format!("Machine {} has no live T3 connection.", machine_id.as_str()),
+                format!("Machine {} has no live node link.", machine_id.as_str()),
             )
             .with_fix(
                 "Wait for the machine to come back online (fleetd_status shows it), then retry.",
             ),
-            Self::Failed(message) => McpToolError::new(ErrorCode::T3Error, message.clone())
-                .with_fix("Retry; if it keeps failing, check the machine's T3 with fleetd_status."),
+            Self::Failed(message) => McpToolError::new(ErrorCode::Failed, message.clone())
+                .with_fix("Retry; if it keeps failing, check the machine with fleetd_status."),
         }
     }
 }
 
-/// A task's T3 thread launch (runtime mode full-access).
+/// A task's thread launch (runtime mode full-access).
 #[derive(Clone, Debug)]
 pub struct LaunchRequest {
     pub project_id: ProjectId,
@@ -83,7 +83,7 @@ pub enum WakeKind {
 pub trait TaskPorts: Send + Sync {
     /// Executors.isConnected.
     fn is_connected(&self, machine_id: &MachineId) -> bool;
-    /// Executors.awaitLive: resolves once the machine has a live T3 connection.
+    /// Executors.awaitLive: resolves once the machine has a live node link.
     fn await_live<'a>(&'a self, machine_id: &'a MachineId) -> BoxFut<'a, ()>;
     /// Executors.launch.
     fn launch<'a>(
@@ -116,9 +116,9 @@ pub trait TaskPorts: Send + Sync {
         machine_id: &'a MachineId,
         cwd: &'a str,
     ) -> BoxFut<'a, Result<String, PortError>>;
-    /// ThreadWorkspace.changes; `None` when T3 could not say.
+    /// ThreadWorkspace.changes; `None` when the node could not say.
     fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>>;
-    /// ThreadWorkspace.pendingQuestion; `None` when there is none or T3 could not say.
+    /// ThreadWorkspace.pendingQuestion; `None` when there is none or the node could not say.
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>>;
     /// WorkspaceFiles.read: `None` when the file does not exist.
     fn read_file<'a>(

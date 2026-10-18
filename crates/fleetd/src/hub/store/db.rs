@@ -5,8 +5,6 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("hub home {} is inside ~/.t3, which belongs to T3; pick another --home (default ~/.fleetd/hub)", .0.display())]
-    InsideT3Home(PathBuf),
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("stored json: {0}")]
@@ -126,20 +124,8 @@ fn resolve(p: &Path) -> PathBuf {
     out
 }
 
-/// Real path of `p`, following symlinks in the part of it that exists.
-fn realish(p: &Path) -> PathBuf {
-    match std::fs::canonicalize(p) {
-        Ok(real) => real,
-        Err(_) => match (p.parent(), p.file_name()) {
-            (Some(parent), Some(name)) => realish(parent).join(name),
-            _ => p.to_path_buf(),
-        },
-    }
-}
-
-/// Resolves `--home` (default `~/.fleetd/hub`, `~` expanded) and refuses anything inside `~/.t3`, the live T3
-/// home, including through symlinks.
-pub fn resolve_hub_home(home: Option<&str>, user_home: &Path) -> Result<PathBuf, StoreError> {
+/// Resolves `--home` (default `~/.fleetd/hub`, `~` expanded).
+pub fn resolve_hub_home(home: Option<&str>, user_home: &Path) -> PathBuf {
     let expanded = match home {
         None => user_home.join(".fleetd").join("hub"),
         Some("~") => user_home.to_path_buf(),
@@ -148,10 +134,5 @@ pub fn resolve_hub_home(home: Option<&str>, user_home: &Path) -> Result<PathBuf,
             None => PathBuf::from(raw),
         },
     };
-    let resolved = resolve(&expanded);
-    let t3 = resolve(&user_home.join(".t3"));
-    if resolved.starts_with(&t3) || realish(&resolved).starts_with(realish(&t3)) {
-        return Err(StoreError::InsideT3Home(resolved));
-    }
-    Ok(resolved)
+    resolve(&expanded)
 }
