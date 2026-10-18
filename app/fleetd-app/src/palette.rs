@@ -228,7 +228,7 @@ impl Palette {
         let first_of_group = ix == 0 || self.items[self.matches[ix - 1]].group != it.group;
         let ask = it.group == Group::Ask;
         ui::row(t, ix, ix == self.selected)
-            .child(div().w(px(76.)).flex_none().text_size(px(size::XS)).text_color(t.faint).child(if first_of_group { it.group.label() } else { "" }))
+            .child(div().w(px(76.)).flex_none().text_size(px(size::XS)).text_color(t.quiet).child(if first_of_group { it.group.label() } else { "" }))
             .child(
                 div()
                     .flex_1()

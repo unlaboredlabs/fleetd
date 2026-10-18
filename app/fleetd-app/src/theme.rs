@@ -108,9 +108,9 @@ pub struct Palette {
     pub border: u32,
     /// Primary text, and what needs you.
     pub text: u32,
-    /// Work that happened without you, secondary labels.
+    /// Work that happened without you, secondary labels, metadata. The smallest readable text uses this.
     pub quiet: u32,
-    /// Placeholders, disabled, gutters.
+    /// Not for text anyone has to read: placeholders, disabled items, state dots, underlines.
     pub faint: u32,
     /// Focus, links, unread.
     pub accent: u32,
@@ -138,15 +138,15 @@ pub const LIGHT: Palette = Palette {
     hairline: 0xe6e6e2,
     border: 0xcfcfca,
     text: 0x1c1c1a,
-    quiet: 0x67675f,
+    quiet: 0x63635d,
     faint: 0x96968f,
     accent: 0x2360c4,
     accent_fill: 0x2360c4,
     on_accent: 0xffffff,
     ring: 0x2360c447,
-    success: 0x2b7a47,
-    warning: 0x8f5c00,
-    danger: 0xbe3733,
+    success: 0x287142,
+    warning: 0x8c5a00,
+    danger: 0xb63531,
     diff_add: 0xe7f4ea,
     diff_del: 0xfbebea,
     shadow: 0x0000001f,
@@ -161,15 +161,15 @@ pub const DARK: Palette = Palette {
     hairline: 0x323230,
     border: 0x4a4a46,
     text: 0xededea,
-    quiet: 0xa3a39d,
+    quiet: 0xababa5,
     faint: 0x74746e,
-    accent: 0x76a9f5,
+    accent: 0x79abf5,
     accent_fill: 0x2e69cc,
     on_accent: 0xffffff,
     ring: 0x76a9f560,
     success: 0x6cc28a,
     warning: 0xe3aa4a,
-    danger: 0xf07470,
+    danger: 0xf38c88,
     diff_add: 0x1f3326,
     diff_del: 0x3b2422,
     shadow: 0x00000066,
@@ -327,28 +327,55 @@ mod tests {
         (x.max(y) + 0.05) / (x.min(y) + 0.05)
     }
 
+    /// An RGBA overlay (hover, selected) composited onto an opaque surface.
+    fn over(surface: u32, overlay: u32) -> u32 {
+        let a = (overlay & 0xff) as f64 / 255.;
+        [16, 8, 0].iter().fold(0, |acc, &shift| {
+            let (o, s) = (((overlay >> 8) >> shift) & 0xff, (surface >> shift) & 0xff);
+            acc | (((o as f64 * a + s as f64 * (1. - a)).round() as u32) << shift)
+        })
+    }
+
+    /// Every surface text sits on: the base tones, the diff tints, and the base tones under the hover and
+    /// selected overlays (a selected row's metadata is still read).
+    fn surfaces(p: &Palette) -> Vec<(String, u32)> {
+        let base = [("bg", p.bg), ("sidebar", p.sidebar), ("raised", p.raised)];
+        let mut out: Vec<(String, u32)> = base.iter().map(|(n, c)| (n.to_string(), *c)).collect();
+        out.extend([("diff_add".to_string(), p.diff_add), ("diff_del".to_string(), p.diff_del)]);
+        for (n, c) in base {
+            out.push((format!("{n}+hover"), over(c, p.hover)));
+            out.push((format!("{n}+selected"), over(c, p.selected)));
+        }
+        out
+    }
+
     #[test]
-    fn text_tokens_are_readable_on_every_surface_in_both_modes() {
+    fn every_text_token_passes_aa_on_every_surface_in_both_modes() {
         for (name, p) in [("light", LIGHT), ("dark", DARK)] {
-            for (surface, bg) in [("bg", p.bg), ("sidebar", p.sidebar), ("raised", p.raised)] {
-                // Body text and anything a person must read: WCAG AA for normal text.
+            for (surface, bg) in surfaces(&p) {
+                // All readable text, down to 11 px metadata: WCAG AA for normal text. `faint` is not a text
+                // colour and is deliberately absent.
                 for (token, fg) in
                     [("text", p.text), ("quiet", p.quiet), ("accent", p.accent), ("danger", p.danger), ("success", p.success), ("warning", p.warning)]
                 {
                     let r = contrast(fg, bg);
                     assert!(r >= 4.5, "{name}: {token} on {surface} is {r:.2}:1, under 4.5");
                 }
-                // Placeholders and gutters are deliberately faint but must still be legible.
-                let r = contrast(p.faint, bg);
-                assert!(r >= 2.5, "{name}: faint on {surface} is {r:.2}:1");
             }
             let r = contrast(p.on_accent, p.accent_fill);
             assert!(r >= 4.5, "{name}: primary button label is {r:.2}:1");
-            // Diff tints keep body text at AA.
-            for bg in [p.diff_add, p.diff_del] {
-                assert!(contrast(p.text, bg) >= 4.5, "{name}: text on a diff line");
+            // Placeholders and disabled items are exempt from AA but must still be visible.
+            for (surface, bg) in [("bg", p.bg), ("sidebar", p.sidebar), ("raised", p.raised)] {
+                let r = contrast(p.faint, bg);
+                assert!(r >= 2.5, "{name}: faint on {surface} is {r:.2}:1");
             }
         }
+    }
+
+    #[test]
+    fn overlays_composite_like_the_renderer() {
+        assert_eq!(over(0xffffff, 0x00000080), 0x7f7f7f);
+        assert_eq!(over(0x000000, 0xffffff00), 0x000000);
     }
 
     #[test]

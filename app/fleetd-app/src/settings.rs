@@ -35,14 +35,12 @@ impl Render for Settings {
         for mode in Mode::ALL {
             let on = mode == current;
             modes = modes.child(
-                div()
-                    .id(mode.label())
+                ui::clickable(t, div().id(mode.label()))
                     .h(px(metric::CONTROL))
                     .px_3()
                     .flex()
                     .items_center()
                     .rounded(px(radius::SM))
-                    .cursor_pointer()
                     .when(on, |d| {
                         d.bg(t.bg).font_weight(STRONG).shadow(vec![gpui::BoxShadow {
                             color: t.hairline,

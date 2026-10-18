@@ -427,7 +427,7 @@ fn menu_row(
             })
         })
         .child(name)
-        .child(div().text_size(px(size::XS)).text_color(t.faint).child(keys))
+        .child(div().text_size(px(size::XS)).text_color(t.quiet).child(keys))
 }
 
 /// The title bar's icons, drawn here so the app needs no icon files (svg renders them in the text colour).

@@ -985,7 +985,7 @@ impl Shell {
                         .child(self.command_line("copy-key-create", "fleetd hub key create --human --name <device>", cx)),
                 );
         }
-        col = col.child(div().text_size(px(size::XS)).text_color(t.faint).child("The key is kept in the OS keychain, never in a file."));
+        col = col.child(div().text_size(px(size::XS)).text_color(t.quiet).child("The key is kept in the OS keychain, never in a file."));
         // Left-aligned at a third of the window, like a document, not a centred card.
         div().id("connect").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().pt(px(96.)).pb_8().pl(px(120.)).child(col).into_any_element()
     }
@@ -1089,7 +1089,7 @@ impl Shell {
                     let variant = if ask.class == AskClass::Irreversible { Variant::Danger } else { Variant::Primary };
                     buttons = buttons
                         .child(reply(clip(rec, 48), format!("{number} go"), variant, cx))
-                        .child(div().text_size(px(size::XS)).text_color(t.faint).child("recommended"));
+                        .child(div().text_size(px(size::XS)).text_color(t.quiet).child("recommended"));
                 }
                 for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
                     if ask.recommendation.as_deref() == Some(option.as_str()) {
@@ -1279,7 +1279,7 @@ impl Shell {
                     .text_color(if row.error.is_some() { t.danger } else { t.quiet })
                     .child(headline),
             )
-            .child(div().w(px(64.)).flex_none().text_size(px(size::XS)).text_color(t.faint).child(if open == 0 {
+            .child(div().w(px(64.)).flex_none().text_size(px(size::XS)).text_color(t.quiet).child(if open == 0 {
                 String::new()
             } else {
                 format!("{open} open")
@@ -1304,7 +1304,7 @@ impl Shell {
         // Degraded machines are explained on Machines.
         let note = match (self.state.machine(machine_id).map(|m| m.status), stale) {
             (Some(MachineStatus::Offline) | None, _) => Some(("offline", t.warning)),
-            (_, true) => Some(("stale", t.faint)),
+            (_, true) => Some(("stale", t.quiet)),
             _ => None,
         };
         div()
@@ -1506,7 +1506,7 @@ impl Shell {
                             .text_color(if m.degraded_reason.is_some() { t.warning } else { t.quiet })
                             .child(detail),
                     )
-                    .child(div().flex_none().text_size(px(size::XS)).text_color(t.faint).font_family(t.mono_font.clone()).child(versions))
+                    .child(div().flex_none().text_size(px(size::XS)).text_color(t.quiet).font_family(t.mono_font.clone()).child(versions))
                     .child(
                         div()
                             .w(px(64.))
@@ -1514,7 +1514,7 @@ impl Shell {
                             .flex()
                             .justify_end()
                             .text_size(px(size::XS))
-                            .text_color(t.faint)
+                            .text_color(t.quiet)
                             .child(ago(m.last_seen_at.as_str())),
                     ),
             );
@@ -1828,7 +1828,7 @@ fn workstream_block(t: &Theme, w: &Workstream) -> impl IntoElement {
                 .gap_2()
                 .items_baseline()
                 .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(w.title.to_string()))
-                .child(div().text_size(px(size::XS)).text_color(t.faint).child(w.workstream_id.to_string()))
+                .child(div().text_size(px(size::XS)).text_color(t.quiet).child(w.workstream_id.to_string()))
                 .child(div().text_size(px(size::XS)).text_color(state_color).child(label(&w.state))),
         )
         .when_some(w.headline.clone(), |d, h| d.child(div().text_color(t.quiet).whitespace_normal().child(h.to_string())));
@@ -1850,7 +1850,7 @@ fn workstream_block(t: &Theme, w: &Workstream) -> impl IntoElement {
             }
             block = block.child(list);
         }
-        None => block = block.child(div().text_size(px(size::XS)).text_color(t.faint).child("Draft: the lead hasn't written the brief yet.")),
+        None => block = block.child(div().text_size(px(size::XS)).text_color(t.quiet).child("Draft: the lead hasn't written the brief yet.")),
     }
     block
 }
@@ -2064,7 +2064,7 @@ fn text_row() -> Div {
     div().h(px(metric::LINE)).px_4().flex().items_center().whitespace_nowrap().overflow_hidden()
 }
 
-/// One log line: a faint timestamp column, then the line; links in it are clickable; diff lines are tinted.
+/// One log line: a grey timestamp column, then the line; links in it are clickable; diff lines are tinted.
 fn log_row(t: &Theme, ix: usize, line: &LogRow, on_open: &links::OnOpen) -> Div {
     let bg = match line.kind {
         LogKind::DiffAdd => Some(t.diff_add),
@@ -2077,7 +2077,7 @@ fn log_row(t: &Theme, ix: usize, line: &LogRow, on_open: &links::OnOpen) -> Div 
     let body = if links::has_link(&text) { body.child(links::text(t, format!("log-{ix}"), text, false, on_open.clone())) } else { body.child(text) };
     text_row()
         .when_some(bg, |d, bg| d.bg(bg))
-        .child(div().w(px(96.)).flex_none().text_color(t.faint).child(SharedString::from(line.stamp().to_string())))
+        .child(div().w(px(96.)).flex_none().text_color(t.quiet).child(SharedString::from(line.stamp().to_string())))
         .child(body)
 }
 

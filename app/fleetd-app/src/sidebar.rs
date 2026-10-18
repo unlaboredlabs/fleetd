@@ -105,7 +105,7 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
                 .px_4()
                 .py_1()
                 .text_size(px(size::XS))
-                .text_color(t.faint)
+                .text_color(t.quiet)
                 .whitespace_normal()
                 .child("No projects yet. Add one with fleetd init on the hub."),
         );
@@ -180,14 +180,12 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
                 .child(entry("nav-machines", "Machines", Pick::Machines, *active == Active::Machines, machines_note)),
         )
         .child(
-            div()
-                .id("nav-projects")
+            ui::clickable(t, div().id("nav-projects"))
                 .px_4()
                 .pt_4()
                 .pb_1()
                 .flex()
                 .items_center()
-                .cursor_pointer()
                 .text_size(px(size::XS))
                 .font_weight(STRONG)
                 .text_color(if *active == Active::Projects { t.text } else { t.quiet })
@@ -201,15 +199,13 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
         .child(projects)
         .children(notice)
         .child(
-            div()
-                .id("sidebar-conn")
+            ui::clickable(t, div().id("sidebar-conn"))
                 .h(px(metric::BAR))
                 .flex_none()
                 .px_4()
                 .flex()
                 .items_center()
                 .gap_2()
-                .cursor_pointer()
                 .border_t_1()
                 .border_color(t.hairline)
                 .text_size(px(size::XS))

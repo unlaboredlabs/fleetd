@@ -1,5 +1,5 @@
 //! A readable unified diff: one header per file with its +/- counts, quiet hunk headers, old and new line
-//! numbers in two faint gutters, and tinted added and removed lines. `git diff`'s index/---/+++ lines carry
+//! numbers in two grey gutters, and tinted added and removed lines. `git diff`'s index/---/+++ lines carry
 //! nothing a reader needs, so they are dropped. Virtualised, so a long diff costs only what is on screen.
 
 use gpui::{Context, Div, SharedString, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list};
@@ -43,7 +43,7 @@ impl DiffView {
                 .pr_2()
                 .flex()
                 .justify_end()
-                .text_color(t.faint)
+                .text_color(t.quiet)
                 .text_size(px(size::XS))
                 .child(n.map(|n| n.to_string()).unwrap_or_default())
         };
@@ -67,7 +67,7 @@ impl DiffView {
                 let (bg, sign, sign_color) = match l.kind {
                     DiffKind::Added => (Some(t.diff_add), "+", t.success),
                     DiffKind::Removed => (Some(t.diff_del), "−", t.danger),
-                    _ => (None, " ", t.faint),
+                    _ => (None, " ", t.quiet),
                 };
                 line.when_some(bg, |d, bg| d.bg(bg))
                     .child(gutter(l.old))

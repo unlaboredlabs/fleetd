@@ -65,13 +65,13 @@ pub fn dot(color: Hsla) -> Div {
 }
 
 /// A count after a row label. Loud counts (open asks: something needs you) are a filled pill in the text
-/// colour; quiet counts are faint numerals.
+/// colour; quiet counts are grey numerals.
 pub fn count(t: &Theme, n: usize, loud: bool) -> Div {
     let base = div().flex_none().text_size(px(size::XS)).child(n.to_string());
     if loud {
         base.min_w(px(18.)).h(px(16.)).px_1p5().flex().items_center().justify_center().rounded_full().bg(t.text).text_color(t.bg).font_weight(STRONG)
     } else {
-        base.text_color(t.faint)
+        base.text_color(t.quiet)
     }
 }
 
@@ -82,7 +82,7 @@ pub fn unread(t: &Theme) -> Div {
 
 /// A keyboard shortcut hint, e.g. "⌘K".
 pub fn kbd(t: &Theme, keys: impl Into<SharedString>) -> Div {
-    div().flex_none().text_size(px(size::XS)).text_color(t.faint).child(keys.into())
+    div().flex_none().text_size(px(size::XS)).text_color(t.quiet).child(keys.into())
 }
 
 /// Shortcut text for this platform: `"K"` -> "⌘K" on macOS, "Ctrl+K" elsewhere.
