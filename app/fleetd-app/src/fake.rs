@@ -30,10 +30,10 @@ impl Rng {
 const PROJECTS: &[&str] = &[
     "fleetd",
     "ops-plan",
-    "hermes",
-    "adri",
-    "cliproxy",
-    "forge-infra",
+    "web-app",
+    "mailer",
+    "api-proxy",
+    "infra",
     "dotfiles",
     "zed-notes",
     "desktop-notify",
@@ -109,7 +109,7 @@ pub fn fixture_state() -> State {
     let asks = [
         ("A1", "product", "Which path should the health endpoint use?", Some(vec!["/healthz", "/health"]), "/healthz"),
         ("A2", "money", "Raise the hub's Claude slot cap from 40 to 48 for this week?", None, "Keep 40"),
-        ("A3", "irreversible", "Delete the old forge-infra staging bucket (412 GB)?", None, "Delete it"),
+        ("A3", "irreversible", "Delete the old infra staging bucket (412 GB)?", None, "Delete it"),
     ];
     for (n, (id, class, text, options, rec)) in asks.iter().enumerate() {
         let ask = json!({ "askId": id, "projectRef": { "machineId": "forge", "projectId": PROJECTS[n] }, "kind": "decide",
@@ -125,7 +125,7 @@ pub fn fixture_state() -> State {
         { "id": "mac/node", "scope": "machine", "machineId": "mac", "status": "fail", "message": "claude on mac exited 3 times in 10 min.",
           "fix": { "kind": "auto", "label": "Restart the node on mac" } },
         { "id": "mac/claude_auth", "scope": "machine", "machineId": "mac", "status": "unknown", "message": "Couldn't ask: the machine is degraded.",
-          "fix": { "kind": "manual", "label": "Log in to Claude on mac", "command": "claude /login" } },
+          "fix": { "kind": "manual", "label": "Log in to Claude on mac", "command": "claude auth login" } },
     ]);
     state.doctor = Some(Doctor { checks: from(checks), checked_at: Some(AT.into()), error: None });
     state.detail = Some(Detail { key: ("forge".into(), PROJECTS[0].into()), tail: Vec::new(), tail_error: None, version: 0 });

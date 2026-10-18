@@ -298,8 +298,8 @@ mod tests {
 
     #[test]
     fn subsequence_matches_and_prefers_word_starts_and_runs() {
-        assert!(score("frt", "forge-infra").is_none(), "t is not in forge-infra");
-        assert!(score("fi", "forge-infra").is_some());
+        assert!(score("frt", "fleet-infra").is_none(), "no t after the r in fleet-infra");
+        assert!(score("fi", "fleet-infra").is_some());
         assert!(score("xyz", "fleetd").is_none());
         // A run at the start beats the same letters scattered.
         assert!(score("fle", "fleetd").unwrap() > score("fle", "forge-lead-e").unwrap());
