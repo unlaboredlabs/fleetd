@@ -1,6 +1,10 @@
 //! What one followed thread is doing now, for the app's live lanes: the open tool call or the model's state, the
 //! streamed text of the current message, token usage, and a one-minute sparkline of real work. Fed every thread
 //! frame the hub receives (including the deltas the transcript view drops), stamped with the hub's clock. Pure.
+//!
+//! The sparkline counts tool calls started, text streamed, and the output tokens claude reports that were not
+//! streamed as text: a file written, a command composed, thinking. Without those an agent that mostly writes
+//! files reads as idle while it works hardest.
 use std::collections::HashMap;
 
 use fleetd_contracts::live::{
@@ -20,6 +24,8 @@ pub const WRITING_FOR_MS: i64 = 3000;
 /// The newest streamed text kept per thread.
 pub const TEXT_TAIL_CHARS: usize = 2000;
 const BUCKET_MS: i64 = SPARK_BUCKET_SECS as i64 * 1000;
+/// Roughly, for English and code: how many streamed characters one output token is.
+const CHARS_PER_TOKEN: u64 = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Open {
@@ -32,6 +38,8 @@ struct Bucket {
     index: i64,
     items: u32,
     chars: u32,
+    /// Output tokens that did not stream as text.
+    tokens: u32,
 }
 
 /// The current message's streamed text: its newest `TEXT_TAIL_CHARS` characters and how many were ever appended,
@@ -77,6 +85,8 @@ pub struct ActivityTracker {
     run_usage: HashMap<String, RunUsage>,
     /// The active run's usage so far.
     live_usage: Option<(String, RunUsage)>,
+    /// Text streamed since the last usage report, so that report's output tokens count only what text did not.
+    chars_since_usage: u64,
     buckets: [Bucket; SPARK_BUCKETS],
 }
 
@@ -114,7 +124,7 @@ impl ActivityTracker {
                 self.retry = None;
                 if item.status == ItemStatus::Running {
                     if !self.open.contains_key(item.id.as_str()) {
-                        self.bump(now_ms, 1, 0);
+                        self.bump(now_ms, 1, 0, 0);
                     }
                     self.open_item(item, now_ms);
                 } else {
@@ -122,7 +132,7 @@ impl ActivityTracker {
                         self.quiet_since_ms = now_ms;
                     } else {
                         // A call that started and ended between two frames is still work done.
-                        self.bump(now_ms, 1, 0);
+                        self.bump(now_ms, 1, 0, 0);
                     }
                     if let Some(retry) = retry_of(item) {
                         self.retry = Some((retry, now_ms));
@@ -135,7 +145,8 @@ impl ActivityTracker {
             } => {
                 self.retry = None;
                 let chars = append.chars().count();
-                self.bump(now_ms, 0, chars as u32);
+                self.bump(now_ms, 0, chars as u32, 0);
+                self.chars_since_usage += chars as u64;
                 if self
                     .last_delta_ms
                     .is_none_or(|at| now_ms - at > WRITING_FOR_MS)
@@ -163,6 +174,17 @@ impl ActivityTracker {
                 }
             }
             ThreadEvent::Usage { run_id, usage } => {
+                // Usage is cumulative per run. The first report of a run (or one seen after following mid-run)
+                // only sets the baseline, so a whole run's tokens never land in one bucket.
+                if let Some((run, before)) = &self.live_usage
+                    && run == run_id.as_str()
+                {
+                    let out = usage.output_tokens.saturating_sub(before.output_tokens);
+                    let as_text = self.chars_since_usage / CHARS_PER_TOKEN;
+                    let unstreamed = out.saturating_sub(as_text);
+                    self.bump(now_ms, 0, 0, unstreamed.min(u32::MAX as u64) as u32);
+                }
+                self.chars_since_usage = 0;
                 self.live_usage = Some((run_id.to_string(), usage.clone()));
             }
         }
@@ -209,7 +231,7 @@ impl ActivityTracker {
         );
     }
 
-    fn bump(&mut self, now_ms: i64, items: u32, chars: u32) {
+    fn bump(&mut self, now_ms: i64, items: u32, chars: u32, tokens: u32) {
         let index = now_ms.div_euclid(BUCKET_MS);
         let slot = &mut self.buckets[index.rem_euclid(SPARK_BUCKETS as i64) as usize];
         if slot.index != index {
@@ -220,6 +242,7 @@ impl ActivityTracker {
         }
         slot.items = slot.items.saturating_add(items);
         slot.chars = slot.chars.saturating_add(chars);
+        slot.tokens = slot.tokens.saturating_add(tokens);
     }
 
     /// True while a run is queued, starting, running or waiting.
@@ -287,7 +310,7 @@ impl ActivityTracker {
             .map(|index| {
                 let b = self.buckets[index.rem_euclid(SPARK_BUCKETS as i64) as usize];
                 if b.index == index {
-                    (16 * b.items as u64 + b.chars as u64 / 32).min(255) as u8
+                    (16 * b.items as u64 + b.chars as u64 / 32 + b.tokens as u64 / 8).min(255) as u8
                 } else {
                     0
                 }
@@ -554,6 +577,33 @@ mod tests {
         assert_eq!(spark.end_at.0, iso_ms(start + 4_000));
         // A minute later every bucket has rolled off.
         assert!(t.spark(start + 70_000).samples.iter().all(|v| *v == 0));
+    }
+
+    #[test]
+    fn output_that_did_not_stream_as_text_counts_once_per_report() {
+        let usage = |out: u64| {
+            event(
+                json!({ "type": "usage", "runId": "r1", "usage": { "inputTokens": 40, "outputTokens": out, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0 } }),
+            )
+        };
+        let mut t = ActivityTracker::default();
+        t.apply(&run("running"), T0);
+        let start = T0 - T0.rem_euclid(2000);
+        // The first report only sets the baseline, however much the run had already written.
+        t.apply(&usage(5_000), start + 10);
+        // A file written as tool input: 800 tokens that never streamed as text.
+        t.apply(&usage(5_800), start + 2_010);
+        // 400 characters of text (about 100 tokens) streamed, then a report of 160 more: 60 were not text.
+        t.apply(&delta(&"y".repeat(400)), start + 4_010);
+        t.apply(&usage(5_960), start + 4_500);
+        let s = t.spark(start + 6_000).samples.to_vec();
+        assert_eq!(s[SPARK_BUCKETS - 3], 0);
+        assert_eq!(s[SPARK_BUCKETS - 2], 100, "800 tokens / 8");
+        assert_eq!(
+            s[SPARK_BUCKETS - 1],
+            12 + 7,
+            "400 chars / 32, then the 60 tokens that were not text / 8"
+        );
     }
 
     #[test]
