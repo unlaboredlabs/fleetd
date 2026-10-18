@@ -68,8 +68,11 @@ until the machine is online. It prints every remote command before it runs it. <
 [6/6] (re)start the node
 [hub] wait until builder-1 is online
 [exit 0]</span></code></pre>
-<p>It is safe to run again: a real run reads the machine's state first and skips what is done. <code>--local</code> sets up this
-machine.</p>
+<p>It is safe to run again: a real run reads the machine's state first and skips what is done.</p>
+<h2 id="local">Add this machine<a class="anchor" href="#local" aria-label="Link to this section">#</a></h2>
+<pre class="code sh" data-copy><code><span class="l">fleetd machine add --local</span></code></pre>
+<p>The same steps, run here without SSH. Use it to make the hub machine a worker too, or to repair it. <code>fleetd init</code>
+does this when you pick "(this machine)".</p>
 <h2 id="add-a-machine-the-hub-cant-reach">Add a machine the hub can't reach<a class="anchor" href="#add-a-machine-the-hub-cant-reach" aria-label="Link to this section">#</a></h2>
 <p>For a laptop behind NAT, or anything without SSH from the hub, print a one-line join command on the hub and paste
 it on the new machine:</p>
@@ -84,8 +87,9 @@ worker; <code>--rejoin</code> enrolls it again with a new code.</p>
 <h2 id="log-in-fleetds-claude-on-a-worker">Log in fleetd's Claude on a worker<a class="anchor" href="#log-in-fleetds-claude-on-a-worker" aria-label="Link to this section">#</a></h2>
 <p>The node runs <code>claude</code> with its own config dir, so your own login doesn't carry over. On the worker:</p>
 <pre class="code sh" data-copy><code><span class="l">CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login</span></code></pre>
-<p>Or run <code>claude setup-token</code> and put <code>CLAUDE_CODE_OAUTH_TOKEN=&lt;token&gt;</code> in <code>~/.fleetd/claude.env</code>. <code>fleetd init</code> offers
-both when it sets a machine up.</p>
+<p>Or run <code>claude setup-token</code> and put <code>CLAUDE_CODE_OAUTH_TOKEN=&lt;token&gt;</code> in <code>~/.fleetd/claude.env</code>. When <code>fleetd init</code>
+sets a machine up, it offers to run the login for you. On the hub machine, it also offers to copy a token or gateway
+variables that your shell has into <code>claude.env</code>.</p>
 <h2 id="remove">Remove a machine<a class="anchor" href="#remove" aria-label="Link to this section">#</a></h2>
 <pre class="code sh" data-copy><code><span class="l">fleetd machine remove homeserver</span></code></pre>
 <p>It stops and removes the node's service there and revokes its key on the hub. <code>--purge</code> also deletes
@@ -109,6 +113,7 @@ prints the fix for each problem. The app's Machines screen shows the same checks
 <p>On this page</p>
 <ul>
 <li><a href="#add-a-machine-the-hub-can-reach-over-ssh">Add a machine the hub can reach over SSH</a></li>
+<li><a href="#local">Add this machine</a></li>
 <li><a href="#add-a-machine-the-hub-cant-reach">Add a machine the hub can't reach</a></li>
 <li><a href="#log-in-fleetds-claude-on-a-worker">Log in fleetd's Claude on a worker</a></li>
 <li><a href="#remove">Remove a machine</a></li>

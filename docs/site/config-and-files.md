@@ -39,12 +39,13 @@ Log it in on each worker:
 CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login
 ```
 
-The hub's own `claude` (the order router and the retro) uses your normal login on the hub machine.
+The hub's own `claude` (the order router and the retro) uses your normal login on the hub machine (`~/.claude`), or
+the gateway variables in `claude.env`.
 
 ## claude.env {#claude-env}
 
-`KEY=VALUE` lines added to the environment of every `claude` fleetd starts, re-read at each start. Blank lines, `#`
-comments and `export ` are allowed. Mode 0600. Use it for a token instead of a login, or for a gateway:
+`KEY=VALUE` lines for the `claude` that fleetd runs. Blank lines, `#` comments and `export ` are allowed. Mode 0600.
+Use it for a token instead of a login, or for a gateway:
 
 ```ini
 CLAUDE_CODE_OAUTH_TOKEN=<token from claude setup-token>
@@ -52,6 +53,11 @@ CLAUDE_CODE_OAUTH_TOKEN=<token from claude setup-token>
 ANTHROPIC_BASE_URL=https://gateway.example.com
 ANTHROPIC_AUTH_TOKEN=<token>
 ```
+
+- **Nodes** add every line to each session's environment and re-read the file at each start.
+- **The hub** service loads the file when it starts, so restart it after a change. Its own `claude` gets only
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` from it. A `CLAUDE_CODE_OAUTH_TOKEN` there
+  reaches the node's sessions but not the hub's router.
 
 `fleetd init` offers to copy these from your shell when it finds them there.
 

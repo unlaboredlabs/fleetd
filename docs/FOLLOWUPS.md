@@ -21,3 +21,13 @@ Things a daily user will notice that the design pass left for later. Remove a li
 
 - **One fix per doctor finding.** A degraded machine's finding prints two "Fix:" clauses (the claude login, then
   restart the node); merge them into one ordered fix.
+- **`fleetd init --help` exit code** (in progress, wizard). It prints the usage but exits 2 instead of 0.
+- **`fleetd init` lists failures twice** (in progress, wizard). The closing "step(s) need you" list repeats the ✗ lines
+  above it.
+- **Doctor names `machine add localhost` for the hub's own machine.** It should print `fleetd machine add --local`.
+- **The hub's gateway fix points elsewhere.** The `hub/claude_login` fix names the `env` block of
+  `~/.claude/settings.json`, but the hub's claude gets `ANTHROPIC_*` from `~/.fleetd/claude.env`, which its service
+  loads. Make the label name `claude.env`.
+- **A token in claude.env passes init but not the router.** `fleetd init` checks the hub's claude with all of
+  `claude.env`, but the router only passes `ANTHROPIC_*` through. So a `CLAUDE_CODE_OAUTH_TOKEN` there shows ✓ in
+  init and ✗ in the doctor.

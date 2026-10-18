@@ -74,14 +74,21 @@
 <p>The node runs <code>claude</code> with <code>CLAUDE_CONFIG_DIR=~/.fleetd/claude</code>, so its login is separate from yours in <code>~/.claude</code>.
 Log it in on each worker:</p>
 <pre class="code sh" data-copy><code><span class="l">CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login</span></code></pre>
-<p>The hub's own <code>claude</code> (the order router and the retro) uses your normal login on the hub machine.</p>
+<p>The hub's own <code>claude</code> (the order router and the retro) uses your normal login on the hub machine (<code>~/.claude</code>), or
+the gateway variables in <code>claude.env</code>.</p>
 <h2 id="claude-env">claude.env<a class="anchor" href="#claude-env" aria-label="Link to this section">#</a></h2>
-<p><code>KEY=VALUE</code> lines added to the environment of every <code>claude</code> fleetd starts, re-read at each start. Blank lines, <code>#</code>
-comments and <code>export </code> are allowed. Mode 0600. Use it for a token instead of a login, or for a gateway:</p>
+<p><code>KEY=VALUE</code> lines for the <code>claude</code> that fleetd runs. Blank lines, <code>#</code> comments and <code>export </code> are allowed. Mode 0600.
+Use it for a token instead of a login, or for a gateway:</p>
 <pre class="code ini" data-copy><code>CLAUDE_CODE_OAUTH_TOKEN=&lt;token from claude setup-token&gt;
 # or
 ANTHROPIC_BASE_URL=https://gateway.example.com
 ANTHROPIC_AUTH_TOKEN=&lt;token&gt;</code></pre>
+<ul>
+<li><strong>Nodes</strong> add every line to each session's environment and re-read the file at each start.</li>
+<li><strong>The hub</strong> service loads the file when it starts, so restart it after a change. Its own <code>claude</code> gets only
+<code>ANTHROPIC_BASE_URL</code>, <code>ANTHROPIC_AUTH_TOKEN</code> and <code>ANTHROPIC_API_KEY</code> from it. A <code>CLAUDE_CODE_OAUTH_TOKEN</code> there
+reaches the node's sessions but not the hub's router.</li>
+</ul>
 <p><code>fleetd init</code> offers to copy these from your shell when it finds them there.</p>
 <h2 id="policy">.fleetd/policy.yaml<a class="anchor" href="#policy" aria-label="Link to this section">#</a></h2>
 <p>An optional file in a project's repo; commit it to the default branch. Changes apply within a minute. Without it,

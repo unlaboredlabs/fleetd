@@ -26,7 +26,8 @@ command that fixes it. Run it again at any time: it keeps what works and repairs
 $ fleetd init
 fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
 ✔ Is this machine the hub (the always-on machine that runs your fleet)? · yes
-✓ reachability: the hub listens on 100.x.y.z:4790, reached at http://hub.your-tailnet.ts.net:4790
+✔ Where should the hub listen? · http://hub.your-tailnet.ts.net:4790  your tailnet: the app and your other machines reach it, nothing public
+✓ reachability: the hub will answer at http://hub.your-tailnet.ts.net:4790
 ✓ claude: 2.1.302, logged in (claude.ai)
 ✓ gh: logged in as ada-lovelace
 ✔ Commit author for your agents' commits (Name <email>) · ada-lovelace <1234567+ada-lovelace@users.noreply.github.com>
@@ -47,8 +48,17 @@ fleetd is set up.
 Next: install the desktop app on the computer you work from (curl -fsSL https://fleetd.sh | sh -s -- --app), open it and enter the pairing code; then type your first order in it.
 ```
 
-The hub listens on your tailnet when it finds Tailscale, otherwise on `127.0.0.1:4790` only. It never opens itself to
-the internet.
+`fleetd init` asks where the hub listens: your tailnet first when it finds Tailscale, then this machine only, then
+your LAN:
+
+```text
+? Where should the hub listen? ›
+❯ http://hub.your-tailnet.ts.net:4790  your tailnet: the app and your other machines reach it, nothing public
+  http://127.0.0.1:4790  this machine only: workers on other machines can't reach it
+  http://192.168.1.20:4790  your LAN: anyone on this network can reach it (plain HTTP)
+```
+
+It never opens the hub to the internet.
 
 ## 3. Send your first order
 
