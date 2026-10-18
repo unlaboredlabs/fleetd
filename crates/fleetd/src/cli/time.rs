@@ -153,6 +153,17 @@ pub fn resolve_project(name: &str, projects: &[Value]) -> Result<Value, String> 
     }
 }
 
+/// A command as one table cell: its first line, cut at `max` characters. The full text is in `--json`.
+pub fn one_line(text: &str, max: usize) -> String {
+    let first = text.lines().next().unwrap_or("").trim_end();
+    let cut = first.chars().count() > max || text.trim_end().contains('\n');
+    if !cut {
+        return first.to_owned();
+    }
+    let kept: String = first.chars().take(max - 1).collect();
+    format!("{}…", kept.trim_end())
+}
+
 /// `1h42m`, `34m`, `2m10s`, `8s`, `250ms`.
 pub fn dur(ms: i64) -> String {
     let ms = ms.max(0);
@@ -343,7 +354,7 @@ pub fn render(
             let detail = labels
                 .iter()
                 .take(2)
-                .map(|(l, d)| format!("{l} {}", dur(*d)))
+                .map(|(l, d)| format!("{} {}", one_line(l, 40), dur(*d)))
                 .collect::<Vec<_>>()
                 .join(", ");
             rows.push(vec![
@@ -363,7 +374,13 @@ pub fn render(
     }
 
     let mut rows = vec![vec!["agent time".to_owned(), dur(agent)]];
-    for c in breakdown.by_category.iter().filter(|c| c.ms.get() > 0) {
+    let mut categories: Vec<_> = breakdown
+        .by_category
+        .iter()
+        .filter(|c| c.ms.get() > 0)
+        .collect();
+    categories.sort_by_key(|c| -c.ms.get());
+    for c in categories {
         let mut kinds: Vec<_> = c.kinds.iter().filter(|k| k.ms.get() > 0).collect();
         kinds.sort_by_key(|k| -k.ms.get());
         let detail = if kinds.len() < 2 && c.cat != Category::Tools {
@@ -403,7 +420,7 @@ pub fn render(
         ]];
         for c in breakdown.top_commands.iter().take(5) {
             rows.push(vec![
-                format!("  {}", c.label.as_str()),
+                format!("  {}", one_line(c.label.as_str(), 60)),
                 c.n.get().to_string(),
                 dur(c.total_ms.get()),
                 dur(c.p50_ms.get()),
@@ -727,6 +744,19 @@ mod tests {
                 .unwrap_err()
                 .starts_with("no order or project 'nope'")
         );
+    }
+
+    #[test]
+    fn commands_fit_one_cell() {
+        assert_eq!(
+            one_line("cargo test --workspace", 60),
+            "cargo test --workspace"
+        );
+        assert_eq!(
+            one_line("gh pr create --body \"Source: done:0\n\nmore\"", 60),
+            "gh pr create --body \"Source: done:0…"
+        );
+        assert_eq!(one_line(&"x".repeat(80), 10), format!("{}…", "x".repeat(9)));
     }
 
     #[test]
