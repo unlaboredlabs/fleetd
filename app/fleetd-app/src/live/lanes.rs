@@ -165,12 +165,9 @@ impl FleetLanes {
             self.arrived.remove(&id);
             let Some(index) = self.lanes.iter().position(|l| l.lane_id.as_str() == id) else { continue };
             let lane = self.lanes[index].clone();
-            // A lane the board saw finish stays for the rest of its hold; anything else leaves now.
-            let exit_at = match self.ended.get(&id) {
-                Some(&at) if self.holds_done() => (at + dur::DONE_HOLD).max(now),
-                _ => now,
-            };
-            self.gone.push(Gone { lane, index, exit_at });
+            if let Some(exit_at) = leave_at(self.ended.get(&id).copied(), self.holds_done(), now) {
+                self.gone.push(Gone { lane, index, exit_at });
+            }
         }
         for lane in &lanes {
             let id = lane.lane_id.to_string();
@@ -623,6 +620,19 @@ impl Render for FleetLanes {
     }
 }
 
+/// When a lane that left the list starts its exit: a lane seen finishing stays for the rest of its hold, anything
+/// else leaves now. `None` when its hold and exit already played (a settled lane kept on after it collapsed): it
+/// is gone from view, and playing the exit again would bring the row back for a moment.
+fn leave_at(ended: Option<Instant>, holds_done: bool, now: Instant) -> Option<Instant> {
+    match ended {
+        Some(at) if holds_done => {
+            let start = at + dur::DONE_HOLD;
+            (now < start + dur::EXIT).then(|| start.max(now))
+        }
+        _ => Some(now),
+    }
+}
+
 /// What a finished lane did: "done in 3:02 · #211 · ran 14 commands (1 failed) · changed 4 files".
 pub fn report(lane: &AgentLane) -> String {
     let mut parts = vec![describe(lane).words];
@@ -733,6 +743,21 @@ impl Ticker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lane_that_already_collapsed_does_not_leave_again() {
+        let t0 = Instant::now();
+        // Finished and left at once: it holds, then exits.
+        assert_eq!(leave_at(Some(t0), true, t0), Some(t0 + dur::DONE_HOLD));
+        // Left midway through its exit: the exit carries on from now.
+        let mid = t0 + dur::DONE_HOLD + dur::EXIT / 2;
+        assert_eq!(leave_at(Some(t0), true, mid), Some(mid));
+        // Dropped long after it collapsed (the board keeps a settled lane for a minute): nothing to play.
+        assert_eq!(leave_at(Some(t0), true, t0 + Duration::from_secs(60)), None);
+        // Never seen finishing, or a view that folds finished lanes: it leaves now.
+        assert_eq!(leave_at(None, true, mid), Some(mid));
+        assert_eq!(leave_at(Some(t0), false, mid), Some(mid));
+    }
 
     #[test]
     fn model_names_shorten_to_their_family() {
