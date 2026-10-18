@@ -219,7 +219,7 @@ impl Shell {
         open.next().is_none().then_some(one)
     }
 
-    /// The staged order, centred in the room under the composer, with the board's finished orders beneath it.
+    /// The staged order, a fixed gap under the composer, with the board's finished orders beneath it.
     fn stage_area(&mut self, id: &str, cx: &mut Context<Self>) -> AnyElement {
         let t = &theme(cx).clone();
         let Some(card) = self.state.card(id).cloned() else { return div().into_any_element() };
@@ -247,12 +247,12 @@ impl Shell {
             .min_h_0()
             .overflow_y_scroll()
             .child(
+                // A fixed gap under the composer; spare room falls below the card, never between them.
                 div()
-                    .min_h_full()
-                    .py_6()
+                    .pt_8()
+                    .pb_6()
                     .flex()
                     .flex_col()
-                    .justify_center()
                     .child(board_frame(stage.into_any_element()))
                     .when(!rest.is_empty(), |d| d.child(board_frame(div().pt_8().flex().flex_col().children(rest).into_any_element()))),
             )

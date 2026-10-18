@@ -557,7 +557,7 @@ impl Feed {
                     self.open_pr(now_ms, *pr);
                     for (k, n) in next.iter().enumerate() {
                         let (role, title) =
-                            if k < 2 { (AgentRole::Reviewer, format!("review #{pr}")) } else { (AgentRole::Verifier, format!("check #{pr}")) };
+                            if k < 2 { (AgentRole::Reviewer, format!("review #{pr}")) } else { (AgentRole::Verifier, format!("verify #{pr}")) };
                         self.start_lane(now_ms, n, role, &title);
                     }
                     done.push(id.to_string());
@@ -1045,17 +1045,7 @@ impl Render for BenchBoard {
                     .text_color(t.text)
                     .font_family(t.ui_font.clone())
                     .text_size(px(size::MD))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .px_6()
-                            .py_6()
-                            .flex()
-                            .flex_col()
-                            .justify_center()
-                            .child(div().w_full().max_w(px(STAGE_W)).mx_auto().child(staged)),
-                    )
+                    .child(div().flex_1().min_h_0().px_6().pt_8().child(div().w_full().max_w(px(STAGE_W)).mx_auto().child(staged)))
                     .child(machine_strip(&t, self.state.machines(), self.state.slots()))
                     .child(self.train.clone())
                     .into_any_element();

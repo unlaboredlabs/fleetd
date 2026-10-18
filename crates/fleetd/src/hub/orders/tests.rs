@@ -147,6 +147,9 @@ fn an_order_joins_its_agents_prs_and_asks() {
     assert_eq!(t4.status_reason.as_deref(), Some("slots: 40/40 in use"));
     // Review lanes link the PR they review; the writer's finished lane links the PR it opened.
     assert_eq!(t4.pr.as_ref().map(|p| p.number.get()), Some(12));
+    // Checkers are named by what they check; a writer keeps its task's title.
+    let titles: Vec<_> = c.lanes.iter().map(|l| l.title.as_str()).collect();
+    assert_eq!(titles, ["QA #12", "verify #12", "review #12", "T2 work"]);
     assert_eq!(joined.done.len(), 1);
     assert_eq!(joined.done[0].pr.as_ref().map(|p| p.number.get()), Some(12));
     // One clean review of the current patch: T6 reviewed an older patch, T7 found blocking issues.
