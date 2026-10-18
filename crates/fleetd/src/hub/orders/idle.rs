@@ -53,6 +53,19 @@ pub fn to_nudge(
         .collect()
 }
 
+/// Forgets the nudge of every order that closed or has work under way again, so a later stall is nudged once more.
+pub fn forget_settled(nudged: &mut HashSet<WorkstreamId>, orders: &[OrderFacts]) {
+    nudged.retain(|id| {
+        orders.iter().any(|o| {
+            &o.workstream_id == id
+                && o.state == WorkstreamState::Running
+                && o.live_tasks == 0
+                && o.open_asks == 0
+                && o.open_changes == 0
+        })
+    });
+}
+
 pub fn nudge_line(id: &WorkstreamId, title: &str) -> String {
     format!(
         "- You ended your turn without starting work or asking anything for {id} '{title}': nothing else will wake you for it. Continue it now (spawn its tasks), ask the human, or say why it waits with `fleetd status set --workstream {id}`."
@@ -158,7 +171,11 @@ pub async fn run(hub: Arc<Hub>) {
                 .is_empty();
             let will_wake = scheduled || hub.leads.wakes.pending(&r);
             let orders = facts(&hub, &r);
-            let ids = to_nudge(&orders, will_wake, &nudged.lock().unwrap());
+            let ids = {
+                let mut nudged = nudged.lock().unwrap();
+                forget_settled(&mut nudged, &orders);
+                to_nudge(&orders, will_wake, &nudged)
+            };
             for id in ids {
                 let title = orders
                     .iter()
@@ -207,6 +224,27 @@ mod tests {
         assert!(to_nudge(std::slice::from_ref(&idle), false, &nudged).is_empty());
         // Something will wake the lead anyway.
         assert!(to_nudge(std::slice::from_ref(&idle), true, &none).is_empty());
+    }
+
+    #[test]
+    fn an_order_that_got_going_again_can_be_nudged_again() {
+        let mut nudged = HashSet::from([
+            WorkstreamId::new("W1").unwrap(),
+            WorkstreamId::new("W2").unwrap(),
+            WorkstreamId::new("W3").unwrap(),
+        ]);
+        // W1 has a task again, W2 closed (not open any more), W3 is still idle.
+        forget_settled(
+            &mut nudged,
+            &[
+                OrderFacts {
+                    live_tasks: 1,
+                    ..order("W1")
+                },
+                order("W3"),
+            ],
+        );
+        assert_eq!(nudged, HashSet::from([WorkstreamId::new("W3").unwrap()]));
     }
 
     #[test]
