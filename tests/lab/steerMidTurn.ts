@@ -17,7 +17,10 @@ const SLOW = "for i in $(seq 25); do sleep 1; done; echo slow-done";
 const STEER_EVENTS = ["steer.queued", "steer.delivered", "steer.acknowledged", "steer.unacknowledged", "steer.withdrawn", "steer.failed"];
 
 interface Seen {
+  /** This process's clock when the line was read. */
   readonly at: number;
+  /** The node's own stamp, on one clock for the whole transcript. */
+  readonly ms: number;
   readonly dir: string;
   readonly msg: Body;
 }
@@ -49,7 +52,7 @@ class Tail {
       if (!p.startsWith("{")) continue;
       try {
         const rec = JSON.parse(p) as Body;
-        this.lines.push({ at: now, dir: rec.dir, msg: rec.msg ?? {} });
+        this.lines.push({ at: now, ms: Number(rec.ms), dir: rec.dir, msg: rec.msg ?? {} });
       } catch {
         /* a partial line */
       }
@@ -200,10 +203,12 @@ export async function steerMidTurn(lab: Lab) {
     const steer = await send(workstreamId, `Also run \`echo ${marker}\` with Bash, then reply BOUNDARY.`, "queue");
     const delivered = (await steerEvent(`${steer.id} delivered`, c, steer.id, "steer.delivered", 60_000)).event;
     check(delivered.type === "steer.delivered", `${steer.id} delivered, not ${delivered.type}`);
-    const result = tail.lines.find((s) => s.at >= toolUse.at && toolResultAfter(s));
-    check(result !== undefined, "the loop's tool result is in the transcript");
+    // The hub can hear of the delivery before this tail reads the lines, so wait for them; time the boundary on the
+    // transcript's own clock, from the tool result to claude taking the steer in.
+    const result = await tail.waitFor("the loop's tool result", toolUse.at, toolResultAfter, 10_000);
+    const begun = await tail.waitFor(`${steer.id} started`, toolUse.at, (s) => s.msg.type === "command_lifecycle" && s.msg.command_uuid === steer.runId && s.msg.state === "started", 10_000);
     const deliveredMs = Date.parse(delivered.at) - t0;
-    const afterResultMs = Date.parse(delivered.at) - result!.at;
+    const afterResultMs = begun.ms - result.ms;
     const listed = ((await humanCall("steers_list", { workstreamId })).body.steers as Array<Body>).find((s) => s.id === steer.id);
     check(listed?.how === "boundary", `${steer.id} delivered at the boundary: ${JSON.stringify(listed)}`);
     check(afterResultMs <= 2000, `${steer.id} delivered ${afterResultMs} ms after the loop returned (≤ 2 s)`);
