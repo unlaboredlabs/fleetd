@@ -1019,6 +1019,21 @@ impl Tasks {
                 None,
             ));
         }
+        if let Some(item) = &input.item {
+            let mut refused = None;
+            self.d
+                .db
+                .with(|c| {
+                    refused =
+                        crate::hub::plan::Plans::check_spawn_item(c, r, item, &input.workstream_id)
+                            .err();
+                    Ok(())
+                })
+                .map_err(store_error)?;
+            if let Some(e) = refused {
+                return Err(lead_error(e.0.code, e.0.message, e.0.fix.as_deref()));
+            }
+        }
         let policy = self.d.policies.get(r).await?;
         let unknown: Vec<&str> = input
             .areas
@@ -1066,6 +1081,7 @@ impl Tasks {
             serves: input.serves.clone(),
             qa: input.qa,
             pr: input.pr.clone(),
+            item_id: input.item.clone(),
             state: TaskState::Queued,
             queued_reason: None,
             thread_ref: None,
@@ -1079,7 +1095,18 @@ impl Tasks {
             ended_at: None,
         };
         let task = self
-            .db(|c| TaskRecords::create(c, task))
+            .db(|c| {
+                let task = TaskRecords::create(c, task)?;
+                if let Some(item) = &task.item_id {
+                    crate::hub::plan::Plans::link_task(
+                        c,
+                        item,
+                        &task.workstream_id,
+                        &task.task_id,
+                    )?;
+                }
+                Ok(task)
+            })
             .map_err(store_error)?;
         Ok(self
             .try_start(

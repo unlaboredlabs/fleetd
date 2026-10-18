@@ -255,9 +255,15 @@ impl NodeLinkServer {
             Err(e) => return tracing::error!(error = %e, "node link: machine read failed"),
         };
         let previous = stored.degraded_reason.clone();
+        // Going offline is silence, not a sighting: keep the last heartbeat's time.
+        let last_seen_at = if status == MachineStatus::Offline {
+            stored.last_seen_at.clone()
+        } else {
+            Timestamp(at.to_owned())
+        };
         let mut machine = Machine {
             status,
-            last_seen_at: Timestamp(at.to_owned()),
+            last_seen_at,
             degraded_reason: None,
             ..stored
         };

@@ -16,6 +16,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("changes_list", changes_list);
     tools.add("train_get", train_get);
     tools.add("train_freeze", train_freeze);
+    tools.add("github_webhook_set", super::hooks::github_webhook_set);
 }
 
 /// The train's `{ code, message, fix }` as a tool error.

@@ -279,6 +279,7 @@ pub fn build_on(
         auth.clone(),
         clock.clone(),
     )?;
+    let fresh = Arc::new(crate::hub::status::fresh::Fresh::default());
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let train_host =
         crate::hub::train::hub_host::HubHost::new(clock.clone(), events.clone(), store.clone());
@@ -287,7 +288,10 @@ pub fn build_on(
         clock.clone(),
         db.clone(),
         Arc::new(crate::hub::train::github::SystemGh),
-        crate::hub::train::TrainOptions::default(),
+        crate::hub::train::TrainOptions {
+            fresh: fresh.clone(),
+            ..Default::default()
+        },
     );
     let hub_task_ports =
         crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
@@ -347,6 +351,7 @@ pub fn build_on(
     {
         tracing::warn!(error = %e, "projects: interrupted clones not closed");
     }
+    let plans = crate::hub::plan::Plans::new(db.clone(), events.clone(), clock.clone());
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -387,7 +392,10 @@ pub fn build_on(
         tasks,
         leads,
         time,
+        status: crate::hub::status::Status::new(fresh),
+        plans,
     });
+    crate::hub::train::hooks::restore(&hub);
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     hub.checks.set_time(hub.time.sink());
@@ -398,6 +406,7 @@ pub fn build_on(
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
+    crate::hub::plan::calls::register_lead_calls(&hub);
     Ok(hub)
 }
 
@@ -440,6 +449,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
     loops.extend(hub.leads.run());
     loops.extend(hub.time.start(hub));
+    loops.push(tokio::spawn(hub.status.clone().run(hub.clone())));
     loops
 }
 

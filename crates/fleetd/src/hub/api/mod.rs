@@ -147,6 +147,8 @@ pub struct Hub {
     pub tasks: Arc<crate::hub::tasks::Tasks>,
     pub leads: Arc<crate::hub::leads::Area>,
     pub time: Arc<crate::hub::time::Time>,
+    pub status: Arc<crate::hub::status::Status>,
+    pub plans: Arc<crate::hub::plan::Plans>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
@@ -172,5 +174,7 @@ pub fn registry() -> Registry {
     crate::hub::orders::tools::register(&mut tools);
     crate::hub::prompts::tools::register(&mut tools);
     crate::hub::time::tools::register(&mut tools);
+    crate::hub::plan::tools::register(&mut tools);
+    crate::hub::status::tools::register(&mut tools);
     tools
 }

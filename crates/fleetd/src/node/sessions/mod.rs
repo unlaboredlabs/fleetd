@@ -401,7 +401,7 @@ struct Inner {
     /// schedule.
     health_changed: Arc<tokio::sync::Notify>,
     /// The latest claude.ai usage window per limit type, for the heartbeat.
-    limits: Mutex<std::collections::BTreeMap<String, crate::node::runner::RateLimit>>,
+    limits: Mutex<std::collections::BTreeMap<String, (crate::node::runner::RateLimit, Timestamp)>>,
     /// Project files for @-mentions, per project, for `FILES_FOR`.
     files: Mutex<HashMap<String, Listed>>,
     /// How many sessions have an active run.
@@ -780,7 +780,11 @@ impl SessionService {
 
     fn remember_limit(&self, limit: crate::node::runner::RateLimit) {
         let key = limit.limit_type.clone().unwrap_or_else(|| "unknown".into());
-        self.inner.limits.lock().unwrap().insert(key, limit);
+        self.inner
+            .limits
+            .lock()
+            .unwrap()
+            .insert(key, (limit, now()));
     }
 
     /// The claude.ai usage windows sessions last reported, for the heartbeat.
@@ -792,7 +796,7 @@ impl SessionService {
             .lock()
             .unwrap()
             .iter()
-            .filter_map(|(kind, l)| {
+            .filter_map(|(kind, (l, observed_at))| {
                 Some(LoginLimit {
                     limit_type: Text::new(super::util::head_utf16(kind, 40)).ok()?,
                     utilization: l.utilization.and_then(|u| NonNegative::new(u).ok()),
@@ -804,6 +808,7 @@ impl SessionService {
                                 .into()
                         }),
                     status: Text::new(super::util::head_utf16(&l.status, 40)).ok()?,
+                    observed_at: Some(observed_at.clone()),
                 })
             })
             .take(4)

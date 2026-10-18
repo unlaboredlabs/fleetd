@@ -7,6 +7,7 @@ pub mod live;
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};
 use crate::hub::auth::AuthError;
 use crate::hub::mcp::invalid_input;
+use crate::hub::store::now_ms;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use fleetd_contracts::app::AppClientMessage;
 use fleetd_contracts::hello::PROTOCOL_VERSION;
@@ -121,6 +122,24 @@ async fn stream_events(
     }
 }
 
+/// The one status_wait a connection has in flight. A new one supersedes it: the old answers `{unchanged}` at once, so
+/// waits left over from scope switches never pile up against the in-flight limit. Whoever claims `answered` first (the
+/// call finishing, or the superseder) sends the one result for its id.
+struct PendingWait {
+    id: String,
+    scope: Option<String>,
+    after: i64,
+    answered: Arc<std::sync::atomic::AtomicBool>,
+    abort: tokio::task::AbortHandle,
+}
+
+impl PendingWait {
+    /// True for exactly one caller.
+    fn claim(answered: &std::sync::atomic::AtomicBool) -> bool {
+        !answered.swap(true, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 struct Session {
     hub: Arc<Hub>,
     tools: Arc<Registry>,
@@ -131,6 +150,8 @@ struct Session {
     /// The live subscription's pump, and the one-frame slot it writes to.
     live: Option<tokio::task::JoinHandle<()>>,
     live_slot: Arc<live::LiveSlot>,
+    budget: Arc<live::ConnBudget>,
+    status_wait: Option<PendingWait>,
 }
 
 /// What to do with the socket after a frame.
@@ -188,14 +209,63 @@ impl Session {
                     self.send(error_frame(&busy, Some(id.as_str())));
                     return After::Continue;
                 }
+                let is_wait = tool.as_str() == "status_wait";
+                if is_wait
+                    && let Some(old) = self.status_wait.take()
+                    && PendingWait::claim(&old.answered)
+                {
+                    old.abort.abort();
+                    let version = old
+                        .scope
+                        .as_deref()
+                        .and_then(|k| self.hub.status.version_of(k))
+                        .unwrap_or(old.after);
+                    self.send(json!({ "t": "result", "id": old.id, "output": { "unchanged": true, "version": version } }));
+                }
+                let answered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let wait_scope = is_wait.then(|| {
+                    let scope = serde_json::from_value::<fleetd_contracts::status::StatusScope>(
+                        input["scope"].clone(),
+                    )
+                    .ok();
+                    (scope.map(|s| s.key()), input["after"].as_i64().unwrap_or(0))
+                });
                 let (hub, tools, out) = (self.hub.clone(), self.tools.clone(), self.out.clone());
-                self.calls.spawn(async move {
+                let budget = self.budget.clone();
+                let claim = answered.clone();
+                let call_id = id.as_str().to_owned();
+                let abort = self.calls.spawn(async move {
                     let frame = match call(&hub, &tools, &key, tool.as_str(), input).await {
                         Ok(output) => json!({ "t": "result", "id": id.as_str(), "output": output }),
                         Err(error) => error_frame(&error, Some(id.as_str())),
                     };
+                    // Status answers share the live feed's per-connection budget: one over it waits for the next second.
+                    if tool.as_str().starts_with("status_") {
+                        let bytes = frame.to_string().len();
+                        loop {
+                            let wait = budget.reserve(now_ms(hub.clock.as_ref()), bytes);
+                            if wait == 0 {
+                                break;
+                            }
+                            hub.clock
+                                .sleep(std::time::Duration::from_millis(wait))
+                                .await;
+                        }
+                    }
+                    if is_wait && !PendingWait::claim(&claim) {
+                        return;
+                    }
                     let _ = out.send(frame);
                 });
+                if let Some((scope, after)) = wait_scope {
+                    self.status_wait = Some(PendingWait {
+                        id: call_id,
+                        scope,
+                        after,
+                        answered,
+                        abort,
+                    });
+                }
             }
             AppClientMessage::Snapshot {} => match self
                 .tools
@@ -242,6 +312,7 @@ impl Session {
                     self.hub.clone(),
                     scope,
                     self.live_slot.clone(),
+                    self.budget.clone(),
                 )));
             }
         }
@@ -262,6 +333,8 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         calls: JoinSet::new(),
         live: None,
         live_slot: Arc::default(),
+        budget: Arc::default(),
+        status_wait: None,
     };
     let live_slot = session.live_slot.clone();
     let close = loop {

@@ -198,6 +198,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <h3 id="one-shots">One-shots<a class="anchor" href="#one-shots" aria-label="Link to this section">#</a></h3>
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
 <tr><td><code>router</code></td><td>each order without @project or a template prefix</td><td>uses no tools; replies with JSON only (prompt only)</td></tr>
+<tr><td><code>status.headline</code></td><td>when a viewed status scope's facts change</td><td>uses no tools; replies with one line of at most 160 characters; uses only numbers from the facts</td></tr>
 <tr><td><code>router.retry</code></td><td>once per order, after an unusable first answer</td><td></td></tr>
 <tr><td><code>retro</code></td><td>each retro run (at most 2 a day)</td><td>uses no tools; at most 3 changes</td></tr>
 </tbody></table></div>

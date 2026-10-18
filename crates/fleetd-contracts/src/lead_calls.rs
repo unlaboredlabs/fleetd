@@ -17,6 +17,10 @@ use crate::ledger::{
     ask_blocks_nothing, ask_kind_rule,
 };
 use crate::mcp::McpToolError;
+use crate::plan::{
+    PlanAddCall, PlanDropCall, PlanEditCall, PlanItemId, PlanItemResult, PlanMilestoneCall,
+    PlanMilestoneResult, PlanShowCall, PlanShowResult,
+};
 use crate::prim::{Count, Line, List, NonEmpty, NonNegative, Text};
 use crate::secrets::SecretSink;
 use crate::tasks::{
@@ -195,6 +199,8 @@ pub struct TaskSpawnCall {
     pub serves: Option<Serves>,
     pub pr: Option<PrUrl>,
     pub qa: Option<bool>,
+    /// `--item P<n>`: the plan item this task works on; refused when it belongs to another order.
+    pub item: Option<PlanItemId>,
 }
 checked!(TaskSpawnCall, |call| {
     task_areas_rule(call.kind, call.areas.len())?;
@@ -252,6 +258,8 @@ pub struct ChangeEnqueueCall {
     pub workstream_id: Option<WorkstreamId>,
     pub serves: Option<Serves>,
     pub tier: Option<Tier>,
+    /// `--item P<n>`: stores the PR as a link of that plan item (for a PR no task of the item wrote).
+    pub item: Option<PlanItemId>,
 }
 
 /// `fleetd change status X1`.
@@ -298,6 +306,11 @@ pub enum LeadCall {
     GatedRun(GatedRunCall),
     WorkstreamSpawn(WorkstreamSpawnCall),
     Inventory(InventoryCall),
+    PlanMilestone(PlanMilestoneCall),
+    PlanAdd(PlanAddCall),
+    PlanEdit(PlanEditCall),
+    PlanDrop(PlanDropCall),
+    PlanShow(PlanShowCall),
 }
 
 #[skip_serializing_none]
@@ -455,6 +468,11 @@ pub enum LeadCallResult {
     GatedRun(GatedRunResult),
     WorkstreamSpawn(WorkstreamSpawnResult),
     Inventory(InventoryResult),
+    PlanMilestone(PlanMilestoneResult),
+    PlanAdd(PlanItemResult),
+    PlanEdit(PlanItemResult),
+    PlanDrop(PlanItemResult),
+    PlanShow(PlanShowResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

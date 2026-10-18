@@ -192,6 +192,28 @@ pub enum HubEventType {
     /// reset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.
     #[serde(rename = "prompt.default_changed")]
     PromptDefaultChanged,
+    /// A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).
+    #[serde(rename = "plan.changed")]
+    PlanChanged,
+    /// The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.
+    #[serde(rename = "plan.verified")]
+    PlanVerified,
+    /// A merge-train Change moved between states; `data.changeId`, `data.workstreamId`, `data.repo`, `data.prNumber`,
+    /// `data.from`, `data.to`.
+    #[serde(rename = "change.state")]
+    ChangeState,
+    /// Main-branch CI of a train repo changed state; `data.repo`, `data.sha`, `data.state`, `data.failing`.
+    #[serde(rename = "ci.main")]
+    CiMain,
+    /// Reconciliation found GitHub moved without fleetd; `data.repo`, `data.kind`, `data.what`, `data.lagMs`.
+    #[serde(rename = "github.drift")]
+    GithubDrift,
+    /// A status source went quiet past its cadence; `data.source`, `data.sinceMs`, `data.reason`.
+    #[serde(rename = "source.stale")]
+    SourceStale,
+    /// A stale source answered again; `data.source`, `data.staleMs`.
+    #[serde(rename = "source.fresh")]
+    SourceFresh,
 }
 
 impl HubEventType {
@@ -264,6 +286,13 @@ impl HubEventType {
             Self::WorkstreamNote => "workstream.note",
             Self::PromptChanged => "prompt.changed",
             Self::PromptDefaultChanged => "prompt.default_changed",
+            Self::PlanChanged => "plan.changed",
+            Self::PlanVerified => "plan.verified",
+            Self::ChangeState => "change.state",
+            Self::CiMain => "ci.main",
+            Self::GithubDrift => "github.drift",
+            Self::SourceStale => "source.stale",
+            Self::SourceFresh => "source.fresh",
         }
     }
 }

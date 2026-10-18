@@ -19,6 +19,7 @@ use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{
     ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary,
 };
+use crate::plan::PlanView;
 use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
@@ -30,6 +31,7 @@ use crate::prompts::{
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
+use crate::status::{StatusDoc, StatusScope};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
@@ -1033,6 +1035,73 @@ output!(SessionPromptGetOutput {
     session: SessionPrompt
 });
 
+// status_get, status_wait, status_seen: the status view of the fleet, a project or an order.
+input!(StatusGetInput {
+    scope: StatusScope,
+    /// Count "since" from this seq instead of the key's status_seen mark (a client that keeps its own mark).
+    since_seq: Option<EventSeq>,
+});
+// Not flattened: the doc's own `next` (Next-up rows) would clash with the output's `next` hint.
+output!(StatusGetOutput { doc: StatusDoc });
+input!(StatusWaitInput {
+    scope: StatusScope,
+    /// As in status_get.
+    since_seq: Option<EventSeq>,
+    /// The version the caller has; absent waits for none (answers at once).
+    after: Option<Count>,
+    #[serde(default)]
+    timeout_sec: IntOr<0, 50, 50>,
+});
+// `doc` once its version is past `after`; otherwise `unchanged` with the current version.
+output!(StatusWaitOutput {
+    doc: Option<StatusDoc>,
+    unchanged: Option<bool>,
+    version: Count,
+});
+input!(StatusSeenInput {
+    scope: StatusScope,
+    seq: EventSeq
+});
+output!(StatusSeenOutput {
+    /// False for agent keys: only a person's look moves the mark.
+    recorded: bool,
+});
+
+// plan_get: one project's plan, or one order's items.
+input!(
+    #[serde(remote = "Self")]
+    PlanGetInput {
+        project_ref: Option<ProjectRef>,
+        workstream_id: Option<WorkstreamId>,
+    }
+);
+checked!(PlanGetInput, |input| {
+    if input.project_ref.is_some() == input.workstream_id.is_some() {
+        return Err("give projectRef or workstreamId".into());
+    }
+    Ok(())
+});
+output!(PlanGetOutput {
+    #[serde(flatten)]
+    plan: PlanView,
+});
+
+// github_webhook_set: opt-in GitHub webhooks on every train repo; no url turns them off.
+input!(GithubWebhookSetInput {
+    /// A public URL GitHub can reach, ending in /github; fleetd never creates one.
+    url: Option<WebhookUrl>,
+});
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubHook {
+    pub repo: GitHubRepo,
+    pub hook_id: Positive,
+}
+output!(GithubWebhookSetOutput {
+    /// The hooks now in place; empty when turned off.
+    repos: List<GithubHook, 0, 100>,
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -1161,6 +1230,11 @@ tools! {
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;
     time_retention_set => TimeRetentionSet, Admin, TimeRetentionSetInput, TimeRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
+    status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
+    status_wait => StatusWait, Read, StatusWaitInput, StatusWaitOutput;
+    status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
+    plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
+    github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1292,7 +1366,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 65);
+        assert_eq!(McpToolName::ALL.len(), 70);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
@@ -1302,6 +1376,31 @@ mod tests {
         assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
         assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);
         assert_eq!(McpToolName::parse("push_subscribe"), None);
+    }
+
+    #[test]
+    fn status_get_round_trips_a_doc_with_next_rows() {
+        let doc = json!({
+            "scope": { "kind": "order", "workstreamId": "W41" },
+            "title": "native runner", "version": 3, "seq": 120, "now": "2026-10-18T14:02:07.000Z",
+            "progress": { "pct": 72, "done": 5, "total": 8, "polishDone": 2, "polishTotal": 5,
+                          "asOf": "2026-10-18T14:02:07.000Z" },
+            "markers": [], "eta": { "samples": 2, "basis": "none" }, "gates": [],
+            "headline": { "text": "Nothing running. Nothing needs you.", "source": "template",
+                          "at": "2026-10-18T14:02:07.000Z" },
+            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "asked": 0, "scopeItems": 0 },
+            "parts": [], "done": [], "inProgress": [],
+            "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
+            "needsYou": { "count": 0, "askIds": [] }, "risks": [],
+            "health": { "ci": [], "machines": [], "usage": [],
+                        "slots": { "running": 0, "used": 0, "cap": 40, "queued": 0 } },
+            "stale": [],
+            "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 }
+        });
+        let output = json!({ "doc": doc, "next": "status_wait" });
+        let decoded: StatusGetOutput = decode(output.clone()).unwrap();
+        assert_eq!(decoded.doc.next.len(), 1);
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), output);
     }
 
     #[test]

@@ -200,6 +200,11 @@ impl Webhooks {
     }
 
     /// Webhooks for the hub in `home`, sealing secrets with `<home>/webhook.key` (created 0600 on first start).
+    /// The box webhook secrets are sealed with; GitHub webhook secrets use it too.
+    pub fn secret_box(&self) -> &SecretBox {
+        &self.secret_box
+    }
+
     pub fn for_home(
         home: &Path,
         db: Arc<HubDb>,

@@ -849,6 +849,30 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "status.headline",
+        Oneshot,
+        OneShots,
+        Audience::None,
+        "Status headline",
+        "when a viewed status scope's facts change",
+        "facts!=the fact list as JSON; scope!=fleet, a project or an order",
+        &[
+            ("no-tools", "uses no tools", r"do not use tools", Code),
+            (
+                "one-line",
+                "replies with one line of at most 160 characters",
+                r"one line",
+                Code
+            ),
+            (
+                "numbers-from-facts",
+                "uses only numbers from the facts",
+                r"only numbers that appear in the facts",
+                Code
+            ),
+        ]
+    ),
+    entry!(
         "router.retry",
         Oneshot,
         OneShots,

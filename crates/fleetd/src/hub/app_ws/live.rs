@@ -35,6 +35,46 @@ const SLOTS_EVERY: u64 = 4;
 const MACHINES_EVERY: u64 = 20;
 /// Bytes per connection per second, worst case.
 pub const MAX_BYTES_PER_SEC: usize = 32 * 1024;
+
+/// One connection's bytes per second, shared by the live pump and status answers, so the two together stay within
+/// [`MAX_BYTES_PER_SEC`].
+#[derive(Default)]
+pub struct ConnBudget(std::sync::Mutex<(i64, usize)>);
+
+impl ConnBudget {
+    /// Whether this second still has room.
+    pub fn room(&self, now_ms: i64) -> bool {
+        let mut w = self.0.lock().unwrap();
+        if now_ms - w.0 >= 1000 {
+            *w = (now_ms, 0);
+        }
+        w.1 < MAX_BYTES_PER_SEC
+    }
+
+    pub fn spend(&self, now_ms: i64, bytes: usize) {
+        let mut w = self.0.lock().unwrap();
+        if now_ms - w.0 >= 1000 {
+            *w = (now_ms, 0);
+        }
+        w.1 += bytes;
+    }
+
+    /// Reserves `bytes` in this second when they fit (or the second is still empty, so one large frame can pass),
+    /// returning 0; otherwise reserves nothing and returns the milliseconds until the next second. Check and spend
+    /// happen under one lock, so answers waiting together can't all pass at once.
+    pub fn reserve(&self, now_ms: i64, bytes: usize) -> u64 {
+        let mut w = self.0.lock().unwrap();
+        if now_ms - w.0 >= 1000 {
+            *w = (now_ms, 0);
+        }
+        if w.1 == 0 || w.1 + bytes <= MAX_BYTES_PER_SEC {
+            w.1 += bytes;
+            0
+        } else {
+            (w.0 + 1000 - now_ms).max(1) as u64
+        }
+    }
+}
 /// A focused order's lanes stay in scope this long after they end, so the app sees them settle.
 const ENDED_GRACE_MS: i64 = 60_000;
 /// A board's lanes stay in scope this long after they end: a few board ticks, so the app sees how each one settled
@@ -426,13 +466,12 @@ pub fn slots(hub: &Hub, caller: &Caller) -> SlotState {
 }
 
 /// Runs one subscription until it is replaced or the connection ends.
-pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>) {
+pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>, budget: Arc<ConnBudget>) {
     if !scope.board && scope.focus.is_none() {
         return;
     }
     let mut pump = Pump::default();
     let mut tick: u64 = 0;
-    let mut window = (0i64, 0usize);
     let mut interval = tokio::time::interval(TICK);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -441,11 +480,8 @@ pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>) {
             return;
         }
         let now = now_ms(hub.clock.as_ref());
-        if now - window.0 >= 1000 {
-            window = (now, 0);
-        }
         // Latest wins: the socket has not taken the last frame, so skip this tick rather than queue behind it.
-        if slot.pending() || window.1 >= MAX_BYTES_PER_SEC {
+        if slot.pending() || !budget.room(now) {
             continue;
         }
         let first = tick == 0;
@@ -481,10 +517,37 @@ pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>) {
             out.extend(body);
         }
         let text = json.to_string();
-        window.1 += text.len();
+        budget.spend(now, text.len());
         slot.offer(text);
     }
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn answers_waiting_together_pass_one_window_at_a_time() {
+        let b = ConnBudget::default();
+        let frame = 16 * 1024;
+        assert_eq!(b.reserve(1_000, frame), 0);
+        assert_eq!(b.reserve(1_000, frame), 0, "32 KB fit in one second");
+        let waits: Vec<u64> = (0..3).map(|_| b.reserve(1_200, frame)).collect();
+        assert_eq!(waits, vec![800, 800, 800], "none of the rest is reserved");
+        assert_eq!(b.reserve(2_000, frame), 0);
+        assert_eq!(b.reserve(2_000, frame), 0);
+        assert_eq!(
+            b.reserve(2_000, frame),
+            1000,
+            "the third waits another second"
+        );
+        assert_eq!(
+            b.reserve(3_000, 40 * 1024),
+            0,
+            "an empty second takes one oversize frame"
+        );
+    }
+}

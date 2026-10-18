@@ -31,9 +31,13 @@ use crate::hub::store::NewEvent;
 use crate::hub::train::github::{GhErrorKind, SystemGh, TrainGitHub};
 use inspect::{GitHubAnswers, Worker};
 
-/// gh runs here, on the hub machine.
+/// gh runs here, on the hub machine. An inspection is not a train read, so it feeds no status source.
 fn github() -> TrainGitHub {
-    TrainGitHub::new(Arc::new(SystemGh))
+    TrainGitHub::new(
+        Arc::new(SystemGh),
+        Arc::new(crate::hub::status::fresh::Fresh::default()),
+        Arc::new(crate::clock::SystemClock),
+    )
 }
 
 fn now(hub: &Hub) -> fleetd_contracts::ids::Timestamp {
