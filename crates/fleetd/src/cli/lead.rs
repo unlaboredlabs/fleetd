@@ -40,9 +40,10 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
       [--model <m>] [--effort low|medium|high|max] [--tier S|M|L] [--estimate <min>]
-      [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa]
+      [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa] [--item P<n>]
              delegate work to a subagent; writers need --areas and --serves and get their own
-             branch; a review task needs --pr, and --qa marks it a QA run
+             branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
+             that plan item
   task list [--state <s>] [--workstream <W>]
   task status <T>
   task message <T> "<text>"
@@ -56,9 +57,23 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              the last step of a review task; a research judge also reports its metric for the
              baseline and the candidate, and fleetd computes GO, STOP or INCONCLUSIVE
   change enqueue --pr <url> [--task <T>] [--workstream <W>] [--serves <s>] [--tier S|M|L]
+      [--item P<n>]
              put a PR on its repo's merge train (a write task's PR goes on by itself); its body
-             needs a 'Source: <serves>' line. Only the train merges.
+             needs a 'Source: <serves>' line. Only the train merges. --item links the PR to
+             that plan item
   change status <X>
+  plan milestone "<title>" [--position <n>]
+  plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
+      [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"]
+  plan edit P<n> [--title <t>] [--size s|m|l] [--must|--polish] [--milestone M<n>]
+      [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--check +<n>|--check=-<n>]
+      [--position <n>] [--why "<note>"]
+  plan drop P<n> --why "<reason>"
+  plan show [--workstream <W>]
+             keep the project's plan: milestones of must or polish items sized s, m or l. Link
+             work with --item; only fleetd marks an item done, once its PRs merged through the
+             train and its done-when checks passed. Changing scope after a milestone's first 10
+             minutes needs --why, and the status view shows it as a marker
   inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
@@ -82,11 +97,16 @@ const LEAD_COMMANDS: &[&str] = &[
     "gated",
     "workstream",
     "inventory",
+    "plan",
 ];
 
+/// `status` is a lead call only as `status set`; any other `fleetd status` is the human's progress view.
 pub fn is_lead_command(argv: &[String]) -> bool {
-    argv.first()
-        .is_some_and(|command| LEAD_COMMANDS.contains(&command.as_str()))
+    match argv.first().map(String::as_str) {
+        Some("status") => argv.get(1).map(String::as_str) == Some("set"),
+        Some(command) => LEAD_COMMANDS.contains(&command),
+        None => false,
+    }
 }
 
 fn usage(message: &str) -> CliResult {
@@ -138,6 +158,14 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("baseline", Kind::Str),
     ("candidate", Kind::Str),
     ("template", Kind::Str),
+    ("item", Kind::Str),
+    ("milestone", Kind::Str),
+    ("must", Kind::Bool),
+    ("polish", Kind::Bool),
+    ("size", Kind::Str),
+    ("after", Kind::Str),
+    ("check", Kind::Str),
+    ("position", Kind::Str),
 ];
 
 fn parse_json(flag: &str, text: &str) -> Result<Value, String> {
@@ -417,6 +445,7 @@ pub fn parse_lead_args(
                     "serves",
                     "pr",
                     "qa",
+                    "item",
                 ])?;
                 required(&["workstream", "title", "prompt"])?;
                 if let Some(estimate) = v.str("estimate")
@@ -442,6 +471,7 @@ pub fn parse_lead_args(
                     ("serves", s(v.str("serves"))),
                     ("pr", s(v.str("pr"))),
                     ("qa", v.flag("qa").then_some(Value::Bool(true))),
+                    ("item", s(v.str("item"))),
                 ])
             }
             Some("list") => {
@@ -547,7 +577,7 @@ pub fn parse_lead_args(
         }
         Some("change") => match sub {
             Some("enqueue") => {
-                only(&["pr", "task", "workstream", "serves", "tier"])?;
+                only(&["pr", "task", "workstream", "serves", "tier", "item"])?;
                 if rest.len() > 1 || (rest.len() == 1 && v.str("pr").is_some()) {
                     return Err("expected fleetd change enqueue --pr <url>".into());
                 }
@@ -561,6 +591,7 @@ pub fn parse_lead_args(
                     ("workstreamId", s(v.str("workstream"))),
                     ("serves", s(v.str("serves"))),
                     ("tier", s(v.str("tier"))),
+                    ("item", s(v.str("item"))),
                 ])
             }
             Some("status") => {
@@ -642,6 +673,158 @@ pub fn parse_lead_args(
                 ("serves", s(v.str("serves"))),
                 ("template", s(v.str("template"))),
             ])
+        }
+        Some("plan") => {
+            let weight = || -> Result<Option<Value>, String> {
+                match (v.flag("must"), v.flag("polish")) {
+                    (true, true) => Err("give one of --must and --polish".into()),
+                    (true, false) => Ok(s(Some("must"))),
+                    (false, true) => Ok(s(Some("polish"))),
+                    (false, false) => Ok(None),
+                }
+            };
+            let size = || -> Result<Option<Value>, String> {
+                match v.str("size").map(str::to_lowercase).as_deref() {
+                    None => Ok(None),
+                    Some(size @ ("s" | "m" | "l")) => Ok(s(Some(size))),
+                    Some(_) => Err(format!(
+                        "--size is s, m or l, got '{}'",
+                        v.str("size").unwrap_or("")
+                    )),
+                }
+            };
+            let whole = |flag: &str| -> Result<Option<Value>, String> {
+                match v.str(flag) {
+                    None => Ok(None),
+                    Some(n) if all_digits(n) => Ok(Some(number(n))),
+                    Some(n) => Err(format!("--{flag} is a whole number, got '{n}'")),
+                }
+            };
+            let after = v.str("after").map(|a| Value::Array(split_list(a)));
+            let title = rest.join(" ");
+            match sub {
+                Some("milestone") => {
+                    only(&["position"])?;
+                    if title.is_empty() {
+                        return Err(r#"expected fleetd plan milestone "<title>""#.into());
+                    }
+                    defined(vec![
+                        ("op", s(Some("plan_milestone"))),
+                        ("title", Some(Value::String(title))),
+                        ("position", whole("position")?),
+                    ])
+                }
+                Some("add") => {
+                    only(&[
+                        "milestone",
+                        "workstream",
+                        "must",
+                        "polish",
+                        "size",
+                        "after",
+                        "pr",
+                        "check",
+                        "why",
+                    ])?;
+                    if title.is_empty() {
+                        return Err(r#"expected fleetd plan add "<title>" --milestone M<n>"#.into());
+                    }
+                    required(&["milestone"])?;
+                    defined(vec![
+                        ("op", s(Some("plan_add"))),
+                        ("title", Some(Value::String(title))),
+                        ("milestoneId", s(v.str("milestone"))),
+                        ("workstreamId", s(v.str("workstream"))),
+                        ("weight", weight()?),
+                        ("size", size()?),
+                        ("after", after),
+                        ("pr", s(v.str("pr"))),
+                        ("check", whole("check")?),
+                        ("why", s(v.str("why"))),
+                    ])
+                }
+                Some("edit") => {
+                    only(&[
+                        "title",
+                        "size",
+                        "must",
+                        "polish",
+                        "milestone",
+                        "workstream",
+                        "after",
+                        "pr",
+                        "check",
+                        "position",
+                        "why",
+                    ])?;
+                    let [item] = rest.as_slice() else {
+                        return Err("expected fleetd plan edit P<n> [--title <t>] …".into());
+                    };
+                    // `+x` adds, `-x` removes, a bare value adds.
+                    let signed = |flag: &str| match v.str(flag) {
+                        None => (None, false),
+                        Some(given) => match given.strip_prefix('-') {
+                            Some(value) => (Some(value), true),
+                            None => (Some(given.strip_prefix('+').unwrap_or(given)), false),
+                        },
+                    };
+                    let (pr, pr_remove) = signed("pr");
+                    let (check, check_remove) = signed("check");
+                    let check = match check {
+                        Some(n) if !all_digits(n) => {
+                            return Err(format!(
+                                "--check is +<n> or -<n>, a done-when index, got '{}'",
+                                v.str("check").unwrap_or("")
+                            ));
+                        }
+                        other => other.map(number),
+                    };
+                    let one = |value: Option<Value>| value.map(|v| Value::Array(vec![v]));
+                    let pr = pr.map(|url| Value::String(url.to_owned()));
+                    defined(vec![
+                        ("op", s(Some("plan_edit"))),
+                        ("itemId", s(Some(item))),
+                        ("title", s(v.str("title"))),
+                        ("size", size()?),
+                        ("weight", weight()?),
+                        ("milestoneId", s(v.str("milestone"))),
+                        ("workstreamId", s(v.str("workstream"))),
+                        ("after", after),
+                        (if pr_remove { "prRemove" } else { "prAdd" }, one(pr)),
+                        (
+                            if check_remove {
+                                "checkRemove"
+                            } else {
+                                "checkAdd"
+                            },
+                            one(check),
+                        ),
+                        ("position", whole("position")?),
+                        ("why", s(v.str("why"))),
+                    ])
+                }
+                Some("drop") => {
+                    only(&["why"])?;
+                    let [item] = rest.as_slice() else {
+                        return Err(r#"expected fleetd plan drop P<n> --why "<reason>""#.into());
+                    };
+                    required(&["why"])?;
+                    json!({ "op": "plan_drop", "itemId": item, "why": v.str("why") })
+                }
+                Some("show") => {
+                    only(&["workstream"])?;
+                    if let Some(first) = rest.first() {
+                        return Err(format!(
+                            "unexpected '{first}': fleetd plan show [--workstream <W>]"
+                        ));
+                    }
+                    defined(vec![
+                        ("op", s(Some("plan_show"))),
+                        ("workstreamId", s(v.str("workstream"))),
+                    ])
+                }
+                _ => return Err("expected fleetd plan milestone|add|edit|drop|show".into()),
+            }
         }
         Some("inventory") => {
             if sub.is_some() {
@@ -1239,6 +1422,62 @@ pub fn format_result(result: &Value) -> String {
             next = "don't merge it yourself; the train merges and the outcome arrives in a wake."
                 .into();
         }
+        "plan_milestone" => {
+            let m = &result["milestone"];
+            lines.push(format!(
+                "Added {} {}.",
+                st(m, "milestoneId"),
+                st(m, "title")
+            ));
+            next = format!(
+                "add its items: fleetd plan add \"<title>\" --milestone {} --size s|m|l",
+                st(m, "milestoneId")
+            );
+        }
+        "plan_add" | "plan_edit" | "plan_drop" => {
+            let item = &result["item"];
+            let verb = match st(result, "op") {
+                "plan_add" => "Added",
+                "plan_edit" => "Edited",
+                _ => "Dropped",
+            };
+            lines.push(format!(
+                "{verb} {} in {}: {} ({}, {}){}.",
+                st(item, "itemId"),
+                st(item, "milestoneId"),
+                st(item, "title"),
+                st(item, "weight"),
+                st(item, "size"),
+                opt(item, "workstreamId")
+                    .map(|w| format!(", order {}", js(Some(w))))
+                    .unwrap_or_default()
+            ));
+            if let Some(change) = opt(result, "change") {
+                let pct = match (opt(change, "pctBefore"), opt(change, "pctAfter")) {
+                    (Some(before), Some(after)) => {
+                        format!(" ({}% → {}%)", js(Some(before)), js(Some(after)))
+                    }
+                    _ => String::new(),
+                };
+                lines.push(format!(
+                    "Scope change recorded: {}{pct}; the status view shows it as a marker.",
+                    st(change, "note")
+                ));
+            }
+            next = if st(result, "op") == "plan_drop" {
+                "carry on.".into()
+            } else {
+                format!(
+                    "link work to it with --item {} on fleetd task spawn; fleetd marks it done once its PRs merged through the train and its checks passed.",
+                    st(item, "itemId")
+                )
+            };
+        }
+        "plan_show" => {
+            lines.push(st(result, "text").trim_end().to_owned());
+            next = "link work with --item; only fleetd marks items done. Scope changes need --why."
+                .into();
+        }
         "gated_run" => {
             lines.push(format!(
                 "{} {}: the command is stored and waits for a human to approve it; nothing runs before that.",
@@ -1581,6 +1820,99 @@ mod tests {
             ])
             .unwrap_err()
             .starts_with("invalid input: ")
+        );
+    }
+
+    #[test]
+    fn plan_calls_fill_defaults_and_split_signed_links() {
+        let add = parse(&[
+            "plan",
+            "add",
+            "full",
+            "lab",
+            "run",
+            "--milestone",
+            "M1",
+            "--polish",
+            "--size",
+            "L",
+            "--after",
+            "P1, P2",
+            "--check",
+            "2",
+        ])
+        .unwrap();
+        assert_eq!(add["title"], "full lab run");
+        assert_eq!(
+            (&add["weight"], &add["size"]),
+            (&json!("polish"), &json!("l"))
+        );
+        assert_eq!(
+            (&add["after"], &add["check"]),
+            (&json!(["P1", "P2"]), &json!(2))
+        );
+        assert_eq!(
+            parse(&["plan", "add", "x", "--milestone", "M1"]).unwrap()["size"],
+            "m"
+        );
+        let edit = parse(&[
+            "plan",
+            "edit",
+            "P3",
+            "--pr=-https://github.com/acme/storefront/pull/9",
+            "--check",
+            "+1",
+        ])
+        .unwrap();
+        assert_eq!(
+            edit["prRemove"],
+            json!(["https://github.com/acme/storefront/pull/9"])
+        );
+        assert_eq!(edit["checkAdd"], json!([1]));
+        assert_eq!(
+            parse(&[
+                "task",
+                "spawn",
+                "--workstream",
+                "W1",
+                "--title",
+                "t",
+                "--prompt",
+                "p",
+                "--kind",
+                "read",
+                "--item",
+                "P3"
+            ])
+            .unwrap()["item"],
+            "P3"
+        );
+        for (args, error) in [
+            (&["plan", "add", "x"][..], "--milestone is required"),
+            (
+                &[
+                    "plan",
+                    "add",
+                    "x",
+                    "--milestone",
+                    "M1",
+                    "--must",
+                    "--polish",
+                ],
+                "give one of --must and --polish",
+            ),
+            (&["plan", "drop", "P3"], "--why is required"),
+            (
+                &["plan", "add", "x", "--milestone", "M1", "--size", "xl"],
+                "--size is s, m or l, got 'xl'",
+            ),
+        ] {
+            assert_eq!(parse(args).unwrap_err(), error, "{args:?}");
+        }
+        assert!(
+            parse(&["plan", "edit", "W3", "--size", "s"])
+                .unwrap_err()
+                .starts_with("invalid input")
         );
     }
 

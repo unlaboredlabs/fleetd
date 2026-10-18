@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status · fleetd docs</title>
+<meta name="description" content="How far along an order, a project or the fleet is, when it will be done, and what it waits on, never stale.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+<li><a href="/docs/status" aria-current="page">Status</a></li>
+<li><a href="/docs/time-inspector">Where time went</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Using fleetd</p>
+<h1>Status</h1>
+<p>Status answers "how far along is this, and when will it be done?" for one order, one project or the whole fleet: a
+progress number fleetd verified itself, an ETA from measured speed, what the work waits on, what changed since you
+last looked, the fleet's health and the risks worth knowing. Every part says how fresh it is, and a part that isn't
+live says so.</p>
+<p>Open it in the <a href="/docs/desktop-app#status">desktop app</a> with ⌘. (Ctrl+. on Linux), or from a terminal on the hub machine:</p>
+<pre class="code console" data-copy><code><span class="c">$ fleetd status storefront</span>
+<span class="o">storefront  61%  polish 2/5    as of 14:02:07 (live)
+  11 of 18 required items verified
+  ↓ from 69% · +3 items: checkout redesign added (14:00)
+  Switching payments to the new provider, waiting on the full test run. Nothing needs you.   [generated]
+  eta Thu 14:00   planned Wed 18:00 (+6h scope, +14h slower)   4.1 pts/busy h, 18 samples
+  waiting on  P12 full test run (serial); CI on #212
+  since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items
+health  main CI acme/storefront green as of 14:01:50 · 2 of 2 machines online · claude 58% 5h 41% wk · 8 running, slots 8/40
+risks   check `e2e (safari)` failed on 2 PRs today
+doing   P12 full test run   T88   eta 14:40
+        P15 provider cutover   T90   review of #212   eta 15:10
+next    P14 switch the default provider (after P12), P16 docs page
+done    P9 webhook outbox   #208 merged by the train 13:12 · check 2 passed C7</span></code></pre>
+<p><code>fleetd status W41</code> shows one order and <code>fleetd status</code> the fleet. <code>--watch</code> keeps it on screen and prints each new
+version as the hub sends it; there is no refresh interval, so nothing changes unless something happened. Elsewhere,
+add <code>--hub &lt;url&gt; --key-file &lt;path&gt;</code>. See the <a href="/docs/cli#status">CLI reference</a> for every option.</p>
+<h2 id="what-the-number-means">What the number means<a class="anchor" href="#what-the-number-means" aria-label="Link to this section">#</a></h2>
+<p>The number is the share of <strong>required</strong> work that fleetd has verified, by size. An item counts only when fleetd
+checked it: its PRs were merged by the merge train (a PR merged by hand doesn't count) and the order's done-when checks
+it lists passed in the latest claim. A lead saying it's done moves nothing. The number reaches 100% only when every
+required item is verified.</p>
+<p>Items are <strong>must</strong> or <strong>polish</strong>. Polish shows beside the number ("polish 2/5") and never holds it back. Sizes are s,
+m and l, worth 1, 3 and 8 points, so a large item moves the number more than a small one.</p>
+<p>An order without a plan counts as one must item sized by its tier, done when the order is. It enters the figure with a
+marker ("+1 item: W41 (no plan yet)") and leaves it once it gets a plan, is stopped, or a day after it finishes. The
+view lists it as a risk after half an hour ("W41 has no plan"), since its number can only jump from 0 to 100.</p>
+<h2 id="plans-and-markers">Plans and markers<a class="anchor" href="#plans-and-markers" aria-label="Link to this section">#</a></h2>
+<p>A project's plan is milestones of items. The project lead keeps it with <code>fleetd plan</code> and links work to items with
+<code>--item P12</code> when it spawns a task or enqueues a PR; you can run the same commands in the project's folder. A project's
+number covers its open milestones; a finished milestone leaves it with a marker ("M1 native runner done (12 items)").</p>
+<p>Scope can change, but never silently. For the first 10 minutes of a milestone the lead is still planning and items
+come and go freely. After that, adding, dropping or resizing an item needs a reason (<code>--why</code>), and the view shows it
+next to the number:</p>
+<pre class="code text"><code>72%  ↓ from 80% · +3 items: time inspector added (14:00)</code></pre>
+<p>Items the hub closes itself get a marker too: open items of an order that finished without linking them ("−2 items:
+closed with W41, not separately verified"), or of an order that was stopped.</p>
+<h2 id="how-the-eta-is-measured">How the ETA is measured<a class="anchor" href="#how-the-eta-is-measured" aria-label="Link to this section">#</a></h2>
+<p>The ETA comes from how fast fleetd actually verified work over the last 7 days, never from the lead's guess:</p>
+<ul>
+<li><strong>Speed</strong> is points verified per busy hour. Busy time is when orders were running, so a quiet weekend doesn't make
+the fleet look slow, and CI, reviews and waiting on you are all inside it.</li>
+<li><strong>Samples:</strong> an ETA needs 5 verified items. An order with fewer borrows its project's speed, shared among the
+project's running orders, then the fleet's. Below 5 anywhere, the view says "measuring: 2 of 5 verified" instead of
+guessing.</li>
+<li><strong>Serial work:</strong> when items must happen one after another (<code>--after</code>), the ETA is at least the length of that chain,
+and the view names the item that sets it.</li>
+<li><strong>Planned vs current:</strong> an order or milestone keeps its first ETA as "planned". When the current ETA is later, the
+difference is split into what scope added and what slower speed cost: "planned Wed 18:00 (+6h scope, +14h slower)".</li>
+<li>When the lead's own estimate is far from the measured one, both show, and the measured one wins.</li>
+</ul>
+<p>"Waiting on" names up to three things the work is blocked by right now, serial ones first: an item others wait on,
+CI on a PR, the merge train, your answer to an ask, a free slot, or a machine that's offline.</p>
+<h2 id="since-you-last-looked">Since you last looked<a class="anchor" href="#since-you-last-looked" aria-label="Link to this section">#</a></h2>
+<p>"Since you last looked" counts what happened in this scope since then: merged PRs, verified items, started orders,
+failures, new asks and scope changes. The app moves your mark when you leave the view after reading it for a few
+seconds. <code>fleetd status</code> keeps its own mark on each machine ("since you last looked here"), moved each time it prints
+or when <code>--watch</code> ends; the two never move each other. Marks older than the hub's 30 days of events read "more than 30
+days ago".</p>
+<h2 id="stale-data">Stale data<a class="anchor" href="#stale-data" aria-label="Link to this section">#</a></h2>
+<p>Status never shows old data as live. Each part depends on a source, and the hub flags a source stale when it goes
+quiet for longer than its normal rhythm:</p>
+<div class="table"><table><thead><tr><th>source</th><th>normally</th><th>stale after</th><th>the view says</th></tr></thead><tbody>
+<tr><td>a machine</td><td>a heartbeat every 15 s</td><td>45 s of silence, until it's back</td><td>"no heartbeat from devbox for 4m"; after it wakes, "devbox slept 10m46s"</td></tr>
+<tr><td>Claude usage</td><td>each Claude reply</td><td>its reset time passes, or its machine is stale</td><td>"5h reading from 13:10, before the 14:00 reset"</td></tr>
+<tr><td>GitHub</td><td>every train pass (15 s) and main CI (60 s)</td><td>180 s without a good answer</td><td>"GitHub not reached for 4m: …"</td></tr>
+<tr><td>main CI</td><td>read every 60 s</td><td>its period plus 180 s unread</td><td>"main CI of acme/storefront unread since 14:05"</td></tr>
+<tr><td>a merge train</td><td>every 15 s</td><td>120 s</td><td>"the acme/storefront train hasn't run for 3m"</td></tr>
+</tbody></table></div>
+<p>A stale part keeps its last value with the time it's from and a warning, and the generated headline starts with "Not
+live: …" naming what's missing. In the terminal, the first line says "NOT LIVE: 1 stale source" and a <code>stale</code> line
+gives each one's reason. Just after the hub restarts, every source reads "not checked since the hub started" until it
+reports in, which takes seconds.</p>
+<p>If the app or <code>fleetd status --watch</code> loses the hub, the view greys out with "Not live: reconnecting · data from
+14:02:07" and fetches a fresh copy when it's back.</p>
+<h2 id="github-sync">GitHub sync<a class="anchor" href="#github-sync" aria-label="Link to this section">#</a></h2>
+<p>The hub keeps track of PRs and CI on its own: each merge train asks GitHub about its open PRs every 15 s and about the
+main branch's CI every minute. Requests for things that didn't change are free under GitHub's rate limit, so this
+stays far below it even with many open PRs.</p>
+<p>You can also let GitHub tell the hub about changes the moment they happen. It needs a public URL that GitHub can reach
+and that forwards to the hub; fleetd never creates one, so bring your own (a reverse proxy, or a tunnel you already
+use). Then, on the hub machine:</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd hub github-webhook --url https://hooks.example.com/github</span></code></pre>
+<p>That adds a webhook to every repo the train merges into. Turn it off with <code>fleetd hub github-webhook --off</code>. With
+webhooks on, the hub checks main CI every 5 minutes instead of every minute; if it notices a change that no webhook
+announced, it goes back to every minute for half an hour and lists it under risks. A webhook only makes the hub look
+sooner: a lost or forged delivery can't change what it records.</p>
+<h2 id="the-headline">The headline<a class="anchor" href="#the-headline" aria-label="Link to this section">#</a></h2>
+<p>The sentence under the number is written by Claude (haiku, through your <code>claude</code> login on the hub, no tools) from a
+short list of facts fleetd computed: the number, what's in progress, what it waits on, the ETA and the top risks. Every
+number in it must appear in those facts, or it's thrown away. It's rewritten only for views someone has open, at most
+once a minute per view and 300 times a day.</p>
+<p>When the facts change and the new sentence isn't written yet, or Claude can't be reached, the view shows a plain
+template instead and labels it <code>template</code> with the reason. A generated sentence is never shown for facts it wasn't
+written from. Change how it's written with <code>fleetd prompts edit status.headline</code> (see
+<a href="/docs/what-agents-are-told">What agents are told</a>).</p>
+<h2 id="notification">Notification<a class="anchor" href="#notification" aria-label="Link to this section">#</a></h2>
+<p>The app can post one desktop notification at 09:00 and 18:00 with the fleet's number, its headline and what happened
+since the previous one. Turn it on in Settings → Notifications; it's off by default and respects quiet hours.
+Clicking it opens Status.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/desktop-app"><span>Previous</span>The desktop app</a>
+<a class="next" href="/docs/time-inspector"><span>Next</span>Where time went</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/status.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#what-the-number-means">What the number means</a></li>
+<li><a href="#plans-and-markers">Plans and markers</a></li>
+<li><a href="#how-the-eta-is-measured">How the ETA is measured</a></li>
+<li><a href="#since-you-last-looked">Since you last looked</a></li>
+<li><a href="#stale-data">Stale data</a></li>
+<li><a href="#github-sync">GitHub sync</a></li>
+<li><a href="#the-headline">The headline</a></li>
+<li><a href="#notification">Notification</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

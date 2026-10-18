@@ -14,6 +14,7 @@ pub mod project;
 pub mod prompts;
 pub mod retro;
 pub mod setup;
+pub mod status;
 pub mod time;
 pub mod update;
 
@@ -64,7 +65,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -75,11 +76,13 @@ lead-side commands (run by a lead or task inside a project workspace):
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
         hub_key::HUB_TOKEN_USAGE,
+        status::GITHUB_WEBHOOK_USAGE,
         node::NODE_USAGE,
         listen::LISTEN_USAGE,
         retro::RETRO_USAGE,
         prompts::PROMPTS_USAGE,
         time::TIME_USAGE,
+        status::STATUS_USAGE,
         lead::LEAD_USAGE
     )
 }
@@ -107,11 +110,13 @@ pub fn help_for(argv: &[String]) -> Option<String> {
             Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
             Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
             Some("token") => hub_key::HUB_TOKEN_USAGE.to_owned(),
+            Some("github-webhook") => status::GITHUB_WEBHOOK_USAGE.to_owned(),
             _ => format!(
-                "{}{}{}",
+                "{}{}{}{}",
                 node::HUB_START_USAGE,
                 hub_key::HUB_KEY_USAGE,
-                hub_key::HUB_TOKEN_USAGE
+                hub_key::HUB_TOKEN_USAGE,
+                status::GITHUB_WEBHOOK_USAGE
             ),
         },
         "node" => node::NODE_USAGE.to_owned(),
@@ -120,6 +125,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
         "time" => time::TIME_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
+        "status" if !lead::is_lead_command(argv) => status::STATUS_USAGE.to_owned(),
         _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
         _ => return None,
     };
@@ -166,24 +172,18 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
-/// Commands that keep running (`node …`, `listen`) or wait on other processes (setup, `retro run`, `update`).
+/// Commands that keep running (`node …`, `listen`, `status --watch`) or wait on other processes or the hub (setup,
+/// `retro run`, `update`, `status`, `hub github-webhook`). `status set` is a lead call.
 fn is_long_running(argv: &[String]) -> bool {
-    matches!(
-        argv.first().map(String::as_str),
+    match argv.first().map(String::as_str) {
         Some(
-            "init"
-                | "doctor"
-                | "uninstall"
-                | "machine"
-                | "project"
-                | "projects"
-                | "node"
-                | "listen"
-                | "retro"
-                | "time"
-                | "update"
-        )
-    )
+            "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node"
+            | "listen" | "retro" | "time" | "update",
+        ) => true,
+        Some("status") => !lead::is_lead_command(argv),
+        Some("hub") => argv.get(1).map(String::as_str) == Some("github-webhook"),
+        _ => false,
+    }
 }
 
 async fn run_long_running(argv: &[String]) -> u8 {
@@ -196,6 +196,8 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "listen" => listen::listen_command(rest).await,
         "retro" => retro::retro_command(rest).await,
         "time" => time::time_command(rest).await,
+        "status" => status::status_command(rest).await,
+        "hub" => status::github_webhook_command(&rest[1..]).await,
         _ => update_command(rest).await,
     }
 }

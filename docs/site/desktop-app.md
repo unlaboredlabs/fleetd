@@ -2,7 +2,7 @@
 title: The desktop app
 section: Using fleetd
 order: 70
-description: Pair the app with your hub, give the fleet work from the board, follow an order, answer the inbox, and the shortcuts.
+description: Pair the app with your hub, give the fleet work from the board, follow an order, see its status, answer the inbox, and the shortcuts.
 ---
 
 The app is where you give work, follow it, answer asks, approve commands and enter secrets. Install it with
@@ -61,10 +61,23 @@ The box under the conversation talks to the lead:
 |---|---|---|
 | Add a note | Enter | reads it at its next wake |
 | Steer | ⌘Enter, or "Steer now" | is woken now |
-| Stop | "Stop W…" (⌘.), then confirm | its running agents are cancelled and its asks withdrawn; merged PRs stay |
+| Stop | "Stop W…" (⌘⇧.), then confirm | its running agents are cancelled and its asks withdrawn; merged PRs stay |
 | Reorder | "Reorder" on a stopped order | nothing yet: its text goes back into the composer, to send as a new order |
 
 A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order, Esc back to the board.
+
+## Status {#status}
+
+⌘. opens Status for what you're looking at: the open order, the selected project, or the whole fleet; ⌘. again goes
+back. It's also in the sidebar above Board, in the palette ("Status", "Status for W41") and on an order's header. It
+shows the progress fleetd verified, the ETA from measured speed, what the work waits on, what changed since you last
+looked, then health, what needs you, risks, and the items in progress, next and done. What needs you has the inbox's
+one-tap answers.
+
+It updates as things happen, without a refresh. A part whose source has gone quiet gets a warning outline with
+"stale 4m" and the reason, and keeps its last value. While the app is reconnecting the whole view greys out with
+"Not live: reconnecting", and after it reconnects it shows empty bars until the fresh numbers arrive. What the number
+means and how the ETA is measured: [Status](status.md).
 
 ## Inbox and replies {#reply}
 
@@ -121,7 +134,8 @@ order, machine and role, and compares two periods. How to read it, and what is n
 | ⌘1 to ⌘9 | Open the nth order in the sidebar |
 | ⌘⇧G | Group the board by project or by status |
 | ⌘[ / ⌘] | Previous / next order |
-| ⌘. | Stop the open order (asks to confirm) |
+| ⌘. | Status for the open order, the selected project or the fleet |
+| ⌘⇧. | Stop the open order (asks to confirm) |
 | ⌘, | Settings |
 | ⌘B | Toggle the sidebar |
 | Enter | Send an order; in an order, add a note |
