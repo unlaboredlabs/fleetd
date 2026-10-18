@@ -326,11 +326,12 @@ fn wrap(line: &str, width: usize, bar: &str) -> String {
     let mut used = 0;
     for word in line.split(' ') {
         let w = measure(word);
-        if used > 0 && used + 1 + w > width {
+        // Never break right after the leading mark or bar: a long word then just runs long.
+        if used > indent && used + 1 + w > width {
             out.push('\n');
             out.push_str(bar);
             used = indent;
-        } else if used > 0 {
+        } else if !out.is_empty() {
             out.push(' ');
             used += 1;
         }
@@ -368,6 +369,10 @@ mod tests {
                 "│  "
             ),
             "│  open:\n│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X"
+        );
+        assert_eq!(
+            wrap("│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X", 30, "│  "),
+            "│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X"
         );
     }
 
