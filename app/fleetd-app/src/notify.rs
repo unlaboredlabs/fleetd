@@ -24,6 +24,8 @@ pub enum Target {
     Ask(String),
     Inbox,
     Machines,
+    /// The fleet's Status view (the digest).
+    Status,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -46,7 +48,7 @@ impl Policy {
         Policy { coalesce_ms: FALLBACK_COALESCE_MS, quiet: Vec::new() }
     }
 
-    fn quiet_at(&self, now: i64) -> bool {
+    pub fn quiet_at(&self, now: i64) -> bool {
         self.quiet.iter().any(|&(from, to)| now >= from && now < to)
     }
 

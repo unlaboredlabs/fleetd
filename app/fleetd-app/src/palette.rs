@@ -47,6 +47,8 @@ pub enum Command {
     ToggleGroup,
     /// The time inspector: an order's timeline, or the fleet's breakdown.
     Time(Option<String>),
+    /// The Status view: the fleet's, or an order's.
+    Status(Option<String>),
     Settings,
     /// Back to the connect screen, to pair with another hub.
     Connect,
@@ -123,12 +125,20 @@ pub fn items(state: &State) -> Vec<Item> {
         item(Group::Action, "Add project…", "Clone a GitHub repo or add a folder on one of your machines", None, Command::AddProject),
         item(Group::Action, "Machines", "Machines and setup checks", None, Command::Machines),
         item(Group::Action, "Time", "Where the fleet's agent time went", None, Command::Time(None)),
+        item(Group::Action, "Status", "How far the fleet is, verified, and what is in its way", Some(ui::shortcut(".")), Command::Status(None)),
         item(Group::Action, "Settings", "Appearance, motion and hub connection", Some(ui::shortcut(",")), Command::Settings),
         item(Group::Action, "Connect to a hub…", "Pair this app with a fleetd hub", None, Command::Connect),
     ]);
     if let Some(order) = &state.order {
         let w = order.workstream_id.clone();
-        out.push(item(Group::Action, format!("Time for {w}"), "Its timeline: what each agent did and waited on", None, Command::Time(Some(w))));
+        out.push(item(
+            Group::Action,
+            format!("Time for {w}"),
+            "Its timeline: what each agent did and waited on",
+            None,
+            Command::Time(Some(w.clone())),
+        ));
+        out.push(item(Group::Action, format!("Status for {w}"), "Its verified progress, ETA and what it waits on", None, Command::Status(Some(w))));
     }
     for row in &state.projects {
         let key = row.key();

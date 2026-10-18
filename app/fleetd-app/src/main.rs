@@ -31,6 +31,7 @@ mod settings;
 mod shell;
 mod sidebar;
 mod state;
+mod status;
 mod theme;
 mod time;
 mod titlebar;

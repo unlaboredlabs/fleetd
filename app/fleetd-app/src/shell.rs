@@ -62,6 +62,8 @@ pub enum Screen {
     Machines,
     /// The time inspector: an order's timeline, or where the fleet's time went.
     Time,
+    /// How far the fleet, a project or an order is, and what is in its way (⌘.).
+    Status,
     Settings,
 }
 
@@ -197,6 +199,7 @@ pub struct Shell {
     cmd_held: bool,
     window_active: bool,
     pub(crate) add: crate::project_add::open::AddUi,
+    pub(crate) status_ui: crate::status::Ui,
 }
 
 impl Shell {
@@ -249,6 +252,7 @@ impl Shell {
                             this.send(out);
                         }
                     }
+                    SettingsEvent::Digest(on) => this.state.status.digest_on = *on,
                 }
                 cx.notify();
             }),
@@ -310,9 +314,11 @@ impl Shell {
             cmd_held: false,
             window_active: true,
             add: Default::default(),
+            status_ui: crate::status::Ui::default(),
         };
         cx.observe_window_activation(window, |this, window, cx| {
             this.window_active = window.is_window_active();
+            this.status_seen_tick();
             this.update_live(true, cx);
         })
         .detach();
@@ -342,6 +348,7 @@ impl Shell {
                     .update(cx, |this, cx| {
                         match this.notified.take() {
                             Some(Target::Machines) => this.go(Screen::Machines),
+                            Some(Target::Status) => this.open_status(fleetd_contracts::status::StatusScope::Fleet, cx),
                             Some(Target::Ask(id)) => {
                                 this.toggle_inbox(true, cx);
                                 this.focus_ask = Some(id);
@@ -357,6 +364,16 @@ impl Shell {
 
     /// Posts the notification the hub's attention rules and policy allow now, if any.
     fn notify_if_due(&mut self, cx: &mut App) {
+        if let Some(n) = self.state.status.digest.take() {
+            self.notified = Some(n.target);
+            // Its own tag, so it doesn't replace a "needs you" one still on screen.
+            cx.show_system_notification(SystemNotification {
+                tag: "fleetd-digest".into(),
+                title: n.title.into(),
+                body: n.body.into(),
+                actions: Vec::new(),
+            });
+        }
         let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
         if let Some(n) = self.state.take_notification(now_ms) {
             self.notified = Some(n.target);
@@ -446,9 +463,14 @@ impl Shell {
             loop {
                 cx.background_executor().timer(POLL_EVERY).await;
                 let ok = this.update(cx, |this, cx| {
+                    let before = this.state.status.phase();
                     let out = this.state.poll(now_ms());
                     this.send(out);
                     this.notify_if_due(cx);
+                    // A lost status wait just turned the view not live: redraw now, not at the next input.
+                    if this.state.status.phase() != before {
+                        cx.notify();
+                    }
                 });
                 if ok.is_err() {
                     return;
@@ -461,7 +483,8 @@ impl Shell {
         add.lost |= add.active();
         self.state = State::default();
         self.state.add = add;
-        self.screen = Screen::Board;
+        self.state.status.digest_on = crate::prefs::load().digest;
+        self.set_screen(Screen::Board);
         self.selected = 0;
         self.pending_focus = Some(self.docked.focus_handle(cx));
     }
@@ -470,7 +493,7 @@ impl Shell {
     /// [`Self::listen_for_links`]), the `app-pair.json` that `fleetd init` leaves on the hub machine, and a hub
     /// answering on this computer.
     fn first_run(&mut self, cx: &mut Context<Self>) {
-        self.screen = Screen::Connect;
+        self.set_screen(Screen::Connect);
         self.pending_focus = Some(self.form.code.focus_handle(cx));
         cx.spawn(async move |this, cx| {
             let file = pair::app_pair_file();
@@ -557,7 +580,7 @@ impl Shell {
         self.form.error = None;
         self.form.status = Some(format!("Pairing with {hub}…"));
         if self.hub.is_none() {
-            self.screen = Screen::Connect;
+            self.set_screen(Screen::Connect);
         }
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -638,7 +661,7 @@ impl Shell {
         self.hub = None;
         self.secrets.clear();
         self.state = State::default();
-        self.screen = Screen::Connect;
+        self.set_screen(Screen::Connect);
         self.note = None;
         self.form.status = None;
         self.pending_focus = Some(self.form.code.focus_handle(cx));
@@ -671,7 +694,7 @@ impl Shell {
             });
             self.hub = None;
             self.secrets.clear();
-            self.screen = Screen::Connect;
+            self.set_screen(Screen::Connect);
             self.pending_focus = Some(self.form.code.focus_handle(cx));
         }
         // An ask answered or withdrawn elsewhere drops (and wipes) what was typed for it; a new one gets a field.
@@ -834,13 +857,22 @@ impl Shell {
 
     /// Subscribes to what's on screen: the board's lanes while it shows, the open order's in focus; nothing while
     /// the window is in the background. `force` after the window comes back, for a fresh full frame.
-    fn update_live(&mut self, force: bool, cx: &mut Context<Self>) {
+    pub(crate) fn update_live(&mut self, force: bool, cx: &mut Context<Self>) {
         if self.bench.is_some() {
             return;
         }
         let active = self.window_active;
-        let board = active && self.screen == Screen::Board;
-        let focus = if active && self.screen == Screen::Order { self.state.order.as_ref().map(|o| o.workstream_id.clone()) } else { None };
+        // Status joins its in-progress rows to the lanes: the board's for the fleet or a project, the order's for one.
+        let status_order = match (&self.screen, &self.state.status.scope) {
+            (Screen::Status, Some(fleetd_contracts::status::StatusScope::Order { workstream_id })) => Some(workstream_id.to_string()),
+            _ => None,
+        };
+        let board = active && (self.screen == Screen::Board || (self.screen == Screen::Status && status_order.is_none()));
+        let focus = match self.screen {
+            Screen::Order if active => self.state.order.as_ref().map(|o| o.workstream_id.clone()),
+            Screen::Status if active => status_order,
+            _ => None,
+        };
         let out = self.state.subscribe_live(board, focus.as_deref(), force && active);
         self.send(out);
         cx.notify();
@@ -877,8 +909,32 @@ impl Shell {
                 self.send(out);
             }
         }
-        self.screen = screen;
+        self.set_screen(screen);
         self.selected = 0;
+    }
+
+    pub(crate) fn window_is_active(&self) -> bool {
+        self.window_active
+    }
+
+    /// ⌘.: the Status view at the scope on screen (the open order, the picked project, else the fleet); again, back
+    /// to where it was opened from.
+    fn toggle_status(&mut self, cx: &mut Context<Self>) {
+        if self.screen == Screen::Status {
+            let back = self.status_ui.before.take().filter(|s| *s != Screen::Status).unwrap_or(Screen::Board);
+            match (back, self.state.order.as_ref().map(|o| o.workstream_id.clone())) {
+                (Screen::Order, Some(w)) => self.open_order(&w, cx),
+                _ => self.go(back),
+            }
+            self.focus_composer(cx);
+            return cx.notify();
+        }
+        let scope = match (self.screen, &self.state.order, &self.selected_project) {
+            (Screen::Order, Some(o), _) => crate::status::order_scope(&o.workstream_id),
+            (Screen::Board, _, Some((m, p))) => crate::status::project_scope(m, p),
+            _ => fleetd_contracts::status::StatusScope::Fleet,
+        };
+        self.open_status(scope, cx);
     }
 
     /// The time inspector on an order (its timeline) or, with none, on what the filters pick.
@@ -970,7 +1026,7 @@ impl Shell {
             self.selected_project = Some(key);
         }
         self.selected_card = Some(workstream_id.to_string());
-        self.screen = Screen::Order;
+        self.set_screen(Screen::Order);
         self.pending_focus = Some(self.follow.focus_handle(cx));
         self.after_state_change(cx);
         cx.notify();
@@ -1225,6 +1281,7 @@ impl Shell {
             }
             sidebar::Pick::Machines => self.go(Screen::Machines),
             sidebar::Pick::Time => self.open_time(None, cx),
+            sidebar::Pick::Status => self.open_status(fleetd_contracts::status::StatusScope::Fleet, cx),
             sidebar::Pick::Settings => self.go(Screen::Settings),
             sidebar::Pick::Project(key) => {
                 self.selected_project = if self.selected_project.as_ref() == Some(&key) && self.screen == Screen::Board { None } else { Some(key) };
@@ -1252,6 +1309,10 @@ impl Shell {
             Command::Inbox => self.toggle_inbox(true, cx),
             Command::Machines => self.go(Screen::Machines),
             Command::Time(order) => self.open_time(order, cx),
+            Command::Status(order) => {
+                let scope = order.map_or(fleetd_contracts::status::StatusScope::Fleet, |w| crate::status::order_scope(&w));
+                self.open_status(scope, cx);
+            }
             Command::Settings => self.go(Screen::Settings),
             Command::Project(key) => self.pick(sidebar::Pick::Project(key), window, cx),
             Command::Order(w) => self.open_order(&w, cx),
@@ -1300,7 +1361,7 @@ impl Shell {
     }
 
     pub(crate) fn close_settings(&mut self, cx: &mut Context<Self>) {
-        self.screen = self.before_settings;
+        self.set_screen(self.before_settings);
         self.prompts_ui.picker = None;
         self.focus_composer(cx);
         cx.notify();
@@ -1335,6 +1396,7 @@ impl Shell {
             },
             Screen::Machines => sidebar::Active::Machines,
             Screen::Time => sidebar::Active::Time,
+            Screen::Status => sidebar::Active::Status,
             Screen::Settings => sidebar::Active::Settings,
             Screen::Order => self.state.order.as_ref().map_or(sidebar::Active::None, |o| sidebar::Active::Order(o.workstream_id.clone())),
             Screen::Loading | Screen::Connect => sidebar::Active::None,
@@ -1426,6 +1488,7 @@ impl Render for Shell {
             Screen::Order => self.order_screen(window, cx),
             Screen::Machines => self.machines_screen(cx),
             Screen::Time => self.time.clone().into_any_element(),
+            Screen::Status => self.status_screen(cx),
             Screen::Settings => {
                 let hub = settings::Hub {
                     url: self.hub.as_ref().map(|h| h.url.clone().into()),
@@ -1511,6 +1574,7 @@ impl Render for Shell {
                         this.group_by_status = !this.group_by_status;
                         cx.notify();
                     }))
+                    .on_action(cx.listener(|this, _: &actions::ToggleStatus, _, cx| this.toggle_status(cx)))
                     .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
                         this.sidebar_hidden = !this.sidebar_hidden;
                         cx.notify();
@@ -1952,9 +2016,25 @@ impl Shell {
         let screen = std::env::var("FLEETD_SCREEN").unwrap_or_default();
         let (base, extra) = screen.split_once('+').unwrap_or((screen.as_str(), ""));
         match base {
-            "board" => self.screen = Screen::Board,
+            "board" => self.set_screen(Screen::Board),
             "machines" => self.go(Screen::Machines),
             "settings" => self.go(Screen::Settings),
+            // status, status-project, status-order; +stale, +skeleton (no answer yet), +offline (the link dropped), +lists
+            // (scrolled to the lists at the end).
+            "status" | "status-project" | "status-order" => {
+                let scope = match base {
+                    "status-project" => crate::status::project_scope("devbox", "storefront"),
+                    "status-order" => crate::status::order_scope(fake::FIXTURE_ORDER),
+                    _ => fleetd_contracts::status::StatusScope::Fleet,
+                };
+                self.open_status(scope, cx);
+                if extra == "lists" {
+                    self.status_ui.scroll.scroll_to_bottom();
+                }
+                if extra == "offline" {
+                    self.state.apply(crate::client::Incoming::Disconnected { reason: "connection reset".into(), retry_in: Duration::from_secs(4) });
+                }
+            }
             "prompts" | "instructions" => self.bench_prompts(base, extra, cx),
             "time" | "time-breakdown" | "time-insights" | "fleet-time" | "fleet-insights" => {
                 let order = base.starts_with("time").then(|| crate::time::fixture::ORDER.to_string());

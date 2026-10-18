@@ -20,6 +20,7 @@ actions!(
         PreviousOrder,
         NextOrder,
         StopOrder,
+        ToggleStatus,
         ToggleCommandPalette,
         ToggleSidebar,
         ToggleFullScreen,
@@ -50,7 +51,9 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-shift-g", ToggleGrouping, None),
         KeyBinding::new("secondary-[", PreviousOrder, None),
         KeyBinding::new("secondary-]", NextOrder, None),
-        KeyBinding::new("secondary-.", StopOrder, None),
+        // ⌘. is Status; stopping an order takes the extra Shift (spec §10).
+        KeyBinding::new("secondary-.", ToggleStatus, None),
+        KeyBinding::new("secondary-shift-.", StopOrder, None),
         KeyBinding::new("secondary-k", ToggleCommandPalette, None),
         KeyBinding::new("secondary-b", ToggleSidebar, None),
         KeyBinding::new("secondary-q", Quit, None),

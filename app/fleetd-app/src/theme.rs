@@ -17,7 +17,7 @@ use std::borrow::Cow;
 use gpui::{App, BoxShadow, FontWeight, Global, Hsla, SharedString, Window, WindowAppearance, point, px, rgb, rgba};
 use serde::{Deserialize, Serialize};
 
-/// Type scale (px). Five steps; most text is `MD`, titles are `MD` semibold (hierarchy from weight, not size),
+/// Type scale (px). Six steps; most text is `MD`, titles are `MD` semibold (hierarchy from weight, not size),
 /// metadata is `XS`, machine text is `SM` in mono.
 pub mod size {
     /// Metadata: counts, timestamps, machine chips, field labels.
@@ -30,6 +30,8 @@ pub mod size {
     pub const LG: f32 = 18.;
     /// The one headline on the connect screen and empty states.
     pub const XL: f32 = 20.;
+    /// The Status view's progress number.
+    pub const DISPLAY: f32 = 28.;
 }
 
 /// Weights: two only. Regular for everything, semibold for titles and for what needs you.

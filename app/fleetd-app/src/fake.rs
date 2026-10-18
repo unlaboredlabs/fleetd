@@ -275,6 +275,27 @@ pub fn time_store(state: &mut State) {
     crate::time::fixture::answer_store(state);
 }
 
+/// The Status view's `status_get`, answered from `status::fixture` at once. `status_wait` is left open, as a hub
+/// with nothing new would; `FLEETD_SCREEN=…+skeleton` leaves `status_get` open too, and `…+stale` answers with two
+/// sources gone quiet.
+pub fn status_answer(state: &mut State, out: Vec<AppClientMessage>) {
+    use crate::status::fixture::{Variant, doc};
+    let screen = std::env::var("FLEETD_SCREEN").unwrap_or_default();
+    if screen.contains("skeleton") {
+        return;
+    }
+    let variant = if screen.contains("stale") { Variant::Stale } else { Variant::Live };
+    for message in out {
+        if let AppClientMessage::Call { id, tool, input } = message
+            && tool.as_str() == "status_get"
+        {
+            let scope = from(input["scope"].clone());
+            let output = json!({ "doc": doc(&scope, variant) });
+            state.apply(crate::client::Incoming::Message(AppServerMessage::Result { id, output }));
+        }
+    }
+}
+
 fn from<T: serde::de::DeserializeOwned>(v: Value) -> T {
     serde_json::from_value(v).expect("fixture matches the contracts")
 }
@@ -503,6 +524,7 @@ const WAKE_INTENT: &str = include_str!("../fixtures/prompts/wake.intent.md");
 const WAKE_TASK_RESULT: &str = include_str!("../fixtures/prompts/wake.task_result.md");
 const NUDGE: &str = include_str!("../fixtures/prompts/watchdog.nudge.md");
 const ROUTER: &str = include_str!("../fixtures/prompts/router.md");
+const STATUS_HEADLINE: &str = include_str!("../fixtures/prompts/status.headline.md");
 const BUGFIX: &str = "Bugfix. First a repro: a test or cmd check that fails on main today, in the brief's doneWhen. The fix is done when \
 it passes. One writer per area, a worktree per task. Review by tier: S none, M one reviewer, L plan first. Every PR carries Source: \
 done:<n>. Never merge; the train does. Fix this bug only: no refactors, no polish loops. When the repro passes, claim done. Idle is success.";
@@ -665,6 +687,22 @@ impl PromptHub {
                 default: ROUTER.to_string(),
                 placeholders: vec![("projects", true, "Every project, one per line."), ("intent", true, "The order's text.")],
                 rules: vec![("json-only", "Answer JSON only", "json", Prompt)],
+                global: None,
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: "status.headline",
+                title: "Status headline",
+                kind: PromptKind::Oneshot,
+                group: PromptGroup::OneShots,
+                sent_when: "when a viewed status scope's facts change",
+                per_project: false,
+                default: STATUS_HEADLINE.to_string(),
+                placeholders: vec![("facts", true, "The fact list as JSON."), ("scope", true, "fleet, a project or an order")],
+                rules: vec![
+                    ("no-tools", "uses no tools", "do not use tools", Code),
+                    ("one-line", "replies with one line of at most 160 characters", "one line", Code),
+                ],
                 global: None,
                 projects: Vec::new(),
             },

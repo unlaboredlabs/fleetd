@@ -41,6 +41,7 @@ use fleetd_contracts::mcp::{
     PromptGetInput, PromptGetOutput, PromptResetInput, PromptResetOutput, PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput,
     SessionPromptGetInput, SessionPromptGetOutput,
 };
+use fleetd_contracts::mcp::{StatusGetInput, StatusGetOutput, StatusSeenInput, StatusSeenOutput, StatusWaitInput, StatusWaitOutput};
 
 /// A tool the app calls: its input type, wire name and output type.
 pub(crate) trait Tool: Serialize {
@@ -88,6 +89,9 @@ tools! {
     ProjectAddInput => ProjectAddOutput, "project_add";
     ProjectInspectInput => ProjectInspectOutput, "project_inspect";
     EventsWaitInput => EventsWaitOutput, "events_wait";
+    StatusGetInput => StatusGetOutput, "status_get";
+    StatusWaitInput => StatusWaitOutput, "status_wait";
+    StatusSeenInput => StatusSeenOutput, "status_seen";
 }
 
 /// (machineId, projectId)
@@ -134,6 +138,9 @@ pub(crate) enum Purpose {
     },
     /// Settings → Prompts and Instructions, and the "what this agent was told" sheet.
     Prompt(crate::prompts::Call),
+    /// The Status view, tagged with the view generation it was sent for, so an answer for a closed or re-aimed
+    /// view is dropped.
+    Status(crate::status::Call, u64),
     /// The time inspector, tagged with the query generation it was sent for, so a page for an older query is dropped.
     Time(TimeCall, u64),
     /// The Add project sheet: what's there to add, and the add itself.
@@ -180,6 +187,7 @@ impl Purpose {
                 | Purpose::AddProject
                 | Purpose::AddInspect
                 | Purpose::AddRecover
+                | Purpose::Status(crate::status::Call::Seen | crate::status::Call::Digest, _)
         )
     }
 }
@@ -415,6 +423,8 @@ pub struct State {
     /// The time inspector's last answers, for the query it has open.
     pub time: TimeState,
     pub add: crate::project_add::Feed,
+    /// The Status view's scope and its latest doc.
+    pub status: crate::status::StatusState,
     order_events: HashMap<String, VecDeque<HubEvent>>,
     /// The live subscription last sent on this connection, and whether this hub streams live frames at all.
     live_sub: Option<(bool, Option<String>)>,
@@ -459,6 +469,7 @@ impl Default for State {
             prompts: crate::prompts::Prompts::default(),
             time: TimeState::default(),
             add: crate::project_add::Feed::default(),
+            status: crate::status::StatusState::default(),
             order_events: HashMap::new(),
             live_sub: None,
             live_frames: false,
@@ -490,6 +501,7 @@ impl State {
                 if let Some(q) = self.time.query.take() {
                     out.extend(self.time_open(q));
                 }
+                out.extend(self.status_reconnected());
                 out
             }
             Incoming::Disconnected { reason, retry_in } => {
@@ -497,6 +509,7 @@ impl State {
                 self.add_disconnected();
                 // Lanes keep their last values, greyed; elapsed keeps ticking from startedAt.
                 self.live.mark_stale();
+                self.status.disconnected();
                 self.conn = Conn::Connecting { reason: Some(reason), retry_in: Some(retry_in) };
                 Vec::new()
             }
@@ -1024,6 +1037,7 @@ impl State {
             row.lead().is_some_and(|l| l.state == LeadState::Working) || row.lead_thread().is_some_and(|t| t.status == ThreadStatus::Running)
         });
         let mut out: Out = if busy && self.conn == Conn::Live { self.request_tail().into_iter().collect() } else { Vec::new() };
+        out.extend(self.status_check_deadline(now_ms));
         if self.policy.as_ref().is_some_and(|p| p.stale(now_ms)) {
             out.extend(self.request_policy());
         }
@@ -1235,6 +1249,9 @@ impl State {
         }
         self.add_saw(event.seq);
         out.extend(self.on_add_event(event));
+        if event.r#type == HubEventType::DigestReady {
+            out.extend(self.status_digest_ready());
+        }
         if event.r#type == HubEventType::DoctorChanged && self.doctor.is_some() {
             out.extend(self.request_doctor());
         }
@@ -1312,6 +1329,7 @@ impl State {
             Purpose::Prompt(call) => return self.on_prompt_result(call, output),
             Purpose::Time(call, g) => return self.on_time_result(*call, *g, output),
             Purpose::AddDiscover | Purpose::AddProject | Purpose::AddInspect | Purpose::AddRecover => return self.on_add_result(purpose, output),
+            Purpose::Status(call, generation) => return self.on_status_result(*call, *generation, output),
             Purpose::Asks => match parse::<AsksListOutput>(output) {
                 Ok(list) => {
                     self.asks_seen = self.asks_sent;
@@ -1513,6 +1531,7 @@ impl State {
             Purpose::Prompt(call) => self.on_prompt_error(call, text),
             Purpose::Time(call, g) => self.on_time_error(*call, *g, text),
             Purpose::AddDiscover | Purpose::AddProject | Purpose::AddInspect | Purpose::AddRecover => {}
+            Purpose::Status(call, generation) => self.on_status_error(*call, *generation, text),
             Purpose::Asks => self.asks_error = Some(text),
             Purpose::Project(key) => {
                 if let Some(row) = self.projects.iter_mut().find(|r| &r.key() == key) {

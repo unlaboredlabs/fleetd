@@ -64,6 +64,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
         ]),
         Menu::new("View").items([
+            MenuItem::action("Status", ToggleStatus),
             MenuItem::action("Board", GoToBoard),
             MenuItem::action("Inbox", ToggleInbox),
             MenuItem::action("Group by Project or Status", ToggleGrouping),
