@@ -1,0 +1,158 @@
+fleetd
+https://fleetd.sh
+
+You send one line. A lead runs Claude Code agents across your machines and asks
+you only about product, money and calls that can't be undone.
+
+An agent saying "done" doesn't merge anything. Every change goes through
+fleetd's merge train: reviewed, rebased onto main, merged only on green CI.
+
+Install
+  curl -fsSL https://fleetd.sh | sh
+  Linux x64, macOS arm64 and x64. Installs the fleetd CLI and the desktop app. MIT.
+
+Docs:   https://github.com/unlaboredlabs/fleetd/blob/main/docs/FIRST-USE.md
+GitHub: https://github.com/unlaboredlabs/fleetd
+
+
+FIG. 1  THE INBOX, BATCH B1
+The fleetd desktop app on a live hub. The lead filed three asks for the
+storefront project: two product, one money. Image: capture-inbox.png
+
+  Batch B1
+  1  product  builder-1/2df114b3-9289-47d1-b9c3-0819d478f33e
+     Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?
+     [go: Pay for machines, not seats] [no]
+  2  product  builder-1/2df114b3-9289-47d1-b9c3-0819d478f33e
+     Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?
+     [go: drop moment] [no]
+  3  money    builder-1/2df114b3-9289-47d1-b9c3-0819d478f33e  blocks: the Team plan launch
+     Free trial length for the Team plan?
+     [go: 7 days] [a: 7 days] [b: 14 days] [c: 30 days] [no]
+  > Reply to the inbox: 1 go 2 nvm 3 b
+
+  10  The reply grammar, printed in the header ("reply below: 1 go 2 nvm 3 b ·
+      recs fine"). "recs fine" takes every recommendation.
+  12  Ask 1, filed by the lead with `fleetd ask --class product`. builder-1 is
+      the machine it came from, then the project id.
+  14  A money ask says what it holds up: "blocks: the Team plan launch".
+  16  Each ask carries the lead's recommendation, "go: 7 days", and lettered options.
+  18  The whole reply is one line. "1 go 2 nvm 3 b": ship the headline, drop the
+      moment change, pick b, 14 days.
+
+Enter. Each answer becomes a decision.
+  > 1 go 2 nvm 3 b
+  Logged: 1 → Pay for machines, not seats (D1), 2 → dropped, 3 → 14 days (D2)
+The inbox is empty afterwards. In the app's words: "Nothing needs you. Leads
+decide everything that isn't a product, money, credential or irreversible call."
+
+
+FIG. 2  THE LEAD'S SIDE, AFTER THE REPLY
+Project storefront on builder-1. The lead's log: its fleetd ask commands, the
+hub's wake carrying D1 and D2, and the lead's answer. Image: capture-lead.png
+
+  20  The lead files an ask and keeps going:
+      "Next: carry on without waiting; the answer arrives in a later wake."
+  22  Your reply reaches the lead as a wake from the hub:
+      "A1 site.pricing.headline → Pay for machines, not seats (D1)"
+  24  The decision log: key, value, scope, who decided.
+      "D2 billing.team.trial = 14 days (project, human)"
+  26  The lead keeps your override: "14 days. This is not my 7-day
+      recommendation, but the human chose it, so it stands."
+
+The wake, verbatim:
+
+  ## Answers since your last wake
+  - A1 site.pricing.headline → Pay for machines, not seats (D1)
+  - A2 deps.moment: dropped by the human; do not pursue it
+  - A3 billing.team.trial → 14 days (D2)
+
+  ## Decisions (most relevant)
+  - D2 billing.team.trial = 14 days (project, human)
+  - D1 site.pricing.headline = Pay for machines, not seats (project, human)
+
+  ## Do not re-ask: keys already decided or asked
+  billing.team.trial, site.pricing.headline
+
+  ## Why you are woken
+  - The human settled 3 of your asks; see "Answers since your last wake" above.
+
+
+WHAT THE LEAD DOES WITHOUT ASKING YOU
+01  The lead decides everything that isn't a product, money, credential or irreversible call.
+02  The lead files the rest with `fleetd ask`, each with a class, a recommendation
+    and what it blocks, and carries on without waiting.
+03  The lead hands workstreams and tasks to Claude Code agents on your machines.
+04  The lead starts every wake from the hub's digest: answers, open workstreams,
+    tasks, open asks, decisions.
+05  The lead doesn't re-ask a key that's already decided.
+06  The lead keeps your answer when it overrides its own recommendation.
+07  The lead gets an incident, I1 misfiled_ask, when you drop an ask it could
+    have decided itself.
+
+What you get at 09:00 and 18:00 when that's all there is:
+  fleetd digest · Sun 18 Oct, 10:30
+  Nothing needs you · 0 running · 0 done
+
+
+"DONE" IS CHECKED BY FLEETD
+Merge-train events from a lab run against the public fleetd-testbed repo
+(https://github.com/unlaboredlabs/fleetd-testbed), 18 Oct 2026, UTC. The hub's
+own summaries (one log link shortened), with the commit status the train posts
+before each merge.
+
+00:37:45  change.refused       Refused https://github.com/unlaboredlabs/fleetd-testbed/pull/74: The PR body has no 'Source:' line.
+00:38:05  change.queued        X1 queued: unlaboredlabs/fleetd-testbed#76 (tier M, done:0)
+00:38:06  train.frozen         Train for unlaboredlabs/fleetd-testbed frozen: M7 lab: hold until every PR is ready
+00:38:09  change.queued        X2 queued: unlaboredlabs/fleetd-testbed#75 (tier M, done:1)
+00:38:19  review.verdict       T12 review verdict at 20176bd4f39d: 0 blocking, 0 non-blocking
+00:38:19  change.ready         X2 ready for the train: unlaboredlabs/fleetd-testbed#75
+00:38:43  train.resumed        Train for unlaboredlabs/fleetd-testbed resumed
+00:38:44  fleetd/train         X1: rebased onto main, CI green   [commit status on eebd0dc]
+00:38:47  pr.merged            X1 merged: unlaboredlabs/fleetd-testbed#76 as 5e0ee5175d55
+00:39:06  fleetd/train         X2: rebased onto main, CI green   [commit status on 8da5c41]
+00:39:10  pr.merged            X2 merged: unlaboredlabs/fleetd-testbed#75 as ccd768e89177
+00:39:29  change.ci_failed     X3 CI failed on 815688b43cdc: ci (failure) (log: …)
+00:39:30  change.needs_rebase  X4 needs a rebase: conflicts with origin/main in lab/20261018002620/alpha.md
+00:39:43  change.ready         X4 ready for the train: unlaboredlabs/fleetd-testbed#78
+00:39:59  fleetd/train         X4: rebased onto main, CI green   [commit status on f330188]
+00:40:03  pr.merged            X4 merged: unlaboredlabs/fleetd-testbed#78 as 7dbe340fb72a
+
+
+SETUP IS A HUB AND YOUR MACHINES
+After the install, `fleetd init` sets up the hub. `fleetd machine add` turns a
+machine you can reach over SSH into one that runs agents. Both outputs are real.
+
+The hub, on the machine you installed on:
+
+$ fleetd init --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service
+hub home ~/.fleetd/hub
+commit identity Demo <demo@users.noreply.github.com>
+not installing a service; run the hub yourself with:
+  fleetd hub start --home ~/.fleetd/hub --listen 127.0.0.1:4778
+next: fleetd hub key create --human --name <device> prints the key the desktop app connects to http://127.0.0.1:4778 with
+then: fleetd machine add <ssh-host> for each machine that runs agents
+[exit 0]
+
+A worker. --dry-run prints the plan and runs nothing; the shell command under
+each step is left out here:
+
+$ fleetd machine add builder-1 --dry-run
+dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state over SSH and leaves out what is already done:
+[probe] read the machine's state (read-only)
+[1/11] create fleetd's directories
+[2/11] install fleetd 0.0.0
+[3/11] install T3 0.1.1-nightly.20261017.3238 from npm
+[4/11] configure the fleetd Claude instance in T3's settings
+[5/11] create the fleetd instance's Claude login file (empty, 0600)
+[6/11] write the T3 service
+[7/11] write the node service
+[8/11] (re)start T3
+[9/11] wait for T3 to answer
+[10/11] enroll the node with a one-time token (sent on stdin)
+[11/11] (re)start the node
+[hub] wait until builder-1 is online
+[exit 0]
+
+
+fleetd · MIT

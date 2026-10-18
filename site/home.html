@@ -1,60 +1,335 @@
 <!doctype html>
+<!-- Type: IBM Plex Sans for every human sentence and Lilex for machine text, because they are the two faces the fleetd app itself renders in, so the page and the captured app read as one document. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>fleetd: an open-source software factory</title>
-<meta name="description" content="fleetd runs coding agents across your own machines: one lead per project, tasks, checks and a merge train, and a native app that asks you only when it matters.">
+<title>fleetd: one line in, a fleet of Claude Code agents out</title>
+<meta name="description" content="You send one line. A lead runs Claude Code agents across your machines and asks you only about product, money and calls that can't be undone.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="alternate" type="text/plain" href="/index.txt" title="fleetd.sh as plain text">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  :root { color-scheme: dark; --bg: #1b1c1f; --panel: #222327; --border: #33353a; --text: #d6d7da; --muted: #7d8089; --accent: #6ea8fe; }
-  * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
-    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { width: min(640px, 100% - 48px); padding: 48px 0; }
-  header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
-  header img { width: 52px; height: 52px; }
-  h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
-  p { margin: 0 0 12px; }
-  .muted { color: var(--muted); }
-  .install { margin: 32px 0 16px; display: flex; align-items: center; gap: 8px; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 10px; padding: 12px 12px 12px 16px; }
-  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; }
-  .install code { flex: 1; font-size: 15px; line-height: 1.4; white-space: nowrap; overflow-x: auto; }
-  .install code::before { content: "$ "; color: var(--muted); }
-  button { font: inherit; font-size: 14px; color: var(--text); background: #2f3238; border: 1px solid var(--border);
-    border-radius: 6px; padding: 4px 12px; cursor: pointer; }
-  button:hover { border-color: var(--muted); }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .small { font-size: 14px; }
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-SemiBold.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Lilex";src:url(/fonts/lilex-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Lilex";src:url(/fonts/lilex-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
+
+:root{
+  color-scheme:light;
+  --paper:#f2f2ef;
+  --tone:#e9e9e5;
+  --ink:#18191b;
+  --grey:#5d5f63;
+  --faint:#8b8d90;
+  --rule:#cfcfca;
+  --mark:#c2410c;
+  --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
+  --pad:clamp(20px,4.4vw,64px);
+  --max:1320px;
+  --notes:300px;
+  --g:52px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--sans);font-kerning:normal;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.2em;text-decoration-color:var(--rule)}
+a:hover{text-decoration-color:currentColor}
+:focus-visible{outline:2px solid var(--mark);outline-offset:3px;border-radius:2px}
+code,.m{font-family:var(--mono);font-size:.88em;font-variant-ligatures:none;letter-spacing:0}
+p{margin:0}
+.w{max-width:var(--max);margin:0 auto;padding:0 var(--pad)}
+
+/* header */
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:24px;padding-top:26px;padding-bottom:26px}
+.mark{font-weight:600;font-size:19px;letter-spacing:-.01em;text-decoration:none}
+.nav{display:flex;gap:22px;font-size:15px;color:var(--grey)}
+.nav a{text-decoration:none}
+.nav a:hover{color:var(--ink);text-decoration:underline;text-decoration-color:var(--rule)}
+
+/* opening */
+.open{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:40px 64px;align-items:end;padding-top:clamp(40px,8vw,112px);padding-bottom:clamp(48px,7vw,96px)}
+.pitch{font-weight:500;font-size:clamp(27px,3.1vw,40px);line-height:1.18;letter-spacing:-.017em;max-width:19em;margin:0;text-wrap:balance}
+.done{margin-top:22px;max-width:31em;color:var(--grey)}
+.install{padding-bottom:6px}
+.cmd{display:flex;align-items:center;gap:14px;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);padding:13px 0}
+.cmd code{flex:1;font-size:16px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+.cmd code::before{content:"$ ";color:var(--faint)}
+.copy{font:500 14px/1 var(--sans);color:var(--ink);background:none;border:1px solid var(--rule);border-radius:4px;padding:8px 11px;cursor:pointer;min-width:66px}
+.copy:hover{border-color:var(--ink)}
+.copy:active{background:var(--tone)}
+.facts{margin-top:12px;font-size:14px;color:var(--grey)}
+
+/* figures: the capture is a replaceable slot; callouts are aimed in percent of the image */
+.fig{display:grid;grid-template-columns:minmax(0,1fr) var(--notes);column-gap:var(--g);margin:0 auto;padding-bottom:clamp(56px,6.4vw,96px)}
+.fig.l{grid-template-columns:var(--notes) minmax(0,1fr)}
+.fig.l .frame{grid-column:2}
+.fig.l .cap{grid-column:2}
+.cap{grid-row:1;margin-bottom:18px;max-width:46em}
+.cap b{font-weight:500}
+.cap p{color:var(--grey);font-size:15px;margin-top:4px}
+.frame{grid-row:2;position:relative;container-type:inline-size;--ar:.642857}
+.shot{display:block;border-radius:7px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.14),0 18px 40px -22px rgba(0,0,0,.45)}
+.shot img{display:block;width:100%;height:auto;aspect-ratio:14/9}
+.notes{list-style:none;margin:0;padding:0}
+.notes li{position:absolute;left:0;right:0;height:0;top:calc(var(--y)*var(--ar)*1cqw)}
+.pin{position:absolute;left:calc(var(--x)*1cqw);top:0;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--mark);box-shadow:0 0 0 2px var(--paper)}
+.pin i{display:none}
+.notes li::before{content:"";position:absolute;top:-.5px;height:0;border-top:1px solid var(--mark);left:calc(var(--x)*1cqw);right:calc(-1*var(--g) + 10px)}
+.note{position:absolute;left:calc(100% + var(--g));width:var(--notes);top:-11px;display:flex;gap:10px;font-size:14px;line-height:22px}
+.up .note{top:auto;bottom:-11px}
+.n{color:var(--mark);font-weight:500;font-variant-numeric:tabular-nums;flex:none}
+.fig.l .notes li::before{left:calc(-1*var(--g) + 10px);right:auto;width:calc(var(--x)*1cqw + var(--g) - 10px)}
+.fig.l .note{left:auto;right:calc(100% + var(--g));flex-direction:row-reverse}
+.fig.l .note>span:last-child{flex:1}
+.note code{font-size:12.5px;white-space:nowrap}
+.note code.q{display:block;white-space:normal;margin-top:2px}
+.note q{quotes:"\201C" "\201D"}
+
+/* between the figures */
+.after{display:grid;grid-template-columns:var(--notes) minmax(0,1fr);gap:20px var(--g);padding-bottom:clamp(56px,6.4vw,96px)}
+.after h2{padding-top:12px}
+.after .quote{max-width:40em}
+.after h2,.sec h2{font-size:17px;font-weight:500;margin:0;letter-spacing:0}
+.lines{margin:0;font:400 14px/1.6 var(--mono);font-variant-ligatures:none;white-space:pre-wrap;overflow-wrap:anywhere}
+.lines .c{color:var(--ink);font-weight:500}
+.lines .o{color:var(--grey)}
+.lines .ok{color:#2d6a3e}
+.after .lines{border-top:1px solid var(--rule);padding-top:12px}
+.quote{color:var(--grey);font-size:15px;margin-top:10px}
+
+/* sections */
+.sec{display:grid;grid-template-columns:var(--notes) minmax(0,1fr);gap:20px var(--g);padding-top:clamp(40px,4.4vw,64px);padding-bottom:clamp(48px,5.6vw,80px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
+.sec .lede{color:var(--grey);font-size:15px;margin-top:8px;max-width:26em}
+.list{list-style:none;margin:0;padding:0;counter-reset:l}
+.list li{display:grid;grid-template-columns:2.2em minmax(0,1fr);padding:11px 0;border-bottom:1px solid var(--rule);counter-increment:l}
+.list li:first-child{border-top:1px solid var(--ink)}
+.list li::before{content:counter(l,decimal-leading-zero);color:var(--faint);font-variant-numeric:tabular-nums;font-size:14px;padding-top:2px}
+.digest{margin-top:26px}
+.digest .lines{margin-top:8px}
+
+.train{margin:0;padding:0;list-style:none;font:400 13.5px/1.55 var(--mono);font-variant-ligatures:none;border-top:1px solid var(--ink)}
+.train li{display:grid;grid-template-columns:5.6em 11.6em minmax(0,1fr);gap:0 1em;padding:6px 0;border-bottom:1px solid var(--rule)}
+.train .t,.train .e{color:var(--faint)}
+.train .s{overflow-wrap:anywhere}
+.train .bad .e{color:var(--mark)}
+.train .ok .e{color:#2d6a3e}
+.train .x{color:var(--faint)}
+
+.setup{display:grid;gap:34px}
+.setup figure{margin:0}
+.setup figcaption{font-size:15px;color:var(--grey);margin-bottom:10px;max-width:40em}
+.setup .lines{border-top:1px solid var(--ink);padding-top:12px;font-size:13.5px}
+
+.end{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:22px;padding-bottom:40px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:14px;color:var(--grey)}
+.end nav{display:flex;gap:22px}
+.end a{text-decoration:none}
+.end a:hover{color:var(--ink);text-decoration:underline}
+
+@media (max-width:1100px){
+  .open{grid-template-columns:1fr;align-items:start}
+  .install{max-width:36em}
+  .fig,.fig.l{display:block}
+  .cap{margin-bottom:14px}
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)}
+  .notes li{position:static;height:auto}
+  .notes li::before{display:none}
+  .note,.fig.l .note{position:static;width:auto;flex-direction:row;text-align:left}
+  .pin{top:calc(var(--y)*var(--ar)*1cqw)}
+  .pin i{display:block;position:absolute;left:9px;bottom:4px;font:500 11px/1 var(--sans);font-style:normal;color:var(--mark);background:var(--paper);padding:3px 4px 2px;border-radius:3px;font-variant-numeric:tabular-nums}
+  .after,.sec{grid-template-columns:1fr}
+  .flip .pin i{left:auto;right:9px}
+}
+@media (max-width:640px){
+  body{font-size:16px}
+  .nav{gap:16px;font-size:14px}
+  .notes{grid-template-columns:1fr}
+  .shot{border-radius:4px}
+  .train li{grid-template-columns:5.2em minmax(0,1fr);font-size:12.5px}
+  .train .s{grid-column:1/-1}
+  .lines,.setup .lines{font-size:12.5px}
+  .cmd code{font-size:14px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .copy,.nav a,a{transition:color .15s,border-color .15s,text-decoration-color .15s}
+}
 </style>
 </head>
 <body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="https://github.com/unlaboredlabs/fleetd/blob/main/docs/FIRST-USE.md">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/index.txt" type="text/plain">Plain text</a>
+  </nav>
+</header>
+
 <main>
-  <header>
-    <img src="/icon.svg" alt="">
-    <h1>fleetd</h1>
-  </header>
-  <p>An open-source software factory that runs on your own machines.</p>
-  <p class="muted">A hub drives Claude Code through stock T3 Code on every machine you own: one lead per project, tasks
-    with checks, a merge train, and a native app that asks you only when it matters.</p>
-  <div class="install">
-    <code id="cmd">curl -fsSL https://fleetd.sh | sh</code>
-    <button type="button" id="copy">Copy</button>
+<section class="w open">
+  <div>
+    <h1 class="pitch">You send one line. A lead runs Claude Code agents across your machines and asks you only about product, money and calls that can’t be undone.</h1>
+    <p class="done">An agent saying “done” doesn’t merge anything. Every change goes through fleetd’s merge train: reviewed, rebased onto main, merged only on green CI.</p>
   </div>
-  <p class="small muted">macOS and Linux. Installs the <code>fleetd</code> CLI and the desktop app
-    into your home directory. Then run <code>fleetd init</code>.
-    <a href="/install.sh">Read the script</a>.</p>
-  <p class="small"><a href="https://github.com/unlaboredlabs/fleetd">GitHub</a> &middot;
-    <a href="https://github.com/unlaboredlabs/fleetd/releases">Releases</a> &middot; MIT</p>
+  <div class="install">
+    <div class="cmd"><code id="cmd">curl -fsSL https://fleetd.sh | sh</code><button class="copy" type="button" data-copy="cmd">Copy</button></div>
+    <p class="facts">Linux x64, macOS arm64 and x64. Installs the <code>fleetd</code> CLI and the desktop app. MIT.</p>
+  </div>
+</section>
+
+<!-- Fig. 1. To re-shoot: swap the <img> (keep width/height and aspect-ratio, set --ar to height/width),
+     then re-aim each callout: --x is percent of image width, --y percent of image height, at the point it marks.
+     "up" hangs the note above its leader instead of below. -->
+<figure class="w fig" style="--ar:.642857" aria-labelledby="f1">
+  <figcaption class="cap" id="f1"><b>Fig. 1 · The inbox, batch B1.</b>
+    <p>The fleetd desktop app on a live hub. The lead filed three asks for the storefront project: two product, one money.</p></figcaption>
+  <div class="frame">
+    <a class="shot" href="/capture-inbox.png"><img src="/capture-inbox.png" width="2800" height="1800" alt="The fleetd app’s Inbox showing batch B1 with three numbered asks and their reply buttons, and a reply bar at the bottom."></a>
+    <ol class="notes">
+      <li class="flip" style="--x:99.7;--y:1.75"><span class="pin"><i>10</i></span><p class="note"><span class="n">10</span><span>The reply grammar, printed in the header. <code>recs fine</code> takes every recommendation.</span></p></li>
+      <li style="--x:43.3;--y:11.6"><span class="pin"><i>12</i></span><p class="note"><span class="n">12</span><span>Ask 1, filed by the lead with <code>fleetd ask --class product</code>. <code>builder-1</code> is the machine it came from, then the project id.</span></p></li>
+      <li class="up" style="--x:54.1;--y:36.4"><span class="pin"><i>14</i></span><p class="note"><span class="n">14</span><span>A money ask says what it holds up: <code class="q">blocks: the Team plan launch</code></span></p></li>
+      <li style="--x:42.5;--y:42.5"><span class="pin"><i>16</i></span><p class="note"><span class="n">16</span><span>Each ask carries the lead’s recommendation, <code>go: 7 days</code>, and lettered options.</span></p></li>
+      <li class="up" style="--x:22.9;--y:97.8"><span class="pin"><i>18</i></span><p class="note"><span class="n">18</span><span>The whole reply is one line. <code>1 go 2 nvm 3 b</code>: ship the headline, drop the moment change, pick b, 14 days.</span></p></li>
+    </ol>
+  </div>
+</figure>
+
+<section class="w after" aria-labelledby="enter">
+  <div>
+    <h2 id="enter">Enter. Each answer becomes a decision.</h2>
+  </div>
+  <div>
+    <pre class="lines"><span class="c">› 1 go 2 nvm 3 b</span>
+<span class="ok">Logged: 1 → Pay for machines, not seats (D1), 2 → dropped, 3 → 14 days (D2)</span></pre>
+    <p class="quote">The inbox is empty afterwards. In the app’s words: “Nothing needs you. Leads decide everything that isn’t a product, money, credential or irreversible call.”</p>
+  </div>
+</section>
+
+<figure class="w fig l" style="--ar:.642857" aria-labelledby="f2">
+  <figcaption class="cap" id="f2"><b>Fig. 2 · The lead’s side, after the reply.</b>
+    <p>Project storefront on builder-1. The lead’s log: its <code>fleetd ask</code> commands, the hub’s wake carrying D1 and D2, and the lead’s answer.</p></figcaption>
+  <div class="frame">
+    <a class="shot" href="/capture-lead.png"><img src="/capture-lead.png" width="2800" height="1800" loading="lazy" alt="The fleetd app’s project view: the lead’s log with fleetd ask commands, the hub’s wake digest listing answers and decisions D1 and D2, and the lead’s reply."></a>
+    <ol class="notes">
+      <li class="flip" style="--x:52.9;--y:13.6"><span class="pin"><i>20</i></span><p class="note"><span class="n">20</span><span>The lead files an ask and keeps going: <code class="q">Next: carry on without waiting; the answer arrives in a later wake.</code></span></p></li>
+      <li class="flip" style="--x:52.9;--y:38.6"><span class="pin"><i>22</i></span><p class="note"><span class="n">22</span><span>Your reply reaches the lead as a wake from the hub: <code class="q">A1 site.pricing.headline → Pay for machines, not seats (D1)</code></span></p></li>
+      <li class="flip" style="--x:52.9;--y:66.6"><span class="pin"><i>24</i></span><p class="note"><span class="n">24</span><span>The decision log: key, value, scope, who decided. <code class="q">D2 billing.team.trial = 14 days (project, human)</code></span></p></li>
+      <li class="flip" style="--x:52.9;--y:88.6"><span class="pin"><i>26</i></span><p class="note"><span class="n">26</span><span>The lead keeps your override: <q>14 days. This is not my 7-day recommendation, but the human chose it, so it stands.</q></span></p></li>
+    </ol>
+  </div>
+</figure>
+
+<section class="w sec" aria-labelledby="own">
+  <div>
+    <h2 id="own">What the lead does without asking you.</h2>
+    <p class="lede">Taken from the same run: the lead’s commands, the hub’s events and the lead’s own replies.</p>
+  </div>
+  <div>
+    <ol class="list">
+      <li><span>The lead decides everything that isn’t a product, money, credential or irreversible call.</span></li>
+      <li><span>The lead files the rest with <code>fleetd ask</code>, each with a class, a recommendation and what it blocks, and carries on without waiting.</span></li>
+      <li><span>The lead hands workstreams and tasks to Claude Code agents on your machines.</span></li>
+      <li><span>The lead starts every wake from the hub’s digest: answers, open workstreams, tasks, open asks, decisions.</span></li>
+      <li><span>The lead doesn’t re-ask a key that’s already decided.</span></li>
+      <li><span>The lead keeps your answer when it overrides its own recommendation.</span></li>
+      <li><span>The lead gets an incident, <code>I1 misfiled_ask</code>, when you drop an ask it could have decided itself.</span></li>
+    </ol>
+    <div class="digest">
+      <p class="quote">And what you get at 09:00 and 18:00 when that’s all there is:</p>
+      <pre class="lines"><span class="c">fleetd digest · Sun 18 Oct, 10:30</span>
+<span class="o">Nothing needs you · 0 running · 0 done</span></pre>
+    </div>
+  </div>
+</section>
+
+<section class="w sec" aria-labelledby="train">
+  <div>
+    <h2 id="train">“Done” is checked by fleetd.</h2>
+    <p class="lede">Merge-train events from a lab run against the public <a href="https://github.com/unlaboredlabs/fleetd-testbed">fleetd-testbed</a> repo, 18 Oct 2026, UTC. The hub’s own summaries (one log link shortened), with the commit status the train posts before each merge.</p>
+  </div>
+  <ol class="train">
+    <li class="bad"><span class="t">00:37:45</span><span class="e">change.refused</span><span class="s">Refused https://github.com/unlaboredlabs/fleetd-testbed/pull/74: The PR body has no 'Source:' line.</span></li>
+    <li><span class="t">00:38:05</span><span class="e">change.queued</span><span class="s">X1 queued: unlaboredlabs/fleetd-testbed#76 (tier M, done:0)</span></li>
+    <li><span class="t">00:38:06</span><span class="e">train.frozen</span><span class="s">Train for unlaboredlabs/fleetd-testbed frozen: M7 lab: hold until every PR is ready</span></li>
+    <li><span class="t">00:38:09</span><span class="e">change.queued</span><span class="s">X2 queued: unlaboredlabs/fleetd-testbed#75 (tier M, done:1)</span></li>
+    <li><span class="t">00:38:19</span><span class="e">review.verdict</span><span class="s">T12 review verdict at 20176bd4f39d: 0 blocking, 0 non-blocking</span></li>
+    <li><span class="t">00:38:19</span><span class="e">change.ready</span><span class="s">X2 ready for the train: unlaboredlabs/fleetd-testbed#75</span></li>
+    <li><span class="t">00:38:43</span><span class="e">train.resumed</span><span class="s">Train for unlaboredlabs/fleetd-testbed resumed</span></li>
+    <li><span class="t">00:38:44</span><span class="e">fleetd/train</span><span class="s">X1: rebased onto main, CI green <span class="x">· commit status on eebd0dc</span></span></li>
+    <li class="ok"><span class="t">00:38:47</span><span class="e">pr.merged</span><span class="s">X1 merged: unlaboredlabs/fleetd-testbed#76 as 5e0ee5175d55</span></li>
+    <li><span class="t">00:39:06</span><span class="e">fleetd/train</span><span class="s">X2: rebased onto main, CI green <span class="x">· commit status on 8da5c41</span></span></li>
+    <li class="ok"><span class="t">00:39:10</span><span class="e">pr.merged</span><span class="s">X2 merged: unlaboredlabs/fleetd-testbed#75 as ccd768e89177</span></li>
+    <li class="bad"><span class="t">00:39:29</span><span class="e">change.ci_failed</span><span class="s">X3 CI failed on 815688b43cdc: ci (failure) (log: …)</span></li>
+    <li class="bad"><span class="t">00:39:30</span><span class="e">change.needs_rebase</span><span class="s">X4 needs a rebase: conflicts with origin/main in lab/20261018002620/alpha.md</span></li>
+    <li><span class="t">00:39:43</span><span class="e">change.ready</span><span class="s">X4 ready for the train: unlaboredlabs/fleetd-testbed#78</span></li>
+    <li><span class="t">00:39:59</span><span class="e">fleetd/train</span><span class="s">X4: rebased onto main, CI green <span class="x">· commit status on f330188</span></span></li>
+    <li class="ok"><span class="t">00:40:03</span><span class="e">pr.merged</span><span class="s">X4 merged: unlaboredlabs/fleetd-testbed#78 as 7dbe340fb72a</span></li>
+  </ol>
+</section>
+
+<section class="w sec" aria-labelledby="setup">
+  <div>
+    <h2 id="setup">Setup is a hub and your machines.</h2>
+    <p class="lede">After the install, <code>fleetd init</code> sets up the hub. <code>fleetd machine add</code> turns a machine you can reach over SSH into one that runs agents. Both outputs are real.</p>
+  </div>
+  <div class="setup">
+    <figure>
+      <figcaption>The hub, on the machine you installed on.</figcaption>
+<pre class="lines"><span class="c">$ fleetd init --listen 127.0.0.1:4778 --git-identity "Demo &lt;demo@users.noreply.github.com&gt;" --no-service</span>
+<span class="o">hub home ~/.fleetd/hub
+commit identity Demo &lt;demo@users.noreply.github.com&gt;
+not installing a service; run the hub yourself with:
+  fleetd hub start --home ~/.fleetd/hub --listen 127.0.0.1:4778
+next: fleetd hub key create --human --name &lt;device&gt; prints the key the desktop app connects to http://127.0.0.1:4778 with
+then: fleetd machine add &lt;ssh-host&gt; for each machine that runs agents
+[exit 0]</span></pre>
+    </figure>
+    <figure>
+      <figcaption>A worker. <code>--dry-run</code> prints the plan and runs nothing; the shell command under each step is left out here.</figcaption>
+<pre class="lines"><span class="c">$ fleetd machine add builder-1 --dry-run</span>
+<span class="o">dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state over SSH and leaves out what is already done:
+[probe] read the machine's state (read-only)
+[1/11] create fleetd's directories
+[2/11] install fleetd 0.0.0
+[3/11] install T3 0.1.1-nightly.20261017.3238 from npm
+[4/11] configure the fleetd Claude instance in T3's settings
+[5/11] create the fleetd instance's Claude login file (empty, 0600)
+[6/11] write the T3 service
+[7/11] write the node service
+[8/11] (re)start T3
+[9/11] wait for T3 to answer
+[10/11] enroll the node with a one-time token (sent on stdin)
+[11/11] (re)start the node
+[hub] wait until builder-1 is online
+[exit 0]</span></pre>
+    </figure>
+  </div>
+</section>
 </main>
+
+<footer class="w end">
+  <span>fleetd · MIT</span>
+  <nav aria-label="Footer">
+    <a href="https://github.com/unlaboredlabs/fleetd/blob/main/docs/FIRST-USE.md">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/index.txt" type="text/plain">Plain text</a>
+  </nav>
+</footer>
+
 <script>
-  document.getElementById("copy").addEventListener("click", async (e) => {
-    await navigator.clipboard.writeText(document.getElementById("cmd").textContent);
-    e.target.textContent = "Copied";
-    setTimeout(() => (e.target.textContent = "Copy"), 1500);
+document.querySelectorAll("[data-copy]").forEach(function(b){
+  b.addEventListener("click",function(){
+    var t=document.getElementById(b.dataset.copy).textContent;
+    var done=function(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy"},1600)};
+    if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done)}
+    else{var r=document.createRange();r.selectNodeContents(document.getElementById(b.dataset.copy));var s=getSelection();s.removeAllRanges();s.addRange(r);try{document.execCommand("copy");done()}catch(e){}}
   });
+});
 </script>
 </body>
 </html>
