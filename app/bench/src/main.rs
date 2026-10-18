@@ -140,11 +140,16 @@ impl Run {
         Run { child, lines }
     }
 
-    /// Next bench line whose `event=` is `event`; panics after 60 s.
+    /// Next bench line whose `event=` is `event`; panics after 60 s or if the app exits first.
     fn expect(&self, event: &str) -> String {
         let want = format!("event={event}");
         loop {
-            let line = self.lines.recv_timeout(Duration::from_secs(60)).unwrap_or_else(|_| panic!("timed out waiting for {want}"));
+            let line = self.lines.recv_timeout(Duration::from_secs(60)).unwrap_or_else(|e| match e {
+                mpsc::RecvTimeoutError::Timeout => panic!("timed out waiting for {want}"),
+                mpsc::RecvTimeoutError::Disconnected => {
+                    panic!("fleetd-app exited before {want}; its panic report, if any, is in ~/.fleetd/app.log")
+                }
+            });
             if line.split(' ').next() == Some(want.as_str()) {
                 return line;
             }
