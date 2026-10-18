@@ -65,7 +65,13 @@ pub fn build(
     match gh.workflows.as_ref().and_then(|w| w.get("workflows")) {
         Some(Value::Array(rows)) => {
             for w in rows {
-                if w.get("state").and_then(Value::as_str) == Some("active")
+                // GitHub's own dynamic workflows (Copilot, Dependabot) are not the repo's CI.
+                let dynamic = w
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .is_some_and(|p| p.starts_with("dynamic/"));
+                if !dynamic
+                    && w.get("state").and_then(Value::as_str) == Some("active")
                     && let Some(name) = w.get("name").and_then(Value::as_str)
                 {
                     push_unique(&mut ci.workflows, name.to_owned());
@@ -196,10 +202,36 @@ pub fn lead_needs(i: &ProjectInspect, gh_ok: bool) -> String {
             "CI runs ({n} workflow{s}) but {branch} requires no check: the train still waits for CI on each head"
         );
     }
-    format!(
-        "ready: {} gates {branch}, the train waits for it before each squash merge",
-        i.ci.required_checks.join(", ")
-    )
+    let checks = &i.ci.required_checks;
+    let named = if checks.len() > 3 {
+        format!("{} checks ({}, …)", checks.len(), checks[..2].join(", "))
+    } else {
+        checks.join(", ")
+    };
+    format!("ready: {branch} requires {named}; the train waits for them before each squash merge")
+}
+
+/// The inspect cut to fit an event's 2 KB of data: the longest list loses half its entries until it fits.
+pub fn compact(mut i: ProjectInspect, budget: usize) -> ProjectInspect {
+    let size = |i: &ProjectInspect| serde_json::to_string(i).map_or(0, |t| t.len());
+    while size(&i) > budget {
+        let lists = [
+            &mut i.ci.workflows,
+            &mut i.ci.required_checks,
+            &mut i.merge.rulesets,
+            &mut i.notes,
+        ];
+        let Some(longest) = lists
+            .into_iter()
+            .max_by_key(|l| l.len())
+            .filter(|l| !l.is_empty())
+        else {
+            break;
+        };
+        let keep = longest.len() / 2;
+        longest.truncate(keep);
+    }
+    i
 }
 
 /// A machine a clone could go to.
@@ -307,7 +339,9 @@ mod tests {
             ])),
             rulesets: Some(json!([{ "id": 7, "name": "main gate" }])),
             workflows: Some(json!({ "workflows": [
-                { "name": "CI", "state": "active" }, { "name": "Old", "state": "disabled_manually" } ] })),
+                { "name": "CI", "state": "active", "path": ".github/workflows/ci.yml" },
+                { "name": "Old", "state": "disabled_manually" },
+                { "name": "Copilot", "state": "active", "path": "dynamic/copilot-swe-agent/copilot" } ] })),
         };
         let i = build(Some(&repo()), &gh, None, vec![], true);
         assert_eq!(i.default_branch.as_deref(), Some("main"));
@@ -320,7 +354,33 @@ mod tests {
         assert!(i.notes.is_empty(), "{:?}", i.notes);
         assert_eq!(
             i.lead_needs.as_str(),
-            "ready: build, test gates main, the train waits for it before each squash merge"
+            "ready: main requires build, test; the train waits for them before each squash merge"
+        );
+    }
+
+    #[test]
+    fn many_checks_are_counted_and_an_event_fits() {
+        let checks: Vec<Value> = (0..40)
+            .map(|n| json!({ "context": format!("test matrix job number {n}") }))
+            .collect();
+        let gh = GitHubAnswers {
+            repo: Some(json!({ "default_branch": "master", "allow_squash_merge": true })),
+            rules: Some(
+                json!([{ "type": "required_status_checks", "parameters": { "required_status_checks": checks } }]),
+            ),
+            ..GitHubAnswers::default()
+        };
+        let i = build(Some(&repo()), &gh, None, vec![], true);
+        assert_eq!(
+            i.lead_needs.as_str(),
+            "ready: master requires 40 checks (test matrix job number 0, test matrix job number 1, …); the train waits for them before each squash merge"
+        );
+        let small = compact(i, 1500);
+        assert!(serde_json::to_string(&small).unwrap().len() <= 1500);
+        assert!(!small.ci.required_checks.is_empty());
+        assert_eq!(
+            small.lead_needs,
+            build(Some(&repo()), &gh, None, vec![], true).lead_needs
         );
     }
 

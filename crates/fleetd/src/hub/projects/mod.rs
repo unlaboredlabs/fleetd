@@ -504,7 +504,8 @@ async fn register(
         title,
         path: path.to_owned(),
         created,
-        inspect,
+        // The event log keeps at most 2 KB of data; project_inspect has the whole thing.
+        inspect: inspect::compact(inspect, 1500),
     };
     hub.events.append(NewEvent {
         at: now(hub),
@@ -625,14 +626,14 @@ pub async fn add(
     })
 }
 
-/// Progress events: on each phase change, every 5 percent, and at most one a second within a phase.
+/// Progress events: on each phase change and its 100 %, else every 5 percent at most once a second.
 fn progress_due(last: Option<&(Instant, ClonePhase, u8)>, phase: ClonePhase, percent: u8) -> bool {
     match last {
         None => true,
         Some((at, p, pct)) => {
             *p != phase
-                || (percent >= pct.saturating_add(5) || percent == 100)
-                    && at.elapsed() >= Duration::from_secs(1)
+                || percent == 100 && *pct != 100
+                || percent >= pct.saturating_add(5) && at.elapsed() >= Duration::from_secs(1)
         }
     }
 }

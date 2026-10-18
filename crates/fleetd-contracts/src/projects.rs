@@ -190,7 +190,8 @@ pub enum ClonePhase {
     Inspecting,
 }
 
-/// `HubEvent.data` on `project.clone_progress`: at most one per phase per 5 percent, and at most one a second.
+/// `HubEvent.data` on `project.clone_progress`: on each phase change and its 100 %, else every 5 percent at most once
+/// a second.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -217,6 +218,7 @@ pub struct ProjectAddedData {
     pub path: String,
     /// False when the directory was already a project.
     pub created: bool,
+    /// Long lists are cut so the event fits the log's 2 KB of data; `project_inspect` returns them whole.
     pub inspect: ProjectInspect,
 }
 
