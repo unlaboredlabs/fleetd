@@ -2,8 +2,9 @@
 Type=Application
 Name=fleetd
 Comment=Watch and steer your software factory
-Exec=fleetd-app
+Exec=fleetd-app %u
 Icon=fleetd
 Terminal=false
 Categories=Development;
 StartupWMClass=fleetd
+MimeType=x-scheme-handler/fleetd;

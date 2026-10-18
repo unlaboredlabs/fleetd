@@ -47,6 +47,14 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>FleetdVersion</key><string>$version</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- fleetd://pair links (printed by fleetd pair) open the app and pair it. -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>sh.fleetd.app.pair</string>
+      <key>CFBundleURLSchemes</key><array><string>fleetd</string></array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST
