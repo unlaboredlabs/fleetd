@@ -48,3 +48,11 @@ zeroize.workspace = true
 base64.workspace = true
 # OS keychain: macOS Keychain, Windows Credential Manager, Secret Service (zbus, already in the graph) on Linux.
 keyring = "4.2"
+# Grapheme boundaries for caret movement and deletion in text fields (emoji, combining marks).
+unicode-segmentation = "1"
+# Query strings of fleetd://pair links.
+url.workspace = true
+
+[dev-dependencies]
+# Headless window and simulated keystrokes/clicks for the text field tests.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "fb69067729cb16a7f6135e2c1600c26a28c59659", default-features = false, features = ["font-kit", "wayland", "x11", "profiler", "test-support"] }

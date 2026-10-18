@@ -27,10 +27,9 @@ actions!(
     ]
 );
 
-// The Edit menu's actions. Stand-ins until the text field (input.rs, PR #88) lands: then this becomes
-// `pub use crate::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};`, whose bindings (input::bind_keys,
-// called from main.rs) give the menu its shortcuts. Unbound here so cmd/ctrl+V still reaches the shell.
-actions!(edit, [Undo, Redo, Cut, Copy, Paste, SelectAll]);
+// The Edit menu's actions are the text field's: enabled while a field has focus, with its shortcuts
+// (input::bind_keys, called from shell::bind_keys).
+pub use crate::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 
 pub fn bind_keys(cx: &mut App) {
     // `secondary` is cmd on macOS and ctrl elsewhere.

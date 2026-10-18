@@ -1,65 +1,14 @@
 //! Secret asks: the value is sealed here to the target machine's X25519 `boxPubKey` with libsodium's
 //! `crypto_box_seal` construction, so the hub only ever relays ciphertext; the node opens it with
-//! libsodium's `crypto_box_seal_open`. The caller keeps the plaintext in a [`Secret`], which wipes itself
-//! when dropped, and never logs it.
+//! libsodium's `crypto_box_seal_open`. The plaintext lives only in a masked [`crate::input::TextInput`], which
+//! wipes it when cleared or dropped, and is never logged.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use crypto_box::PublicKey;
 use crypto_box::aead::OsRng;
-use zeroize::Zeroizing;
 
 pub use fleetd_contracts::secrets::SECRET_MAX_BYTES;
-
-/// A secret being typed. The buffer is allocated once at full size so it never reallocates, which
-/// would leave copies of the value behind in freed memory; dropping it zeroes it.
-pub struct Secret(Zeroizing<Vec<u8>>);
-
-impl Default for Secret {
-    fn default() -> Self {
-        Self(Zeroizing::new(Vec::with_capacity(SECRET_MAX_BYTES)))
-    }
-}
-
-impl Secret {
-    /// Appends what fits; false when `text` would take the value over the limit (nothing is added).
-    pub fn push_str(&mut self, text: &str) -> bool {
-        if self.0.len() + text.len() > SECRET_MAX_BYTES {
-            return false;
-        }
-        self.0.extend_from_slice(text.as_bytes());
-        true
-    }
-
-    /// Removes the last character.
-    pub fn pop(&mut self) {
-        while let Some(byte) = self.0.pop() {
-            // Stop after a UTF-8 lead byte (or an ASCII one); continuation bytes are 0b10xxxxxx.
-            if byte & 0xC0 != 0x80 {
-                break;
-            }
-        }
-    }
-
-    /// Characters typed, for the mask.
-    pub fn chars(&self) -> usize {
-        self.0.iter().filter(|b| *b & 0xC0 != 0x80).count()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for Secret {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Secret({} bytes)", self.0.len())
-    }
-}
 
 /// Seals `plaintext` to `box_pub_key` (standard base64 of 32 bytes) and returns standard base64, as
 /// `secret_submit` takes it.
@@ -106,24 +55,6 @@ mod tests {
         assert!(seal(&public, &vec![b'x'; SECRET_MAX_BYTES]).is_ok());
         assert!(seal("AAAA", b"x").is_err());
         assert!(seal("not base64!", b"x").is_err());
-    }
-
-    #[test]
-    fn the_buffer_never_reallocates_and_pops_whole_characters() {
-        let mut s = Secret::default();
-        let start = s.0.as_ptr();
-        assert!(s.push_str("pä"));
-        assert!(s.push_str(&"x".repeat(SECRET_MAX_BYTES - 3)));
-        assert!(!s.push_str("y"), "over the limit");
-        assert_eq!(s.0.as_ptr(), start);
-        s.0.truncate(3);
-        assert_eq!(s.chars(), 2);
-        s.pop();
-        assert_eq!(s.bytes(), b"p");
-        s.pop();
-        s.pop();
-        assert!(s.is_empty());
-        assert_eq!(format!("{s:?}"), "Secret(0 bytes)");
     }
 
     /// Rust seals, libsodium (`libsodium-wrappers`, from the lab suite's packages) opens. Needs node and

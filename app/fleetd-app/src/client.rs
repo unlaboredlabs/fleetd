@@ -216,7 +216,7 @@ async fn connect_once(url: &str, key: &str, outgoing: &mut UnboundedReceiver<App
     }
 }
 
-trait Io: futures::AsyncRead + futures::AsyncWrite + Unpin + Send {}
+pub(crate) trait Io: futures::AsyncRead + futures::AsyncWrite + Unpin + Send {}
 impl<T: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Io for T {}
 
 /// The certificate is checked by the OS verifier (Security.framework on macOS, the system roots on Linux,
@@ -235,7 +235,7 @@ fn tls_config() -> Result<Arc<rustls::ClientConfig>, String> {
         .clone()
 }
 
-async fn tls_connect(name: &str, tcp: async_net::TcpStream) -> Result<futures_rustls::client::TlsStream<async_net::TcpStream>, String> {
+pub(crate) async fn tls_connect(name: &str, tcp: async_net::TcpStream) -> Result<futures_rustls::client::TlsStream<async_net::TcpStream>, String> {
     let server = ServerName::try_from(name.to_string()).map_err(|e| format!("bad host name {name}: {e}"))?;
     futures_rustls::TlsConnector::from(tls_config()?).connect(server, tcp).await.map_err(|e| e.to_string())
 }

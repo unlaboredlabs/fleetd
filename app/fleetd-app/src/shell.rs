@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::app::AppClientMessage;
@@ -8,17 +9,19 @@ use fleetd_contracts::model::MachineStatus;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use gpui::{
-    AnyElement, App, ClipboardItem, Context, Div, FocusHandle, KeyDownEvent, Keystroke, ScrollDelta, ScrollStrategy, ScrollWheelEvent, SharedString,
-    Stateful, SystemNotification, Task, UniformListScrollHandle, Window, div, point, prelude::*, px, rgb, uniform_list,
+    AnyElement, App, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, KeyBinding, KeyDownEvent, Keystroke, MouseButton, ScrollDelta,
+    ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, Subscription, SystemNotification, Task, UniformListScrollHandle, Window, actions, div,
+    point, prelude::*, px, rgb, transparent_black, uniform_list,
 };
-use zeroize::Zeroize;
 
 use crate::bench::{self, Mode, Probe};
 use crate::client;
 use crate::fake::{self, LogKind, LogStream};
+use crate::input::{InputEvent, TextInput};
 use crate::keychain::{self, Saved};
 use crate::notify::unix_secs;
-use crate::seal::{self, Secret};
+use crate::pair::{self, Failure};
+use crate::seal;
 use crate::state::{Conn, Echo, ProjectKey, ProjectRow, State};
 
 const UI_FONT: &str = "IBM Plex Sans";
@@ -57,17 +60,25 @@ enum Screen {
     Machines,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Field {
-    Url,
-    Key,
+actions!(shell, [FocusNext, FocusPrev]);
+
+/// The app's keys: the text field bindings, and Tab / Shift+Tab between fields, buttons and rows.
+pub fn bind_keys(cx: &mut App) {
+    crate::input::bind_keys(cx);
+    cx.bind_keys([KeyBinding::new("tab", FocusNext, None), KeyBinding::new("shift-tab", FocusPrev, None)]);
 }
 
+/// The first-run screen: a pairing code (primary) or, folded away, a key.
 struct ConnectForm {
-    url: String,
-    key: String,
-    field: Field,
-    error: Option<String>,
+    hub: Entity<TextInput>,
+    code: Entity<TextInput>,
+    key: Entity<TextInput>,
+    use_key: bool,
+    /// What the screen is doing or found, e.g. that a hub answers on this computer.
+    status: Option<String>,
+    /// A pairing request is out.
+    busy: bool,
+    error: Option<Failure>,
 }
 
 struct LogRow {
@@ -86,15 +97,18 @@ pub struct Shell {
     state: State,
     screen: Screen,
     selected: usize,
-    bar: String,
+    reply: Entity<TextInput>,
     form: ConnectForm,
     hub: Option<HubLink>,
     /// Shown above the screen, e.g. that the key could not be saved to the keychain.
     note: Option<String>,
-    /// The secret ask whose masked field has the keyboard, and what has been typed into it.
-    secret: Option<(String, Secret)>,
-    /// The step command last copied, so its button says so.
+    /// A masked field per open secret ask; the value lives only in the field's self-wiping buffer.
+    secrets: HashMap<String, (Entity<TextInput>, Subscription)>,
+    /// The text last copied, so its button says so.
     copied: Option<String>,
+    /// Focus to move to on the next render (e.g. the reply box once connected).
+    pending_focus: Option<FocusHandle>,
+    _subscriptions: Vec<Subscription>,
     log: Vec<LogRow>,
     log_version: u64,
     log_scroll: UniformListScrollHandle,
@@ -111,16 +125,44 @@ impl Shell {
         window.focus(&focus, cx);
         let log_scroll = UniformListScrollHandle::new();
         log_scroll.scroll_to_bottom();
+        let reply = cx.new(|cx| TextInput::new(cx).placeholder("Reply to the inbox: 1 go 2 nvm 3 b").multi_line(6).borderless());
+        let hub = cx.new(|cx| {
+            let mut input = TextInput::new(cx).placeholder(pair::LOCAL_HUB);
+            input.set_text(pair::LOCAL_HUB, cx);
+            input
+        });
+        let code = cx.new(|cx| TextInput::new(cx).placeholder("ABCD-2345"));
+        let key = cx.new(|cx| TextInput::new(cx).placeholder("fld_…").masked(4096));
+        let subscriptions = vec![
+            cx.subscribe(&reply, Self::on_reply_event),
+            cx.subscribe(&hub, |this, _, e: &InputEvent, cx| {
+                if *e == InputEvent::Submit {
+                    if this.form.use_key { this.submit_key(cx) } else { this.submit_code(cx) }
+                }
+            }),
+            cx.subscribe(&code, |this, _, e: &InputEvent, cx| {
+                if *e == InputEvent::Submit {
+                    this.submit_code(cx);
+                }
+            }),
+            cx.subscribe(&key, |this, _, e: &InputEvent, cx| {
+                if *e == InputEvent::Submit {
+                    this.submit_key(cx);
+                }
+            }),
+        ];
         let mut shell = Self {
             state: State::default(),
             screen: Screen::Loading,
             selected: 0,
-            bar: String::new(),
-            form: ConnectForm { url: "http://127.0.0.1:4790".into(), key: String::new(), field: Field::Url, error: None },
+            pending_focus: Some(reply.focus_handle(cx)),
+            reply,
+            form: ConnectForm { hub, code, key, use_key: false, status: None, busy: false, error: None },
             hub: None,
             note: None,
-            secret: None,
+            secrets: HashMap::new(),
             copied: None,
+            _subscriptions: subscriptions,
             log: Vec::new(),
             log_version: 0,
             log_scroll,
@@ -134,6 +176,7 @@ impl Shell {
             Some(mode) => shell.start_bench(mode, window, cx),
             None => {
                 shell.on_notification_click(window, cx);
+                shell.listen_for_links(cx);
                 shell.load_saved(cx);
                 crate::update::watch(cx, |shell, text| shell.update = Some(text));
             }
@@ -185,10 +228,11 @@ impl Shell {
             this.update(cx, |this, cx| {
                 match loaded {
                     Ok(Some(saved)) => this.connect(saved, cx),
-                    Ok(None) => this.screen = Screen::Connect,
+                    Ok(None) => this.first_run(cx),
                     Err(e) => {
-                        this.form.error = Some(e);
-                        this.screen = Screen::Connect;
+                        let fix = "You can still connect; without a keychain the key lasts until the app quits.";
+                        this.form.error = Some(Failure { code: String::new(), message: e, fix: Some(fix.into()) });
+                        this.first_run(cx);
                     }
                 }
                 cx.notify();
@@ -207,7 +251,7 @@ impl Shell {
                 let ok = this.update(cx, |this, cx| {
                     let out = this.state.apply(incoming);
                     this.send(out);
-                    this.after_state_change();
+                    this.after_state_change(cx);
                     this.notify_if_due(cx);
                     cx.notify();
                 });
@@ -230,11 +274,11 @@ impl Shell {
                 }
             }
         });
-        self.form.url = saved.url.clone();
         self.hub = Some(HubLink { url: saved.url, tx: out_tx, _tasks: [run, pump, poll] });
         self.state = State::default();
         self.screen = Screen::Inbox;
         self.selected = 0;
+        self.pending_focus = Some(self.reply.focus_handle(cx));
     }
 
     fn send(&self, out: Vec<AppClientMessage>) {
@@ -245,45 +289,186 @@ impl Shell {
         }
     }
 
-    fn submit_connect(&mut self, cx: &mut Context<Self>) {
-        let url = self.form.url.trim().to_string();
-        let key = self.form.key.trim().to_string();
-        if let Err(e) = client::app_url(&url) {
-            self.form.error = Some(e);
-            return;
-        }
-        if key.is_empty() {
-            self.form.error = Some("Paste a key from `fleetd hub key create --human --name <device>`.".into());
-            self.form.field = Field::Key;
-            return;
-        }
-        let saved = Saved { url, key };
-        let to_save = saved.clone();
+    /// No saved hub: show the connect screen and try, in order, a `fleetd://pair` link that launched us (handled by
+    /// [`Self::listen_for_links`]), the `app-pair.json` that `fleetd init` leaves on the hub machine, and a hub
+    /// answering on this computer.
+    fn first_run(&mut self, cx: &mut Context<Self>) {
+        self.screen = Screen::Connect;
+        self.pending_focus = Some(self.form.code.focus_handle(cx));
         cx.spawn(async move |this, cx| {
-            let result = cx.background_executor().spawn(async move { keychain::save(&to_save) }).await;
+            let file = pair::app_pair_file();
+            let read = file.clone();
+            let found = cx.background_executor().spawn(async move { read.and_then(|f| std::fs::read_to_string(f).ok()) }).await;
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+            let auto = found.as_deref().and_then(pair::read_app_pair);
+            let started = this
+                .update(cx, |this, cx| {
+                    let auto = auto?;
+                    this.form.hub.update(cx, |i, cx| i.set_text(&auto.hub, cx));
+                    if this.form.busy || auto.expired(now) {
+                        return None;
+                    }
+                    this.form.code.update(cx, |i, cx| i.set_text(&auto.code, cx));
+                    this.start_pair(auto.hub, auto.code, file, cx);
+                    Some(())
+                })
+                .ok()
+                .flatten();
+            if started.is_some() {
+                return;
+            }
+            let hub = this.update(cx, |this, cx| this.form.hub.read(cx).text().trim().to_string()).unwrap_or_default();
+            let probe = hub.clone();
+            let answers = cx.background_executor().spawn(async move { pair::hub_answers(&probe).await }).await;
             this.update(cx, |this, cx| {
-                this.note = result.err().map(|e| format!("{e} Connected for this session only; the key was not stored anywhere."));
+                if this.form.status.is_none() && !this.form.busy {
+                    this.form.status = Some(if answers {
+                        format!("Found your hub at {hub}. Enter the code from `fleetd pair` to connect.")
+                    } else {
+                        "No hub answers on this computer. Enter your hub's address and a code from `fleetd pair` run there, or set up a hub with `fleetd init`.".into()
+                    });
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// `fleetd://pair?hub=…&code=…` links, from the OS (macOS) or the command line (Linux `.desktop` `%u`).
+    fn listen_for_links(&mut self, cx: &mut Context<Self>) {
+        let Some(mut links) = cx.try_global::<pair::Links>().and_then(|l| l.0.borrow_mut().take()) else { return };
+        cx.spawn(async move |this, cx| {
+            while let Some(link) = links.next().await {
+                let ok = this.update(cx, |this, cx| {
+                    let Some((hub, code)) = pair::parse_deep_link(&link) else {
+                        this.note = Some(format!("Ignored a link this app doesn't handle: {link}"));
+                        return cx.notify();
+                    };
+                    this.form.hub.update(cx, |i, cx| i.set_text(&hub, cx));
+                    this.form.code.update(cx, |i, cx| i.set_text(&code, cx));
+                    if !this.form.busy {
+                        this.start_pair(hub, code, None, cx);
+                    }
+                });
+                if ok.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn submit_code(&mut self, cx: &mut Context<Self>) {
+        if self.form.busy {
+            return;
+        }
+        let hub = self.form.hub.read(cx).text().trim().to_string();
+        let code = self.form.code.read(cx).text().to_string();
+        self.start_pair(hub, code, None, cx);
+    }
+
+    /// Redeems `code` at `hub` (POST /pair), saves the key and connects. `auto_file` is the `app-pair.json` the
+    /// code came from, deleted once the hub has taken or refused the code.
+    fn start_pair(&mut self, hub: String, code: String, auto_file: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+        if let Err(e) = client::app_url(&hub) {
+            self.form.error =
+                Some(Failure { code: String::new(), message: e, fix: Some("Use the hub's address, e.g. http://127.0.0.1:4790.".into()) });
+            return cx.notify();
+        }
+        self.form.busy = true;
+        self.form.error = None;
+        self.form.status = Some(format!("Pairing with {hub}…"));
+        if self.hub.is_none() {
+            self.screen = Screen::Connect;
+        }
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let device = pair::device_name();
+            let target = hub.clone();
+            let result = cx.background_executor().spawn(async move { pair::pair(&target, &code, &device).await }).await;
+            // The hub has used up or refused the code: the file is spent either way.
+            if (result.is_ok() || result.as_ref().is_err_and(|f| f.code.starts_with("pair_code_")))
+                && let Some(file) = auto_file
+            {
+                std::fs::remove_file(file).ok();
+            }
+            this.update(cx, |this, cx| {
+                this.form.busy = false;
+                match result {
+                    Ok(paired) => {
+                        this.form.status = None;
+                        this.form.code.update(cx, |i, cx| i.clear(cx));
+                        this.note = Some(format!("Paired with {}.", paired.hub_name));
+                        this.save_and_connect(Saved { url: hub, key: paired.key }, cx);
+                    }
+                    Err(failure) => {
+                        this.form.status = None;
+                        if this.hub.is_some() {
+                            this.note = Some(format!("Pairing failed: {} {}", failure.message, failure.fix.as_deref().unwrap_or("")));
+                        }
+                        this.form.error = Some(failure);
+                        this.pending_focus = Some(this.form.code.focus_handle(cx));
+                    }
+                }
                 cx.notify();
             })
             .ok();
         })
         .detach();
-        self.form.key.clear();
+    }
+
+    fn submit_key(&mut self, cx: &mut Context<Self>) {
+        let url = self.form.hub.read(cx).text().trim().to_string();
+        let key = self.form.key.read(cx).text().trim().to_string();
+        if let Err(e) = client::app_url(&url) {
+            self.form.error =
+                Some(Failure { code: String::new(), message: e, fix: Some("Use the hub's address, e.g. http://127.0.0.1:4790.".into()) });
+            return cx.notify();
+        }
+        if key.is_empty() {
+            self.form.error = Some(Failure {
+                code: String::new(),
+                message: "Paste a key for this device.".into(),
+                fix: Some("On the hub, run `fleetd hub key create --human --name <device>` and paste the key it prints.".into()),
+            });
+            self.pending_focus = Some(self.form.key.focus_handle(cx));
+            return cx.notify();
+        }
+        self.form.key.update(cx, |i, cx| i.clear(cx));
         self.form.error = None;
+        self.save_and_connect(Saved { url, key }, cx);
+        cx.notify();
+    }
+
+    fn save_and_connect(&mut self, saved: Saved, cx: &mut Context<Self>) {
+        let to_save = saved.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { keychain::save(&to_save) }).await;
+            this.update(cx, |this, cx| {
+                if let Err(e) = result {
+                    this.note = Some(format!("{e} Connected for this session only; the key was not stored anywhere."));
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
         self.connect(saved, cx);
     }
 
     fn disconnect(&mut self, cx: &mut Context<Self>) {
         self.hub = None;
-        self.secret = None;
+        self.secrets.clear();
         self.state = State::default();
         self.screen = Screen::Connect;
-        self.form.field = Field::Key;
         self.note = None;
+        self.form.status = None;
+        self.pending_focus = Some(self.form.code.focus_handle(cx));
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async { keychain::clear() }).await;
             this.update(cx, |this, cx| {
-                this.form.error = result.err();
+                this.form.error = result.err().map(|message| Failure { code: String::new(), message, fix: None });
                 cx.notify();
             })
             .ok();
@@ -291,17 +476,40 @@ impl Shell {
         .detach();
     }
 
-    fn after_state_change(&mut self) {
+    fn after_state_change(&mut self, cx: &mut Context<Self>) {
         if let Conn::Refused(message) = &self.state.conn {
-            self.form.error = Some(message.clone());
-            self.form.field = Field::Key;
+            self.form.error = Some(Failure {
+                code: String::new(),
+                message: message.clone(),
+                fix: Some("Pair again with a code from `fleetd pair` on the hub, or use another key.".into()),
+            });
             self.hub = None;
-            self.secret = None;
+            self.secrets.clear();
             self.screen = Screen::Connect;
+            self.pending_focus = Some(self.form.code.focus_handle(cx));
         }
-        // The ask was answered or withdrawn elsewhere: drop (and wipe) what was typed for it.
-        if self.secret.as_ref().is_some_and(|(id, _)| !self.state.asks.get(id.as_str()).is_some_and(|a| a.state == AskState::Open)) {
-            self.secret = None;
+        // An ask answered or withdrawn elsewhere drops (and wipes) what was typed for it; a new one gets a field.
+        self.secrets.retain(|id, _| self.state.asks.get(id.as_str()).is_some_and(|a| a.state == AskState::Open));
+        let open: Vec<String> = self
+            .state
+            .asks
+            .values()
+            .filter(|a| a.kind == AskKind::Secret && a.state == AskState::Open && !self.secrets.contains_key(a.ask_id.as_str()))
+            .map(|a| a.ask_id.to_string())
+            .collect();
+        for id in open {
+            let input = cx.new(|cx| TextInput::new(cx).placeholder("Type or paste the value; Enter seals and sends").masked(seal::SECRET_MAX_BYTES));
+            let ask_id = id.clone();
+            let sub = cx.subscribe(&input, move |this, input, e: &InputEvent, cx| match e {
+                InputEvent::Submit => this.submit_secret(&ask_id, cx),
+                InputEvent::Cancel => input.update(cx, |i, cx| i.clear(cx)),
+                InputEvent::TooLong => {
+                    this.state.echo = Some(Echo { text: format!("A secret is at most {} bytes.", seal::SECRET_MAX_BYTES), ok: false });
+                    cx.notify();
+                }
+                InputEvent::Changed => cx.notify(),
+            });
+            self.secrets.insert(id, (input, sub));
         }
         let version = self.state.detail.as_ref().map_or(0, |d| d.version);
         if version != self.log_version {
@@ -321,9 +529,6 @@ impl Shell {
         }
         if screen != Screen::Project {
             self.state.close_project();
-        }
-        if screen != Screen::Inbox {
-            self.secret = None;
         }
         if screen == Screen::Machines && self.screen != Screen::Machines {
             let out = self.state.open_doctor();
@@ -350,29 +555,18 @@ impl Shell {
         }
     }
 
-    fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+    /// Accelerators only: everything here is also a click away. Text goes to whichever field has focus.
+    fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let ks = &event.keystroke;
         if let Some((_, probe)) = &mut self.bench {
             probe.key_received(Instant::now(), &ks.key);
         }
         let m = &ks.modifiers;
-        if m.secondary() && !m.alt {
+        if m.secondary() && !m.alt && !m.shift {
             match ks.key.as_str() {
                 "1" => self.go(Screen::Inbox),
                 "2" => self.go(Screen::Projects),
                 "3" => self.go(Screen::Machines),
-                "v" => {
-                    let mut text = cx.read_from_clipboard().and_then(|c| c.text()).unwrap_or_default();
-                    match &mut self.secret {
-                        Some((_, secret)) => {
-                            if !secret.push_str(text.trim_end_matches(['\n', '\r'])) {
-                                self.state.echo = Some(Echo { text: format!("A secret is at most {} bytes.", seal::SECRET_MAX_BYTES), ok: false });
-                            }
-                            text.zeroize();
-                        }
-                        None => self.type_text(text.trim()),
-                    }
-                }
                 _ => return,
             }
             cx.stop_propagation();
@@ -383,55 +577,39 @@ impl Shell {
             return;
         }
         let key = ks.key.as_str();
-        if self.screen == Screen::Connect {
-            match key {
-                "tab" => self.form.field = if self.form.field == Field::Url { Field::Key } else { Field::Url },
-                "enter" => self.submit_connect(cx),
-                "backspace" => {
-                    self.field_mut().pop();
-                }
-                _ => match printable(ks) {
-                    Some(ch) => self.type_text(ch),
-                    None => return,
-                },
+        if matches!(key, "up" | "down") && self.list_len() > 0 {
+            self.selected = if key == "up" { self.selected.saturating_sub(1) } else { (self.selected + 1).min(self.list_len() - 1) };
+            if self.screen == Screen::Projects {
+                self.projects_scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
             }
             cx.stop_propagation();
             cx.notify();
             return;
         }
-        if let Some((_, secret)) = &mut self.secret {
-            match key {
-                "enter" => self.submit_secret(),
-                "escape" => self.secret = None,
-                "backspace" => secret.pop(),
-                _ => match printable(ks) {
-                    Some(ch) => {
-                        if !secret.push_str(ch) {
-                            self.state.echo = Some(Echo { text: format!("A secret is at most {} bytes.", seal::SECRET_MAX_BYTES), ok: false });
-                        }
-                    }
-                    None => return,
-                },
-            }
+        // Typing with no field focused (after clicking the background) goes to the reply box.
+        if self.focus.is_focused(window)
+            && self.has_reply_bar()
+            && let Some(text) = printable(ks)
+        {
+            self.reply.update(cx, |r, cx| r.insert(text, cx));
+            self.pending_focus = Some(self.reply.focus_handle(cx));
             cx.stop_propagation();
             cx.notify();
-            return;
         }
-        match key {
-            "up" | "down" => {
-                self.selected =
-                    if key == "up" { self.selected.saturating_sub(1) } else { (self.selected + 1).min(self.list_len().saturating_sub(1)) };
-                if self.screen == Screen::Projects {
-                    self.projects_scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
-                }
-            }
-            "escape" if !self.bar.is_empty() => self.bar.clear(),
-            "escape" if self.screen == Screen::Project => self.go(Screen::Projects),
-            "backspace" => {
-                self.bar.pop();
-            }
-            "enter" if !self.bar.is_empty() => {
-                let raw = std::mem::take(&mut self.bar);
+    }
+
+    fn has_reply_bar(&self) -> bool {
+        !matches!(self.screen, Screen::Connect | Screen::Loading)
+    }
+
+    fn on_reply_event(&mut self, input: Entity<TextInput>, event: &InputEvent, cx: &mut Context<Self>) {
+        let raw = input.read(cx).text().to_string();
+        match event {
+            InputEvent::Submit if !raw.trim().is_empty() => {
+                input.update(cx, |i, cx| {
+                    i.remember(&raw);
+                    i.clear(cx);
+                });
                 if self.bench.is_some() {
                     // No hub in the bench: echo locally, as typing a reply would.
                     self.push_log(LogRow { kind: LogKind::User, text: format!("› you: {raw}").into() });
@@ -440,48 +618,77 @@ impl Shell {
                     self.send(out);
                 }
             }
-            "enter" if self.screen == Screen::Projects => {
+            // An empty reply box leaves Enter and Esc to the screen: open the selected project, or go back.
+            InputEvent::Submit if self.screen == Screen::Projects => {
                 if let Some(key) = self.state.projects.get(self.selected).map(ProjectRow::key) {
                     self.open_project(key);
                 }
             }
-            _ => match printable(ks) {
-                Some(ch) => self.bar.push_str(ch),
-                None => return,
-            },
+            InputEvent::Cancel if !raw.is_empty() => input.update(cx, |i, cx| i.clear(cx)),
+            InputEvent::Cancel if self.screen == Screen::Project => self.go(Screen::Projects),
+            _ => return,
         }
-        cx.stop_propagation();
         cx.notify();
     }
 
-    fn field_mut(&mut self) -> &mut String {
-        match self.form.field {
-            Field::Url => &mut self.form.url,
-            Field::Key => &mut self.form.key,
-        }
+    fn send_reply(&mut self, cx: &mut Context<Self>) {
+        let reply = self.reply.clone();
+        self.on_reply_event(reply, &InputEvent::Submit, cx);
     }
 
-    fn type_text(&mut self, text: &str) {
-        let text: String = text.chars().filter(|c| !c.is_control()).collect();
-        if self.screen == Screen::Connect { self.field_mut().push_str(&text) } else { self.bar.push_str(&text) }
-    }
-
-    /// Seals what was typed to the sink machine's key and sends only the ciphertext; the typed value is
-    /// wiped when `secret` drops at the end of this call, whatever happens.
-    fn submit_secret(&mut self) {
-        let Some((ask_id, secret)) = self.secret.take() else { return };
-        if secret.is_empty() {
-            self.secret = Some((ask_id, secret));
+    /// Seals the typed value to the sink machine's key and sends only the ciphertext, then wipes the field.
+    fn submit_secret(&mut self, ask_id: &str, cx: &mut Context<Self>) {
+        let Some((input, _)) = self.secrets.get(ask_id) else { return };
+        let input = input.clone();
+        let Some(ask) = self.state.asks.get(ask_id) else { return };
+        let value = input.read(cx).text();
+        if value.is_empty() {
             return;
         }
-        let Some(ask) = self.state.asks.get(ask_id.as_str()) else { return };
-        match self.state.secret_target(ask).and_then(|(machine, key)| Ok((machine, seal::seal(&key, secret.bytes())?))) {
+        match self.state.secret_target(ask).and_then(|(machine, key)| Ok((machine, seal::seal(&key, value.as_bytes())?))) {
             Ok((machine, sealed)) => {
-                let out = self.state.submit_secret(&ask_id, &machine, sealed);
+                let out = self.state.submit_secret(ask_id, &machine, sealed);
                 self.send(out);
+                input.update(cx, |i, cx| i.clear(cx));
             }
             Err(e) => self.state.echo = Some(Echo { text: e, ok: false }),
         }
+        cx.notify();
+    }
+
+    fn copy(&mut self, text: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        self.copied = Some(text);
+        cx.notify();
+    }
+
+    /// A small button that copies `text` and then says so.
+    fn copy_button(&self, id: impl Into<SharedString>, text: impl Into<String>, cx: &mut Context<Self>) -> Stateful<Div> {
+        let text = text.into();
+        let copied = self.copied.as_deref() == Some(text.as_str());
+        button(id.into(), if copied { "Copied" } else { "Copy" }, cx.listener(move |this, _, _, cx| this.copy(text.clone(), cx)))
+    }
+
+    /// Error text in red with a Copy button, so it can be pasted into an issue or a search.
+    fn error_line(&self, id: impl Into<SharedString>, text: impl Into<String>, cx: &mut Context<Self>) -> Div {
+        let text = text.into();
+        div()
+            .flex()
+            .gap_2()
+            .items_start()
+            .child(div().flex_1().min_w_0().whitespace_normal().text_color(rgb(Theme::RED)).child(text.clone()))
+            .child(self.copy_button(id, text, cx))
+    }
+
+    /// A command to run elsewhere, in mono, with a Copy button.
+    fn command_line(&self, id: impl Into<SharedString>, command: impl Into<String>, cx: &mut Context<Self>) -> Div {
+        let command = command.into();
+        div()
+            .flex()
+            .gap_2()
+            .items_center()
+            .child(div().flex_1().min_w_0().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()))
+            .child(self.copy_button(id, command, cx))
     }
 
     fn quick_reply(&mut self, batch_id: BatchId, raw: String, cx: &mut Context<Self>) {
@@ -514,14 +721,12 @@ impl Shell {
         let offline = self.state.machines.iter().filter(|m| m.status != MachineStatus::Online).count();
         let nav = |label: &'static str, count: String, shortcut: &'static str, screen: Screen, cx: &mut Context<Self>| {
             let active = self.screen == screen || (screen == Screen::Projects && self.screen == Screen::Project);
-            div()
-                .id(label)
+            clickable(div().id(label))
                 .h(px(30.))
                 .px_3()
                 .flex()
                 .items_center()
                 .gap_2()
-                .cursor_pointer()
                 .when(active, |d| d.bg(rgb(Theme::SELECTED)))
                 .hover(|d| d.bg(rgb(Theme::HOVER)))
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -544,7 +749,18 @@ impl Shell {
         let bench_status = status.clone();
         pane(px(220.))
             .child(header("fleetd", String::new()))
-            .when_some(self.update.clone(), |d, text| d.child(div().px_3().py_1().whitespace_normal().text_color(rgb(Theme::ACCENT)).child(text)))
+            .when_some(self.update.clone(), |d, text| {
+                d.child(
+                    div()
+                        .px_3()
+                        .py_1()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(div().whitespace_normal().text_color(rgb(Theme::ACCENT)).child(text))
+                        .child(self.command_line("copy-update", "fleetd update", cx)),
+                )
+            })
             .child(nav("Inbox", if inbox > 0 { inbox.to_string() } else { String::new() }, SHORTCUTS[0], Screen::Inbox, cx))
             .child(nav("Projects", self.state.projects.len().to_string(), SHORTCUTS[1], Screen::Projects, cx))
             .child(nav(
@@ -571,62 +787,109 @@ impl Shell {
                                 .child(div().text_color(rgb(dot)).child("●"))
                                 .child(div().flex_1().min_w_0().whitespace_normal().child(muted(status))),
                         )
-                        .child(muted(self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default()))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .child(muted(self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default())),
+                                )
+                                .child(self.copy_button("copy-hub-url", self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default(), cx)),
+                        )
                         .child(button("disconnect", "Disconnect and forget key", cx.listener(|this, _, _, cx| this.disconnect(cx)))),
                 )
             })
             .when(self.bench.is_some(), |d| d.child(div().p_3().child(muted(bench_status))))
     }
 
-    fn connect_screen(&self, window: &Window) -> AnyElement {
-        let focused = self.focus.is_focused(window);
-        let field = |label: &'static str, which: Field, value: String, placeholder: &'static str| {
-            let active = focused && self.form.field == which;
-            div().flex().flex_col().gap_1().child(muted(label)).child(
-                div()
-                    .h(px(32.))
-                    .px_2()
-                    .flex()
-                    .items_center()
-                    .border_1()
-                    .rounded_sm()
-                    .border_color(rgb(if active { Theme::ACCENT } else { Theme::BORDER }))
-                    .bg(rgb(Theme::BG))
-                    .font_family(MONO_FONT)
-                    .child(if value.is_empty() { div().text_color(rgb(Theme::MUTED)).child(placeholder) } else { div().child(value) })
-                    .when(active, |d| d.child(caret())),
-            )
-        };
-        let masked = if self.form.key.is_empty() {
-            String::new()
-        } else {
-            format!("{}{}", &self.form.key[..self.form.key.len().min(4)], "•".repeat(self.form.key.len().saturating_sub(4).min(40)))
-        };
-        div()
-            .flex_1()
+    fn connect_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let form = &self.form;
+        let field = |label: &'static str, input: &Entity<TextInput>| div().flex().flex_col().gap_1().child(muted(label)).child(input.clone());
+        let mut card = div()
+            .w(px(500.))
+            .p_5()
             .flex()
+            .flex_col()
+            .gap_4()
+            .bg(rgb(Theme::PANEL))
+            .border_1()
+            .border_color(rgb(Theme::BORDER))
+            .rounded_md()
+            .child(div().text_size(px(16.)).child("Connect to your fleetd hub"))
+            .when_some(form.status.clone(), |d, status| d.child(div().whitespace_normal().text_color(rgb(Theme::MUTED)).child(status)))
+            .child(field("Hub address", &form.hub));
+        if !form.use_key {
+            card = card
+                .child(field("Pairing code", &form.code))
+                .child(div().flex().child(primary_button(
+                    "pair",
+                    if form.busy { "Connecting…" } else { "Connect" },
+                    cx.listener(|this, _, _, cx| this.submit_code(cx)),
+                )))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(muted("No code yet? On the hub, run this and type the code it prints:"))
+                        .child(self.command_line("copy-pair", "fleetd pair", cx)),
+                );
+        }
+        if let Some(error) = &form.error {
+            let text = match &error.fix {
+                Some(fix) => format!("{}\n{fix}", error.message),
+                None => error.message.clone(),
+            };
+            card = card.child(self.error_line("copy-connect-error", text, cx));
+        }
+        card = card.child(
+            clickable(div().id("use-key"))
+                .flex()
+                .gap_1()
+                .items_center()
+                .text_color(rgb(Theme::ACCENT))
+                .hover(|d| d.text_color(rgb(Theme::TEXT)))
+                .child(if form.use_key { "▾ Use a key instead" } else { "▸ Use a key instead" })
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.form.use_key = !this.form.use_key;
+                    this.form.error = None;
+                    let target = if this.form.use_key { &this.form.key } else { &this.form.code };
+                    this.pending_focus = Some(target.focus_handle(cx));
+                    cx.notify();
+                })),
+        );
+        if form.use_key {
+            card = card
+                .child(field("Key", &form.key))
+                .child(div().flex().child(primary_button("connect-key", "Connect with key", cx.listener(|this, _, _, cx| this.submit_key(cx)))))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(muted("On the hub, create a key for this device, so your answers are recorded as yours:"))
+                        .child(self.command_line("copy-key-create", "fleetd hub key create --human --name <device>", cx)),
+                );
+        }
+        card = card.child(muted("The key is kept in the OS keychain, never in a file."));
+        div()
+            .id("connect")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
             .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .w(px(460.))
-                    .p_5()
-                    .flex()
-                    .flex_col()
-                    .gap_4()
-                    .bg(rgb(Theme::PANEL))
-                    .border_1()
-                    .border_color(rgb(Theme::BORDER))
-                    .rounded_md()
-                    .child(div().text_size(px(16.)).child("Connect to a fleetd hub"))
-                    .child(field("Hub URL", Field::Url, self.form.url.clone(), "http://127.0.0.1:4790"))
-                    .child(field("Key", Field::Key, masked, "fld_…"))
-                    .when_some(self.form.error.clone(), |d, e| d.child(div().text_color(rgb(Theme::RED)).child(e)))
-                    .child(div().whitespace_normal().child(muted(
-                        "On the hub, create a key for this device with `fleetd hub key create --human --name <device>`, so your answers are recorded as yours.",
-                    )))
-                    .child(muted("Tab switches fields, Enter connects. The key is kept in the OS keychain, never in a file.")),
-            )
+            .py_8()
+            .child(div().flex_1())
+            .child(card)
+            .child(div().flex_1())
             .into_any_element()
     }
 
@@ -634,10 +897,24 @@ impl Shell {
         let items = self.state.inbox();
         let mut body = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().p_3().flex().flex_col().gap_2();
         if let Some(echo) = &self.state.echo {
-            body = body.child(div().text_color(rgb(if echo.ok { Theme::GREEN } else { Theme::YELLOW })).child(echo.text.clone()));
+            body = body.child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .items_start()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .whitespace_normal()
+                            .text_color(rgb(if echo.ok { Theme::GREEN } else { Theme::YELLOW }))
+                            .child(echo.text.clone()),
+                    )
+                    .when(!echo.ok, |d| d.child(self.copy_button("copy-echo", echo.text.clone(), cx))),
+            );
         }
         if let Some(e) = &self.state.asks_error {
-            body = body.child(div().text_color(rgb(Theme::RED)).child(e.clone()));
+            body = body.child(self.error_line("copy-asks-error", e.clone(), cx));
         }
         if items.is_empty() && self.state.asks_error.is_none() {
             body = body.child(muted("Nothing needs you. Leads decide everything that isn't a product, money, credential or irreversible call."));
@@ -733,25 +1010,7 @@ impl Shell {
             card =
                 card.child(div().whitespace_normal().child(format!("{}. {}", i + 1, step.text)).child(muted(format!("on {}", label(&step.r#where)))));
             if let Some(command) = &step.command {
-                let copied = self.copied.as_deref() == Some(command.as_str());
-                let to_copy = command.to_string();
-                card = card.child(
-                    div()
-                        .pl_4()
-                        .flex()
-                        .gap_2()
-                        .items_center()
-                        .child(div().flex_1().min_w_0().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.to_string()))
-                        .child(button(
-                            SharedString::from(format!("{}-copy-{i}", ask.ask_id)),
-                            if copied { "Copied" } else { "Copy" },
-                            cx.listener(move |this, _, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(to_copy.clone()));
-                                this.copied = Some(to_copy.clone());
-                                cx.notify();
-                            }),
-                        )),
-                );
+                card = card.child(div().pl_4().child(self.command_line(format!("{}-copy-{i}", ask.ask_id), command.to_string(), cx)));
             }
             if let Some(expect) = &step.expect {
                 card = card.child(div().pl_4().child(muted(format!("expect: {expect}"))));
@@ -761,7 +1020,7 @@ impl Shell {
             // The exact stored argv, as JSON so spaces and quotes stay visible.
             let argv = serde_json::to_string(&gated.argv).unwrap_or_default();
             card = card
-                .child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(argv))
+                .child(self.command_line(format!("{}-copy-argv", ask.ask_id), argv, cx))
                 .child(muted(format!("in {}", gated.cwd.as_deref().unwrap_or("the project workspace"))))
                 .child(muted(format!("{} · {} · up to {} min", label(&gated.class), gated.reason, (gated.timeout_sec.get() + 59) / 60)));
             let env: Vec<String> = gated.secret_env.iter().flat_map(|e| e.0.iter()).map(|e| format!("{} ← {}", e.name, e.secret_key)).collect();
@@ -778,54 +1037,25 @@ impl Shell {
         card.child(buttons)
     }
 
-    /// Masked entry: the value lives only in a self-wiping buffer, and is sealed to the sink machine's key
-    /// here before anything is sent.
+    /// Masked entry: the value lives only in the field's self-wiping buffer, and is sealed to the sink machine's
+    /// key here before anything is sent.
     fn secret_entry(&self, ask: &Ask, cx: &mut Context<Self>) -> Div {
-        let mut col = div().flex().flex_col().gap_1().child(muted(format!("{} → {}", ask.key, ask.sink.as_deref().unwrap_or("?"))));
+        let col = div().flex().flex_col().gap_1().child(muted(format!("{} → {}", ask.key, ask.sink.as_deref().unwrap_or("?"))));
         let machine = match self.state.secret_target(ask) {
             Ok((machine, _)) => machine,
             Err(reason) => return col.child(div().text_color(rgb(Theme::YELLOW)).whitespace_normal().child(reason)),
         };
-        let typed = self.secret.as_ref().filter(|(id, _)| id == ask.ask_id.as_str()).map(|(_, s)| s.chars());
+        let Some((input, _)) = self.secrets.get(ask.ask_id.as_str()) else { return col };
+        let typed = !input.read(cx).is_empty();
         let sending = self.state.secret_submitting(&ask.ask_id);
-        let open = ask.ask_id.to_string();
-        let field = div()
-            .id(SharedString::from(format!("{}-secret", ask.ask_id)))
-            .flex_1()
-            .h(px(30.))
-            .px_2()
-            .flex()
-            .items_center()
-            .border_1()
-            .rounded_sm()
-            .border_color(rgb(if typed.is_some() { Theme::ACCENT } else { Theme::BORDER }))
-            .bg(rgb(Theme::BG))
-            .font_family(MONO_FONT)
-            .cursor_pointer()
-            .on_click(cx.listener(move |this, _, _, cx| {
-                if this.secret.as_ref().is_none_or(|(id, _)| *id != open) {
-                    this.secret = Some((open.clone(), Secret::default()));
-                }
-                cx.notify();
-            }))
-            .child(match typed {
-                Some(0) => div().text_color(rgb(Theme::MUTED)).child("Type or paste the value, Enter seals and sends, Esc cancels"),
-                Some(n) => div().child("•".repeat(n.min(40))),
-                None => div().text_color(rgb(Theme::MUTED)).child("Click to enter the value"),
-            })
-            .when(typed.is_some(), |d| d.child(caret()));
+        let id = ask.ask_id.to_string();
         let send = button(
             SharedString::from(format!("{}-seal", ask.ask_id)),
             if sending { "Sending…" } else { "Seal & send" },
-            cx.listener(|this, _, _, cx| {
-                this.submit_secret();
-                cx.notify();
-            }),
+            cx.listener(move |this, _, _, cx| this.submit_secret(&id, cx)),
         );
-        col = col
-            .child(div().flex().gap_2().items_center().child(field).when(typed.is_some_and(|n| n > 0), |d| d.child(send)))
-            .child(muted(format!("Encrypted here to {machine}'s key; the hub never sees the value.")));
-        col
+        col.child(div().flex().gap_2().items_center().child(div().flex_1().child(input.clone())).when(typed, |d| d.child(send)))
+            .child(muted(format!("Encrypted here to {machine}'s key; the hub never sees the value.")))
     }
 
     fn projects_screen(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -834,7 +1064,7 @@ impl Shell {
             .flex()
             .flex_col()
             .min_w_0()
-            .child(header("Projects", "↑↓ select · Enter opens".into()))
+            .child(header("Projects", "click to open · ↑↓ Enter".into()))
             .child(
                 uniform_list(
                     "projects",
@@ -853,8 +1083,7 @@ impl Shell {
         let open = row.workstreams().len();
         let headline = row.error.clone().or_else(|| row.headline().map(str::to_string)).unwrap_or_default();
         let key = row.key();
-        div()
-            .id(ix)
+        clickable(div().id(ix))
             .w_full()
             .h(px(ROW_H))
             .px_3()
@@ -863,7 +1092,6 @@ impl Shell {
             .gap_3()
             .whitespace_nowrap()
             .overflow_hidden()
-            .cursor_pointer()
             .when(ix == self.selected, |d| d.bg(rgb(Theme::SELECTED)))
             .hover(|d| d.bg(rgb(Theme::HOVER)))
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -921,7 +1149,7 @@ impl Shell {
         let mut left = div().id("workstreams").flex_1().min_h_0().overflow_y_scroll().p_3().flex().flex_col().gap_3();
         if let Some(row) = row {
             if let Some(e) = &row.error {
-                left = left.child(div().text_color(rgb(Theme::RED)).whitespace_normal().child(e.clone()));
+                left = left.child(self.error_line("copy-project-error", e.clone(), cx));
             }
             if row.workstreams().is_empty() && row.outcome.is_some() {
                 left = left.child(muted("No open workstreams."));
@@ -947,12 +1175,20 @@ impl Shell {
                             .flex()
                             .gap_2()
                             .items_center()
+                            .child(button(
+                                "back",
+                                "‹ Projects",
+                                cx.listener(|this, _, _, cx| {
+                                    this.go(Screen::Projects);
+                                    cx.notify();
+                                }),
+                            ))
                             .child(title)
                             .child(self.machine_chip(&key.0))
                             .when(row.is_some_and(ProjectRow::stale), |d| {
                                 d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child("stale"))
                             }),
-                        muted("Esc back"),
+                        muted("Esc"),
                     ))
                     .child(left),
             )
@@ -975,6 +1211,19 @@ impl Shell {
         }
         let status = if self.follow { "following" } else { "paused" };
         let empty = self.log.is_empty();
+        let jump = (!self.follow).then(|| {
+            button(
+                "jump-latest",
+                "Jump to latest",
+                cx.listener(|this, _, _, cx| {
+                    this.follow = true;
+                    if !this.log.is_empty() {
+                        this.log_scroll.scroll_to_item(this.log.len() - 1, ScrollStrategy::Bottom);
+                    }
+                    cx.notify();
+                }),
+            )
+        });
         div()
             .flex_1()
             .flex()
@@ -983,9 +1232,9 @@ impl Shell {
             .bg(rgb(Theme::BG))
             .child(header_el(
                 div().flex().gap_2().items_center().child(div().text_color(rgb(lead_color)).child("●")).child(muted(lead_label)).child(title),
-                muted(format!("{} lines · {status}", self.log.len())),
+                div().flex().gap_2().items_center().child(muted(format!("{} lines · {status}", self.log.len()))).children(jump),
             ))
-            .when_some(error, |d, e| d.child(div().px_3().py_1().text_color(rgb(Theme::RED)).child(e)))
+            .when_some(error, |d, e| d.child(div().px_3().py_1().child(self.error_line("copy-tail-error", e, cx))))
             .when(empty, |d| d.child(div().p_3().child(muted("The lead's latest messages and actions show here."))))
             .child(
                 uniform_list(
@@ -1026,13 +1275,18 @@ impl Shell {
             };
             let t3 = m.t3.as_ref().map_or("T3 not reachable".to_string(), |t| format!("T3 {}", t.version));
             list = list.child(
-                div()
+                clickable(div().id(SharedString::from(format!("machine-{}", m.name))))
                     .min_h(px(ROW_H))
                     .px_3()
                     .py_1()
                     .flex()
                     .items_center()
                     .gap_3()
+                    .hover(|d| d.bg(rgb(Theme::HOVER)))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.selected = ix;
+                        cx.notify();
+                    }))
                     .when(ix == self.selected, |d| d.bg(rgb(Theme::SELECTED)))
                     .child(
                         div()
@@ -1087,7 +1341,7 @@ impl Shell {
             .border_color(rgb(Theme::BORDER))
             .child(div().flex().gap_3().items_center().child("Doctor").child(muted(checked)).child(div().flex_1()).child(rerun));
         if let Some(e) = doctor.and_then(|d| d.error.clone()) {
-            section = section.child(div().text_color(rgb(Theme::RED)).whitespace_normal().child(e));
+            section = section.child(self.error_line("copy-doctor-error", e, cx));
         }
         for check in doctor.map(|d| d.checks.as_slice()).unwrap_or_default() {
             let color = match check.status {
@@ -1106,7 +1360,7 @@ impl Shell {
             if let Some(fix) = check.fix.as_ref().filter(|_| check.status != DoctorStatus::Ok) {
                 let mut fix_col = div().w(px(320.)).flex_none().flex().flex_col().gap_1().child(muted(fix.label.to_string()));
                 if let Some(command) = fix.command.as_ref().filter(|_| fix.kind == DoctorFixKind::Manual) {
-                    fix_col = fix_col.child(div().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.to_string()));
+                    fix_col = fix_col.child(self.command_line(format!("copy-fix-{}", check.id), command.to_string(), cx));
                 }
                 if fix.kind == DoctorFixKind::Auto {
                     let id = check.id.clone();
@@ -1128,13 +1382,15 @@ impl Shell {
         section
     }
 
-    fn reply_bar(&self, window: &Window) -> impl IntoElement {
-        let focused = self.focus.is_focused(window);
+    fn reply_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let focused = self.reply.focus_handle(cx).is_focused(window);
         let echo = self.state.echo.as_ref().filter(|_| self.screen != Screen::Inbox);
+        let has_text = !self.reply.read(cx).is_empty();
         div()
-            .h(px(40.))
+            .min_h(px(40.))
             .flex_none()
             .px_3()
+            .py_1()
             .flex()
             .items_center()
             .gap_2()
@@ -1144,13 +1400,7 @@ impl Shell {
             .font_family(MONO_FONT)
             .text_size(px(13.))
             .child(div().text_color(rgb(Theme::ACCENT)).child("›"))
-            .child(if self.bar.is_empty() {
-                div().text_color(rgb(Theme::MUTED)).child("Reply to the inbox: 1 go 2 nvm 3 b")
-            } else {
-                div().text_color(rgb(Theme::TEXT)).child(self.bar.clone())
-            })
-            .when(focused, |d| d.child(caret()))
-            .child(div().flex_1())
+            .child(div().flex_1().min_w_0().child(self.reply.clone()))
             .when_some(echo, |d, e| {
                 d.child(
                     div()
@@ -1162,6 +1412,9 @@ impl Shell {
                         .font_family(UI_FONT)
                         .child(e.text.clone()),
                 )
+            })
+            .when(has_text, |d| {
+                d.child(div().font_family(UI_FONT).child(button("send-reply", "Send", cx.listener(|this, _, _, cx| this.send_reply(cx)))))
             })
     }
 
@@ -1214,9 +1467,12 @@ impl Shell {
 
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(focus) = self.pending_focus.take() {
+            window.focus(&focus, cx);
+        }
         let screen = match self.screen {
             Screen::Loading => div().flex_1().into_any_element(),
-            Screen::Connect => self.connect_screen(window),
+            Screen::Connect => self.connect_screen(cx),
             Screen::Inbox => self.inbox_screen(cx),
             Screen::Projects => self.projects_screen(cx),
             Screen::Project => self.project_screen(window, cx),
@@ -1228,7 +1484,19 @@ impl Render for Shell {
             .min_w_0()
             .flex()
             .flex_col()
-            .when_some(banner, |d, text| d.child(div().px_3().py_1().bg(rgb(0x3a3220)).text_color(rgb(Theme::YELLOW)).child(text)))
+            .when_some(banner, |d, text| {
+                d.child(
+                    div()
+                        .px_3()
+                        .py_1()
+                        .flex()
+                        .gap_2()
+                        .items_center()
+                        .bg(rgb(0x3a3220))
+                        .child(div().flex_1().min_w_0().whitespace_normal().text_color(rgb(Theme::YELLOW)).child(text.clone()))
+                        .child(self.copy_button("copy-banner", text, cx)),
+                )
+            })
             .child(div().flex_1().min_h_0().flex().child(screen));
         div()
             .size_full()
@@ -1240,6 +1508,8 @@ impl Render for Shell {
             .font_family(UI_FONT)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
+            .on_action(cx.listener(|_, _: &FocusNext, window, cx| window.focus_next(cx)))
+            .on_action(cx.listener(|_, _: &FocusPrev, window, cx| window.focus_prev(cx)))
             .child(crate::titlebar::TitleBar::new())
             .child(
                 div()
@@ -1249,7 +1519,7 @@ impl Render for Shell {
                     .when(self.screen != Screen::Connect && self.screen != Screen::Loading, |d| d.child(self.sidebar(cx)))
                     .child(main),
             )
-            .when(!matches!(self.screen, Screen::Connect | Screen::Loading), |d| d.child(self.reply_bar(window)))
+            .when(self.has_reply_bar(), |d| d.child(self.reply_bar(window, cx)))
     }
 }
 
@@ -1510,8 +1780,15 @@ fn muted(text: impl Into<SharedString>) -> Div {
     div().text_color(rgb(Theme::MUTED)).text_size(px(11.5)).child(text.into())
 }
 
-fn caret() -> Div {
-    div().w(px(7.)).h(px(16.)).bg(rgb(Theme::ACCENT))
+/// Anything you click: pointer cursor, a focus ring when reached with Tab (Enter/Space then click it), and a
+/// click that leaves keyboard focus where it was, so typing in a field carries on.
+fn clickable(el: Stateful<Div>) -> Stateful<Div> {
+    el.tab_index(0)
+        .cursor_pointer()
+        .border_1()
+        .border_color(transparent_black())
+        .focus_visible(|d| d.border_color(rgb(Theme::ACCENT)))
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
 }
 
 fn button(
@@ -1519,15 +1796,31 @@ fn button(
     label: impl Into<SharedString>,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> Stateful<Div> {
-    div()
-        .id(id)
+    clickable(div().id(id))
+        .flex_none()
         .px_2()
         .py_0p5()
         .rounded_sm()
         .bg(rgb(Theme::BUTTON))
         .text_size(px(12.))
-        .cursor_pointer()
         .hover(|d| d.bg(rgb(Theme::SELECTED)))
+        .on_click(on_click)
+        .child(label.into())
+}
+
+/// The one main action on a screen.
+fn primary_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> Stateful<Div> {
+    clickable(div().id(id))
+        .px_4()
+        .py_1()
+        .rounded_sm()
+        .bg(rgb(Theme::SELECTED))
+        .text_color(rgb(Theme::TEXT))
+        .hover(|d| d.bg(rgb(0x3a4c6b)))
         .on_click(on_click)
         .child(label.into())
 }
