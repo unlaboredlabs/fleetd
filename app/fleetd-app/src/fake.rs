@@ -230,10 +230,10 @@ fn fixture_tail() -> Value {
     let act = |m: &str, kind: &str, summary: &str, failed: bool| json!({ "kind": "action", "at": at(m), "action": { "at": at(m), "kind": kind, "status": if failed { "failed" } else { "completed" }, "summary": summary, "failed": failed } });
     json!([
         msg("02:01", "user", "New order W14 from you: Fix the cart total rounding for multi-currency orders."),
-        act("02:04", "tool_call", "fleetd brief show W14", false),
+        act("02:04", "command", "fleetd inventory", false),
         act("02:18", "command", "rg -n roundTotal src/cart", false),
         act("02:31", "command", "npm test -- cart", false),
-        act("02:49", "command", "fleetd brief freeze W14", false),
+        act("02:49", "command", "fleetd brief create --workstream W14 --file brief.json", false),
         msg("02:50", "assistant", "Froze the brief for W14: 2 checks, tier M. Starting an implementer on src/cart/total.ts and a reviewer for #211."),
         msg("03:20", "assistant", "W12's PR #208 is in CI; nothing to do until it lands."),
         act("03:21", "command", "gh pr checks 208", false),
@@ -243,8 +243,8 @@ fn fixture_tail() -> Value {
             "assistant",
             "T31 is editing src/cart/total.ts for W14. I asked you which path the health endpoint should use; T31 continues with /healthz meanwhile."
         ),
-        act("06:40", "command", "fleetd tasks list --workstream W14", false),
-        act("06:52", "tool_call", "fleetd review status #212", false),
+        act("06:40", "command", "fleetd task list --workstream W14", false),
+        act("06:52", "command", "fleetd change status X12", false),
     ])
 }
 

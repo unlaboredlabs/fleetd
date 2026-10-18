@@ -142,7 +142,7 @@ pub fn render(
                 .text_size(px(size::XS))
                 .text_color(t.quiet)
                 .whitespace_normal()
-                .child("No projects yet. Add one with fleetd project add on a machine."),
+                .child("No projects yet. Run fleetd init again on the hub: it offers the repos it finds."),
         );
     }
     let mut jump = 0;
