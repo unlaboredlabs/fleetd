@@ -1,0 +1,6 @@
+{
+  "machineId": "forge",
+  "projectId": "fleetd",
+  "query": "digest",
+  "limit": 20
+}

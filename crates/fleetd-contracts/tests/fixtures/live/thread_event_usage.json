@@ -1,0 +1,14 @@
+{
+  "sessionId": "s-31",
+  "at": "2026-10-18T10:07:12.000Z",
+  "event": {
+    "type": "usage",
+    "runId": "r-3",
+    "usage": {
+      "inputTokens": 2400,
+      "outputTokens": 712,
+      "cacheReadInputTokens": 31000,
+      "cacheCreationInputTokens": 1200
+    }
+  }
+}

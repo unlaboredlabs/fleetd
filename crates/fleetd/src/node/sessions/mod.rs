@@ -657,6 +657,9 @@ impl SessionService {
                 }))
             }
             SessionCall::RunnerInfo => Ok(SessionOutput::RunnerInfo(self.runner_info().await)),
+            SessionCall::ListFiles { .. } | SessionCall::PutFile { .. } => Err(invalid(
+                "this node does not list or write project files yet",
+            )),
         }
     }
 

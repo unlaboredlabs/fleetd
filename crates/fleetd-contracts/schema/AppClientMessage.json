@@ -73,6 +73,26 @@
             "input"
           ],
           "type": "object"
+        },
+        {
+          "description": "Subscribe to `live` frames, replacing any earlier subscription: every open order's lanes when `board`, and\nthe focused order's lanes, its project's lead and their streamed text when `focus` is set. Neither: stop.\nSend it again on window activation; the first frame after each one is `full`.",
+          "properties": {
+            "board": {
+              "type": "boolean"
+            },
+            "focus": {
+              "$ref": "#/$defs/WorkstreamId"
+            },
+            "t": {
+              "const": "live",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "board"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -80,6 +100,10 @@
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
     }
   },
   "$ref": "#/$defs/AppClientMessage",
