@@ -50,28 +50,40 @@ pub async fn connect(home: &Path) -> Result<McpClient, Failure> {
 
 /// [`connect`], named `client` in the hub's logs.
 pub async fn connect_as(home: &Path, client: &str) -> Result<McpClient, Failure> {
+    connect_to(home, None, client).await
+}
+
+/// The hub's MCP endpoint with the CLI's own key from `home`; `hub` overrides the address `fleetd init` saved
+/// (for a hub started by hand with `fleetd hub start`).
+pub async fn connect_to(
+    home: &Path,
+    hub: Option<&str>,
+    client: &str,
+) -> Result<McpClient, Failure> {
     let again = |message: String| Failure {
         message,
         fix: "fleetd init (it starts the hub and repairs its setup)".into(),
     };
-    let state = read_setup(home)
-        .map_err(again)?
-        .ok_or_else(|| again(format!("{} has no hub set up", home.display())))?;
+    let listen = match hub {
+        Some(url) => url.trim_end_matches('/').to_owned(),
+        None => {
+            let state = read_setup(home)
+                .map_err(again)?
+                .ok_or_else(|| again(format!("{} has no hub set up", home.display())))?;
+            format!("http://{}", state.listen)
+        }
+    };
+    let state_listen = listen.clone();
     let key = cli_key(home).map_err(again)?;
-    McpClient::connect(
-        &format!("http://{}", state.listen),
-        &key,
-        client,
-        Duration::from_secs(15),
-    )
-    .await
-    .map_err(|error| {
-        again(format!(
-            "the hub does not answer at {}: {}",
-            state.listen,
-            error.message()
-        ))
-    })
+    McpClient::connect(&listen, &key, client, Duration::from_secs(15))
+        .await
+        .map_err(|error| {
+            again(format!(
+                "the hub does not answer at {}: {}",
+                state_listen,
+                error.message()
+            ))
+        })
 }
 
 async fn list(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
