@@ -1,5 +1,6 @@
 mod actions;
 mod bench;
+mod board;
 mod client;
 mod composer;
 mod crash;
@@ -9,11 +10,15 @@ mod diff;
 #[allow(dead_code)]
 mod diffview;
 mod fake;
+mod inbox;
 mod input;
 mod keychain;
 mod links;
+// Liveness and motion (lanes, activity, sparklines, strips): its own module so it can grow without touching main.rs.
+mod live;
 mod menus;
 mod notify;
+mod order;
 mod pair;
 mod palette;
 mod prefs;
@@ -85,26 +90,29 @@ fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
     menus::init(cx);
     let bounds = Bounds::centered(None, size(px(1400.), px(900.)), cx);
     stage("window_opening", &bench::displays_and(bounds, cx));
-    cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            // The app draws its own top bar (titlebar.rs): on macOS the traffic lights sit in it, on Linux it
-            // carries the window buttons whenever the compositor leaves decorations to the client.
-            titlebar: Some(TitlebarOptions {
-                title: Some("fleetd".into()),
-                appears_transparent: true,
-                traffic_light_position: Some(titlebar::TRAFFIC_LIGHTS),
-            }),
-            app_owns_titlebar_drag: true,
-            window_decorations: Some(WindowDecorations::Client),
-            window_min_size: Some(size(px(640.), px(400.))),
-            app_id: Some("fleetd".into()),
-            // gpui caps unfocused windows at 30 fps. Benchmarks measure rendering, not whether the OS
-            // gave a freshly launched binary focus (macOS often doesn't), so lift the cap there.
-            inactive_frame_interval: if bench.is_some() { None } else { WindowOptions::default().inactive_frame_interval },
-            ..Default::default()
-        },
-        |window, cx| {
+    let window_options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        // The app draws its own top bar (titlebar.rs): on macOS the traffic lights sit in it, on Linux it
+        // carries the window buttons whenever the compositor leaves decorations to the client.
+        titlebar: Some(TitlebarOptions {
+            title: Some("fleetd".into()),
+            appears_transparent: true,
+            traffic_light_position: Some(titlebar::TRAFFIC_LIGHTS),
+        }),
+        app_owns_titlebar_drag: true,
+        window_decorations: Some(WindowDecorations::Client),
+        window_min_size: Some(size(px(640.), px(400.))),
+        app_id: Some("fleetd".into()),
+        // gpui caps unfocused windows at 30 fps. Benchmarks measure rendering, not whether the OS
+        // gave a freshly launched binary focus (macOS often doesn't), so lift the cap there.
+        inactive_frame_interval: if bench.is_some() { None } else { WindowOptions::default().inactive_frame_interval },
+        ..Default::default()
+    };
+    if bench == Some(bench::Mode::Live) {
+        // The live-lanes bench drives its own fixture window (live/fixture.rs), not the shell.
+        live::fixture::open_bench(window_options, cx);
+    } else {
+        cx.open_window(window_options, |window, cx| {
             let shell = cx.new(|cx| shell::Shell::new(bench, window, cx));
             cx.new(|cx| {
                 if bench.is_some() {
@@ -112,9 +120,9 @@ fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
                 }
                 titlebar::Frame::new(shell)
             })
-        },
-    )
-    .expect("open window");
+        })
+        .expect("open window");
+    }
     cx.activate(true);
     stage("activate_requested", "");
 }

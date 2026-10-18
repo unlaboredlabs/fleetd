@@ -49,7 +49,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Quit fleetd", Quit),
         ]),
-        Menu::new("File").items([MenuItem::action("New Order", NewOrder)]),
+        Menu::new("File").items([MenuItem::action("New Order", NewOrder), MenuItem::action("Focus Composer", FocusComposer)]),
         Menu::new("Edit").items([
             MenuItem::os_action("Undo", Undo, OsAction::Undo),
             MenuItem::os_action("Redo", Redo, OsAction::Redo),
@@ -60,6 +60,10 @@ fn menus() -> Vec<Menu> {
             MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
         ]),
         Menu::new("View").items([
+            MenuItem::action("Board", GoToBoard),
+            MenuItem::action("Inbox", ToggleInbox),
+            MenuItem::action("Group by Project or Status", ToggleGrouping),
+            MenuItem::separator(),
             MenuItem::action("Command Palette", ToggleCommandPalette),
             MenuItem::action("Toggle Sidebar", ToggleSidebar),
             // AppKit adds its own "Enter Full Screen" to a menu named View, as it does for Zed; a second
@@ -68,6 +72,12 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             #[cfg(not(target_os = "macos"))]
             MenuItem::action("Full Screen", ToggleFullScreen),
+        ]),
+        Menu::new("Order").items([
+            MenuItem::action("Previous Order", PreviousOrder),
+            MenuItem::action("Next Order", NextOrder),
+            MenuItem::separator(),
+            MenuItem::action("Stop Order…", StopOrder),
         ]),
         Menu::new("Window").items([
             MenuItem::action("Minimize", Minimize),

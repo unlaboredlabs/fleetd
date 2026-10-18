@@ -317,6 +317,22 @@ impl TextInput {
         self.replace(self.selected.clone(), text, EditKind::Insert, cx);
     }
 
+    /// Where the field was last painted, in window coordinates.
+    pub fn bounds(&self) -> Option<Bounds<Pixels>> {
+        self.layout.as_ref().map(|l| l.bounds)
+    }
+
+    /// Where the caret is, as a byte offset into [`Self::text`].
+    pub fn caret(&self) -> usize {
+        self.cursor()
+    }
+
+    /// Replaces `range` (byte offsets) with `text` and puts the caret after it, as one undo step.
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        self.replace(range, text, EditKind::Other, cx);
+        self.last_edit = None;
+    }
+
     /// Adds a sent entry for Up on an empty field to recall.
     pub fn remember(&mut self, entry: &str) {
         if self.masked || entry.trim().is_empty() || self.history.last().is_some_and(|last| last == entry) {

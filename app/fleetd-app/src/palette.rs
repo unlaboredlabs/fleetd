@@ -1,6 +1,7 @@
-//! The command palette (⌘K / Ctrl+K): one field that reaches every project, thread, open ask and action.
-//! Typing filters by a forgiving subsequence match ("dn" finds "desktop-notify"); Up/Down or the mouse pick,
-//! Enter or a click runs, Esc or a click outside closes.
+//! The command palette (⌘K / Ctrl+K): one field that reaches every order (by its id, `W14`), project, open ask
+//! and action. Typing filters by a forgiving subsequence match ("dn" finds "desktop-notify"); Up/Down or the mouse
+//! pick, Enter or a click runs, Esc or a click outside closes. Whatever you type can also become a new order: the
+//! last row is always "New order: <text>".
 
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, ScrollStrategy, SharedString, Subscription, UniformListScrollHandle,
@@ -32,14 +33,18 @@ pub fn bind_keys(cx: &mut App) {
 /// What running an item does; the shell carries it out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
+    Board,
     Inbox,
-    Projects,
     Machines,
     Project(ProjectKey),
+    Order(String),
     /// Opens the inbox at this ask.
     Ask(String),
     /// Opens the composer, aimed at a project or (None) letting the hub route it.
     NewOrder(Option<ProjectKey>),
+    /// Opens the composer with this text in it.
+    NewOrderText(String),
+    ToggleGroup,
     Settings,
     /// Back to the connect screen, to pair with another hub.
     Connect,
@@ -49,18 +54,18 @@ pub enum Command {
 pub enum Group {
     /// Open asks come first: they are why you opened the app.
     Ask,
+    Order,
     Action,
     Project,
-    Thread,
 }
 
 impl Group {
     fn label(self) -> &'static str {
         match self {
             Group::Ask => "Needs you",
+            Group::Order => "Orders",
             Group::Action => "Actions",
             Group::Project => "Projects",
-            Group::Thread => "Threads",
         }
     }
 }
@@ -91,27 +96,34 @@ pub fn items(state: &State) -> Vec<Item> {
             Command::Ask(entry.ask.ask_id.to_string()),
         ));
     }
+    for row in &state.projects {
+        for card in state.live.orders(&row.key()) {
+            out.push(item(
+                Group::Order,
+                format!("{} {}", card.workstream_id, card.title),
+                format!(
+                    "{} · {}",
+                    row.summary.title,
+                    card.phase_detail.as_deref().map_or_else(|| label(&card.phase).replace('_', " "), str::to_string)
+                ),
+                None,
+                Command::Order(card.workstream_id.to_string()),
+            ));
+        }
+    }
     out.extend([
-        item(Group::Action, "New order…", "Send a one-line order to a project", Some(ui::shortcut("N")), Command::NewOrder(None)),
-        item(Group::Action, "Inbox", "What needs you", Some(ui::shortcut("1")), Command::Inbox),
-        item(Group::Action, "Projects", "Every project and its lead", Some(ui::shortcut("2")), Command::Projects),
-        item(Group::Action, "Machines", "Machines and setup checks", Some(ui::shortcut("3")), Command::Machines),
-        item(Group::Action, "Settings", "Appearance and hub connection", Some(ui::shortcut(",")), Command::Settings),
+        item(Group::Action, "New order…", "Tell the fleet what to do", Some(ui::shortcut("N")), Command::NewOrder(None)),
+        item(Group::Action, "Board", "Every open order", Some(ui::shortcut("0")), Command::Board),
+        item(Group::Action, "Inbox", "What needs you", Some(ui::shortcut("I")), Command::Inbox),
+        item(Group::Action, "Group by project or status", "Regroup the board", Some(ui::shortcut("⇧G")), Command::ToggleGroup),
+        item(Group::Action, "Machines", "Machines and setup checks", None, Command::Machines),
+        item(Group::Action, "Settings", "Appearance, motion and hub connection", Some(ui::shortcut(",")), Command::Settings),
         item(Group::Action, "Connect to a hub…", "Pair this app with a fleetd hub", None, Command::Connect),
     ]);
     for row in &state.projects {
         let key = row.key();
         out.push(item(Group::Project, row.summary.title.clone(), row.summary.machine_id.to_string(), None, Command::Project(key.clone())));
         out.push(item(Group::Action, format!("New order in {}", row.summary.title), "", None, Command::NewOrder(Some(key.clone()))));
-        for thread in row.outcome.iter().flat_map(|o| o.threads.iter()) {
-            out.push(item(
-                Group::Thread,
-                thread.title.clone(),
-                format!("{} · {}", row.summary.title, label(&thread.status)),
-                None,
-                Command::Project(key.clone()),
-            ));
-        }
     }
     out
 }
@@ -175,6 +187,8 @@ pub struct Palette {
     input: Entity<TextInput>,
     items: Vec<Item>,
     matches: Vec<usize>,
+    /// The typed text, offered as "New order: …" in the last row.
+    typed: String,
     selected: usize,
     scroll: UniformListScrollHandle,
     _sub: Subscription,
@@ -190,11 +204,12 @@ impl Focusable for Palette {
 
 impl Palette {
     pub fn new(items: Vec<Item>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| TextInput::new(cx).placeholder("Search projects, threads, asks and actions").borderless());
+        let input = cx.new(|cx| TextInput::new(cx).placeholder("Search orders, projects, asks and actions, or type a new order").borderless());
         window.focus(&input.focus_handle(cx), cx);
         let sub = cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
             InputEvent::Changed => {
-                this.matches = rank(input.read(cx).text(), &this.items);
+                this.typed = input.read(cx).text().trim().to_string();
+                this.matches = rank(&this.typed, &this.items);
                 this.selected = 0;
                 this.scroll.scroll_to_item(0, ScrollStrategy::Top);
                 cx.notify();
@@ -204,26 +219,40 @@ impl Palette {
             InputEvent::TooLong => {}
         });
         let matches = rank("", &items);
-        Self { input, items, matches, selected: 0, scroll: UniformListScrollHandle::new(), _sub: sub }
+        Self { input, items, matches, typed: String::new(), selected: 0, scroll: UniformListScrollHandle::new(), _sub: sub }
+    }
+
+    /// Rows: the matches, then "New order: <text>" once something is typed.
+    fn len(&self) -> usize {
+        self.matches.len() + usize::from(!self.typed.is_empty())
     }
 
     fn run(&mut self, ix: usize, cx: &mut Context<Self>) {
         if let Some(item) = self.matches.get(ix).and_then(|&i| self.items.get(i)) {
             cx.emit(PaletteEvent::Run(item.command.clone()));
+        } else if ix == self.matches.len() && !self.typed.is_empty() {
+            cx.emit(PaletteEvent::Run(Command::NewOrderText(self.typed.clone())));
         }
     }
 
     fn step(&mut self, by: isize, cx: &mut Context<Self>) {
-        if self.matches.is_empty() {
+        if self.len() == 0 {
             return;
         }
-        self.selected = (self.selected as isize + by).rem_euclid(self.matches.len() as isize) as usize;
+        self.selected = (self.selected as isize + by).rem_euclid(self.len() as isize) as usize;
         self.scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
         cx.notify();
     }
 
     fn row(&self, ix: usize, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
         let t = theme(cx);
+        if ix == self.matches.len() {
+            return ui::row(t, ix, ix == self.selected)
+                .child(div().w(px(76.)).flex_none().text_size(px(size::XS)).text_color(t.quiet).child("New order"))
+                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(format!("New order: {}", self.typed)))
+                .child(ui::kbd(t, "Enter"))
+                .on_click(cx.listener(move |this, _, _, cx| this.run(ix, cx)));
+        }
         let it = &self.items[self.matches[ix]];
         let first_of_group = ix == 0 || self.items[self.matches[ix - 1]].group != it.group;
         let ask = it.group == Group::Ask;
@@ -256,13 +285,13 @@ impl Palette {
 impl Render for Palette {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme(cx);
-        let list_h = metric::ROW * self.matches.len().clamp(1, VISIBLE_ROWS) as f32 + 8.;
-        let body = if self.matches.is_empty() {
+        let list_h = metric::ROW * self.len().clamp(1, VISIBLE_ROWS) as f32 + 8.;
+        let body = if self.len() == 0 {
             div().h(px(list_h)).px_4().flex().items_center().text_color(t.quiet).child("Nothing matches.").into_any_element()
         } else {
             uniform_list(
                 "palette",
-                self.matches.len(),
+                self.len(),
                 cx.processor(|this, range: std::ops::Range<usize>, _, cx| range.map(|ix| this.row(ix, cx)).collect::<Vec<_>>()),
             )
             .track_scroll(&self.scroll)
@@ -320,8 +349,10 @@ mod tests {
             it(Group::Project, "fleetd", Command::Project(p.clone())),
             it(Group::Action, "New order in fleetd", Command::NewOrder(Some(p))),
             it(Group::Ask, "Delete the bucket?", Command::Ask("A1".into())),
+            it(Group::Order, "W14 Harden lead digest", Command::Order("W14".into())),
         ];
-        assert_eq!(rank("", &items), vec![3, 0, 1]);
+        assert_eq!(rank("", &items), vec![3, 4, 0, 1]);
+        assert_eq!(rank("w14", &items), vec![4], "orders are found by their id");
     }
 
     #[test]

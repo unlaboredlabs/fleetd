@@ -1,4 +1,4 @@
-//! External input latency on X11: type through XTEST and time until the input bar's pixels change.
+//! External input latency on X11: type through XTEST and time until the focused text field's pixels change.
 //!
 //! This is the whole path a user sees: X server -> gpui's X11 backend -> handler -> draw -> present ->
 //! pixels in the X framebuffer. On Xvfb + lavapipe "present" is a CPU blit into the server, so the image
@@ -13,18 +13,30 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 
-const BAR_HEIGHT: u16 = 40;
+/// The region to watch for a key's echo, in window pixels: the focused field's bounds when the app reports them in
+/// its `ready` line (`field=x,y,w,h`), else the band above the bottom strips where the composer sits. Nothing else
+/// in it may change on its own (elapsed clocks, sparklines), or a tick reads as an echo.
+pub fn echo_region(field: Option<&str>, w: u16, h: u16) -> (i16, i16, u16, u16) {
+    let parsed = field.and_then(|f| {
+        let v: Vec<u16> = f.split(',').filter_map(|n| n.trim().parse::<f32>().ok()).map(|n| n.round().max(0.) as u16).collect();
+        (v.len() == 4 && v[2] > 0 && v[3] > 0).then(|| (v[0].min(w - 1), v[1].min(h - 1), v[2], v[3]))
+    });
+    match parsed {
+        Some((x, y, fw, fh)) => (x as i16, y as i16, fw.min(w - x), fh.min(h - y)),
+        None => (0, h.saturating_sub(180) as i16, w, 120.min(h)),
+    }
+}
 
-pub fn type_and_watch(window: u32, keys: usize) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
+pub fn type_and_watch(window: u32, keys: usize, field: Option<&str>) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
     let (conn, screen) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen].root;
     let keycode = keycodes(&conn)?;
     let geom = conn.get_geometry(window)?.reply()?;
-    let (w, h) = (geom.width, geom.height);
+    let (x, y, w, h) = echo_region(field, geom.width, geom.height);
     focus(window)?;
 
     let bar = |conn: &x11rb::rust_connection::RustConnection| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        Ok(conn.get_image(ImageFormat::Z_PIXMAP, window, 0, (h - BAR_HEIGHT) as i16, w, BAR_HEIGHT, !0)?.reply()?.data)
+        Ok(conn.get_image(ImageFormat::Z_PIXMAP, window, x, y, w, h, !0)?.reply()?.data)
     };
     let press = |code: u8| -> Result<Instant, Box<dyn std::error::Error>> {
         let at = Instant::now();
@@ -154,4 +166,17 @@ pub fn type_text(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(Duration::from_millis(15));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::echo_region;
+
+    #[test]
+    fn echo_region_is_the_reported_field_clamped_to_the_window_else_the_composer_band() {
+        assert_eq!(echo_region(Some("40,700.4,900,56"), 1400, 900), (40, 700, 900, 56));
+        assert_eq!(echo_region(Some("1300,850,400,100"), 1400, 900), (1300, 850, 100, 50));
+        assert_eq!(echo_region(None, 1400, 900), (0, 720, 1400, 120));
+        assert_eq!(echo_region(Some("bogus"), 1400, 900), (0, 720, 1400, 120));
+    }
 }
