@@ -68,13 +68,14 @@ impl ToolHooks {
     }
 }
 
-const ATTENTION_TYPES: [&str; 6] = [
+const ATTENTION_TYPES: [&str; 7] = [
     "thread.failed",
     "thread.waiting",
     "thread.usage_limited",
     "usage.breaker",
     "change.needs_rebase",
     "change.ci_failed",
+    "train.blocked",
 ];
 /// How far back fleetd_status looks for attention events.
 const ATTENTION_LOOKBACK: i64 = 1000;

@@ -38,6 +38,7 @@
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app" aria-current="page">The desktop app</a></li>
+<li><a href="/docs/time-inspector">Where time went</a></li>
 </ul>
 <p>Reference</p>
 <ul>
@@ -120,6 +121,14 @@ Clicking it opens the ask.</p>
 <p>Settings (⌘,) has General (appearance, motion, the hub connection), Prompts and Instructions; the last two are in
 <a href="/docs/what-agents-are-told">What agents are told</a>. Motion: System follows the OS's reduce-motion setting,
 Reduced turns the brief card and lane transitions off, Full keeps them. Nothing in the app animates continuously.</p>
+<h2 id="time">Where time went<a class="anchor" href="#time" aria-label="Link to this section">#</a></h2>
+<p>The Time button in an order's header (also ⌘K <code>time</code>, and Time in the sidebar for a project, a machine or the fleet)
+shows where the time went, in three tabs. Timeline draws each agent, PR, CI check and ask as a lane, with the
+critical path underlined; hover a bar for the command, its duration and exit code, and click it to open the
+transcript at that step. Breakdown adds up agent time by group, with the slowest commands and CI checks. Insights
+lists the findings, each with "show spans" to see the bars behind it. The filter bar picks the range, project,
+order, machine and role, and compares two periods. How to read it, and what is not exact:
+<a href="/docs/time-inspector">Where time went</a>.</p>
 <h2 id="shortcuts">Shortcuts<a class="anchor" href="#shortcuts" aria-label="Link to this section">#</a></h2>
 <p>⌘ on macOS is Ctrl on Linux.</p>
 <div class="table"><table><thead><tr><th>Keys</th><th>Does</th></tr></thead><tbody>
@@ -150,7 +159,7 @@ Reduced turns the brief card and lane transitions off, Full keeps them. Nothing 
 platform (word motion, undo and redo, select all).</p>
 <nav class="pn" aria-label="Previous and next">
 <a class="prev" href="/docs/what-agents-are-told"><span>Previous</span>What agents are told</a>
-<a class="next" href="/docs/cli"><span>Next</span>CLI reference</a>
+<a class="next" href="/docs/time-inspector"><span>Next</span>Where time went</a>
 </nav>
 <p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/desktop-app.md">Edit this page</a></p>
 </main>
@@ -163,6 +172,7 @@ platform (word motion, undo and redo, select all).</p>
 <li><a href="#order">Follow an order</a></li>
 <li><a href="#reply">Inbox and replies</a></li>
 <li><a href="#settings">Settings</a></li>
+<li><a href="#time">Where time went</a></li>
 <li><a href="#shortcuts">Shortcuts</a></li>
 </ul>
 </aside>

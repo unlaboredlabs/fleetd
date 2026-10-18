@@ -43,7 +43,13 @@ fn cli_key(home: &Path) -> Result<String, String> {
     Ok(created.key)
 }
 
-async fn connect(home: &Path) -> Result<McpClient, Failure> {
+/// The hub on this machine, with the CLI's own admin key. `fleetd time` without `--hub` uses it too.
+pub async fn connect(home: &Path) -> Result<McpClient, Failure> {
+    connect_as(home, "fleetd-doctor").await
+}
+
+/// [`connect`], named `client` in the hub's logs.
+pub async fn connect_as(home: &Path, client: &str) -> Result<McpClient, Failure> {
     let again = |message: String| Failure {
         message,
         fix: "fleetd init (it starts the hub and repairs its setup)".into(),
@@ -55,7 +61,7 @@ async fn connect(home: &Path) -> Result<McpClient, Failure> {
     McpClient::connect(
         &format!("http://{}", state.listen),
         &key,
-        "fleetd-doctor",
+        client,
         Duration::from_secs(15),
     )
     .await

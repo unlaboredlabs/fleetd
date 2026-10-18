@@ -145,6 +145,15 @@ fn plasma_action(value: &str) -> Option<&'static str> {
     }
 }
 
+/// One `gsettings get` answer, or None when it can't be trusted to be this user's setting. Without the user's dconf
+/// (no session, another user's desktop) gsettings falls back to its memory backend and prints the schema default, which
+/// is "suspend", with a message on stderr; so anything on stderr, a failed exit or no value means unknown.
+pub fn gsettings_value(exit_code: Option<i32>, stdout: &str, stderr: &str) -> Option<String> {
+    let value = stdout.trim();
+    (exit_code == Some(0) && stderr.trim().is_empty() && !value.is_empty())
+        .then(|| value.to_string())
+}
+
 /// `gsettings get org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type` and `…-timeout` output.
 pub fn gnome(kind: &str, timeout: Option<&str>) -> Option<IdleSleep> {
     let kind = kind.trim().trim_matches('\'');
@@ -269,7 +278,24 @@ mod imp {
             Duration::from_secs(5),
         )
         .await;
-        out.error.is_none().then_some(out.stdout)
+        gsettings_value(out.exit_code, &out.stdout, &out.stderr)
+    }
+
+    /// Like `running`, but only this user's processes: another user's desktop settings are not ours to report.
+    fn running_mine(name: &str) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(me) = std::fs::metadata("/proc/self").map(|m| m.uid()) else {
+            return false;
+        };
+        std::fs::read_dir("/proc")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|e| {
+                e.metadata().is_ok_and(|m| m.uid() == me)
+                    && std::fs::read_to_string(e.path().join("comm"))
+                        .is_ok_and(|comm| comm.trim().starts_with(name))
+            })
     }
 
     pub async fn read() -> Vec<IdleSleep> {
@@ -281,11 +307,11 @@ mod imp {
             let profiles = std::fs::read_to_string(config.join("powermanagementprofilesrc")).ok();
             found.extend(kde(rc.as_deref(), profiles.as_deref()));
         }
-        if running("gsd-power")
+        if running_mine("gsd-power")
             && let Some(kind) = gsettings("sleep-inactive-ac-type").await
+            && let Some(timeout) = gsettings("sleep-inactive-ac-timeout").await
         {
-            let timeout = gsettings("sleep-inactive-ac-timeout").await;
-            found.extend(gnome(&kind, timeout.as_deref()));
+            found.extend(gnome(&kind, Some(&timeout)));
         }
         found
     }
@@ -394,6 +420,19 @@ mod tests {
             gnome("'hibernate'", Some("int32 1800")).unwrap().after_sec,
             Some(1800)
         );
+    }
+
+    #[test]
+    fn gsettings_unreadable_is_unknown() {
+        assert_eq!(
+            gsettings_value(Some(0), "'suspend'\n", ""),
+            Some("'suspend'".into())
+        );
+        let memory = "GLib-GIO-Message: Using the 'memory' GSettings backend.  Your settings will not be saved or shared with other applications.\n";
+        assert_eq!(gsettings_value(Some(0), "'suspend'\n", memory), None);
+        assert_eq!(gsettings_value(Some(1), "", "No such schema\n"), None);
+        assert_eq!(gsettings_value(None, "", ""), None);
+        assert_eq!(gsettings_value(Some(0), "\n", ""), None);
     }
 
     #[test]

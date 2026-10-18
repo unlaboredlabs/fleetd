@@ -97,6 +97,16 @@ Settings (⌘,) has General (appearance, motion, the hub connection), Prompts an
 [What agents are told](what-agents-are-told.md). Motion: System follows the OS's reduce-motion setting,
 Reduced turns the brief card and lane transitions off, Full keeps them. Nothing in the app animates continuously.
 
+## Where time went {#time}
+
+The Time button in an order's header (also ⌘K `time`, and Time in the sidebar for a project, a machine or the fleet)
+shows where the time went, in three tabs. Timeline draws each agent, PR, CI check and ask as a lane, with the
+critical path underlined; hover a bar for the command, its duration and exit code, and click it to open the
+transcript at that step. Breakdown adds up agent time by group, with the slowest commands and CI checks. Insights
+lists the findings, each with "show spans" to see the bars behind it. The filter bar picks the range, project,
+order, machine and role, and compares two periods. How to read it, and what is not exact:
+[Where time went](time-inspector.md).
+
 ## Shortcuts
 
 ⌘ on macOS is Ctrl on Linux.

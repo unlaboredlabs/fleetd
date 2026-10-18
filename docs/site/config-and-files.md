@@ -11,7 +11,7 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
 ~/.fleetd/
   bin/fleetd             the CLI (linked from ~/.local/bin/fleetd)
   hub/                   the hub's home (hub machine only)
-    hub.sqlite           everything the hub knows
+    hub.sqlite           everything the hub knows, timelines included (see below)
     setup.json           what fleetd init and machine add set up: address, commit identity, machines
     hub.log              the hub service's log
     cli.key              the admin key the CLI on this machine uses
@@ -24,13 +24,24 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
     node.sock            the socket lead-side commands reach the hub through
-    sessions.sqlite      the node's sessions
+    sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per writer session
   claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log
 ```
 
 Prompts and instructions: [What agents are told](what-agents-are-told.md). `fleetd uninstall` keeps all of it; see [Updating & uninstall](updating-and-uninstall.md).
+
+## Timelines {#timelines}
+
+The hub keeps the spans behind [Where time went](time-inspector.md) in `hub.sqlite` for 30 days, and their daily
+totals and each finished order's critical path for 400 days (older ranges show those totals, without the commands
+and findings). Set 1 to 365 days with `fleetd time --retention <days>`
+(an admin key) or in the app's Settings under Data, which shows their size; a busy fleet adds a few MB a day.
+
+Each node holds the timings it has not sent yet in `sessions.sqlite` and deletes them once the hub has them. While
+the hub is away it keeps up to 7 days or 500,000 of them; past that it drops the oldest and the timeline shows the
+gap.
 
 ## The Claude login {#claude}
 

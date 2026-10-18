@@ -126,6 +126,10 @@ pub enum HubEventType {
     /// `data.repo`.
     #[serde(rename = "train.resumed")]
     TrainResumed,
+    /// Something that is not the train's sits where its worktree goes, and a person has to move it; `data.changeId`,
+    /// `data.repo`, `data.error` (what to move).
+    #[serde(rename = "train.blocked")]
+    TrainBlocked,
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
     #[serde(rename = "change.refused")]
     ChangeRefused,
@@ -229,6 +233,7 @@ impl HubEventType {
             Self::PrMerged => "pr.merged",
             Self::TrainFrozen => "train.frozen",
             Self::TrainResumed => "train.resumed",
+            Self::TrainBlocked => "train.blocked",
             Self::ChangeRefused => "change.refused",
             Self::IntakeRouted => "intake.routed",
             Self::ResearchVerdict => "research.verdict",

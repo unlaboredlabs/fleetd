@@ -13,6 +13,7 @@ pub mod pending;
 pub mod prompts;
 pub mod retro;
 pub mod setup;
+pub mod time;
 pub mod update;
 
 use std::path::PathBuf;
@@ -60,7 +61,7 @@ commands:
 setting up (on the hub machine):
 {}{}{}
 running by hand:
-{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -74,6 +75,7 @@ lead-side commands (run by a lead or task inside a project workspace):
         listen::LISTEN_USAGE,
         retro::RETRO_USAGE,
         prompts::PROMPTS_USAGE,
+        time::TIME_USAGE,
         lead::LEAD_USAGE
     )
 }
@@ -111,6 +113,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "listen" => listen::LISTEN_USAGE.to_owned(),
         "retro" => retro::RETRO_USAGE.to_owned(),
         "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
+        "time" => time::TIME_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
         _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
         _ => return None,
@@ -162,7 +165,17 @@ pub fn run(argv: &[String]) -> CliResult {
 fn is_long_running(argv: &[String]) -> bool {
     matches!(
         argv.first().map(String::as_str),
-        Some("init" | "doctor" | "uninstall" | "machine" | "node" | "listen" | "retro" | "update")
+        Some(
+            "init"
+                | "doctor"
+                | "uninstall"
+                | "machine"
+                | "node"
+                | "listen"
+                | "retro"
+                | "time"
+                | "update"
+        )
     )
 }
 
@@ -174,6 +187,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "node" => node::node_command(rest).await,
         "listen" => listen::listen_command(rest).await,
         "retro" => retro::retro_command(rest).await,
+        "time" => time::time_command(rest).await,
         _ => update_command(rest).await,
     }
 }
