@@ -751,7 +751,7 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
             Some(problem) => split_fix(problem),
             None => (detail.clone(), "claude auth login".to_owned()),
         };
-        list.failed("claude", &why, &fix);
+        list.failed("claude", why.strip_prefix("claude ").unwrap_or(&why), &fix);
         return Ok(None);
     }
 }
