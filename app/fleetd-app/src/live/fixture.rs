@@ -276,8 +276,8 @@ impl Feed {
         serde_json::from_value(m).unwrap()
     }
 
-    /// One 250 ms tick of the scripted hub: activities move on, a sparkline bucket closes every 2 s, every 3 s a
-    /// lane finishes and another starts in its order, every 4 s the train moves.
+    /// One 250 ms tick of the scripted hub: activities move on, a sparkline bucket closes every 2 s, every 3 s (6 s
+    /// outside the bench) a lane finishes and another starts in its order, every 4 s (8 s) the train moves.
     pub fn step(&mut self, now_ms: i64) -> Step {
         self.tick += 1;
         let mut boards_changed = false;
@@ -322,14 +322,15 @@ impl Feed {
             }
         }
         let mut lanes: Vec<LiveLane> = changed.iter().map(|id| self.live_lane(id, now_ms, roll)).collect();
-        if self.tick.is_multiple_of(12)
+        let pace = if self.max_rate { 1 } else { 2 };
+        if self.tick.is_multiple_of(12 * pace)
             && let Some(done) = self.finish_one(now_ms, &working)
         {
             lanes.push(LiveLane { status: LaneStatus::Done, activity: None, spark: None, ..self.live_lane(&done, now_ms, false) });
             self.finished.push(done);
             boards_changed = true;
         }
-        if self.tick.is_multiple_of(16) {
+        if self.tick.is_multiple_of(16 * pace) {
             self.move_train();
             boards_changed = true;
         }

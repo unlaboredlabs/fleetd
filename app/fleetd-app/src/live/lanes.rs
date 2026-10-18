@@ -133,6 +133,12 @@ impl FleetLanes {
         }
         // A lane that came back (e.g. retried) is no longer leaving.
         self.gone.retain(|g| !lanes.iter().any(|l| l.lane_id == g.lane.lane_id));
+        // Forget lanes that are neither listed nor leaving, so a long session doesn't accumulate them.
+        let shown: HashSet<String> =
+            lanes.iter().map(|l| &l.lane_id).chain(self.gone.iter().map(|g| &g.lane.lane_id)).map(|id| id.to_string()).collect();
+        self.was.retain(|id, _| shown.contains(id));
+        self.ended.retain(|id, _| shown.contains(id));
+        self.arrived.retain(|id| shown.contains(id));
         self.lanes = lanes;
         self.stale = stale;
         self.schedule(cx);
