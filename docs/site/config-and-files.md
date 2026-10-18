@@ -126,6 +126,15 @@ The hub listens on one port, 4790 by default: on your tailnet address when `flee
 on `127.0.0.1` only. The desktop app, nodes and MCP clients all use it (`<hub url>/mcp` for MCP). Workers open no
 port: their nodes dial out. Change it with `fleetd init --listen <host:port> --url <url>`.
 
+## Hub environment {#env}
+
+Two variables in the hub's environment tune how it follows GitHub; the defaults suit almost everyone.
+
+| variable | default | does |
+|---|---|---|
+| `FLEETD_STATUS_GITHUB_STALE_SEC` | `180` | seconds without a good GitHub answer before [Status](status.md#stale-data) marks a repo stale |
+| `FLEETD_MAIN_CI_EVERY_SEC` | `60` | how often each merge train checks its main branch's CI (every 5 minutes with GitHub webhooks on) |
+
 ## The app
 
 The app's pairing hand-off from `fleetd init` or `fleetd pair` on the same machine is
