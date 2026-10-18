@@ -8,9 +8,9 @@ use fleetd_contracts::ids::{ProjectId, ThreadId};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunStatus,
-    SessionCall, SessionCallFrame, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult,
-    SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
+    FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunFailure,
+    RunStatus, SessionCall, SessionCallFrame, SessionErrorCode, SessionLaunch, SessionOutput,
+    SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
 };
 use tokio::sync::mpsc;
 
@@ -544,11 +544,15 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
         .unwrap();
     assert!(matches!(
         retry.kind,
-        ItemKind::ApiRetry {
+        ItemKind::NodeRetry {
             attempt: 1,
-            max_retries: 1,
-            error_status: Some(529),
-            ..
+            of: 1,
+            delay_ms: 1000,
+            reason: RunFailure {
+                class: FailureClass::Overloaded,
+                api_status: Some(529),
+                ..
+            },
         }
     ));
 }

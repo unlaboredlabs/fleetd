@@ -532,6 +532,15 @@ pub enum ItemKind {
         error_status: Option<u16>,
         error: String,
     },
+    /// The node continuing a run itself after claude's own retries gave up (Overloaded, Network): `attempt` of
+    /// `of`, sent after `delay_ms`, because of `reason`.
+    #[serde(rename_all = "camelCase")]
+    NodeRetry {
+        attempt: u32,
+        of: u32,
+        delay_ms: u64,
+        reason: RunFailure,
+    },
     Error {
         failure: RunFailure,
     },
