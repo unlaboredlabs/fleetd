@@ -2,9 +2,10 @@
 // A lab hub and node, a haiku lead that files three numbered asks, the desktop app under a private Xvfb answering
 // them, and the setup CLI in a throwaway HOME. Writes site/capture-*.png and rewrites the `<!-- capture:NAME -->`
 // blocks in site/home.html and the same blocks in site/fleetd.txt. Costs three tiny claude-haiku turns. Every process
-// it starts is stopped by the PID captured at spawn; it never touches a T3 or hub it didn't start.
+// it starts is stopped by the PID captured at spawn; it never touches a hub or node it didn't start.
 //
-// Everything that knows the lab runs T3 is in stageLab(); the rest drives only the fleetd CLI, MCP tools and the app.
+// Everything that knows how the lab lays out a machine is in stageLab(); the rest drives only the fleetd CLI, MCP
+// tools and the app.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -23,20 +24,21 @@ import {
   fleetdCommand,
   HUB_PORT,
   HUB_URL,
+  cleanupMachineHomes,
   LAB,
-  lab,
   log,
-  MACHINES,
-  mintT3Bearer,
   MODEL,
+  nodeEnv,
+  nodeHome,
+  prepareMachineHome,
   RELEASE,
   REPO,
   SLOT,
   scrubbedEnv,
-  T3_SRC,
   takeLabLock,
   until,
   waitEventWith,
+  writeFleetdWrapper,
 } from "./harness.ts";
 
 if (process.env.FLEETD_LAB_SLOT === undefined) throw new Error("set FLEETD_LAB_SLOT (1-9) to the lab slot this run may use");
@@ -93,12 +95,10 @@ const spawnTracked = (name: string, [cmd, args]: [string, Array<string>], env: R
 
 const pause = (ms: number) => new Promise<undefined>((r) => setTimeout(() => r(undefined), ms));
 
-// ---- The lab: a stock T3 (lab-a) with the storefront project, a hub, and node builder-1 on that T3. ----
+// ---- The lab: a hub and node builder-1 (its own HOME, so its own ~/.fleetd and Claude config dir). ----
 
 async function stageLab() {
   takeLabLock();
-  const t3 = MACHINES[0];
-  if (!/already running/u.test(lab("up", t3.id))) cleanups.push(() => void log(lab("down", t3.id).trim()));
 
   const workspace = path.join(LAB, "storefront");
   fs.rmSync(workspace, { recursive: true, force: true });
@@ -111,38 +111,10 @@ async function stageLab() {
     execFileSync("git", args, { cwd: workspace, env: gitEnv, stdio: "ignore" });
   }
 
-  // T3 holds exactly the storefront project for the run; the slot's own projects come back afterwards.
-  const bearer = mintT3Bearer(t3);
-  const api = async (method: string, route: string, body?: unknown) => {
-    const r = await fetch(`${t3.t3Url}${route}`, {
-      method,
-      headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    if (!r.ok) throw new Error(`T3 ${method} ${route}: HTTP ${r.status} ${(await r.text()).slice(0, 300)}`);
-    return (await r.json()) as Body;
-  };
-  const mutate = (command: Body) => api("POST", "/api/projects/mutate", { commandId: randomUUID(), ...command });
-  const before = (await api("GET", "/api/projects")).projects as Array<Body>;
-  for (const p of before) await mutate({ type: "project.delete", projectId: p.id, force: true });
-  const storefrontId = randomUUID();
-  await mutate({ type: "project.create", projectId: storefrontId, title: "storefront", workspaceRoot: workspace });
-  cleanups.push(async () => {
-    await mutate({ type: "project.delete", projectId: storefrontId, force: true });
-    for (const p of before.filter((p) => p.workspaceRoot !== workspace)) {
-      await mutate({ type: "project.create", projectId: randomUUID(), title: p.title, workspaceRoot: p.workspaceRoot });
-    }
-    log(`T3 ${t3.id}: projects restored (${before.map((p) => p.title).join(", ")})`);
-  });
-
-  // The lead's shell: lab.mjs puts LAB/bin on T3's PATH and points FLEETD_NODE_SOCK at LAB/sock/<instance>.sock.
-  const nodeHome = path.join(RUN, `node-${MACHINE}`);
-  const [bin, prefix] = fleetdCommand([]);
-  fs.mkdirSync(path.join(LAB, "bin"), { recursive: true });
-  fs.writeFileSync(path.join(LAB, "bin", "fleetd"), `#!/bin/sh\nexec ${[bin, ...prefix].map((a) => `'${a}'`).join(" ")} "$@"\n`, { mode: 0o755 });
-  fs.mkdirSync(path.join(LAB, "sock"), { recursive: true });
-  fs.rmSync(path.join(LAB, "sock", `${t3.id}.sock`), { force: true });
-  fs.symlinkSync(path.join(nodeHome, "node.sock"), path.join(LAB, "sock", `${t3.id}.sock`));
+  // The lead's shell gets `fleetd` (the build under test) on the node's PATH; the node sets FLEETD_NODE_SOCK itself.
+  writeFleetdWrapper();
+  prepareMachineHome(MACHINE);
+  cleanups.push(() => cleanupMachineHomes());
 
   const hubHome = path.join(RUN, "hub");
   spawnTracked("hub", fleetdCommand(["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`]), scrubbedEnv());
@@ -159,10 +131,9 @@ async function stageLab() {
   spawnTracked(
     "node",
     fleetdCommand([
-      "node", "join", "--hub", HUB_URL, "--token", token!, "--machine", MACHINE, "--t3-home", t3.t3Home, "--t3-url", t3.t3Url,
-      "--t3-cmd", `${process.execPath} ${path.join(T3_SRC, "apps/server/src/bin.ts")}`, "--home", nodeHome,
+      "node", "join", "--hub", HUB_URL, "--token", token!, "--machine", MACHINE, "--home", nodeHome(MACHINE),
     ]),
-    scrubbedEnv(),
+    nodeEnv(MACHINE),
   );
   return { operateKey, humanKey, workspace };
 }
@@ -475,6 +446,13 @@ async function main() {
     return r.body;
   };
 
+  await until(`${MACHINE} online`, 120_000, async () => {
+    const s = (await callTool("fleetd_status")).body;
+    if (s.machines.some((m: Body) => m.machineId === MACHINE && m.status === "online")) return true;
+    await callTool("events_wait", { cursor: s.cursor, timeoutSec: 5 });
+    return undefined;
+  });
+  ok(await callTool("project_add", { machineId: MACHINE, path: workspace, title: "storefront" }), "project_add storefront");
   const projectId = await until(`${MACHINE} online with the storefront project`, 120_000, async () => {
     const s = (await callTool("fleetd_status")).body;
     const p = s.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot === workspace);

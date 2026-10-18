@@ -1,4 +1,4 @@
-// M12 lab check, standalone (no T3 or nodes needed): `node tests/lab/m12Retro.ts` after
+// M12 lab check, standalone (no nodes needed): `node tests/lab/m12Retro.ts` after
 // `cargo build --release -p fleetd` (or with FLEETD_BIN set). Creates a fresh hub home under the lab with the fleetd under test, seeds a synthetic
 // incident history straight into its SQLite (the schema both hubs share), starts the hub with the user's own claude
 // login, and runs `fleetd retro run --advise`: one real claude-haiku-5-5 turn. Checks the run is recorded as

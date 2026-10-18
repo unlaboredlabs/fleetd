@@ -1,7 +1,7 @@
 // M5 "done when" 1-5, end to end on lab-a: the lead spawns a writer with `fleetd task spawn` from its own shell and
 // gets its result inline in one wake; with the cap at 1 a second spawn queues until that turn ends; a second writer
 // on the same area queues on the lease; a writer that touches a file outside its area is flagged; and the instance
-// hides T3's tools and Claude's native Task tool from every thread. Further spawns run `fleetd` from the harness in
+// keeps Claude's native Task, Workflow and AskUserQuestion tools from every thread. Further spawns run `fleetd` from the harness in
 // the project's workspace, exactly as a lead's shell would, so they cost no lead turns. Every turn is tiny haiku/low.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -10,7 +10,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, cli, fleetdCommand, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, initTools, type Lab, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -32,6 +32,8 @@ export const git = (cwd: string, ...args: Array<string>) =>
 
 /** The policy file on main, and no task worktrees or branches left from an earlier run (task numbers restart at T1). */
 export const prepareRepo = (root: string) => {
+  // An earlier run's machine homes, and the worktrees in them, are gone; git forgets those first.
+  git(root, "worktree", "prune");
   const file = path.join(root, ".fleetd/policy.yaml");
   if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== POLICY) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -50,34 +52,6 @@ export const prepareRepo = (root: string) => {
   }
 };
 
-/** T3's provider event log for `threadId` on a machine: what went to and came from Claude, as JSON lines. */
-export const providerLog = (home: string, threadId: string): string => {
-  const dir = path.join(home, "userdata/logs/provider");
-  return fs
-    .readdirSync(dir)
-    .map((name) => fs.readFileSync(path.join(dir, name), "utf8"))
-    // The log names the thread URL-encoded inside its provider session id.
-    .filter((text) => text.includes(threadId) || text.includes(encodeURIComponent(threadId)))
-    .join("\n");
-};
-
-/** The tools Claude reported at session start for `threadId`. */
-export const initTools = (home: string, threadId: string): ReadonlyArray<string> | undefined => {
-  const tools = /"subtype":"init".*?"tools":(\[[^\]]*\])/u.exec(providerLog(home, threadId))?.[1];
-  return tools === undefined ? undefined : (JSON.parse(tools) as Array<string>);
-};
-
-/** The newest init tool list on a machine, for the control instance. */
-const latestInitTools = (home: string): ReadonlyArray<string> | undefined => {
-  const dir = path.join(home, "userdata/logs/provider");
-  const files = fs.readdirSync(dir).map((name) => path.join(dir, name)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  for (const file of files) {
-    const tools = /"subtype":"init".*?"tools":(\[[^\]]*\])/u.exec(fs.readFileSync(file, "utf8"))?.[1];
-    if (tools !== undefined) return JSON.parse(tools) as Array<string>;
-  }
-  return undefined;
-};
-
 export async function m5Tasks(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
@@ -93,7 +67,7 @@ export async function m5Tasks(lab: Lab) {
     const out = spawnSync(...fleetdCommand(args), {
       cwd: root,
       encoding: "utf8",
-      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },
+      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
     });
     return { code: out.status, stdout: out.stdout, stderr: out.stderr };
   };
@@ -169,7 +143,7 @@ export async function m5Tasks(lab: Lab) {
     }
     ok(`lead thread ${leadThread}, workstream ${workstreamId}`);
 
-    // 1. The lead spawns T1 from its shell: a T3 thread in a new worktree on fleetd/T1-add-file, explicit model and effort.
+    // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, explicit model and effort.
     const spawn1 =
       `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --serves done:0 --model ${MODEL} --effort low ` +
       `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
@@ -203,10 +177,10 @@ export async function m5Tasks(lab: Lab) {
     // 2. Cap 1: a read task queues on the slot board; so does the out-of-area writer for item 4.
     const capped = (await admin("cap_set", { cap: 1 })).body;
     check(capped.slots?.cap === 1, `cap_set 1: ${JSON.stringify(capped)}`);
-    const t3 = spawnTask(["--workstream", workstreamId, "--title", "say ok", "--kind", "read", "--prompt", "Reply with the single word OK."]);
-    const t3Task = await task(t3.taskId);
-    check(t3Task.state === "queued" && /^slots: \d+\/1 in use/u.test(t3Task.queuedReason ?? ""), `T3 queued on the cap: ${JSON.stringify(t3Task)}`);
-    ok(`2. cap set to 1; ${t3.taskId} queued: ${t3Task.queuedReason}`);
+    const reader = spawnTask(["--workstream", workstreamId, "--title", "say ok", "--kind", "read", "--prompt", "Reply with the single word OK."]);
+    const readerTask = await task(reader.taskId);
+    check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
+    ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);
     const t4 = spawnTask([
       "--workstream", workstreamId, "--title", "add notes", "--areas", "api", "--serves", "done:0",
       "--prompt",
@@ -227,22 +201,22 @@ export async function m5Tasks(lab: Lab) {
     await spawnTurn;
     const afterWake = await leadTurnDone(wake.event.seq, "T1 result wake");
     // Results that land within the debounce window share one wake, which can outgrow thread_tail's 2,000 characters,
-    // so read the wakes as Claude received them, in the lead's provider log (JSON, so newlines show as \n).
-    const home = lab.machines.find((m) => m.id === MACHINE)!.t3Home;
-    const delivered = providerLog(home, leadThread);
+    // so read the wakes as Claude received them, in its own session file.
     const head = "- T1 completed: add file (branch fleetd/T1-add-file)";
+    const delivered = userMessages(MACHINE, leadThread).filter((m) => m.includes(head));
+    const parts = delivered[0]?.split(head) ?? [];
     check(
-      delivered.split(head).length === 2 && /^(\\n {2}receipts: [^\\]*)?\\n {2}result:\\n {2}> \S/u.test(delivered.split(head)[1]!),
-      `exactly one wake carries T1's result inline: ${delivered.slice(delivered.indexOf(head), delivered.indexOf(head) + 400)}`,
+      delivered.length === 1 && parts.length === 2 && /^(\n {2}receipts: [^\n]*)?\n {2}result:\n {2}> \S/u.test(parts[1]!),
+      `exactly one wake carries T1's result inline: ${JSON.stringify(delivered.map((m) => m.slice(m.indexOf(head), m.indexOf(head) + 400)))}`,
     );
     ok(`1. one wake carried "${head.slice(2)}" with the result tail inline (triggers: ${JSON.stringify(wake.event.data?.triggers)})`);
     check(git(root, "branch", "--list", "fleetd/T1-add-file").trim() !== "", "branch fleetd/T1-add-file exists in the repo");
     check((await task("T1")).worktreePath, `T1 records its worktree: ${JSON.stringify(await task("T1"))}`);
 
-    // 2. T3 got the freed slot only after T1's turn ended; then the cap goes back up so T2 and T4 run side by side.
-    const t3Started = await taskEvent(`task.started ${t3.taskId}`, t1Started.cursor, "task.started", t3.taskId);
-    check(t3Started.event.seq > t1Done.event.seq, `${t3.taskId} started (seq ${t3Started.event.seq}) after T1 ended (seq ${t1Done.event.seq})`);
-    ok(`2. ${t3.taskId} started only after T1's turn ended (seq ${t3Started.event.seq} > ${t1Done.event.seq})`);
+    // 2. The read task got the freed slot only after T1's turn ended; then the cap goes back up so T2 and T4 run side by side.
+    const readerStarted = await taskEvent(`task.started ${reader.taskId}`, t1Started.cursor, "task.started", reader.taskId);
+    check(readerStarted.event.seq > t1Done.event.seq, `${reader.taskId} started (seq ${readerStarted.event.seq}) after T1 ended (seq ${t1Done.event.seq})`);
+    ok(`2. ${reader.taskId} started only after T1's turn ended (seq ${readerStarted.event.seq} > ${t1Done.event.seq})`);
     await admin("cap_set", { cap: 40 });
 
     // 3. T2 starts once T1's lease is released.
@@ -257,7 +231,7 @@ export async function m5Tasks(lab: Lab) {
 
     // Every task ends, then the lead's wakes for them: each wake fires within WAKE_MAX_WAIT (60 s) of its trigger.
     let after = afterWake;
-    for (const id of [t2.taskId, t3.taskId, t4.taskId]) {
+    for (const id of [t2.taskId, reader.taskId, t4.taskId]) {
       const ended = await lab.waitEvent(`${id} ends`, 2 * TURN_MS, {
         cursor: t1Started.cursor,
         types: ["task.completed", "task.failed"],
@@ -279,20 +253,16 @@ export async function m5Tasks(lab: Lab) {
     check(final.taskCounts?.done === 4 && !(final.threads as Array<Body>).some((t) => taskThreads.has(t.threadId)), `project_get: ${JSON.stringify({ taskCounts: final.taskCounts, threads: final.threads.map((t: Body) => t.threadId) })}`);
     ok(`project_get: taskCounts ${JSON.stringify(final.taskCounts)}; no task thread among its ${final.threads.length} threads`);
 
-    // 5. The instance hides every T3 tool and Claude's subagent tools (Task, Workflow) from lead and task threads alike.
+    // 5. The node keeps Claude's subagent and question tools (Task, Workflow, AskUserQuestion) from lead and task threads alike.
     for (const threadId of [leadThread, t1.threadRef.threadId as string]) {
-      const tools = initTools(home, threadId);
+      const tools = initTools(MACHINE, threadId);
       check(tools !== undefined && tools.includes("Bash"), `init tool list for ${threadId}: ${JSON.stringify(tools)}`);
       check(
-        !tools!.includes("Task") && !tools!.includes("Workflow") && !tools!.some((t) => t.startsWith("mcp__t3-code__")),
-        `no Task, no Workflow and no T3 tools for ${threadId}: ${JSON.stringify(tools)}`,
+        !["Task", "Workflow", "AskUserQuestion"].some((t) => tools!.includes(t)),
+        `no Task, Workflow or AskUserQuestion for ${threadId}: ${JSON.stringify(tools)}`,
       );
     }
-    const control = latestInitTools(lab.machines.find((m) => m.id === "lab-b")!.t3Home);
-    const has = (tool: string) => (control?.includes(tool) === true ? "has" : "lacks");
-    ok(
-      `5. lab-a threads start without Task, Workflow or any mcp__t3-code__ tool${control === undefined ? "" : `; control lab-b ${has("Task")} Task and ${has("Workflow")} Workflow`}`,
-    );
+    ok("5. lead and task threads start without Task, Workflow or AskUserQuestion");
 
     const total = await countLeadTurns();
     ok(`M5 used ${total} lead turns + 4 task turns = ${total + 4} claude turns (${MODEL}, effort low)`);

@@ -2,12 +2,13 @@
   "name": "fleetd-lab",
   "private": true,
   "type": "module",
-  "description": "End-to-end lab suite for the fleetd binary against disposable stock T3 instances. Never run in CI.",
+  "description": "End-to-end lab suite for the fleetd binary: a hub and nodes that run the real claude CLI. Never run in CI.",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "lab": "node testLab.ts",
+    "record-fixtures": "node failure/recordFixtures.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

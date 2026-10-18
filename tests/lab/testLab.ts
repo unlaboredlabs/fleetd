@@ -1,5 +1,6 @@
 // `npm run lab -- [scenario…]` (in tests/lab): the M1-M9 "done when" scenarios, end to end, against the disposable lab
-// (never in CI); M7 and M9 also use the GitHub testbed unlaboredlabs/fleetd-testbed. Two stock T3 instances (lab.mjs), one hub and two nodes, driven only through a real MCP client.
+// (never in CI); M7 and M9 also use the GitHub testbed unlaboredlabs/fleetd-testbed. One hub and two nodes (lab-a,
+// lab-b), each node running the real `claude` itself under its own HOME, driven only through a real MCP client.
 // Each scenario is a file exporting one function over the shared `Lab`; name some to run only those (setup always
 // runs). Costs a handful of tiny claude-haiku-5-5 turns. Every process this starts is stopped by its spawn PID.
 import fs from "node:fs";
@@ -7,40 +8,44 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { degradedMachine, labRestartCmd } from "./degradedMachine.ts";
+import { degradedMachine } from "./degradedMachine.ts";
+import { FAILURE_SCENARIOS } from "./failure/index.ts";
 import {
   type Body,
   callToolWith,
   check,
+  cleanupMachineHomes,
   cli,
-  fleetdCommand,
   HUB_PORT,
   HUB_URL,
-  isRunning,
+  joinNode,
   LAB,
   type Lab,
-  lab,
-  type LabMachine,
   launchTiny,
   log,
   MACHINES,
-  mintT3Bearer,
+  nodeEnv,
+  nodeHome,
+  type NodeOptions,
   ok,
+  pidOf,
   QUEUE_TTL_SEC,
   RUN,
+  seedRepo,
+  setCmdRoots,
   startCli,
   stopAll,
   stopCli,
-  T3_SRC,
   takeLabLock,
   until,
   waitEventWith,
+  writeFleetdWrapper,
 } from "./harness.ts";
 import { m1Fleet } from "./m1Fleet.ts";
 import { m3Loop } from "./m3Loop.ts";
 import { m5Tasks } from "./m5Tasks.ts";
 import { m6Verify } from "./m6Verify.ts";
-import { m7Train, removeTestbedProject } from "./m7Train.ts";
+import { m7Train } from "./m7Train.ts";
 import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
 import { offlineQueue } from "./offlineQueue.ts";
@@ -48,7 +53,7 @@ import { scenarioPush } from "./scenarioPush.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
 import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
 
-/** In run order. Later ones may stop nodes or kill T3, so they come after the ones that need both machines up. */
+/** In run order. Later ones may stop or restart nodes, so they come after the ones that need both machines up. */
 const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void> }> = [
   { name: "m1", run: m1Fleet },
   { name: "wake", run: wakeOnTime },
@@ -69,37 +74,14 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m8", run: m8Desktop },
   // After m7, which leaves no testbed project: its router must choose among the lab projects only.
   { name: "m9", run: m9Playbooks },
+  // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
+  ...FAILURE_SCENARIOS,
 ];
 
-/** Extra `node join` flags per machine. */
-const NODE_FLAGS: Record<LabMachine, ReadonlyArray<string>> = {
-  "lab-a": [],
-  "lab-b": ["--t3-restart-cmd", labRestartCmd("lab-b")],
-};
-
 const hubHome = path.join(RUN, "hub");
-const nodeHome = (id: LabMachine) => path.join(RUN, `node-${id}`);
-
-/**
- * What a lead's shell needs, at the stable paths lab.mjs gives each T3: `fleetd` on PATH (the fleetd under test)
- * and FLEETD_NODE_SOCK pointing at this run's node socket.
- */
-const linkLeadShell = () => {
-  fs.mkdirSync(path.join(LAB, "bin"), { recursive: true });
-  const [bin, prefix] = fleetdCommand([]);
-  const exec = [bin, ...prefix].map((a) => `'${a}'`).join(" ");
-  fs.writeFileSync(path.join(LAB, "bin", "fleetd"), `#!/bin/sh\nexec ${exec} "$@"\n`, { mode: 0o755 });
-  fs.mkdirSync(path.join(LAB, "sock"), { recursive: true });
-  for (const m of MACHINES) {
-    const link = path.join(LAB, "sock", `${m.id}.sock`);
-    fs.rmSync(link, { force: true });
-    fs.symlinkSync(path.join(nodeHome(m.id), "node.sock"), link);
-  }
-};
-
-// The intake router runs `claude -p` on the hub, so the hub gets the same login variables lab.mjs gives T3.
+// The intake router runs `claude -p` on the hub. Like an installed hub, it finds Claude through the user's own login,
+// not variables passed in.
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
-  // Like an installed hub, it finds Claude through the user's own login, not variables passed in.
   startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
   await until("hub /healthz", 30_000, async () => {
     try {
@@ -126,37 +108,18 @@ async function main() {
   const scenarios = wanted.length === 0 ? SCENARIOS : SCENARIOS.filter((s) => wanted.includes(s.name));
   takeLabLock();
 
-  // Only instances this run started are stopped at the end; one already running is left as found.
-  const labStarted: Array<string> = [];
-  for (const m of MACHINES) {
-    const out = lab("up", m.id);
-    if (/already running/u.test(out)) ok(`${m.id} T3 already running (left running)`);
-    else {
-      labStarted.push(m.id);
-      ok(`${m.id} T3 up: ${out.trim()}`);
-    }
-  }
-
   let client: Client | undefined;
   try {
-    // A testbed project left by an interrupted m7 would be taken for lab-a's project by the other scenarios.
-    await removeTestbedProject({ machines: MACHINES, mintT3Bearer });
+    // A fresh run dir: a new hub and new machine homes (node stores, Claude config dirs). The test repos persist.
     fs.rmSync(RUN, { recursive: true, force: true });
-    linkLeadShell();
+    writeFleetdWrapper();
+    for (const m of MACHINES) seedRepo(m.repo, m.id);
     await startHubProcess();
     ok(`hub up on ${HUB_URL} (queue TTL ${QUEUE_TTL_SEC} s)`);
 
     const key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "lab", "--role", "operate", "--machines", "*"))?.[0];
     if (key === undefined) throw new Error("hub key create printed no key");
-    for (const m of MACHINES) {
-      const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", m.id))?.[0];
-      if (token === undefined) throw new Error(`no enrollment token for ${m.id}`);
-      startCli(`node-${m.id}`, [
-        "node", "join", "--hub", HUB_URL, "--token", token, "--machine", m.id, "--t3-home", m.t3Home, "--t3-url", m.t3Url,
-        "--t3-cmd", `${process.execPath} ${path.join(T3_SRC, "apps/server/src/bin.ts")}`, "--home", nodeHome(m.id),
-        ...NODE_FLAGS[m.id],
-      ]);
-    }
+    for (const m of MACHINES) joinNode(HUB_URL, hubHome, m.id);
 
     client = await connectClient(key);
     const callTool = callToolWith(() => client!);
@@ -164,15 +127,33 @@ async function main() {
     const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;
     const waitEvent = waitEventWith(callTool);
 
-    const waitLive = async (machineId: LabMachine) => {
-      await until(`${machineId} online with a live T3 connection`, 120_000, async () => {
+    const online = (machineId: string) =>
+      until(`${machineId} online`, 120_000, async () => {
         const s = (await callTool("fleetd_status")).body;
-        const project = s.projects.find((p: Body) => p.machineId === machineId);
-        const online = s.machines.some((m: Body) => m.machineId === machineId && m.status === "online");
-        if (online && project && (await callTool("project_get", { machineId, projectId: project.projectId })).body.stale === false) return true;
+        if (s.machines.some((m: Body) => m.machineId === machineId && m.status === "online")) return true;
         await callTool("events_wait", { cursor: s.cursor, timeoutSec: 5 });
         return undefined;
       });
+    const waitLive = async (machineId: string) => {
+      await until(`${machineId} online with a live session link`, 120_000, async () => {
+        const s = (await callTool("fleetd_status")).body;
+        const project = s.projects.find((p: Body) => p.machineId === machineId);
+        const isOnline = s.machines.some((m: Body) => m.machineId === machineId && m.status === "online");
+        if (isOnline && project && (await callTool("project_get", { machineId, projectId: project.projectId })).body.stale === false) return true;
+        await callTool("events_wait", { cursor: s.cursor, timeoutSec: 5 });
+        return undefined;
+      });
+    };
+    const addProject = async (machineId: string, dir: string, title: string) => {
+      const added = await callTool("project_add", { machineId, path: dir, title });
+      check(!added.isError && typeof added.body.projectId === "string", `project_add ${machineId} ${dir}: ${JSON.stringify(added.body)}`);
+      const projectId = added.body.projectId as string;
+      await until(`${machineId} lists project ${projectId}`, 60_000, async () => {
+        const listed = ((await callTool("projects_list", { machineId })).body.projects as Array<Body>).some((p) => p.projectId === projectId);
+        if (!listed) await callTool("events_wait", { cursor: await cursor(), timeoutSec: 3 });
+        return listed ? true : undefined;
+      });
+      return projectId;
     };
 
     const base = {
@@ -189,10 +170,13 @@ async function main() {
       waitEvent,
       waitLive,
       cursor,
-      stopNode: (machineId: LabMachine) => stopCli(`node-${machineId}`),
-      startNode: (machineId: LabMachine) => void startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)]),
+      addProject,
+      stopNode: (machineId: string, signal: "SIGTERM" | "SIGKILL" = "SIGTERM") => stopCli(`node-${machineId}`, signal),
+      startNode: (machineId: string, opts: NodeOptions = {}) =>
+        void startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)], {}, nodeEnv(machineId, opts)),
+      nodePid: (machineId: string) => pidOf(`node-${machineId}`),
+      joinNode: (machineId: string, opts: NodeOptions & { readonly login?: boolean } = {}) => void joinNode(HUB_URL, hubHome, machineId, opts),
       machines: MACHINES,
-      mintT3Bearer,
       stopHub: async () => {
         await client?.close().catch(() => undefined);
         await stopCli("hub");
@@ -202,11 +186,11 @@ async function main() {
         await stopCli("hub");
         await startHubProcess(env);
         client = await connectClient(key);
-        // The store still says online from before; wait until running nodes have relinked and T3 is attached.
-        for (const m of MACHINES) if (isRunning(`node-${m.id}`)) await waitLive(m.id);
+        // The store still says online from before; wait until running nodes have relinked.
+        for (const m of MACHINES) if (pidOf(`node-${m.id}`) !== undefined) await waitLive(m.id);
         ok(`hub (re)started${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
       },
-      idleThread: async (machineId: LabMachine) => {
+      idleThread: async (machineId: string) => {
         const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === machineId)?.projectId;
         check(projectId, `${machineId} has a project`);
         const outcome = (await callTool("project_get", { machineId, projectId })).body;
@@ -223,16 +207,28 @@ async function main() {
       },
     } satisfies Omit<Lab, "dir">;
 
+    // Each machine's test repo is its project, registered the way a user would. The node runs `cmd` checks only under
+    // its roots, so once enrolled it gets the lab dir (repos, testbed) as its root and restarts. The hub may still show
+    // it online from before, so project_add is retried until the relinked node takes it.
+    for (const m of MACHINES) {
+      await online(m.id);
+      await stopCli(`node-${m.id}`);
+      setCmdRoots(m.id, [LAB]);
+      base.startNode(m.id);
+      const projectId = await until(`project_add on ${m.id}`, 60_000, async () => {
+        const added = await callTool("project_add", { machineId: m.id, path: m.repo, title: path.basename(m.repo) });
+        if (!added.isError) return added.body.projectId as string;
+        await callTool("events_wait", { cursor: await cursor(), timeoutSec: 2 });
+        return undefined;
+      });
+      ok(`project_add ${m.id} ${m.repo} -> ${projectId}`);
+    }
     for (const m of MACHINES) await waitLive(m.id);
     const s = (await callTool("fleetd_status")).body;
     ok(`fleetd_status: ${s.machines.map((m: Body) => `${m.machineId}=${m.status}`).join(", ")}; ${s.projects.length} projects`);
 
     for (const scenario of scenarios) {
       log(`--- ${scenario.name}`);
-      // It SIGKILLs lab-b's T3, which must not be someone else's.
-      if (scenario.name === "degraded" && !labStarted.includes("lab-b")) {
-        throw new Error("scenario degraded needs a lab-b T3 this run started; stop lab-b (node tests/lab/lab.mjs down lab-b) and rerun");
-      }
       await scenario.run({ ...base, dir: path.join(RUN, scenario.name) });
       ok(`scenario ${scenario.name} passed`);
     }
@@ -240,7 +236,7 @@ async function main() {
   } finally {
     await client?.close().catch(() => undefined);
     await stopAll();
-    for (const id of labStarted) ok(lab("down", id).trim());
+    cleanupMachineHomes();
   }
 }
 

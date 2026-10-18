@@ -10,8 +10,8 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
-import { git, prepareRepo, providerLog } from "./m5Tasks.ts";
+import { type Body, fleetdCommand, type Lab, MODEL, nodeSock, scrubbedEnv, sessionText } from "./harness.ts";
+import { git, prepareRepo } from "./m5Tasks.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -26,7 +26,6 @@ export async function m6Verify(lab: Lab) {
   const ref = { machineId: MACHINE, projectId };
   const outcome = (await callTool("project_get", ref)).body;
   const root = outcome.project.workspaceRoot as string;
-  const home = lab.machines.find((m) => m.id === MACHINE)!.t3Home;
   // Run alone, task numbers restart at T1, so old fleetd/* branches must go; after m5 they belong to this run.
   if (outcome.taskCounts === undefined) prepareRepo(root);
   if (fs.existsSync(path.join(root, FILE))) {
@@ -39,7 +38,7 @@ export async function m6Verify(lab: Lab) {
     const out = spawnSync(...fleetdCommand(args), {
       cwd: root,
       encoding: "utf8",
-      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) },
+      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
     });
     return { code: out.status, stdout: out.stdout, stderr: out.stderr };
   };
@@ -96,7 +95,7 @@ export async function m6Verify(lab: Lab) {
     match: (e) => (e.data?.triggers ?? []).includes("claim_failed"),
   });
   cursor = (await leadTurnEnds(woken.event.seq)).cursor;
-  const wakeText = providerLog(home, leadThread);
+  const wakeText = sessionText(MACHINE, leadThread);
   check(
     wakeText.includes(`Claim ${firstClaim} on ${w} failed`) && wakeText.includes(`done:0 (on ${MACHINE}: \`test -f ${FILE}\` exits 0): fail, exit 1`) && wakeText.includes(`exited 1 (expected 0)`),
     `the wake carries the failing check's exit code and output: ${wakeText.slice(wakeText.lastIndexOf(`Claim ${firstClaim}`), wakeText.lastIndexOf(`Claim ${firstClaim}`) + 400)}`,
@@ -149,7 +148,7 @@ export async function m6Verify(lab: Lab) {
     const wake = await lab.waitEvent("a task result wake", 75_000, { cursor: after, machineId: MACHINE, types: ["lead.woken"] }).catch(() => undefined);
     if (wake === undefined) break;
     after = (await leadTurnEnds(wake.event.seq)).cursor;
-    const text = providerLog(home, leadThread);
+    const text = sessionText(MACHINE, leadThread);
     const at = text.indexOf(`- ${reader} completed`);
     unverifiedDelivered ||= at >= 0 && text.slice(at, at + 300).includes("receipts: 0 commands run — claims unverified");
   }
