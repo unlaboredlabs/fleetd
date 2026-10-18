@@ -528,16 +528,7 @@ impl FleetLanes {
             .flex()
             .items_center()
             .gap_3()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .text_color(if doing.is_empty() { t.quiet } else { t.text })
-                    .child(if doing.is_empty() { "No agent at work right now".to_string() } else { doing }),
-            )
+            .child(div().flex_1().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_color(t.text).child(doing))
             .when(self.stale, |d| d.child(div().text_size(px(size::XS)).text_color(t.quiet).italic().child("live feed reconnecting")))
             .when_some(clock, |d, c| d.child(div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(c)))
     }

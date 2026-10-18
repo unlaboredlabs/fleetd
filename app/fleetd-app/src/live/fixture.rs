@@ -696,6 +696,9 @@ impl Feed {
             };
             card.phase = phase;
             card.phase_detail = Some(Text::unchecked(detail));
+            if active == 0 {
+                card.next = Some(fleetd_contracts::ledger::Headline::unchecked("merge each PR as its CI passes"));
+            }
         });
     }
 }
