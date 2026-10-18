@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::effort::Effort;
+use fleetd_contracts::ids::ThreadRef;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::live::{AgentLane, LaneId, LaneStatus};
 use fleetd_contracts::train::GitHubPrUrl;
@@ -38,6 +39,8 @@ pub enum Density {
 pub enum LaneEvent {
     Open(LaneId),
     OpenPr(GitHubPrUrl),
+    /// "Show full prompt": what this lane's session was told, and who it is ("the lead", "T31").
+    Told(ThreadRef, String),
 }
 
 /// Rows a card shows; past this the last row says "+N more agents".
@@ -341,7 +344,21 @@ impl FleetLanes {
             }
             d
         });
-        div().pb(px(6.)).child(body.child(div().h(px(metric::LINE)).pl(px(15.)).flex().items_center().child(line())).children(third))
+        let told = lane.thread_ref.clone().map(|thread| {
+            let who = lane.task_id.as_ref().map_or_else(|| "the lead".to_string(), |t| t.to_string());
+            ui::clickable(t, div().id(SharedString::from(format!("lane-told-{id}"))))
+                .flex_none()
+                .text_size(px(size::XS))
+                .text_color(t.quiet)
+                .hover(|s| s.underline())
+                .child("Show full prompt")
+                .on_click(cx.listener(move |_, _, _, cx| {
+                    cx.stop_propagation();
+                    cx.emit(LaneEvent::Told(thread.clone(), who.clone()));
+                }))
+        });
+        let second = div().h(px(metric::LINE)).pl(px(15.)).flex().items_center().gap_3().child(line().flex_1().min_w_0()).children(told);
+        div().pb(px(6.)).child(body.child(second).children(third))
     }
 
     /// The lane's status dot; a status change crossfades its colour over 120 ms.

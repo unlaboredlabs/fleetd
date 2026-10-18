@@ -1,7 +1,8 @@
-//! Settings (⌘, / Ctrl+,, or the app menu): appearance, motion, the hub this app is paired with, and the version.
-//! Appearance and motion apply at once and are saved; the connection is in the OS keychain, never in a file.
+//! Settings (⌘, / Ctrl+,, or the app menu): General (appearance, motion, the hub this app is paired with, the
+//! version), Prompts (`prompts.rs`) and Instructions (`instructions.rs`). Appearance and motion apply at once and
+//! are saved; the connection is in the OS keychain, never in a file.
 
-use gpui::{Context, EventEmitter, SharedString, Window, div, prelude::*, px};
+use gpui::{AnyElement, Context, EventEmitter, SharedString, Window, div, prelude::*, px};
 
 use crate::prefs::{self, MotionPref as Motion};
 use crate::theme::{self, Mode, STRONG, Theme, metric, radius, size, theme};
@@ -10,7 +11,34 @@ use crate::ui::{self, Variant};
 pub enum SettingsEvent {
     /// Forget the saved key and go back to the connect screen.
     Disconnect,
-    Close,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Section {
+    #[default]
+    General,
+    Prompts,
+    Instructions,
+}
+
+impl Section {
+    const ALL: [Section; 3] = [Section::General, Section::Prompts, Section::Instructions];
+
+    fn label(self) -> &'static str {
+        match self {
+            Section::General => "General",
+            Section::Prompts => "Prompts",
+            Section::Instructions => "Instructions",
+        }
+    }
+
+    fn help(self) -> &'static str {
+        match self {
+            Section::General => "Appearance, motion, hub",
+            Section::Prompts => "Everything fleetd tells agents",
+            Section::Instructions => "Your own, added to every agent",
+        }
+    }
 }
 
 /// What the shell knows about the connection, shown as-is.
@@ -33,7 +61,7 @@ impl Default for Settings {
 }
 
 /// A segmented control: one option per button, the current one raised.
-fn segmented<T: Copy + PartialEq + 'static>(
+pub(crate) fn segmented<T: Copy + PartialEq + 'static>(
     t: &Theme,
     id: &'static str,
     options: &[(T, &'static str)],
@@ -129,6 +157,72 @@ impl Render for Settings {
                     ),
                 )
             });
+        div().size_full().flex().flex_col().text_size(px(size::MD)).text_color(t.text).child(
+            div()
+                .id("settings-body")
+                .flex_1()
+                .overflow_y_scroll()
+                .px_6()
+                .py_4()
+                .flex()
+                .flex_col()
+                .gap_6()
+                .max_w(px(metric::MEASURE))
+                .child(div().flex().items_start().gap_6().child(setting("Appearance", "Match system follows the OS as it changes.")).child(modes))
+                .child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap_6()
+                        .child(setting("Motion", "Cards, lanes and the inbox panel move briefly when they change. Reduced turns that off."))
+                        .child(motion),
+                )
+                .child(ui::hairline(t))
+                .child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap_6()
+                        .child(setting("Hub", "This app acts as you on this hub, with a key kept in the OS keychain."))
+                        .child(connection),
+                )
+                .child(ui::hairline(t))
+                .child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap_6()
+                        .child(setting("Version", "Run fleetd update to update the CLI and this app together."))
+                        .child(ui::mono(t, format!("fleetd-app {}", crate::update::VERSION))),
+                ),
+        )
+    }
+}
+
+impl crate::shell::Shell {
+    /// The Settings frame: header with Done, the section list, and the section.
+    pub(crate) fn settings_screen(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let t = &theme(cx).clone();
+        let current = self.settings_section;
+        let mut nav = div().w(px(184.)).flex_none().p_2().flex().flex_col().gap_0p5().border_r_1().border_color(t.hairline);
+        for section in Section::ALL {
+            nav = nav.child(
+                ui::row(t, SharedString::from(format!("settings-{}", section.label())), section == current)
+                    .h(px(metric::ROW + 16.))
+                    .flex_col()
+                    .items_start()
+                    .justify_center()
+                    .gap_0()
+                    .child(div().when(section == current, |d| d.font_weight(STRONG)).child(section.label()))
+                    .child(div().text_size(px(size::XS)).text_color(t.quiet).child(section.help()))
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_settings_section(section, cx))),
+            );
+        }
+        let body = match current {
+            Section::General => self.settings.clone().into_any_element(),
+            Section::Prompts => self.prompts_page(cx),
+            Section::Instructions => self.instructions_page(cx),
+        };
         div()
             .size_full()
             .flex()
@@ -138,46 +232,26 @@ impl Render for Settings {
             .child(ui::header(
                 t,
                 "Settings",
-                ui::button(t, "settings-close", "Done", Variant::Secondary, true).on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Close))),
+                ui::button(t, "settings-close", "Done", Variant::Secondary, true).on_click(cx.listener(|this, _, _, cx| this.close_settings(cx))),
             ))
-            .child(
-                div()
-                    .id("settings-body")
-                    .flex_1()
-                    .overflow_y_scroll()
-                    .px_6()
-                    .py_4()
-                    .flex()
-                    .flex_col()
-                    .gap_6()
-                    .max_w(px(metric::MEASURE))
-                    .child(div().flex().items_start().gap_6().child(setting("Appearance", "Match system follows the OS as it changes.")).child(modes))
-                    .child(
-                        div()
-                            .flex()
-                            .items_start()
-                            .gap_6()
-                            .child(setting("Motion", "Cards, lanes and the inbox panel move briefly when they change. Reduced turns that off."))
-                            .child(motion),
-                    )
-                    .child(ui::hairline(t))
-                    .child(
-                        div()
-                            .flex()
-                            .items_start()
-                            .gap_6()
-                            .child(setting("Hub", "This app acts as you on this hub, with a key kept in the OS keychain."))
-                            .child(connection),
-                    )
-                    .child(ui::hairline(t))
-                    .child(
-                        div()
-                            .flex()
-                            .items_start()
-                            .gap_6()
-                            .child(setting("Version", "Run fleetd update to update the CLI and this app together."))
-                            .child(ui::mono(t, format!("fleetd-app {}", crate::update::VERSION))),
-                    ),
-            )
+            .child(div().flex_1().min_h_0().flex().child(nav).child(div().flex_1().min_w_0().min_h_0().flex().flex_col().child(body)))
+            .into_any_element()
+    }
+
+    /// Shows a section, fetching what it needs the first time and refreshing it after that.
+    pub(crate) fn open_settings_section(&mut self, section: Section, cx: &mut Context<Self>) {
+        self.settings_section = section;
+        self.prompts_ui.picker = None;
+        if self.connected() {
+            match section {
+                Section::General => {}
+                Section::Prompts => self.open_prompts(self.state.prompts.project.clone(), cx),
+                Section::Instructions => {
+                    let project = self.state.prompts.instructions_for.clone().or_else(|| self.selected_project.clone());
+                    self.open_instructions(project, cx)
+                }
+            }
+        }
+        cx.notify();
     }
 }

@@ -337,3 +337,14 @@ fn word_boundaries() {
     assert_eq!(word_at("a  b", 2), 1..3);
     assert_eq!(line_at("ab\ncd\nef", 4), 3..5);
 }
+
+#[gpui::test]
+fn an_editor_field_takes_enter_as_a_new_line_and_never_submits(cx: &mut TestAppContext) {
+    let (input, cx) = field(cx, |i| i.multi_line(8).enter_newline());
+    let seen = events(&input, cx);
+    cx.simulate_input("## Rules");
+    keys(cx, "enter");
+    cx.simulate_input("- one");
+    assert_eq!(text(&input, cx), "## Rules\n- one");
+    assert!(!seen.borrow().contains(&InputEvent::Submit));
+}

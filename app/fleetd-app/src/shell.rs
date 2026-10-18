@@ -144,15 +144,17 @@ pub struct Shell {
     /// The bench's order view shows its raw 20k-line log (what the scroll bench scrolls) instead of the conversation.
     pub(crate) bench_log: bool,
     update: Option<String>,
-    palette: Option<Entity<Palette>>,
+    pub(crate) palette: Option<Entity<Palette>>,
     /// New orders: docked on the board, or floating over the order view (⌘N there).
     pub(crate) docked: Entity<Composer>,
-    floating: Option<Entity<Composer>>,
+    pub(crate) floating: Option<Entity<Composer>>,
     /// The order view's follow-up box.
     pub(crate) follow: Entity<Composer>,
-    settings: Entity<Settings>,
+    pub(crate) settings: Entity<Settings>,
+    pub(crate) settings_section: settings::Section,
     /// Where Settings' Done goes back to.
     before_settings: Screen,
+    pub(crate) prompts_ui: crate::prompts::Ui,
     sidebar_hidden: bool,
     seen: sidebar::Seen,
     /// The ask a notification or the palette pointed at, marked in the inbox.
@@ -230,10 +232,6 @@ impl Shell {
             cx.subscribe(&settings, |this, _, event: &SettingsEvent, cx| {
                 match event {
                     SettingsEvent::Disconnect => this.disconnect(cx),
-                    SettingsEvent::Close => {
-                        this.screen = this.before_settings;
-                        this.focus_composer(cx);
-                    }
                 }
                 cx.notify();
             }),
@@ -265,7 +263,9 @@ impl Shell {
             floating: None,
             follow,
             settings,
+            settings_section: settings::Section::General,
             before_settings: Screen::Board,
+            prompts_ui: crate::prompts::Ui::new(cx),
             sidebar_hidden: false,
             seen: sidebar::Seen::default(),
             focus_ask: None,
@@ -773,6 +773,7 @@ impl Shell {
                 self.open_order(&w, cx);
             }
             LaneEvent::Open(_) => {}
+            LaneEvent::Told(thread, who) => self.open_told(thread.clone(), who.clone(), cx),
         }
     }
 
@@ -1009,7 +1010,11 @@ impl Shell {
         let field_focused = !self.focus.is_focused(window) && !self.inbox_focus.is_focused(window);
         if key == "escape" {
             // Esc: close a menu (the field does) → the panel → the order view back to the board.
-            if self.stop_confirm {
+            if self.state.prompts.told.is_some() {
+                self.state.prompts.told = None;
+            } else if self.prompts_ui.picker.is_some() {
+                self.prompts_ui.picker = None;
+            } else if self.stop_confirm {
                 self.stop_confirm = false;
             } else if self.inbox_open {
                 self.toggle_inbox(false, cx);
@@ -1134,10 +1139,18 @@ impl Shell {
     fn close_overlays(&mut self, cx: &mut Context<Self>) {
         self.palette = None;
         self.floating = None;
+        self.state.prompts.told = None;
         self.focus_composer(cx);
     }
 
-    fn connected(&self) -> bool {
+    pub(crate) fn close_settings(&mut self, cx: &mut Context<Self>) {
+        self.screen = self.before_settings;
+        self.prompts_ui.picker = None;
+        self.focus_composer(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn connected(&self) -> bool {
         self.hub.is_some() || self.bench.is_some()
     }
 
@@ -1262,7 +1275,7 @@ impl Render for Shell {
                     live: self.state.conn == Conn::Live && self.hub.is_some(),
                 };
                 self.settings.update(cx, |s, _| s.hub = hub);
-                self.settings.clone().into_any_element()
+                self.settings_screen(cx)
             }
         };
         let t = theme(cx).clone();
@@ -1296,6 +1309,7 @@ impl Render for Shell {
             div().absolute().top(px(34.)).bottom_0().right_0().child(live::motion::slide_panel("inbox-panel-slide", panel, true))
         });
         let title_items = self.title_items(cx);
+        let told = self.told_sheet(window, cx);
         div()
             .relative()
             .size_full()
@@ -1355,6 +1369,7 @@ impl Render for Shell {
             .children(panel)
             .when_some(self.palette.clone(), |d, p| d.child(overlay(p.into_any_element(), cx)))
             .when_some(self.floating.clone(), |d, c| d.child(overlay(c.into_any_element(), cx)))
+            .when_some(told, |d, sheet| d.child(overlay(sheet, cx)))
     }
 }
 
@@ -1753,6 +1768,7 @@ impl Shell {
         let mut stream = LogStream::new(1);
         self.log = (0..history).map(|_| to_row(stream.next_line())).collect();
         self.state = fake::fixture_state();
+        self.prompts_ui.fake = Some(fake::PromptHub::new());
         self.seen.prime(&self.state);
         // Two projects with news since you last looked, so the fixture shows the unread state.
         for row in self.state.projects.iter().skip(3).step_by(4).take(2) {
@@ -1768,6 +1784,7 @@ impl Shell {
             "board" => self.screen = Screen::Board,
             "machines" => self.go(Screen::Machines),
             "settings" => self.go(Screen::Settings),
+            "prompts" | "instructions" => self.bench_prompts(base, extra, cx),
             _ => {
                 self.state.order = None;
                 self.open_order(fake::FIXTURE_ORDER, cx);
@@ -1776,6 +1793,7 @@ impl Shell {
             }
         }
         match extra {
+            "told" | "told-task" => self.bench_told(extra == "told-task", cx),
             "inbox" => self.toggle_inbox(true, cx),
             "status" => self.group_by_status = true,
             "narrow" => {}

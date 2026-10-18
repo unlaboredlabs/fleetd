@@ -207,6 +207,10 @@ pub struct TextInput {
     masked: bool,
     max_bytes: Option<usize>,
     bordered: bool,
+    /// Machine text: the mono voice at the mono size.
+    mono: bool,
+    /// A text editor: Enter adds a line and nothing submits.
+    enter_newline: bool,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     last_edit: Option<EditKind>,
@@ -243,6 +247,8 @@ impl TextInput {
             masked: false,
             max_bytes: None,
             bordered: true,
+            mono: false,
+            enter_newline: false,
             undo: Vec::new(),
             redo: Vec::new(),
             last_edit: None,
@@ -277,6 +283,18 @@ impl TextInput {
         self
     }
 
+    /// Mono text, for fields that hold machine text such as a prompt.
+    pub fn mono(mut self) -> Self {
+        self.mono = true;
+        self
+    }
+
+    /// For a multi-line field that holds a document rather than a message: Enter adds a line, like Shift+Enter.
+    pub fn enter_newline(mut self) -> Self {
+        self.enter_newline = true;
+        self
+    }
+
     /// No border or background, for a field that sits in a styled strip.
     pub fn borderless(mut self) -> Self {
         self.bordered = false;
@@ -295,6 +313,16 @@ impl TextInput {
         let end = self.text.len();
         self.replace(0..end, text, EditKind::Other, cx);
         self.last_edit = None;
+    }
+
+    /// Puts the caret at the start and scrolls there, e.g. after filling a long text with [`Self::set_text`].
+    pub fn caret_to_start(&mut self, cx: &mut Context<Self>) {
+        self.selected = 0..0;
+        self.reversed = false;
+        self.goal_x = None;
+        self.scroll = Point::default();
+        self.autoscroll = true;
+        cx.notify();
     }
 
     /// Empties the field (wiping a masked value) and its undo; history stays.
@@ -748,6 +776,10 @@ impl TextInput {
     }
 
     fn submit(&mut self, _: &Submit, _: &mut Window, cx: &mut Context<Self>) {
+        if self.enter_newline && self.max_rows.is_some() {
+            self.replace(self.selected.clone(), "\n", EditKind::Insert, cx);
+            return;
+        }
         cx.emit(InputEvent::Submit);
     }
 
@@ -963,6 +995,7 @@ impl Render for TextInput {
             .min_w_0()
             .px_2()
             .py_1()
+            .when(self.mono, |d| d.font_family(crate::theme::theme(cx).mono_font.clone()).text_size(px(crate::theme::size::SM)))
             .when(self.bordered, |d| {
                 let t = crate::theme::theme(cx);
                 d.rounded(px(crate::theme::radius::SM))

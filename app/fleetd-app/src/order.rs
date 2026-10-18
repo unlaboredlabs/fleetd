@@ -533,8 +533,19 @@ impl Shell {
         }
         let workspace = key.as_ref().and_then(|k| self.state.project(k)).map(|r| r.summary.workspace_root.clone());
         let on_open = self.link_opener(workspace, cx);
-        let snap = ConvSnapshot { head: head.join(" · "), lead: lead.filter(|l| l.live.is_some()), notice, entries };
-        self.conv.update(cx, |c, cx| c.set(snap, on_open, cx));
+        let told = key.as_ref().and_then(|k| {
+            let lead = self.state.project(k)?.lead()?;
+            Some(fleetd_contracts::ids::ThreadRef {
+                machine_id: fleetd_contracts::ids::MachineId::unchecked(k.0.as_str()),
+                thread_id: lead.thread_id.clone(),
+            })
+        });
+        let shell = cx.entity().downgrade();
+        let on_told: OnTold = std::rc::Rc::new(move |thread, cx| {
+            shell.update(cx, |this, cx| this.open_told(thread, "the lead".into(), cx)).ok();
+        });
+        let snap = ConvSnapshot { head: head.join(" · "), told, lead: lead.filter(|l| l.live.is_some()), notice, entries };
+        self.conv.update(cx, |c, cx| c.set(snap, on_open, on_told, cx));
     }
 
     fn order_bottom(&self, w: &str, lanes: &[AgentLane], cx: &mut Context<Self>) -> Div {
@@ -618,6 +629,8 @@ impl Shell {
 #[derive(Clone, Default, PartialEq)]
 pub struct ConvSnapshot {
     pub head: String,
+    /// The lead's session, for "Show full prompt" in the header.
+    pub told: Option<fleetd_contracts::ids::ThreadRef>,
     pub lead: Option<AgentLane>,
     /// The empty or loading line, or the tail's error (true).
     pub notice: Option<(String, bool)>,
@@ -630,8 +643,11 @@ pub struct LeadConv {
     snap: ConvSnapshot,
     list: gpui::ListState,
     on_open: crate::links::OnOpen,
+    on_told: OnTold,
     open_folds: OpenFolds,
 }
+
+pub type OnTold = std::rc::Rc<dyn Fn(fleetd_contracts::ids::ThreadRef, &mut gpui::App)>;
 
 impl LeadConv {
     pub fn new() -> Self {
@@ -639,12 +655,14 @@ impl LeadConv {
             snap: ConvSnapshot::default(),
             list: gpui::ListState::new(0, gpui::ListAlignment::Bottom, px(400.)),
             on_open: std::rc::Rc::new(|_, _, _| {}),
+            on_told: std::rc::Rc::new(|_, _| {}),
             open_folds: OpenFolds::new(),
         }
     }
 
-    pub fn set(&mut self, snap: ConvSnapshot, on_open: crate::links::OnOpen, cx: &mut Context<Self>) {
+    pub fn set(&mut self, snap: ConvSnapshot, on_open: crate::links::OnOpen, on_told: OnTold, cx: &mut Context<Self>) {
         self.on_open = on_open;
+        self.on_told = on_told;
         if snap == self.snap {
             return;
         }
@@ -743,7 +761,17 @@ impl LeadConv {
 impl Render for LeadConv {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = &theme(cx).clone();
-        let mut col = div().px_4().flex().flex_col().gap_2().child(section(t, "LEAD", self.snap.head.clone()));
+        let told = self.snap.told.clone().map(|thread| {
+            let on_told = self.on_told.clone();
+            ui::clickable(t, div().id("lead-told"))
+                .text_size(px(size::XS))
+                .text_color(t.quiet)
+                .hover(|s| s.underline())
+                .child("Show full prompt")
+                .on_click(move |_, _, cx| on_told(thread.clone(), cx))
+        });
+        let head = section(t, "LEAD", self.snap.head.clone()).child(div().flex_1()).children(told);
+        let mut col = div().px_4().flex().flex_col().gap_2().child(head);
         if let Some(lead) = &self.snap.lead {
             col = col.child(div().pl(px(96.)).child(crate::live::activity::activity_line(t, lead)));
         }

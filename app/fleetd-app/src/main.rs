@@ -12,6 +12,7 @@ mod diffview;
 mod fake;
 mod inbox;
 mod input;
+mod instructions;
 mod keychain;
 mod links;
 // Liveness and motion (lanes, activity, sparklines, strips): its own module so it can grow without touching main.rs.
@@ -22,6 +23,7 @@ mod order;
 mod pair;
 mod palette;
 mod prefs;
+mod prompts;
 mod seal;
 mod settings;
 mod shell;
@@ -29,6 +31,7 @@ mod sidebar;
 mod state;
 mod theme;
 mod titlebar;
+mod told;
 mod ui;
 mod update;
 
