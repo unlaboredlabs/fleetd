@@ -562,6 +562,11 @@ impl SessionService {
                 }
             }
         }
+        let home = crate::node::util::home_dir();
+        let removed = blocking(move || super::repos::remove_partials(&home)).await;
+        if removed > 0 {
+            tracing::info!(removed, "removed clones a previous node left half done");
+        }
         service.spawn_reaper();
         service.spawn_prober();
         service.spawn_span_flusher(service.inner.span_wake.clone());
@@ -1917,7 +1922,8 @@ impl SessionService {
             )));
         }
         let service = self.clone();
-        super::repos::clone(url, &dest, move |p| {
+        let id = add_id.to_string();
+        super::repos::clone(url, &dest, &id, move |p| {
             let percent = p
                 .percent
                 .map(|n| fleetd_contracts::prim::Int::unchecked(i64::from(n)));

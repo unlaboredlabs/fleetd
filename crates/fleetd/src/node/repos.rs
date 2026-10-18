@@ -28,6 +28,7 @@ pub fn scan(home: &Path) -> (String, Vec<ScannedRepo>) {
     let roots: Vec<PathBuf> = REPO_ROOTS.iter().map(|r| home.join(r)).collect();
     let mut repos: Vec<ScannedRepo> = find_repos(&roots)
         .into_iter()
+        .filter(|r| !r.path.to_string_lossy().contains(PARTIAL))
         .map(|r| ScannedRepo {
             path: r.path.to_string_lossy().into_owned(),
             remote: r.remote,
@@ -129,7 +130,8 @@ fn has_gh() -> bool {
 pub async fn clone(
     url: &str,
     dest: &Path,
-    mut progress: impl FnMut(Progress) + Send,
+    add_id: &str,
+    progress: impl FnMut(Progress) + Send,
 ) -> Result<(), String> {
     if dest.exists() {
         return Err(format!("{} already exists", dest.display()));
@@ -138,6 +140,63 @@ pub async fn clone(
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
+    // git writes into a sibling that is renamed into place only when complete, so `dest` existing always means a
+    // whole clone (one cut off by a restart is never offered for reuse).
+    let id: String = add_id
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(40)
+        .collect();
+    let partial = PathBuf::from(format!("{}{PARTIAL}{id}", dest.display()));
+    let _ = std::fs::remove_dir_all(&partial);
+    let result = git_clone(url, &partial, progress).await;
+    let result = result.and_then(|()| {
+        std::fs::rename(&partial, dest)
+            .map_err(|e| format!("cannot move the clone into {}: {e}", dest.display()))
+    });
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(&partial);
+    }
+    result
+}
+
+/// The suffix of a clone in progress: `<dest>.fleetd-partial-<addId>`.
+pub const PARTIAL: &str = ".fleetd-partial-";
+
+/// Removes clones a previous node process left half done, under the usual source dirs (two levels down). Run at
+/// start, before any clone.
+pub fn remove_partials(home: &Path) -> usize {
+    let mut removed = 0;
+    let mut dirs: Vec<PathBuf> = REPO_ROOTS.iter().map(|r| home.join(r)).collect();
+    let mut depth = 0;
+    while depth < 2 && !dirs.is_empty() {
+        let mut next = Vec::new();
+        for dir in dirs {
+            for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+                    continue;
+                }
+                let path = entry.path();
+                if entry.file_name().to_string_lossy().contains(PARTIAL) {
+                    if std::fs::remove_dir_all(&path).is_ok() {
+                        removed += 1;
+                    }
+                } else if !path.join(".git").exists() {
+                    next.push(path);
+                }
+            }
+        }
+        dirs = next;
+        depth += 1;
+    }
+    removed
+}
+
+async fn git_clone(
+    url: &str,
+    dest: &Path,
+    mut progress: impl FnMut(Progress) + Send,
+) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new("git");
     if has_gh() {
         cmd.args([
@@ -331,14 +390,39 @@ mod tests {
         crate::node::worktree::tests::run(&origin, &["commit", "-q", "-m", "ci"]);
         let dest = dir.path().join("src/storefront");
         let url = format!("file://{}", origin.display());
-        clone(&url, &dest, |_| {}).await.unwrap();
+        clone(&url, &dest, "a1", |_| {}).await.unwrap();
+        assert!(!dir.path().join("src/storefront.fleetd-partial-a1").exists());
         let facts = inspect(&dest);
         assert!(facts.is_git);
         assert_eq!(facts.remote.as_deref(), Some(url.as_str()));
         assert_eq!(facts.workflow_files, vec!["ci.yml".to_owned()]);
         assert!(facts.default_branch.is_some());
-        let again = clone(&url, &dest, |_| {}).await.unwrap_err();
+        let again = clone(&url, &dest, "a2", |_| {}).await.unwrap_err();
         assert!(again.contains("already exists"), "{again}");
         assert!(!inspect(&dir.path().join("missing")).exists);
+    }
+
+    #[tokio::test]
+    async fn a_cut_off_clone_never_takes_the_destination() {
+        let home = tempfile::tempdir().unwrap();
+        let dest = home.path().join("src/storefront");
+        // A failed clone leaves neither the destination nor its partial behind.
+        let bad = format!("file://{}/nope", home.path().display());
+        assert!(clone(&bad, &dest, "b1", |_| {}).await.is_err());
+        assert!(!dest.exists());
+        assert!(
+            !home
+                .path()
+                .join("src/storefront.fleetd-partial-b1")
+                .exists()
+        );
+        // A node killed mid-clone leaves a partial; the next start removes it and the scan never lists it.
+        let partial = home.path().join("src/storefront.fleetd-partial-b2");
+        std::fs::create_dir_all(partial.join(".git")).unwrap();
+        let nested = home.path().join("src/acme/storefront.fleetd-partial-b3");
+        std::fs::create_dir_all(nested.join(".git")).unwrap();
+        assert!(scan(home.path()).1.is_empty());
+        assert_eq!(remove_partials(home.path()), 2);
+        assert!(!partial.exists() && !nested.exists());
     }
 }
