@@ -1,9 +1,11 @@
 name: record-mac
 
 # The app's own-window recording (FLEETD_RECORD, app/record) on a real Mac: the live fixture board for 25 s, then the
-# MP4, its PNGs and frames ffmpeg cut from the MP4 as an artifact. Run by hand on a branch:
-#   gh workflow run record-mac.yml --ref <branch>
+# MP4, its PNGs and frames ffmpeg cut from the MP4 as an artifact. Runs on pull requests that change the recorder
+# (GitHub only dispatches workflows that are on main), and by hand: gh workflow run record-mac.yml --ref <branch>
 on:
+  pull_request:
+    paths: [app/record/**, app/fleetd-app/src/record.rs, .github/workflows/record-mac.yml]
   workflow_dispatch:
     inputs:
       seconds:
