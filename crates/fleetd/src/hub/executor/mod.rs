@@ -35,8 +35,8 @@ use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
     MachineEvent, MachineEventFrame, PermissionDecision, RunnerInfo, SessionCall, SessionCallFrame,
-    SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionWorkspace,
-    ThreadEvent, ThreadEventFrame,
+    SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionStatus,
+    SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame,
 };
 use futures_util::StreamExt;
 use serde_json::json;
@@ -857,6 +857,7 @@ impl Executors {
         event: &MachineEvent,
         baseline: bool,
     ) {
+        self.follow_active(machine_id, event);
         let ids: Vec<String> = match event {
             MachineEvent::Snapshot { sessions, .. } => {
                 sessions.iter().map(|s| s.session_id.to_string()).collect()
@@ -1513,6 +1514,41 @@ impl Executors {
             last_frame_ms: s.last_frame_ms,
             tool: thread_view::open_tool(&s.view, active.as_deref()),
         })
+    }
+
+    /// Follows a session the moment a run of it is active, and lets the follow idle out once none is, so the live
+    /// lanes see its tool calls, text and usage from the start. The watchdog follows running threads too, but only on
+    /// its 30 s pass: a short task would end before it, and every lane would only say "waiting on the model".
+    fn follow_active(self: &Arc<Self>, machine_id: &MachineId, event: &MachineEvent) {
+        let sessions: Vec<&SessionSummary> = match event {
+            MachineEvent::Snapshot { sessions, .. } => sessions.iter().collect(),
+            MachineEvent::SessionUpdated(s) => vec![s],
+            _ => return,
+        };
+        for s in sessions {
+            let active = s.active_run_id.is_some()
+                || matches!(s.status, SessionStatus::Running | SessionStatus::Waiting);
+            let r = thread_ref(machine_id, s.session_id.as_str());
+            let watched = self
+                .machines
+                .lock()
+                .unwrap()
+                .get(machine_id)
+                .and_then(|slot| slot.watches.get(r.thread_id.as_str()).cloned());
+            match (active, watched) {
+                (true, Some(w)) => w.state.lock().unwrap().pinned = true,
+                (true, None) => {
+                    let this = Arc::clone(self);
+                    tokio::spawn(async move {
+                        if let Err(error) = this.follow(&r).await {
+                            tracing::debug!(%error, "executor: active session not followed");
+                        }
+                    });
+                }
+                (false, Some(_)) => self.release(&r),
+                (false, None) => {}
+            }
+        }
     }
 
     /// The live parts of a followed thread's lane at the hub's `now`; None when nobody follows it (it is not running,

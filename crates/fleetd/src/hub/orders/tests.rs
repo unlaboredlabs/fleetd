@@ -199,3 +199,24 @@ fn a_done_order_leaves_only_its_open_prs_that_are_not_on_their_way_in() {
     // Merged stays merged, the PR in CI may still land, another order's PR is not touched.
     assert_eq!(left, vec![11, 14]);
 }
+
+#[test]
+fn cards_get_a_short_title() {
+    let mut w = workstream();
+    w.title = Text::unchecked(
+        "Tier L. Add three short pages, lab/20261018153639/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page.",
+    );
+    assert_eq!(
+        short_title(&w),
+        "Add three short pages, lab/20261018153639/alpha.md…"
+    );
+    w.title = Text::unchecked("@storefront fix: rounding of cart totals");
+    assert_eq!(short_title(&w), "rounding of cart totals");
+    // Once the brief is frozen its goal names the order.
+    w.brief = Some(
+        serde_json::from_value(json!({ "goal": "Three pages on the merge train. One per writer.", "why": "demo", "pointers": [], "constraints": [],
+            "doneWhen": [{ "type": "pr_merged", "repo": "o/testbed" }], "tier": "L" }))
+        .unwrap(),
+    );
+    assert_eq!(short_title(&w), "Three pages on the merge train");
+}

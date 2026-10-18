@@ -100,6 +100,69 @@ fn template_of(w: &Workstream) -> Option<PlaybookName> {
     PlaybookName::ALL.into_iter().find(|p| p.as_str() == name)
 }
 
+/// Longest order title on a card, in characters.
+pub const TITLE_CHARS: usize = 60;
+
+/// A card's title: the frozen brief's goal once there is one, else the order's first line, without a leading
+/// `@project`, template prefix or "Tier L.", cut to its first sentence and to `TITLE_CHARS` on a word boundary.
+pub fn short_title(w: &Workstream) -> String {
+    let source = w
+        .brief
+        .as_ref()
+        .map_or(w.title.as_str(), |b| b.goal.as_str());
+    let mut rest = source.trim();
+    loop {
+        let before = rest;
+        let lower = rest.to_lowercase();
+        if rest.starts_with('@') {
+            rest = rest
+                .split_once(char::is_whitespace)
+                .map_or("", |(_, r)| r)
+                .trim_start();
+        }
+        for prefix in [
+            "fix:",
+            "bug:",
+            "bugfix:",
+            "feature:",
+            "research:",
+            "finish:",
+        ] {
+            if lower.starts_with(prefix) {
+                rest = rest[prefix.len()..].trim_start();
+            }
+        }
+        if let Some(tier) = lower.strip_prefix("tier ")
+            && tier.len() >= 2
+            && matches!(&tier[..1], "s" | "m" | "l")
+            && matches!(&tier[1..2], "." | ":" | ",")
+        {
+            rest = rest["tier x.".len()..].trim_start();
+        }
+        if rest == before {
+            break;
+        }
+    }
+    let first = rest
+        .split_inclusive(['\n'])
+        .next()
+        .unwrap_or(rest)
+        .split(". ")
+        .next()
+        .unwrap_or(rest)
+        .trim()
+        .trim_end_matches('.');
+    if first.chars().count() <= TITLE_CHARS {
+        return first.to_owned();
+    }
+    let cut: String = first.chars().take(TITLE_CHARS - 1).collect();
+    let cut = cut
+        .rsplit_once(' ')
+        .map_or(cut.as_str(), |(head, _)| head)
+        .trim_end_matches([',', ';', ':']);
+    format!("{cut}…")
+}
+
 /// One PR for the app, with its clean reviews of the current patch against what its tier asks for.
 pub fn pr_ref(change: &Change, reviews_needed: i64) -> PrRef {
     let done = change
@@ -303,7 +366,7 @@ pub fn card(p: &OrderParts<'_>, look: &dyn Lookups) -> Joined {
     let card = OrderCard {
         workstream_id: w.workstream_id.clone(),
         project_ref: w.project_ref.clone(),
-        title: w.title.clone(),
+        title: Text::unchecked(short_title(w)),
         state: w.state,
         template: template_of(w),
         phase,
