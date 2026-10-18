@@ -6,7 +6,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "exitCode": {
-          "description": "Only when T3 reports one or the output says \"Exit code N\"; T3's Claude adapter sets none itself.",
+          "description": "Only when the runner reports one or the output says \"Exit code N\".",
           "maximum": 9007199254740991,
           "minimum": -9007199254740991,
           "type": "integer"
@@ -1815,7 +1815,7 @@
         },
         {
           "const": "project.removed",
-          "description": "T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
+          "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
         },
         {
@@ -2390,7 +2390,7 @@
         },
         "threadId": {
           "$ref": "#/$defs/ThreadId",
-          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+          "description": "The current lead thread on the project's machine; earlier ones stay on the node as history."
         }
       },
       "required": [
@@ -2454,7 +2454,7 @@
         },
         "threadId": {
           "$ref": "#/$defs/ThreadId",
-          "description": "The current lead thread on the project's machine; earlier ones stay in T3 as history."
+          "description": "The current lead thread on the project's machine; earlier ones stay on the node as history."
         },
         "truncated": {
           "type": "boolean"
@@ -3292,7 +3292,7 @@
       "type": "object"
     },
     "Receipts": {
-      "description": "Counted by the hub from the task's T3 items, never from its prose.",
+      "description": "Counted by the hub from the task's thread items, never from its prose.",
       "properties": {
         "commands": {
           "maximum": 9007199254740991,
@@ -4773,7 +4773,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "effort": {
-          "description": "As reported by T3; not narrowed to Effort because T3 may report other levels.",
+          "description": "As reported by the runner; not narrowed to Effort because it may report other levels.",
           "type": "string"
         },
         "headline": {

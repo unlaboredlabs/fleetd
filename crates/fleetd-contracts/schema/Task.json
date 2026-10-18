@@ -38,7 +38,7 @@
       "type": "object"
     },
     "Receipts": {
-      "description": "Counted by the hub from the task's T3 items, never from its prose.",
+      "description": "Counted by the hub from the task's thread items, never from its prose.",
       "properties": {
         "commands": {
           "maximum": 9007199254740991,
