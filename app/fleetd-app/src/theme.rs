@@ -30,6 +30,8 @@ pub mod size {
     pub const LG: f32 = 18.;
     /// The one headline on the connect screen and empty states.
     pub const XL: f32 = 20.;
+    /// The Status view's progress number.
+    pub const DISPLAY: f32 = 28.;
 }
 
 /// Weights: two only. Regular for everything, semibold for titles and for what needs you.

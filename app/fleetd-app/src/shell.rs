@@ -62,6 +62,8 @@ pub enum Screen {
     Machines,
     /// The time inspector: an order's timeline, or where the fleet's time went.
     Time,
+    /// How far the fleet, a project or an order is, and what is in its way (⌘.).
+    Status,
     Settings,
 }
 
@@ -197,6 +199,7 @@ pub struct Shell {
     cmd_held: bool,
     window_active: bool,
     pub(crate) add: crate::project_add::open::AddUi,
+    pub(crate) status_ui: crate::status::Ui,
 }
 
 impl Shell {
@@ -310,9 +313,11 @@ impl Shell {
             cmd_held: false,
             window_active: true,
             add: Default::default(),
+            status_ui: crate::status::Ui::default(),
         };
         cx.observe_window_activation(window, |this, window, cx| {
             this.window_active = window.is_window_active();
+            this.status_seen_tick();
             this.update_live(true, cx);
         })
         .detach();
@@ -865,6 +870,9 @@ impl Shell {
             let out = self.state.open_doctor();
             self.send(out);
         }
+        if screen != Screen::Status && self.screen == Screen::Status {
+            self.leave_status();
+        }
         if screen != Screen::Time && self.screen == Screen::Time {
             self.state.time_close();
         }
@@ -879,6 +887,31 @@ impl Shell {
         }
         self.screen = screen;
         self.selected = 0;
+        self.status_seen_tick();
+    }
+
+    pub(crate) fn window_is_active(&self) -> bool {
+        self.window_active
+    }
+
+    /// ⌘.: the Status view at the scope on screen (the open order, the picked project, else the fleet); again, back
+    /// to where it was opened from.
+    fn toggle_status(&mut self, cx: &mut Context<Self>) {
+        if self.screen == Screen::Status {
+            let back = self.status_ui.before.take().filter(|s| *s != Screen::Status).unwrap_or(Screen::Board);
+            match (back, self.state.order.as_ref().map(|o| o.workstream_id.clone())) {
+                (Screen::Order, Some(w)) => self.open_order(&w, cx),
+                _ => self.go(back),
+            }
+            self.focus_composer(cx);
+            return cx.notify();
+        }
+        let scope = match (self.screen, &self.state.order, &self.selected_project) {
+            (Screen::Order, Some(o), _) => crate::status::order_scope(&o.workstream_id),
+            (Screen::Board, _, Some((m, p))) => crate::status::project_scope(m, p),
+            _ => fleetd_contracts::status::StatusScope::Fleet,
+        };
+        self.open_status(scope, cx);
     }
 
     /// The time inspector on an order (its timeline) or, with none, on what the filters pick.
@@ -1225,6 +1258,7 @@ impl Shell {
             }
             sidebar::Pick::Machines => self.go(Screen::Machines),
             sidebar::Pick::Time => self.open_time(None, cx),
+            sidebar::Pick::Status => self.open_status(fleetd_contracts::status::StatusScope::Fleet, cx),
             sidebar::Pick::Settings => self.go(Screen::Settings),
             sidebar::Pick::Project(key) => {
                 self.selected_project = if self.selected_project.as_ref() == Some(&key) && self.screen == Screen::Board { None } else { Some(key) };
@@ -1252,6 +1286,10 @@ impl Shell {
             Command::Inbox => self.toggle_inbox(true, cx),
             Command::Machines => self.go(Screen::Machines),
             Command::Time(order) => self.open_time(order, cx),
+            Command::Status(order) => {
+                let scope = order.map_or(fleetd_contracts::status::StatusScope::Fleet, |w| crate::status::order_scope(&w));
+                self.open_status(scope, cx);
+            }
             Command::Settings => self.go(Screen::Settings),
             Command::Project(key) => self.pick(sidebar::Pick::Project(key), window, cx),
             Command::Order(w) => self.open_order(&w, cx),
@@ -1335,6 +1373,7 @@ impl Shell {
             },
             Screen::Machines => sidebar::Active::Machines,
             Screen::Time => sidebar::Active::Time,
+            Screen::Status => sidebar::Active::Status,
             Screen::Settings => sidebar::Active::Settings,
             Screen::Order => self.state.order.as_ref().map_or(sidebar::Active::None, |o| sidebar::Active::Order(o.workstream_id.clone())),
             Screen::Loading | Screen::Connect => sidebar::Active::None,
@@ -1426,6 +1465,7 @@ impl Render for Shell {
             Screen::Order => self.order_screen(window, cx),
             Screen::Machines => self.machines_screen(cx),
             Screen::Time => self.time.clone().into_any_element(),
+            Screen::Status => self.status_screen(cx),
             Screen::Settings => {
                 let hub = settings::Hub {
                     url: self.hub.as_ref().map(|h| h.url.clone().into()),
@@ -1511,6 +1551,7 @@ impl Render for Shell {
                         this.group_by_status = !this.group_by_status;
                         cx.notify();
                     }))
+                    .on_action(cx.listener(|this, _: &actions::ToggleStatus, _, cx| this.toggle_status(cx)))
                     .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
                         this.sidebar_hidden = !this.sidebar_hidden;
                         cx.notify();
@@ -1955,6 +1996,22 @@ impl Shell {
             "board" => self.screen = Screen::Board,
             "machines" => self.go(Screen::Machines),
             "settings" => self.go(Screen::Settings),
+            // status, status-project, status-order; +stale, +skeleton (no answer yet), +offline (the link dropped), +lists
+            // (scrolled to the lists at the end).
+            "status" | "status-project" | "status-order" => {
+                let scope = match base {
+                    "status-project" => crate::status::project_scope("devbox", "storefront"),
+                    "status-order" => crate::status::order_scope(fake::FIXTURE_ORDER),
+                    _ => fleetd_contracts::status::StatusScope::Fleet,
+                };
+                self.open_status(scope, cx);
+                if extra == "lists" {
+                    self.status_ui.scroll.scroll_to_bottom();
+                }
+                if extra == "offline" {
+                    self.state.apply(crate::client::Incoming::Disconnected { reason: "connection reset".into(), retry_in: Duration::from_secs(4) });
+                }
+            }
             "prompts" | "instructions" => self.bench_prompts(base, extra, cx),
             "time" | "time-breakdown" | "time-insights" | "fleet-time" | "fleet-insights" => {
                 let order = base.starts_with("time").then(|| crate::time::fixture::ORDER.to_string());

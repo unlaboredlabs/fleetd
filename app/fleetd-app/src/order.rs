@@ -311,7 +311,11 @@ impl Shell {
                 move |this, _, _, cx| this.open_time(Some(w.clone()), cx)
             })))
             .child(div().text_size(px(size::XS)).text_color(t.quiet).child(status))
-            .child(ui::kbd(t, ui::shortcut(".")))
+            .child(ui::button(t, "order-status", "Status", Variant::Ghost, true).on_click(cx.listener({
+                let w = w.clone();
+                move |this, _, _, cx| this.open_status(crate::status::order_scope(&w), cx)
+            })))
+            .child(ui::kbd(t, ui::shortcut("⇧.")))
             .child(stop);
         let wide = window.viewport_size().width >= px(1100.);
         let left = self.order_left(&w, &lanes, cx);

@@ -275,6 +275,27 @@ pub fn time_store(state: &mut State) {
     crate::time::fixture::answer_store(state);
 }
 
+/// The Status view's `status_get`, answered from `status::fixture` at once. `status_wait` is left open, as a hub
+/// with nothing new would; `FLEETD_SCREEN=…+skeleton` leaves `status_get` open too, and `…+stale` answers with two
+/// sources gone quiet.
+pub fn status_answer(state: &mut State, out: Vec<AppClientMessage>) {
+    use crate::status::fixture::{Variant, doc};
+    let screen = std::env::var("FLEETD_SCREEN").unwrap_or_default();
+    if screen.contains("skeleton") {
+        return;
+    }
+    let variant = if screen.contains("stale") { Variant::Stale } else { Variant::Live };
+    for message in out {
+        if let AppClientMessage::Call { id, tool, input } = message
+            && tool.as_str() == "status_get"
+        {
+            let scope = from(input["scope"].clone());
+            let output = json!({ "doc": doc(&scope, variant) });
+            state.apply(crate::client::Incoming::Message(AppServerMessage::Result { id, output }));
+        }
+    }
+}
+
 fn from<T: serde::de::DeserializeOwned>(v: Value) -> T {
     serde_json::from_value(v).expect("fixture matches the contracts")
 }

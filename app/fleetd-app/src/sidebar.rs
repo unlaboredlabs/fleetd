@@ -1,4 +1,4 @@
-//! The sidebar (spec 2.6): Board, Machines and Time, then every project with its open orders beneath it, then the
+//! The sidebar (spec 2.6): Status, Board, Machines and Time, then every project with its open orders beneath it, then the
 //! connection. The amber dot means something there needs you; the quiet number is the project's running agents.
 //! Holding ⌘ (Ctrl) shows jump numbers on the first nine orders, which ⌘1..9 open.
 
@@ -18,6 +18,7 @@ use crate::ui;
 /// Where a click in the sidebar goes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pick {
+    Status,
     Board,
     Machines,
     Time,
@@ -33,6 +34,7 @@ pub type OnPick = Rc<dyn Fn(Pick, &mut Window, &mut App)>;
 /// Which entry is current.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Active {
+    Status,
     Board,
     Machines,
     Time,
@@ -250,6 +252,7 @@ pub fn render(
                 .flex_col()
                 .border_b_1()
                 .border_color(t.hairline)
+                .child(entry("nav-status", "Status", Pick::Status, *active == Active::Status, ui::kbd(t, ui::shortcut(".")).into_any_element()))
                 .child(entry("nav-board", "Board", Pick::Board, *active == Active::Board, board_keys))
                 .child(entry("nav-machines", "Machines", Pick::Machines, *active == Active::Machines, machines_note))
                 .child(entry("nav-time", "Time", Pick::Time, *active == Active::Time, div().into_any_element())),
