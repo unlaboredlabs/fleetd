@@ -286,9 +286,9 @@ fn since_line(since: &Since, c: &Clock) -> String {
         counts.push(format!("{:+} items", since.scope_items.get()));
     }
     let from = match (&since.seen_at, since.pruned) {
-        (_, Some(true)) => "more than 30 days".to_owned(),
-        (Some(at), _) => c.at(at),
-        (None, _) => "your first look".to_owned(),
+        (_, Some(true)) => "you last looked here, more than 30 days ago".to_owned(),
+        (Some(at), _) => format!("you last looked here {}", c.at(at)),
+        (None, _) => "your first look from here".to_owned(),
     };
     let what = if counts.is_empty() {
         "nothing new".to_owned()
@@ -763,27 +763,82 @@ fn decode<A: serde::de::DeserializeOwned>(tool: &str, body: Value) -> Result<A, 
     })
 }
 
+/// "Since you last looked here": this machine's own mark per hub and scope, in `~/.fleetd/cli/status-seen.json`
+/// (0600). It is separate from the per-person marks the app keeps on the hub: neither moves the other, so the CLI
+/// needs no person's key and a look in one place never hides news from the other.
+struct Mark {
+    file: PathBuf,
+    key: String,
+    /// `{seq, at}` from the last doc printed here.
+    last: Option<Value>,
+}
+
+impl Mark {
+    fn load(hub: &str, scope: &Value) -> Self {
+        let file = super::home_dir().join(".fleetd/cli/status-seen.json");
+        let scope_key = serde_json::from_value::<StatusScope>(scope.clone())
+            .map(|s| s.key())
+            .unwrap_or_default();
+        let key = format!("{hub} {scope_key}");
+        let last = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|all| all.get(&key).cloned());
+        Mark { file, key, last }
+    }
+
+    /// The hub counts what happened after this seq.
+    fn input(&self, mut input: Value) -> Value {
+        if let Some(seq) = self.last.as_ref().and_then(|l| l.get("seq")) {
+            input["sinceSeq"] = seq.clone();
+        }
+        input
+    }
+
+    /// The doc's "since" line reads from this machine's mark, not the key's.
+    fn apply(&self, mut doc: StatusDoc) -> StatusDoc {
+        doc.since.seen_at = self
+            .last
+            .as_ref()
+            .and_then(|l| l.get("at"))
+            .and_then(Value::as_str)
+            .map(|at| Timestamp(at.to_owned()));
+        doc
+    }
+
+    fn save(&self, doc: &StatusDoc) {
+        let mut all = std::fs::read_to_string(&self.file)
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .filter(Value::is_object)
+            .unwrap_or_else(|| json!({}));
+        all[&self.key] = json!({ "seq": doc.seq, "at": doc.now });
+        if let Some(dir) = self.file.parent() {
+            use std::os::unix::fs::DirBuilderExt;
+            let _ = std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir);
+        }
+        // A mark that can't be written only means the next look counts from further back.
+        let _ = super::setup::write_private(&self.file, &format!("{all}\n"));
+    }
+}
+
 /// One status_get; `Err` keeps transport failures apart so `--watch` can reconnect.
-async fn get(client: &mut McpClient, scope: &Value) -> Result<Result<StatusDoc, u8>, CallError> {
+async fn get(
+    client: &mut McpClient,
+    scope: &Value,
+    mark: &Mark,
+) -> Result<Result<StatusDoc, u8>, CallError> {
     let body = call(
         client,
         "status_get",
-        json!({ "scope": scope }),
+        mark.input(json!({ "scope": scope })),
         Duration::from_secs(30),
     )
     .await?;
-    Ok(decode::<StatusGetOutput>("status_get", body).map(|out| out.doc))
-}
-
-async fn record_seen(client: &mut McpClient, scope: &Value, doc: &StatusDoc) {
-    // An agent key is told {recorded:false}; nothing to say about it either way.
-    let _ = call(
-        client,
-        "status_seen",
-        json!({ "scope": scope, "seq": doc.seq }),
-        Duration::from_secs(10),
-    )
-    .await;
+    Ok(decode::<StatusGetOutput>("status_get", body).map(|out| mark.apply(out.doc)))
 }
 
 /// `fleetd status …`: exit 0, 1 when the hub answered in a shape this build does not know, 2 on bad arguments, 3
@@ -816,7 +871,12 @@ pub async fn status_command(argv: &[String]) -> u8 {
         tty: args.watch && !args.json && std::io::stdout().is_terminal(),
         zone: crate::hub::attention::hub_zone(),
     };
-    let mut doc = match get(&mut client, &scope).await {
+    let hub = match &target {
+        Target::Remote { url, .. } => url.clone(),
+        Target::Local { .. } => "local".to_owned(),
+    };
+    let mark = Mark::load(&hub, &scope);
+    let mut doc = match get(&mut client, &scope, &mark).await {
         Ok(Ok(doc)) => doc,
         Ok(Err(code)) => return code,
         Err(error) => return fail("status", error),
@@ -824,8 +884,9 @@ pub async fn status_command(argv: &[String]) -> u8 {
     printer.show(&doc);
     if args.watch {
         let mut stop = super::Stop::on_signals();
-        loop {
-            let wait = json!({ "scope": scope, "after": doc.version, "timeoutSec": WAIT_SEC });
+        'watch: loop {
+            let wait =
+                mark.input(json!({ "scope": scope, "after": doc.version, "timeoutSec": WAIT_SEC }));
             let answer = tokio::select! {
                 _ = stop.wait() => break,
                 answer = call(&mut client, "status_wait", wait, Duration::from_secs(WAIT_SEC + 15)) => answer,
@@ -835,7 +896,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
                     Ok(StatusWaitOutput {
                         doc: Some(next), ..
                     }) => {
-                        doc = next;
+                        doc = mark.apply(next);
                         printer.show(&doc);
                         continue;
                     }
@@ -852,13 +913,12 @@ pub async fn status_command(argv: &[String]) -> u8 {
                 let delay = BACKOFF[attempt.min(BACKOFF.len() - 1)];
                 attempt += 1;
                 if stop.sleep(Duration::from_secs(delay)).await {
-                    // Stopped while away: nothing was seen past what is on screen, so no mark is recorded.
-                    return 0;
+                    break 'watch;
                 }
                 let Ok(mut fresh) = target.connect("fleetd-status").await else {
                     continue;
                 };
-                match get(&mut fresh, &scope).await {
+                match get(&mut fresh, &scope, &mark).await {
                     Ok(Ok(next)) => {
                         client = fresh;
                         doc = next;
@@ -871,7 +931,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
             }
         }
     }
-    record_seen(&mut client, &scope, &doc).await;
+    mark.save(&doc);
     0
 }
 
@@ -1027,7 +1087,7 @@ mod tests {
         for want in [
             "  eta Thu 14:00   planned Wed 18:00 (+6h scope, +14h slower)   4.1 pts/busy h, 18 samples",
             "  waiting on  P12 full lab run (serial); CI on #212",
-            "  since 09:12  7 merged, 3 verified, 1 failed, +3 items",
+            "  since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items",
             "health  main CI acme/storefront RED (rust (macos)) as of 14:01:50 · 1 of 2 machines online · lab-b OFFLINE last seen 13:58:07 (stale) · claude 58% 5h · 8 running, slots 8/40, 1 queued",
             "stale   machine:lab-b since 13:58:52: no heartbeat from lab-b for 4m",
             "doing   P12 full lab run   T88   eta 14:40",

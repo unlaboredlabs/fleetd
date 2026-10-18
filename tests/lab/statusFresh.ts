@@ -12,7 +12,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, cli, type Lab, scrubbedEnv } from "./harness.ts";
+import { type Body, fleetdCommand, type Lab, scrubbedEnv } from "./harness.ts";
 import { REPO } from "./m7Train.ts";
 
 const MACHINE = "lab-b";
@@ -81,7 +81,12 @@ export async function statusFresh(lab: Lab) {
     check(offline.status === "offline", `${MACHINE} offline in health: ${JSON.stringify(offline)}`);
     check(offline.lastSeenAt === undefined || Date.parse(offline.lastSeenAt) <= t0, `${MACHINE} last seen at or before the kill: ${offline.lastSeenAt}`);
     const headline = await docUntil("the headline says Not live and names lab-b", 15_000, (d) => notLive(d) && (d.headline.text as string).includes(MACHINE));
-    const printed = cli("status", "--hub", lab.hubUrl, "--key-file", keyFile);
+    // HOME in the run dir: the CLI keeps its "since you last looked here" mark under ~/.fleetd/cli.
+    const printed = execFileSync(...fleetdCommand(["status", "--hub", lab.hubUrl, "--key-file", keyFile]), {
+      env: { ...scrubbedEnv(), HOME: lab.dir },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     check(/OFFLINE/u.test(printed), `fleetd status prints OFFLINE:\n${printed}`);
     ok(`2. ${MACHINE} killed: stale after ${took.toFixed(1)} s ("${staleReason(flagged, `machine:${MACHINE}`)}"); headline "${headline.headline.text}"; fleetd status prints OFFLINE`);
 

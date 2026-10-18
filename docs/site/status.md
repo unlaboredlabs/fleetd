@@ -20,7 +20,7 @@ storefront  61%  polish 2/5    as of 14:02:07 (live)
   Switching payments to the new provider, waiting on the full test run. Nothing needs you.   [generated]
   eta Thu 14:00   planned Wed 18:00 (+6h scope, +14h slower)   4.1 pts/busy h, 18 samples
   waiting on  P12 full test run (serial); CI on #212
-  since 09:12  7 merged, 3 verified, 1 failed, +3 items
+  since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items
 health  main CI acme/storefront green as of 14:01:50 · 2 of 2 machines online · claude 58% 5h 41% wk · 8 running, slots 8/40
 risks   check `e2e (safari)` failed on 2 PRs today
 doing   P12 full test run   T88   eta 14:40
@@ -83,12 +83,11 @@ CI on a PR, the merge train, your answer to an ask, a free slot, or a machine th
 
 ## Since you last looked
 
-"since 09:12" counts what happened in this scope since you last looked at it: merged PRs, verified items, started
-orders, failures, new asks and scope changes. The app moves your mark when you leave the view after reading it for a
-few seconds; `fleetd status` moves it when it exits, if its key is a person's (`--key-file` with a key from
-`fleetd hub key create --human`). Agents' keys, and `fleetd status` on the hub machine without `--key-file`, read
-without moving it. Marks older than the hub's
-30 days of events read "since more than 30 days".
+"Since you last looked" counts what happened in this scope since then: merged PRs, verified items, started orders,
+failures, new asks and scope changes. The app moves your mark when you leave the view after reading it for a few
+seconds. `fleetd status` keeps its own mark on each machine ("since you last looked here"), moved each time it prints
+or when `--watch` ends; the two never move each other. Marks older than the hub's 30 days of events read "more than 30
+days ago".
 
 ## Stale data
 
