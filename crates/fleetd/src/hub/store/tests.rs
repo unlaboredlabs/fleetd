@@ -54,7 +54,7 @@ fn schema(db: &HubDb) -> Vec<(String, String, Option<String>)> {
 
 #[tokio::test]
 async fn opens_a_database_written_by_the_ts_hub_unchanged() {
-    // Written by fixtures/make-ts-hub.ts with an older hub's own HubDb, HubStore, EventLog and Auth.
+    // Written by the TypeScript hub that fleetd replaced, with its own store and auth code.
     let secrets: serde_json::Value =
         serde_json::from_slice(&std::fs::read(fixture("ts-hub.json")).unwrap()).unwrap();
     let at = secrets["at"].as_u64().unwrap();

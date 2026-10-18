@@ -66,7 +66,7 @@ cargo build --release -p fleetd        # target/release/fleetd
 cargo test --workspace --exclude fleetd-app --exclude fleetd-bench
 ```
 
-Building the app on Linux needs GPUI's `-dev` packages; see `AGENTS.md`.
+Layout, checks, building the app and conventions: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 The lab suite (`tests/lab`) runs the binary end to end against two disposable T3 instances built from source at the
 pinned commit (`vendor/t3/pin.json`). It costs a handful of small `claude-haiku-5-5` turns. It is the only Node
