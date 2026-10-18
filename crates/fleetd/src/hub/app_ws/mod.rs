@@ -210,16 +210,17 @@ impl Session {
                     return After::Continue;
                 }
                 let is_wait = tool.as_str() == "status_wait";
-                if is_wait && let Some(old) = self.status_wait.take() {
-                    if PendingWait::claim(&old.answered) {
-                        old.abort.abort();
-                        let version = old
-                            .scope
-                            .as_deref()
-                            .and_then(|k| self.hub.status.version_of(k))
-                            .unwrap_or(old.after);
-                        self.send(json!({ "t": "result", "id": old.id, "output": { "unchanged": true, "version": version } }));
-                    }
+                if is_wait
+                    && let Some(old) = self.status_wait.take()
+                    && PendingWait::claim(&old.answered)
+                {
+                    old.abort.abort();
+                    let version = old
+                        .scope
+                        .as_deref()
+                        .and_then(|k| self.hub.status.version_of(k))
+                        .unwrap_or(old.after);
+                    self.send(json!({ "t": "result", "id": old.id, "output": { "unchanged": true, "version": version } }));
                 }
                 let answered = Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let wait_scope = is_wait.then(|| {
