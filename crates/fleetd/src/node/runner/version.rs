@@ -1,5 +1,9 @@
-//! The claude versions this fleetd speaks stream-json with. `TESTED` is the version the fixtures were recorded from.
-//! stream-json is not a public stable API, so a claude outside `SUPPORTED` is refused rather than trusted.
+//! The claude versions this fleetd speaks stream-json with. `TESTED` is the version the fixtures were recorded from,
+//! `SUPPORTED` the range it was tested across. The floor is not a feature boundary: what fleetd needs from claude is
+//! the stream-json `initialize` control request with `capabilities` and `account` (checked by the conformance probe
+//! at every start, which refuses a claude without it and names what is missing) and the interrupt and lifecycle
+//! capabilities a turn's `system/init` lists. So an older claude runs with a warning and the probe decides; a claude
+//! past the range's end is refused, since its stream-json may have changed in ways the probe can't see.
 pub const TESTED: &str = "2.1.302";
 pub const SUPPORTED: &str = ">=2.1.300, <2.2.0";
 const OLDEST: Version = (2, 1, 300);
@@ -13,8 +17,9 @@ pub enum VersionVerdict {
     Ok,
     /// Inside the range but newer than `TESTED`: sessions run, and the doctor warns once.
     UntestedNewer,
-    /// Below the range: sessions are refused until claude is updated.
-    TooOld,
+    /// Below the range: older than fleetd was tested with. Sessions run (the conformance probe still has the last
+    /// word), and the doctor and setup warn and offer `claude update`.
+    UntestedOlder,
     /// At or past the range's end: its stream-json may have changed, so sessions are refused.
     TooNew,
     /// `claude --version` printed something fleetd can't read.
@@ -27,7 +32,7 @@ pub fn check(version: &str) -> VersionVerdict {
         return VersionVerdict::Unreadable;
     };
     if found < OLDEST {
-        VersionVerdict::TooOld
+        VersionVerdict::UntestedOlder
     } else if found >= BELOW {
         VersionVerdict::TooNew
     } else if parse(TESTED).is_some_and(|tested| found > tested) {
@@ -50,7 +55,7 @@ fn parse(version: &str) -> Option<Version> {
 impl VersionVerdict {
     /// Sessions may start with this claude.
     pub fn runs(&self) -> bool {
-        matches!(self, Self::Ok | Self::UntestedNewer)
+        matches!(self, Self::Ok | Self::UntestedNewer | Self::UntestedOlder)
     }
 
     /// What the doctor and `runner_info.problem` say about `found` (the `claude --version` output); `None` for Ok.
@@ -62,9 +67,14 @@ impl VersionVerdict {
                 "claude {found} is newer than {TESTED}, the version this fleetd was tested with. It is inside the \
                  supported range ({SUPPORTED}), so sessions run; if they misbehave, pin the tested version."
             ),
-            Self::TooOld => format!(
-                "claude {found} is older than this fleetd supports ({SUPPORTED}). Sessions on this machine are \
-                 refused until claude is updated."
+            Self::UntestedOlder => format!(
+                "claude {found} is older than fleetd is tested with (from {}); it may work, and fleetd checks its \
+                 protocol at every start.",
+                SUPPORTED
+                    .trim_start_matches(">=")
+                    .split(',')
+                    .next()
+                    .unwrap_or(SUPPORTED)
             ),
             Self::TooNew => format!(
                 "claude {found} is newer than this fleetd supports ({SUPPORTED}); its stream-json protocol may have \
@@ -81,7 +91,7 @@ impl VersionVerdict {
     pub fn fix(&self) -> Option<String> {
         Some(match self {
             Self::Ok => return None,
-            Self::TooOld => format!("claude update (or claude install {TESTED})"),
+            Self::UntestedOlder => "claude update".to_owned(),
             Self::UntestedNewer => format!("claude install {TESTED}"),
             Self::TooNew => format!("claude install {TESTED}, or fleetd update"),
             Self::Unreadable => {
@@ -106,9 +116,10 @@ mod tests {
             ("2.1.303 (Claude Code)", UntestedNewer),
             ("2.1.999", UntestedNewer),
             ("2.1.303-beta.1 (Claude Code)", UntestedNewer),
-            ("2.1.299 (Claude Code)", TooOld),
-            ("2.0.500", TooOld),
-            ("1.9.999", TooOld),
+            // Older than tested: runs with a warning; the conformance probe refuses it if it lacks what fleetd uses.
+            ("2.1.296 (Claude Code)", UntestedOlder),
+            ("2.0.500", UntestedOlder),
+            ("1.9.999", UntestedOlder),
             ("2.2.0 (Claude Code)", TooNew),
             ("2.2.0-beta.1", TooNew),
             ("3.0.0", TooNew),
@@ -135,16 +146,17 @@ mod tests {
         assert_eq!(VersionVerdict::Ok.problem("2.1.302"), None);
         assert_eq!(VersionVerdict::Ok.fix(), None);
         assert_eq!(
-            VersionVerdict::TooOld
-                .problem("2.1.200 (Claude Code)")
+            VersionVerdict::UntestedOlder
+                .problem("2.1.296 (Claude Code)")
                 .unwrap(),
-            "claude 2.1.200 (Claude Code) is older than this fleetd supports (>=2.1.300, <2.2.0). Sessions on this \
-             machine are refused until claude is updated."
+            "claude 2.1.296 (Claude Code) is older than fleetd is tested with (from 2.1.300); it may work, and \
+             fleetd checks its protocol at every start."
         );
         assert_eq!(
-            VersionVerdict::TooOld.fix().unwrap(),
-            "claude update (or claude install 2.1.302)"
+            VersionVerdict::UntestedOlder.fix().unwrap(),
+            "claude update"
         );
+        assert!(VersionVerdict::UntestedOlder.runs());
         assert_eq!(
             VersionVerdict::TooNew.fix().unwrap(),
             "claude install 2.1.302, or fleetd update"

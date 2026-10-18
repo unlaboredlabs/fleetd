@@ -108,13 +108,14 @@ The log is `~/.fleetd/logs/node.log`.
 
 ## claude is missing or the wrong version {#claude_version}
 
-fleetd speaks claude's stream-json protocol, which isn't a stable API, so it runs only claude `>=2.1.300, <2.2.0`
-and was tested with 2.1.302.
+fleetd speaks claude's stream-json protocol, which isn't a stable API. It is tested with claude `>=2.1.300, <2.2.0`
+(fixtures from 2.1.302). An older claude runs with a warning: fleetd checks its protocol at every start and refuses
+it only if something fleetd uses is missing. A claude past 2.2 is refused.
 
 | Finding | Status | Fix |
 |---|---|---|
 | claude is not installed on laptop; its sessions can't start. | ✗ | `curl -fsSL https://claude.ai/install.sh \| bash` |
-| claude 2.1.250 is older than this fleetd supports (>=2.1.300, <2.2.0). | ✗ | `claude update (or claude install 2.1.302)` |
+| claude 2.1.296 is older than fleetd is tested with (from 2.1.300); it may work, and fleetd checks its protocol at every start. | ! | `claude update` |
 | claude 2.2.0 is newer than this fleetd supports (>=2.1.300, <2.2.0); its stream-json protocol may have changed. | ✗ | `claude install 2.1.302, or fleetd update` |
 | claude 2.1.303 is newer than 2.1.302, the version this fleetd was tested with. It is inside the supported range, so sessions run. | ! | `claude install 2.1.302` |
 | `claude --version` printed "…", which fleetd can't read as a version. | ✗ | `curl -fsSL https://claude.ai/install.sh \| bash -s 2.1.302` |

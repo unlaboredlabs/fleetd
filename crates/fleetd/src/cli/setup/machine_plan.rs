@@ -522,7 +522,10 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         });
     }
 
-    if claude_verdict == VersionVerdict::UntestedNewer {
+    if matches!(
+        claude_verdict,
+        VersionVerdict::UntestedNewer | VersionVerdict::UntestedOlder
+    ) {
         notes.push(format!(
             "{} If sessions misbehave, run on the machine: {}",
             claude_verdict.problem(printed).unwrap_or_default(),
@@ -854,15 +857,28 @@ mod tests {
                 "Fix: on the machine, run curl -fsSL https://claude.ai/install.sh | bash"
             )
         );
-        let old = Facts {
-            claude_version: Some("2.0.14 (Claude Code)".into()),
+        let newer = Facts {
+            claude_version: Some("2.2.1 (Claude Code)".into()),
             ..fresh_facts("wynn", "x64")
         };
         assert!(
-            plan_machine_add(&old, &input())
+            plan_machine_add(&newer, &input())
                 .err()
                 .unwrap()
-                .ends_with("Fix: on the machine, run claude update (or claude install 2.1.302)")
+                .ends_with("Fix: on the machine, run claude install 2.1.302, or fleetd update")
+        );
+        // Older than tested: set up anyway, with a note that says so and how to update.
+        let older = Facts {
+            claude_version: Some("2.1.296 (Claude Code)".into()),
+            ..fresh_facts("wynn", "x64")
+        };
+        let plan = plan_machine_add(&older, &input()).unwrap();
+        assert!(
+            plan.notes
+                .iter()
+                .any(|n| n.contains("may work") && n.ends_with("claude update")),
+            "{:?}",
+            plan.notes
         );
     }
 

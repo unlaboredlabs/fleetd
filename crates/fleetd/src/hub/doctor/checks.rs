@@ -565,7 +565,8 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
     vec![version, login, conformance]
 }
 
-/// The version verdict as a check: refused outside the supported range, a warning past the tested version.
+/// The version verdict as a check: a warning outside the tested versions that still run (older, or newer within the
+/// minor), a failure where sessions are refused.
 fn version_entry(
     found: &str,
     entry: impl Fn(DoctorStatus, &str, Option<DoctorFix>) -> Entry,
@@ -581,7 +582,7 @@ fn version_entry(
             &format!("claude {} is supported.", found.trim()),
             None,
         ),
-        VersionVerdict::UntestedNewer => entry(Warn, &problem, fix),
+        VersionVerdict::UntestedNewer | VersionVerdict::UntestedOlder => entry(Warn, &problem, fix),
         _ => entry(Fail, &problem, fix),
     }
 }
@@ -862,7 +863,7 @@ mod tests {
             )))
             .1
             .as_deref(),
-            Some("claude update (or claude install 2.1.302)")
+            Some("claude update")
         );
         assert_eq!(
             fix(Some(runner(None, false, LoginStatus::Unknown, None)))
@@ -878,10 +879,7 @@ mod tests {
             None,
         )));
         assert_eq!(command, None);
-        assert_eq!(
-            label,
-            "On mac: claude update (or claude install 2.1.302), then claude auth login"
-        );
+        assert_eq!(label, "On mac: claude update, then claude auth login");
         // No runner report: the node's own fix, never a restart for a login problem.
         assert_eq!(fix(None).1.as_deref(), Some("claude auth login"));
         // No runner cause at all: the node itself is the problem.
@@ -936,12 +934,26 @@ mod tests {
         );
         let bad = runner_checks(
             "mac",
-            &info(Some("2.0.1"), LoginStatus::LoggedOut, Some(false)),
+            &info(Some("2.2.1"), LoginStatus::LoggedOut, Some(false)),
         );
         assert_eq!(bad[0].check.status, Fail);
         assert_eq!(
             bad[0].check.fix.as_ref().and_then(|f| f.command.as_deref()),
-            Some("claude update (or claude install 2.1.302)")
+            Some("claude install 2.1.302, or fleetd update")
+        );
+        // Older than tested: a warning with the update, never a refusal on the version alone.
+        let older = runner_checks(
+            "mac",
+            &info(Some("2.1.296"), LoginStatus::LoggedIn, Some(true)),
+        );
+        assert_eq!(older[0].check.status, Warn);
+        assert_eq!(
+            older[0]
+                .check
+                .fix
+                .as_ref()
+                .and_then(|f| f.command.as_deref()),
+            Some("claude update")
         );
         assert_eq!(
             bad[1].check.fix.as_ref().and_then(|f| f.command.as_deref()),

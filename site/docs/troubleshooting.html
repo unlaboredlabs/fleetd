@@ -115,11 +115,12 @@ no claude cause gets a restart, on that machine:</p>
 <span class="l">launchctl kickstart -k gui/$(id -u)/sh.fleetd.node           # macOS</span></code></pre>
 <p>The log is <code>~/.fleetd/logs/node.log</code>.</p>
 <h2 id="claude_version">claude is missing or the wrong version<a class="anchor" href="#claude_version" aria-label="Link to this section">#</a></h2>
-<p>fleetd speaks claude's stream-json protocol, which isn't a stable API, so it runs only claude <code>&gt;=2.1.300, &lt;2.2.0</code>
-and was tested with 2.1.302.</p>
+<p>fleetd speaks claude's stream-json protocol, which isn't a stable API. It is tested with claude <code>&gt;=2.1.300, &lt;2.2.0</code>
+(fixtures from 2.1.302). An older claude runs with a warning: fleetd checks its protocol at every start and refuses
+it only if something fleetd uses is missing. A claude past 2.2 is refused.</p>
 <div class="table"><table><thead><tr><th>Finding</th><th>Status</th><th>Fix</th></tr></thead><tbody>
 <tr><td>claude is not installed on laptop; its sessions can't start.</td><td>✗</td><td><code>curl -fsSL https://claude.ai/install.sh | bash</code></td></tr>
-<tr><td>claude 2.1.250 is older than this fleetd supports (&gt;=2.1.300, &lt;2.2.0).</td><td>✗</td><td><code>claude update (or claude install 2.1.302)</code></td></tr>
+<tr><td>claude 2.1.296 is older than fleetd is tested with (from 2.1.300); it may work, and fleetd checks its protocol at every start.</td><td>!</td><td><code>claude update</code></td></tr>
 <tr><td>claude 2.2.0 is newer than this fleetd supports (&gt;=2.1.300, &lt;2.2.0); its stream-json protocol may have changed.</td><td>✗</td><td><code>claude install 2.1.302, or fleetd update</code></td></tr>
 <tr><td>claude 2.1.303 is newer than 2.1.302, the version this fleetd was tested with. It is inside the supported range, so sessions run.</td><td>!</td><td><code>claude install 2.1.302</code></td></tr>
 <tr><td><code>claude --version</code> printed "…", which fleetd can't read as a version.</td><td>✗</td><td><code>curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302</code></td></tr>
