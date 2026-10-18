@@ -1568,7 +1568,7 @@ impl Shell {
                 .items_start()
                 .border_b_1()
                 .border_color(t.hairline)
-                .child(div().pt(px(6.)).child(ui::dot(color)))
+                .child(ui::dot(color))
                 .child(
                     div()
                         .w(px(170.))
@@ -1840,11 +1840,11 @@ fn workstream_block(t: &Theme, w: &Workstream) -> impl IntoElement {
                 list = list.child(
                     div()
                         .flex()
+                        .items_start()
                         .gap_2()
-                        .items_center()
                         .text_size(px(size::XS))
                         .text_color(t.quiet)
-                        .child(div().size(px(7.)).flex_none().rounded_full().border_1().border_color(t.faint))
+                        .child(ui::ring(t.faint))
                         .child(div().whitespace_normal().child(describe(check))),
                 );
             }
