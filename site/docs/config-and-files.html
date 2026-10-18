@@ -38,6 +38,7 @@
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
+<li><a href="/docs/time-inspector">Where time went</a></li>
 </ul>
 <p>Reference</p>
 <ul>
@@ -55,7 +56,7 @@
 <pre class="code text"><code>~/.fleetd/
   bin/fleetd             the CLI (linked from ~/.local/bin/fleetd)
   hub/                   the hub's home (hub machine only)
-    hub.sqlite           everything the hub knows
+    hub.sqlite           everything the hub knows, timelines included (see below)
     setup.json           what fleetd init and machine add set up: address, commit identity, machines
     hub.log              the hub service's log
     cli.key              the admin key the CLI on this machine uses
@@ -68,11 +69,18 @@
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
     node.sock            the socket lead-side commands reach the hub through
-    sessions.sqlite      the node's sessions
+    sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per writer session
   claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log</code></pre>
 <p>Prompts and instructions: <a href="/docs/what-agents-are-told">What agents are told</a>. <code>fleetd uninstall</code> keeps all of it; see <a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a>.</p>
+<h2 id="timelines">Timelines<a class="anchor" href="#timelines" aria-label="Link to this section">#</a></h2>
+<p>The hub keeps the spans behind <a href="/docs/time-inspector">Where time went</a> in <code>hub.sqlite</code> for 30 days, and their daily
+totals and each finished order's critical path for 400 days. Set 1 to 365 days with <code>fleetd time --retention &lt;days&gt;</code>
+(an admin key) or in the app's Settings under Data, which shows their size; a busy fleet adds a few MB a day.</p>
+<p>Each node holds the timings it has not sent yet in <code>sessions.sqlite</code> and deletes them once the hub has them. While
+the hub is away it keeps up to 7 days or 500,000 of them; past that it drops the oldest and the timeline shows the
+gap.</p>
 <h2 id="claude">The Claude login<a class="anchor" href="#claude" aria-label="Link to this section">#</a></h2>
 <p>Sessions run <code>claude</code> with your own setup on that machine (<code>~/.claude</code>), so your login, the <code>env</code> in
 <code>~/.claude/settings.json</code> (a proxy's <code>ANTHROPIC_BASE_URL</code>, say), an <code>apiKeyHelper</code> and your MCP servers work as they
@@ -147,6 +155,7 @@ OS keychain, except in an unsigned or ad-hoc signed Mac build, which keeps it in
 <p>On this page</p>
 <ul>
 <li><a href="#fleetd">~/.fleetd</a></li>
+<li><a href="#timelines">Timelines</a></li>
 <li><a href="#claude">The Claude login</a></li>
 <li><a href="#claude-env">claude.env</a></li>
 <li><a href="#policy">.fleetd/policy.yaml</a></li>

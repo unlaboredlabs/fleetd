@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where time went · fleetd docs</title>
+<meta name="description" content="See what your agents spent their time on and what they waited for, and find what slows orders down.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+<li><a href="/docs/time-inspector" aria-current="page">Where time went</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Using fleetd</p>
+<h1>Where time went</h1>
+<p>fleetd records where every agent's time goes: model time, each tool call, and every wait (for a slot, for CI, for
+the train, for you). It keeps this for each order, project, machine and the whole fleet. Use it to find what makes
+orders slow: the test suite an agent ran eight times, the CI check that finishes last, the ask that waited an hour on
+your answer.</p>
+<p>The numbers come from what fleetd already sees: the <code>claude</code> stream on each machine and the hub's own events. It
+makes no extra model calls and does not poll for them, so recording costs next to nothing.</p>
+<p>Open it in the <a href="/docs/desktop-app#time">desktop app</a>, or from a terminal on the hub machine:</p>
+<pre class="code console" data-copy><code><span class="c">$ fleetd time W41</span>
+<span class="o">W41 Add three short pages  done
+wall 1h42m  critical path 1h42m  agent time 3h25m  parallelism 2.0x  coverage complete
+
+critical path  1h42m
+  you            34m  33%  deploy.region 34m
+  ci             22m  22%  rust (macos) 14m, rust (linux) 8m
+  model          18m  18%
+  tools          15m  15%  cargo test --workspace 9m, src/pages.rs 6m
+  review          9m   9%
+  queue           4m   4%
+
+agent time  3h25m
+  model     1h11m  35%  output 37m  thinking 22m  first token 12m
+  tools       52m  25%  Bash 41m (212)  Read 6m  Edit 3m  MCP 2m
+  you         34m  17%
+  pipeline    31m  15%  CI 22m  review 9m
+  queue        9m   4%
+  machine      8m   4%  retries 5m  startup 3m
+
+slowest commands           n  total  median  failed
+  cargo test --workspace  22    51m   2m10s  3
+  npm run build           14    19m   1m20s  0
+
+findings
+  1. agents ran the full test suite `cargo test --workspace` 22× (51 min); 14 runs followed no edit
+     fleetd time W41 --spans full_suite_repeat
+  2. CI check `rust (macos)` adds 6 min on the critical path of this order
+     fleetd time W41 --spans ci_check_critical</span></code></pre>
+<p><code>fleetd time storefront</code> shows a project and <code>fleetd time</code> the whole fleet, over the last 7 days unless you pass
+<code>--since</code> (<code>24h</code>, <code>30d</code>, or a date). Each finding ends with the command that lists the spans behind it. See the
+<a href="/docs/cli#time">CLI reference</a> for every option.</p>
+<h2 id="what-it-measures">What it measures<a class="anchor" href="#what-it-measures" aria-label="Link to this section">#</a></h2>
+<p>Time falls into seven groups, the same colors and words everywhere:</p>
+<div class="table"><table><thead><tr><th>group</th><th>is</th></tr></thead><tbody>
+<tr><td>model</td><td>claude writing: the wait for its first token, thinking, and output</td></tr>
+<tr><td>tools</td><td>tool calls: Bash commands, reads, edits, web, MCP, and the checks fleetd runs for "done"</td></tr>
+<tr><td>machine</td><td>the machine or provider: starting <code>claude</code>, API retries, compaction, <code>claude</code>'s own work between steps</td></tr>
+<tr><td>queue</td><td>waiting for fleetd: a free slot, an area lease, a usage limit, an offline machine, a lead's wake</td></tr>
+<tr><td>you</td><td>waiting on you: blocking asks, approvals, asks held in a batch before you saw them</td></tr>
+<tr><td>pipeline</td><td>CI, review and the merge train: in line, rebasing, each CI check, merging</td></tr>
+<tr><td>idle</td><td>a session alive with nothing to do; never counted against an order</td></tr>
+</tbody></table></div>
+<p>Two numbers come back everywhere, and they mean different things:</p>
+<ul>
+<li><strong>Wall time</strong> is the clock: an order runs from when you sent it to when it was done.</li>
+<li><strong>Agent time</strong> adds up every agent's time. Three writers working for an hour at once are three hours of agent time
+in one hour of wall time; <strong>parallelism</strong> is the ratio. Each agent's time is split so nothing is counted twice,
+and its parts always add up to its total.</li>
+</ul>
+<p>"Slowest commands" counts each call on its own, from start to finish. When an agent runs several tools at once,
+those calls overlap, so their totals can add up to more than the agent's tool time.</p>
+<h2 id="critical-path">Reading the critical path<a class="anchor" href="#critical-path" aria-label="Link to this section">#</a></h2>
+<p>The critical path is the one chain of work that decided when the order finished. Start from the end of the order
+and walk back: at each moment, take whatever finished last, then whatever that was waiting on, back to the start.
+Its rows add up to the order's wall time exactly.</p>
+<p>To make an order faster, shorten what is on the path. Work off the path ran in parallel with it, so speeding it up
+changes nothing. In the example above, the 34 minutes the order waited for your answer about <code>deploy.region</code> are on the path:
+answering sooner would have finished the order sooner. Most of the 51 minutes of <code>cargo test --workspace</code> are off
+it, because other work ran at the same time; only 9 of them held the order up.</p>
+<p>Two waits that happen at once, such as two writers each queued for a slot, count once on the path and twice in
+agent time. When nothing was running at some moment of the path, it shows as "nothing running" and the coverage
+line says so; that points at missing data, not at idle time.</p>
+<h2 id="limits">What is not exact<a class="anchor" href="#limits" aria-label="Link to this section">#</a></h2>
+<p>fleetd shows only what it can see. Where a number is a bound or a rule rather than a measurement, the views say so:</p>
+<ul>
+<li><strong>The wait for the first token</strong> mixes <code>claude</code>'s own preparation, the network, the provider's queue and reading
+the prompt. They can't be told apart. <code>claude</code>'s own total of API time per run is shown beside it as a check.</li>
+<li><strong>Thinking and output</strong> inside one answer are split as they stream in; a summarized thinking block can arrive in
+bursts. The answer's total time and its thinking tokens are exact.</li>
+<li><strong>When a tool starts.</strong> <code>claude</code> doesn't report it; fleetd uses the moment the tool call arrived, which in tests
+was within about 10 ms. With several tools at once, each one's time is an upper bound; the group's time is exact.</li>
+<li><strong>Background commands</strong> (<code>run_in_background</code>) and anything still running after its tool call returns are not
+seen. The span ends when the call returns.</li>
+<li><strong>Exit codes</strong> are exact for failed Bash commands. A successful one shows 0. Other tools show only ok or failed.</li>
+<li><strong>Lining up machines.</strong> Each machine's spans use its own clock, moved onto the hub's. Durations on one machine are
+exact; where lanes from two machines meet, they can be off by the network delay (milliseconds on a LAN, tens of
+milliseconds over a tailnet). GitHub's times are whole seconds.</li>
+<li><strong>CI queueing on GitHub</strong> shows only when fleetd knows when the commit was pushed (the train pushed it, or an
+agent did with <code>git push</code>).</li>
+<li><strong>The lead's time</strong> serves every order its wake was about. It is split equally between them, and the views say
+"split".</li>
+<li><strong>Waiting on you</strong> runs from when the ask reached your inbox to your answer. When you actually saw it is not
+knowable.</li>
+</ul>
+<p>The coverage line says whether the timeline is complete. It says "incomplete" when a machine runs an older fleetd
+that doesn't send timings, when a machine was away so long that it dropped old timings, or when the hub was too busy
+to keep some. It never fills a gap with a guess.</p>
+<h2 id="retention">How long it is kept<a class="anchor" href="#retention" aria-label="Link to this section">#</a></h2>
+<p>The hub keeps every span for 30 days by default, and daily totals and each finished order's critical path for 400
+days, so long-range breakdowns still work after the details are gone. Change it with an admin key, from 1 to 365
+days:</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd time --retention 90</span></code></pre>
+<p>or in the app's Settings, under Data, which also shows how much space it takes. A busy fleet uses a few MB a day.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/desktop-app"><span>Previous</span>The desktop app</a>
+<a class="next" href="/docs/cli"><span>Next</span>CLI reference</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/time-inspector.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#what-it-measures">What it measures</a></li>
+<li><a href="#critical-path">Reading the critical path</a></li>
+<li><a href="#limits">What is not exact</a></li>
+<li><a href="#retention">How long it is kept</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>
