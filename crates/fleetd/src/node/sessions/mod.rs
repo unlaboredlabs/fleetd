@@ -619,10 +619,20 @@ impl SessionService {
                 session_id,
                 run_id,
                 text,
+                mode: _,
+                steer: _,
             } => {
                 let queued = self.begin_run(&session_id, &run_id, &text).await?;
-                Ok(SessionOutput::Sent(SendAccepted { run_id, queued }))
+                Ok(SessionOutput::Sent(SendAccepted {
+                    run_id,
+                    queued,
+                    send_now: None,
+                }))
             }
+            SessionCall::Withdraw { .. } => Err(error(
+                SessionErrorCode::Invalid,
+                "this node cannot withdraw a send yet",
+            )),
             SessionCall::Interrupt {
                 session_id,
                 run_id,
@@ -1095,6 +1105,7 @@ impl SessionService {
                 queued_at: Some(c.at.clone()),
                 started_at: None,
                 ended_at: None,
+                superseded_by: None,
                 failure: None,
                 usage: None,
             });

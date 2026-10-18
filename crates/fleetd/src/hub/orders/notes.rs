@@ -218,6 +218,7 @@ pub async fn note(
     Ok(OrderNoteOutput {
         note_id: Text::unchecked(note_id),
         wakes_at: iso_ms(wakes_at).into(),
+        steer_id: None,
         next: Some("The lead reads it at that wake; watch for lead.woken.".into()),
         truncated: None,
     })

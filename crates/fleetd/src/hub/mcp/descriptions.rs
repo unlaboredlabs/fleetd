@@ -201,6 +201,18 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Add to an order for its lead, with optional references (files, orders, PRs) and attachments from attachment_put. The lead reads it at its next wake; urgent wakes it now. A person's device (a human key) only.",
     ),
     (
+        "steer_send",
+        "Steer an order's lead (target {workstreamId}) or one task (target {taskId}) mid-run. mode queue (default) lands at the agent's next tool boundary as its own turn; now stops its current step and delivers at once. Returns the steer S<n> with its receipt stage; steer.delivered and steer.acknowledged (the agent's reply names S<n>) or steer.unacknowledged follow as events. A person's device (a human key) only.",
+    ),
+    (
+        "steer_withdraw",
+        "Withdraw a steer that is still queued. Refused once it was delivered: the next steer says what changed. The sender's key only.",
+    ),
+    (
+        "steers_list",
+        "Steers with their receipts (queued, delivered and how, acknowledged with the reply's first words, unacknowledged, withdrawn, failed), newest first. Filter by workstreamId or taskId; afterN pages.",
+    ),
+    (
         "order_stop",
         "Stop an order: cancels its queued and running tasks, withdraws its asks, sets it stopped and tells its lead. Merged PRs stay. Idempotent. A person's device (a human key) only.",
     ),

@@ -9,8 +9,8 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunFailure,
-    RunStatus, SessionCall, SessionCallFrame, SessionErrorCode, SessionLaunch, SessionOutput,
-    SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
+    RunStatus, SendMode, SessionCall, SessionCallFrame, SessionErrorCode, SessionLaunch,
+    SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
 };
 use tokio::sync::mpsc;
 
@@ -88,6 +88,8 @@ fn send(id: &str, run_id: &str) -> SessionCall {
         session_id: ThreadId::unchecked(id),
         run_id: NonEmpty::unchecked(run_id),
         text: NonEmpty::unchecked("Reply with the word TWO and nothing else."),
+        mode: SendMode::Plain,
+        steer: None,
     }
 }
 

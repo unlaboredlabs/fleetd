@@ -95,7 +95,11 @@ pub fn register(tools: &mut Registry) {
 }
 
 fn frame(task: Task) -> TaskResultFrame {
-    TaskResultFrame { task, next: None }
+    TaskResultFrame {
+        task,
+        steer_id: None,
+        next: None,
+    }
 }
 
 fn internal(error: StoreError) -> TaskError {

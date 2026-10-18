@@ -226,6 +226,7 @@ mod tests {
             ended_at: None,
             failure: None,
             usage: None,
+            superseded_by: None,
         }
     }
 

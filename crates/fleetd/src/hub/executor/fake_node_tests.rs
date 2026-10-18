@@ -297,6 +297,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
         session_id: to,
         run_id: next_run,
         text,
+        ..
     } = call
     else {
         panic!("not a send")

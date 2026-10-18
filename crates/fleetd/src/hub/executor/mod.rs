@@ -35,9 +35,9 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
-    MachineEvent, MachineEventFrame, PermissionDecision, RunnerInfo, SessionCall, SessionCallFrame,
-    SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionStatus,
-    SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame,
+    MachineEvent, MachineEventFrame, PermissionDecision, RunnerInfo, SendMode, SessionCall,
+    SessionCallFrame, SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult,
+    SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame,
 };
 use futures_util::StreamExt;
 use serde_json::json;
@@ -1334,6 +1334,8 @@ impl Executors {
             session_id: r.thread_id.clone(),
             run_id: NonEmpty::unchecked(run_id.clone()),
             text: non_empty(&r.machine_id, op, "message", message)?,
+            mode: SendMode::Plain,
+            steer: None,
         };
         Ok(
             match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
