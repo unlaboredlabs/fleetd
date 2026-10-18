@@ -3,6 +3,7 @@
 //! The source format is in `site/README.md` ("Docs").
 
 mod cli_ref;
+mod prompts;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -121,6 +122,7 @@ fn build(root: &Path) -> Result<BTreeMap<String, String>, String> {
     let mut fronts = Vec::new();
     for (file, text) in &sources {
         let (front, body) = frontmatter(file, text)?;
+        let body = expand(body);
         fronts.push((file.clone(), front, body));
     }
     let slugs: HashMap<String, String> = fronts
@@ -534,6 +536,22 @@ fn code_block(info: &str, code: &str) -> Result<(String, String), String> {
         format!("<pre class=\"code {lang}\"{copy}{capture}><code>{body}</code></pre>\n"),
         searchable,
     ))
+}
+
+/// Generated markdown in place of its marker line.
+fn expand(body: String) -> String {
+    if !body.lines().any(|l| l == prompts::MARKER) {
+        return body;
+    }
+    body.lines()
+        .map(|l| {
+            if l == prompts::MARKER {
+                prompts::table()
+            } else {
+                format!("{l}\n")
+            }
+        })
+        .collect()
 }
 
 fn cli_reference(page: &mut Page) -> Result<(), String> {

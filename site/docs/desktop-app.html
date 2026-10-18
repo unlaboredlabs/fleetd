@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The desktop app · fleetd docs</title>
-<meta name="description" content="Pair the app with your hub, answer the inbox in one line, and the keyboard shortcuts.">
+<meta name="description" content="Pair the app with your hub, give the fleet work from the board, follow an order, answer the inbox, and the shortcuts.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -36,6 +36,7 @@
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app" aria-current="page">The desktop app</a></li>
 </ul>
 <p>Reference</p>
@@ -50,7 +51,7 @@
 <main class="doc" id="main">
 <p class="kicker">Using fleetd</p>
 <h1>The desktop app</h1>
-<p>The app is where you send orders, answer asks, approve commands and enter secrets. Install it with
+<p>The app is where you give work, follow it, answer asks, approve commands and enter secrets. Install it with
 <code>curl -fsSL https://fleetd.sh | sh -s -- --app</code> (<a href="/docs/install">Install</a>).</p>
 <h2 id="pair-it-with-the-hub">Pair it with the hub<a class="anchor" href="#pair-it-with-the-hub" aria-label="Link to this section">#</a></h2>
 <p>On the hub machine the app pairs by itself. On another computer, print a code on the hub:</p>
@@ -64,9 +65,40 @@ app and enter the code and hub address above, or open the link there.</span></co
 <p>Enter the address and code on the app's "Connect to your fleetd hub" screen, or open the <code>fleetd://pair</code> link. The
 code works once, for 15 minutes. The app keeps its key in the OS keychain, never in a file. Settings (⌘,) shows the
 hub it is paired with and disconnects it; "Connect to a hub…" in the palette pairs with another.</p>
+<h2 id="the-board">The board<a class="anchor" href="#the-board" aria-label="Link to this section">#</a></h2>
+<p>The app opens on the board with the composer focused: type what the fleet should do and press Enter. Under it, what
+needs you, then every open order grouped by project (⌘⇧G groups by status). Each card shows its phase, up to four
+live agents (role, what each is doing now), its PRs and the lead's next step. Cards don't move under the pointer or
+the selection; they resort 2 s after you leave. Machine load and the merge train sit in strips at the bottom.</p>
+<p>The sidebar lists Board, Machines, and each project with its orders; an amber dot means an order needs you. Hold ⌘ to
+see the ⌘1-⌘9 jump keys.</p>
+<h2 id="composer">Give work<a class="anchor" href="#composer" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Project</strong>: the picker (⌘⇧P) says where the order goes and why: chosen, selected in the sidebar, the router's
+guess, last used, or "the hub picks". A leading <code>@project </code> also picks it.</li>
+<li><strong>Type</strong>: the type picker (⌘⇧T), or a prefix: <code>fix:</code> or <code>bug:</code>, <code>research:</code>, <code>finish:</code>. The default is a feature.</li>
+<li><strong>Attach</strong>: up to 8 files (images, text, PDF; 5 MiB each) by "+ attach" (⌘⇧A), paste or drop. A paste over 3,500
+bytes becomes <code>pasted-N.txt</code>. The lead finds them in <code>.fleetd/attachments/&lt;W&gt;/</code> of the project, kept out of git.</li>
+<li><strong>Mention</strong>: <code>@</code> opens a menu of the project's files, orders and PRs; ↑ ↓ and Enter or Tab pick one.</li>
+</ul>
+<p>An order is at most 4,000 bytes; attach the detail. It appears as a card at once. If the hub can't tell the project,
+the card asks which one; if sending fails, it offers Retry and Edit. In an order, ⌘N opens a composer over it, so you
+keep your place.</p>
+<h2 id="order">Follow an order<a class="anchor" href="#order" aria-label="Link to this section">#</a></h2>
+<p>Click a card (or select it and press Enter). The left side has its agents, PRs and done-when checks with their
+results; the right side is the project lead's conversation, focused on this order: finished turns fold to one line
+("Worked for 48s · ran 3 commands") and runs about other orders collapse.</p>
+<p>The box under the conversation talks to the lead:</p>
+<div class="table"><table><thead><tr><th>Do</th><th>How</th><th>The lead</th></tr></thead><tbody>
+<tr><td>Add a note</td><td>Enter</td><td>reads it at its next wake</td></tr>
+<tr><td>Steer</td><td>⌘Enter, or "Steer now"</td><td>is woken now</td></tr>
+<tr><td>Stop</td><td>"Stop W…" (⌘.), then confirm</td><td>its running agents are cancelled and its asks withdrawn; merged PRs stay</td></tr>
+<tr><td>Reorder</td><td>"Reorder" on a stopped order</td><td>nothing yet: its text goes back into the composer, to send as a new order</td></tr>
+</tbody></table></div>
+<p>A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order, Esc back to the board.</p>
 <h2 id="reply">Inbox and replies<a class="anchor" href="#reply" aria-label="Link to this section">#</a></h2>
-<p>The inbox (⌘1) lists what needs you, in numbered batches. Answer a whole batch in one line in the reply box at the
-bottom of every screen. Typing anywhere outside a field goes there.</p>
+<p>⌘I opens the inbox panel; the badge in the title bar counts what needs you. In the panel, 1-9 select an item, Enter
+takes its recommendation, <code>n</code> answers no, Esc closes. Or answer a whole batch in one line in its reply field:</p>
 <div class="table"><table><thead><tr><th>Reply</th><th>Means</th></tr></thead><tbody>
 <tr><td><code>1 go</code></td><td>accept item 1 (also <code>yes</code>, <code>y</code>, <code>ok</code>, <code>rec</code>)</td></tr>
 <tr><td><code>2 nvm</code></td><td>reject item 2 (also <code>no</code>, <code>drop</code>, <code>skip</code>, <code>n</code>)</td></tr>
@@ -80,30 +112,44 @@ bottom of every screen. Typing anywhere outside a field goes there.</p>
 <tr><td><code>pref: no new dependencies</code></td><td>a standing preference for every lead</td></tr>
 <tr><td><code>forget D12</code></td><td>drop decision 12</td></tr>
 </tbody></table></div>
-<p>Mix them: <code>1 go 2 nvm 3 b</code>. A reply the app can't read changes nothing and shows a hint. Up in the empty reply box
-recalls what you sent before.</p>
+<p>Mix them: <code>1 go 2 nvm 3 b</code>. A reply the app can't read changes nothing and shows a hint.</p>
 <p>Asks that block work also raise a desktop notification: at most one every 20 minutes, with the rest folded in as "+N
-more", and only urgent ones in quiet hours (23:00 to 08:00 unless a <code>policy.quiet_hours</code> decision says otherwise).</p>
+more", and only urgent ones in quiet hours (23:00 to 08:00 unless a <code>policy.quiet_hours</code> decision says otherwise).
+Clicking it opens the ask.</p>
+<h2 id="settings">Settings<a class="anchor" href="#settings" aria-label="Link to this section">#</a></h2>
+<p>Settings (⌘,) has General (appearance, motion, the hub connection), Prompts and Instructions; the last two are in
+<a href="/docs/what-agents-are-told">What agents are told</a>. Motion: System follows the OS's reduce-motion setting,
+Reduced turns the brief card and lane transitions off, Full keeps them. Nothing in the app animates continuously.</p>
 <h2 id="shortcuts">Shortcuts<a class="anchor" href="#shortcuts" aria-label="Link to this section">#</a></h2>
 <p>⌘ on macOS is Ctrl on Linux.</p>
 <div class="table"><table><thead><tr><th>Keys</th><th>Does</th></tr></thead><tbody>
-<tr><td>⌘K</td><td>Command palette: every project, thread, open ask and action</td></tr>
-<tr><td>⌘N</td><td>New order</td></tr>
-<tr><td>⌘1 / ⌘2 / ⌘3</td><td>Inbox / Projects / Machines</td></tr>
+<tr><td>⌘N</td><td>New order (over the order view when one is open)</td></tr>
+<tr><td>⌘L</td><td>Focus the composer</td></tr>
+<tr><td>⌘K</td><td>Command palette: projects, orders (by id too), asks and actions; always offers "New order: &lt;what you typed&gt;"</td></tr>
+<tr><td>⌘I</td><td>Inbox panel</td></tr>
+<tr><td>⌘0</td><td>Board</td></tr>
+<tr><td>⌘1 to ⌘9</td><td>Open the nth order in the sidebar</td></tr>
+<tr><td>⌘⇧G</td><td>Group the board by project or by status</td></tr>
+<tr><td>⌘[ / ⌘]</td><td>Previous / next order</td></tr>
+<tr><td>⌘.</td><td>Stop the open order (asks to confirm)</td></tr>
 <tr><td>⌘,</td><td>Settings</td></tr>
 <tr><td>⌘B</td><td>Toggle the sidebar</td></tr>
-<tr><td>↑ ↓</td><td>Move the selection in a list or the palette (also Ctrl+P / Ctrl+N in the palette)</td></tr>
-<tr><td>Enter</td><td>Open the selected project, run the palette item, or send</td></tr>
-<tr><td>Shift+Enter</td><td>New line in a reply or order</td></tr>
-<tr><td>Esc</td><td>Clear the field, close a dialog, or go back to Projects</td></tr>
+<tr><td>Enter</td><td>Send an order; in an order, add a note</td></tr>
+<tr><td>⌘Enter</td><td>In an order, steer: wake the lead now</td></tr>
+<tr><td>Shift+Enter</td><td>New line</td></tr>
+<tr><td>⌘⇧P / ⌘⇧T / ⌘⇧A</td><td>In the composer: project picker / type picker / attach</td></tr>
+<tr><td>↑ ↓ (or j k)</td><td>Move the selection on the board, in a menu or the palette (also Ctrl+P / Ctrl+N in the palette)</td></tr>
+<tr><td>Enter</td><td>Open the selected card, run the palette item, pick from a menu</td></tr>
+<tr><td>Esc</td><td>Close a menu, the stop confirm or the inbox panel; from an order, back to the board</td></tr>
 <tr><td>Tab / Shift+Tab</td><td>Next / previous control</td></tr>
 <tr><td>⌘Q</td><td>Quit</td></tr>
 <tr><td>⌃⌘F (macOS), F11 (Linux)</td><td>Full screen</td></tr>
 <tr><td>⌘H, ⌥⌘H, ⌘M (macOS)</td><td>Hide, hide others, minimize</td></tr>
 </tbody></table></div>
-<p>Text fields follow the usual editing keys of each platform (word motion, undo and redo, select all).</p>
+<p>Typing with no field focused goes to the composer on screen. Text fields follow the usual editing keys of each
+platform (word motion, undo and redo, select all).</p>
 <nav class="pn" aria-label="Previous and next">
-<a class="prev" href="/docs/approvals-and-secrets"><span>Previous</span>Approvals &amp; secrets</a>
+<a class="prev" href="/docs/what-agents-are-told"><span>Previous</span>What agents are told</a>
 <a class="next" href="/docs/cli"><span>Next</span>CLI reference</a>
 </nav>
 <p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/desktop-app.md">Edit this page</a></p>
@@ -112,7 +158,11 @@ more", and only urgent ones in quiet hours (23:00 to 08:00 unless a <code>policy
 <p>On this page</p>
 <ul>
 <li><a href="#pair-it-with-the-hub">Pair it with the hub</a></li>
+<li><a href="#the-board">The board</a></li>
+<li><a href="#composer">Give work</a></li>
+<li><a href="#order">Follow an order</a></li>
 <li><a href="#reply">Inbox and replies</a></li>
+<li><a href="#settings">Settings</a></li>
 <li><a href="#shortcuts">Shortcuts</a></li>
 </ul>
 </aside>

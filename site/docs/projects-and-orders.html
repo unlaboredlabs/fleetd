@@ -36,6 +36,7 @@
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders" aria-current="page">Projects &amp; orders</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
 </ul>
 <p>Reference</p>
@@ -74,22 +75,43 @@ created key_tjw34bxe (fld_mwrgw4, operate:*). The key above is shown only once.<
 <p>Roles are <code>read</code>, <code>operate</code> and <code>admin</code>, on every machine (<code>'*'</code>) or a list. <code>fleetd hub key list</code> shows keys and
 <code>fleetd hub key revoke &lt;keyId&gt;</code> ends one at once.</p>
 <h2 id="send-an-order">Send an order<a class="anchor" href="#send-an-order" aria-label="Link to this section">#</a></h2>
-<p>In the app, press ⌘N (Ctrl+N), type one line and press Enter. Aim it at a project, or leave it to the hub, which
-reads a leading <code>@project</code>, else asks a quick router, else asks you. A prefix picks the playbook: <code>fix:</code> or <code>bug:</code>,
-<code>research:</code>, <code>finish:</code>.</p>
-<p>From an MCP client: <code>intake_submit {text}</code>.</p>
+<p>In the app, type one line in the board's composer and press Enter (<a href="/docs/desktop-app#composer">Give work</a>). Pick the
+project, or leave it to the hub, which reads a leading <code>@project</code>, else asks a quick router, else asks you. A prefix
+picks the playbook: <code>fix:</code> or <code>bug:</code>, <code>research:</code>, <code>finish:</code>. Attach screenshots or files, or <code>@</code>-mention files,
+orders and PRs; the lead gets them with the order.</p>
+<p>From an MCP client: <code>intake_submit {text}</code>; <code>intake_preview {text}</code> says where it would go without sending it.</p>
 <h2 id="follow-it">Follow it<a class="anchor" href="#follow-it" aria-label="Link to this section">#</a></h2>
-<p>The lead freezes a brief, runs writer and reviewer tasks on your workers, and puts each PR on the merge train. Follow
-it on the app's Projects screen (⌘2), or with <code>workstream_list</code>, <code>workstream_get</code>, <code>thread_tail</code> and <code>fleetd_status</code>.
-<code>events_wait</code> long-polls for changes instead of polling.</p>
+<p>The lead freezes a brief, runs writer and reviewer tasks on your workers, and puts each PR on the merge train. The
+board shows every order's phase and live agents; open one for its PRs, checks and the lead's conversation
+(<a href="/docs/desktop-app#order">Follow an order</a>).</p>
+<h2 id="add-to-it-steer-it-stop-it">Add to it, steer it, stop it<a class="anchor" href="#add-to-it-steer-it-stop-it" aria-label="Link to this section">#</a></h2>
+<p>In the order, Enter adds a note the lead reads at its next wake; ⌘Enter (Ctrl+Enter) or "Steer now" wakes it now.
+Stop cancels the order's running and queued agents and withdraws its asks; merged PRs stay. A stopped order stays
+stopped: send it again as a new order.</p>
 <h2 id="answer-its-questions">Answer its questions<a class="anchor" href="#answer-its-questions" aria-label="Link to this section">#</a></h2>
-<p>Questions land in the inbox (⌘1), numbered. Reply in one line, such as <code>1 go 2 nvm 3 b</code>: see
+<p>Questions land in the inbox (⌘I), numbered. Reply in one line, such as <code>1 go 2 nvm 3 b</code>: see
 <a href="/docs/desktop-app#reply">the reply grammar</a>. Commands and secrets have their own flow:
 <a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a>.</p>
 <h2 id="done-checked">Done, checked<a class="anchor" href="#done-checked" aria-label="Link to this section">#</a></h2>
 <p>The lead reports done with <code>fleetd claim done</code>. The hub then runs the brief's done-when checks itself, and only all of
 them passing makes the workstream done. A failure wakes the lead with the exit code and output. <code>claims_list</code> shows
 every claim with its evidence.</p>
+<p>A done order cleans up after itself: its PRs still waiting (queued, in review, ready, needing a rebase, or with failed
+CI) are closed on GitHub with a comment saying why, and its leftover tasks are cancelled. A PR the train is already
+rebasing, checking or merging is left to land.</p>
+<h2 id="tools">MCP tools for orders<a class="anchor" href="#tools" aria-label="Link to this section">#</a></h2>
+<div class="table"><table><thead><tr><th>Tool</th><th>Does</th><th>Role</th></tr></thead><tbody>
+<tr><td><code>intake_submit {text}</code></td><td>send an order (optional <code>attachments</code>, <code>refs</code>)</td><td>operate</td></tr>
+<tr><td><code>intake_preview {text}</code></td><td>where it would go, without sending</td><td>operate</td></tr>
+<tr><td><code>attachment_put {name, mime, dataB64}</code></td><td>upload a file (image, text or PDF, at most 5 MiB) for an order or note</td><td>operate</td></tr>
+<tr><td><code>project_files {machineId, projectId, query}</code></td><td>a project's files for <code>@</code>-mentions</td><td>read</td></tr>
+<tr><td><code>orders_board {projectRef?}</code></td><td>open orders with their phase, agents, PRs, asks and the trains</td><td>read</td></tr>
+<tr><td><code>order_get {workstreamId}</code></td><td>one order, plus its lead, finished agents and claims</td><td>read</td></tr>
+<tr><td><code>order_note {workstreamId, text, urgent?}</code></td><td>add to an order; <code>urgent</code> wakes the lead now</td><td>operate, human key</td></tr>
+<tr><td><code>order_stop {workstreamId}</code></td><td>stop an order</td><td>operate, human key</td></tr>
+<tr><td><code>workstream_list</code>, <code>workstream_get</code>, <code>thread_tail</code>, <code>fleetd_status</code></td><td>the lower-level views</td><td>read</td></tr>
+</tbody></table></div>
+<p><code>events_wait</code> long-polls for changes instead of polling. A human key is a person's paired device, not an agent key.</p>
 <nav class="pn" aria-label="Previous and next">
 <a class="prev" href="/docs/machines"><span>Previous</span>Machines</a>
 <a class="next" href="/docs/approvals-and-secrets"><span>Next</span>Approvals &amp; secrets</a>
@@ -104,8 +126,10 @@ every claim with its evidence.</p>
 <li><a href="#connect-an-mcp-client">Connect an MCP client</a></li>
 <li><a href="#send-an-order">Send an order</a></li>
 <li><a href="#follow-it">Follow it</a></li>
+<li><a href="#add-to-it-steer-it-stop-it">Add to it, steer it, stop it</a></li>
 <li><a href="#answer-its-questions">Answer its questions</a></li>
 <li><a href="#done-checked">Done, checked</a></li>
+<li><a href="#tools">MCP tools for orders</a></li>
 </ul>
 </aside>
 </div>

@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 # The CLI reference comes from the same usage text `fleetd help` prints, so it can't drift from the binary.
 fleetd = { path = "../fleetd" }
+fleetd-contracts = { path = "../fleetd-contracts" }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 serde_json.workspace = true
 

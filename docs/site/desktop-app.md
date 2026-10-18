@@ -2,10 +2,10 @@
 title: The desktop app
 section: Using fleetd
 order: 70
-description: Pair the app with your hub, answer the inbox in one line, and the keyboard shortcuts.
+description: Pair the app with your hub, give the fleet work from the board, follow an order, answer the inbox, and the shortcuts.
 ---
 
-The app is where you send orders, answer asks, approve commands and enter secrets. Install it with
+The app is where you give work, follow it, answer asks, approve commands and enter secrets. Install it with
 `curl -fsSL https://fleetd.sh | sh -s -- --app` ([Install](install.md)).
 
 ## Pair it with the hub
@@ -26,10 +26,50 @@ Enter the address and code on the app's "Connect to your fleetd hub" screen, or 
 code works once, for 15 minutes. The app keeps its key in the OS keychain, never in a file. Settings (⌘,) shows the
 hub it is paired with and disconnects it; "Connect to a hub…" in the palette pairs with another.
 
+## The board
+
+The app opens on the board with the composer focused: type what the fleet should do and press Enter. Under it, what
+needs you, then every open order grouped by project (⌘⇧G groups by status). Each card shows its phase, up to four
+live agents (role, what each is doing now), its PRs and the lead's next step. Cards don't move under the pointer or
+the selection; they resort 2 s after you leave. Machine load and the merge train sit in strips at the bottom.
+
+The sidebar lists Board, Machines, and each project with its orders; an amber dot means an order needs you. Hold ⌘ to
+see the ⌘1-⌘9 jump keys.
+
+## Give work {#composer}
+
+- **Project**: the picker (⌘⇧P) says where the order goes and why: chosen, selected in the sidebar, the router's
+  guess, last used, or "the hub picks". A leading `@project ` also picks it.
+- **Type**: the type picker (⌘⇧T), or a prefix: `fix:` or `bug:`, `research:`, `finish:`. The default is a feature.
+- **Attach**: up to 8 files (images, text, PDF; 5 MiB each) by "+ attach" (⌘⇧A), paste or drop. A paste over 3,500
+  bytes becomes `pasted-N.txt`. The lead finds them in `.fleetd/attachments/<W>/` of the project, kept out of git.
+- **Mention**: `@` opens a menu of the project's files, orders and PRs; ↑ ↓ and Enter or Tab pick one.
+
+An order is at most 4,000 bytes; attach the detail. It appears as a card at once. If the hub can't tell the project,
+the card asks which one; if sending fails, it offers Retry and Edit. In an order, ⌘N opens a composer over it, so you
+keep your place.
+
+## Follow an order {#order}
+
+Click a card (or select it and press Enter). The left side has its agents, PRs and done-when checks with their
+results; the right side is the project lead's conversation, focused on this order: finished turns fold to one line
+("Worked for 48s · ran 3 commands") and runs about other orders collapse.
+
+The box under the conversation talks to the lead:
+
+| Do | How | The lead |
+|---|---|---|
+| Add a note | Enter | reads it at its next wake |
+| Steer | ⌘Enter, or "Steer now" | is woken now |
+| Stop | "Stop W…" (⌘.), then confirm | its running agents are cancelled and its asks withdrawn; merged PRs stay |
+| Reorder | "Reorder" on a stopped order | nothing yet: its text goes back into the composer, to send as a new order |
+
+A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order, Esc back to the board.
+
 ## Inbox and replies {#reply}
 
-The inbox (⌘1) lists what needs you, in numbered batches. Answer a whole batch in one line in the reply box at the
-bottom of every screen. Typing anywhere outside a field goes there.
+⌘I opens the inbox panel; the badge in the title bar counts what needs you. In the panel, 1-9 select an item, Enter
+takes its recommendation, `n` answers no, Esc closes. Or answer a whole batch in one line in its reply field:
 
 | Reply | Means |
 |---|---|
@@ -45,11 +85,17 @@ bottom of every screen. Typing anywhere outside a field goes there.
 | `pref: no new dependencies` | a standing preference for every lead |
 | `forget D12` | drop decision 12 |
 
-Mix them: `1 go 2 nvm 3 b`. A reply the app can't read changes nothing and shows a hint. Up in the empty reply box
-recalls what you sent before.
+Mix them: `1 go 2 nvm 3 b`. A reply the app can't read changes nothing and shows a hint.
 
 Asks that block work also raise a desktop notification: at most one every 20 minutes, with the rest folded in as "+N
 more", and only urgent ones in quiet hours (23:00 to 08:00 unless a `policy.quiet_hours` decision says otherwise).
+Clicking it opens the ask.
+
+## Settings
+
+Settings (⌘,) has General (appearance, motion, the hub connection), Prompts and Instructions; the last two are in
+[What agents are told](what-agents-are-told.md). Motion: System follows the OS's reduce-motion setting,
+Reduced turns the brief card and lane transitions off, Full keeps them. Nothing in the app animates continuously.
 
 ## Shortcuts
 
@@ -57,18 +103,28 @@ more", and only urgent ones in quiet hours (23:00 to 08:00 unless a `policy.quie
 
 | Keys | Does |
 |---|---|
-| ⌘K | Command palette: every project, thread, open ask and action |
-| ⌘N | New order |
-| ⌘1 / ⌘2 / ⌘3 | Inbox / Projects / Machines |
+| ⌘N | New order (over the order view when one is open) |
+| ⌘L | Focus the composer |
+| ⌘K | Command palette: projects, orders (by id too), asks and actions; always offers "New order: <what you typed>" |
+| ⌘I | Inbox panel |
+| ⌘0 | Board |
+| ⌘1 to ⌘9 | Open the nth order in the sidebar |
+| ⌘⇧G | Group the board by project or by status |
+| ⌘[ / ⌘] | Previous / next order |
+| ⌘. | Stop the open order (asks to confirm) |
 | ⌘, | Settings |
 | ⌘B | Toggle the sidebar |
-| ↑ ↓ | Move the selection in a list or the palette (also Ctrl+P / Ctrl+N in the palette) |
-| Enter | Open the selected project, run the palette item, or send |
-| Shift+Enter | New line in a reply or order |
-| Esc | Clear the field, close a dialog, or go back to Projects |
+| Enter | Send an order; in an order, add a note |
+| ⌘Enter | In an order, steer: wake the lead now |
+| Shift+Enter | New line |
+| ⌘⇧P / ⌘⇧T / ⌘⇧A | In the composer: project picker / type picker / attach |
+| ↑ ↓ (or j k) | Move the selection on the board, in a menu or the palette (also Ctrl+P / Ctrl+N in the palette) |
+| Enter | Open the selected card, run the palette item, pick from a menu |
+| Esc | Close a menu, the stop confirm or the inbox panel; from an order, back to the board |
 | Tab / Shift+Tab | Next / previous control |
 | ⌘Q | Quit |
 | ⌃⌘F (macOS), F11 (Linux) | Full screen |
 | ⌘H, ⌥⌘H, ⌘M (macOS) | Hide, hide others, minimize |
 
-Text fields follow the usual editing keys of each platform (word motion, undo and redo, select all).
+Typing with no field focused goes to the composer on screen. Text fields follow the usual editing keys of each
+platform (word motion, undo and redo, select all).
