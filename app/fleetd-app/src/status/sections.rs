@@ -315,11 +315,13 @@ fn item_id(t: &Theme, id: &str) -> Div {
 /// is on screen.
 fn activity(t: &Theme, lane: Option<&AgentLane>, tasks: &[String], stale: bool) -> Div {
     let inner = match lane {
-        Some(l) => div().flex().items_center().gap_2().min_w_0().child(crate::live::chips::role_tag(t, l.role)).child(crate::live::activity::render(
-            t,
-            &crate::live::activity::describe(l),
-            stale,
-        )),
+        Some(l) => div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .min_w_0()
+            .child(crate::live::chips::role_tag(t, l.role, size::XS))
+            .child(crate::live::activity::render(t, &crate::live::activity::describe(l), stale)),
         None if !tasks.is_empty() => div().text_size(px(size::XS)).text_color(t.quiet).child(tasks.join(", ")),
         None => div(),
     };

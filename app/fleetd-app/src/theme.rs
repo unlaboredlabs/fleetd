@@ -17,7 +17,7 @@ use std::borrow::Cow;
 use gpui::{App, BoxShadow, FontWeight, Global, Hsla, SharedString, Window, WindowAppearance, point, px, rgb, rgba};
 use serde::{Deserialize, Serialize};
 
-/// Type scale (px). Five steps; most text is `MD`, titles are `MD` semibold (hierarchy from weight, not size),
+/// Type scale (px). Six steps; most text is `MD`, titles are `MD` semibold (hierarchy from weight, not size),
 /// metadata is `XS`, machine text is `SM` in mono.
 pub mod size {
     /// Metadata: counts, timestamps, machine chips, field labels.
