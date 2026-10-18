@@ -83,8 +83,8 @@ encrypted.</li>
 <ul>
 <li><strong>Installs are checksummed.</strong> The installer and <code>fleetd update</code> refuse any release file whose SHA-256 doesn't match
 the release's <code>SHA256SUMS</code>. <code>fleetd machine add</code> copies the hub's own binary to a worker over SSH.</li>
-<li><strong>Models only through the <code>claude</code> CLI</strong>, with a Claude login of fleetd's own on each machine. fleetd never calls
-a model or usage API itself.</li>
+<li><strong>Models only through the <code>claude</code> CLI</strong>, with the machine user's own claude setup (their login, settings and MCP
+servers), so agents get the same Claude access as that user. fleetd never calls a model or usage API itself.</li>
 </ul>
 <h2 id="report-a-vulnerability">Report a vulnerability<a class="anchor" href="#report-a-vulnerability" aria-label="Link to this section">#</a></h2>
 <p>Privately, through GitHub's security advisories for

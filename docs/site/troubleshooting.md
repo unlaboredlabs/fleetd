@@ -13,8 +13,8 @@ a hub check `hub/<name>` is `#hub-<name>`, a machine check `<machine>/<name>` is
 $ fleetd doctor
 ✗ doctor hub: gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login
 ✗ doctor hub: claude on the hub is not logged in; the intake router and the retro can't reach a model. Fix: claude auth login
-! doctor laptop: laptop is degraded: claude is not logged in for fleetd. Fix: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login (or run `claude setup-token` and put CLAUDE_CODE_OAUTH_TOKEN=<token> in ~/.fleetd/claude.env). Fix: systemctl --user restart fleetd-node.service
-✗ doctor laptop: fleetd's Claude on laptop is not logged in, so its sessions can't start. Fix: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login
+! doctor laptop: laptop is degraded: claude is not logged in. Fix: claude auth login.
+✗ doctor laptop: laptop: claude 2.1.302, not logged in, so its sessions can't start. Fix: claude auth login
 ✗ doctor laptop: No git commit identity is set on laptop. Fix: fleetd pair --worker laptop, then run what it prints on laptop
 ✓ doctor: 7 of 12 checks pass
 [exit 1]
@@ -119,18 +119,19 @@ and was tested with 2.1.302.
 
 Sessions on that machine are refused until a ✗ is fixed. fleetd turns claude's auto-updater off for its own sessions.
 
-## fleetd's Claude is not logged in {#claude_login}
+## claude is not logged in on a worker {#claude_login}
 
-> fleetd's Claude on laptop is not logged in, so its sessions can't start.
+> laptop: claude 2.1.302, not logged in, so its sessions can't start.
 
-On that machine:
+Sessions use the worker's own claude setup, so log in there as you would for yourself:
 
 ```sh
-CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login
+claude auth login
 ```
 
-Or run `claude setup-token` and put `CLAUDE_CODE_OAUTH_TOKEN=<token>` in `~/.fleetd/claude.env`. A login that expires
-mid-run ("claude refused fleetd's login: …") has the same fix. See [the Claude login](config-and-files.md#claude).
+If claude goes through a proxy (`ANTHROPIC_BASE_URL` in `~/.claude/settings.json`; the doctor names it), log in with
+your proxy as you normally do. A login that expires mid-run ("claude refused its login: …") has the same fix. See
+[the Claude login](config-and-files.md#claude).
 
 ## claude doesn't answer the protocol probe {#runner_conformance}
 

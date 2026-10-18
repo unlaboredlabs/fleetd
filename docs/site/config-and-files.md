@@ -17,14 +17,13 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
     cli.key              the admin key the CLI on this machine uses
     webhook.key          seals webhook secrets
   node/                  the node's home (every worker)
-    node.json            the hub it belongs to and its machine id
+    node.json            the hub it belongs to, its machine id and an optional claudeConfigDir
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
     node.sock            the socket lead-side commands reach the hub through
     sessions.sqlite      the node's sessions
     worktrees/           one git worktree per writer session
-  claude/                fleetd's own Claude login and sessions
-  claude.env             extra environment for every claude fleetd starts
+  claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log
 ```
 
@@ -32,20 +31,30 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
 
 ## The Claude login {#claude}
 
-The node runs `claude` with `CLAUDE_CONFIG_DIR=~/.fleetd/claude`, so its login is separate from yours in `~/.claude`.
-Log it in on each worker:
+Sessions run `claude` with your own setup on that machine: `~/.claude` (or the `CLAUDE_CONFIG_DIR` the node's
+service has), so your login, the `env` in `~/.claude/settings.json` (a proxy's `ANTHROPIC_BASE_URL`, say), an
+`apiKeyHelper` and your MCP servers work as they do in your shell. If `claude` works for you on the worker, it works
+for fleetd. Otherwise log in as you normally do: `claude auth login`, or through your proxy.
 
-```sh
-CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login
-```
+`fleetd doctor` shows what each worker uses, e.g. `claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317
+from ~/.claude/settings.json`.
+
+fleetd adds its own settings per session on top of yours, never in their place: an `--mcp-config` for its servers and
+a `--settings` overlay that pins claude's version and denies the tools agents never get (subagents, plan mode,
+worktrees, cron).
+
+To give a worker's sessions a dedicated claude profile instead, set `"claudeConfigDir": "<dir>"` in
+`~/.fleetd/node/node.json` (or join with `fleetd node join --claude-config-dir <dir>`) and restart the node. A
+session resumes only under the config dir it started in; the node refuses a resume under another one and says so.
 
 The hub's own `claude` (the order router and the retro) uses your normal login on the hub machine (`~/.claude`), or
 the gateway variables in `claude.env`.
 
 ## claude.env {#claude-env}
 
-`KEY=VALUE` lines for the `claude` that fleetd runs. Blank lines, `#` comments and `export ` are allowed. Mode 0600.
-Use it for a token instead of a login, or for a gateway:
+Optional. `KEY=VALUE` lines for the `claude` that fleetd runs, for a variable your login needs that the services don't
+see, such as one only your interactive shell exports. Blank lines, `#` comments and `export ` are allowed. Mode
+0600. Your `~/.claude/settings.json` `env` outranks it, as it does for your own `claude`.
 
 ```ini
 CLAUDE_CODE_OAUTH_TOKEN=<token from claude setup-token>

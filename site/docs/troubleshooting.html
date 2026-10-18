@@ -56,8 +56,8 @@ a hub check <code>hub/&lt;name&gt;</code> is <code>#hub-&lt;name&gt;</code>, a m
 <pre class="code console" data-copy><code><span class="c">$ fleetd doctor</span>
 <span class="o">✗ doctor hub: gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login
 ✗ doctor hub: claude on the hub is not logged in; the intake router and the retro can't reach a model. Fix: claude auth login
-! doctor laptop: laptop is degraded: claude is not logged in for fleetd. Fix: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login (or run `claude setup-token` and put CLAUDE_CODE_OAUTH_TOKEN=&lt;token&gt; in ~/.fleetd/claude.env). Fix: systemctl --user restart fleetd-node.service
-✗ doctor laptop: fleetd's Claude on laptop is not logged in, so its sessions can't start. Fix: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login
+! doctor laptop: laptop is degraded: claude is not logged in. Fix: claude auth login.
+✗ doctor laptop: laptop: claude 2.1.302, not logged in, so its sessions can't start. Fix: claude auth login
 ✗ doctor laptop: No git commit identity is set on laptop. Fix: fleetd pair --worker laptop, then run what it prints on laptop
 ✓ doctor: 7 of 12 checks pass
 [exit 1]</span></code></pre>
@@ -123,14 +123,15 @@ and was tested with 2.1.302.</p>
 <tr><td><code>claude --version</code> printed "…", which fleetd can't read as a version.</td><td>✗</td><td><code>curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302</code></td></tr>
 </tbody></table></div>
 <p>Sessions on that machine are refused until a ✗ is fixed. fleetd turns claude's auto-updater off for its own sessions.</p>
-<h2 id="claude_login">fleetd's Claude is not logged in<a class="anchor" href="#claude_login" aria-label="Link to this section">#</a></h2>
+<h2 id="claude_login">claude is not logged in on a worker<a class="anchor" href="#claude_login" aria-label="Link to this section">#</a></h2>
 <blockquote>
-<p>fleetd's Claude on laptop is not logged in, so its sessions can't start.</p>
+<p>laptop: claude 2.1.302, not logged in, so its sessions can't start.</p>
 </blockquote>
-<p>On that machine:</p>
-<pre class="code sh" data-copy><code><span class="l">CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login</span></code></pre>
-<p>Or run <code>claude setup-token</code> and put <code>CLAUDE_CODE_OAUTH_TOKEN=&lt;token&gt;</code> in <code>~/.fleetd/claude.env</code>. A login that expires
-mid-run ("claude refused fleetd's login: …") has the same fix. See <a href="/docs/config-and-files#claude">the Claude login</a>.</p>
+<p>Sessions use the worker's own claude setup, so log in there as you would for yourself:</p>
+<pre class="code sh" data-copy><code><span class="l">claude auth login</span></code></pre>
+<p>If claude goes through a proxy (<code>ANTHROPIC_BASE_URL</code> in <code>~/.claude/settings.json</code>; the doctor names it), log in with
+your proxy as you normally do. A login that expires mid-run ("claude refused its login: …") has the same fix. See
+<a href="/docs/config-and-files#claude">the Claude login</a>.</p>
 <h2 id="runner_conformance">claude doesn't answer the protocol probe<a class="anchor" href="#runner_conformance" aria-label="Link to this section">#</a></h2>
 <blockquote>
 <p>claude on laptop did not answer fleetd's protocol probe as expected.</p>
@@ -181,7 +182,7 @@ or, once the login has capacity, call <code>usage_resume</code> for that machine
 <li><a href="#hub-https">The hub isn't reachable over HTTPS</a></li>
 <li><a href="#online">A machine is offline or degraded</a></li>
 <li><a href="#claude_version">claude is missing or the wrong version</a></li>
-<li><a href="#claude_login">fleetd's Claude is not logged in</a></li>
+<li><a href="#claude_login">claude is not logged in on a worker</a></li>
 <li><a href="#runner_conformance">claude doesn't answer the protocol probe</a></li>
 <li><a href="#commit_identity">No or the wrong commit identity</a></li>
 <li><a href="#disk">Low disk space</a></li>
