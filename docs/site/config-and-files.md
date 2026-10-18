@@ -17,6 +17,8 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
     cli.key              the admin key the CLI on this machine uses
     webhook.key          seals webhook secrets
     playbooks/<name>.md  your version of a playbook (the retro writes here too); delete it for fleetd's
+    prompts/<id>.md      your version of a prompt, hub-wide
+    prompts/projects/<machine>/<project>/<id>.md   the same for one project
   node/                  the node's home (every worker)
     node.json            the hub it belongs to, its machine id and an optional claudeConfigDir
     node-key.pem         proves the node to the hub
@@ -28,7 +30,7 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
   logs/node.log          the node service's log
 ```
 
-`fleetd uninstall` keeps all of it; see [Updating & uninstall](updating-and-uninstall.md).
+Prompts and instructions: [What agents are told](what-agents-are-told.md). `fleetd uninstall` keeps all of it; see [Updating & uninstall](updating-and-uninstall.md).
 
 ## The Claude login {#claude}
 

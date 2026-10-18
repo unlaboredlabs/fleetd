@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What agents are told · fleetd docs</title>
+<meta name="description" content="Every prompt fleetd sends a model, how to read, edit, reset and diff it, your own instructions, and what a running agent keeps.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/what-agents-are-told" aria-current="page">What agents are told</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Using fleetd</p>
+<h1>What agents are told</h1>
+<p>Every word fleetd sends a model is listed here, readable in the app and the CLI, and editable. A session keeps the
+text it started with.</p>
+<h2 id="how-a-session-gets-its-instructions">How a session gets its instructions<a class="anchor" href="#how-a-session-gets-its-instructions" aria-label="Link to this section">#</a></h2>
+<p>There is no hidden system prompt. fleetd's instructions are the first message of a session (lead, task, reviewer,
+judge), later messages into it (wakes, review findings, train news, nudges), or the input of a one-shot <code>claude -p</code>
+with no tools (the router, the retro). Your own claude setup applies as usual underneath
+(<a href="/docs/config-and-files">Config &amp; files</a>).</p>
+<h2 id="prompts">The prompts<a class="anchor" href="#prompts" aria-label="Link to this section">#</a></h2>
+<p>Grouped as in Settings → Prompts.</p>
+<div class="table"><table><thead><tr><th>Group</th><th>Ids</th><th>Sent</th></tr></thead><tbody>
+<tr><td>Lead</td><td><code>lead.start</code>, <code>lead.digest</code></td><td>at lead start and every restart; the digest also tops every wake</td></tr>
+<tr><td>Tasks</td><td><code>task.brief.write</code>, <code>task.brief.read</code>, <code>task.brief.review</code>, <code>task.review_findings</code>, <code>task.train_rebase</code>, <code>task.train_ci_failed</code></td><td>at each task attempt, then into it</td></tr>
+<tr><td>Reviews and checks</td><td><code>review.reviewer</code>, <code>review.verifier</code>, <code>judge</code>, <code>judge.research</code></td><td>per PR head by review tier; per <code>judge</code> done-when check</td></tr>
+<tr><td>Wakes and messages</td><td><code>wake.*</code>, <code>digest.*</code>, <code>watchdog.nudge</code>, <code>usage.continue</code>, <code>permission.denied.*</code></td><td>into a running session: one line per event, a stalled run, a usage reset, a refused tool call</td></tr>
+<tr><td>One-shots</td><td><code>router</code>, <code>router.retry</code>, <code>retro</code></td><td>per order without a project; per retro run</td></tr>
+<tr><td>Playbooks</td><td><code>playbook.feature</code>, <code>playbook.bugfix</code>, <code>playbook.research</code>, <code>playbook.finish-all</code></td><td>in the lead's digest while an order uses it</td></tr>
+</tbody></table></div>
+<p><code>fleetd prompts list</code> prints them all with where each comes from; <code>fleetd prompts show &lt;id&gt;</code> prints one.</p>
+<h2 id="safety">Safety rules: code or prompt<a class="anchor" href="#safety" aria-label="Link to this section">#</a></h2>
+<p>Most rules don't depend on the prompt. fleetd enforces them in code whatever the text says: secrets are sealed to a
+machine, gated commands wait for your tap, only the train merges, and done is decided by the hub running the checks.
+Editing those words away only means agents hit refusals they weren't warned about.</p>
+<p>A few rules live only in the prompt: reviewers don't read the PR description, no subagents, the lead never writes
+code, a lead doesn't re-ask a decided question, and it asks you only about product, money, credentials or something
+irreversible. Remove one of these and nothing else stops it.</p>
+<h2 id="edit-a-prompt">Edit a prompt<a class="anchor" href="#edit-a-prompt" aria-label="Link to this section">#</a></h2>
+<p>In the app: Settings → Prompts. Pick Global or a project at the top, open a prompt, edit, Save. Reset to default and
+Diff are next to Save. On the hub machine:</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd prompts edit lead.start</span>
+<span class="l">fleetd prompts edit task.brief.write --project builder-1/app</span>
+<span class="l">fleetd prompts diff lead.start</span>
+<span class="l">fleetd prompts reset lead.start</span></code></pre>
+<p><code>edit</code> opens <code>$VISUAL</code> or <code>$EDITOR</code>, shows the warnings and asks before saving. A project's version beats the global
+one, which beats fleetd's. Playbooks have only the global level. Your versions are files under
+<code>~/.fleetd/hub/prompts/</code> (<a href="/docs/config-and-files">Config &amp; files</a>); a hand edit there is read at hub start.</p>
+<p>Prompts fill in <code>{{name}}</code> placeholders, such as <code>{{project}}</code>; the editor lists each prompt's own. Nothing else is
+template syntax.</p>
+<h3 id="warnings">Warnings<a class="anchor" href="#warnings" aria-label="Link to this section">#</a></h3>
+<p>Saving never refuses text that isn't empty, but it warns:</p>
+<div class="table"><table><thead><tr><th>Warning</th><th>Means</th></tr></thead><tbody>
+<tr><td>a required placeholder is missing</td><td>that value no longer reaches the agent (for <code>task.brief.write</code> without <code>{{serves}}</code>, the PR's <code>Source:</code> line)</td></tr>
+<tr><td>unknown placeholder</td><td><code>{{name}}</code> isn't one this prompt fills; it is sent as written</td></tr>
+<tr><td>a safety rule is missing</td><td>its wording is gone; the warning says whether fleetd still enforces it in code or nothing does</td></tr>
+<tr><td>too long</td><td>past the prompt's budget; the digest cuts long playbook lines</td></tr>
+</tbody></table></div>
+<h2 id="instructions">Your own instructions<a class="anchor" href="#instructions" aria-label="Link to this section">#</a></h2>
+<p>Settings → Instructions, Global or per project, or:</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd instructions edit</span>
+<span class="l">fleetd instructions edit --project builder-1/app</span></code></pre>
+<p>They are added to every lead's first message and every task brief (writers, reviewers and judges), global first, under
+"Custom instructions from the human". Not to the router, the retro or wakes.</p>
+<h2 id="when-fleetd-changes-a-default-you-edited">When fleetd changes a default you edited<a class="anchor" href="#when-fleetd-changes-a-default-you-edited" aria-label="Link to this section">#</a></h2>
+<p>Your version stays in use. The prompt gets an "update" chip in Settings → Prompts and an inbox item; <code>fleetd prompts diff &lt;id&gt;</code> shows what changed in fleetd's text and in yours since you edited it, and <code>edit</code> opens a merge of both.
+Save it, keep yours, or reset. A safety rule the new default added and your text lacks shows as a warning.</p>
+<h2 id="pinning">What a running agent keeps<a class="anchor" href="#pinning" aria-label="Link to this section">#</a></h2>
+<p>Each session keeps the exact prompt versions it started with, wakes included. An edit reaches new sessions at once: a
+task at its next attempt, a lead at its next start. To give a running lead your edit now, restart it with
+<code>lead_restart</code> from an MCP client (<a href="/docs/projects-and-orders#its-lead">Its lead</a>).</p>
+<h2 id="told">See exactly what an agent was told<a class="anchor" href="#told" aria-label="Link to this section">#</a></h2>
+<p>In an order, a lane's menu or the lead's header has "Show full prompt": the exact first message, which versions it
+used (default, edited globally, project), your instructions, and the tools it may not use. Or:</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd prompts show --session &lt;machine&gt;/&lt;thread&gt;</span></code></pre>
+<p>Later messages are in the lead's conversation.</p>
+<h2 id="not-editable-tool-descriptions-and-cli-replies">Not editable: tool descriptions and CLI replies<a class="anchor" href="#not-editable-tool-descriptions-and-cli-replies" aria-label="Link to this section">#</a></h2>
+<p>MCP tool descriptions and what the lead-side CLI prints back (each <code>next:</code> and <code>fix:</code>) are the other half of a
+protocol with code: a description must match its tool, a <code>next:</code> must name a real command. They are listed in the
+<a href="/docs/cli">CLI reference</a> and the <a href="/docs/projects-and-orders#tools">MCP tools</a>, not editable.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/approvals-and-secrets"><span>Previous</span>Approvals &amp; secrets</a>
+<a class="next" href="/docs/desktop-app"><span>Next</span>The desktop app</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/what-agents-are-told.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#how-a-session-gets-its-instructions">How a session gets its instructions</a></li>
+<li><a href="#prompts">The prompts</a></li>
+<li><a href="#safety">Safety rules: code or prompt</a></li>
+<li><a href="#edit-a-prompt">Edit a prompt</a></li>
+<li><a href="#instructions">Your own instructions</a></li>
+<li><a href="#when-fleetd-changes-a-default-you-edited">When fleetd changes a default you edited</a></li>
+<li><a href="#pinning">What a running agent keeps</a></li>
+<li><a href="#told">See exactly what an agent was told</a></li>
+<li><a href="#not-editable-tool-descriptions-and-cli-replies">Not editable: tool descriptions and CLI replies</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>
