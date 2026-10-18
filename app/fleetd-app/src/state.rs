@@ -425,6 +425,8 @@ pub struct State {
     /// The open order's steers (to its lead and its agents), oldest first, and those still on their way to the hub.
     pub steers: Vec<Steer>,
     pub steer_sends: Vec<Sending>,
+    /// Steers whose answer was lost when the link dropped (their clientRequestIds), sent again once it is back.
+    steers_lost: Vec<String>,
     /// The agent sheet's recent items.
     pub agent_tail: Option<AgentTail>,
     pub prompts: crate::prompts::Prompts,
@@ -475,6 +477,7 @@ impl Default for State {
             last_project: None,
             steers: Vec::new(),
             steer_sends: Vec::new(),
+            steers_lost: Vec::new(),
             agent_tail: None,
             prompts: crate::prompts::Prompts::default(),
             time: TimeState::default(),
@@ -515,6 +518,12 @@ impl State {
                 out
             }
             Incoming::Disconnected { reason, retry_in } => {
+                // Only a steer still waiting for its answer was lost; one the hub answered (or refused) was not.
+                let waiting = self.pending.values().filter_map(|p| match p {
+                    Purpose::SteerSend { request_id } => Some(request_id.clone()),
+                    _ => None,
+                });
+                self.steers_lost.extend(waiting.collect::<Vec<_>>());
                 self.reset_calls();
                 self.add_disconnected();
                 // Lanes keep their last values, greyed; elapsed keeps ticking from startedAt.
@@ -740,10 +749,12 @@ impl State {
         Ok(self.call(Purpose::SteerSend { request_id: s.request_id.clone() }, &input))
     }
 
-    /// After a reconnect: steers whose answer was lost with the link are sent again with the same clientRequestId,
+    /// On a snapshot: steers whose answer was lost with a dropped link are sent again with the same clientRequestId,
     /// so the hub answers each once (with the steer it already made, if it did), and the receipts are fetched anew.
+    /// A snapshot on a live link (after a `machine.*` event) resends nothing: those calls are still in flight.
     fn steers_reconnected(&mut self) -> Out {
-        let lost: Vec<Sending> = self.steer_sends.iter().filter(|s| s.error.is_none()).cloned().collect();
+        let ids = std::mem::take(&mut self.steers_lost);
+        let lost: Vec<Sending> = self.steer_sends.iter().filter(|s| s.error.is_none() && ids.contains(&s.request_id)).cloned().collect();
         let mut out: Out = lost.iter().filter_map(|s| self.send_steer_call(s).ok()).collect();
         out.extend(self.request_steers());
         out
@@ -2076,6 +2087,34 @@ mod tests {
         s.apply(result(&id, steer));
         assert!(s.steer_sends.is_empty(), "no longer \"sending…\"");
         assert_eq!(s.steers[0].stage, crate::steer::SteerStage::Delivered);
+    }
+
+    #[test]
+    fn a_snapshot_on_a_live_link_resends_no_steer() {
+        let mut s = synced();
+        s.open_order("W7");
+        let target = SteerTarget::Lead { workstream_id: WorkstreamId::unchecked("W7") };
+        s.steer(target.clone(), "in flight", SteerMode::Queue, Vec::new(), Vec::new(), "n-4");
+        // A machine event asks for a fresh snapshot while the steer's answer is still on its way.
+        let out = s.apply(snapshot(&[("lab-a", "p1"), ("lab-a", "p2")], 1));
+        assert!(!tools_of(&out).contains(&"steer_send".to_string()), "still in flight: sending it again would double it");
+        // One the hub refused before the link dropped isn't resent either; one still waiting is, once.
+        let AppClientMessage::Call { id, .. } = &s.steer(target, "refused", SteerMode::Queue, Vec::new(), Vec::new(), "n-5")[0] else { panic!() };
+        let id = id.to_string();
+        s.apply(error(&id, ErrorCode::Invalid, "T88 has ended.", None));
+        s.apply(Incoming::Disconnected { reason: "gone".into(), retry_in: Duration::from_secs(1) });
+        s.apply(Incoming::Ready);
+        let out = s.apply(snapshot(&[("lab-a", "p1"), ("lab-a", "p2")], 2));
+        let resent: Vec<&Value> = out
+            .iter()
+            .filter_map(|m| match m {
+                AppClientMessage::Call { tool, input, .. } if tool.as_str() == "steer_send" => Some(input),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(resent.iter().map(|i| i["clientRequestId"].as_str().unwrap()).collect::<Vec<_>>(), ["n-4"]);
+        let again = s.apply(snapshot(&[("lab-a", "p1"), ("lab-a", "p2")], 3));
+        assert!(!tools_of(&again).contains(&"steer_send".to_string()), "resent once per drop");
     }
 
     #[test]
