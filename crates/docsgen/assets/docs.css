@@ -115,8 +115,8 @@ dl.cli dd{margin:2px 0 0;color:var(--grey);font-size:15px}
 p.lede{color:var(--grey);margin-top:-2px}
 p.note{color:var(--grey);font-size:15px;border-left:2px solid var(--rule);padding-left:14px}
 dl.idx{display:grid;grid-template-columns:minmax(9em,auto) 1fr;margin:0}
-dl.idx dt{padding-right:24px}
 dl.idx dt,dl.idx dd{margin:0;padding:8px 0;border-bottom:1px solid var(--rule)}
+dl.idx dt{padding-right:24px}
 dl.idx dt a{font-weight:500;text-decoration:none}
 dl.idx dt a:hover{text-decoration:underline}
 dl.idx dd{color:var(--grey)}
