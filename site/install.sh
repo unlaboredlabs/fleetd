@@ -224,9 +224,9 @@ main() {
 
   if [ -x "$bin_dir/fleetd" ]; then
     # One next command; `fleetd init` itself says how to put ~/.local/bin on PATH when it isn't.
+    # shellcheck disable=SC2088 # the tilde is printed for the user to type
     case ":$PATH:" in
       *":$HOME/.local/bin:"*) next="fleetd init" ;;
-      # shellcheck disable=SC2088 # printed for the user to type, not expanded here
       *) next="~/.local/bin/fleetd init" ;;
     esac
     printf '\nNext, run:\n  %s\n' "$next"
