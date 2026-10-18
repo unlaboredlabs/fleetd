@@ -35,8 +35,8 @@ fleetd init
 It asks a few questions (Enter takes the default) and ticks off each step. A ✗ line ends with the exact command
 that fixes it. Run `fleetd init` again at any time: it keeps what works and repairs the rest.
 
-<!-- expected-output: a real `fleetd init` run (#89), sanitized. Illustrative only, not verbatim: the first-project
-     lines (the real run picked "not now") and the doctor line (the real run's one failure was a leftover that S1 removes). -->
+<!-- expected-output: a real `fleetd init` run, sanitized (host, IP, port, names). The real run picked "not now" for the
+     first project; those two lines use the wizard's exact strings (wizard.rs) for a picked repo. -->
 ```text
 fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
 ✔ Is this machine the hub (the always-on machine that runs your fleet)? · yes
@@ -49,20 +49,21 @@ fleetd init: sets up fleetd on this machine, step by step. Enter takes the defau
 ✔ Which machines should run agents? (space toggles, enter accepts) · homeserver (this machine)
 ✓ worker homeserver: online
 ✓ claude on homeserver: fleetd's Claude is logged in
-✔ Which repo should be your first project? · ~/src/myapp  ada-lovelace/myapp
+✔ Which repo should be your first project? · ~/src/myapp  github.com/ada-lovelace/myapp
 ✓ first project: ~/src/myapp on homeserver
 ✔ Pair the desktop app with this hub now? · yes
 ✓ pairing code: 8X5X-DJ0M for http://hub.your-tailnet.ts.net:4790 (one use, until 2026-10-18T12:00:24.131Z)
     The app on this machine pairs by itself (~/.config/fleetd/app-pair.json).
     On another computer: open the app, enter http://hub.your-tailnet.ts.net:4790 and the code, or open fleetd://pair?hub=…&code=8X5X-DJ0M
 ✓ doctor: 9 of 9 checks pass
+
 fleetd is set up.
 Next: install the desktop app on the computer you work from (curl -fsSL https://fleetd.sh | sh -s -- --app), open it and enter the pairing code; then type your first order in it.
 ```
 
 **3. Open the app and send your first order**
 
-On the computer you work from, install just the app and open it:
+On the computer you work from, install fleetd with its desktop app and open the app:
 
 ```sh
 curl -fsSL https://fleetd.sh | sh -s -- --app
@@ -77,7 +78,7 @@ work, and its questions show up in the inbox.
 
 ## After setup
 
-- **More machines:** on the hub, `fleetd pair --worker <name>` prints one line to paste on the new machine. It
+- **More machines:** on the hub, `fleetd pair --worker <machine-id>` prints one line to paste on the new machine. It
   installs fleetd there and joins it to the hub with a one-time code. To set one up from the hub over SSH instead,
   run `fleetd init` again and pick it, or run `fleetd machine add <ssh-host>`, which prints every remote command
   first (`--dry-run` only prints them). A worker needs only the `claude` CLI. For now it must have the same OS and

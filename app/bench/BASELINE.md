@@ -206,7 +206,7 @@ sg video -c "sg render -c 'FLEETD_VK_ICD=$HOME/src/fleetd-lab/sysroot/usr/share/
 Not tried: whether RADV can present to Xvfb, which has no DRI3. If it can't, run the same command against
 a real or nested X server.
 
-## macOS (Adri's MacBook Air): nightly, quick block
+## macOS (MacBook Air): nightly, quick block
 
 **MacBook Air M4 (Mac16,12)**, macOS 27.2, Metal (runtime shaders), on an **external 1920x1080 display at scale 1
 (not Retina), about 120 Hz**. Nightly 0.0.0-nightly.20261018.8305f18, the quick block from
@@ -231,7 +231,7 @@ Startup stages of one diagnostic cold run, ms from `main`: `app_launched` 111, `
 
 What shapes these numbers:
 - **Cold start** includes a few ms of shell overhead (the quick block times from zsh, not the driver), and runs
-  about 110 ms longer than on forge. Most of the gap is before `app_launched`, which is gpui's platform setup
+  about 110 ms longer than on the Linux bench machine. Most of the gap is before `app_launched`, which is gpui's platform setup
   and AppKit's own launch; the app's own work there is a panic hook and one defaults write.
 - **Input latency and scroll** follow the 120 Hz display: a key waits about half a frame (4 ms) for its draw.
 - The full driver table, with a built-in Retina display, is still pending.

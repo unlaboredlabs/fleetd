@@ -35,5 +35,5 @@ Asks that block work also raise a desktop notification.
 
 ## When something is wrong
 
-Run `fleetd doctor`, or look at the app's Machines screen. Each problem comes with its fix, and
-`fleetd doctor --fix` applies the ones fleetd can make by itself. The logs are in `~/.fleetd/hub/hub.log` and `~/.fleetd/logs/node.log`.
+Run `fleetd doctor`, or look at the app's Machines screen. Each problem comes with its fix. The logs are in
+`~/.fleetd/hub/hub.log` and `~/.fleetd/logs/node.log`.
