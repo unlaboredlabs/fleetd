@@ -185,6 +185,8 @@ pub struct Probe {
     pending_keys: Vec<(Instant, String)>,
     last_draw: Option<Instant>,
     pub presents: Vec<Instant>,
+    /// Time inside `Window::draw` (layout, prepaint and paint) of each frame drawn.
+    pub draw_times: Vec<Duration>,
     pub keys_received: usize,
     pub scroll_started: Option<Instant>,
 }
@@ -201,6 +203,7 @@ impl Probe {
             pending_keys: Vec::new(),
             last_draw: None,
             presents: Vec::new(),
+            draw_times: Vec::new(),
             keys_received: 0,
             scroll_started: None,
         }
@@ -223,7 +226,10 @@ impl Probe {
             .collect_unseen()
             .into_iter()
             .map(|event| match event {
-                FrameEvent::Draw(t) => Frame::Draw { start: t.draw_start },
+                FrameEvent::Draw(t) => {
+                    self.draw_times.push(t.draw_duration());
+                    Frame::Draw { start: t.draw_start }
+                }
                 FrameEvent::Present(t) => Frame::Present { end: t.present_end },
             })
             .collect();
