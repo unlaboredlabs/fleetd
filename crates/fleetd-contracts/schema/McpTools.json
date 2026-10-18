@@ -2480,7 +2480,7 @@
       "type": "string"
     },
     "LoginKind": {
-      "description": "Read from the T3 provider instance status and its env var names, never from credentials.",
+      "description": "Read from the runner's login kind, never from credentials.",
       "enum": [
         "subscription",
         "api_key",
@@ -2514,17 +2514,6 @@
         "status": {
           "$ref": "#/$defs/MachineStatus"
         },
-        "t3": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MachineT3"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Null until the node has reported a reachable T3."
-        },
         "tags": {
           "items": {
             "type": "string"
@@ -2538,7 +2527,6 @@
         "tags",
         "status",
         "lastSeenAt",
-        "t3",
         "nodeVersion"
       ],
       "type": "object"
@@ -2555,23 +2543,6 @@
         "degraded"
       ],
       "type": "string"
-    },
-    "MachineT3": {
-      "properties": {
-        "protocol": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "version": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "version",
-        "protocol"
-      ],
-      "type": "object"
     },
     "McpTools": {
       "properties": {
@@ -3061,31 +3032,6 @@
       "description": "<playbook name>@<full lowercase hex git blob SHA>",
       "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
-    },
-    "ProbeCounter": {
-      "description": "Direct usage or reset-credit calls seen in the machine's T3 trace file. Must be 0.",
-      "properties": {
-        "count": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "observable": {
-          "type": "boolean"
-        },
-        "reason": {
-          "description": "Why it is not observable.",
-          "type": "string"
-        },
-        "source": {
-          "description": "The trace directory read, when observable.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "observable"
-      ],
-      "type": "object"
     },
     "ProjectAddInput": {
       "properties": {
@@ -5186,9 +5132,6 @@
         },
         "parked": {
           "$ref": "#/$defs/ParkedCounts"
-        },
-        "probes": {
-          "$ref": "#/$defs/ProbeCounter"
         }
       },
       "required": [
@@ -5196,8 +5139,7 @@
         "login",
         "breaker",
         "parked",
-        "lastEvents",
-        "probes"
+        "lastEvents"
       ],
       "type": "object"
     },

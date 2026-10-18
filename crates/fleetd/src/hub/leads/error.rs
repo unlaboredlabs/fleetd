@@ -40,7 +40,7 @@ impl LeadError {
     pub fn machine_offline(machine_id: &fleetd_contracts::ids::MachineId) -> Self {
         Self::new(
             ErrorCode::MachineOffline,
-            format!("Machine {machine_id} has no live T3 connection."),
+            format!("Machine {machine_id} has no live node link."),
             "Wait for the machine to come back online (fleetd_status shows it), then retry.",
         )
     }

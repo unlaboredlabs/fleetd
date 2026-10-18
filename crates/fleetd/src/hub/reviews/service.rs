@@ -307,7 +307,7 @@ impl Reviews {
                     format!("No usable Codex instance on {machine}, so both {} reviewers run on Claude.", tier_str(tier))
                 } else {
                     format!(
-                        "Codex {} on {machine} is not fleetd's (ids must start with \"fleetd\"; others could reach T3's spawn tools), so both {} reviewers run on Claude.",
+                        "Codex {} on {machine} is not fleetd's (ids must start with \"fleetd\"; others could reach the runner's spawn tools), so both {} reviewers run on Claude.",
                         others.join(", "),
                         tier_str(tier)
                     )
@@ -353,7 +353,7 @@ impl Reviews {
                     continue;
                 }
             };
-            // A task T3 refused to launch is not counted, so the next review of this patch tries that role again.
+            // A task the node refused to launch is not counted, so the next review of this patch tries that role again.
             if task.state == "failed" {
                 self.note(
                     &change.change_id,

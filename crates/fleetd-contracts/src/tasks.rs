@@ -86,7 +86,7 @@ pub fn task_spawn_rule(
     Ok(())
 }
 
-/// Counted by the hub from the task's T3 items, never from its prose.
+/// Counted by the hub from the task's thread items, never from its prose.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Receipts {

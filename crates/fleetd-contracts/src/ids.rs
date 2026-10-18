@@ -10,11 +10,11 @@ brand!(
     MachineId, name = "MachineId", pattern = r"^[a-z0-9-]{1,32}$", description = "Machine slug, [a-z0-9-]{1,32}"
 );
 brand!(
-    /// T3's project id on one machine. Only unique together with a MachineId.
+    /// The node's project id on one machine. Only unique together with a MachineId.
     ProjectId, name = "ProjectId", check = |s| !s.is_empty(), expected = "a non-empty string"
 );
 brand!(
-    /// T3's thread id on one machine. Only unique together with a MachineId.
+    /// The node's thread id on one machine. Only unique together with a MachineId.
     ThreadId, name = "ThreadId", check = |s| !s.is_empty(), expected = "a non-empty string"
 );
 

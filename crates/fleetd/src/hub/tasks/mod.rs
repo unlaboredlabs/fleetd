@@ -1,5 +1,5 @@
 //! fleetd-owned tasks: every subagent a lead runs. Spawn resolves model and effort, takes leases (writers) and a
-//! slot or queues with the reason, and launches a T3 thread (writers in a new worktree on `fleetd/<taskId>-<slug>`).
+//! slot or queues with the reason, and launches a thread (writers in a new worktree on `fleetd/<taskId>-<slug>`).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot and leases are released and the queue is tried again.
 pub mod branch_diff;
@@ -136,7 +136,7 @@ impl From<StoreError> for StartError {
     }
 }
 
-/// A T3 command id for one of the task's writes. T3 keeps a receipt per id forever, so the id carries the task's
+/// A request id for one of the task's writes. The node's launch is idempotent on it, so the id carries the task's
 /// creation time: a hub on a fresh database numbers tasks from T1 again and must not get an earlier hub's thread.
 fn request_id(task: &Task, parts: &[&str]) -> String {
     let created = parse_iso_ms(task.created_at.as_str())
@@ -388,7 +388,7 @@ impl Tasks {
                 &format!("{}: {}", task.task_id.as_str(), task.title.as_str()),
                 80,
             ),
-            // T3 keeps a receipt per command id, so a retried launch returns the same thread.
+            // The node's launch is idempotent on the request id, so a retried launch returns the same thread.
             client_request_id: request_id(task, &[&task.attempt.get().to_string()]),
             worktree: base_branch
                 .zip(branch.clone())
@@ -737,8 +737,8 @@ impl Tasks {
             pending_message: None,
         })?;
 
-        // The PR's diff when the node can read it; T3's checkpoint paths (which include whatever a rebase brought
-        // in) only when it can't.
+        // The PR's diff when the node can read it; the thread's changed paths (which include whatever a rebase
+        // brought in) only when it can't.
         let pr_paths = match (&branch, write) {
             (Some(branch), true) => self.branch_paths(&task.project_ref, branch).await,
             _ => None,
@@ -746,7 +746,7 @@ impl Tasks {
         if pr_paths.is_none() && write {
             tracing::warn!(
                 task_id = task.task_id.as_str(),
-                "task: branch diff not read; areas checked on T3 checkpoint paths"
+                "task: branch diff not read; areas checked on the thread's changed paths"
             );
         }
         if let Some(paths) = pr_paths.or_else(|| changes.as_ref().map(|c| c.paths.clone()))
@@ -866,7 +866,7 @@ impl Tasks {
                     .or_else(|| latest.filter(|l| !l.is_empty()).map(|l| tail_of(&l, 1500)))
                     .unwrap_or_else(|| {
                         format!(
-                            "(T3 did not say what it waits for; read it with thread_tail on {}/{})",
+                            "(the node did not say what it waits for; read it with thread_tail on {}/{})",
                             thread_ref.machine_id.as_str(),
                             thread_ref.thread_id.as_str()
                         )
@@ -952,7 +952,7 @@ impl Tasks {
         }
     }
 
-    /// The task as stored: running, queued with its reason, or failed if T3 refused the launch.
+    /// The task as stored: running, queued with its reason, or failed if the node refused the launch.
     pub async fn spawn(
         self: &Arc<Self>,
         caller: &TaskCaller,

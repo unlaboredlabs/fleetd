@@ -1,5 +1,5 @@
 //! The slot board: a global cap on running turns, per-project shares, and a FIFO queue within priority.
-//! A slot is held while a lead's or task's T3 thread is running, read from the executor's thread events, and
+//! A slot is held while a lead's or task's thread is running, read from the executor's thread events, and
 //! from a grant until that thread first runs. Threads that belong to no lead or task are not counted.
 pub mod board;
 
@@ -330,7 +330,7 @@ impl Slots {
     }
 
     /// The holder's slot follows `thread` from now on: freed whenever the thread stops running, taken again whenever
-    /// it runs (a follow-up message), even past the cap, since T3 already started it.
+    /// it runs (a follow-up message), even past the cap, since the node already started it.
     pub fn bind(&self, holder: &str, thread: &ThreadRef) -> Result<(), StoreError> {
         self.locked(|b| (b.bind(holder, &thread.machine_id, &thread.thread_id), false))
     }

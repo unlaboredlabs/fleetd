@@ -293,7 +293,7 @@ pub fn build_on(
         crate::hub::slots::SlotsOptions::default(),
     )?;
     let leases = crate::hub::leases::Leases::new(db.clone(), events.clone(), clock.clone());
-    let source = crate::hub::leases::policy::T3PolicySource {
+    let source = crate::hub::leases::policy::NodePolicySource {
         store: store.clone(),
         ports: task_ports.clone(),
     };

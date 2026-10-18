@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn review_verdict_needs_a_full_lowercase_head_sha_and_sane_counts() {
         let sha = "0123456789abcdef0123456789abcdef01234567";
-        let verdict = json!({ "taskId": "T3", "prHeadSha": sha, "blocking": 0, "nonBlocking": 2, "summary": "two nits" });
+        let verdict = json!({ "taskId": "T4", "prHeadSha": sha, "blocking": 0, "nonBlocking": 2, "summary": "two nits" });
         let accepts = |patch: serde_json::Value| {
             let mut value = verdict.clone();
             for (key, field) in patch.as_object().unwrap() {

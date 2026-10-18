@@ -1,4 +1,4 @@
-//! MCP tools over node sessions that T3's UI used to cover: thread_answer (the way out of `thread.waiting`),
+//! MCP tools over node sessions: thread_answer (the way out of `thread.waiting`),
 //! project_add and project_remove.
 use std::sync::Arc;
 

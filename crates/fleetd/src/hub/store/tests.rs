@@ -76,6 +76,7 @@ async fn opens_a_database_written_by_the_ts_hub_unchanged() {
     let store = HubStore::new(db.clone());
     let machine = store.machine_get(&m("lab-a")).unwrap().unwrap();
     assert_eq!(machine.status, MachineStatus::Degraded);
+    // Written by the TypeScript hub, from before the native runner.
     assert_eq!(machine.degraded_reason.as_deref(), Some("T3 is restarting"));
     assert_eq!(store.machines_list().unwrap().len(), 1);
     let project = ProjectRef {

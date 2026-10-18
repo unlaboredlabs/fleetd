@@ -67,7 +67,7 @@ pub enum LeadState {
 #[serde(rename_all = "camelCase")]
 pub struct Lead {
     pub project_ref: ProjectRef,
-    /// The current lead thread on the project's machine; earlier ones stay in T3 as history.
+    /// The current lead thread on the project's machine; earlier ones stay on the node as history.
     pub thread_id: ThreadId,
     pub state: LeadState,
     pub started_at: Timestamp,

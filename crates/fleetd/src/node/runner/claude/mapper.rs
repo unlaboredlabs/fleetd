@@ -729,7 +729,7 @@ impl StreamMapper {
         });
     }
 
-    /// The classified failure. The classifier puts claude's stderr for the run under its text (T3 dropped it).
+    /// The classified failure. The classifier puts claude's stderr for the run under its text.
     fn failure(&self, evidence: FailureEvidence) -> RunFailure {
         (self.classify)(&evidence).unwrap_or_else(|| RunFailure {
             class: if evidence.exit.is_some() {

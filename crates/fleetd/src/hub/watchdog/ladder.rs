@@ -75,7 +75,7 @@ pub fn threshold_ms(config: &WatchdogConfig, tool: Option<Tool>) -> u64 {
 /// What the watchdog reads and drives: the executor's thread watch, interrupt and send, and the event log.
 pub trait WatchPort: Send + Sync {
     fn now_ms(&self) -> u64;
-    /// `(key, run_id)` of threads whose shell row says running, on machines with a live T3 connection.
+    /// `(key, run_id)` of threads whose shell row says running, on machines with a live node link.
     fn running(&self) -> Vec<(Key, String)>;
     /// `(run_id, running)` as last seen; None for an unknown thread.
     fn latest_run(&self, key: &Key) -> Option<(Option<String>, bool)>;
@@ -273,7 +273,7 @@ impl<P: WatchPort> Ladder<P> {
         if matches!(&chain, Some(Chain::Failed { run_id: r, .. }) if r != run_id) {
             chain = None;
         }
-        // A new run before the nudge went out (T3's own continuation, or a user message) stands in for it.
+        // A new run before the nudge went out (the runner's own continuation, or a user message) stands in for it.
         if let Some(Chain::Interrupting { run_id: r, at }) = &chain
             && r != run_id
         {

@@ -1,6 +1,4 @@
-//! Receipts: what a task actually executed, counted from its T3 items rather than read from its prose. Pure.
-//! T3's own "Preparing workspace" step never reaches here: the executor's
-//! actions leave it out, since the agent ran nothing.
+//! Receipts: what a task actually executed, counted from its thread items rather than read from its prose. Pure.
 use fleetd_contracts::model::{ActionItem, ActionKind};
 use fleetd_contracts::prim::Count;
 use fleetd_contracts::tasks::{Receipts, TaskResult};

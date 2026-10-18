@@ -98,7 +98,7 @@ pub struct ThreadSummary {
     pub usage_limit_reset_at: Option<Timestamp>,
     pub last_progress_at: Timestamp,
     pub model: Option<String>,
-    /// As reported by T3; not narrowed to Effort because T3 may report other levels.
+    /// As reported by the runner; not narrowed to Effort because it may report other levels.
     pub effort: Option<String>,
     pub stale: bool,
     pub as_of: Timestamp,
@@ -157,7 +157,7 @@ pub struct ActionItem {
     /// The command, path or tool.
     pub summary: Text<0, 200>,
     pub output_tail: Option<Text<0, 1024>>,
-    /// Only when T3 reports one or the output says "Exit code N"; T3's Claude adapter sets none itself.
+    /// Only when the runner reports one or the output says "Exit code N".
     pub exit_code: Option<AnyInt>,
     pub failed: bool,
 }

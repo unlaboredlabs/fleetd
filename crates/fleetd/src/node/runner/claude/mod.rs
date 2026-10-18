@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn the_session_file_follows_claudes_project_naming() {
         let config = Path::new("/c");
-        // Observed: /work/project → -work-project, and dots become dashes (`~/.t3/...` → `-home-wynn--t3-...`).
+        // Observed: /work/project → -work-project, and dots become dashes (`~/.fleetd/...` → `-home-wynn--fleetd-...`).
         assert_eq!(
             session_file(config, Path::new("/nonexistent/.wt/a_b"), "s1"),
             Some(PathBuf::from("/c/projects/-nonexistent--wt-a-b/s1.jsonl"))

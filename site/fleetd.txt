@@ -138,19 +138,14 @@ A worker. --dry-run prints the plan and runs nothing; the shell command under
 each step is left out here:
 
 $ fleetd machine add builder-1 --dry-run
-dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state over SSH and leaves out what is already done:
+dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
 [probe] read the machine's state (read-only)
-[1/11] create fleetd's directories
-[2/11] install fleetd 0.0.0
-[3/11] install T3 0.1.1-nightly.20261017.3238 from npm
-[4/11] configure the fleetd Claude instance in T3's settings
-[5/11] create the fleetd instance's Claude login file (empty, 0600)
-[6/11] write the T3 service
-[7/11] write the node service
-[8/11] (re)start T3
-[9/11] wait for T3 to answer
-[10/11] enroll the node with a one-time token (sent on stdin)
-[11/11] (re)start the node
+[1/6] create fleetd's directories
+[2/6] install fleetd 0.0.0
+[3/6] create fleetd's Claude login file (empty, 0600)
+[4/6] write the node service
+[5/6] enroll the node with a one-time token (sent on stdin)
+[6/6] (re)start the node
 [hub] wait until builder-1 is online
 [exit 0]
 

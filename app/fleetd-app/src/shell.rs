@@ -1273,7 +1273,6 @@ impl Shell {
                 (None, MachineStatus::Offline) => format!("last seen {}", ago(m.last_seen_at.as_str())),
                 _ => String::new(),
             };
-            let t3 = m.t3.as_ref().map_or("T3 not reachable".to_string(), |t| format!("T3 {}", t.version));
             list = list.child(
                 clickable(div().id(SharedString::from(format!("machine-{}", m.name))))
                     .min_h(px(ROW_H))
@@ -1307,7 +1306,6 @@ impl Shell {
                             .text_color(rgb(if m.degraded_reason.is_some() { Theme::YELLOW } else { Theme::MUTED }))
                             .child(detail),
                     )
-                    .child(muted(t3))
                     .child(muted(format!("node {}", m.node_version)))
                     .child(muted(ago(m.last_seen_at.as_str()))),
             );

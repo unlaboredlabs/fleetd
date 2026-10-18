@@ -395,7 +395,7 @@ impl Intake {
         if allowed.is_empty() {
             return Err(LeadError::not_found(
                 "There is no project you may start work in.",
-                "Open the project in T3 on a connected machine, or ask the hub admin for an operate grant.",
+                "Add the project on a connected machine (project_add), or ask the hub admin for an operate grant.",
             ));
         }
         let candidates: Vec<ProjectSummary> = allowed.into_iter().take(ROUTER_PROJECTS).collect();

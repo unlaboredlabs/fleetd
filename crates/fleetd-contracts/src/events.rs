@@ -15,7 +15,7 @@ pub enum HubEventType {
     MachineOffline,
     #[serde(rename = "machine.degraded")]
     MachineDegraded,
-    /// T3 no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
+    /// The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
     #[serde(rename = "project.removed")]
     ProjectRemoved,
     #[serde(rename = "thread.started")]

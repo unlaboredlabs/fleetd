@@ -1,4 +1,4 @@
-//! The stall ladder on a test clock: one thread on a fake T3, driven by the test.
+//! The stall ladder on a test clock: one thread on a fake node, driven by the test.
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 

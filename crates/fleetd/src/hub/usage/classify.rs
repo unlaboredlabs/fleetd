@@ -151,7 +151,7 @@ pub fn limit_of_event(event: &HubEvent) -> Option<Limit> {
             model: str_at(&data, &["model"]).map(str::to_string),
         });
     }
-    // Events from before M4 carry only T3's class and reset; T3 marked them usage_limit.
+    // Events from before M4 carry only a class and reset, and were all marked usage_limit.
     classify_limit(&LimitInput {
         error_class: Some(str_at(&data, &["error", "class"]).unwrap_or("usage_limit")),
         message: str_at(&data, &["error", "message"]).unwrap_or(""),
@@ -211,14 +211,14 @@ mod tests {
         })
     }
 
-    // Error text shapes as T3 stores them in a thread's lastError: T3's own Claude adapter messages and the CLI's or
-    // CLIProxyAPI's raw text it passes through. No live limit was hit to get them.
+    // Error text shapes as stored in a thread's lastError: older adapter messages and the CLI's or CLIProxyAPI's raw
+    // text. No live limit was hit to get them.
     #[test]
     fn classifies_the_fixture_table() {
         use UsageClass::*;
         let fixtures: Vec<(&str, LimitInput, Option<Limit>)> = vec![
             (
-                "T3 usage_limit with its reset",
+                "usage_limit with its reset",
                 LimitInput {
                     reset_at: Some("2026-10-20T09:00:00.000Z"),
                     ..input(
@@ -229,7 +229,7 @@ mod tests {
                 limit(UsageLimit, Some("2026-10-20T09:00:00.000Z".into()), None),
             ),
             (
-                "T3 blocking_limit without a reset",
+                "blocking_limit without a reset",
                 input(
                     "usage_limit",
                     "Claude stopped: a usage limit blocked the request.",
@@ -242,7 +242,7 @@ mod tests {
                 limit(UsageLimit, Some("2026-10-20T08:00:00.000Z".into()), None),
             ),
             (
-                "T3 429",
+                "a 429",
                 input(
                     "usage_limit",
                     "Claude API rate limit reached. Try again later.",
