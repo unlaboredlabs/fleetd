@@ -53,6 +53,10 @@ unicode-segmentation = "1"
 # Query strings of fleetd://pair links.
 url.workspace = true
 
+# main.rs turns off AppKit's window restoration. Already in the graph through gpui_macos.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSUserDefaults"] }
+
 [dev-dependencies]
 # Headless window and simulated keystrokes/clicks for the text field tests.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "fb69067729cb16a7f6135e2c1600c26a28c59659", default-features = false, features = ["font-kit", "wayland", "x11", "profiler", "test-support"] }

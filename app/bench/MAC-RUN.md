@@ -7,8 +7,8 @@ For an agent (or person) on a Mac. Two ways, both ending with numbers to send ba
 - **Full table: the `fleetd-bench` driver** (about 10 minutes of building, then 3 of measuring). The same
   markdown table the Linux run prints, for `app/bench/BASELINE.md`. Needs Rust and a checkout.
 
-Neither touches a T3 server, a hub, the keychain, or any other app: in bench mode the app shows fixture
-data and talks to nothing. The Mac must be **awake and unlocked, with the display on**, for the whole run,
+In bench mode the app shows fixture data and touches no hub, node, keychain or other app: no network, no
+notifications, no prompts. The Mac must be **awake and unlocked, with the display on**, for the whole run,
 because macOS stops presenting frames for windows it can't show. A fleetd window opens and closes about
 15 (quick) or 35 (full) times; leave the keyboard and mouse alone.
 
@@ -27,26 +27,49 @@ measurement and prints `FLEETD_BENCH key=value ...` lines on stdout. The mode is
 Any other value (such as `FLEETD_BENCH=1`) prints the list of modes and exits with status 2. If the app
 ever panics it says where on stderr and appends the same report to `~/.fleetd/app.log`.
 
+Startup progress goes to **stderr**, one line per milestone, timed from the start of `main`:
+`FLEETD_BENCH stage=<name> t_ms=<ms>`. In order: `process_start`, `app_launched` (AppKit has finished
+launching and handed over), `window_opening` (the displays and the window's bounds), `window_created`
+(`active=`, `visible=`, `bounds=`, `scale=`), `activate_requested`, `visibility` and `activation` whenever
+those change, `first_draw`, `first_present`. A run with no presented frame after 15 s prints
+`FLEETD_BENCH stage=timeout last=<last stage reached>` and exits with status 3 (`FLEETD_BENCH_TIMEOUT_MS`
+sets the limit; 0 turns it off).
+
+| `last=` | Where it stopped |
+|---|---|
+| `process_start` | Before AppKit handed over, usually behind a modal alert of AppKit's own. |
+| `window_created`, `activate_requested` | The window exists but macOS isn't showing it (`visible=false`): display asleep, screen locked, another Space. |
+| `first_draw` | Drawn but never presented: the GPU or the display link. |
+
 ## Quick: from the nightly zip
 
 1. Download `fleetd-app-macos-universal.zip` from the nightly release and unzip it (Safari does this
    itself), so the app is at `~/Downloads/fleetd.app`. Elsewhere, set `FLEETD_APP` to its
    `Contents/MacOS/fleetd-app` before step 2.
-2. Paste this into Terminal:
+2. Paste this into Terminal. A diagnostic run comes first; if startup stops, its stage lines say where,
+   and the rest is skipped.
 
 ```sh
 zsh <<'EOF'
 zmodload zsh/datetime
 app=${FLEETD_APP:-$HOME/Downloads/fleetd.app/Contents/MacOS/fleetd-app}
 out=$HOME/Desktop/fleetd-mac-bench.txt
+err=$(mktemp)
 # median, p90 and max of numbers on stdin, picked the way fleetd-bench picks them
 stats() { sort -n | awk '{v[NR]=$1} END {if (!NR) {print "no samples"; exit}
   printf "median %.1f, p90 %.1f, max %.1f (n=%d)\n", v[int((NR-1)*0.5+1.5)], v[int((NR-1)*0.9+1.5)], v[NR], NR}'; }
+# A run with no frame after 15 s exits 3; this prints its stage log.
+failed() { echo "$1 failed${2:+ (exit $2)}. Its stderr:"; sed 's/^/  /' $err; }
 {
   echo "$($app --version), macOS $(sw_vers -productVersion), $(sysctl -n hw.model), $(sysctl -n machdep.cpu.brand_string)"
+  echo "Diagnostic cold start:"
+  FLEETD_BENCH=cold $app 2>$err >/dev/null; code=$?
+  sed 's/^/  /' $err
+  if (( code )); then echo "The diagnostic run failed (exit $code); startup stopped after the last stage above."; exit 1; fi
   echo "Cold start, exec -> first frame presented, warm cache, ms: $(for i in {0..10}; do
     t0=$EPOCHREALTIME
-    ns=$(FLEETD_BENCH=cold $app | sed -n 's/.*event=first_present unix_ns=\([0-9]*\).*/\1/p')
+    ns=$(FLEETD_BENCH=cold $app 2>$err | sed -n 's/.*event=first_present unix_ns=\([0-9]*\).*/\1/p')
+    [[ -z $ns ]] && { failed "Cold run $i" >&2; continue; }
     (( i )) && printf '%.1f\n' $(( (ns / 1e9 - t0) * 1000 )) # run 0 warms the cache
   done | stats)"
   for label envs in \
@@ -54,16 +77,22 @@ stats() { sort -n | awk '{v[NR]=$1} END {if (!NR) {print "no samples"; exit}
       "Idle RSS, 20k-line log loaded, 10 s after first frame" "FLEETD_STREAM=0" \
       "RSS, 20k-line log + streaming 50 lines/s, after 10 s" ""; do
     log=$(mktemp)
-    env FLEETD_BENCH=idle ${=envs} $app > $log & pid=$!
+    env FLEETD_BENCH=idle ${=envs} $app > $log 2>$err & pid=$!
     until grep -q first_present $log || ! kill -0 $pid 2>/dev/null; do sleep 0.2; done
-    sleep 10
-    printf '%s: %.1f MiB\n' $label $(( $(ps -o rss= -p $pid) / 1024.0 ))
-    kill $pid; wait $pid 2>/dev/null; rm -f $log
+    if grep -q first_present $log; then
+      sleep 10
+      printf '%s: %.1f MiB\n' $label $(( $(ps -o rss= -p $pid) / 1024.0 ))
+      kill $pid; wait $pid 2>/dev/null
+    else
+      wait $pid; failed $label $?
+    fi
+    rm -f $log
   done
-  echo "Input latency in-app, key handler -> echo frame presented (gpui dispatch), ms: $(FLEETD_BENCH=keys-internal $app |
+  echo "Input latency in-app, key handler -> echo frame presented (gpui dispatch), ms: $(FLEETD_BENCH=keys-internal $app 2>$err |
     sed -n 's/.*event=key key=[a-z] latency_ns=\([0-9]*\).*/\1/p' | awk '{printf "%.3f\n", $1 / 1e6}' | stats)"
-  echo "Scroll 20k-line log for 5 s: $(FLEETD_BENCH=scroll $app | sed -n 's/.*event=scroll //p')"
+  echo "Scroll 20k-line log for 5 s: $(FLEETD_BENCH=scroll $app 2>$err | sed -n 's/.*event=scroll //p')"
 } 2>&1 | tee $out
+rm -f $err
 EOF
 ```
 
@@ -72,6 +101,12 @@ The cold start here includes a few ms of shell overhead that the driver doesn't 
 3. Send back `~/Desktop/fleetd-mac-bench.txt`, plus the Mac model, the display (built-in Retina,
    external, refresh rate) and whether it was on battery. If anything failed, also send
    `~/.fleetd/app.log`.
+
+If the diagnostic run stops at `last=process_start` with a window on screen, that window is an AppKit
+alert and a person has to read it (`screencapture` needs a Screen Recording grant). Builds after
+nightly 20261018.49e63ae turn AppKit's window restoration off; on older builds an earlier crashed launch
+leaves a "quit unexpectedly while reopening windows" alert armed, which
+`rm -rf ~/Library/Saved\ Application\ State/sh.fleetd.app.savedState` clears.
 
 ## Full table: the driver
 

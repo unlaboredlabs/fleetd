@@ -22,6 +22,7 @@ use std::borrow::Cow;
 use gpui::{App, AppContext, Bounds, QuitMode, TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, px, size};
 
 fn main() {
+    bench::mark_start();
     if std::env::args().any(|a| a == "--version") {
         println!("fleetd-app {}", update::VERSION);
         return;
@@ -34,6 +35,12 @@ fn main() {
             std::process::exit(2);
         }
     };
+    if let Some(mode) = bench {
+        bench::stage("process_start", &format!("mode={mode:?} pid={}", std::process::id()));
+        bench::start_watchdog();
+    }
+    #[cfg(target_os = "macos")]
+    skip_window_restoration();
     let app = gpui_platform::application()
         .with_assets(titlebar::Icons)
         // One window: closing it quits, on macOS too, rather than leaving a windowless app in the Dock.
@@ -44,6 +51,12 @@ fn main() {
 }
 
 fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
+    let stage = |name, detail: &str| {
+        if bench.is_some() {
+            bench::stage(name, detail);
+        }
+    };
+    stage("app_launched", "");
     cx.set_global(links);
     shell::bind_keys(cx);
     // Bundled so text renders the same everywhere, including hosts with no system fonts.
@@ -57,6 +70,7 @@ fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
     cx.set_app_identity("sh.fleetd.app", "fleetd");
     menus::init(cx);
     let bounds = Bounds::centered(None, size(px(1400.), px(900.)), cx);
+    stage("window_opening", &bench::displays_and(bounds, cx));
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -78,9 +92,27 @@ fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
         },
         |window, cx| {
             let shell = cx.new(|cx| shell::Shell::new(bench, window, cx));
-            cx.new(|_| titlebar::Frame::new(shell))
+            cx.new(|cx| {
+                if bench.is_some() {
+                    bench::watch_window(window, cx);
+                }
+                titlebar::Frame::new(shell)
+            })
         },
     )
     .expect("open window");
     cx.activate(true);
+    stage("activate_requested", "");
+}
+
+/// AppKit's window restoration runs during launch, before gpui calls `launch`. After a launch that died part way
+/// (the abort an early nightly hit inside applicationDidFinishLaunching, or a kill), the next one first shows a
+/// modal "quit unexpectedly while reopening windows" alert, so the app has no window and prints nothing until
+/// someone clicks it; a run killed while the alert is up leaves it armed for the next. The app restores nothing
+/// (it opens one window at a fixed size), so turn restoration off in its own defaults domain (Xcode passes the
+/// same key when it runs an app). Set on every launch, before AppKit reads it.
+#[cfg(target_os = "macos")]
+fn skip_window_restoration() {
+    use objc2_foundation::{NSString, NSUserDefaults};
+    NSUserDefaults::standardUserDefaults().setBool_forKey(true, &NSString::from_str("ApplePersistenceIgnoreState"));
 }
