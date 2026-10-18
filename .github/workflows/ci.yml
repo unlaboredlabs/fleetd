@@ -30,6 +30,11 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --exclude fleetd-app --exclude fleetd-bench --all-targets -- -D warnings
       - run: cargo test --locked --workspace --exclude fleetd-app --exclude fleetd-bench
+      - name: Claude runner conformance (fixtures)
+        # CI has no claude. The streams recorded from claude at version.rs TESTED go through the decoders, the
+        # failure classifier and the conformance probe (against a stand-in replaying the recorded initialize
+        # answer). Its own step so a claude protocol drift reads as such; re-record the fixtures when bumping TESTED.
+        run: cargo test --locked -p fleetd --lib node::runner
       # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
       - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
       - uses: actions/upload-artifact@v7

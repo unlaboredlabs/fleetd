@@ -10,6 +10,7 @@
 //! `{"dir":"in"|"out"|"stderr"|"meta","ms":<since start>,"msg":{…}}` (`raw` instead of `msg` for non-JSON lines).
 //! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
 pub mod claude;
+pub mod conformance;
 pub mod failure;
 pub mod version;
 

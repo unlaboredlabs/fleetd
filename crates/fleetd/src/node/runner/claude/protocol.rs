@@ -132,6 +132,9 @@ pub struct ResultLine {
     pub terminal_reason: Option<String>,
     pub api_error_status: Option<u16>,
     pub errors: Option<Vec<String>>,
+    /// Why claude refused to start the turn (gateway sign-in, org pin, …); written with
+    /// `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` set.
+    pub startup_failure_reason: Option<String>,
     pub usage: Option<Usage>,
     pub total_cost_usd: Option<f64>,
     pub user_message_uuid: Option<String>,
