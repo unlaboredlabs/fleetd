@@ -18,7 +18,12 @@ export async function degradedMachine(lab: Lab) {
   await lab.stopNode(MACHINE);
   const brokenAt = Date.now();
   lab.startNode(MACHINE, { path: pathWithoutClaude() });
-  const degraded = await lab.waitEvent("machine.degraded", 60_000, { cursor, machineId: MACHINE, types: ["machine.degraded"] });
+  // The hub asks the node for runner_info as soon as its link is welcomed (hub/link/server.rs check_runner), and with
+  // no claude on PATH the node's probe fails at once, so the node's start, link and probe fit in 20 s (the old T3
+  // limit). The hub's periodic re-check (every RUNNER_CHECK_EVERY heartbeats) is only a backstop here.
+  const degraded = await lab.waitEvent("machine.degraded", 20_000, { cursor, machineId: MACHINE, types: ["machine.degraded"] });
+  const degradedAfter = (Date.now() - brokenAt) / 1000;
+  check(degradedAfter <= 20, `machine.degraded within 20 s of the node's restart (took ${degradedAfter} s)`);
   cursor = degraded.cursor;
   const status = await machine();
   check(status.status === "degraded" && typeof status.degradedReason === "string", `fleetd_status shows why: ${JSON.stringify(status)}`);

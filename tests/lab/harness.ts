@@ -130,8 +130,8 @@ export const prepareMachineHome = (id: string, opts: { readonly login?: boolean 
   const hasGh = fs.existsSync(path.join(ghDir, "hosts.yml"));
   if (hasGh) {
     fs.mkdirSync(path.join(home, ".config/gh"), { recursive: true, mode: 0o700 });
-    for (const file of ["hosts.yml", "config.yml"]) {
-      if (fs.existsSync(path.join(ghDir, file))) fs.copyFileSync(path.join(ghDir, file), path.join(home, ".config/gh", file));
+    for (const file of ["hosts.yml", "config.yml"].filter((f) => fs.existsSync(path.join(ghDir, f)))) {
+      fs.copyFileSync(path.join(ghDir, file), path.join(home, ".config/gh", file));
       fs.chmodSync(path.join(home, ".config/gh", file), 0o600);
     }
   }
@@ -141,6 +141,13 @@ export const prepareMachineHome = (id: string, opts: { readonly login?: boolean 
     `[user]\n\tname = ${identity.GIT_AUTHOR_NAME}\n\temail = ${identity.GIT_AUTHOR_EMAIL}\n[init]\n\tdefaultBranch = main\n` +
       (hasGh ? `[credential "https://github.com"]\n\thelper = \n\thelper = !${gh} auth git-credential\n` : ""),
   );
+};
+
+/** m7 and m9 push to GitHub as the user: their agents need the user's `gh` login, copied into each machine's HOME. */
+export const requireGhLogin = () => {
+  if (!fs.existsSync(path.join(os.homedir(), ".config/gh/hosts.yml"))) {
+    throw new Error("this scenario pushes to the GitHub testbed with your gh login, and ~/.config/gh/hosts.yml is missing: run gh auth login");
+  }
 };
 
 /** Deletes every machine's claude.env and gh copy: the login stays only as long as the run needs it. */

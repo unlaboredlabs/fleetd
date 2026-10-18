@@ -7,7 +7,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { type Body, FINISH_ALL_IDLE, fleetdCommand, LAB, type Lab, MODEL, nodeSock, scrubbedEnv } from "./harness.ts";
+import { type Body, FINISH_ALL_IDLE, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
 import { removeTestbedProject, TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -38,6 +38,7 @@ const shell = (cwd: string) => {
 export async function m9Playbooks(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
+  requireGhLogin();
   const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot !== TESTBED)?.projectId as string;
   check(projectId, `${MACHINE} has a project`);
   const ref = { machineId: MACHINE, projectId };

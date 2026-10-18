@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, LAB, type Lab, LEAD_PROMPT_VERSION, MODEL, nodeSock, scrubbedEnv, sessionText } from "./harness.ts";
+import { type Body, fleetdCommand, LAB, type Lab, LEAD_PROMPT_VERSION, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const REPO = "unlaboredlabs/fleetd-testbed";
@@ -86,6 +86,7 @@ export const removeTestbedProject = async (lab: Pick<Lab, "callTool">) => {
 export async function m7Train(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
+  requireGhLogin();
   check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run node tests/lab/testbed.ts --clone ${TESTBED})`);
   cleanTestbed();
   prepareCheckout();
