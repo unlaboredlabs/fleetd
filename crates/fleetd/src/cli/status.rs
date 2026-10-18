@@ -9,7 +9,15 @@ use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
+use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::ledger::WorkstreamId;
+use fleetd_contracts::mcp::StatusWaitOutput;
+use fleetd_contracts::model::MachineStatus;
+use fleetd_contracts::plan::PlanItemId;
+use fleetd_contracts::status::{
+    CiState, EtaBasis, HeadlineSource, Health, MIN_SAMPLES, Marker, RiskLevel, Since, StaleMark,
+    StatusDoc, StatusEta, StatusScope,
+};
 use serde_json::{Value, json};
 
 use super::args::{self, Kind, Spec};
@@ -128,10 +136,6 @@ fn st<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
-fn opt<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
-    value.get(key).filter(|v| !v.is_null())
-}
-
 fn arr<'a>(value: &'a Value, key: &str) -> &'a [Value] {
     value
         .get(key)
@@ -140,60 +144,10 @@ fn arr<'a>(value: &'a Value, key: &str) -> &'a [Value] {
         .unwrap_or(&[])
 }
 
-fn num(value: &Value, key: &str) -> Option<i64> {
-    value.get(key).and_then(Value::as_f64).map(|n| n as i64)
-}
-
-/// The words of a marker, gate, risk or evidence: a string, or the first text field of an object.
-fn text_of(value: &Value) -> String {
-    match value {
-        Value::String(s) => s.clone(),
-        Value::Object(_) => ["text", "label", "message", "note", "title"]
-            .iter()
-            .map(|k| st(value, k))
-            .find(|s| !s.is_empty())
-            .unwrap_or("")
-            .to_owned(),
-        _ => String::new(),
-    }
-}
-
-/// `P12 full lab run`, or the order a virtual item stands for.
-fn item_label(item: &Value) -> String {
-    let item = opt(item, "item").unwrap_or(item);
-    let id = ["itemId", "id", "workstreamId"]
-        .iter()
-        .map(|k| st(item, k))
-        .find(|s| !s.is_empty())
-        .unwrap_or("");
-    let title = st(item, "title");
-    match (id, title) {
-        ("", t) => t.to_owned(),
-        (i, "") => i.to_owned(),
-        (i, t) => format!("{i} {t}"),
-    }
-}
-
 fn parse_time(iso: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(iso)
         .ok()
         .map(|t| t.with_timezone(&Utc))
-}
-
-/// `14:02:07` on the doc's day, `Thu 14:02` within a week, `2026-10-12 14:02` before that.
-fn clock(iso: &str, now: Option<DateTime<Utc>>, zone: Tz, seconds: bool) -> String {
-    let Some(at) = parse_time(iso) else {
-        return iso.to_owned();
-    };
-    let local = at.with_timezone(&zone);
-    let today = now.map(|n| n.with_timezone(&zone).date_naive());
-    let days = today.map(|d| (local.date_naive() - d).num_days().abs());
-    match days {
-        Some(0) if seconds => local.format("%H:%M:%S").to_string(),
-        Some(0) => local.format("%H:%M").to_string(),
-        Some(1..=6) => local.format("%a %H:%M").to_string(),
-        _ => local.format("%Y-%m-%d %H:%M").to_string(),
-    }
 }
 
 /// `10m46s`, `2h05m`.
@@ -206,26 +160,58 @@ fn dur(ms: i64) -> String {
     }
 }
 
-/// Where the doc says a source is stale: `(since, reason)`.
-fn stale_of<'a>(doc: &'a Value, source: &str) -> Option<&'a Value> {
-    arr(doc, "stale").iter().find(|s| st(s, "source") == source)
+/// `+6h`, `+40m`, `-1h30m`.
+fn signed_minutes(minutes: i64) -> String {
+    let sign = if minutes < 0 { "-" } else { "+" };
+    let m = minutes.abs();
+    match (m / 60, m % 60) {
+        (0, m) => format!("{sign}{m}m"),
+        (h, 0) => format!("{sign}{h}h"),
+        (h, m) => format!("{sign}{h}h{m:02}m"),
+    }
 }
 
-struct Ctx {
+/// Absolute times in the hub machine's zone, relative to the doc's own `now`, so nothing printed ever ticks.
+struct Clock {
     now: Option<DateTime<Utc>>,
     zone: Tz,
 }
 
-impl Ctx {
-    fn at(&self, iso: &str) -> String {
-        clock(iso, self.now, self.zone, false)
+impl Clock {
+    /// `14:02:07` on the doc's day (with `seconds`), `14:02`, `Thu 14:02` within a week, else the date.
+    fn fmt(&self, at: &Timestamp, seconds: bool) -> String {
+        let Some(at) = parse_time(&at.0) else {
+            return at.0.clone();
+        };
+        let local = at.with_timezone(&self.zone);
+        let days = self
+            .now
+            .map(|n| (local.date_naive() - n.with_timezone(&self.zone).date_naive()).num_days());
+        match days {
+            Some(0) if seconds => local.format("%H:%M:%S").to_string(),
+            Some(0) => local.format("%H:%M").to_string(),
+            Some(-6..=6) => local.format("%a %H:%M").to_string(),
+            _ => local.format("%Y-%m-%d %H:%M").to_string(),
+        }
     }
-    fn at_s(&self, iso: &str) -> String {
-        clock(iso, self.now, self.zone, true)
+    fn at(&self, at: &Timestamp) -> String {
+        self.fmt(at, false)
+    }
+    fn at_s(&self, at: &Timestamp) -> String {
+        self.fmt(at, true)
+    }
+    fn ms(&self, ms: i64) -> String {
+        Utc.timestamp_millis_opt(ms)
+            .single()
+            .map(|t| self.at(&Timestamp(t.to_rfc3339())))
+            .unwrap_or_default()
+    }
+    fn stale(&self, mark: &StaleMark) -> String {
+        format!("stale since {}: {}", self.at_s(&mark.since), mark.reason)
     }
 }
 
-/// One table column of label + body, the body's later lines indented under the first.
+/// One labelled block: the label in an 8-wide column, later lines indented under the first.
 fn section(out: &mut Vec<String>, label: &str, lines: &[String]) {
     for (i, line) in lines.iter().enumerate() {
         let head = if i == 0 { label } else { "" };
@@ -233,324 +219,382 @@ fn section(out: &mut Vec<String>, label: &str, lines: &[String]) {
     }
 }
 
-fn health_line(doc: &Value, c: &Ctx) -> String {
-    let health = opt(doc, "health").cloned().unwrap_or(Value::Null);
-    let mut parts: Vec<String> = Vec::new();
-    for ci in arr(&health, "ci") {
-        let repo = st(ci, "repo");
-        let failing: Vec<&str> = arr(ci, "failing")
-            .iter()
-            .filter_map(Value::as_str)
-            .collect();
-        let state = match st(ci, "state") {
-            "red" if !failing.is_empty() => format!("red ({})", failing.join(", ")),
-            "" => "unknown".into(),
-            other => other.to_owned(),
-        };
-        let stale = stale_of(doc, &format!("github:{repo}"))
-            .map(|s| format!(" (stale since {})", c.at_s(st(s, "since"))))
-            .unwrap_or_default();
-        let as_of = opt(ci, "asOf")
-            .and_then(Value::as_str)
-            .map(|t| format!(" as of {}", c.at_s(t)))
-            .unwrap_or_default();
-        parts.push(format!("main CI {repo} {state}{as_of}{stale}"));
-    }
-    let machines = arr(&health, "machines");
-    let online = machines
-        .iter()
-        .filter(|m| {
-            st(m, "status") == "online"
-                && stale_of(doc, &format!("machine:{}", st(m, "machineId"))).is_none()
-        })
-        .count();
-    if !machines.is_empty() {
-        parts.push(format!("{online} of {} machines online", machines.len()));
-    }
-    for m in machines {
-        let id = st(m, "machineId");
-        let stale = stale_of(doc, &format!("machine:{id}"));
-        let status = st(m, "status");
-        if status != "online" || stale.is_some() {
-            let seen = opt(m, "lastSeenAt")
-                .and_then(Value::as_str)
-                .map(|t| format!(" last seen {}", c.at_s(t)))
-                .unwrap_or_default();
-            let word = if status == "degraded" {
-                "DEGRADED"
-            } else {
-                "OFFLINE"
-            };
-            parts.push(format!(
-                "{id} {word}{seen}{}",
-                if stale.is_some() { " (stale)" } else { "" }
-            ));
-        }
-        if let Some(slept) = opt(m, "slept") {
-            let (from, to) = (num(slept, "fromMs"), num(slept, "toMs"));
-            if let (Some(from), Some(to)) = (from, to) {
-                let at = Utc
-                    .timestamp_millis_opt(from)
-                    .single()
-                    .map(|t| c.at(&t.to_rfc3339()))
-                    .unwrap_or_default();
-                parts.push(format!("{id} slept {} at {at}", dur(to - from)));
-            }
-        }
-    }
-    if let Some(usage) = opt(&health, "usage") {
-        let limits = usage
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or_else(|| arr(usage, "limits"));
-        let shown: Vec<String> = limits
-            .iter()
-            .filter_map(|l| {
-                let pct = l.get("utilization").and_then(Value::as_f64)?;
-                let kind = match st(l, "limitType") {
-                    "five_hour" => "5h",
-                    "seven_day" | "weekly" => "wk",
-                    other => other,
-                };
-                let stale = opt(l, "stale").and_then(Value::as_bool) == Some(true)
-                    || !st(l, "staleReason").is_empty();
-                Some(format!(
-                    "{}% {kind}{}",
-                    (pct * 100.0).round() as i64,
-                    if stale { " (stale)" } else { "" }
-                ))
+fn marker_text(marker: &Marker, pct: i64, c: &Clock) -> String {
+    let from = match marker.pct_before.map(|p| p.get()) {
+        Some(before) if before > pct => format!("↓ from {before}% · "),
+        Some(before) if before < pct => format!("↑ from {before}% · "),
+        _ => String::new(),
+    };
+    format!("{from}{} ({})", marker.text, c.at(&marker.at))
+}
+
+fn eta_line(eta: &StatusEta, c: &Clock) -> String {
+    let samples = eta.samples.get();
+    let Some(current) = eta.current.as_ref().filter(|_| eta.basis != EtaBasis::None) else {
+        return format!("measuring: {samples} of {MIN_SAMPLES} verified");
+    };
+    let mut parts = vec![c.at(current)];
+    if let Some(original) = &eta.original {
+        let slip = eta
+            .slip
+            .as_ref()
+            .map(|s| {
+                format!(
+                    " ({} scope, {} slower)",
+                    signed_minutes(s.scope_minutes.get()),
+                    signed_minutes(s.speed_minutes.get())
+                )
             })
-            .collect();
-        if !shown.is_empty() {
-            parts.push(format!("claude {}", shown.join(" ")));
-        }
+            .unwrap_or_default();
+        parts.push(format!("planned {}{slip}", c.at(original)));
     }
-    if let Some(slots) = opt(&health, "slots") {
-        let queued = num(slots, "queued").unwrap_or(0);
+    if let Some(lead) = &eta.lead {
         parts.push(format!(
-            "slots {}/{}{}",
-            num(slots, "used").unwrap_or(0),
-            num(slots, "cap").unwrap_or(0),
-            if queued > 0 {
-                format!(", {queued} queued")
-            } else {
-                String::new()
-            }
+            "lead estimated {}; measured speed wins",
+            c.at(lead)
         ));
     }
+    let rate = eta
+        .rate
+        .map(|r| format!("{:.1} pts/busy h, ", r.get()))
+        .unwrap_or_default();
+    let basis = match eta.basis {
+        EtaBasis::Order | EtaBasis::None => "",
+        EtaBasis::Project => " (project's speed)",
+        EtaBasis::Fleet => " (fleet's speed)",
+    };
+    parts.push(format!("{rate}{samples} samples{basis}"));
+    if let Some(chain) = &eta.chain {
+        parts.push(format!("set by {chain}"));
+    }
+    parts.join("   ")
+}
+
+fn since_line(since: &Since, c: &Clock) -> String {
+    let mut counts: Vec<String> = [
+        (since.merged, "merged"),
+        (since.verified, "verified"),
+        (since.started, "started"),
+        (since.failed, "failed"),
+        (since.asked, "asked"),
+    ]
+    .iter()
+    .filter(|(n, _)| n.get() != 0)
+    .map(|(n, word)| format!("{} {word}", n.get()))
+    .collect();
+    if since.scope_items.get() != 0 {
+        counts.push(format!("{:+} items", since.scope_items.get()));
+    }
+    let from = match (&since.seen_at, since.pruned) {
+        (_, Some(true)) => "more than 30 days".to_owned(),
+        (Some(at), _) => c.at(at),
+        (None, _) => "your first look".to_owned(),
+    };
+    let what = if counts.is_empty() {
+        "nothing new".to_owned()
+    } else {
+        counts.join(", ")
+    };
+    format!("since {from}  {what}")
+}
+
+fn health_line(health: &Health, c: &Clock) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for ci in health.ci.iter() {
+        let failing: Vec<&str> = ci.failing.iter().map(|f| f.as_str()).collect();
+        let state = match ci.state {
+            CiState::Green => "green".to_owned(),
+            CiState::Red if failing.is_empty() => "RED".to_owned(),
+            CiState::Red => format!("RED ({})", failing.join(", ")),
+            CiState::Pending => "pending".to_owned(),
+            CiState::Unknown => "not checked yet".to_owned(),
+        };
+        let as_of = ci
+            .as_of
+            .as_ref()
+            .map(|t| format!(" as of {}", c.at_s(t)))
+            .unwrap_or_default();
+        let stale = ci
+            .stale
+            .as_ref()
+            .map(|s| format!(" ({})", c.stale(s)))
+            .unwrap_or_default();
+        parts.push(format!(
+            "main CI {} {state}{as_of}{stale}",
+            ci.repo.as_str()
+        ));
+    }
+    let machines = &health.machines;
+    if !machines.is_empty() {
+        let online = machines
+            .iter()
+            .filter(|m| m.status == MachineStatus::Online && m.stale.is_none())
+            .count();
+        parts.push(format!("{online} of {} machines online", machines.len()));
+    }
+    for m in machines.iter() {
+        let id = m.machine_id.as_str();
+        if m.status != MachineStatus::Online || m.stale.is_some() {
+            let word = match m.status {
+                MachineStatus::Degraded => "DEGRADED",
+                _ => "OFFLINE",
+            };
+            let seen = m
+                .last_seen_at
+                .as_ref()
+                .map(|t| format!(" last seen {}", c.at_s(t)))
+                .unwrap_or_default();
+            let stale = if m.stale.is_some() { " (stale)" } else { "" };
+            parts.push(format!("{id} {word}{seen}{stale}"));
+        }
+        if let Some(slept) = m.slept {
+            parts.push(format!(
+                "{id} slept {} at {}",
+                dur(slept.to_ms.get() - slept.from_ms.get()),
+                c.ms(slept.from_ms.get())
+            ));
+        }
+    }
+    let usage: Vec<String> = health
+        .usage
+        .iter()
+        .filter_map(|u| {
+            let pct = (u.utilization?.get() * 100.0).round() as i64;
+            let window = match u.limit_type.as_str() {
+                "five_hour" => "5h",
+                "seven_day" => "wk",
+                other => other,
+            };
+            let stale = u
+                .stale
+                .as_ref()
+                .map(|s| format!(" ({})", c.stale(s)))
+                .unwrap_or_default();
+            Some(format!("{pct}% {window}{stale}"))
+        })
+        .collect();
+    if !usage.is_empty() {
+        parts.push(format!("claude {}", usage.join(" ")));
+    }
+    let s = &health.slots;
+    let queued = if s.queued.get() > 0 {
+        format!(", {} queued", s.queued.get())
+    } else {
+        String::new()
+    };
+    parts.push(format!(
+        "{} running, slots {}/{}{queued}",
+        s.running.get(),
+        s.used.get(),
+        s.cap.get()
+    ));
     parts.join(" · ")
 }
 
-/// What `fleetd status` prints for one doc. `label` names the scope as the user typed it.
-pub fn render(doc: &Value, label: &str, zone: Tz) -> String {
-    let c = Ctx {
-        now: parse_time(st(doc, "now")),
+fn row_label(item: Option<&PlanItemId>, order: Option<&WorkstreamId>, title: &str) -> String {
+    match (item, order) {
+        (Some(item), _) => format!("{} {title}", item.as_str()),
+        (None, Some(order)) => format!("{} {title}", order.as_str()),
+        (None, None) => title.to_owned(),
+    }
+}
+
+/// What `fleetd status` prints for one doc.
+pub fn render(doc: &StatusDoc, zone: Tz) -> String {
+    let c = Clock {
+        now: parse_time(&doc.now.0),
         zone,
     };
     let mut out: Vec<String> = Vec::new();
-    let progress = opt(doc, "progress").cloned().unwrap_or(Value::Null);
-    let stale = arr(doc, "stale");
-    let live = if stale.is_empty() {
-        "live".to_owned()
-    } else {
-        format!(
-            "NOT LIVE: {} stale source{}",
-            stale.len(),
-            if stale.len() == 1 { "" } else { "s" }
-        )
+    let p = &doc.progress;
+    let pct = p.pct.get();
+    let live = match doc.stale.len() {
+        0 => "live".to_owned(),
+        1 => "NOT LIVE: 1 stale source".to_owned(),
+        n => format!("NOT LIVE: {n} stale sources"),
     };
-    let pct = num(&progress, "pct")
-        .map(|p| format!("{p}%"))
-        .unwrap_or_else(|| "—".into());
-    let polish = num(&progress, "polishPct")
-        .map(|p| format!("  polish {p}%"))
+    let polish = if p.polish_total.get() > 0 {
+        format!("  polish {}/{}", p.polish_done.get(), p.polish_total.get())
+    } else {
+        String::new()
+    };
+    out.push(format!(
+        "{}  {pct}%{polish}    as of {} ({live})",
+        doc.title,
+        c.at_s(&doc.now)
+    ));
+    let tier = doc
+        .virtual_tier
+        .map(|t| format!(", no plan: counts as one {t:?} item"))
         .unwrap_or_default();
     out.push(format!(
-        "{label}  {pct}{polish}    as of {} ({live})",
-        c.at_s(st(doc, "now"))
+        "  {} of {} required items verified{tier}{}",
+        p.done.get(),
+        p.total.get(),
+        p.stale
+            .as_ref()
+            .map(|s| format!(" ({})", c.stale(s)))
+            .unwrap_or_default()
     ));
-    if let (Some(done), Some(total)) = (num(&progress, "done"), num(&progress, "total")) {
-        out.push(format!("  {done} of {total} required points verified"));
+    for marker in doc.markers.iter() {
+        out.push(format!("  {}", marker_text(marker, pct, &c)));
     }
-    for marker in opt(&progress, "marker")
-        .into_iter()
-        .chain(arr(doc, "markers"))
-    {
-        let text = text_of(marker);
-        if !text.is_empty() {
-            out.push(format!("  {text}"));
-        }
-    }
-    if let Some(headline) = opt(doc, "headline") {
-        let tag = match (st(headline, "source"), opt(headline, "reason")) {
-            ("generated", _) => "[generated]".to_owned(),
-            (_, Some(reason)) => format!("[template: {}]", text_of(reason)),
-            _ => "[template]".to_owned(),
-        };
-        out.push(format!("  {}   {tag}", st(headline, "text")));
-    }
-    if let Some(eta) = opt(doc, "eta") {
-        let samples = num(eta, "samples").unwrap_or(0);
-        let line = match opt(eta, "current").and_then(Value::as_str) {
-            None => format!("measuring: {samples} of 5 verified"),
-            Some(current) => {
-                let planned = opt(eta, "original")
-                    .and_then(Value::as_str)
-                    .map(|o| format!("   planned {}", c.at(o)))
-                    .unwrap_or_default();
-                let lead = opt(eta, "lead")
-                    .and_then(Value::as_str)
-                    .map(|l| format!("   lead estimated {}", c.at(l)))
-                    .unwrap_or_default();
-                let basis = match st(eta, "basis") {
-                    "" => String::new(),
-                    b => format!(", {b}"),
-                };
-                format!(
-                    "{}{planned}{lead}   {samples} samples{basis}",
-                    c.at(current)
-                )
-            }
-        };
-        out.push(format!("  eta {line}"));
-    }
-    let gates: Vec<String> = arr(doc, "gates")
-        .iter()
-        .map(|g| {
-            let serial = g.get("serial").and_then(Value::as_bool) == Some(true);
-            format!("{}{}", text_of(g), if serial { " (serial)" } else { "" })
-        })
-        .filter(|g| !g.is_empty())
-        .collect();
-    if !gates.is_empty() {
+    let tag = match (doc.headline.source, &doc.headline.reason) {
+        (HeadlineSource::Generated, _) => "[generated]".to_owned(),
+        (HeadlineSource::Template, Some(reason)) => format!("[template: {reason}]"),
+        (HeadlineSource::Template, None) => "[template]".to_owned(),
+    };
+    out.push(format!("  {}   {tag}", doc.headline.text));
+    out.push(format!("  eta {}", eta_line(&doc.eta, &c)));
+    if !doc.gates.is_empty() {
+        let gates: Vec<String> = doc
+            .gates
+            .iter()
+            .map(|g| format!("{}{}", g.label, if g.serial { " (serial)" } else { "" }))
+            .collect();
         out.push(format!("  waiting on  {}", gates.join("; ")));
     }
-    if let Some(since) = opt(doc, "since") {
-        let mut counts: Vec<String> = [
-            ("merged", "merged"),
-            ("verified", "verified"),
-            ("started", "started"),
-            ("failed", "failed"),
-            ("asked", "asked"),
-        ]
+    out.push(format!("  {}", since_line(&doc.since, &c)));
+    section(&mut out, "health", &[health_line(&doc.health, &c)]);
+    let stale: Vec<String> = doc
+        .stale
         .iter()
-        .filter_map(|(key, word)| {
-            num(since, key)
-                .filter(|n| *n != 0)
-                .map(|n| format!("{n} {word}"))
-        })
+        .map(|s| format!("{} since {}: {}", s.source, c.at_s(&s.since), s.reason))
         .collect();
-        if let Some(items) = num(since, "scopeItems").filter(|n| *n != 0) {
-            counts.push(format!("{items:+} items"));
-        }
-        let from = opt(since, "seenAt")
-            .and_then(Value::as_str)
-            .map(|t| c.at(t))
-            .unwrap_or_else(|| "first look".into());
-        let what = if counts.is_empty() {
-            "nothing new".into()
-        } else {
-            counts.join(", ")
-        };
-        out.push(format!("  since {from}  {what}"));
-    }
-    let health = health_line(doc, &c);
-    if !health.is_empty() {
-        section(&mut out, "health", &[health]);
-    }
-    let stale_lines: Vec<String> = stale
-        .iter()
-        .map(|s| {
-            format!(
-                "{} since {}: {}",
-                st(s, "source"),
-                c.at_s(st(s, "since")),
-                st(s, "reason")
-            )
-        })
-        .collect();
-    section(&mut out, "stale", &stale_lines);
-    if let Some(needs) = opt(doc, "needsYou").filter(|n| num(n, "count").unwrap_or(0) > 0) {
-        let asks: Vec<&str> = arr(needs, "askIds")
-            .iter()
-            .filter_map(Value::as_str)
-            .collect();
+    section(&mut out, "stale", &stale);
+    if doc.needs_you.count.get() > 0 {
+        let asks: Vec<&str> = doc.needs_you.ask_ids.iter().map(|a| a.as_str()).collect();
+        let n = doc.needs_you.count.get();
+        let verb = if n == 1 { "needs" } else { "need" };
         section(
             &mut out,
             "needs",
             &[format!(
-                "{} need you: {} (answer in the app's inbox)",
-                num(needs, "count").unwrap_or(0),
+                "{n} {verb} you: {} (answer in the app's inbox)",
                 asks.join(", ")
             )],
         );
     }
-    let risks: Vec<String> = arr(doc, "risks").iter().map(text_of).collect();
+    let risks: Vec<String> = doc
+        .risks
+        .iter()
+        .map(|r| match r.level {
+            RiskLevel::Danger => format!("{} (!)", r.message),
+            RiskLevel::Warning => r.message.to_string(),
+        })
+        .collect();
     section(&mut out, "risks", &risks);
-    let doing: Vec<String> = arr(doc, "inProgress")
+    let parts: Vec<String> = doc
+        .parts
+        .iter()
+        .map(|part| {
+            let eta = part
+                .eta
+                .as_ref()
+                .map(|e| format!("   eta {}", c.at(e)))
+                .unwrap_or_default();
+            let marker = part
+                .progress
+                .marker
+                .as_ref()
+                .map(|m| format!("   {}", m.text))
+                .unwrap_or_default();
+            format!("{}  {}%{eta}{marker}", part.title, part.progress.pct.get())
+        })
+        .collect();
+    let parts_label = match doc.scope {
+        StatusScope::Fleet => "projects",
+        _ => "milestones",
+    };
+    if !parts.is_empty() {
+        out.push(parts_label.to_owned());
+        out.extend(parts.into_iter().map(|p| format!("        {p}")));
+    }
+    let doing: Vec<String> = doc
+        .in_progress
         .iter()
         .map(|row| {
-            let mut cells = vec![item_label(row)];
-            let tasks: Vec<&str> = arr(row, "taskIds")
-                .iter()
-                .filter_map(Value::as_str)
-                .collect();
+            let mut cells = vec![row_label(
+                row.item_id.as_ref(),
+                Some(&row.workstream_id),
+                &row.title,
+            )];
+            let tasks: Vec<&str> = row.task_ids.iter().map(|t| t.as_str()).collect();
             if !tasks.is_empty() {
                 cells.push(tasks.join(","));
             }
-            if let Some(gate) = opt(row, "gate") {
-                cells.push(text_of(gate));
+            if let Some(gate) = &row.gate {
+                cells.push(gate.to_string());
             }
-            if let Some(eta) = opt(row, "eta").and_then(Value::as_str) {
-                cells.push(format!("eta {}", c.at(eta)));
+            match (&row.eta, row.overdue_minutes.map(|m| m.get())) {
+                (_, Some(late)) if late > 0 => cells.push(format!("overdue {late}m")),
+                (Some(eta), _) => cells.push(format!("eta {}", c.at(eta))),
+                _ => {}
             }
-            if let Some(stale) = opt(row, "stale") {
-                let why = text_of(stale);
-                cells.push(if why.is_empty() {
-                    "(stale)".into()
-                } else {
-                    format!("(stale: {why})")
-                });
+            if let Some(stale) = &row.stale {
+                cells.push(format!("({})", c.stale(stale)));
             }
             cells.join("   ")
         })
         .collect();
     section(&mut out, "doing", &doing);
-    let next: Vec<String> = arr(doc, "next").iter().map(item_label).collect();
-    if !next.is_empty() {
+    if !doc.next.is_empty() {
+        let next: Vec<String> = doc
+            .next
+            .iter()
+            .map(|row| {
+                let after: Vec<&str> = row.after.iter().map(|a| a.as_str()).collect();
+                let after = if after.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (after {})", after.join(", "))
+                };
+                format!("{} {}{after}", row.item_id.as_str(), row.title)
+            })
+            .collect();
         section(&mut out, "next", &[next.join(", ")]);
     }
-    let done: Vec<String> = arr(doc, "done")
+    let done: Vec<String> = doc
+        .done
         .iter()
-        .map(|row| match opt(row, "evidence").map(text_of) {
-            Some(evidence) if !evidence.is_empty() => format!("{}   {evidence}", item_label(row)),
-            _ => item_label(row),
+        .map(|row| {
+            format!(
+                "{}   {}",
+                row_label(row.item_id.as_ref(), row.workstream_id.as_ref(), &row.title),
+                row.evidence
+            )
         })
         .collect();
     section(&mut out, "done", &done);
-    if let Some(more) = opt(doc, "more").and_then(Value::as_object) {
-        let hidden: Vec<String> = more
-            .iter()
-            .filter_map(|(k, v)| {
-                v.as_f64()
-                    .filter(|n| *n > 0.0)
-                    .map(|_| format!("{} more {k}", js_number(v)))
-            })
-            .collect();
-        if !hidden.is_empty() {
-            out.push(format!("({}; the app shows them all)", hidden.join(", ")));
-        }
+    let m = &doc.more;
+    let hidden: Vec<String> = [
+        (m.done, "done"),
+        (m.in_progress, "in progress"),
+        (m.next, "next"),
+        (m.risks, "risks"),
+        (m.parts, parts_label),
+        (m.stale, "stale"),
+    ]
+    .iter()
+    .filter(|(n, _)| n.get() > 0)
+    .map(|(n, what)| format!("{} more {what}", n.get()))
+    .collect();
+    if !hidden.is_empty() {
+        out.push(format!("({}; --json has the doc)", hidden.join(", ")));
     }
     out.join("\n")
 }
 
-/// What `fleetd status --watch` prints above the last doc when the hub stops answering. It is the CLI's own
+/// What `fleetd status --watch` prints above the last doc while the hub does not answer. It is the CLI's own
 /// connection, not a judgement on the hub's data.
-pub fn not_live_banner(last_now: &str, zone: Tz, reason: &str) -> String {
-    let now = parse_time(last_now);
+pub fn not_live_banner(last: &StatusDoc, zone: Tz, reason: &str) -> String {
+    let c = Clock {
+        now: parse_time(&last.now.0),
+        zone,
+    };
     format!(
         "NOT LIVE: reconnecting to the hub ({reason}) · data from {}",
-        clock(last_now, now, zone, true)
+        c.at_s(&last.now)
     )
 }
 
@@ -679,26 +723,19 @@ async fn scope_for(client: &mut McpClient, target: &str) -> Result<Value, u8> {
 struct Printer {
     json: bool,
     tty: bool,
-    label: String,
     zone: Tz,
 }
 
 impl Printer {
-    fn show(&self, doc: &Value, banner: Option<&str>) {
+    fn show(&self, doc: &StatusDoc) {
         let mut stdout = std::io::stdout().lock();
         if self.json {
-            let _ = writeln!(stdout, "{doc}");
-            return;
-        }
-        let mut text = render(doc, &self.label, self.zone);
-        if let Some(banner) = banner {
-            text = format!("{banner}\n{text}");
-        }
-        if self.tty {
+            let _ = writeln!(stdout, "{}", serde_json::to_string(doc).unwrap_or_default());
+        } else if self.tty {
             // Home, clear: the new version replaces the old in place.
-            let _ = writeln!(stdout, "\x1b[H\x1b[2J{text}");
+            let _ = writeln!(stdout, "\x1b[H\x1b[2J{}", render(doc, self.zone));
         } else {
-            let _ = writeln!(stdout, "{text}\n");
+            let _ = writeln!(stdout, "{}\n", render(doc, self.zone));
         }
         let _ = stdout.flush();
     }
@@ -708,7 +745,7 @@ impl Printer {
         if self.json {
             let _ = writeln!(stdout, "{}", json!({ "notLive": line }));
         } else if self.tty {
-            // Top line, cleared, then back: the last doc stays on screen under the banner.
+            // The top line, cleared, then back: the last doc stays on screen under the banner.
             let _ = write!(stdout, "\x1b7\x1b[H\x1b[2K{line}\x1b8");
         } else {
             let _ = writeln!(stdout, "{line}\n");
@@ -717,21 +754,40 @@ impl Printer {
     }
 }
 
-async fn record_seen(client: &mut McpClient, scope: &Value, doc: &Value) {
-    if let Some(seq) = doc.get("seq").filter(|s| s.is_number()) {
-        // An agent key is told {recorded:false}; nothing to say about it either way.
-        let _ = call(
-            client,
-            "status_seen",
-            json!({ "scope": scope, "seq": seq }),
-            Duration::from_secs(10),
-        )
-        .await;
-    }
+fn decode<A: serde::de::DeserializeOwned>(tool: &str, body: Value) -> Result<A, u8> {
+    serde_json::from_value(body).map_err(|error| {
+        eprintln!(
+            "fleetd status: {tool} answered in a shape this fleetd does not know ({error}); update fleetd"
+        );
+        1
+    })
 }
 
-/// `fleetd status …`: exit 0, 2 on bad arguments, 3 when the hub refused the key or the call, 4 when it cannot be
-/// reached.
+/// One status_get; `Err` keeps transport failures apart so `--watch` can reconnect.
+async fn get(client: &mut McpClient, scope: &Value) -> Result<Result<StatusDoc, u8>, CallError> {
+    let body = call(
+        client,
+        "status_get",
+        json!({ "scope": scope }),
+        Duration::from_secs(30),
+    )
+    .await?;
+    Ok(decode("status_get", body))
+}
+
+async fn record_seen(client: &mut McpClient, scope: &Value, doc: &StatusDoc) {
+    // An agent key is told {recorded:false}; nothing to say about it either way.
+    let _ = call(
+        client,
+        "status_seen",
+        json!({ "scope": scope, "seq": doc.seq }),
+        Duration::from_secs(10),
+    )
+    .await;
+}
+
+/// `fleetd status …`: exit 0, 1 when the hub answered in a shape this build does not know, 2 on bad arguments, 3
+/// when the hub refused the key or the call, 4 when it cannot be reached.
 pub async fn status_command(argv: &[String]) -> u8 {
     let args = match parse_status_args(argv) {
         Ok(args) => args,
@@ -758,76 +814,59 @@ pub async fn status_command(argv: &[String]) -> u8 {
     let printer = Printer {
         json: args.json,
         tty: args.watch && !args.json && std::io::stdout().is_terminal(),
-        label: if args.target.is_empty() {
-            "fleet".into()
-        } else {
-            args.target.clone()
-        },
         zone: crate::hub::attention::hub_zone(),
     };
-    let get = json!({ "scope": scope });
-    let mut doc = match call(
-        &mut client,
-        "status_get",
-        get.clone(),
-        Duration::from_secs(30),
-    )
-    .await
-    {
-        Ok(doc) => doc,
+    let mut doc = match get(&mut client, &scope).await {
+        Ok(Ok(doc)) => doc,
+        Ok(Err(code)) => return code,
         Err(error) => return fail("status", error),
     };
-    printer.show(&doc, None);
+    printer.show(&doc);
     if args.watch {
         let mut stop = super::Stop::on_signals();
         loop {
-            let after = doc.get("version").cloned().unwrap_or(json!(0));
-            let wait = json!({ "scope": scope, "after": after, "timeoutSec": WAIT_SEC });
+            let wait = json!({ "scope": scope, "after": doc.version, "timeoutSec": WAIT_SEC });
             let answer = tokio::select! {
                 _ = stop.wait() => break,
                 answer = call(&mut client, "status_wait", wait, Duration::from_secs(WAIT_SEC + 15)) => answer,
             };
-            match answer {
-                Ok(body) if body.get("unchanged") == Some(&Value::Bool(true)) => {}
-                Ok(body) => {
-                    doc = body;
-                    printer.show(&doc, None);
-                }
-                Err(CallError::Refused(message)) => {
-                    eprintln!("fleetd status: {message}");
-                    return 3;
-                }
-                Err(CallError::Transport(McpError::Unauthorized)) => {
-                    eprintln!("fleetd status: the hub refused the key (401)");
-                    return 3;
-                }
-                Err(CallError::Transport(McpError::Other(reason))) => {
-                    printer.banner(&not_live_banner(st(&doc, "now"), printer.zone, &reason));
-                    let mut attempt = 0;
-                    loop {
-                        let delay = BACKOFF[attempt.min(BACKOFF.len() - 1)];
-                        attempt += 1;
-                        if stop.sleep(Duration::from_secs(delay)).await {
-                            // Interrupted while away: nothing more was seen than what is on screen.
-                            return 0;
-                        }
-                        let Ok(mut fresh) = target.connect("fleetd-status").await else {
-                            continue;
-                        };
-                        if let Ok(body) = call(
-                            &mut fresh,
-                            "status_get",
-                            get.clone(),
-                            Duration::from_secs(30),
-                        )
-                        .await
-                        {
-                            client = fresh;
-                            doc = body;
-                            printer.show(&doc, None);
-                            break;
-                        }
+            let reason = match answer {
+                Ok(body) => match decode::<StatusWaitOutput>("status_wait", body) {
+                    Ok(StatusWaitOutput {
+                        doc: Some(next), ..
+                    }) => {
+                        doc = next;
+                        printer.show(&doc);
+                        continue;
                     }
+                    // Unchanged within the hub's wait: wait again.
+                    Ok(_) => continue,
+                    Err(code) => return code,
+                },
+                Err(CallError::Transport(McpError::Other(reason))) => reason,
+                Err(error) => return fail("status", error),
+            };
+            printer.banner(&not_live_banner(&doc, printer.zone, &reason));
+            let mut attempt = 0;
+            loop {
+                let delay = BACKOFF[attempt.min(BACKOFF.len() - 1)];
+                attempt += 1;
+                if stop.sleep(Duration::from_secs(delay)).await {
+                    // Stopped while away: nothing was seen past what is on screen, so no mark is recorded.
+                    return 0;
+                }
+                let Ok(mut fresh) = target.connect("fleetd-status").await else {
+                    continue;
+                };
+                match get(&mut fresh, &scope).await {
+                    Ok(Ok(next)) => {
+                        client = fresh;
+                        doc = next;
+                        printer.show(&doc);
+                        break;
+                    }
+                    Ok(Err(code)) => return code,
+                    Err(_) => {}
                 }
             }
         }
@@ -920,10 +959,6 @@ pub async fn github_webhook_command(argv: &[String]) -> u8 {
 mod tests {
     use super::*;
 
-    fn utc() -> Tz {
-        chrono_tz::UTC
-    }
-
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| s.to_string()).collect()
     }
@@ -943,88 +978,85 @@ mod tests {
         );
     }
 
-    fn doc() -> Value {
-        json!({
-            "scope": { "kind": "project" }, "version": 7, "seq": 120, "now": "2026-10-18T14:02:07Z",
-            "progress": { "pct": 61, "polishPct": 40, "done": 11, "total": 18, "asOf": "2026-10-18T14:02:07Z" },
-            "markers": ["↓ from 69% · +3 items: time inspector added (14:00)"],
-            "eta": { "current": "2026-10-22T14:00:00Z", "original": "2026-10-21T18:00:00Z", "samples": 18, "basis": "measured" },
-            "gates": [{ "label": "P12 full lab run", "serial": true }, { "label": "CI on #212" }],
-            "headline": { "text": "Not live: lab-b silent. Switching to the new runner.", "source": "generated", "at": "2026-10-18T14:02:00Z" },
+    fn doc(stale: Value) -> StatusDoc {
+        serde_json::from_value(json!({
+            "scope": { "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "p1" } },
+            "title": "storefront", "version": 7, "seq": 120, "now": "2026-10-18T14:02:07Z",
+            "progress": { "pct": 61, "done": 11, "total": 18, "polishDone": 2, "polishTotal": 5, "asOf": "2026-10-18T14:02:07Z" },
+            "markers": [{ "at": "2026-10-18T14:00:00Z", "text": "+3 items: time inspector added", "pctBefore": 69, "pctAfter": 61, "deltaItems": 3 }],
+            "eta": { "current": "2026-10-22T14:00:00Z", "original": "2026-10-21T18:00:00Z", "slip": { "scopeMinutes": 360, "speedMinutes": 840 },
+                     "rate": 4.1, "samples": 18, "basis": "order" },
+            "gates": [{ "kind": "plan", "label": "P12 full lab run", "serial": true }, { "kind": "live", "label": "CI on #212", "serial": false }],
+            "headline": { "text": "Not live: lab-b silent 4m. Switching to the new runner.", "source": "generated", "at": "2026-10-18T14:02:00Z" },
             "since": { "seenAt": "2026-10-18T09:12:00Z", "merged": 7, "verified": 3, "started": 0, "failed": 1, "asked": 0, "scopeItems": 3 },
-            "inProgress": [{ "item": { "itemId": "P12", "title": "full lab run" }, "taskIds": ["T88"], "eta": "2026-10-18T14:40:00Z" }],
-            "next": [{ "itemId": "P14", "title": "switch default runner" }],
-            "done": [{ "item": { "itemId": "P9", "title": "node outbox" }, "evidence": "#208 merged by the train 13:12" }],
+            "parts": [],
+            "done": [{ "itemId": "P9", "title": "node outbox", "doneAt": "2026-10-18T13:12:00Z", "evidence": "#208 merged by the train 13:12" }],
+            "inProgress": [{ "itemId": "P12", "workstreamId": "W41", "title": "full lab run", "taskIds": ["T88"], "changeIds": [], "eta": "2026-10-18T14:40:00Z" }],
+            "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
             "needsYou": { "count": 0, "askIds": [] },
-            "risks": [{ "rule": "machine_offline", "message": "lab-b offline (2 tasks waiting)" }],
+            "risks": [{ "rule": "machine_offline", "level": "warning", "message": "lab-b offline (2 tasks waiting)" }],
             "health": {
                 "ci": [{ "repo": "acme/storefront", "state": "red", "failing": ["rust (macos)"], "asOf": "2026-10-18T14:01:50Z" }],
                 "machines": [
-                    { "machineId": "devbox", "status": "online", "lastSeenAt": "2026-10-18T14:02:00Z" },
-                    { "machineId": "lab-b", "status": "offline", "lastSeenAt": "2026-10-18T13:58:07Z" }
+                    { "machineId": "devbox", "status": "online", "lastSeenAt": "2026-10-18T14:02:00Z", "dropsToday": 0 },
+                    { "machineId": "lab-b", "status": "offline", "lastSeenAt": "2026-10-18T13:58:07Z", "dropsToday": 1,
+                      "stale": { "since": "2026-10-18T13:58:52Z", "reason": "no heartbeat from lab-b for 4m" } }
                 ],
-                "usage": [{ "limitType": "five_hour", "utilization": 0.58 }],
-                "slots": { "cap": 40, "used": 8, "queued": 1 }
+                "usage": [{ "limitType": "five_hour", "machineId": "devbox", "utilization": 0.58, "status": "allowed" }],
+                "slots": { "running": 8, "used": 8, "cap": 40, "queued": 1 }
             },
-            "stale": [{ "source": "machine:lab-b", "since": "2026-10-18T13:58:52Z", "reason": "no heartbeat from lab-b for 4m" }]
-        })
+            "stale": stale,
+            "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 }
+        }))
+        .unwrap()
     }
 
     #[test]
     fn a_stale_machine_reads_not_live_and_offline_with_absolute_times() {
-        let text = render(&doc(), "storefront", utc());
+        let stale = json!([{ "source": "machine:lab-b", "since": "2026-10-18T13:58:52Z", "reason": "no heartbeat from lab-b for 4m" }]);
+        let text = render(&doc(stale), chrono_tz::UTC);
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(
             lines[0],
-            "storefront  61%  polish 40%    as of 14:02:07 (NOT LIVE: 1 stale source)"
+            "storefront  61%  polish 2/5    as of 14:02:07 (NOT LIVE: 1 stale source)"
         );
-        assert!(
-            text.contains("  eta Thu 14:00   planned Wed 18:00   18 samples, measured"),
-            "{text}"
+        assert_eq!(
+            lines[2],
+            "  ↓ from 69% · +3 items: time inspector added (14:00)"
         );
-        assert!(text.contains("  waiting on  P12 full lab run (serial); CI on #212"));
-        assert!(text.contains("  since 09:12  7 merged, 3 verified, 1 failed, +3 items"));
-        assert!(text.contains(
-            "health  main CI acme/storefront red (rust (macos)) as of 14:01:50 · 1 of 2 machines online · lab-b OFFLINE last seen 13:58:07 (stale) · claude 58% 5h · slots 8/40, 1 queued"
-        ), "{text}");
-        assert!(
-            text.contains("stale   machine:lab-b since 13:58:52: no heartbeat from lab-b for 4m")
-        );
-        assert!(text.contains("doing   P12 full lab run   T88   eta 14:40"));
-        assert!(text.contains("done    P9 node outbox   #208 merged by the train 13:12"));
+        for want in [
+            "  eta Thu 14:00   planned Wed 18:00 (+6h scope, +14h slower)   4.1 pts/busy h, 18 samples",
+            "  waiting on  P12 full lab run (serial); CI on #212",
+            "  since 09:12  7 merged, 3 verified, 1 failed, +3 items",
+            "health  main CI acme/storefront RED (rust (macos)) as of 14:01:50 · 1 of 2 machines online · lab-b OFFLINE last seen 13:58:07 (stale) · claude 58% 5h · 8 running, slots 8/40, 1 queued",
+            "stale   machine:lab-b since 13:58:52: no heartbeat from lab-b for 4m",
+            "doing   P12 full lab run   T88   eta 14:40",
+            "next    P14 switch default runner (after P12)",
+            "done    P9 node outbox   #208 merged by the train 13:12",
+        ] {
+            assert!(text.contains(want), "missing {want:?} in\n{text}");
+        }
         assert!(!text.contains("needs"), "zero asks print nothing");
     }
 
     #[test]
-    fn a_clean_doc_is_live_and_a_stale_ci_source_is_marked() {
-        let mut d = doc();
-        d["stale"] = json!([]);
+    fn a_clean_doc_is_live_and_no_samples_means_no_eta() {
+        let mut d = doc(json!([]));
         assert!(
-            render(&d, "fleet", utc())
+            render(&d, chrono_tz::UTC)
                 .lines()
                 .next()
                 .unwrap()
                 .ends_with("(live)")
         );
-        d["stale"] = json!([{ "source": "github:acme/storefront", "since": "2026-10-18T14:00:00Z", "reason": "gh: connect: network is unreachable" }]);
-        let text = render(&d, "fleet", utc());
-        assert!(
-            text.contains("as of 14:01:50 (stale since 14:00:00)"),
-            "{text}"
-        );
-    }
-
-    #[test]
-    fn eta_without_samples_says_so() {
-        let mut d = doc();
-        d["eta"] = json!({ "samples": 2, "basis": "fleet" });
-        assert!(render(&d, "W41", utc()).contains("  eta measuring: 2 of 5 verified"));
+        d.eta = serde_json::from_value(json!({ "samples": 2, "basis": "none" })).unwrap();
+        assert!(render(&d, chrono_tz::UTC).contains("  eta measuring: 2 of 5 verified"));
     }
 
     #[test]
     fn the_not_live_banner_names_when_the_data_is_from() {
         assert_eq!(
-            not_live_banner("2026-10-18T14:02:07Z", utc(), "connection refused"),
+            not_live_banner(&doc(json!([])), chrono_tz::UTC, "connection refused"),
             "NOT LIVE: reconnecting to the hub (connection refused) · data from 14:02:07"
         );
     }
