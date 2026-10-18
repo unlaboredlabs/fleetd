@@ -148,7 +148,7 @@ impl ThreadWriter for FakeWriter {
                 machine_id: target.machine_id.clone(),
                 operation: "send",
                 message: "claude is not logged in for fleetd on this machine".into(),
-                fix: Some("On lab-a: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login".into()),
+                fix: Some("On lab-a: claude auth login".into()),
             })
         } else {
             let mut sends = self.sends.lock().unwrap();
@@ -166,9 +166,7 @@ impl ThreadWriter for FakeWriter {
             machine_id: machine_id.clone(),
             operation: "send",
             message: why,
-            fix: Some(format!(
-                "On {machine_id}: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login"
-            )),
+            fix: Some(format!("On {machine_id}: claude auth login")),
         })
     }
 }

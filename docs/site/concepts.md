@@ -15,8 +15,9 @@ desktop app and one MCP endpoint, `<hub url>/mcp`, over all your machines. Its d
 ## Nodes
 
 One `fleetd node` per machine that runs agents (a worker). The node dials out to the hub, so no worker opens a port.
-It runs one `claude` process per live session, each writer in its own git worktree and branch. It uses a Claude
-login of its own in `~/.fleetd/claude`, separate from yours in `~/.claude`. The hub machine is usually a worker too.
+It runs one `claude` process per live session, each writer in its own git worktree and branch. Sessions use your own
+claude setup in `~/.claude`: the same login, proxy settings and MCP servers as the `claude` in your shell. The hub
+machine is usually a worker too.
 
 ## Leads
 

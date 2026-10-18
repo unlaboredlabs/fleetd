@@ -220,6 +220,13 @@ impl Session {
                 );
                 self.stream = Some(tokio::spawn(task));
             }
+            AppClientMessage::Live { .. } => {
+                let todo = ToolError::new(
+                    ErrorCode::Invalid,
+                    "This hub does not stream live frames yet.",
+                );
+                self.send(error_frame(&todo, None));
+            }
         }
         After::Continue
     }

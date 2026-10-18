@@ -57,8 +57,9 @@ desktop app and one MCP endpoint, <code>&lt;hub url&gt;/mcp</code>, over all you
 <code>~/.fleetd/hub</code>.</p>
 <h2 id="nodes">Nodes<a class="anchor" href="#nodes" aria-label="Link to this section">#</a></h2>
 <p>One <code>fleetd node</code> per machine that runs agents (a worker). The node dials out to the hub, so no worker opens a port.
-It runs one <code>claude</code> process per live session, each writer in its own git worktree and branch. It uses a Claude
-login of its own in <code>~/.fleetd/claude</code>, separate from yours in <code>~/.claude</code>. The hub machine is usually a worker too.</p>
+It runs one <code>claude</code> process per live session, each writer in its own git worktree and branch. Sessions use your own
+claude setup in <code>~/.claude</code>: the same login, proxy settings and MCP servers as the <code>claude</code> in your shell. The hub
+machine is usually a worker too.</p>
 <h2 id="leads">Leads<a class="anchor" href="#leads" aria-label="Link to this section">#</a></h2>
 <p>Each project has one lead: a long-running <code>claude</code> session that turns orders into briefs, splits them into tasks
 for writer and reviewer sessions, and never writes code itself. Leads run on <code>claude-opus-5-5</code> by default. A

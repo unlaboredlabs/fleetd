@@ -266,6 +266,11 @@
           "const": "key.paired",
           "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
           "type": "string"
+        },
+        {
+          "const": "workstream.note",
+          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
+          "type": "string"
         }
       ]
     },

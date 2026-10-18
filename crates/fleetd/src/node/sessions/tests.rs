@@ -32,7 +32,7 @@ struct Hub {
 fn config(dir: &Path) -> SessionConfig {
     SessionConfig {
         home: dir.join("node"),
-        config_dir: dir.join("claude"),
+        config_dir: None,
         claude_env: dir.join("claude.env"),
         base_env: vec![("HOME".into(), dir.to_string_lossy().into_owned())],
         idle_reap: Duration::from_secs(600),
@@ -163,7 +163,7 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     std::fs::write(root.join("policy.yaml"), "tools: {}\n").unwrap();
     std::fs::write(
         dir.path().join("claude.env"),
-        "ANTHROPIC_AUTH_TOKEN=tok\nCLAUDE_CONFIG_DIR=/somewhere/else\n",
+        "ANTHROPIC_AUTH_TOKEN=tok\nDISABLE_AUTOUPDATER=0\n",
     )
     .unwrap();
     let mut hub = hub(
@@ -218,10 +218,18 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
             .map(|(_, v)| v.as_str())
     };
     assert_eq!(last("ANTHROPIC_AUTH_TOKEN"), Some("tok"));
+    // The user's own claude setup: no config dir of fleetd's, so claude reads $HOME/.claude.
+    assert_eq!(last("CLAUDE_CONFIG_DIR"), None);
     assert_eq!(
-        last("CLAUDE_CONFIG_DIR"),
-        Some(dir.path().join("claude").to_str().unwrap())
+        hub.service.session("s1").unwrap().local.config_dir,
+        dir.path().join(".claude")
     );
+    // fleetd's overlay rides on top of the user's settings, and its tools stay denied whatever they allow.
+    let overlay: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
+            .unwrap();
+    assert_eq!(overlay["env"]["DISABLE_AUTOUPDATER"], "1");
+    assert_eq!(overlay["permissions"]["deny"][0], "Task");
     assert_eq!(last("FLEETD_THREAD_ID"), Some("s1"));
     assert_eq!(last("FLEETD_PROJECT_ID"), Some("p1"));
     assert_eq!(last("DISABLE_AUTOUPDATER"), Some("1"));
@@ -735,4 +743,43 @@ async fn a_project_with_a_live_process_is_not_removed_even_when_idle() {
     })
     .await;
     assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
+}
+
+#[test]
+fn sessions_get_a_config_dir_only_when_the_machine_has_a_dedicated_one() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("claude.env"),
+        "ANTHROPIC_BASE_URL=http://127.0.0.1:9\n",
+    )
+    .unwrap();
+    let own = config(dir.path());
+    let env = own.runner_env();
+    assert!(!env.iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"));
+    let setup = crate::node::runner::claude_setup::proxy_of(&env).unwrap();
+    assert_eq!(setup.0, "http://127.0.0.1:9");
+    assert!(setup.1.ends_with("claude.env"), "{}", setup.1);
+
+    let dedicated = SessionConfig {
+        config_dir: Some(dir.path().join("profile")),
+        ..own
+    };
+    assert_eq!(
+        crate::node::runner::claude_setup::config_dir(&dedicated.runner_env()),
+        dir.path().join("profile")
+    );
+}
+
+#[test]
+fn a_machine_given_a_config_dir_keeps_it_in_its_node_config() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("node.json"),
+        r#"{"hub":"h","machineId":"m","name":"m","tags":[],"enrolled":true,"claudeConfigDir":"/srv/claude-profile"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        SessionConfig::for_node(dir.path()).config_dir,
+        Some(PathBuf::from("/srv/claude-profile"))
+    );
 }

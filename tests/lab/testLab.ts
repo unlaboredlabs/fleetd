@@ -26,6 +26,7 @@ import {
   MACHINES,
   nodeEnv,
   nodeHome,
+  type MachineHomeOptions,
   type NodeOptions,
   ok,
   pidOf,
@@ -175,7 +176,7 @@ async function main() {
       startNode: (machineId: string, opts: NodeOptions = {}) =>
         void startCli(`node-${machineId}`, ["node", "run", "--home", nodeHome(machineId)], {}, nodeEnv(machineId, opts)),
       nodePid: (machineId: string) => pidOf(`node-${machineId}`),
-      joinNode: (machineId: string, opts: NodeOptions & { readonly login?: boolean } = {}) => void joinNode(HUB_URL, hubHome, machineId, opts),
+      joinNode: (machineId: string, opts: NodeOptions & MachineHomeOptions = {}) => void joinNode(HUB_URL, hubHome, machineId, opts),
       machines: MACHINES,
       stopHub: async () => {
         await client?.close().catch(() => undefined);

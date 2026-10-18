@@ -13,8 +13,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use super::claude::protocol::Line;
-use super::failure::LOGIN_FIX;
 use super::version::{self, SUPPORTED, TESTED};
+use super::{claude_setup, failure};
 
 /// `system/init.capabilities` the runner relies on (interrupt receipts, cancelling queued sends, run lifecycle).
 /// They arrive only with a turn, so the runner checks them on its first `Init` rather than here.
@@ -25,8 +25,9 @@ pub const REQUIRED_INIT_CAPABILITIES: &[&str] = &[
 ];
 
 const REQUEST_ID: &str = "fleetd-probe-1";
-/// The probe's argv: no model, no MCP servers, and only the user settings of fleetd's own config dir (they may
-/// carry the gateway variables, which decide the login).
+/// The probe's argv: no model, no MCP servers (starting them would cost time, not decide anything), and only the
+/// user settings of the config dir sessions use (they may carry the proxy or gateway variables, which decide the
+/// login).
 const PROBE_ARGS: &[&str] = &[
     "-p",
     "--verbose",
@@ -55,7 +56,8 @@ pub struct Account {
     pub email: Option<String>,
 }
 
-/// Probes `binary` with exactly `env` (the session environment: `CLAUDE_CONFIG_DIR`, `claude.env`, …).
+/// Probes `binary` with exactly `env`: the environment a session would get (the user's own claude setup, plus the
+/// optional `~/.fleetd/claude.env`).
 pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
     let mut info = RunnerInfo {
         runner: RunnerKind::Claude,
@@ -66,7 +68,15 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
         login_kind: None,
         conformance_ok: None,
         problem: None,
+        login_label: None,
+        proxy: None,
+        proxy_source: None,
+        config_dir: Some(claude_setup::config_dir(env).to_string_lossy().into_owned()),
     };
+    if let Some((url, source)) = claude_setup::proxy_of(env) {
+        info.proxy = Some(url);
+        info.proxy_source = Some(source);
+    }
     let printed = match claude_version(binary, env).await {
         Ok(printed) => printed,
         Err(problem) => {
@@ -106,9 +116,11 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
             let (login, kind) = login_of(&answer.account);
             info.login = login;
             info.login_kind = Some(kind.to_owned());
+            info.login_label = claude_setup::login_label(&answer.account);
             if login == LoginStatus::LoggedOut {
                 problems.push(format!(
-                    "claude is not logged in for fleetd. Fix: {LOGIN_FIX}"
+                    "claude is not logged in. Fix: {}",
+                    failure::login_fix(info.proxy.is_some())
                 ));
             }
         }
@@ -127,7 +139,11 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
 fn command(binary: &Path, env: &[(String, String)]) -> Command {
     let mut cmd = Command::new(binary);
     cmd.env_clear()
-        .envs(env.iter().map(|(k, v)| (k, v)))
+        .envs(
+            env.iter()
+                .filter(|(k, _)| k != claude_setup::FLEETD_ENV_SOURCE)
+                .map(|(k, v)| (k, v)),
+        )
         .current_dir(std::env::temp_dir())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -524,8 +540,12 @@ mod tests {
         panic!("stand-in claude stayed busy (ETXTBSY)");
     }
 
+    /// A HOME with no claude settings, so the user's own proxy can't change what these tests see.
     fn env() -> Vec<(String, String)> {
-        vec![("PATH".into(), "/usr/bin:/bin".into())]
+        vec![
+            ("PATH".into(), "/usr/bin:/bin".into()),
+            ("HOME".into(), "/nonexistent/fleetd-test-home".into()),
+        ]
     }
 
     #[tokio::test]
@@ -546,7 +566,7 @@ mod tests {
         );
         assert_eq!(
             info.problem.unwrap(),
-            format!("claude is not logged in for fleetd. Fix: {LOGIN_FIX}")
+            "claude is not logged in. Fix: claude auth login"
         );
     }
 

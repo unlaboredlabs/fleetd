@@ -13,6 +13,7 @@ pub mod hello;
 pub mod ids;
 pub mod lead_calls;
 pub mod ledger;
+pub mod live;
 pub mod mcp;
 pub mod model;
 pub mod node_link;

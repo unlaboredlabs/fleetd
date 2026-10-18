@@ -14,7 +14,7 @@ use crate::hello::ProtocolVersion;
 use crate::ids::{MachineId, Timestamp};
 use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
 use crate::ledger::{AskId, DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
-use crate::prim::{AnyInt, Finite, Int, List, NonEmpty, Text};
+use crate::prim::{AnyInt, Finite, Int, List, NonEmpty, NonNegative, Text};
 use crate::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink};
 use crate::sessions::{MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame};
 use crate::tasks::AbsolutePath;
@@ -72,9 +72,43 @@ pub struct HubWelcome {
 }
 
 /// Both directions every 15 s; a link silent for 45 s is offline.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Heartbeat {
     pub at: Timestamp,
+    /// Node -> hub only; absent from older nodes and when the machine's figures can't be read.
+    pub load: Option<NodeLoad>,
+}
+
+/// What a machine reports about itself with each heartbeat.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeLoad {
+    /// Logical CPUs.
+    pub cpus: Int<1, 4096>,
+    /// The 1-minute load average.
+    pub load1: NonNegative,
+    /// Memory in use (total minus available), percent.
+    pub mem_used_pct: Option<Int<0, 100>>,
+    /// The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,
+    /// which send none.
+    #[serde(default)]
+    pub limits: List<LoginLimit, 0, 4>,
+}
+
+/// One claude.ai usage window, as claude's `rate_limit_event` last reported it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginLimit {
+    /// claude's own name for the window, e.g. "five_hour", "seven_day".
+    pub limit_type: Text<1, 40>,
+    /// 0 to 1 as claude sends it; absent when it sent none.
+    pub utilization: Option<NonNegative>,
+    pub resets_at: Option<Timestamp>,
+    /// allowed, allowed_warning or rejected.
+    pub status: Text<1, 40>,
 }
 
 /// Hub -> node: run a `cmd` check. argv only, never through a shell.

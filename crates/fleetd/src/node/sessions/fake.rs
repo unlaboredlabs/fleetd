@@ -109,6 +109,10 @@ impl Runner for FakeRunner {
                 login_kind: Some("token".into()),
                 conformance_ok: Some(true),
                 problem: None,
+                login_label: None,
+                proxy: None,
+                proxy_source: None,
+                config_dir: None,
             }
         })
     }

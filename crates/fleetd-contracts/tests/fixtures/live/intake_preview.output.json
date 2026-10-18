@@ -1,0 +1,10 @@
+{
+  "echo": {
+    "projectRef": {
+      "machineId": "forge",
+      "projectId": "fleetd"
+    },
+    "template": "feature",
+    "reason": "The digest lives in fleetd's hub/leads."
+  }
+}

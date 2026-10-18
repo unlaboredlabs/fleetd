@@ -33,6 +33,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
 use super::runner::claude::ALWAYS_DISALLOWED;
+use super::runner::claude_setup;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
 };
@@ -45,7 +46,7 @@ use state::EndCause;
 
 /// What the node sends after a retryable failure (Overloaded, Network) to continue the same run.
 pub const CONTINUE_PROMPT: &str = "Continue where you left off.";
-/// Only servers fleetd lists load (`--strict-mcp-config`); user and repo `.mcp.json` servers never leak in.
+/// fleetd's own MCP servers (none yet: leads and agents call the `fleetd` CLI). The user's own servers load too.
 const MCP_CONFIG: &str = "{\"mcpServers\":{}}\n";
 const SNAPSHOT_WINDOW: usize = 200;
 const TRANSCRIPT_CAP: u64 = 20 * 1024 * 1024;
@@ -65,9 +66,11 @@ const SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
 pub struct SessionConfig {
     /// The node home: `worktrees/`, `sessions/<id>/` (the MCP config) and `transcripts/` live here.
     pub home: PathBuf,
-    /// `CLAUDE_CONFIG_DIR` for every session: the machine's fleetd login.
-    pub config_dir: PathBuf,
-    /// `KEY=VALUE` lines (the login or gateway variables) added to every session's environment, re-read per spawn.
+    /// A dedicated `CLAUDE_CONFIG_DIR` for every session (`node join --claude-config-dir`). None: the user's own
+    /// claude setup (`~/.claude`), so their login, proxy settings and MCP servers work as in their own shell.
+    pub config_dir: Option<PathBuf>,
+    /// Optional `KEY=VALUE` lines added to every session's environment, re-read per spawn: for a login or gateway
+    /// variable the node's service doesn't otherwise see (e.g. one exported only in an interactive shell).
     pub claude_env: PathBuf,
     /// HOME, PATH, USER, LANG and the git identity; nothing else of the node's environment reaches claude.
     pub base_env: Vec<(String, String)>,
@@ -77,7 +80,9 @@ pub struct SessionConfig {
 }
 
 impl SessionConfig {
-    /// `~/.fleetd/{claude,claude.env}` from `$HOME`, so a lab node with its own HOME needs no flag.
+    /// The user's own claude setup and the optional `~/.fleetd/claude.env`, from `$HOME`, so a lab node with its own
+    /// HOME needs no flag. A dedicated config dir comes from the node config (`claudeConfigDir`), else from a
+    /// `CLAUDE_CONFIG_DIR` the node itself was started with.
     /// `FLEETD_NODE_IDLE_REAP_SEC` and `FLEETD_NODE_RETRY_SCHEDULE_MS` (e.g. `500,1000,2000`) exist for tests and
     /// the lab only.
     pub fn for_node(home: &Path) -> Self {
@@ -105,9 +110,21 @@ impl SessionConfig {
                     .collect::<Option<Vec<u64>>>()
             })
             .unwrap_or_else(|| vec![60_000, 240_000, 900_000]);
+        // fleetd's old default, which a node unit written by an older `machine add` still sets in the environment:
+        // sessions are back on the user's own setup.
+        let from_env = std::env::var("CLAUDE_CONFIG_DIR")
+            .ok()
+            .filter(|d| expand_home(d) != fleetd.join("claude"));
+        let config_dir = super::config::read_config(home)
+            .ok()
+            .flatten()
+            .and_then(|c| c.claude_config_dir)
+            .or(from_env)
+            .filter(|d| !d.trim().is_empty())
+            .map(|d| expand_home(&d));
         Self {
             home: home.to_path_buf(),
-            config_dir: fleetd.join("claude"),
+            config_dir,
             claude_env: fleetd.join("claude.env"),
             base_env,
             idle_reap,
@@ -118,17 +135,27 @@ impl SessionConfig {
 
 impl SessionConfig {
     /// What every claude the node starts gets, sessions and probes alike: the base environment, then `claude.env`
-    /// (re-read on each call), then fleetd's own values, which win.
+    /// (re-read on each call), then fleetd's own values, which win. No `CLAUDE_CONFIG_DIR` unless the machine has a
+    /// dedicated one: claude then reads the user's own `~/.claude` and `~/.claude.json`.
     pub fn runner_env(&self) -> Vec<(String, String)> {
         let mut env = self.base_env.clone();
         if let Ok(text) = std::fs::read_to_string(&self.claude_env) {
-            env.extend(parse_env_file(&text));
+            let extra = parse_env_file(&text);
+            if extra.iter().any(|(k, _)| k == "ANTHROPIC_BASE_URL") {
+                env.push((
+                    claude_setup::FLEETD_ENV_SOURCE.to_owned(),
+                    claude_setup::tilde(&self.claude_env),
+                ));
+            }
+            env.extend(extra);
+        }
+        if let Some(dir) = &self.config_dir {
+            env.push((
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                dir.to_string_lossy().into_owned(),
+            ));
         }
         env.extend([
-            (
-                "CLAUDE_CONFIG_DIR".to_owned(),
-                self.config_dir.to_string_lossy().into_owned(),
-            ),
             // claude never updates itself out of the pinned, tested range.
             ("DISABLE_AUTOUPDATER".to_owned(), "1".to_owned()),
             // Startup failures come back as result messages the failure classifier reads.
@@ -138,6 +165,15 @@ impl SessionConfig {
             ),
         ]);
         env
+    }
+}
+
+/// `~/x` as `$HOME/x`; other paths as given.
+fn expand_home(dir: &str) -> PathBuf {
+    match dir.strip_prefix("~/") {
+        Some(rest) => super::util::home_dir().join(rest),
+        None if dir == "~" => super::util::home_dir(),
+        None => PathBuf::from(dir),
     }
 }
 
@@ -159,6 +195,20 @@ pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
         })
         .filter(|(k, _)| !k.is_empty())
         .collect()
+}
+
+/// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
+/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), the subagent cap, and the tools
+/// fleetd never gives an agent.
+fn settings_overlay() -> String {
+    let overlay = serde_json::json!({
+        "env": {
+            "DISABLE_AUTOUPDATER": "1",
+            "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "2",
+        },
+        "permissions": { "deny": ALWAYS_DISALLOWED },
+    });
+    format!("{overlay}\n")
 }
 
 type Reply = Result<SessionOutput, SessionError>;
@@ -607,6 +657,9 @@ impl SessionService {
                 }))
             }
             SessionCall::RunnerInfo => Ok(SessionOutput::RunnerInfo(self.runner_info().await)),
+            SessionCall::ListFiles { .. } | SessionCall::PutFile { .. } => Err(invalid(
+                "this node does not list or write project files yet",
+            )),
         }
     }
 
@@ -761,7 +814,7 @@ impl SessionService {
             local: SessionLocal {
                 cwd,
                 add_dirs,
-                config_dir: self.inner.config.config_dir.clone(),
+                config_dir: claude_setup::config_dir(&self.inner.config.runner_env()),
                 workspace_root: root,
                 base_ref,
                 branch,
@@ -890,8 +943,12 @@ impl SessionService {
         }
         let config = &self.inner.config;
         let mut row = self.session(id)?;
-        let resume = state::start_mode(&row.local, &config.config_dir, id)
-            .map_err(|m| error(SessionErrorCode::RunnerUnavailable, m))?;
+        let resume = state::start_mode(
+            &row.local,
+            &claude_setup::config_dir(&config.runner_env()),
+            id,
+        )
+        .map_err(|m| error(SessionErrorCode::RunnerUnavailable, m))?;
         // A worktree removed by `stop{removeWorktree}` comes back at the same path, so the session still resumes.
         let mut recreated = false;
         if let (Some(base_ref), Some(branch)) = (&row.local.base_ref, &row.local.branch)
@@ -965,7 +1022,8 @@ impl SessionService {
         Ok(handle.commands)
     }
 
-    /// The process spec, after writing the session's MCP config and keeping its transcript under its cap.
+    /// The process spec, after writing the session's MCP config and settings overlay and keeping its transcript (fleetd's
+    /// own copy; claude keeps its session in the config dir) under its cap.
     fn spec(&self, row: &SessionRow, resume: bool) -> std::io::Result<SessionSpec> {
         let config = &self.inner.config;
         let id = row.summary.session_id.as_str();
@@ -975,6 +1033,8 @@ impl SessionService {
         if !mcp.exists() {
             std::fs::write(&mcp, MCP_CONFIG)?;
         }
+        let settings = dir.join("settings.json");
+        std::fs::write(&settings, settings_overlay())?;
         let transcripts = config.home.join("transcripts");
         super::config::mkdir_private(&transcripts)?;
         let transcript = transcripts.join(format!("{id}.jsonl"));
@@ -1012,6 +1072,7 @@ impl SessionService {
                 .chain(row.local.disallowed_tools.iter().cloned())
                 .collect(),
             mcp_config: Some(mcp),
+            settings: Some(settings),
             env,
             transcript: Some(transcript),
         })
