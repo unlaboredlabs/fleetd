@@ -48,7 +48,7 @@ pub fn is_machine_id(id: &str) -> bool {
     fleetd_contracts::ids::MachineId::new(id).is_ok()
 }
 
-fn usage_text() -> String {
+pub fn usage_text() -> String {
     format!(
         "usage: fleetd <command>
 

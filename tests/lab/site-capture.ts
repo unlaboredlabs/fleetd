@@ -1,4 +1,5 @@
 // `FLEETD_LAB_SLOT=<n> node tests/lab/site-capture.ts`: re-shoots the fleetd.sh landing page from the real product.
+// `node tests/lab/site-capture.ts --docs` only recaptures the docs' ```console capture=NAME blocks (no lab, no claude).
 // A lab hub and node, a haiku lead that files three numbered asks, the desktop app under a private Xvfb answering
 // them, and the setup CLI in a throwaway HOME. Writes site/capture-*.png and rewrites the `<!-- capture:NAME -->`
 // blocks in site/home.html and the same blocks in site/fleetd.txt. Costs three tiny claude-haiku turns. Every process
@@ -41,7 +42,8 @@ import {
   writeFleetdWrapper,
 } from "./harness.ts";
 
-if (process.env.FLEETD_LAB_SLOT === undefined) throw new Error("set FLEETD_LAB_SLOT (1-9) to the lab slot this run may use");
+const DOCS_ONLY = process.argv.includes("--docs");
+if (process.env.FLEETD_LAB_SLOT === undefined && !DOCS_ONLY) throw new Error("set FLEETD_LAB_SLOT (1-9) to the lab slot this run may use");
 
 const SITE = path.join(REPO, "site");
 const RUN = path.join(LAB, "site-capture");
@@ -224,27 +226,102 @@ function xwdToPng(xwd: Buffer, width: number, height: number) {
 
 // ---- Setup transcripts and train lines ----
 
-/** `fleetd init` and `machine add --dry-run` in a throwaway HOME. --no-service: with a service, init drives the real
- * systemd user manager. */
-function setupTranscripts() {
+const INIT = 'fleetd init --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service';
+
+/** A throwaway HOME (user demo) with this fleetd on its PATH; `run` gives a command's output with that HOME as `~`. */
+function demoHome() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-site-"));
   cleanups.push(() => fs.rmSync(base, { recursive: true, force: true }));
   const home = path.join(base, "demo");
   fs.mkdirSync(path.join(home, ".local/bin"), { recursive: true });
   fs.copyFileSync(fleetdCommand([])[0], path.join(home, ".local/bin/fleetd"));
-  const run = (cmd: string) => {
+  return (cmd: string) => {
     const r = spawnSync("bash", ["-c", `cd ~ && ${cmd} 2>&1`], {
       env: { HOME: home, USER: "demo", LOGNAME: "demo", LANG: "C.UTF-8", PATH: `${home}/.local/bin:/usr/bin:/bin` },
       encoding: "utf8",
+      timeout: 60_000,
     });
-    check(r.status === 0, `${cmd}: exit ${r.status} ${r.stdout}`);
-    return { cmd, out: `${r.stdout.replace(/\n$/u, "")}\n[exit ${r.status}]`.replaceAll(home, "~") };
+    return { cmd, status: r.status ?? 1, out: r.stdout.replace(/\n$/u, "").replaceAll(home, "~") };
   };
-  const init = run('fleetd init --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service');
+}
+
+/** `fleetd init` and `machine add --dry-run` in a throwaway HOME. --no-service: with a service, init drives the real
+ * systemd user manager. */
+function setupTranscripts() {
+  const exec = demoHome();
+  const run = (cmd: string) => {
+    const r = exec(cmd);
+    check(r.status === 0, `${cmd}: exit ${r.status} ${r.out}`);
+    return { cmd, out: `${r.out}\n[exit ${r.status}]` };
+  };
+  const init = run(INIT);
   const add = run("fleetd machine add builder-1 --dry-run");
   // The page shows the plan, not the shell command indented under each step or the trailing notes.
   add.out = add.out.split("\n").filter((l) => !/^\s/u.test(l) && !l.startsWith("note:")).join("\n");
   return { init, add };
+}
+
+// ---- The docs' capture blocks (docs/site/*.md) ----
+
+const DOCS = path.join(REPO, "docs/site");
+const DOCS_BLOCK = /^```console capture=([a-z0-9-]+)\n([\s\S]*?)^```$/gmu;
+
+/** The `$ ` commands of a transcript, a trailing backslash continuing one onto the next line. */
+export function docsCommands(body: string) {
+  const commands: Array<string> = [];
+  let continued = false;
+  for (const line of body.split("\n")) {
+    if (continued) commands[commands.length - 1] += `\n${line}`;
+    else if (line.startsWith("$ ")) commands.push(line.slice(2));
+    else continue;
+    continued = line.endsWith("\\");
+  }
+  return commands;
+}
+
+/** Each block's `$ ` commands run in a fresh throwaway HOME where the standard `fleetd init` already ran (unless the
+ * block's first command is `fleetd init`), each followed by its output; `[exit N]` only when N isn't 0. Blocks named
+ * in `given` (output only the lab run has, like the digest) take that text instead; without it they're left alone. */
+export function docsBlocks(given: Record<string, string>) {
+  const blocks = new Map<string, { file: string; body: string }>();
+  for (const name of fs.readdirSync(DOCS).filter((n) => n.endsWith(".md")).sort()) {
+    const file = path.join(DOCS, name);
+    for (const [, block, body] of fs.readFileSync(file, "utf8").matchAll(DOCS_BLOCK)) {
+      check(!blocks.has(block!), `capture=${block} is used once across docs/site`);
+      if (block! in given) {
+        blocks.set(block!, { file, body: `${given[block!]}\n` });
+        continue;
+      }
+      const commands = docsCommands(body!);
+      if (commands.length === 0) {
+        log(`docs: capture=${block} in ${name} has no $ command and no lab output; left as is`);
+        continue;
+      }
+      const exec = demoHome();
+      if (!commands[0]!.startsWith("fleetd init")) check(exec(INIT).status === 0, `docs: ${INIT}`);
+      const out = commands.map((cmd) => {
+        const r = exec(cmd);
+        return `$ ${cmd}\n${r.out}${r.status === 0 ? "" : `\n[exit ${r.status}]`}`.replace(/\n$/u, "");
+      });
+      blocks.set(block!, { file, body: `${out.join("\n")}\n` });
+    }
+  }
+  return blocks;
+}
+
+/** Writes the blocks back into docs/site and regenerates site/docs. */
+function fillDocs(blocks: ReturnType<typeof docsBlocks>) {
+  for (const [name, { body }] of blocks) assertPublishable(`docs capture=${name}`, body);
+  const files = new Set([...blocks.values()].map((b) => b.file));
+  for (const file of files) {
+    const text = fs.readFileSync(file, "utf8").replace(DOCS_BLOCK, (all, name: string) => {
+      const b = blocks.get(name);
+      return b === undefined || b.file !== file ? all : `\`\`\`console capture=${name}\n${b.body}\`\`\``;
+    });
+    fs.writeFileSync(file, text);
+  }
+  execFileSync("cargo", ["run", "-q", "--locked", "-p", "docsgen"], { cwd: REPO, stdio: "inherit" });
+  log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s) under docs/site and regenerated site/docs`);
 }
 
 interface TrainLine {
@@ -539,11 +616,24 @@ async function main() {
   fs.writeFileSync(path.join(SITE, "fleetd.txt"), fillTwin(fs.readFileSync(path.join(SITE, "fleetd.txt"), "utf8"), txtBlocks));
   const stale = staleQuotes([...strings(tail), ...strings(answered), wake, digest, init.out, add.out].join("\n"));
   log(`wrote site/capture-inbox.png, site/capture-lead.png and the capture blocks in site/home.html and site/fleetd.txt`);
+  fillDocs(docsBlocks({ ...landingTranscripts({ init, add }), digest }));
   if (stale.length > 0) log(`check by hand: the page says these, this run's output doesn't:\n${stale.map((s) => `  - ${s}`).join("\n")}`);
   log("callouts are placed by hand: if the app's layout moved, re-aim --x/--y in home.html (see the comment above Fig. 1)");
 }
 
-if (import.meta.main) main()
+/** Docs blocks named `init` and `machine-add` show exactly the landing page's transcripts (the dry-run plan without
+ * the shell command under each step). */
+const landingTranscripts = ({ init, add }: ReturnType<typeof setupTranscripts>) => ({
+  init: `$ ${init.cmd}\n${init.out}`,
+  "machine-add": `$ ${add.cmd}\n${add.out}`,
+});
+
+async function docsOnly() {
+  check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
+  fillDocs(docsBlocks(landingTranscripts(setupTranscripts())));
+}
+
+if (import.meta.main) (DOCS_ONLY ? docsOnly() : main())
   .catch((error: unknown) => {
     log(`FAIL ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
     log(`logs: ${path.join(RUN, "logs")}`);

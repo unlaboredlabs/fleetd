@@ -35,6 +35,10 @@ jobs:
         # failure classifier and the conformance probe (against a stand-in replaying the recorded initialize
         # answer). Its own step so a claude protocol drift reads as such; re-record the fixtures when bumping TESTED.
         run: cargo test --locked -p fleetd --lib node::runner
+      - name: fleetd.sh/docs is up to date
+        # site/docs/ is committed (Vercel has no build step); this fails while it differs from docs/site/*.md and
+        # fleetd help. Fix: cargo run -q -p docsgen, then commit site/docs.
+        run: cargo run --locked -q -p docsgen -- --check
       # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
       - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
       - uses: actions/upload-artifact@v7
@@ -44,8 +48,9 @@ jobs:
           retention-days: 1
 
   site:
-    # fleetd.sh may only mention what fleetd has: no index.* in site/ (Vercel would serve it at / instead of the
-    # installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists.
+    # fleetd.sh may only mention what fleetd has: no index.* at the root of site/ (Vercel would serve it at / instead
+    # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
+    # landing page and in the docs' sources; and every link on the site resolves.
     needs: rust-crates
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 5
@@ -59,6 +64,20 @@ jobs:
           name: fleetd-help
           path: ${{ runner.temp }}
       - run: node .github/site-check.mjs "$RUNNER_TEMP/fleetd-help.txt"
+      - name: Internal links and anchors
+        run: node .github/docs-links.mjs
+
+  site-external-links:
+    # Every external link on fleetd.sh and its docs answers (10 s a try, two tries). Links into this repo on GitHub
+    # are checked against the checkout by the site job instead.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node .github/docs-links.mjs --external
 
   rust:
     strategy:
