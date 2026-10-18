@@ -1366,8 +1366,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 65);
-        assert_eq!(McpToolName::ALL.len(), 68);
+        assert_eq!(McpToolName::ALL.len(), 70);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
