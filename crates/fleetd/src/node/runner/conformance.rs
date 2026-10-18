@@ -389,6 +389,13 @@ mod tests {
         fixture_out("initialize-probe").remove(0)
     }
 
+    /// The recorded answer as another claude version would give it.
+    fn recorded_answer_for(version: &str) -> Value {
+        let mut answer = recorded_answer();
+        answer["response"]["response"]["claude_code_version"] = Value::String(version.to_owned());
+        answer
+    }
+
     fn account(json: Value) -> Account {
         serde_json::from_value(json).unwrap()
     }
@@ -577,8 +584,8 @@ mod tests {
         token["response"]["response"]["account"] =
             serde_json::json!({"tokenSource": "ANTHROPIC_AUTH_TOKEN"});
 
-        // Too old, but the probe still reports the login.
-        let bin = stand_in(dir.path(), "2.1.250 (Claude Code)", &format!("{token}\n"));
+        // Past the supported range, but the probe still reports the login.
+        let bin = stand_in(dir.path(), "2.2.1 (Claude Code)", &format!("{token}\n"));
         let info = probe(&bin, &env()).await;
         assert!(!info.version_ok);
         assert_eq!(
@@ -587,15 +594,24 @@ mod tests {
         );
         let problem = info.problem.unwrap();
         assert!(
-            problem.starts_with("claude 2.1.250 (Claude Code) is older than this fleetd supports"),
+            problem.starts_with("claude 2.2.1 (Claude Code) is newer than this fleetd supports"),
             "{problem}"
         );
         assert!(
-            problem.contains("Fix: claude update (or claude install 2.1.302)"),
+            problem.contains("Fix: claude install 2.1.302, or fleetd update"),
             "{problem}"
         );
-        // The answer says 2.1.302 while --version says 2.1.250.
+        // The answer says 2.1.302 while --version says 2.2.1.
         assert!(problem.contains("two installs on PATH?"), "{problem}");
+
+        // Older than tested: it runs, and nothing is a problem when its protocol answers.
+        let bin = stand_in(
+            dir.path(),
+            "2.1.296 (Claude Code)",
+            &format!("{}\n", recorded_answer_for("2.1.296")),
+        );
+        let info = probe(&bin, &env()).await;
+        assert!(info.version_ok, "{info:?}");
 
         let bin = stand_in(dir.path(), "2.1.302 (Claude Code)", "");
         let info = probe(&bin, &env()).await;

@@ -19,6 +19,7 @@ use crate::cli::hub_key::open_hub;
 use crate::cli::pair;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
 use crate::node::runner::claude_setup::{ClaudeSetup, describe};
+use crate::node::runner::version::{self, VersionVerdict};
 
 const PORT: u16 = 4790;
 const AGAIN: &str = "Run fleetd init to continue; it keeps what's done.";
@@ -49,10 +50,10 @@ impl Ui {
         answer
     }
 
-    /// Whether to run an interactive login (claude/gh auth login) now: only when a person is at the terminal and
-    /// says yes. Without a terminal, with --yes or in a scripted --join it is never offered, so nothing waits for a
+    /// Whether to run something interactive now (claude/gh auth login, a claude update): only when a person is at
+    /// the terminal and says yes. Without a terminal, with --yes or in a scripted --join it is never offered, so nothing waits for a
     /// browser; the step fails with its fix instead.
-    fn offer_login(&self, list: &mut Checklist, prompt: &str) -> Result<bool, Stopped> {
+    fn offer_to_run(&self, list: &mut Checklist, prompt: &str) -> Result<bool, Stopped> {
         if !self.interactive {
             return Ok(false);
         }
@@ -720,39 +721,104 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
         );
         return Ok(None);
     };
-    let mut offered = false;
+    let (mut logged, mut updated) = (false, false);
     loop {
         list.start("Checking claude");
         let setup = describe(&binary, &session_env()).await;
+        let printed = setup.version.clone().unwrap_or_default();
+        let verdict = version::check(&printed);
+        // The version first, then always the login: an old claude's login still matters.
+        if setup.version.is_some() && verdict != VersionVerdict::Ok {
+            let fix = match verdict {
+                VersionVerdict::UntestedOlder => update_command(&binary),
+                _ => verdict.fix().unwrap_or_else(|| update_command(&binary)),
+            };
+            let why = verdict.problem(&printed).unwrap_or_default();
+            let why = why.trim_end_matches('.');
+            let why = why.strip_prefix("claude ").unwrap_or(why);
+            if verdict.runs() {
+                list.warn("claude version", why, Some(&fix));
+            } else {
+                list.failed("claude version", why, &fix);
+            }
+            if !updated
+                && verdict != VersionVerdict::UntestedNewer
+                && ui.offer_to_run(list, &format!("Update claude now? ({fix})"))?
+            {
+                updated = true;
+                attached(list, "/bin/sh", &["-c", &fix]);
+                continue;
+            }
+        }
         let shown = setup.to_string();
         let detail = shown.strip_prefix("claude ").unwrap_or(&shown).to_owned();
-        if setup.login_kind.is_some() && setup.problem.is_none() {
-            if setup.proxy_source.as_deref() == Some("environment") {
-                list.warn(
-                    "claude",
-                    &format!("{detail}; that proxy is only in this shell, so fleetd's services won't use it"),
-                    Some("put ANTHROPIC_BASE_URL in the env block of ~/.claude/settings.json"),
-                );
-            } else {
-                list.done("claude", &detail);
+        if setup.login_kind.is_none() {
+            if setup.version.is_some()
+                && !logged
+                && ui.offer_to_run(list, "claude isn't logged in. Log in now?")?
+            {
+                logged = true;
+                attached(list, "claude", &["auth", "login"]);
+                continue;
             }
-            return Ok(Some(setup));
+            match (&setup.version, &setup.problem) {
+                (None, Some(problem)) => {
+                    let (why, fix) = split_fix(problem);
+                    list.failed("claude", why.strip_prefix("claude ").unwrap_or(&why), &fix);
+                }
+                _ => list.failed("claude", &detail, "claude auth login"),
+            }
+            return Ok(None);
         }
-        if setup.login_kind.is_none()
-            && setup.version.is_some()
-            && !offered
-            && ui.offer_login(list, "claude isn't logged in. Log in now?")?
+        if setup.proxy_source.as_deref() == Some("environment") {
+            list.warn(
+                "claude",
+                &format!(
+                    "{detail}; that proxy is only in this shell, so fleetd's services won't use it"
+                ),
+                Some("put ANTHROPIC_BASE_URL in the env block of ~/.claude/settings.json"),
+            );
+        } else {
+            list.done("claude", &detail);
+        }
+        // A protocol break the probe found (the version and login are shown above).
+        if let Some(problem) = setup
+            .problem
+            .as_deref()
+            .filter(|_| verdict.runs())
+            .filter(|p| !p.contains("not logged in"))
         {
-            offered = true;
-            attached(list, "claude", &["auth", "login"]);
-            continue;
+            let (why, fix) = split_fix(problem);
+            list.failed(
+                "claude protocol",
+                why.strip_prefix("claude ").unwrap_or(&why),
+                &fix,
+            );
+            return Ok(None);
         }
-        let (why, fix) = match &setup.problem {
-            Some(problem) => split_fix(problem),
-            None => (detail.clone(), "claude auth login".to_owned()),
-        };
-        list.failed("claude", why.strip_prefix("claude ").unwrap_or(&why), &fix);
-        return Ok(None);
+        return Ok(verdict.runs().then_some(setup));
+    }
+}
+
+/// How this claude updates itself: Homebrew and npm installs through their package manager, the native installer's
+/// by running it again, anything else with `claude update`.
+fn update_command(binary: &Path) -> String {
+    let real = std::fs::canonicalize(binary).unwrap_or_else(|_| binary.to_path_buf());
+    update_command_for(&real.to_string_lossy())
+}
+
+fn update_command_for(path: &str) -> String {
+    if path.contains("/Caskroom/")
+        || path.contains("/Cellar/")
+        || path.starts_with("/opt/homebrew/")
+    {
+        "brew upgrade claude-code".into()
+    } else if path.contains("/node_modules/") {
+        "npm install -g @anthropic-ai/claude-code@latest".into()
+    } else if path.contains("/.local/share/claude/") || path.contains("/.claude/local/") {
+        "curl -fsSL https://claude.ai/install.sh | bash".into()
+    } else {
+        "claude update".into()
     }
 }
 
@@ -781,7 +847,7 @@ async fn gh_check(ui: &Ui, list: &mut Checklist) -> Result<bool, Stopped> {
             list.done("gh", message);
             return Ok(true);
         }
-        if !offered && ui.offer_login(list, "gh isn't logged in. Log in now?")? {
+        if !offered && ui.offer_to_run(list, "gh isn't logged in. Log in now?")? {
             offered = true;
             attached(list, "gh", &["auth", "login"]);
             continue;
@@ -1051,7 +1117,7 @@ async fn worker_claude(
             return Ok(());
         }
         if offered
-            || !ui.offer_login(
+            || !ui.offer_to_run(
                 list,
                 &format!(
                     "claude on {} isn't logged in. Log in now?",
@@ -1394,13 +1460,36 @@ fn finish(list: &mut Checklist, summary: &Summary, paired: bool) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn claude_updates_the_way_it_was_installed() {
+        let native = "/Users/ada/.local/share/claude/versions/2.1.296";
+        assert_eq!(
+            update_command_for(native),
+            "curl -fsSL https://claude.ai/install.sh | bash"
+        );
+        assert_eq!(
+            update_command_for("/opt/homebrew/Caskroom/claude-code/2.1.296/claude"),
+            "brew upgrade claude-code"
+        );
+        assert_eq!(
+            update_command_for("/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js"),
+            "npm install -g @anthropic-ai/claude-code@latest"
+        );
+        assert_eq!(update_command_for("/usr/local/bin/claude"), "claude update");
+    }
+
     /// --yes, no terminal, a scripted --join: a logged-out claude or gh is reported, never logged in interactively.
     #[test]
     fn logins_are_offered_only_to_a_person_at_the_terminal() {
         let mut list = Checklist::plain();
         let unattended = Ui { interactive: false };
         assert!(matches!(
-            unattended.offer_login(&mut list, "claude isn't logged in. Log in now?"),
+            unattended.offer_to_run(&mut list, "claude isn't logged in. Log in now?"),
+            Ok(false)
+        ));
+        // Nor is a claude update.
+        assert!(matches!(
+            unattended.offer_to_run(&mut list, "Update claude now? (claude update)"),
             Ok(false)
         ));
         // Other prompts still take their defaults unattended.
