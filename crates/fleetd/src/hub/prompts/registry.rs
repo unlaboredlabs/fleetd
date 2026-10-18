@@ -112,7 +112,8 @@ const NO_SUBAGENTS: (&str, &str, &str, Enforcement) = (
     "no-subagents",
     "does the task itself, no subagents",
     r"subagents",
-    Prompt,
+    // Every session's claude runs with the subagent tools (Task, Workflow) disallowed: see ALWAYS_DISALLOWED.
+    Code,
 );
 const READ_ONLY: (&str, &str, &str, Enforcement) = (
     "read-only",

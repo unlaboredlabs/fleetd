@@ -62,6 +62,8 @@ pub const WATCH_IDLE_MS: u64 = 60_000;
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// A launch may create a worktree and spawn claude before the node answers.
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
+/// The node first stops the project's claude processes and waits up to 12 s for them to exit.
+const REMOVE_TIMEOUT: Duration = Duration::from_secs(30);
 /// The node keeps the last 2000 characters of the assistant's text on the summary; a shorter tail is the whole text.
 const SUMMARY_TAIL_MAX: usize = 2000;
 
@@ -1673,7 +1675,7 @@ impl Executors {
         let call = SessionCall::ProjectRemove {
             project_id: project_id.clone(),
         };
-        self.call(machine_id, NodeOperation::Project, call, READ_TIMEOUT)
+        self.call(machine_id, NodeOperation::Project, call, REMOVE_TIMEOUT)
             .await?;
         Ok(())
     }

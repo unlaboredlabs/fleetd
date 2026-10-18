@@ -58,7 +58,8 @@ cliclack = "0.5"
 console = "0.16"
 # prompts: the 3-way merge when a release changes a default you edited
 diffy = "0.5.2"
+# prompts edit: a private scratch file (0600, random name, created exclusively)
+tempfile = "3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
-tempfile = "3"

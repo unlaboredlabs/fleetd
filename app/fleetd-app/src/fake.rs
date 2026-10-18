@@ -525,7 +525,7 @@ impl PromptHub {
         let task_rules = vec![
             ("areas-only", "Writers change only their areas", "only change files in these areas", Code),
             ("never-merge", "Never merge; the train does", "never merge", Code),
-            ("no-subagents", "No subagents", "do not hand it to subagents", Prompt),
+            ("no-subagents", "No subagents", "do not hand it to subagents", Code),
         ];
         let prompts = vec![
             FakePrompt {

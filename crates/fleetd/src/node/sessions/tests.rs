@@ -709,40 +709,41 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
 }
 
 #[tokio::test]
-async fn a_project_with_a_live_process_is_not_removed_even_when_idle() {
+async fn removing_a_project_stops_its_claude_processes_first() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("project");
-    std::fs::create_dir_all(&root).unwrap();
     let mut hub = hub(
         dir.path(),
         NodeStore::open_memory(10_000).unwrap(),
-        FakeRunner::fixture("init-partial-two-turns"),
+        FakeRunner::fixture("permission-allow"),
     )
     .await;
-    hub.project(&root).await;
+    hub.project(dir.path()).await;
     hub.ok(launch(
         "s1",
-        RuntimeMode::FullAccess,
+        RuntimeMode::ApprovalRequired,
         SessionWorkspace::Root,
     ))
     .await;
-    assert_eq!(hub.settled("r1").await.status, SessionStatus::Idle);
+    hub.summary(|s| s.status == SessionStatus::Waiting).await;
 
     let remove = || SessionCall::ProjectRemove {
         project_id: ProjectId::unchecked("p1"),
     };
-    let SessionResult::Err(refused) = hub.call(remove()).await else {
-        panic!("removed a project whose claude is still running")
-    };
-    assert_eq!(refused.code, SessionErrorCode::Invalid);
-    assert!(refused.message.contains("s1"), "{}", refused.message);
-
-    hub.ok(SessionCall::Stop {
-        session_id: ThreadId::unchecked("s1"),
-        remove_worktree: false,
-    })
-    .await;
     assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
+    let ended = hub.settled("r1").await;
+    assert_eq!(ended.status, SessionStatus::Interrupted);
+    assert_eq!(
+        ended.latest_run.unwrap().failure.unwrap().message.as_str(),
+        "its project was removed"
+    );
+    assert!(matches!(
+        hub.runner.received().last(),
+        Some(SessionCommand::Shutdown { .. })
+    ));
+    let SessionResult::Err(gone) = hub.call(remove()).await else {
+        panic!("removed the same project twice")
+    };
+    assert_eq!(gone.code, SessionErrorCode::NotFound);
 }
 
 #[test]
