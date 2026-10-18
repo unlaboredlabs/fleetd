@@ -1,0 +1,68 @@
+---
+title: Quick start
+section: Get started
+order: 20
+description: Install, set up the hub and send a first order in three steps.
+---
+
+Run steps 1 and 2 on the always-on machine that will be your hub. Step 3 is on the computer you work from.
+
+## 1. Install fleetd
+
+```console
+$ curl -fsSL https://fleetd.sh | sh
+fleetd: installed the CLI: ~/.fleetd/bin/fleetd
+
+Next, run:
+  fleetd init
+```
+
+## 2. Set it up
+
+Run `fleetd init`. It asks a few questions (Enter takes the default) and ticks off each step. A ✗ line ends with the
+command that fixes it. Run it again at any time: it keeps what works and repairs the rest.
+
+```console
+$ fleetd init
+fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
+✔ Is this machine the hub (the always-on machine that runs your fleet)? · yes
+✓ reachability: the hub listens on 100.x.y.z:4790, reached at http://hub.your-tailnet.ts.net:4790
+✓ claude: 2.1.302, logged in (claude.ai)
+✓ gh: logged in as ada-lovelace
+✔ Commit author for your agents' commits (Name <email>) · ada-lovelace <1234567+ada-lovelace@users.noreply.github.com>
+✓ commit author: ada-lovelace <1234567+ada-lovelace@users.noreply.github.com>
+✓ hub: runs as a service and answers at 100.x.y.z:4790 (home ~/.fleetd/hub)
+✔ Which machines should run agents? (space toggles, enter accepts) · homeserver (this machine)
+✓ worker homeserver: online
+✓ claude on homeserver: fleetd's Claude is logged in
+✔ Which repo should be your first project? · ~/src/myapp  github.com/ada-lovelace/myapp
+✓ first project: ~/src/myapp on homeserver
+✔ Pair the desktop app with this hub now? · yes
+✓ pairing code: 8X5X-DJ0M for http://hub.your-tailnet.ts.net:4790 (one use, until 2026-10-18T12:00:24.131Z)
+    The app on this machine pairs by itself (~/.config/fleetd/app-pair.json).
+    On another computer: open the app, enter http://hub.your-tailnet.ts.net:4790 and the code, or open fleetd://pair?hub=…&code=8X5X-DJ0M
+✓ doctor: 9 of 9 checks pass
+
+fleetd is set up.
+Next: install the desktop app on the computer you work from (curl -fsSL https://fleetd.sh | sh -s -- --app), open it and enter the pairing code; then type your first order in it.
+```
+
+The hub listens on your tailnet when it finds Tailscale, otherwise on `127.0.0.1:4790` only. It never opens itself to
+the internet.
+
+## 3. Send your first order
+
+On the computer you work from, install fleetd with its app and open it:
+
+```sh
+curl -fsSL https://fleetd.sh | sh -s -- --app
+open ~/Applications/fleetd.app                    # macOS
+~/.local/share/fleetd/app/fleetd-app &            # Linux (or "fleetd" in your app menu)
+```
+
+Enter the hub address and the pairing code `fleetd init` printed. Codes last 15 minutes; `fleetd pair` on the hub
+prints a new one. Then press ⌘N (Ctrl+N on Linux) and type an order, such as `fix the typo in the README`.
+
+The project's lead answers with a brief and starts work. Its questions land in the inbox.
+
+Next: [Concepts](concepts.md), or [more machines](machines.md).

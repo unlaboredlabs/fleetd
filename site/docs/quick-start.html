@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick start · fleetd docs</title>
+<meta name="description" content="Install, set up the hub and send a first order in three steps.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start" aria-current="page">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Get started</p>
+<h1>Quick start</h1>
+<p>Run steps 1 and 2 on the always-on machine that will be your hub. Step 3 is on the computer you work from.</p>
+<h2 id="1-install-fleetd">1. Install fleetd<a class="anchor" href="#1-install-fleetd" aria-label="Link to this section">#</a></h2>
+<pre class="code console" data-copy><code><span class="c">$ curl -fsSL https://fleetd.sh | sh</span>
+<span class="o">fleetd: installed the CLI: ~/.fleetd/bin/fleetd
+
+Next, run:
+  fleetd init</span></code></pre>
+<h2 id="2-set-it-up">2. Set it up<a class="anchor" href="#2-set-it-up" aria-label="Link to this section">#</a></h2>
+<p>Run <code>fleetd init</code>. It asks a few questions (Enter takes the default) and ticks off each step. A ✗ line ends with the
+command that fixes it. Run it again at any time: it keeps what works and repairs the rest.</p>
+<pre class="code console" data-copy><code><span class="c">$ fleetd init</span>
+<span class="o">fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
+✔ Is this machine the hub (the always-on machine that runs your fleet)? · yes
+✓ reachability: the hub listens on 100.x.y.z:4790, reached at http://hub.your-tailnet.ts.net:4790
+✓ claude: 2.1.302, logged in (claude.ai)
+✓ gh: logged in as ada-lovelace
+✔ Commit author for your agents' commits (Name &lt;email&gt;) · ada-lovelace &lt;1234567+ada-lovelace@users.noreply.github.com&gt;
+✓ commit author: ada-lovelace &lt;1234567+ada-lovelace@users.noreply.github.com&gt;
+✓ hub: runs as a service and answers at 100.x.y.z:4790 (home ~/.fleetd/hub)
+✔ Which machines should run agents? (space toggles, enter accepts) · homeserver (this machine)
+✓ worker homeserver: online
+✓ claude on homeserver: fleetd's Claude is logged in
+✔ Which repo should be your first project? · ~/src/myapp  github.com/ada-lovelace/myapp
+✓ first project: ~/src/myapp on homeserver
+✔ Pair the desktop app with this hub now? · yes
+✓ pairing code: 8X5X-DJ0M for http://hub.your-tailnet.ts.net:4790 (one use, until 2026-10-18T12:00:24.131Z)
+    The app on this machine pairs by itself (~/.config/fleetd/app-pair.json).
+    On another computer: open the app, enter http://hub.your-tailnet.ts.net:4790 and the code, or open fleetd://pair?hub=…&amp;code=8X5X-DJ0M
+✓ doctor: 9 of 9 checks pass
+
+fleetd is set up.
+Next: install the desktop app on the computer you work from (curl -fsSL https://fleetd.sh | sh -s -- --app), open it and enter the pairing code; then type your first order in it.</span></code></pre>
+<p>The hub listens on your tailnet when it finds Tailscale, otherwise on <code>127.0.0.1:4790</code> only. It never opens itself to
+the internet.</p>
+<h2 id="3-send-your-first-order">3. Send your first order<a class="anchor" href="#3-send-your-first-order" aria-label="Link to this section">#</a></h2>
+<p>On the computer you work from, install fleetd with its app and open it:</p>
+<pre class="code sh" data-copy><code><span class="l">curl -fsSL https://fleetd.sh | sh -s -- --app</span>
+<span class="l">open ~/Applications/fleetd.app                    # macOS</span>
+<span class="l">~/.local/share/fleetd/app/fleetd-app &amp;            # Linux (or &quot;fleetd&quot; in your app menu)</span></code></pre>
+<p>Enter the hub address and the pairing code <code>fleetd init</code> printed. Codes last 15 minutes; <code>fleetd pair</code> on the hub
+prints a new one. Then press ⌘N (Ctrl+N on Linux) and type an order, such as <code>fix the typo in the README</code>.</p>
+<p>The project's lead answers with a brief and starts work. Its questions land in the inbox.</p>
+<p>Next: <a href="/docs/concepts">Concepts</a>, or <a href="/docs/machines">more machines</a>.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/install"><span>Previous</span>Install</a>
+<a class="next" href="/docs/concepts"><span>Next</span>Concepts</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/quick-start.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#1-install-fleetd">1. Install fleetd</a></li>
+<li><a href="#2-set-it-up">2. Set it up</a></li>
+<li><a href="#3-send-your-first-order">3. Send your first order</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

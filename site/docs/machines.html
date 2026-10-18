@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Machines · fleetd docs</title>
+<meta name="description" content="Add workers to the hub, log in their Claude, remove them, and check their health.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines" aria-current="page">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Using fleetd</p>
+<h1>Machines</h1>
+<p>A worker is any machine that runs agents. It needs the <code>claude</code> CLI, and for now the same OS and CPU as the hub.
+Run these on the hub.</p>
+<h2 id="add-a-machine-the-hub-can-reach-over-ssh">Add a machine the hub can reach over SSH<a class="anchor" href="#add-a-machine-the-hub-can-reach-over-ssh" aria-label="Link to this section">#</a></h2>
+<p>Run <code>fleetd init</code> again and pick it from the list (hosts from <code>~/.ssh/config</code> and your tailnet), or name it:</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd machine add homeserver</span></code></pre>
+<p>It copies the hub's own fleetd there, enrolls the node with a one-time token, runs it as a user service and waits
+until the machine is online. It prints every remote command before it runs it. <code>--dry-run</code> only prints the plan:</p>
+<pre class="code console" data-copy data-capture="machine-add"><code><span class="c">$ fleetd machine add builder-1 --dry-run</span>
+<span class="o">dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
+[probe] read the machine's state (read-only)
+[1/6] create fleetd's directories
+[2/6] install fleetd 0.0.0
+[3/6] create fleetd's Claude login file (empty, 0600)
+[4/6] write the node service
+[5/6] enroll the node with a one-time token (sent on stdin)
+[6/6] (re)start the node
+[hub] wait until builder-1 is online
+[exit 0]</span></code></pre>
+<p>It is safe to run again: a real run reads the machine's state first and skips what is done. <code>--local</code> sets up this
+machine.</p>
+<h2 id="add-a-machine-the-hub-cant-reach">Add a machine the hub can't reach<a class="anchor" href="#add-a-machine-the-hub-cant-reach" aria-label="Link to this section">#</a></h2>
+<p>For a laptop behind NAT, or anything without SSH from the hub, print a one-line join command on the hub and paste
+it on the new machine:</p>
+<pre class="code console" data-copy><code><span class="c">$ fleetd pair --worker laptop</span>
+<span class="o">On laptop, run:
+
+  curl -fsSL https://fleetd.sh | sh &amp;&amp; ~/.local/bin/fleetd init --join http://hub.your-tailnet.ts.net:4790 --code &lt;code&gt; --machine-id laptop --git-identity 'ada-lovelace &lt;1234567+ada-lovelace@users.noreply.github.com&gt;'
+
+The code works once, until 2026-10-18T13:35:46.366Z. laptop needs claude installed and must reach the hub at that address.</span></code></pre>
+<p>The code lasts 15 minutes. The machine must reach the hub's address. Run the command again later to repair the
+worker; <code>--rejoin</code> enrolls it again with a new code.</p>
+<h2 id="log-in-fleetds-claude-on-a-worker">Log in fleetd's Claude on a worker<a class="anchor" href="#log-in-fleetds-claude-on-a-worker" aria-label="Link to this section">#</a></h2>
+<p>The node runs <code>claude</code> with its own config dir, so your own login doesn't carry over. On the worker:</p>
+<pre class="code sh" data-copy><code><span class="l">CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login</span></code></pre>
+<p>Or run <code>claude setup-token</code> and put <code>CLAUDE_CODE_OAUTH_TOKEN=&lt;token&gt;</code> in <code>~/.fleetd/claude.env</code>. <code>fleetd init</code> offers
+both when it sets a machine up.</p>
+<h2 id="remove">Remove a machine<a class="anchor" href="#remove" aria-label="Link to this section">#</a></h2>
+<pre class="code sh" data-copy><code><span class="l">fleetd machine remove homeserver</span></code></pre>
+<p>It stops and removes the node's service there and revokes its key on the hub. <code>--purge</code> also deletes
+<code>~/.fleetd/node</code>, <code>~/.fleetd/claude</code> and <code>~/.fleetd/claude.env</code> on that machine. For a machine that joined with
+<code>pair --worker</code>, only the key is revoked; stop its node there yourself:</p>
+<pre class="code console" data-copy><code><span class="c">$ fleetd machine remove laptop</span>
+<span class="o">laptop was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand.
+revoked laptop's node key; the hub refuses that node from now on.</span></code></pre>
+<h2 id="check-health">Check health<a class="anchor" href="#check-health" aria-label="Link to this section">#</a></h2>
+<pre class="code sh" data-copy><code><span class="l">fleetd doctor</span></code></pre>
+<p>It checks the hub and every machine (online, claude version and login, commit identity, disk, usage breaker) and
+prints the fix for each problem. The app's Machines screen shows the same checks. Every finding and its fix:
+<a href="/docs/troubleshooting">Troubleshooting</a>.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/concepts"><span>Previous</span>Concepts</a>
+<a class="next" href="/docs/projects-and-orders"><span>Next</span>Projects &amp; orders</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/machines.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#add-a-machine-the-hub-can-reach-over-ssh">Add a machine the hub can reach over SSH</a></li>
+<li><a href="#add-a-machine-the-hub-cant-reach">Add a machine the hub can't reach</a></li>
+<li><a href="#log-in-fleetds-claude-on-a-worker">Log in fleetd's Claude on a worker</a></li>
+<li><a href="#remove">Remove a machine</a></li>
+<li><a href="#check-health">Check health</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

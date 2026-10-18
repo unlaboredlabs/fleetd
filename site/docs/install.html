@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install · fleetd docs</title>
+<meta name="description" content="One command installs the fleetd CLI, plus the desktop app on a machine with a display.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install" aria-current="page">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Get started</p>
+<h1>Install</h1>
+<pre class="code console" data-copy><code><span class="c">$ curl -fsSL https://fleetd.sh | sh</span>
+<span class="o">fleetd: installed the CLI: ~/.fleetd/bin/fleetd
+
+Next, run:
+  fleetd init</span></code></pre>
+<p>Then set it up: <a href="/docs/quick-start">Quick start</a>.</p>
+<h2 id="platforms">Platforms<a class="anchor" href="#platforms" aria-label="Link to this section">#</a></h2>
+<div class="table"><table><thead><tr><th></th><th>CLI (hub and workers)</th><th>Desktop app</th></tr></thead><tbody>
+<tr><td>Linux x64</td><td>yes</td><td>yes</td></tr>
+<tr><td>macOS, Apple silicon</td><td>yes</td><td>yes</td></tr>
+<tr><td>macOS, Intel</td><td>yes</td><td>yes</td></tr>
+</tbody></table></div>
+<p>The hub also needs <code>git</code>, and the <code>claude</code> and <code>gh</code> CLIs logged in to your own accounts. A worker needs only
+<code>claude</code>. <code>fleetd init</code> checks each one and prints the install command for anything missing.</p>
+<h2 id="what-it-installs">What it installs<a class="anchor" href="#what-it-installs" aria-label="Link to this section">#</a></h2>
+<ul>
+<li>The CLI at <code>~/.fleetd/bin/fleetd</code>, linked from <code>~/.local/bin/fleetd</code>.</li>
+<li>The desktop app, on macOS and on Linux with a display: <code>~/Applications/fleetd.app</code>, or <code>~/.local/share/fleetd/app</code>
+with a menu entry.</li>
+</ul>
+<p>Every download is checked against the release's <code>SHA256SUMS</code>. The installer needs no sudo and starts no services:
+<code>fleetd init</code> does that. Running it again replaces what it installed. To read it first, open
+<a href="https://fleetd.sh/install.sh">fleetd.sh/install.sh</a>.</p>
+<h2 id="options">Options<a class="anchor" href="#options" aria-label="Link to this section">#</a></h2>
+<pre class="code sh" data-copy><code><span class="l">curl -fsSL https://fleetd.sh | sh -s -- --app       # the app too, on Linux without a display</span>
+<span class="l">curl -fsSL https://fleetd.sh | sh -s -- --no-app    # the CLI only</span></code></pre>
+<pre class="code console" data-copy><code><span class="c">$ curl -fsSL https://fleetd.sh | sh -s -- --app</span>
+<span class="o">fleetd: installed the CLI: ~/.fleetd/bin/fleetd
+fleetd: installed the app: ~/.local/share/fleetd/app (menu entry: ~/.local/share/applications/fleetd.desktop)
+
+Next, run:
+  fleetd init</span></code></pre>
+<p>Releases are nightly builds for now. <code>FLEETD_CHANNEL=stable</code> picks the stable channel once it has a release.</p>
+<h2 id="verify">Verify<a class="anchor" href="#verify" aria-label="Link to this section">#</a></h2>
+<pre class="code console" data-copy><code><span class="c">$ fleetd version</span>
+<span class="o">fleetd 0.0.0-nightly.20261018.832ba8f (protocol 1)</span></code></pre>
+<p>If your shell can't find <code>fleetd</code>, add <code>~/.local/bin</code> to your <code>PATH</code>, or run <code>~/.local/bin/fleetd</code>.</p>
+<nav class="pn" aria-label="Previous and next">
+<span></span>
+<a class="next" href="/docs/quick-start"><span>Next</span>Quick start</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/install.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#platforms">Platforms</a></li>
+<li><a href="#what-it-installs">What it installs</a></li>
+<li><a href="#options">Options</a></li>
+<li><a href="#verify">Verify</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

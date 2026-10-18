@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Config &amp; files · fleetd docs</title>
+<meta name="description" content="Where fleetd keeps its state, the Claude login it uses, the project policy file, and its port.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files" aria-current="page">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Reference</p>
+<h1>Config &amp; files</h1>
+<h2 id="fleetd">~/.fleetd<a class="anchor" href="#fleetd" aria-label="Link to this section">#</a></h2>
+<pre class="code text"><code>~/.fleetd/
+  bin/fleetd             the CLI (linked from ~/.local/bin/fleetd)
+  hub/                   the hub's home (hub machine only)
+    hub.sqlite           everything the hub knows
+    setup.json           what fleetd init and machine add set up: address, commit identity, machines
+    hub.log              the hub service's log
+    cli.key              the admin key the CLI on this machine uses
+    webhook.key          seals webhook secrets
+  node/                  the node's home (every worker)
+    node.json            the hub it belongs to and its machine id
+    node-key.pem         proves the node to the hub
+    node-box-key.pem     opens secrets sealed to this machine
+    node.sock            the socket lead-side commands reach the hub through
+    sessions.sqlite      the node's sessions
+    worktrees/           one git worktree per writer session
+  claude/                fleetd's own Claude login and sessions
+  claude.env             extra environment for every claude fleetd starts
+  logs/node.log          the node service's log</code></pre>
+<p><code>fleetd uninstall</code> keeps all of it; see <a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a>.</p>
+<h2 id="claude">The Claude login<a class="anchor" href="#claude" aria-label="Link to this section">#</a></h2>
+<p>The node runs <code>claude</code> with <code>CLAUDE_CONFIG_DIR=~/.fleetd/claude</code>, so its login is separate from yours in <code>~/.claude</code>.
+Log it in on each worker:</p>
+<pre class="code sh" data-copy><code><span class="l">CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login</span></code></pre>
+<p>The hub's own <code>claude</code> (the order router and the retro) uses your normal login on the hub machine.</p>
+<h2 id="claude-env">claude.env<a class="anchor" href="#claude-env" aria-label="Link to this section">#</a></h2>
+<p><code>KEY=VALUE</code> lines added to the environment of every <code>claude</code> fleetd starts, re-read at each start. Blank lines, <code>#</code>
+comments and <code>export </code> are allowed. Mode 0600. Use it for a token instead of a login, or for a gateway:</p>
+<pre class="code ini" data-copy><code>CLAUDE_CODE_OAUTH_TOKEN=&lt;token from claude setup-token&gt;
+# or
+ANTHROPIC_BASE_URL=https://gateway.example.com
+ANTHROPIC_AUTH_TOKEN=&lt;token&gt;</code></pre>
+<p><code>fleetd init</code> offers to copy these from your shell when it finds them there.</p>
+<h2 id="policy">.fleetd/policy.yaml<a class="anchor" href="#policy" aria-label="Link to this section">#</a></h2>
+<p>An optional file in a project's repo; commit it to the default branch. Changes apply within a minute. Without it,
+writers may touch the whole repo.</p>
+<pre class="code yaml" data-copy><code>areas:                    # what a writer task may touch; a task leases one or more areas
+  docs: [&quot;docs/**&quot;]
+  app: [&quot;src/**&quot;, &quot;package.json&quot;]
+defaults:                 # optional: the project's task model and effort (low, medium, high, max)
+  model: claude-opus-5-5
+  effort: high
+finishAll:                # optional
+  maxChildren: 10         # most child workstreams one finish-all run starts
+tools:                    # optional: claude permission rules for every session
+  allow: [&quot;Bash(npm test:*)&quot;]
+  deny: [&quot;Bash(git push:*)&quot;]</code></pre>
+<p>Area names are lowercase slugs. A broken file is refused with the exact problem, never ignored, so a typo can't widen
+what a writer may touch.</p>
+<h2 id="services">Services<a class="anchor" href="#services" aria-label="Link to this section">#</a></h2>
+<p><code>fleetd init</code> and <code>fleetd machine add</code> run the hub and node as user services:</p>
+<div class="table"><table><thead><tr><th></th><th>Linux (systemd)</th><th>macOS (launchd)</th></tr></thead><tbody>
+<tr><td>Hub</td><td><code>~/.config/systemd/user/fleetd-hub.service</code></td><td><code>~/Library/LaunchAgents/sh.fleetd.hub.plist</code></td></tr>
+<tr><td>Node</td><td><code>~/.config/systemd/user/fleetd-node.service</code></td><td><code>~/Library/LaunchAgents/sh.fleetd.node.plist</code></td></tr>
+</tbody></table></div>
+<p><code>--unit-suffix &lt;s&gt;</code> adds a suffix to these names, for a second fleet on one machine.</p>
+<h2 id="ports-and-addresses">Ports and addresses<a class="anchor" href="#ports-and-addresses" aria-label="Link to this section">#</a></h2>
+<p>The hub listens on one port, 4790 by default: on your tailnet address when <code>fleetd init</code> finds Tailscale, otherwise
+on <code>127.0.0.1</code> only. The desktop app, nodes and MCP clients all use it (<code>&lt;hub url&gt;/mcp</code> for MCP). Workers open no
+port: their nodes dial out. Change it with <code>fleetd init --listen &lt;host:port&gt; --url &lt;url&gt;</code>.</p>
+<h2 id="the-app">The app<a class="anchor" href="#the-app" aria-label="Link to this section">#</a></h2>
+<p>The app's pairing hand-off from <code>fleetd init</code> or <code>fleetd pair</code> on the same machine is
+<code>~/.config/fleetd/app-pair.json</code> (macOS: <code>~/Library/Application Support/fleetd/app-pair.json</code>). Its hub key is in the
+OS keychain.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/cli"><span>Previous</span>CLI reference</a>
+<a class="next" href="/docs/security"><span>Next</span>Security model</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/config-and-files.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#fleetd">~/.fleetd</a></li>
+<li><a href="#claude">The Claude login</a></li>
+<li><a href="#claude-env">claude.env</a></li>
+<li><a href="#policy">.fleetd/policy.yaml</a></li>
+<li><a href="#services">Services</a></li>
+<li><a href="#ports-and-addresses">Ports and addresses</a></li>
+<li><a href="#the-app">The app</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

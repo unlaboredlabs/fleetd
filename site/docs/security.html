@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security model · fleetd docs</title>
+<meta name="description" content="What fleetd trusts, how keys and secrets move, and how to report a vulnerability.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security" aria-current="page">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Reference</p>
+<h1>Security model</h1>
+<p>fleetd is built for one person or a small team running their own fleet.</p>
+<h2 id="network">Network<a class="anchor" href="#network" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>The hub is never public by default.</strong> <code>fleetd init</code> listens on your tailnet address, or on <code>127.0.0.1</code> without
+Tailscale. Plain HTTP is accepted only there (Tailscale's tunnel is encrypted); anywhere else, put HTTPS in front
+(<a href="/docs/troubleshooting#hub-https">the https check</a>).</li>
+<li><strong>Nodes dial out.</strong> A worker's node connects to the hub and proves itself with its own key pair, so no worker
+opens a port. Enrollment tokens and pairing codes work once and expire after 15 minutes.</li>
+</ul>
+<h2 id="keys">Keys<a class="anchor" href="#keys" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Agent keys are hashed.</strong> A <code>fld_</code> key is shown once; the hub stores only its hash and prefix. Each key has read,
+operate or admin rights on every machine or a named list. A revoked key stops on its next request.</li>
+<li><strong>A person's device holds a human key</strong>, in the OS keychain, never in a file. Only human keys answer secret,
+approve and checklist asks, so no agent can approve itself.</li>
+<li><strong>The node socket trusts the node's OS user.</strong> Lead-side commands reach the hub through <code>~/.fleetd/node/node.sock</code>
+(mode 0600), and the hub attributes each call to the project whose workspace contains the caller's working
+directory. Any process running as that user can act as any project's lead on that machine. Run agents you don't
+trust as a different user.</li>
+</ul>
+<h2 id="secrets-and-commands">Secrets and commands<a class="anchor" href="#secrets-and-commands" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Secrets never reach the hub in plain text.</strong> The app seals each value to the target node's key (a libsodium
+sealed box) and wipes what was typed. The hub relays the ciphertext without storing it and keeps only the
+fingerprint the node reports. Notifications carry a one-line summary, never a secret.</li>
+<li><strong>An approved command runs exactly as stored</strong>, and only after a person approves it.</li>
+<li><strong>Webhooks are signed</strong> with a Standard Webhooks signature; each subscription's secret is shown once and stored
+encrypted.</li>
+</ul>
+<h2 id="software">Software<a class="anchor" href="#software" aria-label="Link to this section">#</a></h2>
+<ul>
+<li><strong>Installs are checksummed.</strong> The installer and <code>fleetd update</code> refuse any release file whose SHA-256 doesn't match
+the release's <code>SHA256SUMS</code>. <code>fleetd machine add</code> copies the hub's own binary to a worker over SSH.</li>
+<li><strong>Models only through the <code>claude</code> CLI</strong>, with a Claude login of fleetd's own on each machine. fleetd never calls
+a model or usage API itself.</li>
+</ul>
+<h2 id="report-a-vulnerability">Report a vulnerability<a class="anchor" href="#report-a-vulnerability" aria-label="Link to this section">#</a></h2>
+<p>Privately, through GitHub's security advisories for
+<a href="https://github.com/unlaboredlabs/fleetd/security/advisories/new">unlaboredlabs/fleetd</a>.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/config-and-files"><span>Previous</span>Config &amp; files</a>
+<a class="next" href="/docs/troubleshooting"><span>Next</span>Troubleshooting</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/security.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#network">Network</a></li>
+<li><a href="#keys">Keys</a></li>
+<li><a href="#secrets-and-commands">Secrets and commands</a></li>
+<li><a href="#software">Software</a></li>
+<li><a href="#report-a-vulnerability">Report a vulnerability</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>
