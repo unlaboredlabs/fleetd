@@ -189,13 +189,13 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dt id="change-status"><a class="anchor" href="#change-status" aria-label="Link to fleetd change status">#</a><pre class="syn"><code>fleetd change status &lt;X&gt;</code></pre></dt>
 <dt id="plan-milestone"><a class="anchor" href="#plan-milestone" aria-label="Link to fleetd plan milestone">#</a><pre class="syn"><code>fleetd plan milestone &quot;&lt;title&gt;&quot; [--position &lt;n&gt;]</code></pre></dt>
 <dt id="plan-add"><a class="anchor" href="#plan-add" aria-label="Link to fleetd plan add">#</a><pre class="syn"><code>fleetd plan add &quot;&lt;title&gt;&quot; --milestone M&lt;n&gt; [--workstream &lt;W&gt;] [--must|--polish] [--size s|m|l]
-    [--after P1,P2] [--pr &lt;url&gt;] [--check &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;]</code></pre></dt>
+    [--after P1,P2] [--pr &lt;url&gt;] [--check &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;] [--steer S&lt;n&gt;]</code></pre></dt>
 <dt id="plan-edit"><a class="anchor" href="#plan-edit" aria-label="Link to fleetd plan edit">#</a><pre class="syn"><code>fleetd plan edit P&lt;n&gt; [--title &lt;t&gt;] [--size s|m|l] [--must|--polish] [--milestone M&lt;n&gt;]
     [--workstream &lt;W&gt;] [--after P1,P2] [--pr +&lt;url&gt;|--pr=-&lt;url&gt;] [--check +&lt;n&gt;|--check=-&lt;n&gt;]
-    [--position &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;]</code></pre></dt>
-<dt id="plan-drop"><a class="anchor" href="#plan-drop" aria-label="Link to fleetd plan drop">#</a><pre class="syn"><code>fleetd plan drop P&lt;n&gt; --why &quot;&lt;reason&gt;&quot;</code></pre></dt>
+    [--position &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;] [--steer S&lt;n&gt;]</code></pre></dt>
+<dt id="plan-drop"><a class="anchor" href="#plan-drop" aria-label="Link to fleetd plan drop">#</a><pre class="syn"><code>fleetd plan drop P&lt;n&gt; (--why &quot;&lt;reason&gt;&quot; | --steer S&lt;n&gt;)</code></pre></dt>
 <dt id="plan-show"><a class="anchor" href="#plan-show" aria-label="Link to fleetd plan show">#</a><pre class="syn"><code>fleetd plan show [--workstream &lt;W&gt;]</code></pre></dt>
-<dd>keep the project's plan: milestones of must or polish items sized s, m or l. Link work with <code>--item</code>; only fleetd marks an item done, once its PRs merged through the train and its done-when checks passed. Changing scope after a milestone's first 10 minutes needs <code>--why</code>, and the status view shows it as a marker</dd>
+<dd>keep the project's plan: milestones of must or polish items sized s, m or l. Link work with <code>--item</code>; only fleetd marks an item done, once its PRs merged through the train and its done-when checks passed. Changing scope after a milestone's first 10 minutes needs <code>--why</code>, and the status view shows it as a marker. <code>--steer</code> S&lt;n&gt; says the human's steer asked for it: it stands in for <code>--why</code> and acknowledges the steer</dd>
 <dt id="inventory"><a class="anchor" href="#inventory" aria-label="Link to fleetd inventory">#</a><pre class="syn"><code>fleetd inventory</code></pre></dt>
 <dd>the project's open work ranked: failing checks, open issues (gh), open asks and TODO/FIXME markers; with nothing left that has a value source and no open child, the project's finish-all workstream goes idle</dd>
 <dt id="workstream-spawn"><a class="anchor" href="#workstream-spawn" aria-label="Link to fleetd workstream spawn">#</a><pre class="syn"><code>fleetd workstream spawn --text &quot;&lt;intent&gt;&quot; --serves issue:&lt;#n|url&gt;|defect:&lt;text&gt;|done:&lt;n&gt;

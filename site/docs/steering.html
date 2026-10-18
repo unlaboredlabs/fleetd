@@ -103,7 +103,7 @@ continues its conversation.</p>
 sees it. Once it is delivered it cannot be unsaid: send another steer that says what changed.</p>
 <h2 id="plan">When a steer changes the plan<a class="anchor" href="#plan" aria-label="Link to this section">#</a></h2>
 <p>If your steer changes what the order delivers, the lead updates the order's plan in the same turn and names your
-steer. The status view then shows it on the order: "↳ you steered S12 14:02 · acknowledged ·
+steer (<code>fleetd plan drop P3 --steer S12</code>), which also counts as acknowledging it. The status view then shows it on the order: "↳ you steered S12 14:02 · acknowledged ·
 −1 item".</p>
 <h2 id="cli">From the command line<a class="anchor" href="#cli" aria-label="Link to this section">#</a></h2>
 <p><code>fleetd steer</code> speaks for you, so it needs a human key: create one on the hub machine with

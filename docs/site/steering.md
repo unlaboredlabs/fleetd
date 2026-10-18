@@ -75,7 +75,7 @@ sees it. Once it is delivered it cannot be unsaid: send another steer that says 
 ## When a steer changes the plan {#plan}
 
 If your steer changes what the order delivers, the lead updates the order's plan in the same turn and names your
-steer. The status view then shows it on the order: "↳ you steered S12 14:02 · acknowledged ·
+steer (`fleetd plan drop P3 --steer S12`), which also counts as acknowledging it. The status view then shows it on the order: "↳ you steered S12 14:02 · acknowledged ·
 −1 item".
 
 ## From the command line {#cli}

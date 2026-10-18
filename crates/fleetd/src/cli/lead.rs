@@ -65,16 +65,17 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   change status <X>
   plan milestone "<title>" [--position <n>]
   plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
-      [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"]
+      [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"] [--steer S<n>]
   plan edit P<n> [--title <t>] [--size s|m|l] [--must|--polish] [--milestone M<n>]
       [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--check +<n>|--check=-<n>]
-      [--position <n>] [--why "<note>"]
-  plan drop P<n> --why "<reason>"
+      [--position <n>] [--why "<note>"] [--steer S<n>]
+  plan drop P<n> (--why "<reason>" | --steer S<n>)
   plan show [--workstream <W>]
              keep the project's plan: milestones of must or polish items sized s, m or l. Link
              work with --item; only fleetd marks an item done, once its PRs merged through the
              train and its done-when checks passed. Changing scope after a milestone's first 10
-             minutes needs --why, and the status view shows it as a marker
+             minutes needs --why, and the status view shows it as a marker. --steer S<n> says the
+             human's steer asked for it: it stands in for --why and acknowledges the steer
   inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
@@ -168,7 +169,15 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("after", Kind::Str),
     ("check", Kind::Str),
     ("position", Kind::Str),
+    ("steer", Kind::Str),
 ];
+
+/// `S` and a positive number, as `SteerId`.
+fn is_steer_id(id: &str) -> bool {
+    id.strip_prefix('S').is_some_and(|n| {
+        !n.is_empty() && !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit())
+    })
+}
 
 fn parse_json(flag: &str, text: &str) -> Result<Value, String> {
     serde_json::from_str(text).map_err(|error| format!("{flag} is not valid JSON ({error})"))
@@ -709,6 +718,12 @@ pub fn parse_lead_args(
             };
             let after = v.str("after").map(|a| Value::Array(split_list(a)));
             let title = rest.join(" ");
+            // `--steer S12`: the change answers that steer, which also acknowledges it, and stands in for --why.
+            let steer = match v.str("steer") {
+                None => None,
+                Some(id) if is_steer_id(id) => s(Some(id)),
+                Some(id) => return Err(format!("--steer is a steer id like S12, got '{id}'")),
+            };
             match sub {
                 Some("milestone") => {
                     only(&["position"])?;
@@ -732,6 +747,7 @@ pub fn parse_lead_args(
                         "pr",
                         "check",
                         "why",
+                        "steer",
                     ])?;
                     if title.is_empty() {
                         return Err(r#"expected fleetd plan add "<title>" --milestone M<n>"#.into());
@@ -748,6 +764,7 @@ pub fn parse_lead_args(
                         ("pr", s(v.str("pr"))),
                         ("check", whole("check")?),
                         ("why", s(v.str("why"))),
+                        ("steer", steer),
                     ])
                 }
                 Some("edit") => {
@@ -763,6 +780,7 @@ pub fn parse_lead_args(
                         "check",
                         "position",
                         "why",
+                        "steer",
                     ])?;
                     let [item] = rest.as_slice() else {
                         return Err("expected fleetd plan edit P<n> [--title <t>] …".into());
@@ -808,15 +826,23 @@ pub fn parse_lead_args(
                         ),
                         ("position", whole("position")?),
                         ("why", s(v.str("why"))),
+                        ("steer", steer),
                     ])
                 }
                 Some("drop") => {
-                    only(&["why"])?;
+                    only(&["why", "steer"])?;
                     let [item] = rest.as_slice() else {
                         return Err(r#"expected fleetd plan drop P<n> --why "<reason>""#.into());
                     };
-                    required(&["why"])?;
-                    json!({ "op": "plan_drop", "itemId": item, "why": v.str("why") })
+                    if steer.is_none() {
+                        required(&["why"])?;
+                    }
+                    defined(vec![
+                        ("op", s(Some("plan_drop"))),
+                        ("itemId", s(Some(item))),
+                        ("why", s(v.str("why"))),
+                        ("steer", steer),
+                    ])
                 }
                 Some("show") => {
                     only(&["workstream"])?;
@@ -1597,6 +1623,40 @@ mod tests {
             parse(&["task", "message", "T88", "stop that", "--now"]).unwrap(),
             json!({ "op": "task_message", "taskId": "T88", "message": "stop that", "now": true })
         );
+    }
+
+    #[test]
+    fn plan_steer_takes_a_steer_id_and_stands_in_for_why() {
+        assert!(
+            parse(&["plan", "drop", "P3"])
+                .unwrap_err()
+                .contains("--why is required")
+        );
+        assert!(
+            parse(&["plan", "drop", "P3", "--steer", "12"])
+                .unwrap_err()
+                .contains("like S12")
+        );
+        assert!(
+            parse(&["plan", "drop", "P3", "--steer", "S0"])
+                .unwrap_err()
+                .contains("like S12")
+        );
+        // The steer's own words become the note, on the hub.
+        let dropped = parse(&["plan", "drop", "P3", "--steer", "S12"]).unwrap();
+        assert_eq!(dropped.get("why"), None);
+        assert_eq!(dropped["steer"], json!("S12"));
+        let added = parse(&[
+            "plan",
+            "add",
+            "API first",
+            "--milestone",
+            "M1",
+            "--steer",
+            "S12",
+        ])
+        .unwrap();
+        assert_eq!(added["steer"], json!("S12"));
     }
 
     fn decision() -> Value {

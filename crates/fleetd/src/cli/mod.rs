@@ -15,8 +15,8 @@ pub mod prompts;
 pub mod retro;
 pub mod setup;
 pub mod status;
-pub mod time;
 pub mod steer;
+pub mod time;
 pub mod update;
 
 use std::path::PathBuf;
@@ -181,8 +181,7 @@ fn is_long_running(argv: &[String]) -> bool {
     match argv.first().map(String::as_str) {
         Some(
             "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node"
-            | "listen" | "retro" | "time" | "update" | "steer"
-            | "steers",
+            | "listen" | "retro" | "time" | "update" | "steer" | "steers",
         ) => true,
         Some("status") => !lead::is_lead_command(argv),
         Some("hub") => argv.get(1).map(String::as_str) == Some("github-webhook"),
