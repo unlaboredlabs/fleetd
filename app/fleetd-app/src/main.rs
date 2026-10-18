@@ -12,6 +12,8 @@ mod fake;
 mod input;
 mod keychain;
 mod links;
+// Liveness and motion (lanes, activity, sparklines, strips): its own module so it can grow without touching main.rs.
+mod live;
 mod menus;
 mod notify;
 mod pair;
