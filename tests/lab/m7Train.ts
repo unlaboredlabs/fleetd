@@ -51,7 +51,10 @@ export const cleanTestbed = () => {
   }
   const branches = ghJson<Array<Body>>("api", `repos/${REPO}/branches?per_page=100`).map((b) => b.name as string);
   for (const branch of branches) {
-    if (branch !== "main" && OURS.some((p) => branch.startsWith(p))) gh("api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${branch}`);
+    if (branch === "main" || !OURS.some((p) => branch.startsWith(p))) continue;
+    // GitHub may delete a merged or closed PR's branch between the listing and here; gone is what we want.
+    const out = spawnSync("gh", ["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${branch}`], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
+    if (out.status !== 0 && !/Reference does not exist|Not Found|HTTP 422/u.test(out.stderr)) throw new Error(`deleting ${branch}: ${out.stderr.trim()}`);
   }
 };
 

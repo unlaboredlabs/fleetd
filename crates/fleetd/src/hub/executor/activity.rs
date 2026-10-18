@@ -25,7 +25,6 @@ const BUCKET_MS: i64 = SPARK_BUCKET_SECS as i64 * 1000;
 struct Open {
     activity: Activity,
     started_ms: i64,
-    run_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -206,7 +205,6 @@ impl ActivityTracker {
             Open {
                 activity,
                 started_ms,
-                run_id: item.run_id.as_ref().map(|r| r.to_string()),
             },
         );
     }
@@ -235,14 +233,9 @@ impl ActivityTracker {
             activity,
             since: iso_ms(since_ms.min(now_ms)).into(),
         };
-        if let Some(open) = self
-            .open
-            .values()
-            .filter(|o| {
-                o.run_id.is_none() || self.active_run.is_none() || o.run_id == self.active_run
-            })
-            .max_by_key(|o| o.started_ms)
-        {
+        // Not filtered by run: an item's run id is claude's own command id, which the node may alias to the run it
+        // reports, and the open items are cleared when a run ends anyway.
+        if let Some(open) = self.open.values().max_by_key(|o| o.started_ms) {
             return Some(at(open.activity.clone(), open.started_ms));
         }
         if let Some((retry, since)) = &self.retry

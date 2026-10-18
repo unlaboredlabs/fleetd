@@ -67,6 +67,21 @@ impl Node {
         }
     }
 
+    /// The next call other than a follow. The hub follows every session whose run is active, on its own; those
+    /// follows are answered with "not found" so they end at once.
+    async fn call_after_follows(&mut self) -> (String, SessionCall) {
+        loop {
+            let (id, call) = self.call().await;
+            if !matches!(call, SessionCall::Follow { .. }) {
+                return (id, call);
+            }
+            self.reply(
+                &id,
+                json!({ "err": { "code": "not_found", "message": "not followed in this test" } }),
+            );
+        }
+    }
+
     fn frame(&self, v: Value) {
         let frame: NodeToHub = serde_json::from_value(v).unwrap();
         self.executors.handle_frame(&self.machine, frame);
@@ -265,7 +280,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     let executors = node.executors.clone();
     let target = r.clone();
     let sent = tokio::spawn(async move { executors.send(&target, "and then?", "req-2").await });
-    let (id, call) = node.call().await;
+    let (id, call) = node.call_after_follows().await;
     let SessionCall::Send {
         session_id: to,
         run_id: next_run,
@@ -319,7 +334,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
             )
             .await
     });
-    let (id, call) = node.call().await;
+    let (id, call) = node.call_after_follows().await;
     assert_eq!(
         call,
         SessionCall::Answer {
@@ -346,7 +361,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     let executors = node.executors.clone();
     let target = r.clone();
     let interrupted = tokio::spawn(async move { executors.interrupt(&target, "req-3").await });
-    let (id, call) = node.call().await;
+    let (id, call) = node.call_after_follows().await;
     assert_eq!(
         call,
         SessionCall::Interrupt {
@@ -362,7 +377,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     let executors = node.executors.clone();
     let target = node.thread("nope");
     let unknown = tokio::spawn(async move { executors.send(&target, "hi", "req-4").await });
-    let (id, _) = node.call().await;
+    let (id, _) = node.call_after_follows().await;
     node.reply(
         &id,
         json!({ "err": { "code": "not_found", "message": "no session nope" } }),
