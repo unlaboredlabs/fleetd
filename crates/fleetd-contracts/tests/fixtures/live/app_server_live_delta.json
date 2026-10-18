@@ -9,7 +9,7 @@
       "activity": {
         "activity": {
           "kind": "read",
-          "pattern": "fn stalled"
+          "pattern": "fn roundTotal"
         },
         "since": "2026-10-18T10:07:12.100Z"
       },
@@ -72,9 +72,9 @@
   ],
   "text": [
     {
-      "laneId": "lead:forge/fleetd",
+      "laneId": "lead:devbox/storefront",
       "messageId": "m-81",
-      "append": " T31 is editing the digest; T33 runs the tests."
+      "append": " T31 is fixing the rounding; T33 runs the tests."
     }
   ]
 }

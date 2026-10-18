@@ -1,7 +1,7 @@
 {
   "paths": [
-    "crates/fleetd/src/hub/leads/digest.rs",
-    "crates/fleetd/src/hub/digests/mod.rs",
-    "crates/fleetd/src/hub/ledger/digest_text.rs"
+    "src/cart/total.ts",
+    "src/cart/total.test.ts",
+    "docs/cart-totals.md"
   ]
 }

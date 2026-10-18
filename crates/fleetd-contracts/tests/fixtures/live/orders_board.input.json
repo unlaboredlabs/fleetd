@@ -1,6 +1,6 @@
 {
   "projectRef": {
-    "machineId": "forge",
-    "projectId": "fleetd"
+    "machineId": "devbox",
+    "projectId": "storefront"
   }
 }

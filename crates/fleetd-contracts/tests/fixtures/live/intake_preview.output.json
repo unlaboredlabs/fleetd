@@ -1,10 +1,10 @@
 {
   "echo": {
     "projectRef": {
-      "machineId": "forge",
-      "projectId": "fleetd"
+      "machineId": "devbox",
+      "projectId": "storefront"
     },
     "template": "feature",
-    "reason": "The digest lives in fleetd's hub/leads."
+    "reason": "The cart total lives in storefront's src/cart."
   }
 }

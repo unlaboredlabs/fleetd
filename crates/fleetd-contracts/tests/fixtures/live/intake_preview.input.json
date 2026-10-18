@@ -1,3 +1,3 @@
 {
-  "text": "Harden the lead digest so a stalled lead shows in it"
+  "text": "Fix the cart total rounding for carts with three items"
 }

@@ -1,13 +1,13 @@
 {
   "workstreamId": "W14",
-  "text": "Also cover the stalled case. See the screenshot.",
+  "text": "Also cover negative totals. See the screenshot.",
   "attachments": [
     "F3"
   ],
   "refs": [
     {
       "kind": "file",
-      "path": "crates/fleetd/src/hub/leads/digest.rs"
+      "path": "src/cart/total.ts"
     },
     {
       "kind": "order",
@@ -15,7 +15,7 @@
     },
     {
       "kind": "pr",
-      "url": "https://github.com/wynn-dev/fleetd/pull/212"
+      "url": "https://github.com/acme/storefront/pull/212"
     }
   ],
   "urgent": false,

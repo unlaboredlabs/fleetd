@@ -318,11 +318,11 @@ mod tests {
     #[test]
     fn lead_lane_ids_stay_within_bounds() {
         let project = ProjectRef {
-            machine_id: MachineId::new("forge").unwrap(),
+            machine_id: MachineId::new("devbox").unwrap(),
             project_id: crate::ids::ProjectId::new("p".repeat(200)).unwrap(),
         };
         let id = lead_lane_id(&project);
-        assert!(id.starts_with("lead:forge/"));
+        assert!(id.starts_with("lead:devbox/"));
         assert_eq!(crate::prim::js_len(&id), 80);
         assert!(LaneId::new(id.as_str()).is_ok());
     }

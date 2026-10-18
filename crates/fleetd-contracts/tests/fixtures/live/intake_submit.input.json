@@ -1,7 +1,7 @@
 {
-  "machineId": "forge",
-  "projectId": "fleetd",
-  "text": "Fix the flaky `train_rebases_before_merge` test. See `crates/fleetd/src/hub/train/tests.rs`, same area as W12.",
+  "machineId": "devbox",
+  "projectId": "storefront",
+  "text": "Fix the flaky `checkout completes` test. See `src/checkout/flow.test.ts`, same area as W12.",
   "template": "bugfix",
   "attachments": [
     "F3"
@@ -9,7 +9,7 @@
   "refs": [
     {
       "kind": "file",
-      "path": "crates/fleetd/src/hub/train/tests.rs"
+      "path": "src/checkout/flow.test.ts"
     },
     {
       "kind": "order",
