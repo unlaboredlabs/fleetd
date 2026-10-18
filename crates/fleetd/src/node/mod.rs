@@ -188,11 +188,11 @@ async fn run_node(
     tracing::info!(machine_id = %config.machine_id, hub = %config.hub, t3_url = %config.t3_url, "fleetd node starting");
     let store = store::NodeStore::open(&home.join("sessions.sqlite"))
         .map_err(|e| NodeError::Setup(format!("cannot open the session store in {shown}: {e}")))?;
+    let session_config = sessions::SessionConfig::for_node(home);
     let runner = Arc::new(runner::claude::ClaudeRunner::new(claude_binary()));
-    let node_sessions =
-        sessions::SessionService::start(store, runner, sessions::SessionConfig::for_node(home))
-            .await
-            .map_err(|e| NodeError::Setup(format!("cannot settle the stored sessions: {e}")))?;
+    let node_sessions = sessions::SessionService::start(store, runner, session_config)
+        .await
+        .map_err(|e| NodeError::Setup(format!("cannot settle the stored sessions: {e}")))?;
     let relay = lead::LeadRelay::new();
     let _socket = lead::serve_lead_socket(lead::lead_socket_path(home), relay.clone())
         .await

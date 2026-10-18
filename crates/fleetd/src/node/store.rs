@@ -6,7 +6,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::sessions::{
-    MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, SessionSummary, ThreadItem,
+    MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, RunnerInfo, SessionSummary, ThreadItem,
     ThreadMessage,
 };
 use rusqlite::{Connection, OptionalExtension, params};
@@ -143,6 +143,11 @@ impl NodeStore {
             )?;
             self.append(conn, MachineEvent::ProjectUpserted(project.clone()))
         })
+    }
+
+    /// Logs the runner's changed state, so a hub that reconnects with a cursor replays it.
+    pub fn runner_info(&self, info: &RunnerInfo) -> StoreResult<MachineEventFrame> {
+        self.tx(|conn| self.append(conn, MachineEvent::RunnerInfo(info.clone())))
     }
 
     /// `None` when there was no such project.
