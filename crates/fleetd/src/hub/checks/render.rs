@@ -1,5 +1,6 @@
 //! The claim lines a lead reads in its wake. Pure.
 use super::{units, utf16_prefix};
+use crate::hub::prompts::PromptSet;
 use fleetd_contracts::ledger::{CheckSpec, WorkstreamId};
 use fleetd_contracts::verification::{CheckOutcome, CheckResult, ClaimId};
 
@@ -84,24 +85,32 @@ fn failure_lines(r: &CheckResult) -> Vec<String> {
 }
 
 pub fn claim_failed_lines(
+    set: &PromptSet,
     claim_id: &ClaimId,
     workstream_id: &WorkstreamId,
     failures: &[CheckResult],
 ) -> String {
     let first = failures.first().map_or(0, |r| r.check_index.get());
-    let mut lines = vec![format!(
-        "- Claim {claim_id} on {workstream_id} failed; {workstream_id} stays verifying. Checks that did not pass:"
-    )];
-    lines.extend(failures.iter().flat_map(failure_lines));
-    lines.push(format!(
-        "  next: fix what failed (e.g. a task with --serves done:{first}), then `fleetd claim done --workstream {workstream_id}` again."
-    ));
-    lines.join("\n")
+    let lines: Vec<String> = failures.iter().flat_map(failure_lines).collect();
+    set.render(
+        "wake.claim_failed",
+        &[
+            ("claimId", claim_id),
+            ("workstreamId", workstream_id),
+            ("failures", &lines.join("\n")),
+            ("firstCheck", &first),
+        ],
+    )
 }
 
-pub fn claim_passed_line(claim_id: &ClaimId, workstream_id: &WorkstreamId) -> String {
-    format!(
-        "- Claim {claim_id} on {workstream_id} passed: every done-when check passed, so {workstream_id} is done."
+pub fn claim_passed_line(
+    set: &PromptSet,
+    claim_id: &ClaimId,
+    workstream_id: &WorkstreamId,
+) -> String {
+    set.render(
+        "wake.claim_passed",
+        &[("claimId", claim_id), ("workstreamId", workstream_id)],
     )
 }
 

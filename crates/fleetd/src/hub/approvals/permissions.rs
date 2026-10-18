@@ -428,7 +428,14 @@ impl Approvals {
                 }),
                 Verdict::Deny(rule) => Some(PermissionDecision::Deny {
                     message: fleetd_contracts::prim::Text::unchecked(clip(
-                        &format!("Denied by the tools.deny rule `{rule}` in {POLICY_FILE_PATH}."),
+                        &self
+                            .deps
+                            .hub
+                            .prompts(&project.machine_id, thread_id)
+                            .render(
+                                "permission.denied.policy",
+                                &[("rule", &rule), ("policyFile", &POLICY_FILE_PATH)],
+                            ),
                         2000,
                     )),
                 }),
@@ -675,9 +682,14 @@ impl Approvals {
             .pointer("/answer/by")
             .and_then(Value::as_str)
             .unwrap_or("its lead");
-        let message = format!(
-            "Not approved: {ask_id} was withdrawn by {by} before anyone answered it. Don't retry this call; ask for another way."
-        );
+        let message = self
+            .deps
+            .hub
+            .prompts(&t.project.machine_id, &t.thread_id)
+            .render(
+                "permission.denied.withdrawn",
+                &[("askId", &ask_id), ("by", &by)],
+            );
         let machine = &t.project.machine_id;
         let sent = self
             .deps
@@ -746,7 +758,14 @@ impl Approvals {
             };
             PermissionDecision::Deny {
                 message: fleetd_contracts::prim::Text::unchecked(clip(
-                    &format!("Denied by {by} ({}){said}", open.ask_id),
+                    &self
+                        .deps
+                        .hub
+                        .prompts(&open.project.machine_id, &open.thread_id)
+                        .render(
+                            "permission.denied.human",
+                            &[("by", &by), ("askId", &open.ask_id), ("said", &said)],
+                        ),
                     2000,
                 )),
             }
@@ -852,9 +871,12 @@ impl Approvals {
                 updated_input: None,
             }
         } else {
-            let message = input
-                .message
-                .unwrap_or_else(|| format!("Denied by {by} with thread_answer."));
+            let message = input.message.unwrap_or_else(|| {
+                self.deps
+                    .hub
+                    .prompts(m, t)
+                    .render("permission.denied.answer", &[("by", &by)])
+            });
             PermissionDecision::Deny {
                 message: fleetd_contracts::prim::Text::unchecked(clip(&message, 2000)),
             }

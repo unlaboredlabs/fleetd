@@ -1,0 +1,1 @@
+- The human stopped {{workstreamId}} '{{title}}' ({{why}}); {{cancelled}} of its tasks were cancelled. Merged PRs stay. Do no more work on it.

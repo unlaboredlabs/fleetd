@@ -91,6 +91,10 @@ impl ChangeRecords {
         Self { db }
     }
 
+    pub fn db(&self) -> &HubDb {
+        &self.db
+    }
+
     /// Numbers it (`X<n>`) and stores it at the back of its repo's train. `change.change_id` is ignored.
     pub fn create(&self, change: Change) -> Change {
         self.db

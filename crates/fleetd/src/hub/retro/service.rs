@@ -36,7 +36,6 @@ pub const THRESHOLD_DAYS: i64 = 7;
 /// Under the HTTP server's 5-minute request timeout, so retro_run answers before its call is cut off.
 pub const RUN_TIMEOUT_MS: u64 = 240_000;
 const PROMPT_INCIDENTS: usize = 200;
-pub const RETRO_PROMPT: &str = include_str!("retro-prompt.md");
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RetroRefused {
@@ -56,6 +55,8 @@ pub trait RetroPlaybooks: Send + Sync {
     /// The current text and ref (`name@sha`) of `name`.
     fn current(&self, name: &str) -> (String, String);
     fn override_text(&self, name: &str) -> Option<String>;
+    /// The texts in effect now; the retro prompt is one of them.
+    fn prompts(&self) -> crate::hub::prompts::PromptSet;
     /// Writes (or with `None` removes) the override; returns the new current ref, or why it was refused.
     fn set_override(&self, name: &str, text: Option<&str>) -> Result<String, String>;
     fn parser(&self) -> &dyn PlaybookParser;
@@ -105,6 +106,7 @@ pub struct Retro {
 }
 
 pub fn render_retro_prompt(
+    set: &crate::hub::prompts::PromptSet,
     window_days: u32,
     incidents: &[Value],
     playbooks: &[(String, String)],
@@ -136,19 +138,20 @@ pub fn render_retro_prompt(
             )
         })
         .collect();
-    RETRO_PROMPT
-        .replacen("{{windowDays}}", &window_days.to_string(), 1)
-        .replacen("{{metrics}}", &METRIC_CLASSES.join(", "), 1)
-        .replacen(
-            "{{incidents}}",
-            &if lines.is_empty() {
-                "(none)".to_string()
-            } else {
-                lines.join("\n")
-            },
-            1,
-        )
-        .replacen("{{playbooks}}", &books.join("\n\n"), 1)
+    let incidents = if lines.is_empty() {
+        "(none)".to_string()
+    } else {
+        lines.join("\n")
+    };
+    set.render(
+        "retro",
+        &[
+            ("windowDays", &window_days),
+            ("metrics", &METRIC_CLASSES.join(", ")),
+            ("incidents", &incidents),
+            ("playbooks", &books.join("\n\n")),
+        ],
+    )
 }
 
 /// `playbook.<name>.<sha256(diff)[..10]>`.
@@ -398,6 +401,7 @@ impl Retro {
             proposals: Vec::new(),
             dropped: Vec::new(),
             usage: None,
+            prompt_ref: None,
         };
         if window_incidents.is_empty() {
             records.finish_run(&done, false);
@@ -430,7 +434,9 @@ impl Retro {
                 )
             })
             .collect();
-        let prompt = render_retro_prompt(input.window_days, &window_incidents, &texts);
+        let set = self.deps.playbooks.prompts();
+        done.prompt_ref = Some(set.get("retro").r#ref.clone());
+        let prompt = render_retro_prompt(&set, input.window_days, &window_incidents, &texts);
         let (text, run_usage) = self.deps.runner.ask(prompt).await;
         let ctx = Context {
             window_days: input.window_days,

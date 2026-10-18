@@ -84,8 +84,15 @@ impl WatchPort for HubWatch {
     }
     async fn send(&self, key: &Key, message: &str, client_request_id: &str) -> Result<(), String> {
         let r = thread_ref(key).ok_or("bad thread ref")?;
+        // `message` is a prompt id (the nudge): the thread gets the text its session started with.
+        let message = self
+            .store
+            .db()
+            .prompts()
+            .for_thread(&r.machine_id, r.thread_id.as_str())
+            .render(message, &[]);
         self.executors
-            .send(&r, message, client_request_id)
+            .send(&r, &message, client_request_id)
             .await
             .map(|_| ())
             .map_err(|e| e.to_string())

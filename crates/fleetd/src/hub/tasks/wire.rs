@@ -343,8 +343,9 @@ impl TasksHook for TasksForLeads {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
+        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
-        self.0.digest_lines(project_ref, since, limit)
+        self.0.digest_lines(project_ref, since, limit, prompts)
     }
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
         self.0.live(project_ref)

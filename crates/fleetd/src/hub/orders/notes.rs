@@ -1,5 +1,6 @@
 //! A person adding to an order (order_note) and stopping one (order_stop). Both reach the order's lead as one wake
 //! line; a note marked urgent wakes it now instead of after the debounce.
+use crate::hub::prompts::PromptSet;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ledger::{Headline, Workstream, WorkstreamState};
@@ -113,6 +114,7 @@ fn serde_plain<T: serde::Serialize>(v: &T) -> String {
 
 /// The wake line for a person's words about an order, with its references and attachments.
 pub fn note_line(
+    set: &PromptSet,
     w: &Workstream,
     text: &str,
     refs: &[String],
@@ -120,21 +122,30 @@ pub fn note_line(
     steered: bool,
 ) -> String {
     let verb = if steered { "steered" } else { "added to" };
-    let mut line = format!(
-        "- The human {verb} {} '{}': '{}'",
-        w.workstream_id,
-        one_line(&w.title, 80),
-        one_line(text, 1500)
-    );
+    set.render(
+        "wake.order_note",
+        &[
+            ("verb", &verb),
+            ("workstreamId", &w.workstream_id),
+            ("title", &one_line(&w.title, 80)),
+            ("text", &one_line(text, 1500)),
+            ("references", &references(refs, attached)),
+        ],
+    )
+}
+
+/// The references and attachments under a wake line, or nothing.
+fn references(refs: &[String], attached: &[String]) -> String {
+    let mut out = String::new();
     if !refs.is_empty() {
-        line.push_str("\n  References:\n");
-        line.push_str(&refs.join("\n"));
+        out.push_str("\n  References:\n");
+        out.push_str(&refs.join("\n"));
     }
     if !attached.is_empty() {
-        line.push_str("\n  Attached:\n");
-        line.push_str(&attached.join("\n"));
+        out.push_str("\n  Attached:\n");
+        out.push_str(&attached.join("\n"));
     }
-    line
+    out
 }
 
 pub async fn note(
@@ -188,7 +199,14 @@ pub async fn note(
     let note_id = format!("N{}", event.seq.get());
     let trigger = Trigger::Line {
         kind: LineKind::Human,
-        text: note_line(&w, &input.text, &refs, &attached, input.urgent),
+        text: note_line(
+            &hub.db.prompts().for_lead(&w.project_ref),
+            &w,
+            &input.text,
+            &refs,
+            &attached,
+            input.urgent,
+        ),
     };
     let wakes_at = if input.urgent {
         hub.leads.wakes.trigger_now(&w.project_ref, trigger);
@@ -218,15 +236,13 @@ pub async fn with_intent(
     };
     let w = stored.workstream;
     let attached = attachments::deliver(hub, caller, files, &w.project_ref, id).await?;
-    let mut line = format!("- {id} came with:");
-    if !refs.is_empty() {
-        line.push_str("\n  References:\n");
-        line.push_str(&refs.join("\n"));
-    }
-    if !attached.is_empty() {
-        line.push_str("\n  Attached:\n");
-        line.push_str(&attached.join("\n"));
-    }
+    let line = hub.db.prompts().for_lead(&w.project_ref).render(
+        "wake.order_refs",
+        &[
+            ("workstreamId", id),
+            ("references", &references(refs, &attached)),
+        ],
+    );
     hub.leads.wakes.trigger(
         &w.project_ref,
         Trigger::Line {
@@ -328,9 +344,14 @@ pub async fn stop(
         &r,
         Trigger::Line {
             kind: LineKind::Human,
-            text: format!(
-                "- The human stopped {id} '{}' ({why}); {cancelled} of its tasks were cancelled. Merged PRs stay. Do no more work on it.",
-                one_line(&stored.workstream.title, 80)
+            text: hub.db.prompts().for_lead(&r).render(
+                "wake.order_stopped",
+                &[
+                    ("workstreamId", &id),
+                    ("title", &one_line(&stored.workstream.title, 80)),
+                    ("why", &why),
+                    ("cancelled", &cancelled),
+                ],
             ),
         },
     );

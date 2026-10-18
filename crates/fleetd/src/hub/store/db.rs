@@ -19,6 +19,8 @@ pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
 /// The hub's SQLite database. HubStore, EventLog, Auth and the areas with tables share this one connection.
 pub struct HubDb {
     conn: Mutex<Connection>,
+    /// `<home>/prompts`, where prompt overrides live; None for an in-memory database, which has the shipped prompts only.
+    prompts_dir: Option<PathBuf>,
 }
 
 impl HubDb {
@@ -30,21 +32,28 @@ impl HubDb {
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut dir, 0o700);
         dir.create(home)?;
-        Self::from_connection(Connection::open(home.join("hub.sqlite"))?)
+        Self::from_connection(
+            Connection::open(home.join("hub.sqlite"))?,
+            Some(home.join("prompts")),
+        )
     }
 
     /// A private in-memory database, for tests.
     pub fn open_memory() -> Result<Arc<Self>, StoreError> {
-        Self::from_connection(Connection::open_in_memory()?)
+        Self::from_connection(Connection::open_in_memory()?, None)
     }
 
-    fn from_connection(conn: Connection) -> Result<Arc<Self>, StoreError> {
+    fn from_connection(
+        conn: Connection,
+        prompts_dir: Option<PathBuf>,
+    ) -> Result<Arc<Self>, StoreError> {
         // Lets the CLI write keys while the hub runs; a writer waits up to 5 s for the other's lock.
         conn.execute_batch("PRAGMA busy_timeout = 5000")?;
         let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
         conn.execute_batch("PRAGMA synchronous = NORMAL")?;
         let db = Self {
             conn: Mutex::new(conn),
+            prompts_dir,
         };
         db.migrate()?;
         Ok(Arc::new(db))
@@ -75,6 +84,10 @@ impl HubDb {
         let result = f(&tx)?;
         tx.commit()?;
         Ok(result)
+    }
+
+    pub fn prompts_dir(&self) -> Option<&Path> {
+        self.prompts_dir.as_deref()
     }
 
     pub fn user_version(&self) -> Result<i64, StoreError> {

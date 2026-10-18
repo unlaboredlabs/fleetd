@@ -5,6 +5,8 @@ use std::sync::LazyLock;
 use fleetd_contracts::ledger::Brief;
 use fleetd_contracts::tasks::{Task, TaskKind, TaskResult, TaskResultStatus, TaskState};
 use regex::Regex;
+
+use crate::hub::prompts::PromptSet;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
@@ -152,10 +154,10 @@ fn state_str(state: TaskState) -> &'static str {
     }
 }
 
-/// The task's first message: the lead's text with the brief, the areas and the rules around it.
-pub fn render_task_prompt(input: &PromptInput<'_>) -> String {
+/// The task's first message: the lead's text with the brief, the areas and the rules around it, then the human's
+/// custom instructions.
+pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     let task = input.task;
-    let task_id = task.task_id.as_str();
     let serves = task.serves.as_ref().map(|s| s.as_str());
     let mut context = Vec::new();
     if let Some(brief) = input.brief {
@@ -168,74 +170,50 @@ pub fn render_task_prompt(input: &PromptInput<'_>) -> String {
     if let Some(serves) = serves {
         context.push(format!("This task serves: {}", one_line(serves, 200)));
     }
-
-    let mut rules = Vec::new();
-    if task.kind == TaskKind::Write {
-        let areas = task
-            .areas
-            .iter()
-            .map(|a| {
-                let globs = input
-                    .area_globs
-                    .iter()
-                    .find(|(n, _)| n == a.as_str())
-                    .map(|(_, g)| g.join(", "))
-                    .unwrap_or_default();
-                format!("{} ({globs})", a.as_str())
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        rules.push(format!("- Only change files in these areas: {areas}. Changes anywhere else are flagged as out of area."));
-        let base = input.base_branch.map_or_else(
-            || "the default branch".to_owned(),
-            |b| format!("the default branch ({b})"),
-        );
-        rules.push(format!(
-            "- You work in your own worktree on branch {}. Commit to your branch; do not merge; do not push to {base}.",
-            input.branch.unwrap_or("your task branch")
-        ));
-        // M7: only the merge train merges, and it takes a PR only with the Source: line it checks.
-        let branch = input.branch.unwrap_or("<your branch>");
-        rules.push(format!(
-            "- If the repo's origin is on GitHub: when your commits are done, `git push -u origin {branch}` and open a pull request with `gh pr create --base {} --head {branch}` whose body has the line `Source: {}`, and put its URL in your result. Never merge it and never post a `fleetd/train` commit status: fleetd's merge train merges it. Without a GitHub origin, just commit.",
-            input.base_branch.unwrap_or("<default branch>"),
-            serves.unwrap_or("<what this serves>"),
-        ));
+    let workstream = if context.is_empty() {
+        String::new()
     } else {
-        rules.push(
-            "- This is a read-only task: do not change, commit or push any files.".to_owned(),
-        );
-    }
-    rules.push("- Do the task yourself; do not hand it to subagents.".to_owned());
-    if task.kind == TaskKind::Review {
-        // The value bar keys review rounds on this verdict: one clean pass per commit ends review.
-        rules.push(format!(
-            "- Before your final message, record your verdict once: `fleetd review verdict --task {task_id} --sha <the full SHA you reviewed> --blocking <n> --non-blocking <n> --summary \"<one paragraph>\"`. Blocking findings are the ones that must change before merge."
-        ));
-    }
-    rules.push("- End with a one-paragraph result: what you did, what is left, and anything the lead must decide.".to_owned());
-
-    let mut lines = vec![
-        format!(
-            "You are fleetd task {task_id} ({}) for workstream {} in project {}: {}",
-            kind_str(task.kind),
-            task.workstream_id.as_str(),
-            one_line(input.project_title, 80),
-            task.title.as_str()
-        ),
-        String::new(),
-        "## Task".to_owned(),
-        task.prompt.as_str().trim().to_owned(),
-    ];
-    if !context.is_empty() {
-        lines.push(String::new());
-        lines.push("## Workstream".to_owned());
-        lines.extend(context);
-    }
-    lines.push(String::new());
-    lines.push("## Rules".to_owned());
-    lines.extend(rules);
-    lines.join("\n")
+        format!("\n\n## Workstream\n{}", context.join("\n"))
+    };
+    let areas = task
+        .areas
+        .iter()
+        .map(|a| {
+            let globs = input
+                .area_globs
+                .iter()
+                .find(|(n, _)| n == a.as_str())
+                .map(|(_, g)| g.join(", "))
+                .unwrap_or_default();
+            format!("{} ({globs})", a.as_str())
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let id = match task.kind {
+        TaskKind::Write => "task.brief.write",
+        TaskKind::Read => "task.brief.read",
+        TaskKind::Review => "task.brief.review",
+    };
+    let text = set.render(
+        id,
+        &[
+            ("taskId", &task.task_id),
+            ("kind", &kind_str(task.kind)),
+            ("workstreamId", &task.workstream_id),
+            ("project", &one_line(input.project_title, 80)),
+            ("title", &task.title),
+            ("task", &task.prompt.as_str().trim()),
+            ("workstream", &workstream),
+            ("areas", &areas),
+            ("branch", &input.branch.unwrap_or("<your branch>")),
+            (
+                "baseBranch",
+                &input.base_branch.unwrap_or("<default branch>"),
+            ),
+            ("serves", &serves.unwrap_or("<what this serves>")),
+        ],
+    );
+    set.with_instructions(text)
 }
 
 fn quoted(text: &str) -> Vec<String> {
@@ -248,16 +226,12 @@ fn quoted(text: &str) -> Vec<String> {
 /// The "why you are woken" entry for a finished task: its whole result tail, inline.
 /// `receipts` is the receipts area's line for this result.
 pub fn task_result_lines(
+    set: &PromptSet,
     task_id: &str,
     title: &str,
     result: &TaskResult,
     receipts: Option<&str>,
 ) -> String {
-    let verb = match result.status {
-        TaskResultStatus::Done => "completed",
-        TaskResultStatus::Failed => "failed",
-        TaskResultStatus::Cancelled => "was cancelled",
-    };
     let mut where_ = Vec::new();
     if let Some(b) = &result.branch {
         where_.push(format!("branch {}", b.as_str()));
@@ -270,44 +244,46 @@ pub fn task_result_lines(
     } else {
         format!(" ({})", where_.join(", "))
     };
-    let mut out = vec![format!(
-        "- {task_id} {verb}: {}{where_}",
-        one_line(title, 80)
-    )];
     // M6 receipts, counted by the hub; absent on results stored before them.
-    if let Some(receipts) = receipts {
-        out.push(format!("  {receipts}"));
-    }
-    out.push("  result:".to_owned());
+    let receipts = receipts.map_or_else(String::new, |r| format!("\n  {r}"));
     let tail = result.tail.as_str();
-    if tail.trim().is_empty() {
-        out.push("  > (no final message)".to_owned());
+    let quoted_tail = if tail.trim().is_empty() {
+        "  > (no final message)".to_owned()
     } else {
-        out.extend(quoted(tail));
-    }
-    out.push(if result.status == TaskResultStatus::Cancelled {
-        "  next: nothing; spawn a new task if the work is still needed.".to_owned()
-    } else {
-        format!("  next: judge the result; `fleetd task message {task_id} \"<text>\"` continues the same thread.")
-    });
-    out.join("\n")
+        quoted(tail).join("\n")
+    };
+    let (id, verb) = match result.status {
+        TaskResultStatus::Done => ("wake.task_result", "completed"),
+        TaskResultStatus::Failed => ("wake.task_result", "failed"),
+        TaskResultStatus::Cancelled => ("wake.task_cancelled", "was cancelled"),
+    };
+    set.render(
+        id,
+        &[
+            ("taskId", &task_id),
+            ("verb", &verb),
+            ("title", &one_line(title, 80)),
+            ("where", &where_),
+            ("receipts", &receipts),
+            ("result", &quoted_tail),
+        ],
+    )
 }
 
 /// The "why you are woken" entry for a task waiting on input: its question, inline.
-pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String {
-    let mut out = vec![
-        format!("- {task_id} is waiting for input: {}", one_line(title, 80)),
-        "  question:".to_owned(),
-    ];
-    out.extend(quoted(question));
-    out.push(format!(
-        "  next: answer it with `fleetd task message {task_id} \"<answer>\"`, or `fleetd task cancel {task_id}`. Ask the human only if it is a product, money, credential or irreversible call."
-    ));
-    out.join("\n")
+pub fn task_waiting_lines(set: &PromptSet, task_id: &str, title: &str, question: &str) -> String {
+    set.render(
+        "wake.task_waiting",
+        &[
+            ("taskId", &task_id),
+            ("title", &one_line(title, 80)),
+            ("question", &quoted(question).join("\n")),
+        ],
+    )
 }
 
 /// One digest line per task: running and idle, then queued with reasons, then those that ended since `since`.
-pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
+pub fn task_digest_lines(set: &PromptSet, tasks: &[Task], since: Option<&str>) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
     let model = |t: &Task| format!("{}/{}", t.model.as_str(), effort_str(t.effort));
     let mut out = Vec::new();
@@ -315,30 +291,36 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
         .iter()
         .filter(|t| matches!(t.state, TaskState::Running | TaskState::Idle))
     {
-        let what = if t.state == TaskState::Idle {
-            "idle, waiting for input"
+        let id = if t.state == TaskState::Idle {
+            "digest.tasks.idle"
         } else {
-            "running"
+            "digest.tasks.running"
         };
         let branch = t
             .branch
             .as_ref()
             .map_or_else(String::new, |b| format!(" [{}]", b.as_str()));
-        out.push(format!(
-            "- {} {what} ({}, {}): {}{branch}",
-            t.task_id.as_str(),
-            kind_str(t.kind),
-            model(t),
-            title(t)
+        out.push(set.render(
+            id,
+            &[
+                ("taskId", &t.task_id),
+                ("kind", &kind_str(t.kind)),
+                ("model", &model(t)),
+                ("title", &title(t)),
+                ("branch", &branch),
+            ],
         ));
     }
     for t in tasks.iter().filter(|t| t.state == TaskState::Queued) {
         let reason = t.queued_reason.as_ref().map_or("waiting", |r| r.as_str());
-        out.push(format!(
-            "- {} queued ({}): {}; {reason}",
-            t.task_id.as_str(),
-            kind_str(t.kind),
-            title(t)
+        out.push(set.render(
+            "digest.tasks.queued",
+            &[
+                ("taskId", &t.task_id),
+                ("kind", &kind_str(t.kind)),
+                ("title", &title(t)),
+                ("reason", &reason),
+            ],
         ));
     }
     for t in tasks.iter().filter(|t| {
@@ -356,11 +338,14 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
         } else {
             format!(" → {first}")
         };
-        out.push(format!(
-            "- {} {} since your last wake: {}{arrow}",
-            t.task_id.as_str(),
-            state_str(t.state),
-            title(t)
+        out.push(set.render(
+            "digest.tasks.ended",
+            &[
+                ("taskId", &t.task_id),
+                ("state", &state_str(t.state)),
+                ("title", &title(t)),
+                ("result", &arrow),
+            ],
         ));
     }
     out

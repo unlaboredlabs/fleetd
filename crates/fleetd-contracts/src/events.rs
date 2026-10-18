@@ -166,6 +166,14 @@ pub enum HubEventType {
     /// 200 characters).
     #[serde(rename = "workstream.note")]
     WorkstreamNote,
+    /// A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),
+    /// `data.warnings` (their codes). The text is not in the event; prompt_get reads it.
+    #[serde(rename = "prompt.changed")]
+    PromptChanged,
+    /// This release changed the default of a prompt you overrode; yours stays in effect until you save it again or
+    /// reset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.
+    #[serde(rename = "prompt.default_changed")]
+    PromptDefaultChanged,
 }
 
 impl HubEventType {
@@ -231,6 +239,8 @@ impl HubEventType {
             Self::PlaybookKept => "playbook.kept",
             Self::KeyPaired => "key.paired",
             Self::WorkstreamNote => "workstream.note",
+            Self::PromptChanged => "prompt.changed",
+            Self::PromptDefaultChanged => "prompt.default_changed",
         }
     }
 }

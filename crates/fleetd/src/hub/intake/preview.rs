@@ -73,7 +73,10 @@ impl Intake {
                 recent_intents: recent.into_iter().map(|w| w.title.to_string()).collect(),
             });
         }
-        let outcome = self.router.route(text, &projects).await;
+        let outcome = self
+            .router
+            .route(&self.ctx.db.prompts().current(None), text, &projects)
+            .await;
         let echo = match outcome.result {
             Some(r) => Some(Self::echo(
                 r.project_ref.clone(),

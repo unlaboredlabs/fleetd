@@ -1,0 +1,1 @@
+- {{who}} recorded {{decisionId}}: {{key}} = {{value}} ({{scope}}). Follow it.

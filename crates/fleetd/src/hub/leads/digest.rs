@@ -8,7 +8,8 @@ use fleetd_contracts::ledger::{
 };
 
 use super::ports::Answer;
-use crate::hub::playbooks::finish_all_rules::{FINISH_ALL_IDLE, is_finish_all};
+use crate::hub::playbooks::finish_all_rules::is_finish_all;
+use crate::hub::prompts::PromptSet;
 
 pub const DIGEST_MAX_TOKENS: usize = 1500;
 /// Decisions listed by full value; the rest only appear by key under "do not re-ask".
@@ -42,6 +43,8 @@ pub struct WorkstreamFacts {
 }
 
 pub struct DigestInput<'a> {
+    /// The texts the digest's words come from.
+    pub prompts: &'a PromptSet,
     pub project_ref: &'a ProjectRef,
     pub title: &'a str,
     pub at: &'a str,
@@ -174,6 +177,7 @@ pub fn done_when_text(checks: &[CheckSpec], passed: Option<&HashSet<usize>>, max
 }
 
 fn workstream_lines(
+    set: &PromptSet,
     w: &Workstream,
     facts: Option<&WorkstreamFacts>,
     playbook: Option<&DigestPlaybook>,
@@ -204,14 +208,15 @@ fn workstream_lines(
         one_line(&w.title, 120)
     );
     if w.state == WorkstreamState::Idle && is_finish_all(w) {
-        return format!(
-            "{head}\n  {FINISH_ALL_IDLE}; `fleetd inventory` again only when something new comes in"
-        );
+        return format!("{head}\n  {}", set.render("digest.finish_all_idle", &[]));
     }
     let Some(brief) = &w.brief else {
         return format!(
-            "{head}\n  no brief yet: register it with `fleetd brief create --workstream {} --json '<Brief>'`",
-            w.workstream_id
+            "{head}\n  {}",
+            set.render(
+                "digest.workstream.no_brief",
+                &[("workstreamId", &w.workstream_id)]
+            )
         );
     };
     let status = w
@@ -266,12 +271,12 @@ fn ask_line(a: &Ask) -> String {
     )
 }
 
-fn answer_line(answer: &Answer) -> String {
+fn answer_line(set: &PromptSet, answer: &Answer) -> String {
     let ask = &answer.ask;
     if answer.withdrawn {
-        return format!(
-            "- {} {}: dropped by the human; do not pursue it",
-            ask.ask_id, ask.key
+        return set.render(
+            "digest.answer.withdrawn",
+            &[("askId", &ask.ask_id), ("key", &ask.key)],
         );
     }
     let value = answer
@@ -389,12 +394,10 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
         }
     }
 
-    let header = format!(
-        "# fleetd digest: project {} ({}/{}), {}\nThis is the current truth about your project. Trust it over your memory.",
-        one_line(input.title, 80),
-        input.project_ref.machine_id,
-        input.project_ref.project_id,
-        input.at
+    let title = one_line(input.title, 80);
+    let project_ref = format!(
+        "{}/{}",
+        input.project_ref.machine_id, input.project_ref.project_id
     );
 
     let playbook_of = |w: &Workstream| w.playbook.as_ref().and_then(|p| input.playbooks.get(p));
@@ -413,7 +416,11 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     let mut sections = vec![
         Section::new(
             "Answers since your last wake",
-            input.answers.iter().map(answer_line).collect(),
+            input
+                .answers
+                .iter()
+                .map(|a| answer_line(input.prompts, a))
+                .collect(),
             20,
             "see `fleetd decisions search`",
             "\n",
@@ -423,7 +430,14 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             input
                 .workstreams
                 .iter()
-                .map(|w| workstream_lines(w, input.facts.get(&w.workstream_id), playbook_of(w)))
+                .map(|w| {
+                    workstream_lines(
+                        input.prompts,
+                        w,
+                        input.facts.get(&w.workstream_id),
+                        playbook_of(w),
+                    )
+                })
                 .collect(),
             20,
             "older ones not shown",
@@ -496,9 +510,16 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     shown.extend([ASKS, DECISIONS, DO_NOT_RE_ASK]);
 
     let render = |sections: &[Section]| {
-        let mut parts = vec![header.clone()];
-        parts.extend(shown.iter().map(|&i| sections[i].render()));
-        parts.join("\n\n")
+        let parts: Vec<String> = shown.iter().map(|&i| sections[i].render()).collect();
+        input.prompts.render(
+            "lead.digest",
+            &[
+                ("project", &title),
+                ("projectRef", &project_ref),
+                ("at", &input.at),
+                ("sections", &parts.join("\n\n")),
+            ],
+        )
     };
     // Lowest value first: the key list, then decisions, asks, workstreams, and answers last. The first pass keeps a
     // few of each so no section vanishes while another is long; the second trims to nothing if it must.

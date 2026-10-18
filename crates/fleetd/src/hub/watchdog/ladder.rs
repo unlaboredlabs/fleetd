@@ -28,7 +28,8 @@ pub const DEFAULT_CONFIG: WatchdogConfig = WatchdogConfig {
     check_every_ms: 30_000,
 };
 
-pub const NUDGE: &str = "You seem stalled; continue the task from where you stopped.";
+/// The prompt id of the stall nudge; the hub renders it from the thread's own texts when it sends it.
+pub const NUDGE: &str = "watchdog.nudge";
 
 /// Thresholds from `FLEETD_STALL_*` / `FLEETD_WATCHDOG_EVERY_SEC` (seconds); unset or invalid keeps the default.
 pub fn config_from_env(get: impl Fn(&str) -> Option<String>) -> WatchdogConfig {

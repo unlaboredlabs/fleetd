@@ -46,8 +46,15 @@ impl Playbooks {
         }))
     }
 
-    /// The current version of `name`; new workstreams pin this one.
+    /// The current version of `name`; new workstreams pin this one. Read from disk each time, so an override saved
+    /// with prompt_set or `fleetd prompts edit` applies at once; one that no longer parses leaves the last good one.
     pub fn current(&self, name: PlaybookName) -> LoadedPlaybook {
+        match load::load_all(self.overrides_dir.as_deref()) {
+            Ok(all) => *self.current.lock().unwrap() = all,
+            Err(error) => {
+                tracing::warn!(%error, "playbook overrides unreadable; keeping the last good ones")
+            }
+        }
         self.current.lock().unwrap()[name.as_str()].clone()
     }
 

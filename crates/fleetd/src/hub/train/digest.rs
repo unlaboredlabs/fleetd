@@ -97,13 +97,22 @@ fn waived(facts: &TrainFacts, since_ms: Option<i64>) -> impl Iterator<Item = (&C
 }
 
 /// The lead digest's "Merge train" lines. `since` is the lead's last wake.
-pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> {
+pub fn lead_train_lines(
+    set: &crate::hub::prompts::PromptSet,
+    facts: &TrainFacts,
+    since: Option<&str>,
+) -> Vec<String> {
     // Date.parse of an unreadable `since` is NaN: nothing is "after" it.
     let since_ms = since.map(|s| parse_iso(s).unwrap_or(i64::MAX));
     let mut lines: Vec<String> = facts
         .trains
         .iter()
-        .map(|t| format!("- {}: {}", t.repo, state_of(&facts.changes, t)))
+        .map(|t| {
+            set.render(
+                "digest.train.repo",
+                &[("repo", &t.repo), ("state", &state_of(&facts.changes, t))],
+            )
+        })
         .collect();
     let when = if since.is_some() {
         " since your last wake"
@@ -111,32 +120,48 @@ pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> 
         ""
     };
     lines.extend(merged(&facts.changes, since_ms).map(|c| {
-        format!(
-            "- {} merged{when}: {}{} (serves {}{})",
-            c.change_id,
-            pr(c),
-            short(c.merged_sha.as_deref()),
-            c.serves,
-            by(c)
+        set.render(
+            "digest.train.merged",
+            &[
+                ("changeId", &c.change_id),
+                ("since", &when),
+                ("pr", &pr(c)),
+                ("sha", &short(c.merged_sha.as_deref())),
+                ("serves", &c.serves),
+                ("by", &by(c)),
+            ],
         )
     }));
-    lines.extend(facts.changes.iter().filter(|c| PARKED.contains(&c.state)).map(|c| {
-        format!(
-            "- {} {}: {}{}; {}. The train told its author and retries the next push by itself.",
-            c.change_id,
-            state_str(c.state),
-            pr(c),
-            by(c),
-            one_line(c.last_error.as_deref().unwrap_or(""), 160)
-        )
-    }));
+    lines.extend(
+        facts
+            .changes
+            .iter()
+            .filter(|c| PARKED.contains(&c.state))
+            .map(|c| {
+                set.render(
+                    "digest.train.parked",
+                    &[
+                        ("changeId", &c.change_id),
+                        ("state", &state_str(c.state)),
+                        ("pr", &pr(c)),
+                        ("by", &by(c)),
+                        (
+                            "error",
+                            &one_line(c.last_error.as_deref().unwrap_or(""), 160),
+                        ),
+                    ],
+                )
+            }),
+    );
     lines.extend(waived(facts, since_ms).map(|(c, reason)| {
-        format!(
-            "- {} {} ({}): {}",
-            c.change_id,
-            pr(c),
-            state_str(c.state),
-            one_line(reason, 200)
+        set.render(
+            "digest.train.waived",
+            &[
+                ("changeId", &c.change_id),
+                ("pr", &pr(c)),
+                ("state", &state_str(c.state)),
+                ("reason", &one_line(reason, 200)),
+            ],
         )
     }));
     lines

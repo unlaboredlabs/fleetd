@@ -290,6 +290,9 @@ impl ApprovalHub for Fake {
         };
         Box::pin(async move { Some(p) })
     }
+    fn prompts(&self, _: &str, _: &str) -> crate::hub::prompts::PromptSet {
+        crate::hub::prompts::PromptSet::defaults().clone()
+    }
 }
 
 impl EventLog for Fake {
