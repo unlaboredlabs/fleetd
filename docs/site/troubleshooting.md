@@ -13,7 +13,7 @@ a hub check `hub/<name>` is `#hub-<name>`, a machine check `<machine>/<name>` is
 $ fleetd doctor
 ✗ doctor hub: gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login
 ✗ doctor hub: claude on the hub is not logged in; the intake router and the retro can't reach a model. Fix: claude auth login
-! doctor laptop: laptop is degraded: claude is not logged in. Fix: claude auth login.
+! doctor laptop: laptop is degraded: claude is not logged in. Fix: claude auth login
 ✗ doctor laptop: laptop: claude 2.1.302, not logged in, so its sessions can't start. Fix: claude auth login
 ✗ doctor laptop: No git commit identity is set on laptop. Fix: fleetd pair --worker laptop, then run what it prints on laptop
 ✓ doctor: 7 of 12 checks pass
@@ -62,8 +62,9 @@ If gh is missing, install it from [cli.github.com](https://cli.github.com) first
 claude auth login
 ```
 
-For a gateway or API key instead, put `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`) in
-`~/.fleetd/claude.env` and restart the hub service: see [claude.env](config-and-files.md#claude-env). If claude is missing ("Claude Code (claude) is not on the hub's PATH"), install it first
+When the hub's claude goes through a proxy, the doctor names it; log in with your proxy as you normally do. For a
+gateway, API key or token instead, put `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`, or
+`CLAUDE_CODE_OAUTH_TOKEN`) in `~/.fleetd/claude.env` and restart the hub service: see [claude.env](config-and-files.md#claude-env). If claude is missing ("Claude Code (claude) is not on the hub's PATH"), install it first
 (next section).
 
 ## claude on the hub is missing or the wrong version {#hub-claude_version}
@@ -94,15 +95,16 @@ HTTPS address stops answering, check where it points with `tailscale serve statu
 
 > laptop is offline (last seen …). · laptop is degraded: ….
 
-Restart its node, on that machine:
+The finding's fix follows the cause. For claude logged out, out of range or missing, it is the login, update or
+install (see the claude findings below), and both in order when both are needed. Only a node that is down or has
+no claude cause gets a restart, on that machine:
 
 ```sh
 systemctl --user restart fleetd-node.service                 # Linux
 launchctl kickstart -k gui/$(id -u)/sh.fleetd.node           # macOS
 ```
 
-A degraded reason that names its own fix (such as a claude login) comes first: apply that fix. The log is
-`~/.fleetd/logs/node.log`.
+The log is `~/.fleetd/logs/node.log`.
 
 ## claude is missing or the wrong version {#claude_version}
 
@@ -158,8 +160,7 @@ For a machine set up over SSH, write the hub's identity into its service again, 
 fleetd machine add laptop
 ```
 
-For the hub's own machine, the finding prints `fleetd machine add localhost`; run `fleetd machine add --local`
-instead.
+For the hub's own machine, the finding prints `fleetd machine add --local`.
 
 For one that joined with a code, run `fleetd pair --worker laptop` on the hub, then the command it prints on the
 machine. Without a hub identity, set one on the machine:

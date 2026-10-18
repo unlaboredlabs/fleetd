@@ -26,6 +26,9 @@ pub struct GitIdentity {
 #[serde(rename_all = "camelCase")]
 pub struct MachineSetup {
     pub ssh_host: String,
+    /// Set up on the hub's own machine (`machine add --local`), without SSH.
+    #[serde(default)]
+    pub local: bool,
     /// "linux" or "darwin".
     pub platform: Platform,
     pub uid: u32,
@@ -57,6 +60,18 @@ pub fn read_hub_config(home: &Path) -> (HubConfig, Option<String>) {
                     first.lines().next().unwrap_or("")
                 )),
             )
+        }
+    }
+}
+
+impl MachineSetup {
+    /// The command that sets this machine up again, as `fleetd machine add` was run for it.
+    pub fn add_command(&self) -> String {
+        // A record from before the `local` flag has the hub's own machine as "localhost".
+        if self.local || self.ssh_host == "localhost" {
+            "fleetd machine add --local".to_owned()
+        } else {
+            format!("fleetd machine add {}", self.ssh_host)
         }
     }
 }

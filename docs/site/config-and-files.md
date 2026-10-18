@@ -65,8 +65,7 @@ ANTHROPIC_AUTH_TOKEN=<token>
 
 - **Nodes** add every line to each session's environment and re-read the file at each start.
 - **The hub** service loads the file when it starts, so restart it after a change. Its own `claude` gets only
-  `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` from it. A `CLAUDE_CODE_OAUTH_TOKEN` there
-  reaches the node's sessions but not the hub's router.
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` from it.
 
 `fleetd init` offers to copy these from your shell when it finds them there.
 

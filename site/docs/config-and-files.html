@@ -94,8 +94,7 @@ ANTHROPIC_AUTH_TOKEN=&lt;token&gt;</code></pre>
 <ul>
 <li><strong>Nodes</strong> add every line to each session's environment and re-read the file at each start.</li>
 <li><strong>The hub</strong> service loads the file when it starts, so restart it after a change. Its own <code>claude</code> gets only
-<code>ANTHROPIC_BASE_URL</code>, <code>ANTHROPIC_AUTH_TOKEN</code> and <code>ANTHROPIC_API_KEY</code> from it. A <code>CLAUDE_CODE_OAUTH_TOKEN</code> there
-reaches the node's sessions but not the hub's router.</li>
+<code>ANTHROPIC_BASE_URL</code>, <code>ANTHROPIC_AUTH_TOKEN</code>, <code>ANTHROPIC_API_KEY</code> and <code>CLAUDE_CODE_OAUTH_TOKEN</code> from it.</li>
 </ul>
 <p><code>fleetd init</code> offers to copy these from your shell when it finds them there.</p>
 <h2 id="policy">.fleetd/policy.yaml<a class="anchor" href="#policy" aria-label="Link to this section">#</a></h2>

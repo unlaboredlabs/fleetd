@@ -127,23 +127,10 @@ async fn run_cmd(cmd: &str, args: &[&str], env: Option<HashMap<String, String>>)
 /// The intake router's environment allowlist: the hub's own `CLAUDE*` variables never
 /// reach the child, and without `CLAUDE_CONFIG_DIR` claude reads the user's login from `$HOME/.claude`.
 pub fn router_env() -> HashMap<String, String> {
-    [
-        "HOME",
-        "PATH",
-        "USER",
-        "LANG",
-        "ANTHROPIC_BASE_URL",
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_API_KEY",
-    ]
-    .iter()
-    .filter_map(|k| {
-        std::env::var(k)
-            .ok()
-            .filter(|v| !v.is_empty())
-            .map(|v| (k.to_string(), v))
-    })
-    .collect()
+    let own: HashMap<String, String> = std::env::vars().collect();
+    crate::hub::intake::router::router_env(&own)
+        .into_iter()
+        .collect()
 }
 
 impl Doctor {
@@ -201,6 +188,7 @@ impl Doctor {
         );
         let hub_setup = MachineSetup {
             ssh_host: String::new(),
+            local: true,
             platform: if cfg!(target_os = "macos") {
                 Platform::Darwin
             } else {
@@ -216,7 +204,7 @@ impl Doctor {
                 restart_command("hub", Some(&hub_setup)),
             ),
             checks::gh_auth(&gh),
-            checks::claude_login(&claude),
+            checks::hub_claude_login(&claude, runner.proxy.as_deref()),
             checks::hub_claude_version(&runner),
             checks::https_reachable(
                 &config,
@@ -253,7 +241,7 @@ impl Doctor {
                 }
             }
         );
-        let mut out = vec![checks::machine_online(machine, setup)];
+        let mut out = vec![checks::machine_online(machine, setup, runner.as_ref())];
         if let Some(info) = &runner {
             out.extend(checks::runner_checks(id, info));
         }

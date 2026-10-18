@@ -196,16 +196,33 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
     }
 }
 
-pub fn claude_login_fix() -> DoctorFix {
-    manual(
-        "Log claude in as the hub's user (a gateway instead: ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json)",
-        Some("claude auth login".into()),
-    )
+/// The hub's claude login fix. Behind a proxy the proxy holds the login. Otherwise `claude auth login`, or a gateway's
+/// variables in `claude.env`, which the hub's service loads (the router passes only those variables on).
+pub fn claude_login_fix(proxy: Option<&str>) -> DoctorFix {
+    match proxy {
+        Some(proxy) => manual(
+            &format!(
+                "On the hub, {} (its claude goes through {proxy})",
+                login_fix(true)
+            ),
+            None,
+        ),
+        None => manual(
+            "Log claude in as the hub's user (a gateway instead: ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in \
+             ~/.fleetd/claude.env, then restart the hub)",
+            Some(login_fix(false).into()),
+        ),
+    }
 }
 
 /// `claude auth status --json` as the router runs it (same environment, so the same login). The intake router and
 /// the retro reach a model only through this login; without it they can't run.
 pub fn claude_login(outcome: &CmdOutcome) -> Entry {
+    hub_claude_login(outcome, None)
+}
+
+/// [`claude_login`] for a hub claude that goes through `proxy`, whose login the proxy holds.
+pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
     let (exit_code, stdout) = match outcome {
         CmdOutcome::SpawnError(e) if e == "ENOENT" => {
             return hub_entry(
@@ -246,7 +263,7 @@ pub fn claude_login(outcome: &CmdOutcome) -> Entry {
             "claude_login",
             Fail,
             "claude on the hub is not logged in; the intake router and the retro can't reach a model.",
-            Some(claude_login_fix()),
+            Some(claude_login_fix(proxy)),
         );
     }
     let method = status
@@ -362,8 +379,54 @@ pub struct MachineView {
     pub degraded_reason: Option<String>,
 }
 
+/// The one fix for a machine whose runner is unusable, from the cause its probe reports: claude missing, out of the
+/// supported range, a protocol break, logged out. Two causes at once become one ordered sentence (an update first,
+/// since a login on a claude that can't run proves nothing). None when the runner reports no cause.
+pub fn runner_fix(machine_id: &str, info: &RunnerInfo) -> Option<DoctorFix> {
+    let claude = match &info.version {
+        None => Some(("Install Claude Code", CLAUDE_INSTALL.to_owned())),
+        Some(found) if !info.version_ok => Some((
+            "Put a supported claude",
+            version::check(found)
+                .fix()
+                .unwrap_or_else(|| "claude update".to_owned()),
+        )),
+        Some(_) if info.conformance_ok == Some(false) => Some((
+            "Put the tested claude",
+            format!("claude install {CLAUDE_TESTED}"),
+        )),
+        Some(_) => None,
+    };
+    let login = (info.login == LoginStatus::LoggedOut).then(|| login_fix(info.proxy.is_some()));
+    Some(match (claude, login) {
+        (None, None) => return None,
+        (Some((label, command)), None) => {
+            manual(&format!("{label} on {machine_id}"), Some(command))
+        }
+        // Behind a proxy the proxy holds the login: nothing to paste.
+        (None, Some(login)) if info.proxy.is_some() => manual(
+            &format!(
+                "On {machine_id}, {login} (claude goes through {})",
+                info.proxy.as_deref().unwrap_or_default()
+            ),
+            None,
+        ),
+        (None, Some(login)) => manual(
+            &format!("Log claude in on {machine_id}"),
+            Some(login.to_owned()),
+        ),
+        (Some((_, command)), Some(login)) => {
+            manual(&format!("On {machine_id}: {command}, then {login}"), None)
+        }
+    })
+}
+
 /// The node's link to the hub; what it runs is checked by the claude checks.
-pub fn machine_online(machine: &MachineView, setup: Option<&MachineSetup>) -> Entry {
+pub fn machine_online(
+    machine: &MachineView,
+    setup: Option<&MachineSetup>,
+    runner: Option<&RunnerInfo>,
+) -> Entry {
     let id = machine.machine_id.as_str();
     let restart = || {
         Some(manual(
@@ -384,18 +447,25 @@ pub fn machine_online(machine: &MachineView, setup: Option<&MachineSetup>) -> En
                 .degraded_reason
                 .as_deref()
                 .unwrap_or("its node reports a problem");
-            // A runner problem names its own fix (a login, an update; the claude checks repeat it): restarting the
-            // node would not help, so the line offers no second, wrong one.
-            let fix = if reason.contains("Fix: ") {
-                None
-            } else {
-                restart()
+            // The node's reason carries its own "Fix: …"; the finding has one fix field, so it is cut from the text.
+            let (cause, embedded) = match reason.split_once(" Fix: ") {
+                Some((cause, fix)) => (cause, Some(fix.trim_end_matches('.'))),
+                None => (reason, None),
+            };
+            // The cause decides the fix: a runner problem is fixed on claude, and only a node with no runner cause
+            // gets the restart.
+            let fix = match (runner.and_then(|info| runner_fix(id, info)), embedded) {
+                (Some(fix), _) => Some(fix),
+                (None, Some(command)) => {
+                    Some(manual(&format!("On {id}"), Some(command.to_owned())))
+                }
+                (None, None) => restart(),
             };
             machine_entry(
                 id,
                 "online",
                 Warn,
-                &format!("{id} is degraded: {}.", reason.trim_end_matches('.')),
+                &format!("{id} is degraded: {}.", cause.trim_end_matches('.')),
                 fix,
             )
         }
@@ -601,7 +671,7 @@ pub fn commit_identity(
                 &format!(
                     "Run machine setup again from the hub to write the hub's identity into {machine_id}'s service"
                 ),
-                Some(format!("fleetd machine add {}", m.ssh_host)),
+                Some(m.add_command()),
             ),
             // Joined by itself (fleetd pair --worker): the join command carries the identity.
             None => manual(
@@ -730,6 +800,104 @@ mod tests {
         ] {
             assert_eq!(sealed_http(url), None, "{url}");
         }
+    }
+
+    /// A degraded machine's finding has exactly one fix, and it is the one for the cause.
+    #[test]
+    fn a_degraded_machine_gets_the_one_fix_for_its_cause() {
+        let degraded = MachineView {
+            machine_id: "mac".into(),
+            status: "degraded".into(),
+            last_seen_at: "now".into(),
+            degraded_reason: Some("claude is not logged in. Fix: claude auth login".into()),
+        };
+        let runner = |version: Option<&str>, version_ok, login, proxy: Option<&str>| RunnerInfo {
+            runner: fleetd_contracts::sessions::RunnerKind::Claude,
+            version: version.map(str::to_owned),
+            supported: ">=2.1.300, <2.2.0".into(),
+            version_ok,
+            login,
+            login_kind: None,
+            conformance_ok: Some(true),
+            problem: None,
+            login_label: None,
+            proxy: proxy.map(str::to_owned),
+            proxy_source: None,
+            config_dir: None,
+        };
+        let fix = |info: Option<RunnerInfo>| {
+            let entry = machine_online(&degraded, None, info.as_ref());
+            assert_eq!(
+                entry.check.message,
+                "mac is degraded: claude is not logged in."
+            );
+            let fix = entry.check.fix.unwrap();
+            (fix.label, fix.command)
+        };
+        let ok = Some("2.1.302 (Claude Code)");
+        assert_eq!(
+            fix(Some(runner(ok, true, LoginStatus::LoggedOut, None))),
+            (
+                "Log claude in on mac".into(),
+                Some("claude auth login".into())
+            )
+        );
+        let (label, command) = fix(Some(runner(
+            ok,
+            true,
+            LoginStatus::LoggedOut,
+            Some("http://127.0.0.1:8317"),
+        )));
+        assert_eq!(command, None);
+        assert!(
+            label.contains("log in with your proxy") && label.contains("8317"),
+            "{label}"
+        );
+        assert_eq!(
+            fix(Some(runner(
+                Some("2.0.1"),
+                false,
+                LoginStatus::LoggedIn,
+                None
+            )))
+            .1
+            .as_deref(),
+            Some("claude update (or claude install 2.1.302)")
+        );
+        assert_eq!(
+            fix(Some(runner(None, false, LoginStatus::Unknown, None)))
+                .1
+                .as_deref(),
+            Some(CLAUDE_INSTALL)
+        );
+        // Two causes: one ordered sentence, the update first.
+        let (label, command) = fix(Some(runner(
+            Some("2.0.1"),
+            false,
+            LoginStatus::LoggedOut,
+            None,
+        )));
+        assert_eq!(command, None);
+        assert_eq!(
+            label,
+            "On mac: claude update (or claude install 2.1.302), then claude auth login"
+        );
+        // No runner report: the node's own fix, never a restart for a login problem.
+        assert_eq!(fix(None).1.as_deref(), Some("claude auth login"));
+        // No runner cause at all: the node itself is the problem.
+        let down = MachineView {
+            degraded_reason: Some("its node's runner is unavailable".into()),
+            ..degraded.clone()
+        };
+        let entry = machine_online(
+            &down,
+            None,
+            Some(&runner(ok, true, LoginStatus::LoggedIn, None)),
+        );
+        assert_eq!(
+            entry.check.fix.and_then(|f| f.command).as_deref(),
+            Some("systemctl --user restart fleetd-node.service")
+        );
     }
 
     #[test]
