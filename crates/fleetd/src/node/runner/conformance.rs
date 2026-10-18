@@ -40,6 +40,8 @@ const PROBE_ARGS: &[&str] = &[
 ];
 /// claude answers in about 0.2 s; a cold start of a 280 MB binary on a loaded machine takes a few.
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// Bytes of the probe's stderr kept for its error.
+const STDERR_KEEP: usize = 8192;
 const INSTALL_FIX: &str = "curl -fsSL https://claude.ai/install.sh | bash";
 
 /// `initialize`'s `account`: which credential claude would use.
@@ -184,15 +186,30 @@ async fn initialize(binary: &Path, env: &[(String, String)]) -> Result<String, S
     });
     let mut stdin = child.stdin.take().expect("piped stdin");
     let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
+    // Drained alongside stdout so a chatty stderr can't fill its pipe and stall claude; only the tail is kept.
     let mut stderr = child.stderr.take().expect("piped stderr");
+    let stderr_tail = tokio::spawn(async move {
+        let (mut kept, mut chunk) = (Vec::new(), [0u8; 4096]);
+        while let Ok(n @ 1..) = stderr.read(&mut chunk).await {
+            kept.extend_from_slice(&chunk[..n]);
+            let excess = kept.len().saturating_sub(STDERR_KEEP);
+            kept.drain(..excess);
+        }
+        String::from_utf8_lossy(&kept).into_owned()
+    });
+    let mut skipped = None;
     let exchange = async {
         stdin
             .write_all(format!("{request}\n").as_bytes())
             .await
             .map_err(|e| format!("could not write the initialize request: {e}."))?;
         while let Some(line) = stdout.next_line().await.map_err(|e| e.to_string())? {
-            let value: Value = serde_json::from_str(&line)
-                .map_err(|_| format!("claude printed a non-JSON line on stdout: {line:?}."))?;
+            let Ok(value) = serde_json::from_str::<Value>(&line) else {
+                // A stray banner or warning on stdout: note it, and only fail if no answer follows.
+                tracing::warn!(line = %tail(&line, 200), "claude printed a non-JSON line during the probe");
+                skipped.get_or_insert(line);
+                continue;
+            };
             if value["type"] == "control_response" {
                 return Ok(Some(line));
             }
@@ -201,18 +218,29 @@ async fn initialize(binary: &Path, env: &[(String, String)]) -> Result<String, S
     };
     let answer = tokio::time::timeout(TIMEOUT, exchange).await;
     drop(stdin);
+    let skipped = skipped
+        .map(|l| {
+            format!(
+                " It printed a non-JSON line on stdout: {:?}.",
+                tail(&l, 200)
+            )
+        })
+        .unwrap_or_default();
     let answer = match answer {
         Err(_) => Err(format!(
-            "claude did not answer the initialize probe within {}s.",
+            "claude did not answer the initialize probe within {}s.{skipped}",
             TIMEOUT.as_secs()
         )),
         Ok(Err(e)) => Err(e),
         Ok(Ok(Some(line))) => Ok(line),
         Ok(Ok(None)) => {
-            let mut text = String::new();
-            let _ = tokio::time::timeout(TIMEOUT, stderr.read_to_string(&mut text)).await;
+            let text = tokio::time::timeout(TIMEOUT, stderr_tail)
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_default();
             Err(format!(
-                "claude exited without answering the initialize probe: {}.",
+                "claude exited without answering the initialize probe: {}.{skipped}",
                 tail(text.trim(), 2000)
             ))
         }
@@ -444,8 +472,9 @@ mod tests {
         assert_eq!(missing_init_capabilities(&fewer), vec!["msg_lifecycle_v1"]);
     }
 
-    /// A stand-in `claude`: prints `version` for `--version`; otherwise reads the initialize request, prints
-    /// `answer` (or exits 1 with "boom" on stderr when it is empty) and waits for stdin to close.
+    /// A stand-in `claude`: prints `version` for `--version`; otherwise reads the initialize request, then a
+    /// non-JSON stdout line and 200 KB of stderr (past any pipe buffer), then `answer`, and waits for stdin to
+    /// close. With an empty `answer` it exits 1 with "boom" on stderr instead.
     fn stand_in(dir: &Path, version: &str, answer: &str) -> PathBuf {
         let answer_path = dir.join("answer.json");
         std::fs::write(&answer_path, answer).unwrap();
@@ -457,6 +486,8 @@ mod tests {
                  if [ \"$1\" = --version ]; then echo '{version}'; exit 0; fi\n\
                  read -r request\n\
                  if [ ! -s '{a}' ]; then echo boom >&2; exit 1; fi\n\
+                 echo 'Claude Code: a banner, not JSON'\n\
+                 head -c 200000 /dev/zero | tr '\\0' x >&2\n\
                  cat '{a}'\n\
                  while read -r more; do :; done\n",
                 a = answer_path.display()

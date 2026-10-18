@@ -182,24 +182,39 @@ fn fallback_ms(class: FailureClass) -> i64 {
     }
 }
 
-/// The first reset that lies after `at_ms`: the structured one, then the texts, then the class's fallback.
+/// A reset further out than this is a garbled number, not a plan: cap it rather than park for years.
+const MAX_RESET_MS: i64 = 31 * 24 * 60 * 60_000;
+
+/// The first reset that lies after `at_ms`: the structured one, then the texts, then the class's fallback. Text
+/// numbers saturate and the result is capped at [`MAX_RESET_MS`] out, so no gateway text can overflow it.
 fn reset_ms(text: &str, structured_ms: Option<i64>, at_ms: i64, class: FailureClass) -> i64 {
     let after = |ms: Option<i64>| ms.filter(|ms| *ms > at_ms);
     let num = |c: &regex::Captures, i: usize| {
         c.get(i)
-            .map_or(0, |m| m.as_str().parse::<i64>().unwrap_or(0))
+            .map_or(0, |m| m.as_str().parse::<i64>().unwrap_or(i64::MAX))
     };
-    let epoch = PIPE_EPOCH.captures(text).map(|c| num(&c, 1) * 1000);
+    let epoch = PIPE_EPOCH
+        .captures(text)
+        .map(|c| num(&c, 1).saturating_mul(1000));
     let seconds = RESET_SECONDS.captures(text).map(|c| num(&c, 1));
     let span_ms = RESET_AFTER.captures(text).map_or(0, |c| {
-        (num(&c, 1) * 3600 + num(&c, 2) * 60 + num(&c, 3)) * 1000
+        num(&c, 1)
+            .saturating_mul(3600)
+            .saturating_add(num(&c, 2).saturating_mul(60))
+            .saturating_add(num(&c, 3))
+            .saturating_mul(1000)
     });
-    after(structured_ms)
+    let reset = after(structured_ms)
         .or_else(|| after(epoch))
-        .or_else(|| seconds.filter(|s| *s > 0).map(|s| at_ms + s * 1000))
-        .or_else(|| (span_ms > 0).then_some(at_ms + span_ms))
+        .or_else(|| {
+            seconds
+                .filter(|s| *s > 0)
+                .map(|s| at_ms.saturating_add(s.saturating_mul(1000)))
+        })
+        .or_else(|| (span_ms > 0).then_some(at_ms.saturating_add(span_ms)))
         .or_else(|| clock_reset_ms(text, at_ms))
-        .unwrap_or(at_ms + fallback_ms(class))
+        .unwrap_or(at_ms + fallback_ms(class));
+    reset.min(at_ms.saturating_add(MAX_RESET_MS))
 }
 
 /// "resets 4pm (UTC)": the next such wall-clock time in that zone after `at_ms`.
@@ -285,7 +300,7 @@ fn decide(e: &FailureEvidence, stderr: &str) -> (FailureClass, Option<i64>) {
         .rate_limit
         .as_ref()
         .filter(|r| r.status == "rejected")
-        .map(|r| r.resets_at.map(|s| s * 1000));
+        .map(|r| r.resets_at.map(|s| s.saturating_mul(1000)));
     let limited = error == Some("rate_limit") || status == Some(429);
     if let Some(resets_at) = rejected.filter(|_| limited || reason == Some("blocking_limit")) {
         return (UsageLimit, Some(reset_ms(text, resets_at, now, UsageLimit)));
@@ -604,6 +619,23 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(classify(&e).unwrap().class, UsageLimit);
+    }
+
+    #[test]
+    fn huge_reset_numbers_saturate_and_cap_at_31_days() {
+        let cap = iso(NOW + 31 * 24 * 60 * MIN);
+        for text in [
+            r#"API Error: 429 {"error":{"code":"model_cooldown","reset_seconds":9223372036854775807}}"#,
+            r#"model_cooldown "reset_seconds":99999999999999999999999"#,
+            "rate limit (reset after 9223372036854775807h9223372036854775807m)",
+            "Claude AI usage limit reached|9999999999",
+        ] {
+            let limit = classify_text(text, false, None, NOW).unwrap();
+            assert_eq!(iso(limit.reset_ms.unwrap()), cap, "{text}");
+        }
+        let mut e = evidence("usage-limit-subscription.documented");
+        e.rate_limit.as_mut().unwrap().resets_at = Some(i64::MAX);
+        assert_eq!(classify(&e).unwrap().reset_at.unwrap().0, cap);
     }
 
     #[test]
