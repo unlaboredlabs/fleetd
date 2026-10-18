@@ -233,6 +233,8 @@ pub struct PrRef {
     pub reviews_done: Count,
     /// What the tier asks for.
     pub reviews_needed: Count,
+    /// The task that opened it (its writer), when the hub knows: the board groups the PR's checkers under it.
+    pub task_id: Option<crate::tasks::TaskId>,
 }
 
 /// One agent of an order: a task, or the project's lead.

@@ -67,7 +67,11 @@ pub fn fleet(rows: &[AgentLane], seen: &[AgentLane], prs: &[PrRef]) -> Fleet {
         .iter()
         .map(|pr| {
             let n = pr.number.get();
-            let writer = seen.iter().chain(rows).find(|l| !is_checker(l.role) && pr_of(l) == Some(n)).cloned();
+            // The writer, by the task the hub says opened the PR, else by the PR its lane links.
+            let wrote =
+                |l: &&AgentLane| !is_checker(l.role) && (pr.task_id.as_ref().is_some_and(|t| l.task_id.as_ref() == Some(t)) || pr_of(l) == Some(n));
+            // The latest copy: a row drawn now is fresher than one remembered.
+            let writer = rows.iter().find(wrote).or_else(|| seen.iter().find(wrote)).cloned();
             let checkers: Vec<&AgentLane> = seen.iter().filter(|l| is_checker(l.role) && pr_of(l) == Some(n)).collect();
             // Counted from the lanes, as the rows show them: the hub's verdict count lags a finished check.
             let done = checkers.iter().filter(|l| l.status == LaneStatus::Done).count();
@@ -84,7 +88,10 @@ pub fn fleet(rows: &[AgentLane], seen: &[AgentLane], prs: &[PrRef]) -> Fleet {
             }
         })
         .collect();
-    let grouped = |l: &AgentLane| pr_of(l).is_some_and(|n| groups.iter().any(|g| g.pr.number.get() == n));
+    let grouped = |l: &AgentLane| {
+        pr_of(l).is_some_and(|n| groups.iter().any(|g| g.pr.number.get() == n))
+            || groups.iter().any(|g| g.writer.as_ref().is_some_and(|w| w.lane_id == l.lane_id))
+    };
     Fleet {
         writers: rows.iter().filter(|l| !is_checker(l.role) && !grouped(l)).cloned().collect(),
         others: rows.iter().filter(|l| is_checker(l.role) && !grouped(l)).cloned().collect(),
@@ -143,6 +150,13 @@ mod tests {
         assert_eq!(g.rows.len(), 2);
         assert_eq!((g.checks_done, g.checks_needed, g.label()), (1, 3, "review 1/3".to_string()));
         assert!((g.review_progress() - 1. / 3.).abs() < 1e-6);
+        // A writer whose lane never linked its PR is found by the task the PR names, and leaves the writers.
+        let mut by_task = pr(115, "reviewing", 0);
+        by_task.task_id = Some(fleetd_contracts::tasks::TaskId::unchecked("T9"));
+        let w9 = AgentLane { task_id: Some(fleetd_contracts::tasks::TaskId::unchecked("T9")), ..lane("T9", "implementer", "done", None) };
+        let f = fleet(std::slice::from_ref(&w9), std::slice::from_ref(&w9), &[by_task]);
+        assert_eq!(f.groups[0].writer.as_ref().map(|l| l.lane_id.as_str()), Some("T9"));
+        assert!(f.writers.is_empty());
         // The train calls it ready while a check still runs: the words say so and the bar agrees.
         let g = &fleet(&rows, &seen, &[pr(115, "ready", 2)]).groups[0];
         assert_eq!((g.checks_done, g.label()), (1, "ready · 1/3 checks".to_string()));

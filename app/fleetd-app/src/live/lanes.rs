@@ -398,8 +398,10 @@ impl FleetLanes {
         let doing = || {
             let step_el =
                 step.clone().map(|s| div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(s));
-            // The line takes the room and cuts with "…"; a cut needs a width to cut at.
-            div().flex_1().min_w_0().flex().items_center().gap_2().child(line().flex_1()).children(step_el)
+            // A line with machine text takes the room and cuts it with "…" (a cut needs a width to cut at), its
+            // step time after; a short line keeps its time beside it ("thinking 0:12").
+            let long = said.machine.is_some();
+            div().flex_1().min_w_0().flex().items_center().gap_2().child(if long { line().flex_1() } else { line() }).children(step_el)
         };
         let title = |w: Option<f32>, text_size: f32, color: Hsla| {
             div()

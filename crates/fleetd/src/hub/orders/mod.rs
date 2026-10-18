@@ -183,6 +183,7 @@ pub fn pr_ref(change: &Change, reviews_needed: i64) -> PrRef {
         position: change.position,
         reviews_done: count(done),
         reviews_needed: Count::unchecked(reviews_needed.max(0)),
+        task_id: change.task_id.clone(),
     }
 }
 

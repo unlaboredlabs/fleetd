@@ -709,7 +709,7 @@ fn pr_ref(number: i64, state: ChangeState, reviews_done: i64) -> PrRef {
     serde_json::from_value(serde_json::json!({
         "changeId": format!("X{number}"), "repo": "acme/storefront", "number": number,
         "url": format!("https://github.com/acme/storefront/pull/{number}"), "state": state,
-        "reviewsDone": reviews_done, "reviewsNeeded": 2
+        "reviewsDone": reviews_done, "reviewsNeeded": 2, "taskId": format!("T{}", number - 180)
     }))
     .unwrap()
 }
