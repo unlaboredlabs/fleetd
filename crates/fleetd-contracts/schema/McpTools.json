@@ -102,6 +102,250 @@
       ],
       "type": "object"
     },
+    "Activity": {
+      "description": "What a lane is doing now, literally.",
+      "oneOf": [
+        {
+          "description": "The command's first line, `cd x &&` stripped.",
+          "properties": {
+            "kind": {
+              "const": "command",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 160,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Repo-relative.",
+          "properties": {
+            "kind": {
+              "const": "edit",
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file read, or a search when `pattern` is set.",
+          "properties": {
+            "kind": {
+              "const": "read",
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "pattern": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "detail": {
+              "maxLength": 120,
+              "type": "string"
+            },
+            "kind": {
+              "const": "tool",
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Assistant text streamed in the last 3 s.",
+          "properties": {
+            "kind": {
+              "const": "writing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A run is active with nothing open and no text for 3 s: waiting on the model.",
+          "properties": {
+            "kind": {
+              "const": "thinking",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "compacting",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "attempt": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "retrying",
+              "type": "string"
+            },
+            "of": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "reason": {
+              "maxLength": 80,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "attempt",
+            "of",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ActivityNow": {
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/Activity"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "activity",
+        "since"
+      ],
+      "type": "object"
+    },
+    "AgentLane": {
+      "description": "One agent of an order: a task, or the project's lead.",
+      "properties": {
+        "branch": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "laneId": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "live": {
+          "$ref": "#/$defs/LiveLane",
+          "description": "Live values at snapshot time."
+        },
+        "model": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pr": {
+          "$ref": "#/$defs/PrRef"
+        },
+        "receipts": {
+          "$ref": "#/$defs/Receipts",
+          "description": "Counted from the thread's items when it ended."
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "status": {
+          "$ref": "#/$defs/LaneStatus"
+        },
+        "statusReason": {
+          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "maxLength": 160,
+          "type": "string"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "title": {
+          "maxLength": 80,
+          "type": "string"
+        }
+      },
+      "required": [
+        "laneId",
+        "role",
+        "title",
+        "status"
+      ],
+      "type": "object"
+    },
+    "AgentRole": {
+      "enum": [
+        "lead",
+        "implementer",
+        "reader",
+        "reviewer",
+        "verifier",
+        "qa"
+      ],
+      "type": "string"
+    },
     "AreaName": {
       "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
@@ -326,6 +570,74 @@
       "required": [
         "batches",
         "asks"
+      ],
+      "type": "object"
+    },
+    "AttachmentId": {
+      "pattern": "^F[1-9][0-9]*$",
+      "type": "string"
+    },
+    "AttachmentMime": {
+      "enum": [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "text/plain",
+        "application/pdf"
+      ],
+      "type": "string"
+    },
+    "AttachmentPutInput": {
+      "properties": {
+        "dataB64": {
+          "description": "Standard base64; at most 5 MiB decoded.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "mime",
+        "dataB64"
+      ],
+      "type": "object"
+    },
+    "AttachmentPutOutput": {
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "bytes",
+        "sha256"
       ],
       "type": "object"
     },
@@ -1997,6 +2309,11 @@
           "const": "key.paired",
           "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
           "type": "string"
+        },
+        {
+          "const": "workstream.note",
+          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
+          "type": "string"
         }
       ]
     },
@@ -2268,8 +2585,101 @@
       ],
       "type": "object"
     },
+    "IntakePreviewInput": {
+      "properties": {
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "IntakePreviewOutput": {
+      "properties": {
+        "echo": {
+          "$ref": "#/$defs/IntakeEcho",
+          "description": "Absent: the router could not place it (intake_submit would ask the human)."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "IntakeRef": {
+      "description": "Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into\nthe lead's wake as a \"References:\" block.",
+      "oneOf": [
+        {
+          "description": "Repo-relative.",
+          "properties": {
+            "kind": {
+              "const": "file",
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "order",
+              "type": "string"
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "pr",
+              "type": "string"
+            },
+            "url": {
+              "$ref": "#/$defs/GitHubPrUrl"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "IntakeSubmitInput": {
       "properties": {
+        "attachments": {
+          "description": "From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed.",
+          "items": {
+            "$ref": "#/$defs/AttachmentId"
+          },
+          "maxItems": 8,
+          "type": "array",
+          "uniqueItems": true
+        },
         "clientRequestId": {
           "minLength": 1,
           "type": "string"
@@ -2280,6 +2690,13 @@
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
+        },
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/IntakeRef"
+          },
+          "maxItems": 20,
+          "type": "array"
         },
         "template": {
           "$ref": "#/$defs/PlaybookName",
@@ -2367,6 +2784,33 @@
         "idle"
       ],
       "type": "object"
+    },
+    "LaneStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "queued",
+            "starting",
+            "working",
+            "stalled",
+            "idle",
+            "done",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "waiting",
+          "description": "A permission prompt waits on a person.",
+          "type": "string"
+        },
+        {
+          "const": "parked",
+          "description": "Usage limit: resumes at the reset.",
+          "type": "string"
+        }
+      ]
     },
     "Lead": {
       "properties": {
@@ -2483,6 +2927,35 @@
       ],
       "type": "string"
     },
+    "LiveLane": {
+      "description": "One lane's live values. In a frame that is not `full`, only lanes that changed are sent.",
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/ActivityNow",
+          "description": "Absent: nothing to say (no run active, or no recent model output; the UI says no more than the status)."
+        },
+        "laneId": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "spark": {
+          "$ref": "#/$defs/Spark",
+          "description": "Absent: unchanged since the last frame (always present in a `full` frame for lanes that have one)."
+        },
+        "status": {
+          "$ref": "#/$defs/LaneStatus"
+        },
+        "tokens": {
+          "$ref": "#/$defs/Tokens"
+        }
+      },
+      "required": [
+        "laneId",
+        "status"
+      ],
+      "type": "object"
+    },
     "LoginKind": {
       "description": "Read from the runner's login kind, never from credentials.",
       "enum": [
@@ -2562,6 +3035,12 @@
         "asks_list.output": {
           "$ref": "#/$defs/AsksListOutput"
         },
+        "attachment_put.input": {
+          "$ref": "#/$defs/AttachmentPutInput"
+        },
+        "attachment_put.output": {
+          "$ref": "#/$defs/AttachmentPutOutput"
+        },
         "attention_policy.input": {
           "$ref": "#/$defs/AttentionPolicyInput"
         },
@@ -2640,6 +3119,12 @@
         "incidents_list.output": {
           "$ref": "#/$defs/IncidentsListOutput"
         },
+        "intake_preview.input": {
+          "$ref": "#/$defs/IntakePreviewInput"
+        },
+        "intake_preview.output": {
+          "$ref": "#/$defs/IntakePreviewOutput"
+        },
         "intake_submit.input": {
           "$ref": "#/$defs/IntakeSubmitInput"
         },
@@ -2664,11 +3149,41 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "order_get.input": {
+          "$ref": "#/$defs/OrderGetInput"
+        },
+        "order_get.output": {
+          "$ref": "#/$defs/OrderGetOutput"
+        },
+        "order_note.input": {
+          "$ref": "#/$defs/OrderNoteInput"
+        },
+        "order_note.output": {
+          "$ref": "#/$defs/OrderNoteOutput"
+        },
+        "order_stop.input": {
+          "$ref": "#/$defs/OrderStopInput"
+        },
+        "order_stop.output": {
+          "$ref": "#/$defs/OrderStopOutput"
+        },
+        "orders_board.input": {
+          "$ref": "#/$defs/OrdersBoardInput"
+        },
+        "orders_board.output": {
+          "$ref": "#/$defs/OrdersBoardOutput"
+        },
         "project_add.input": {
           "$ref": "#/$defs/ProjectAddInput"
         },
         "project_add.output": {
           "$ref": "#/$defs/ProjectAddOutput"
+        },
+        "project_files.input": {
+          "$ref": "#/$defs/ProjectFilesInput"
+        },
+        "project_files.output": {
+          "$ref": "#/$defs/ProjectFilesOutput"
         },
         "project_get.input": {
           "$ref": "#/$defs/ProjectGetInput"
@@ -2832,6 +3347,8 @@
         "actions_list.output",
         "asks_list.input",
         "asks_list.output",
+        "attachment_put.input",
+        "attachment_put.output",
         "attention_policy.input",
         "attention_policy.output",
         "cap_set.input",
@@ -2858,6 +3375,8 @@
         "inbox_reply.output",
         "incidents_list.input",
         "incidents_list.output",
+        "intake_preview.input",
+        "intake_preview.output",
         "intake_submit.input",
         "intake_submit.output",
         "inventory.input",
@@ -2866,8 +3385,18 @@
         "lead_restart.output",
         "lead_start.input",
         "lead_start.output",
+        "order_get.input",
+        "order_get.output",
+        "order_note.input",
+        "order_note.output",
+        "order_stop.input",
+        "order_stop.output",
+        "orders_board.input",
+        "orders_board.output",
         "project_add.input",
         "project_add.output",
+        "project_files.input",
+        "project_files.output",
         "project_get.input",
         "project_get.output",
         "project_remove.input",
@@ -2984,6 +3513,355 @@
       ],
       "type": "object"
     },
+    "OrderCard": {
+      "description": "One order (workstream) as the board shows it.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lanes": {
+          "description": "Active first, then newest; finished lanes are left out on the board.",
+          "items": {
+            "$ref": "#/$defs/AgentLane"
+          },
+          "maxItems": 12,
+          "type": "array"
+        },
+        "needsYou": {
+          "description": "Open asks for it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "description": "The lead's headline.",
+          "maxLength": 280,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "phase": {
+          "$ref": "#/$defs/OrderPhase"
+        },
+        "phaseDetail": {
+          "description": "\"3 working\", \"#212 in CI\", \"1 question\".",
+          "maxLength": 120,
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "prs": {
+          "items": {
+            "$ref": "#/$defs/PrRef"
+          },
+          "maxItems": 6,
+          "type": "array"
+        },
+        "settled": {
+          "description": "Agents done, failed or cancelled, of `total`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        },
+        "template": {
+          "$ref": "#/$defs/PlaybookName"
+        },
+        "title": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "projectRef",
+        "title",
+        "state",
+        "phase",
+        "needsYou",
+        "settled",
+        "total",
+        "lanes",
+        "prs",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "OrderGetInput": {
+      "properties": {
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId"
+      ],
+      "type": "object"
+    },
+    "OrderGetOutput": {
+      "properties": {
+        "asks": {
+          "items": {
+            "$ref": "#/$defs/Ask"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "claims": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Claim"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "doneLanes": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/AgentLane"
+          },
+          "maxItems": 30,
+          "type": "array"
+        },
+        "lead": {
+          "$ref": "#/$defs/AgentLane",
+          "description": "Its project's lead (shared by every order of the project); absent when the project has none."
+        },
+        "next": {
+          "type": "string"
+        },
+        "order": {
+          "$ref": "#/$defs/OrderCard"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "order",
+        "doneLanes",
+        "asks"
+      ],
+      "type": "object"
+    },
+    "OrderNoteInput": {
+      "properties": {
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/AttachmentId"
+          },
+          "maxItems": 8,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/IntakeRef"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "urgent": {
+          "default": false,
+          "type": "boolean"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "text",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "OrderNoteOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "noteId": {
+          "description": "\"N\" plus a number; the workstream.note event carries it.",
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "wakesAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The lead's wake that will carry it: now for urgent notes, else after the wake debounce."
+        }
+      },
+      "required": [
+        "noteId",
+        "wakesAt"
+      ],
+      "type": "object"
+    },
+    "OrderPhase": {
+      "description": "An order's phase: the first match in this order wins, and the board sorts by it.",
+      "oneOf": [
+        {
+          "enum": [
+            "failed",
+            "stopped",
+            "done"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "waiting_on_you",
+          "description": "An open ask for it, or a lane waiting on a permission.",
+          "type": "string"
+        },
+        {
+          "const": "working",
+          "description": "An implementer or reader lane starting or working.",
+          "type": "string"
+        },
+        {
+          "const": "reviewing",
+          "description": "A Change reviewing, or a reviewer, verifier or qa lane working.",
+          "type": "string"
+        },
+        {
+          "const": "merging",
+          "description": "A Change ready, rebasing, in CI or merging.",
+          "type": "string"
+        },
+        {
+          "const": "verifying",
+          "description": "The workstream checks its done-when.",
+          "type": "string"
+        },
+        {
+          "const": "queued",
+          "description": "Only queued lanes.",
+          "type": "string"
+        },
+        {
+          "const": "planning",
+          "description": "Draft, or running with no tasks while the lead works.",
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Anything else open: waiting for the lead.",
+          "type": "string"
+        }
+      ]
+    },
+    "OrderStopInput": {
+      "properties": {
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId"
+      ],
+      "type": "object"
+    },
+    "OrderStopOutput": {
+      "properties": {
+        "cancelled": {
+          "description": "Tasks this call cancelled (0 when it was already stopped).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "state",
+        "cancelled"
+      ],
+      "type": "object"
+    },
+    "OrdersBoardInput": {
+      "properties": {
+        "includeDoneSince": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "type": "object"
+    },
+    "OrdersBoardOutput": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "orders": {
+          "description": "By phase, then most recently updated.",
+          "items": {
+            "$ref": "#/$defs/OrderCard"
+          },
+          "maxItems": 60,
+          "type": "array"
+        },
+        "trains": {
+          "items": {
+            "$ref": "#/$defs/TrainLive"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "orders",
+        "trains",
+        "at"
+      ],
+      "type": "object"
+    },
     "ParkedCounts": {
       "properties": {
         "leads": {
@@ -3037,6 +3915,92 @@
       "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
+    "PrChip": {
+      "description": "One PR on a train strip.",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "position": {
+          "description": "0-based; absent for the head (being rebased, checked or merged) and for PRs merged today.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "url": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "changeId",
+        "number",
+        "url",
+        "workstreamId",
+        "state"
+      ],
+      "type": "object"
+    },
+    "PrRef": {
+      "description": "One PR of an order.",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "position": {
+          "description": "0-based place in its train's queue; absent when not queued.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "reviewsDone": {
+          "description": "Clean reviews of the current patch.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reviewsNeeded": {
+          "description": "What the tier asks for.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "url": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        }
+      },
+      "required": [
+        "changeId",
+        "repo",
+        "number",
+        "url",
+        "state",
+        "reviewsDone",
+        "reviewsNeeded"
+      ],
+      "type": "object"
+    },
     "ProjectAddInput": {
       "properties": {
         "machineId": {
@@ -3078,6 +4042,56 @@
       "required": [
         "projectId",
         "created"
+      ],
+      "type": "object"
+    },
+    "ProjectFilesInput": {
+      "properties": {
+        "limit": {
+          "default": 20,
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "query": {
+          "default": "",
+          "maxLength": 200,
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectFilesOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "paths": {
+          "description": "Repo-relative.",
+          "items": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paths"
       ],
       "type": "object"
     },
@@ -3878,6 +4892,29 @@
         "projectRef",
         "share",
         "used"
+      ],
+      "type": "object"
+    },
+    "Spark": {
+      "description": "Work per 2 s bucket, oldest first, ending with the bucket that ends at `end_at`. A sample is\n`min(255, 16 × items started + streamed chars / 32)`; a bucket with no frames is 0.",
+      "properties": {
+        "endAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "samples": {
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 30,
+          "type": "array"
+        }
+      },
+      "required": [
+        "endAt",
+        "samples"
       ],
       "type": "object"
     },
@@ -4902,6 +5939,36 @@
       "format": "date-time",
       "type": "string"
     },
+    "Tokens": {
+      "description": "Summed over the lane's runs. `live`: the running run's usage is streaming in (else it updates at each run's end).",
+      "properties": {
+        "cacheRead": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "input": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "output": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "cacheRead",
+        "live"
+      ],
+      "type": "object"
+    },
     "ToolPermission": {
       "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
       "properties": {
@@ -4992,6 +6059,41 @@
       },
       "required": [
         "train"
+      ],
+      "type": "object"
+    },
+    "TrainLive": {
+      "description": "One repo's merge train, resolved for the strip: head first, then the queue in order, then today's merges.",
+      "properties": {
+        "chips": {
+          "items": {
+            "$ref": "#/$defs/PrChip"
+          },
+          "maxItems": 12,
+          "type": "array"
+        },
+        "frozen": {
+          "type": "boolean"
+        },
+        "frozenReason": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "mergedToday": {
+          "description": "Merged since 00:00 UTC.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "frozen",
+        "chips",
+        "mergedToday"
       ],
       "type": "object"
     },

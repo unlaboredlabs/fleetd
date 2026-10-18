@@ -162,6 +162,10 @@ pub enum HubEventType {
     /// A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.
     #[serde(rename = "key.paired")]
     KeyPaired,
+    /// A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first
+    /// 200 characters).
+    #[serde(rename = "workstream.note")]
+    WorkstreamNote,
 }
 
 impl HubEventType {
@@ -226,6 +230,7 @@ impl HubEventType {
             Self::PlaybookReverted => "playbook.reverted",
             Self::PlaybookKept => "playbook.kept",
             Self::KeyPaired => "key.paired",
+            Self::WorkstreamNote => "workstream.note",
         }
     }
 }

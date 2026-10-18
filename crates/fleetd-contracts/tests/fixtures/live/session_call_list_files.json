@@ -1,0 +1,9 @@
+{
+  "id": "c9",
+  "call": {
+    "op": "list_files",
+    "projectId": "fleetd",
+    "query": "digest",
+    "limit": 20
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "machineId": "forge",
+  "projectId": "fleetd",
+  "text": "Fix the flaky `train_rebases_before_merge` test. See `crates/fleetd/src/hub/train/tests.rs`, same area as W12.",
+  "template": "bugfix",
+  "attachments": [
+    "F3"
+  ],
+  "refs": [
+    {
+      "kind": "file",
+      "path": "crates/fleetd/src/hub/train/tests.rs"
+    },
+    {
+      "kind": "order",
+      "workstreamId": "W12"
+    }
+  ],
+  "clientRequestId": "order-1"
+}

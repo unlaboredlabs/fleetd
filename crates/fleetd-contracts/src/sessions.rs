@@ -18,7 +18,7 @@ use serde_with::skip_serializing_none;
 use crate::effort::Effort;
 use crate::ids::{ProjectId, ThreadId, Timestamp};
 use crate::model::RuntimeMode;
-use crate::prim::{NonEmpty, Text};
+use crate::prim::{Int, NonEmpty, Text};
 
 /// Which agent runtime runs a session. Codex comes later as its own adapter.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -165,6 +165,22 @@ pub enum SessionCall {
     },
     /// The runner's version, login and conformance, for the doctor and the usage area.
     RunnerInfo,
+    /// Files of the project (`git ls-files -co --exclude-standard`, cached 30 s), best fuzzy match of `query` first.
+    #[serde(rename_all = "camelCase")]
+    ListFiles {
+        project_id: ProjectId,
+        #[serde(default)]
+        query: Text<0, 200>,
+        limit: Int<1, 50>,
+    },
+    /// Write a file under the project's workspace root, creating its directories. `rel_path` must stay inside
+    /// `.fleetd/attachments/`, which the node keeps out of git through `.git/info/exclude`.
+    #[serde(rename_all = "camelCase")]
+    PutFile {
+        project_id: ProjectId,
+        rel_path: NonEmpty,
+        data_b64: NonEmpty,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -281,6 +297,11 @@ pub enum SessionOutput {
     },
     Changes(SessionChanges),
     RunnerInfo(RunnerInfo),
+    /// Answer to `list_files`: repo-relative paths.
+    Files {
+        paths: Vec<String>,
+        truncated: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -596,6 +617,13 @@ pub enum ThreadEvent {
         message_id: NonEmpty,
         run_id: Option<NonEmpty>,
         append: String,
+    },
+    /// The active run's usage so far, cumulative, at most once a second per followed session. Not stored, not
+    /// replayed: the run's final usage arrives on its `run` event.
+    #[serde(rename_all = "camelCase")]
+    Usage {
+        run_id: NonEmpty,
+        usage: RunUsage,
     },
 }
 

@@ -1,0 +1,80 @@
+{
+  "t": "live",
+  "at": "2026-10-18T10:07:12.250Z",
+  "full": false,
+  "lanes": [
+    {
+      "laneId": "T31",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "read",
+          "pattern": "fn stalled"
+        },
+        "since": "2026-10-18T10:07:12.100Z"
+      },
+      "tokens": {
+        "input": 2400,
+        "output": 760,
+        "cacheRead": 31000,
+        "live": true
+      }
+    },
+    {
+      "laneId": "T35",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "retrying",
+          "attempt": 2,
+          "of": 5,
+          "reason": "overloaded"
+        },
+        "since": "2026-10-18T10:07:11.000Z"
+      }
+    },
+    {
+      "laneId": "T36",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "tool",
+          "name": "WebFetch",
+          "detail": "docs.rs"
+        },
+        "since": "2026-10-18T10:07:11.500Z"
+      }
+    },
+    {
+      "laneId": "T37",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "thinking"
+        },
+        "since": "2026-10-18T10:07:09.000Z"
+      }
+    },
+    {
+      "laneId": "T38",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "compacting"
+        },
+        "since": "2026-10-18T10:07:10.000Z"
+      }
+    },
+    {
+      "laneId": "T39",
+      "status": "parked"
+    }
+  ],
+  "text": [
+    {
+      "laneId": "lead:forge/fleetd",
+      "messageId": "m-81",
+      "append": " T31 is editing the digest; T33 runs the tests."
+    }
+  ]
+}

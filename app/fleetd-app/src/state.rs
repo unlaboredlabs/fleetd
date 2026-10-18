@@ -308,6 +308,8 @@ impl State {
             project_id: to.map(|k| ProjectId::unchecked(&k.1)),
             text,
             template: None,
+            attachments: None,
+            refs: None,
             client_request_id: request_id,
         };
         vec![self.call(Purpose::Order { to: to.cloned() }, &input)]
@@ -487,7 +489,7 @@ impl State {
 
     fn on_message(&mut self, message: AppServerMessage) -> Out {
         match message {
-            AppServerMessage::Ready { .. } => Vec::new(),
+            AppServerMessage::Ready { .. } | AppServerMessage::Live(_) => Vec::new(),
             AppServerMessage::Snapshot(status) => self.on_snapshot(status),
             AppServerMessage::Event(event) => self.on_event(&event),
             AppServerMessage::Result { id, output } => {

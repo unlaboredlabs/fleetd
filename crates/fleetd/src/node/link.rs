@@ -290,6 +290,7 @@ async fn run_link_once(
                 if tx
                     .send(to_json(&NodeToHub::Heartbeat(Heartbeat {
                         at: Timestamp::from(now_iso()),
+                        load: None,
                     })))
                     .is_err()
                 {

@@ -15,16 +15,19 @@ use crate::ledger::{
     DecisionSource, DecisionValue, DecisionWhy, IntakeText, Lead, PlaybookName, PlaybookRef,
     Serves, Workstream, WorkstreamId, WorkstreamState,
 };
+use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{
     ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary,
 };
 use crate::playbooks::IntakeEcho;
-use crate::prim::{Count, Int, IntOr, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True};
+use crate::prim::{
+    Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
+};
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
-use crate::train::{Change, ChangeState, GitHubRepo, TrainState};
+use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo, TrainState};
 use crate::usage::UsageStatus;
 use crate::verification::{Claim, ClaimOutcome, Eta, Incident, IncidentClass};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
@@ -277,6 +280,56 @@ output!(LeadStartOutput {
 pub type LeadRestartInput = LeadStartInput;
 pub type LeadRestartOutput = LeadStartOutput;
 
+brand!(
+    /// "F" plus a positive integer, unique per hub: a file uploaded with attachment_put.
+    AttachmentId, name = "AttachmentId", pattern = r"^F[1-9][0-9]*$"
+);
+
+/// Attachments an order or a note may carry.
+pub type Attachments = UniqueList<AttachmentId, 0, 8>;
+
+/// Largest attachment, decoded.
+pub const ATTACHMENT_MAX_BYTES: usize = 5 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum AttachmentMime {
+    #[serde(rename = "image/png")]
+    Png,
+    #[serde(rename = "image/jpeg")]
+    Jpeg,
+    #[serde(rename = "image/webp")]
+    Webp,
+    #[serde(rename = "image/gif")]
+    Gif,
+    #[serde(rename = "text/plain")]
+    Text,
+    #[serde(rename = "application/pdf")]
+    Pdf,
+}
+
+/// Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into
+/// the lead's wake as a "References:" block.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum IntakeRef {
+    /// Repo-relative.
+    File {
+        path: Text<1, 1000>,
+    },
+    Order {
+        workstream_id: WorkstreamId,
+    },
+    Pr {
+        url: GitHubPrUrl,
+    },
+}
+
+pub type IntakeRefs = List<IntakeRef, 0, 20>;
+
 // intake_submit
 input!(
     #[serde(remote = "Self")]
@@ -287,6 +340,9 @@ input!(
         text: IntakeText,
         /// Skips the router for the template, like a `fix:` or `research:` prefix.
         template: Option<PlaybookName>,
+        /// From attachment_put; delivered to the project under `.fleetd/attachments/<W>/` when the order is placed.
+        attachments: Option<Attachments>,
+        refs: Option<IntakeRefs>,
         client_request_id: RequestId,
     }
 );
@@ -313,6 +369,91 @@ checked!(IntakeSubmitOutput, |output| {
         return Err("exactly one of workstreamId and askId".into());
     }
     Ok(())
+});
+
+// intake_preview: where intake_submit would send this text (the `@project` and prefix rules, then the router), without
+// creating anything. Cached by text for 10 minutes.
+input!(IntakePreviewInput { text: IntakeText });
+output!(IntakePreviewOutput {
+    /// Absent: the router could not place it (intake_submit would ask the human).
+    echo: Option<IntakeEcho>,
+});
+
+// attachment_put: upload one file for a later intake_submit or order_note. Unreferenced uploads are deleted after 24 h.
+input!(AttachmentPutInput {
+    name: Line<1, 120>,
+    mime: AttachmentMime,
+    /// Standard base64; at most 5 MiB decoded.
+    data_b64: NonEmpty,
+});
+output!(AttachmentPutOutput {
+    attachment_id: AttachmentId,
+    bytes: Count,
+    sha256: Text<64, 64>,
+});
+
+// project_files: a project's files for @-mentions, best fuzzy match first.
+input!(ProjectFilesInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    #[serde(default)]
+    query: Text<0, 200>,
+    #[serde(default)]
+    limit: IntOr<1, 50, 20>,
+});
+output!(ProjectFilesOutput {
+    /// Repo-relative.
+    paths: List<Text<1, 1000>, 0, 50>,
+});
+
+// orders_board: open orders (and those done since `includeDoneSince`) joined with their agents, PRs and asks, plus the
+// trains of their repos.
+input!(OrdersBoardInput { project_ref: Option<ProjectRef>, include_done_since: Option<Timestamp> });
+output!(OrdersBoardOutput {
+    /// By phase, then most recently updated.
+    orders: List<OrderCard, 0, 60>,
+    trains: List<TrainLive, 0, 10>,
+    at: Timestamp,
+});
+
+// order_get: one order with its finished agents, open asks and claims.
+input!(OrderGetInput {
+    workstream_id: WorkstreamId
+});
+output!(OrderGetOutput {
+    order: OrderCard,
+    /// Its project's lead (shared by every order of the project); absent when the project has none.
+    lead: Option<AgentLane>,
+    /// Newest first.
+    done_lanes: List<AgentLane, 0, 30>,
+    asks: List<Ask, 0, 20>,
+    /// Newest first.
+    claims: Option<List<Claim, 0, 20>>,
+});
+
+// order_note: a person adds to an order. The lead reads it at its next wake, or now when `urgent`.
+input!(OrderNoteInput {
+    workstream_id: WorkstreamId,
+    text: IntakeText,
+    attachments: Option<Attachments>,
+    refs: Option<IntakeRefs>,
+    #[serde(default)]
+    urgent: bool,
+    client_request_id: RequestId,
+});
+output!(OrderNoteOutput {
+    /// "N" plus a number; the workstream.note event carries it.
+    note_id: Text<1, 40>,
+    /// The lead's wake that will carry it: now for urgent notes, else after the wake debounce.
+    wakes_at: Timestamp,
+});
+
+// order_stop: cancels the order's queued and running agents and stops it. Merged PRs stay. Idempotent.
+input!(OrderStopInput { workstream_id: WorkstreamId, reason: Option<Text<1, 200>> });
+output!(OrderStopOutput {
+    state: WorkstreamState,
+    /// Tasks this call cancelled (0 when it was already stopped).
+    cancelled: Count,
 });
 
 // workstream_list
@@ -800,6 +941,13 @@ tools! {
     attention_policy => AttentionPolicy, Read, AttentionPolicyInput, AttentionPolicyOutput;
     // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
     doctor_fix => DoctorFix, Operate, DoctorFixInput, DoctorFixOutput;
+    intake_preview => IntakePreview, Operate, IntakePreviewInput, IntakePreviewOutput;
+    attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
+    project_files => ProjectFiles, Read, ProjectFilesInput, ProjectFilesOutput;
+    orders_board => OrdersBoard, Read, OrdersBoardInput, OrdersBoardOutput;
+    order_get => OrderGet, Read, OrderGetInput, OrderGetOutput;
+    order_note => OrderNote, Operate, OrderNoteInput, OrderNoteOutput;
+    order_stop => OrderStop, Operate, OrderStopInput, OrderStopOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -931,7 +1079,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 46);
+        assert_eq!(McpToolName::ALL.len(), 53);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());

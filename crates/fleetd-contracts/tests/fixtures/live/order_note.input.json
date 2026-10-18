@@ -1,0 +1,23 @@
+{
+  "workstreamId": "W14",
+  "text": "Also cover the stalled case. See the screenshot.",
+  "attachments": [
+    "F3"
+  ],
+  "refs": [
+    {
+      "kind": "file",
+      "path": "crates/fleetd/src/hub/leads/digest.rs"
+    },
+    {
+      "kind": "order",
+      "workstreamId": "W12"
+    },
+    {
+      "kind": "pr",
+      "url": "https://github.com/wynn-dev/fleetd/pull/212"
+    }
+  ],
+  "urgent": false,
+  "clientRequestId": "note-1"
+}

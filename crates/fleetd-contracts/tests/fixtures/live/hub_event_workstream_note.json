@@ -1,0 +1,14 @@
+{
+  "seq": 1042,
+  "at": "2026-10-18T10:07:12.000Z",
+  "type": "workstream.note",
+  "machineId": "forge",
+  "projectId": "fleetd",
+  "summary": "You added to W14: Also cover the stalled case.",
+  "data": {
+    "workstreamId": "W14",
+    "noteId": "N5",
+    "urgent": false,
+    "text": "Also cover the stalled case. See the screenshot."
+  }
+}

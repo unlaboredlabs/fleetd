@@ -1,0 +1,257 @@
+{
+  "orders": [
+    {
+      "workstreamId": "W14",
+      "projectRef": {
+        "machineId": "forge",
+        "projectId": "fleetd"
+      },
+      "title": "Harden lead digest",
+      "state": "running",
+      "template": "feature",
+      "phase": "waiting_on_you",
+      "phaseDetail": "1 question",
+      "next": "merge after one clean review",
+      "needsYou": 1,
+      "settled": 3,
+      "total": 7,
+      "lanes": [
+        {
+          "laneId": "T31",
+          "role": "implementer",
+          "title": "harden-digest",
+          "status": "working",
+          "taskId": "T31",
+          "threadRef": {
+            "machineId": "forge",
+            "threadId": "s-31"
+          },
+          "model": "claude-haiku-5-5",
+          "effort": "low",
+          "startedAt": "2026-10-18T10:06:00.000Z",
+          "branch": "fleetd/T31-harden-digest",
+          "pr": {
+            "changeId": "X12",
+            "repo": "wynn-dev/fleetd",
+            "number": 212,
+            "url": "https://github.com/wynn-dev/fleetd/pull/212",
+            "state": "reviewing",
+            "reviewsDone": 1,
+            "reviewsNeeded": 2
+          },
+          "live": {
+            "laneId": "T31",
+            "status": "working",
+            "activity": {
+              "activity": {
+                "kind": "edit",
+                "path": "crates/fleetd/src/hub/leads/digest.rs"
+              },
+              "since": "2026-10-18T10:07:01.000Z"
+            },
+            "tokens": {
+              "input": 2400,
+              "output": 712,
+              "cacheRead": 31000,
+              "live": true
+            },
+            "spark": {
+              "endAt": "2026-10-18T10:07:12.000Z",
+              "samples": [
+                0,
+                0,
+                4,
+                16,
+                16,
+                32,
+                20,
+                8,
+                0,
+                16,
+                40,
+                52,
+                33,
+                16,
+                16,
+                0,
+                0,
+                4,
+                18,
+                30,
+                41,
+                60,
+                48,
+                32,
+                16,
+                16,
+                32,
+                49,
+                52,
+                33
+              ]
+            }
+          }
+        },
+        {
+          "laneId": "T33",
+          "role": "reviewer",
+          "title": "review #212",
+          "status": "working",
+          "taskId": "T33",
+          "threadRef": {
+            "machineId": "forge",
+            "threadId": "s-33"
+          },
+          "model": "claude-haiku-5-5",
+          "effort": "low",
+          "startedAt": "2026-10-18T10:06:32.000Z",
+          "live": {
+            "laneId": "T33",
+            "status": "working",
+            "activity": {
+              "activity": {
+                "kind": "command",
+                "text": "cargo test -p fleetd hub::leads"
+              },
+              "since": "2026-10-18T10:06:32.000Z"
+            },
+            "tokens": {
+              "input": 980,
+              "output": 221,
+              "cacheRead": 12000,
+              "live": false
+            },
+            "spark": {
+              "endAt": "2026-10-18T10:07:12.000Z",
+              "samples": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                16,
+                16,
+                2,
+                0,
+                0,
+                16,
+                32,
+                40
+              ]
+            }
+          }
+        },
+        {
+          "laneId": "T34",
+          "role": "verifier",
+          "title": "verify #212",
+          "status": "queued",
+          "taskId": "T34",
+          "model": "claude-haiku-5-5",
+          "effort": "low",
+          "statusReason": "slots: 40/40 in use"
+        }
+      ],
+      "prs": [
+        {
+          "changeId": "X11",
+          "repo": "wynn-dev/fleetd",
+          "number": 211,
+          "url": "https://github.com/wynn-dev/fleetd/pull/211",
+          "state": "merged",
+          "reviewsDone": 2,
+          "reviewsNeeded": 2
+        },
+        {
+          "changeId": "X12",
+          "repo": "wynn-dev/fleetd",
+          "number": 212,
+          "url": "https://github.com/wynn-dev/fleetd/pull/212",
+          "state": "reviewing",
+          "reviewsDone": 1,
+          "reviewsNeeded": 2
+        }
+      ],
+      "createdAt": "2026-10-18T10:01:00.000Z",
+      "updatedAt": "2026-10-18T10:07:12.000Z"
+    },
+    {
+      "workstreamId": "W12",
+      "projectRef": {
+        "machineId": "forge",
+        "projectId": "fleetd"
+      },
+      "title": "Test ask batching",
+      "state": "running",
+      "template": "bugfix",
+      "phase": "merging",
+      "phaseDetail": "#208 in CI",
+      "needsYou": 0,
+      "settled": 2,
+      "total": 2,
+      "lanes": [],
+      "prs": [
+        {
+          "changeId": "X8",
+          "repo": "wynn-dev/fleetd",
+          "number": 208,
+          "url": "https://github.com/wynn-dev/fleetd/pull/208",
+          "state": "ci",
+          "reviewsDone": 2,
+          "reviewsNeeded": 2
+        }
+      ],
+      "createdAt": "2026-10-18T09:46:00.000Z",
+      "updatedAt": "2026-10-18T10:05:00.000Z"
+    }
+  ],
+  "trains": [
+    {
+      "repo": "wynn-dev/fleetd",
+      "frozen": false,
+      "chips": [
+        {
+          "changeId": "X8",
+          "number": 208,
+          "url": "https://github.com/wynn-dev/fleetd/pull/208",
+          "workstreamId": "W12",
+          "state": "ci"
+        },
+        {
+          "changeId": "X12",
+          "number": 212,
+          "url": "https://github.com/wynn-dev/fleetd/pull/212",
+          "workstreamId": "W14",
+          "state": "reviewing",
+          "position": 0
+        },
+        {
+          "changeId": "X11",
+          "number": 211,
+          "url": "https://github.com/wynn-dev/fleetd/pull/211",
+          "workstreamId": "W14",
+          "state": "merged"
+        }
+      ],
+      "mergedToday": 4
+    }
+  ],
+  "at": "2026-10-18T10:07:12.000Z"
+}

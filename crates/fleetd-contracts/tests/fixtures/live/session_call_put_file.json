@@ -1,0 +1,9 @@
+{
+  "id": "c10",
+  "call": {
+    "op": "put_file",
+    "projectId": "fleetd",
+    "relPath": ".fleetd/attachments/W14/screenshot.png",
+    "dataB64": "iVBORw0KGgo="
+  }
+}
