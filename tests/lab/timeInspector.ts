@@ -150,6 +150,7 @@ export async function timeInspector(lab: Lab) {
     branch = JSON.parse(gh("pr", "view", prUrl!, "--json", "headRefName")).headRefName as string;
     const queued = await lab.waitEvent(`${taskId}'s PR enqueued`, 60_000, { cursor, types: ["change.queued"], match: (e) => prUrl!.endsWith(`/pull/${e.data?.prNumber}`) });
     const changeId = queued.event.data.changeId as string;
+    const changeLane = `change:${REPO}#${queued.event.data.prNumber}`;
     cursor = queued.cursor;
     const merged = await lab.waitEvent(`pr.merged for ${changeId}`, CI_MS, { cursor, types: ["pr.merged"], match: (e) => e.data?.changeId === changeId });
     const change = ((await callTool("changes_list", { projectRef: ref, limit: 100 })).body.changes as Array<Body>).find((c) => c.changeId === changeId)!;
@@ -179,7 +180,10 @@ export async function timeInspector(lab: Lab) {
       if (afterId === undefined) break;
     }
     const dur = (s: Body) => (s.endMs as number) - (s.startMs as number);
-    check(breakdown.coverage.complete === true, `coverage complete: ${JSON.stringify(breakdown.coverage)}`);
+    // The only gaps a clean order may have are short nothing-running stretches of the path (hub processing between
+    // a thread's end and the next span); anything else is missing data.
+    const gaps = breakdown.coverage.gaps as Array<Body>;
+    check(gaps.every((g) => g.why === "nothing_running") && breakdown.coverage.complete === (gaps.length === 0), `coverage: ${JSON.stringify(breakdown.coverage)}`);
     check(spans.every((s) => s.endMs !== undefined), `every span of a done order is closed: ${JSON.stringify(spans.filter((s) => s.endMs === undefined))}`);
 
     // 1. The critical path adds up to the order's wall time, and the wall is submit to done.
@@ -190,7 +194,7 @@ export async function timeInspector(lab: Lab) {
     check(pathSum === p.endMs - p.startMs && contiguous && segments[0]?.startMs === p.startMs, `path segments tile [${p.startMs}, ${p.endMs}]: sum ${pathSum}, contiguous ${contiguous}`);
     check(p.endMs - p.startMs === breakdown.wallMs, `path ${p.endMs - p.startMs} ms = wall ${breakdown.wallMs} ms`);
     check(Math.abs(breakdown.wallMs - (doneAt - submitAt)) <= 1000, `wall ${breakdown.wallMs} ms = submit to workstream.done ${doneAt - submitAt} ms (±1 s)`);
-    check(p.nothingRunningMs === 0, `nothing-running time on the path: ${p.nothingRunningMs} ms`);
+    check(p.nothingRunningMs <= Math.max(5000, breakdown.wallMs / 50), `nothing-running time on the path ${p.nothingRunningMs} ms ≤ max(5 s, 2% of wall)`);
     ok(`1. critical path ${segments.length} segments = wall ${(breakdown.wallMs / 1000).toFixed(1)} s (submit to done ${((doneAt - submitAt) / 1000).toFixed(1)} s); agent time ${(breakdown.agentMs / 1000).toFixed(1)} s`);
 
     // 2. Every run is tiled by its spans: the exclusive time below it adds up to its own length.
@@ -201,20 +205,22 @@ export async function timeInspector(lab: Lab) {
     };
     const runs = spans.filter((s) => s.kind === "run");
     check(runs.some((r) => r.taskId === taskId), `the writer's run is on the order: ${JSON.stringify(runs.map((r) => r.lane))}`);
+    let worst = 0;
     for (const run of runs) {
-      const sum = spans.filter((s) => runOf(s) === run).reduce((n, s) => n + ((s.exclMs as number | undefined) ?? 0), 0);
+      const sum = spans.filter((s) => s.runId === run.runId && runOf(s) === run).reduce((n, s) => n + ((s.exclMs as number | undefined) ?? 0), 0);
       check(tiles(sum, dur(run)), `${run.lane} run ${run.runId}: its spans' exclusive time ${sum} ms vs ${dur(run)} ms`);
+      worst = Math.max(worst, Math.abs(sum - dur(run)));
     }
-    ok(`2. ${runs.length} runs tiled by their spans within max(250 ms, 1%)`);
+    ok(`2. ${runs.length} runs tiled by their spans within max(250 ms, 1%); worst off by ${worst} ms`);
 
     // 3. CI: the train's stages back to back, and the `ci` check as GitHub timed it, inside change.ci.
-    const stages = spans.filter((s) => s.lane === `change:${changeId}` && (s.kind as string).startsWith("change.")).sort((x, y) => x.startMs - y.startMs);
+    const stages = spans.filter((s) => s.lane === changeLane && (s.kind as string).startsWith("change.")).sort((x, y) => x.startMs - y.startMs);
     check(stages.every((s, i) => i === 0 || s.startMs === stages[i - 1]!.endMs), `change stages back to back: ${stages.map((s) => `${s.kind} ${s.startMs}-${s.endMs}`).join(", ")}`);
     for (const kind of ["change.review", "change.ci", "change.merge"]) check(stages.some((s) => s.kind === kind), `${changeId} has a ${kind} span`);
     const runsOnHead = JSON.parse(gh("api", `repos/${REPO}/commits/${change.headSha}/check-runs`)).check_runs as Array<Body>;
     const github = runsOnHead.filter((r) => r.name === "ci").sort((x, y) => Date.parse(y.started_at) - Date.parse(x.started_at))[0];
     check(github?.completed_at, `GitHub has a finished ci run on ${change.headSha}`);
-    const ciSpan = spans.find((s) => s.kind === "ci.check" && (s.extra?.check === "ci" || s.label === "ci"));
+    const ciSpan = spans.find((s) => s.kind === "ci.check" && s.lane === `${changeLane}/ci` && s.extra?.check === "ci");
     check(ciSpan, `a ci.check span named ci: ${JSON.stringify(spans.filter((s) => s.kind === "ci.check"))}`);
     const [ghStart, ghEnd] = [Date.parse(github!.started_at), Date.parse(github!.completed_at)];
     check(Math.abs(ciSpan!.startMs - ghStart) <= 1000 && Math.abs(ciSpan!.endMs - ghEnd) <= 1000, `ci span ${ciSpan!.startMs}-${ciSpan!.endMs} = GitHub ${github!.started_at} to ${github!.completed_at} (±1 s)`);
