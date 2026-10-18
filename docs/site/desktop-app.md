@@ -23,7 +23,7 @@ app and enter the code and hub address above, or open the link there.
 ```
 
 Enter the address and code on the app's "Connect to your fleetd hub" screen, or open the `fleetd://pair` link. The
-code works once, for 15 minutes. The app keeps its key in the OS keychain, never in a file. Settings (⌘,) shows the
+code works once, for 15 minutes. The app keeps its key in the OS keychain (an unsigned Mac build: in a file only you can read). Settings (⌘,) shows the
 hub it is paired with and disconnects it; "Connect to a hub…" in the palette pairs with another.
 
 ## The board

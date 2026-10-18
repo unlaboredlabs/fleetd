@@ -46,7 +46,8 @@ serde_json.workspace = true
 crypto_box.workspace = true
 zeroize.workspace = true
 base64.workspace = true
-# OS keychain: macOS Keychain, Windows Credential Manager, Secret Service (zbus, already in the graph) on Linux.
+# OS keychain: macOS Keychain (Developer ID builds only), Windows Credential Manager, Secret Service (zbus, already
+# in the graph) on Linux.
 keyring = "4.2"
 # Grapheme boundaries for caret movement and deletion in text fields (emoji, combining marks).
 unicode-segmentation = "1"
@@ -60,6 +61,9 @@ fleetd-record = { path = "../record" }
 # main.rs turns off AppKit's window restoration. Already in the graph through gpui_macos.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSUserDefaults"] }
+# keychain.rs checks the app's own code signature (Team ID or ad-hoc). Already in the graph through keyring and
+# rustls-platform-verifier.
+security-framework = "3"
 
 [dev-dependencies]
 # Headless window and simulated keystrokes/clicks for the text field tests.

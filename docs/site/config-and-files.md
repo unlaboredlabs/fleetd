@@ -119,4 +119,5 @@ port: their nodes dial out. Change it with `fleetd init --listen <host:port> --u
 
 The app's pairing hand-off from `fleetd init` or `fleetd pair` on the same machine is
 `~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`). Its hub key is in the
-OS keychain.
+OS keychain, except in an unsigned or ad-hoc signed Mac build, which keeps it in
+`~/Library/Application Support/fleetd/hub.json` (mode 0600).

@@ -43,6 +43,8 @@ use crate::ui::{self, Variant};
 
 const LINES_PER_SEC: u64 = 50;
 const SCROLL_PX_PER_SEC: f32 = 2400.;
+/// How long launch shows a blank window before the connect screen while the saved key is still loading.
+const LOAD_WAIT: Duration = Duration::from_secs(5);
 const POLL_EVERY: Duration = Duration::from_secs(3);
 /// The board resorts this long after the pointer leaves it (spec rule 8: nothing jumps while you look).
 const RESORT_AFTER: Duration = Duration::from_secs(2);
@@ -51,7 +53,7 @@ const STAMP_WIDTH: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
-    /// Reading the keychain.
+    /// Reading the saved hub key.
     Loading,
     Connect,
     Board,
@@ -353,19 +355,48 @@ impl Shell {
     // ---- hub link ------------------------------------------------------------------------
 
     fn load_saved(&mut self, cx: &mut Context<Self>) {
+        // The one-time move of an old keychain item can sit behind a system prompt: the connect screen doesn't wait.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(LOAD_WAIT).await;
+            this.update(cx, |this, cx| {
+                if matches!(this.screen, Screen::Loading) {
+                    this.first_run(cx);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
         cx.spawn(async move |this, cx| {
             let loaded = match keychain::from_env() {
-                Some(saved) => Ok(Some(saved)),
+                Some(saved) => Ok(keychain::Loaded { saved: Some(saved), note: None }),
                 None => cx.background_executor().spawn(async { keychain::load() }).await,
             };
             this.update(cx, |this, cx| {
+                // Paired another way while a prompt was up.
+                if this.hub.is_some() {
+                    return;
+                }
+                let waiting = matches!(this.screen, Screen::Loading);
                 match loaded {
-                    Ok(Some(saved)) => this.connect(saved, cx),
-                    Ok(None) => this.first_run(cx),
+                    Ok(keychain::Loaded { saved: Some(saved), note }) => {
+                        this.note = note;
+                        this.connect(saved, cx);
+                    }
+                    Ok(keychain::Loaded { saved: None, note }) => {
+                        if note.is_some() {
+                            this.form.status = note;
+                        }
+                        if waiting {
+                            this.first_run(cx);
+                        }
+                    }
                     Err(e) => {
-                        let fix = "You can still connect; without a keychain the key lasts until the app quits.";
+                        let fix = "You can still connect; the key then lasts until the app quits.";
                         this.form.error = Some(Failure { code: String::new(), message: e, fix: Some(fix.into()) });
-                        this.first_run(cx);
+                        if waiting {
+                            this.first_run(cx);
+                        }
                     }
                 }
                 cx.notify();
@@ -1531,7 +1562,7 @@ impl Shell {
                         .child(self.command_line("copy-key-create", "fleetd hub key create --human --name <device>", cx)),
                 );
         }
-        col = col.child(div().text_size(px(size::XS)).text_color(t.quiet).child("The key is kept in the OS keychain, never in a file."));
+        col = col.child(div().text_size(px(size::XS)).text_color(t.quiet).child(format!("The key is kept {}.", keychain::where_kept())));
         // Left-aligned at a third of the window, like a document, not a centred card.
         div().id("connect").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().pt(px(96.)).pb_8().pl(px(120.)).child(col).into_any_element()
     }
