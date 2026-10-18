@@ -113,6 +113,11 @@ impl LiveState {
         self.orders.insert(out.order.workstream_id.clone(), out);
     }
 
+    /// The hub answered this project's board, even if it has no orders.
+    pub fn has_board(&self, project: &ProjectKey) -> bool {
+        self.boards.contains_key(project)
+    }
+
     pub fn orders(&self, project: &ProjectKey) -> &[OrderCard] {
         self.boards.get(project).map_or(&[], |b| &b.orders)
     }

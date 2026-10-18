@@ -309,7 +309,8 @@ impl Shell {
     }
 
     fn boards_loaded(&self) -> bool {
-        self.state.projects.iter().all(|r| !self.state.live.orders(&r.key()).is_empty() || self.state.board_errors.contains_key(&r.key()))
+        // A project with no orders has a board too: an empty one is loaded, not loading.
+        self.state.projects.iter().all(|r| self.state.live.has_board(&r.key()) || self.state.board_errors.contains_key(&r.key()))
             || self.bench.is_some()
     }
 
