@@ -31,9 +31,9 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
 
 ## The Claude login {#claude}
 
-Sessions run `claude` with your own setup on that machine: `~/.claude` (or the `CLAUDE_CONFIG_DIR` the node's
-service has), so your login, the `env` in `~/.claude/settings.json` (a proxy's `ANTHROPIC_BASE_URL`, say), an
-`apiKeyHelper` and your MCP servers work as they do in your shell. If `claude` works for you on the worker, it works
+Sessions run `claude` with your own setup on that machine (`~/.claude`), so your login, the `env` in
+`~/.claude/settings.json` (a proxy's `ANTHROPIC_BASE_URL`, say), an `apiKeyHelper` and your MCP servers work as they
+do in your shell. If `claude` works for you on the worker, it works
 for fleetd. Otherwise log in as you normally do: `claude auth login`, or through your proxy.
 
 `fleetd doctor` shows what each worker uses, e.g. `claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317
@@ -67,7 +67,6 @@ ANTHROPIC_AUTH_TOKEN=<token>
 - **The hub** service loads the file when it starts, so restart it after a change. Its own `claude` gets only
   `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` from it.
 
-`fleetd init` offers to copy these from your shell when it finds them there.
 
 ## .fleetd/policy.yaml {#policy}
 

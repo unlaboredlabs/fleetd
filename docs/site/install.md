@@ -5,15 +5,12 @@ order: 10
 description: One command installs the fleetd CLI, plus the desktop app on a machine with a display.
 ---
 
-```console
-$ curl -fsSL https://fleetd.sh | sh
-fleetd: installed the CLI: ~/.fleetd/bin/fleetd
-
-Next, run:
-  fleetd init
+```sh
+curl -fsSL https://fleetd.sh | sh
 ```
 
-Then set it up: [Quick start](quick-start.md).
+In a terminal it then starts the setup wizard, `fleetd init`: see [Quick start](quick-start.md). Without a terminal,
+or with `--no-init`, it only installs and prints the next command.
 
 ## Platforms
 
@@ -32,8 +29,8 @@ The hub also needs `git`, and the `claude` and `gh` CLIs logged in to your own a
 - The desktop app, on macOS and on Linux with a display: `~/Applications/fleetd.app`, or `~/.local/share/fleetd/app`
   with a menu entry.
 
-Every download is checked against the release's `SHA256SUMS`. The installer needs no sudo and starts no services:
-`fleetd init` does that. Running it again replaces what it installed. To read it first, open
+Every download is checked against the release's `SHA256SUMS`. The installer needs no sudo, and only `fleetd init`
+sets up services. Running it again replaces what it installed. To read it first, open
 [fleetd.sh/install.sh](https://fleetd.sh/install.sh).
 
 ## Options
@@ -41,7 +38,10 @@ Every download is checked against the release's `SHA256SUMS`. The installer need
 ```sh
 curl -fsSL https://fleetd.sh | sh -s -- --app       # the app too, on Linux without a display
 curl -fsSL https://fleetd.sh | sh -s -- --no-app    # the CLI only
+curl -fsSL https://fleetd.sh | sh -s -- --no-init   # install, don't start the wizard
 ```
+
+Without a terminal (here, a script):
 
 ```console
 $ curl -fsSL https://fleetd.sh | sh -s -- --app
