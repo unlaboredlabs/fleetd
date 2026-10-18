@@ -419,7 +419,8 @@
             "task.completed",
             "task.failed",
             "task.cancelled",
-            "claim.passed"
+            "claim.passed",
+            "steer.withdrawn"
           ],
           "type": "string"
         },
@@ -646,6 +647,31 @@
         {
           "const": "prompt.default_changed",
           "description": "This release changed the default of a prompt you overrode; yours stays in effect until you save it again or\nreset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.",
+          "type": "string"
+        },
+        {
+          "const": "steer.queued",
+          "description": "A steer was stored (or put in the offline queue). `data` is a `SteerEventData`, plus `data.text` (first 120\ncharacters), `data.mode` and `data.by`.",
+          "type": "string"
+        },
+        {
+          "const": "steer.delivered",
+          "description": "claude took the steer in; `data.how`.",
+          "type": "string"
+        },
+        {
+          "const": "steer.acknowledged",
+          "description": "The agent named the steer (`data.excerpt`), or a lead call did.",
+          "type": "string"
+        },
+        {
+          "const": "steer.unacknowledged",
+          "description": "The steer's run ended with no reply naming it; `data.excerpt` is its first reply.",
+          "type": "string"
+        },
+        {
+          "const": "steer.failed",
+          "description": "Refused by the node, the process exited before taking it in, or it expired in the offline queue;\n`data.reason`.",
           "type": "string"
         },
         {

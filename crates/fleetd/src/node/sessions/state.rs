@@ -23,7 +23,14 @@ pub const ASSISTANT_TAIL: usize = 2000;
 
 /// Recomputes what a summary derives from its runs: the latest run, the active one, and the status.
 pub fn settle(summary: &mut SessionSummary, runs: &[RunInfo], at: &Timestamp) {
-    summary.latest_run = runs.iter().max_by_key(|r| r.ordinal).cloned();
+    // A message withdrawn (or cancelled) before claude took it in never ran: the session reads as its last real run.
+    let never_ran = |r: &&RunInfo| r.status == RunStatus::Interrupted && r.started_at.is_none();
+    summary.latest_run = runs
+        .iter()
+        .filter(|r| !never_ran(r))
+        .max_by_key(|r| r.ordinal)
+        .or_else(|| runs.iter().max_by_key(|r| r.ordinal))
+        .cloned();
     summary.active_run_id = runs
         .iter()
         .filter(|r| r.status.is_active())
@@ -226,6 +233,7 @@ mod tests {
             ended_at: None,
             failure: None,
             usage: None,
+            superseded_by: None,
         }
     }
 

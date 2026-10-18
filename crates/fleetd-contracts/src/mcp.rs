@@ -32,6 +32,7 @@ use crate::prompts::{
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::status::{StatusDoc, StatusScope};
+use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
@@ -457,6 +458,44 @@ output!(OrderNoteOutput {
     note_id: Text<1, 40>,
     /// The lead's wake that will carry it: now for urgent notes, else after the wake debounce.
     wakes_at: Timestamp,
+    /// The steer the note was sent as; its receipts arrive as `steer.*` events.
+    steer_id: Option<SteerId>,
+});
+
+// steer_send: a person steers an order's lead or one task. `queue` (Enter) lands at the agent's next tool boundary;
+// `now` (⌘Enter) stops its current step. No wake debounce, no digest.
+input!(SteerSendInput {
+    target: SteerTarget,
+    text: IntakeText,
+    #[serde(default)]
+    mode: SteerMode,
+    refs: Option<IntakeRefs>,
+    attachments: Option<Attachments>,
+    client_request_id: RequestId,
+});
+output!(SteerSendOutput {
+    #[serde(flatten)]
+    steer: Steer,
+});
+
+// steer_withdraw: drop a steer that is still queued. Refused once it was delivered.
+input!(SteerWithdrawInput { steer_id: SteerId });
+output!(SteerWithdrawOutput {
+    #[serde(flatten)]
+    steer: Steer,
+});
+
+// steers_list: steers with their receipts, newest first.
+input!(SteersListInput {
+    workstream_id: Option<WorkstreamId>,
+    task_id: Option<TaskId>,
+    /// Only steers after this number (the n of `S<n>`).
+    after_n: Option<Count>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
+});
+output!(SteersListOutput {
+    steers: List<Steer, 0, 100>,
 });
 
 // order_stop: cancels the order's queued and running agents and stops it. Merged PRs stay. Idempotent.
@@ -1235,6 +1274,10 @@ tools! {
     status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
+    // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
+    steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
+    steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;
+    steers_list => SteersList, Read, SteersListInput, SteersListOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1366,7 +1409,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 70);
+        assert_eq!(McpToolName::ALL.len(), 73);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
@@ -1401,6 +1444,24 @@ mod tests {
         let decoded: StatusGetOutput = decode(output.clone()).unwrap();
         assert_eq!(decoded.doc.next.len(), 1);
         assert_eq!(serde_json::to_value(&decoded).unwrap(), output);
+    }
+
+    #[test]
+    fn steer_outputs_round_trip_with_every_field_set() {
+        let steer = json!({
+            "id": "S12", "target": { "taskId": "T88" }, "workstreamId": "W41",
+            "thread": { "machineId": "forge", "threadId": "t1" }, "runId": "r1",
+            "by": { "kind": "human", "keyName": "wynn-mac" }, "mode": "now", "text": "skip the docs page",
+            "stage": "acknowledged", "queuedAt": "2026-10-18T14:02:07.120Z",
+            "deliveredAt": "2026-10-18T14:02:07.143Z", "how": "stopped", "stoppedTool": "cargo test",
+            "seenAt": "2026-10-18T14:02:07.150Z", "ackedAt": "2026-10-18T14:02:08.910Z",
+            "ackExcerpt": "S12: dropping the docs page", "planChange": "-1 item", "detail": "sent",
+            "next": "steers_list", "truncated": false,
+        });
+        let send: SteerSendOutput = decode(steer.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&send).unwrap(), steer);
+        let withdraw: SteerWithdrawOutput = decode(steer.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&withdraw).unwrap(), steer);
     }
 
     #[test]

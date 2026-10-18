@@ -38,6 +38,8 @@ pub struct System {
     pub memory_paths: Option<Value>,
     // status
     pub status: Option<String>,
+    /// `requesting`: the user messages this model request carries (`request_marker_lists_v1`).
+    pub user_message_uuids: Option<Vec<String>>,
     pub compact_result: Option<String>,
     // compact_boundary
     pub compact_metadata: Option<CompactMetadata>,
@@ -147,6 +149,8 @@ pub struct ResultLine {
     /// The run's wall time and API time by claude's own count.
     pub duration_ms: Option<u64>,
     pub duration_api_ms: Option<u64>,
+    /// Every user message the turn took in: the first, then any that joined it.
+    pub user_message_uuids: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Deserialize)]
@@ -229,6 +233,9 @@ pub enum Input {
         parent_tool_use_id: Option<String>,
         session_id: String,
         uuid: String,
+        /// `now`: the running turn ends at its next tool boundary and this message gets its own turn. Absent = `next`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        priority: Option<&'static str>,
     },
     ControlRequest {
         request_id: String,

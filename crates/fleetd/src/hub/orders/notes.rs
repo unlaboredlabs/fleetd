@@ -1,13 +1,13 @@
-//! A person adding to an order (order_note) and stopping one (order_stop). Both reach the order's lead as one wake
-//! line; a note marked urgent wakes it now instead of after the debounce.
-use crate::hub::prompts::PromptSet;
+//! A person adding to an order (order_note) and stopping one (order_stop). A note is a steer to the order's lead
+//! (`queue`, or `now` when urgent); a stop reaches the lead as one wake line.
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ledger::{Headline, Workstream, WorkstreamState};
+use fleetd_contracts::ledger::{Headline, WorkstreamState};
 use fleetd_contracts::mcp::{
     ErrorCode, IntakeRef, OrderNoteInput, OrderNoteOutput, OrderStopInput, OrderStopOutput,
 };
 use fleetd_contracts::prim::{Count, Text};
+use fleetd_contracts::steer::{SteerMode, SteerTarget};
 use fleetd_contracts::tasks::TaskState;
 use serde_json::json;
 
@@ -16,7 +16,7 @@ use crate::hub::api::{Caller, Hub, ToolError, allows, is_human, require};
 use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::intake::attachments;
 use crate::hub::leads::records::{StoredWorkstream, is_closed};
-use crate::hub::leads::wakes::{LineKind, Trigger, WAKE_DEBOUNCE};
+use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::store::{NewEvent, iso_ms, now_ms};
 use crate::hub::tasks::TaskCaller;
 
@@ -112,28 +112,6 @@ fn serde_plain<T: serde::Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
-/// The wake line for a person's words about an order, with its references and attachments.
-pub fn note_line(
-    set: &PromptSet,
-    w: &Workstream,
-    text: &str,
-    refs: &[String],
-    attached: &[String],
-    steered: bool,
-) -> String {
-    let verb = if steered { "steered" } else { "added to" };
-    set.render(
-        "wake.order_note",
-        &[
-            ("verb", &verb),
-            ("workstreamId", &w.workstream_id),
-            ("title", &one_line(&w.title, 80)),
-            ("text", &one_line(text, 1500)),
-            ("references", &references(refs, attached)),
-        ],
-    )
-}
-
 /// The references and attachments under a wake line, or nothing.
 fn references(refs: &[String], attached: &[String]) -> String {
     let mut out = String::new();
@@ -176,7 +154,28 @@ pub async fn note(
     let ids: Vec<_> = input.attachments.iter().flatten().cloned().collect();
     let attached =
         attachments::deliver(hub, caller, &ids, &w.project_ref, &w.workstream_id).await?;
+    // A note is a steer to the order's lead: straight to its thread, no wake debounce, no digest.
+    let steer = crate::hub::steer::send(
+        hub,
+        crate::hub::steer::By::Human(caller),
+        crate::hub::steer::SteerRequest {
+            target: SteerTarget::Lead {
+                workstream_id: w.workstream_id.clone(),
+            },
+            text: &input.text,
+            mode: if input.urgent {
+                SteerMode::Now
+            } else {
+                SteerMode::Queue
+            },
+            refs,
+            attached,
+            client_request_id: &input.client_request_id,
+        },
+    )
+    .await?;
     let now = now_ms(hub.clock.as_ref());
+    // Kept for one release, for clients that still watch workstream.note.
     let event = hub.events.append(NewEvent {
         at: iso_ms(now).into(),
         r#type: HubEventType::WorkstreamNote,
@@ -193,32 +192,17 @@ pub async fn note(
             "clientRequestId": input.client_request_id.as_str(),
             "urgent": input.urgent,
             "text": js_take(&input.text, 200),
+            "steerId": steer.id,
         })),
         attention: None,
     })?;
-    let note_id = format!("N{}", event.seq.get());
-    let trigger = Trigger::Line {
-        kind: LineKind::Human,
-        text: note_line(
-            &hub.db.prompts().for_lead(&w.project_ref),
-            &w,
-            &input.text,
-            &refs,
-            &attached,
-            input.urgent,
-        ),
-    };
-    let wakes_at = if input.urgent {
-        hub.leads.wakes.trigger_now(&w.project_ref, trigger);
-        now
-    } else {
-        hub.leads.wakes.trigger(&w.project_ref, trigger);
-        now + WAKE_DEBOUNCE.as_millis() as i64
-    };
     Ok(OrderNoteOutput {
-        note_id: Text::unchecked(note_id),
-        wakes_at: iso_ms(wakes_at).into(),
-        next: Some("The lead reads it at that wake; watch for lead.woken.".into()),
+        note_id: Text::unchecked(format!("N{}", event.seq.get())),
+        wakes_at: iso_ms(now).into(),
+        steer_id: Some(steer.id),
+        next: Some(
+            "Sent to the lead as a steer; watch for steer.delivered and steer.acknowledged.".into(),
+        ),
         truncated: None,
     })
 }

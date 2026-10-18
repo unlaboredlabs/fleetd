@@ -27,6 +27,7 @@ pub mod schema;
 pub mod secrets;
 pub mod sessions;
 pub mod status;
+pub mod steer;
 pub mod subscriptions;
 pub mod tasks;
 pub mod time;

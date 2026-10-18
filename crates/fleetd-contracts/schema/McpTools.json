@@ -2015,6 +2015,31 @@
       ],
       "type": "string"
     },
+    "DeliveredHow": {
+      "description": "How a delivered steer was taken in.",
+      "oneOf": [
+        {
+          "const": "turn",
+          "description": "It started a turn while the agent was idle.",
+          "type": "string"
+        },
+        {
+          "const": "boundary",
+          "description": "After the running tool returned.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "⌘Enter stopped the running step (`stoppedTool` names it).",
+          "type": "string"
+        },
+        {
+          "const": "joined",
+          "description": "An older claude merged it into the running turn; the ack rule catches a miss.",
+          "type": "string"
+        }
+      ]
+    },
     "DigestGetInput": {
       "type": "object"
     },
@@ -3087,7 +3112,8 @@
             "task.completed",
             "task.failed",
             "task.cancelled",
-            "claim.passed"
+            "claim.passed",
+            "steer.withdrawn"
           ],
           "type": "string"
         },
@@ -3317,6 +3343,31 @@
           "type": "string"
         },
         {
+          "const": "steer.queued",
+          "description": "A steer was stored (or put in the offline queue). `data` is a `SteerEventData`, plus `data.text` (first 120\ncharacters), `data.mode` and `data.by`.",
+          "type": "string"
+        },
+        {
+          "const": "steer.delivered",
+          "description": "claude took the steer in; `data.how`.",
+          "type": "string"
+        },
+        {
+          "const": "steer.acknowledged",
+          "description": "The agent named the steer (`data.excerpt`), or a lead call did.",
+          "type": "string"
+        },
+        {
+          "const": "steer.unacknowledged",
+          "description": "The steer's run ended with no reply naming it; `data.excerpt` is its first reply.",
+          "type": "string"
+        },
+        {
+          "const": "steer.failed",
+          "description": "Refused by the node, the process exited before taking it in, or it expired in the offline queue;\n`data.reason`.",
+          "type": "string"
+        },
+        {
           "const": "plan.changed",
           "description": "A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).",
           "type": "string"
@@ -3405,6 +3456,14 @@
         },
         "stale": {
           "$ref": "#/$defs/StaleMark"
+        },
+        "steers": {
+          "description": "The order's latest steers, newest first, on its first in-progress row only.",
+          "items": {
+            "$ref": "#/$defs/StatusSteer"
+          },
+          "maxItems": 3,
+          "type": "array"
         },
         "taskIds": {
           "description": "Join to the live feed's lanes for what each agent is doing now.",
@@ -4619,6 +4678,24 @@
         "status_wait.output": {
           "$ref": "#/$defs/StatusWaitOutput"
         },
+        "steer_send.input": {
+          "$ref": "#/$defs/SteerSendInput"
+        },
+        "steer_send.output": {
+          "$ref": "#/$defs/SteerSendOutput"
+        },
+        "steer_withdraw.input": {
+          "$ref": "#/$defs/SteerWithdrawInput"
+        },
+        "steer_withdraw.output": {
+          "$ref": "#/$defs/SteerWithdrawOutput"
+        },
+        "steers_list.input": {
+          "$ref": "#/$defs/SteersListInput"
+        },
+        "steers_list.output": {
+          "$ref": "#/$defs/SteersListOutput"
+        },
         "subscription_delete.input": {
           "$ref": "#/$defs/SubscriptionDeleteInput"
         },
@@ -4861,6 +4938,12 @@
         "status_seen.output",
         "status_wait.input",
         "status_wait.output",
+        "steer_send.input",
+        "steer_send.output",
+        "steer_withdraw.input",
+        "steer_withdraw.output",
+        "steers_list.input",
+        "steers_list.output",
         "subscription_delete.input",
         "subscription_delete.output",
         "subscription_list.input",
@@ -5372,6 +5455,10 @@
           "maxLength": 40,
           "minLength": 1,
           "type": "string"
+        },
+        "steerId": {
+          "$ref": "#/$defs/SteerId",
+          "description": "The steer the note was sent as; its receipts arrive as `steer.*` events."
         },
         "truncated": {
           "type": "boolean"
@@ -7609,21 +7696,30 @@
       "type": "string"
     },
     "RiskRule": {
-      "enum": [
-        "ci_red_main",
-        "machine_offline",
-        "blocked_on_you",
-        "slipping",
-        "estimate_drift",
-        "riskiest_item",
-        "ci_red_repeat",
-        "machine_flaky",
-        "usage_high",
-        "slots_full",
-        "github_drift",
-        "no_plan"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "ci_red_main",
+            "machine_offline",
+            "blocked_on_you",
+            "slipping",
+            "estimate_drift",
+            "riskiest_item",
+            "ci_red_repeat",
+            "machine_flaky",
+            "usage_high",
+            "slots_full",
+            "github_drift",
+            "no_plan"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "steer_unacknowledged",
+          "description": "A steer was not acknowledged, or has gone 10 minutes delivered without it.",
+          "type": "string"
+        }
+      ]
     },
     "RuntimeMode": {
       "enum": [
@@ -8809,6 +8905,40 @@
       ],
       "type": "object"
     },
+    "StatusSteer": {
+      "description": "A steer as the status doc shows it: \"↳ you steered S12 14:02 · acknowledged · −1 item\".",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "id": {
+          "$ref": "#/$defs/SteerId"
+        },
+        "planChange": {
+          "description": "The plan change it made, e.g. \"−1 item\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/SteerStage"
+        },
+        "text": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "stage",
+        "at"
+      ],
+      "type": "object"
+    },
     "StatusWaitInput": {
       "properties": {
         "after": {
@@ -8858,6 +8988,493 @@
       },
       "required": [
         "version"
+      ],
+      "type": "object"
+    },
+    "Steer": {
+      "description": "One steer and its receipt.",
+      "properties": {
+        "ackExcerpt": {
+          "description": "Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "ackedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "$ref": "#/$defs/SteerBy"
+        },
+        "deliveredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "detail": {
+          "description": "Plain words on the stage: \"waiting for lab-b (until 14:30)\", \"held: usage resets 14:00\", the failure, or\n\"sent (node older than 0.9)\" when the node cannot report receipts.",
+          "maxLength": 400,
+          "type": "string"
+        },
+        "how": {
+          "$ref": "#/$defs/DeliveredHow"
+        },
+        "id": {
+          "$ref": "#/$defs/SteerId"
+        },
+        "mode": {
+          "$ref": "#/$defs/SteerMode"
+        },
+        "planChange": {
+          "description": "A plan change the steer made, e.g. \"−1 item\".",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "queuedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "runId": {
+          "description": "The node run id it was sent as; also the user message id in the thread.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "seenAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The first model request that carried it."
+        },
+        "stage": {
+          "$ref": "#/$defs/SteerStage"
+        },
+        "stoppedTool": {
+          "description": "`how = stopped`: one line on the step it stopped.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/SteerTarget"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The order it belongs to (a task's own order for a task steer)."
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "workstreamId",
+        "thread",
+        "runId",
+        "by",
+        "mode",
+        "text",
+        "stage",
+        "queuedAt"
+      ],
+      "type": "object"
+    },
+    "SteerBy": {
+      "description": "Who sent a steer.",
+      "oneOf": [
+        {
+          "properties": {
+            "keyName": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "human",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "keyName"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "lead",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SteerId": {
+      "pattern": "^S[1-9][0-9]*$",
+      "type": "string"
+    },
+    "SteerMode": {
+      "description": "How a steer reaches a running agent.",
+      "oneOf": [
+        {
+          "const": "queue",
+          "description": "Enter, \"add to the lead's queue\": taken in at the agent's next tool boundary, as its own turn. Never cuts a\nrunning tool.",
+          "type": "string"
+        },
+        {
+          "const": "now",
+          "description": "⌘Enter, \"interrupt and redirect now\": stops the current step and delivers at once.",
+          "type": "string"
+        }
+      ]
+    },
+    "SteerSendInput": {
+      "properties": {
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/AttachmentId"
+          },
+          "maxItems": 8,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/SteerMode",
+          "default": "queue"
+        },
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/IntakeRef"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/SteerTarget"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "text",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "SteerSendOutput": {
+      "description": "One steer and its receipt.",
+      "properties": {
+        "ackExcerpt": {
+          "description": "Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "ackedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "$ref": "#/$defs/SteerBy"
+        },
+        "deliveredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "detail": {
+          "description": "Plain words on the stage: \"waiting for lab-b (until 14:30)\", \"held: usage resets 14:00\", the failure, or\n\"sent (node older than 0.9)\" when the node cannot report receipts.",
+          "maxLength": 400,
+          "type": "string"
+        },
+        "how": {
+          "$ref": "#/$defs/DeliveredHow"
+        },
+        "id": {
+          "$ref": "#/$defs/SteerId"
+        },
+        "mode": {
+          "$ref": "#/$defs/SteerMode"
+        },
+        "next": {
+          "type": "string"
+        },
+        "planChange": {
+          "description": "A plan change the steer made, e.g. \"−1 item\".",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "queuedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "runId": {
+          "description": "The node run id it was sent as; also the user message id in the thread.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "seenAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The first model request that carried it."
+        },
+        "stage": {
+          "$ref": "#/$defs/SteerStage"
+        },
+        "stoppedTool": {
+          "description": "`how = stopped`: one line on the step it stopped.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/SteerTarget"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The order it belongs to (a task's own order for a task steer)."
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "workstreamId",
+        "thread",
+        "runId",
+        "by",
+        "mode",
+        "text",
+        "stage",
+        "queuedAt"
+      ],
+      "type": "object"
+    },
+    "SteerStage": {
+      "oneOf": [
+        {
+          "enum": [
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "queued",
+          "description": "The hub stored it, or put it in the offline queue.",
+          "type": "string"
+        },
+        {
+          "const": "delivered",
+          "description": "claude's context took it in (`command_lifecycle started`).",
+          "type": "string"
+        },
+        {
+          "const": "acknowledged",
+          "description": "The agent's reply named its id, or a lead call did (`--steer S12`).",
+          "type": "string"
+        },
+        {
+          "const": "unacknowledged",
+          "description": "Its run ended with no reply naming it.",
+          "type": "string"
+        },
+        {
+          "const": "withdrawn",
+          "description": "Dropped while still queued.",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "The machine stayed offline past the queue's TTL.",
+          "type": "string"
+        }
+      ]
+    },
+    "SteerTarget": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "workstreamId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "taskId": {
+              "$ref": "#/$defs/TaskId"
+            }
+          },
+          "required": [
+            "taskId"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "Who a steer is for: an order's lead, or one task (writer, reviewer, verifier, …)."
+    },
+    "SteerWithdrawInput": {
+      "properties": {
+        "steerId": {
+          "$ref": "#/$defs/SteerId"
+        }
+      },
+      "required": [
+        "steerId"
+      ],
+      "type": "object"
+    },
+    "SteerWithdrawOutput": {
+      "description": "One steer and its receipt.",
+      "properties": {
+        "ackExcerpt": {
+          "description": "Acknowledged: the reply naming it; unacknowledged: the first reply. First 200 characters.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "ackedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "$ref": "#/$defs/SteerBy"
+        },
+        "deliveredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "detail": {
+          "description": "Plain words on the stage: \"waiting for lab-b (until 14:30)\", \"held: usage resets 14:00\", the failure, or\n\"sent (node older than 0.9)\" when the node cannot report receipts.",
+          "maxLength": 400,
+          "type": "string"
+        },
+        "how": {
+          "$ref": "#/$defs/DeliveredHow"
+        },
+        "id": {
+          "$ref": "#/$defs/SteerId"
+        },
+        "mode": {
+          "$ref": "#/$defs/SteerMode"
+        },
+        "next": {
+          "type": "string"
+        },
+        "planChange": {
+          "description": "A plan change the steer made, e.g. \"−1 item\".",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "queuedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "runId": {
+          "description": "The node run id it was sent as; also the user message id in the thread.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "seenAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The first model request that carried it."
+        },
+        "stage": {
+          "$ref": "#/$defs/SteerStage"
+        },
+        "stoppedTool": {
+          "description": "`how = stopped`: one line on the step it stopped.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/SteerTarget"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The order it belongs to (a task's own order for a task steer)."
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "workstreamId",
+        "thread",
+        "runId",
+        "by",
+        "mode",
+        "text",
+        "stage",
+        "queuedAt"
+      ],
+      "type": "object"
+    },
+    "SteersListInput": {
+      "properties": {
+        "afterN": {
+          "description": "Only steers after this number (the n of `S<n>`).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "SteersListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "steers": {
+          "items": {
+            "$ref": "#/$defs/Steer"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "steers"
       ],
       "type": "object"
     },

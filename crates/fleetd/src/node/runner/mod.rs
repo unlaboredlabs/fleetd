@@ -24,7 +24,7 @@ use std::time::Duration;
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{
-    PermissionDecision, RunFailure, RunUsage, RunnerInfo, RunnerKind, ThreadItem,
+    PermissionDecision, RunFailure, RunUsage, RunnerInfo, RunnerKind, SendMode, SendNow, ThreadItem,
 };
 use tokio::sync::mpsc;
 
@@ -63,7 +63,13 @@ pub struct SessionSpec {
 pub enum SessionCommand {
     /// A user message that starts a run. `run_id` becomes the stream-json user-message uuid, which claude echoes on
     /// `command_lifecycle` and on the run's `result`.
-    Send { run_id: String, text: String },
+    Send {
+        run_id: String,
+        text: String,
+        mode: SendMode,
+    },
+    /// Drop a send claude still holds queued (`cancel_async_message`); answered by [`RunnerEvent::Withdrawn`].
+    Withdraw { run_id: String },
     /// `control_request` interrupt. The session service escalates to [`SessionCommand::Shutdown`] if the run has
     /// not ended within its grace period.
     Interrupt,
@@ -86,6 +92,10 @@ pub enum RunOutcome {
     },
     /// `error_during_execution` after an interrupt (`terminal_reason` aborted_tools / aborted_streaming).
     Interrupted,
+    /// A steer (`boundary` or `now`) ended the run at a tool boundary to get its own turn: run `by`. Not a failure.
+    Superseded {
+        by: String,
+    },
     Failed(RunFailure),
 }
 
@@ -123,6 +133,32 @@ pub enum RunnerEvent {
     /// `command_lifecycle` started.
     RunStarted {
         run_id: String,
+    },
+    /// `command_lifecycle` queued: claude holds the message until the running step ends.
+    Queued {
+        run_id: String,
+    },
+    /// An older claude merged the message into the running turn instead of giving it a turn of its own: the run
+    /// stays filed under the turn's first run and ends with it.
+    Joined {
+        run_id: String,
+    },
+    /// `system/status` requesting: a model request carries these runs' messages.
+    Seen {
+        run_ids: Vec<String>,
+    },
+    /// The answer to a mode-`now` send's stop: what claude did, and the step it stopped.
+    SendNow {
+        run_id: String,
+        outcome: SendNow,
+        stopped_tool: Option<String>,
+    },
+    /// The answer to a [`SessionCommand::Withdraw`], or a steer claude dropped because the turn it waited on was
+    /// stopped (`by_stop`).
+    Withdrawn {
+        run_id: String,
+        cancelled: bool,
+        by_stop: bool,
     },
     /// Partial assistant text (`stream_event` text_delta), for live views only.
     Delta {

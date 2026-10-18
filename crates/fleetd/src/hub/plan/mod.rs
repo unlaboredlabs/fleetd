@@ -806,14 +806,15 @@ impl Plans {
             }
             let before = figure_of(&store::items_of_milestone(c, item.milestone)?);
             item.state = PlanItemState::Dropped;
-            item.data.drop_reason = Some(call.why.to_string());
+            let why = call.why.as_ref().map_or("", |w| w.as_str());
+            item.data.drop_reason = Some(why.to_owned());
             store::item_set(c, &item)?;
             let what = format!("P{} dropped", item.n);
             let change = Self::scope_change(
                 c,
                 item.milestone,
                 before,
-                Some(call.why.as_str()),
+                Some(why),
                 by,
                 item.workstream_id.as_deref(),
                 now,

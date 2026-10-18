@@ -116,6 +116,27 @@ impl TaskPorts for HubTaskPorts {
         })
     }
 
+    fn send_steer<'a>(
+        &'a self,
+        thread: &'a ThreadRef,
+        message: &'a str,
+        client_request_id: &'a str,
+        steer: fleetd_contracts::steer::SteerTag,
+    ) -> BoxFut<'a, Result<(), PortError>> {
+        Box::pin(async move {
+            let opts = crate::hub::queue::ports::SendOpts {
+                mode: fleetd_contracts::sessions::SendMode::Boundary,
+                steer: Some(steer.id),
+                riders: steer.riders,
+            };
+            self.executors
+                .send_with(thread, message, client_request_id, &opts)
+                .await
+                .map(|_| ())
+                .map_err(port_error)
+        })
+    }
+
     fn interrupt<'a>(
         &'a self,
         thread: &'a ThreadRef,

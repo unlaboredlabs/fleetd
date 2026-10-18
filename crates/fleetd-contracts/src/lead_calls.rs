@@ -23,6 +23,7 @@ use crate::plan::{
 };
 use crate::prim::{Count, Line, List, NonEmpty, NonNegative, Text};
 use crate::secrets::SecretSink;
+use crate::steer::SteerId;
 use crate::tasks::{
     AbsolutePath, PrUrl, Task, TaskAreas, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle,
     task_areas_rule, task_spawn_rule,
@@ -223,12 +224,16 @@ pub struct TaskStatusCall {
     pub task_id: TaskId,
 }
 
-/// `fleetd task message T1 "<text>"`. Continues the task's thread, which re-takes a slot.
+/// `fleetd task message T1 "<text>" [--now]`. A steer from the lead: a running task takes it in at its next tool
+/// boundary (`--now`: stops its current step), a queued one gets it with its prompt, and an ended one continues in
+/// its thread, which re-takes a slot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskMessageCall {
     pub task_id: TaskId,
     pub message: TaskPrompt,
+    #[serde(default)]
+    pub now: bool,
 }
 
 /// `fleetd task cancel T1 [--reason r]`. Interrupts the thread and releases its slot and leases.
@@ -375,6 +380,8 @@ pub struct DecisionsSearchResult {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TaskResultFrame {
     pub task: Task,
+    /// Task message: the steer it was sent as.
+    pub steer_id: Option<SteerId>,
     pub next: Option<String>,
 }
 

@@ -39,6 +39,7 @@ use fleetd_contracts::sessions::{
     SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionStatus,
     SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame,
 };
+use fleetd_contracts::steer::{SteerReceipt, SteerTag};
 use futures_util::StreamExt;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -320,6 +321,11 @@ struct Slot {
     pending: HashMap<String, oneshot::Sender<SessionResult>>,
 }
 
+/// Takes a node's steer receipts, in stream order (replayed after a link drop, so a receipt may come twice).
+pub trait SteerSink: Send + Sync {
+    fn receipt(&self, machine_id: &MachineId, receipt: &SteerReceipt);
+}
+
 pub struct Executors {
     store: Arc<HubStore>,
     events: Arc<EventLog>,
@@ -336,6 +342,8 @@ pub struct Executors {
     tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
     /// Running clones by add id: where their `clone_progress` frames go.
     clones: repos::CloneWatchers,
+    /// Where a node's steer receipts go (the steer area).
+    steer_sink: Mutex<Option<Arc<dyn SteerSink>>>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
     time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
@@ -459,6 +467,7 @@ impl Executors {
             machines: Mutex::default(),
             live: Mutex::default(),
             offline_writer: Mutex::default(),
+            steer_sink: Mutex::default(),
             runners: Mutex::default(),
             ready: Mutex::default(),
             tool_policy: Mutex::default(),
@@ -469,6 +478,10 @@ impl Executors {
     }
 
     /// The queue area sets this; `thread_send` then writes through it.
+    pub fn set_steer_sink(&self, sink: Arc<dyn SteerSink>) {
+        *self.steer_sink.lock().unwrap() = Some(sink);
+    }
+
     pub fn set_offline_writer(&self, writer: Arc<dyn OfflineWriter>) {
         *self.offline_writer.lock().unwrap() = Some(writer);
     }
@@ -885,6 +898,12 @@ impl Executors {
         baseline: bool,
     ) {
         self.follow_active(machine_id, event);
+        if let MachineEvent::Steer(receipt) = event {
+            let sink = self.steer_sink.lock().unwrap().clone();
+            if let Some(sink) = sink {
+                sink.receipt(machine_id, receipt);
+            }
+        }
         let ids: Vec<String> = match event {
             MachineEvent::Snapshot { sessions, .. } => {
                 sessions.iter().map(|s| s.session_id.to_string()).collect()
@@ -1325,15 +1344,49 @@ impl Executors {
         message: &str,
         client_request_id: &str,
     ) -> Result<SendOutcome, ExecutorError> {
-        let op = NodeOperation::Send;
-        let run_id = uuid_from(&format!(
+        let opts = crate::hub::queue::ports::SendOpts::default();
+        self.send_with(r, message, client_request_id, &opts).await
+    }
+
+    /// The node run id a send with this request id gets.
+    pub fn send_run_id(r: &ThreadRef, client_request_id: &str) -> String {
+        uuid_from(&format!(
             "send\n{}\n{}\n{client_request_id}",
             r.machine_id, r.thread_id
-        ));
+        ))
+    }
+
+    /// Withdraws a send the thread's claude still holds queued; false once it was taken in.
+    pub async fn withdraw(&self, r: &ThreadRef, run_id: &str) -> Result<bool, ExecutorError> {
+        let call = SessionCall::Withdraw {
+            session_id: r.thread_id.clone(),
+            run_id: NonEmpty::unchecked(run_id),
+        };
+        Ok(matches!(
+            self.call(&r.machine_id, NodeOperation::Send, call, READ_TIMEOUT)
+                .await?,
+            SessionOutput::Withdrawn { cancelled: true }
+        ))
+    }
+
+    pub async fn send_with(
+        &self,
+        r: &ThreadRef,
+        message: &str,
+        client_request_id: &str,
+        opts: &crate::hub::queue::ports::SendOpts,
+    ) -> Result<SendOutcome, ExecutorError> {
+        let op = NodeOperation::Send;
+        let run_id = Self::send_run_id(r, client_request_id);
         let call = SessionCall::Send {
             session_id: r.thread_id.clone(),
             run_id: NonEmpty::unchecked(run_id.clone()),
             text: non_empty(&r.machine_id, op, "message", message)?,
+            mode: opts.mode,
+            steer: opts.steer.clone().map(|id| SteerTag {
+                id,
+                riders: opts.riders.clone(),
+            }),
         };
         Ok(
             match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {

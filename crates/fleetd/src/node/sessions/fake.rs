@@ -10,7 +10,8 @@ use std::time::Duration;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, ItemStatus, LoginStatus, RunFailure, RunnerInfo, RunnerKind, ThreadItem,
+    FailureClass, ItemKind, ItemStatus, LoginStatus, RunFailure, RunnerInfo, RunnerKind, SendMode,
+    SendNow, ThreadItem,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -158,7 +159,8 @@ struct Process {
     commands: Arc<Mutex<Vec<(usize, SessionCommand)>>>,
     rx: mpsc::Receiver<SessionCommand>,
     tx: mpsc::Sender<RunnerEvent>,
-    /// Sends that arrived mid-turn: claude queues them.
+    /// Sends that arrived mid-turn and wait in claude's queue. A plain send waits for the turn's end here (claude
+    /// takes it in at the next tool boundary); a steer (`boundary`, `now`) ends the turn as superseded and plays next.
     backlog: VecDeque<(String, String)>,
 }
 
@@ -184,7 +186,16 @@ impl Process {
                 Some(send) => send,
                 None => match self.next_command().await {
                     None => break clean_exit(),
-                    Some(SessionCommand::Send { run_id, text }) => (run_id, text),
+                    Some(SessionCommand::Send { run_id, text, .. }) => (run_id, text),
+                    Some(SessionCommand::Withdraw { run_id }) => {
+                        let withdrawn = RunnerEvent::Withdrawn {
+                            run_id,
+                            cancelled: false,
+                            by_stop: false,
+                        };
+                        let _ = self.tx.send(withdrawn).await;
+                        continue;
+                    }
                     Some(SessionCommand::Shutdown { .. }) => break clean_exit(),
                     Some(_) => continue,
                 },
@@ -200,8 +211,51 @@ impl Process {
     /// Handles a command that arrives while a turn plays.
     fn during_turn(&mut self, command: SessionCommand, run_id: &str) -> Option<Stop> {
         match command {
-            SessionCommand::Send { run_id, text } => {
-                self.backlog.push_back((run_id, text));
+            SessionCommand::Send {
+                run_id: next,
+                text,
+                mode: SendMode::Plain,
+            } => {
+                self.backlog.push_back((next, text));
+                None
+            }
+            SessionCommand::Send {
+                run_id: steer,
+                text,
+                mode,
+            } => {
+                if mode == SendMode::Now {
+                    let _ = self.tx.try_send(RunnerEvent::SendNow {
+                        run_id: steer.clone(),
+                        outcome: SendNow::Stopped,
+                        stopped_tool: None,
+                    });
+                }
+                let _ = self.tx.try_send(RunnerEvent::RunEnded {
+                    run_id: run_id.to_owned(),
+                    outcome: RunOutcome::Superseded { by: steer.clone() },
+                    usage: None,
+                });
+                self.backlog.push_front((steer, text));
+                Some(Stop::TurnOver)
+            }
+            SessionCommand::Withdraw { run_id: queued } => {
+                let found = self.backlog.iter().position(|(r, _)| *r == queued);
+                if let Some(at) = found {
+                    self.backlog.remove(at);
+                }
+                let _ = self.tx.try_send(RunnerEvent::Withdrawn {
+                    run_id: queued.clone(),
+                    cancelled: found.is_some(),
+                    by_stop: false,
+                });
+                if found.is_some() {
+                    let _ = self.tx.try_send(RunnerEvent::RunEnded {
+                        run_id: queued,
+                        outcome: RunOutcome::Interrupted,
+                        usage: None,
+                    });
+                }
                 None
             }
             SessionCommand::Interrupt if self.honour_interrupt => {

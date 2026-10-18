@@ -30,6 +30,8 @@ struct Replay {
     /// (recorded stdin line, the line the mapper wrote for it)
     inputs: Vec<(Value, Value)>,
     replies: Vec<Input>,
+    /// Recorded stdin lines the mapper writes itself as replies (a `send_now` on its message's `queued`).
+    expected_replies: Vec<Value>,
     sent: Vec<String>,
 }
 
@@ -81,20 +83,47 @@ fn replay_with(name: &str, before_exit: impl FnOnce(&mut StreamMapper)) -> Repla
         evidence: Vec::new(),
         inputs: Vec::new(),
         replies: Vec::new(),
+        expected_replies: Vec::new(),
         sent: Vec::new(),
         spans: Vec::new(),
     };
+    // The steer probe's fixtures name their steer, and which mode sent it.
+    let mut steer: Option<(String, String)> = None;
     for raw in std::fs::read_to_string(&path).unwrap().lines() {
         let rec: Value = serde_json::from_str(raw).unwrap();
         let msg = &rec["msg"];
         let ms = rec["ms"].as_u64().unwrap_or(0);
         match rec["dir"].as_str().unwrap() {
+            "meta" if msg.get("steer").is_some() => {
+                let scenario = msg["scenario"].as_str().unwrap().to_owned();
+                steer = Some((msg["steer"].as_str().unwrap().to_owned(), scenario));
+            }
             "in" => {
                 let ours = match msg["type"].as_str().unwrap() {
                     "user" => {
                         let run_id = msg["uuid"].as_str().unwrap();
                         out.sent.push(run_id.to_owned());
-                        mapper.send(run_id, msg["message"]["content"].as_str().unwrap())
+                        let mode = match (&steer, msg["priority"].as_str()) {
+                            (_, Some("now")) => SendMode::Boundary,
+                            (Some((id, scenario)), _)
+                                if id == run_id && scenario == "steer-send-now" =>
+                            {
+                                SendMode::Now
+                            }
+                            _ => SendMode::Plain,
+                        };
+                        let mut lines =
+                            mapper.send(run_id, msg["message"]["content"].as_str().unwrap(), mode);
+                        assert_eq!(lines.len(), 1, "{file}: one stdin line per send");
+                        lines.pop().unwrap()
+                    }
+                    "control_request" if msg["request"]["send_now"] == true => {
+                        out.expected_replies.push(msg.clone());
+                        continue;
+                    }
+                    "control_request" if msg["request"]["subtype"] == "cancel_async_message" => {
+                        let run_id = msg["request"]["message_uuid"].as_str().unwrap();
+                        mapper.withdraw(run_id).expect("claude still holds it")
                     }
                     // `initialize` is the conformance probe's (R2), not a session's.
                     "control_request" if msg["request"]["subtype"] == "interrupt" => {
@@ -221,7 +250,12 @@ fn every_sent_run_ends_exactly_once_and_the_exit_comes_last() {
             last_status.values().all(|s| *s != ItemStatus::Running),
             "{name}: an item never finished: {last_status:?}"
         );
-        assert!(replay.replies.is_empty(), "{name}: unexpected replies");
+        let replies: Vec<Value> = replay
+            .replies
+            .iter()
+            .map(|r| serde_json::to_value(r).unwrap())
+            .collect();
+        assert_eq!(replies, replay.expected_replies, "{name}: replies");
     }
 }
 
@@ -262,8 +296,12 @@ fn two_turns_in_one_process() {
             },
         };
         vec![
+            RunnerEvent::Queued { run_id: run.into() },
             RunnerEvent::RunStarted { run_id: run.into() },
             init.clone(),
+            RunnerEvent::Seen {
+                run_ids: vec![run.into()],
+            },
             live.clone(),
             RunnerEvent::Delta {
                 message_id: message.into(),
@@ -950,5 +988,273 @@ fn a_tool_s_permission_wait_is_its_own_span_and_the_model_has_phases() {
     assert_eq!(
         run.extra.as_ref().unwrap().duration_api_ms.map(|d| d.get()),
         Some(2308)
+    );
+}
+
+/// The probe's task run and its steer, from the fixture's meta line.
+fn task_and_steer(name: &str) -> (String, String) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "src/node/runner/fixtures/claude-2.1.302-{name}.jsonl"
+    ));
+    let text = std::fs::read_to_string(path).unwrap();
+    let first: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    let steer = first["msg"]["steer"].as_str().unwrap().to_owned();
+    let task = text
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|r| r["dir"] == "in" && r["msg"]["type"] == "user")
+        .unwrap()["msg"]["uuid"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (task, steer)
+}
+
+fn item_status(events: &[RunnerEvent], id: &str) -> Option<(ItemStatus, Option<String>)> {
+    items(events)
+        .into_iter()
+        .rev()
+        .find(|i| i.id == id)
+        .map(|i| (i.status, i.run_id.as_ref().map(|r| r.to_string())))
+}
+
+#[test]
+fn a_boundary_steer_supersedes_the_running_turn_after_its_tool_and_gets_its_own_turn() {
+    let replay = replay("steer-boundary");
+    let (task, steer) = task_and_steer("steer-boundary");
+    let ends = run_ends(&replay.events);
+    assert_eq!(
+        ends,
+        vec![
+            (task.as_str(), &RunOutcome::Superseded { by: steer.clone() }),
+            (
+                steer.as_str(),
+                &RunOutcome::Completed {
+                    text: "REDIRECTED".into()
+                }
+            ),
+        ]
+    );
+    // The running tool was not cut: its result is kept.
+    assert_eq!(
+        item_status(&replay.events, "toolu_01JE4mGrY2TaxcDU99QyXGUR"),
+        Some((ItemStatus::Completed, Some(task.clone())))
+    );
+    assert!(replay.events.contains(&RunnerEvent::RunStarted {
+        run_id: steer.clone()
+    }));
+}
+
+#[test]
+fn a_send_now_steer_stops_the_running_tool_and_names_it() {
+    let replay = replay("steer-send-now");
+    let (task, steer) = task_and_steer("steer-send-now");
+    let send_now = replay.events.iter().find_map(|e| match e {
+        RunnerEvent::SendNow {
+            run_id,
+            outcome,
+            stopped_tool,
+        } => Some((run_id.clone(), *outcome, stopped_tool.clone())),
+        _ => None,
+    });
+    assert_eq!(
+        send_now,
+        Some((
+            steer.clone(),
+            SendNow::Stopped,
+            Some("Sleep 5 seconds then echo one".into())
+        ))
+    );
+    assert_eq!(
+        item_status(&replay.events, "toolu_01CWvUjo2u8omdJKzvvJu3qq"),
+        Some((ItemStatus::Cancelled, Some(task.clone())))
+    );
+    let ends = run_ends(&replay.events);
+    assert_eq!(
+        ends[0],
+        (task.as_str(), &RunOutcome::Superseded { by: steer.clone() })
+    );
+    assert_eq!(
+        ends[1],
+        (
+            steer.as_str(),
+            &RunOutcome::Completed {
+                text: "REDIRECTED".into()
+            }
+        )
+    );
+}
+
+#[test]
+fn a_withdrawn_steer_never_starts_and_the_turn_runs_on() {
+    let replay = replay("steer-withdraw");
+    let (task, steer) = task_and_steer("steer-withdraw");
+    // claude says `cancelled` before it answers the withdraw: the withdraw is reported first, then the run's end.
+    let withdrawn = replay.events.iter().position(|e| {
+        *e == RunnerEvent::Withdrawn {
+            run_id: steer.clone(),
+            cancelled: true,
+            by_stop: false,
+        }
+    });
+    let ended = replay
+        .events
+        .iter()
+        .position(|e| matches!(e, RunnerEvent::RunEnded { run_id, .. } if *run_id == steer));
+    assert!(
+        withdrawn.is_some() && withdrawn < ended,
+        "{:?}",
+        replay.events
+    );
+    assert_eq!(
+        replay
+            .events
+            .iter()
+            .filter(|e| matches!(e, RunnerEvent::Withdrawn { .. }))
+            .count(),
+        1
+    );
+    assert!(!replay.events.contains(&RunnerEvent::RunStarted {
+        run_id: steer.clone()
+    }));
+    let ends = run_ends(&replay.events);
+    assert_eq!(
+        ends,
+        vec![
+            (steer.as_str(), &RunOutcome::Interrupted),
+            (
+                task.as_str(),
+                &RunOutcome::Completed {
+                    text: "DONE".into()
+                }
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_joined_send_stays_filed_under_the_turn_and_ends_with_it() {
+    let replay = replay("steer-joined");
+    let (task, steer) = task_and_steer("steer-joined");
+    assert!(replay.events.contains(&RunnerEvent::Joined {
+        run_id: steer.clone()
+    }));
+    assert!(!replay.events.contains(&RunnerEvent::RunStarted {
+        run_id: steer.clone()
+    }));
+    let done = RunOutcome::Completed {
+        text: "REDIRECTED".into(),
+    };
+    assert_eq!(
+        run_ends(&replay.events),
+        vec![(task.as_str(), &done), (steer.as_str(), &done)]
+    );
+    // Work after the boundary stays the turn's.
+    assert!(
+        items(&replay.events)
+            .iter()
+            .all(|i| i.run_id.as_deref() == Some(task.as_str()))
+    );
+}
+
+fn mid_turn(capabilities: &[&str]) -> StreamMapper {
+    let classify: Classify = Arc::new(|_: &FailureEvidence| None);
+    let mut mapper = StreamMapper::new("s", classify);
+    mapper.send("task", "work", SendMode::Plain);
+    for line in [
+        serde_json::json!({"type": "command_lifecycle", "command_uuid": "task", "state": "started"}),
+        serde_json::json!({"type": "system", "subtype": "init", "capabilities": capabilities}),
+    ] {
+        mapper.feed(serde_json::from_value(line).unwrap(), &now());
+    }
+    mapper
+}
+
+#[test]
+fn a_now_steer_falls_back_by_capability() {
+    let request = |input: &Input| serde_json::to_value(input).unwrap()["request"].clone();
+    // send_now: only the message now; the stop follows its `queued`.
+    let mut mapper = mid_turn(&[
+        "interrupt_receipt_v1",
+        "interrupt_send_now_v1",
+        "msg_lifecycle_v1",
+    ]);
+    let lines = mapper.send("steer", "stop", SendMode::Now);
+    assert_eq!(lines.len(), 1);
+    let queued = serde_json::json!({"type": "command_lifecycle", "command_uuid": "steer", "state": "queued"});
+    let mapped = mapper.feed(serde_json::from_value(queued).unwrap(), &now());
+    assert_eq!(
+        request(&mapped.replies[0]),
+        serde_json::json!({"subtype": "interrupt", "send_now": true, "message_uuid": "steer"})
+    );
+    // Without send_now: an interrupt scoped to the running message, then the message.
+    let mut mapper = mid_turn(&["interrupt_receipt_v1", "msg_lifecycle_v1"]);
+    let lines = mapper.send("steer", "stop", SendMode::Now);
+    assert_eq!(
+        request(&lines[0]),
+        serde_json::json!({"subtype": "interrupt", "for_user_message_uuids": ["task"]})
+    );
+    assert_eq!(serde_json::to_value(&lines[1]).unwrap()["uuid"], "steer");
+    // Without interrupt receipts: today's plain interrupt.
+    let mut mapper = mid_turn(&[]);
+    let lines = mapper.send("steer", "stop", SendMode::Now);
+    assert_eq!(
+        request(&lines[0]),
+        serde_json::json!({"subtype": "interrupt"})
+    );
+    // Between turns every mode is one plain new turn.
+    let classify: Classify = Arc::new(|_: &FailureEvidence| None);
+    let mut idle = StreamMapper::new("s", classify);
+    assert_eq!(idle.send("steer", "stop", SendMode::Now).len(), 1);
+}
+
+#[test]
+fn a_persons_stop_ends_the_turn_interrupted_and_withdraws_the_waiting_steer() {
+    let mut mapper = mid_turn(&["interrupt_receipt_v1", "msg_lifecycle_v1"]);
+    mapper.send("steer", "do this instead", SendMode::Boundary);
+    let lines: Vec<Value> = mapper
+        .stop()
+        .iter()
+        .map(|i| serde_json::to_value(i).unwrap()["request"].clone())
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            serde_json::json!({"subtype": "interrupt"}),
+            serde_json::json!({"subtype": "cancel_async_message", "message_uuid": "steer"}),
+        ]
+    );
+    let mut events = Vec::new();
+    for line in [
+        serde_json::json!({"type": "result", "subtype": "error_during_execution", "is_error": true,
+            "terminal_reason": "aborted_tools", "user_message_uuid": "task"}),
+        serde_json::json!({"type": "command_lifecycle", "command_uuid": "steer", "state": "cancelled"}),
+        serde_json::json!({"type": "control_response", "response": {"subtype": "success",
+            "request_id": "fleetd-withdraw-1", "response": {"cancelled": true}}}),
+    ] {
+        events.extend(
+            mapper
+                .feed(serde_json::from_value(line).unwrap(), &now())
+                .events,
+        );
+    }
+    assert_eq!(
+        run_ends(&events),
+        vec![
+            ("task", &RunOutcome::Interrupted),
+            ("steer", &RunOutcome::Interrupted)
+        ]
+    );
+    let withdrawn: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, RunnerEvent::Withdrawn { .. }))
+        .collect();
+    assert_eq!(
+        withdrawn,
+        [&RunnerEvent::Withdrawn {
+            run_id: "steer".into(),
+            cancelled: true,
+            by_stop: true
+        }]
     );
 }

@@ -5,6 +5,8 @@ use std::pin::Pin;
 
 use fleetd_contracts::auth::{AgentKeyInfo, Role};
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
+use fleetd_contracts::sessions::SendMode;
+use fleetd_contracts::steer::SteerId;
 use rusqlite::Connection;
 
 use crate::hub::executor;
@@ -58,6 +60,15 @@ pub enum ExecutorError {
     },
 }
 
+/// How a write reaches a running thread: plain (wakes, nudges, thread_send), or as a steer.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SendOpts {
+    pub mode: SendMode,
+    pub steer: Option<SteerId>,
+    /// Older steers the same message carries; each gets its own receipts.
+    pub riders: Vec<SteerId>,
+}
+
 /// A message the node took.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sent {
@@ -88,6 +99,16 @@ pub trait ThreadWriter: Send + Sync {
         message: &str,
         client_request_id: &str,
     ) -> BoxFuture<'_, Result<Sent, ExecutorError>>;
+    /// `send` with a mode; writers that only send plainly ignore it.
+    fn send_with<'a>(
+        &'a self,
+        target: &'a ThreadRef,
+        message: &'a str,
+        client_request_id: &'a str,
+        _opts: &'a SendOpts,
+    ) -> BoxFuture<'a, Result<Sent, ExecutorError>> {
+        self.send(target, message, client_request_id)
+    }
     /// Why a machine that is linked can't take a message at all (its runner is logged out or out of range), so a
     /// send fails at once with the runner's words instead of waiting as if the machine were offline.
     fn refusal(&self, _machine_id: &MachineId) -> Option<ExecutorError> {
@@ -179,13 +200,31 @@ impl ThreadWriter for executor::Executors {
         message: &str,
         client_request_id: &str,
     ) -> BoxFuture<'_, Result<Sent, ExecutorError>> {
+        let opts = SendOpts::default();
         let (target, message, id) = (
             target.clone(),
             message.to_owned(),
             client_request_id.to_owned(),
         );
         Box::pin(async move {
-            executor::Executors::send(self, &target, &message, &id)
+            executor::Executors::send_with(self, &target, &message, &id, &opts)
+                .await
+                .map(|sent| Sent {
+                    run_id: sent.run_id,
+                    behind_run: sent.queued,
+                })
+                .map_err(Into::into)
+        })
+    }
+    fn send_with<'a>(
+        &'a self,
+        target: &'a ThreadRef,
+        message: &'a str,
+        client_request_id: &'a str,
+        opts: &'a SendOpts,
+    ) -> BoxFuture<'a, Result<Sent, ExecutorError>> {
+        Box::pin(async move {
+            executor::Executors::send_with(self, target, message, client_request_id, opts)
                 .await
                 .map(|sent| Sent {
                     run_id: sent.run_id,

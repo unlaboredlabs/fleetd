@@ -19,6 +19,7 @@ use crate::effort::Effort;
 use crate::ids::{ProjectId, ThreadId, Timestamp};
 use crate::model::RuntimeMode;
 use crate::prim::{Int, NonEmpty, Text};
+use crate::steer::{SteerReceipt, SteerTag};
 
 /// Which agent runtime runs a session. Codex comes later as its own adapter.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -106,12 +107,23 @@ pub enum SessionCall {
         project_id: ProjectId,
     },
     Launch(SessionLaunch),
-    /// A new run with this user message; queued behind an active run.
+    /// A new run with this user message. `plain`: taken in at the running turn's next tool boundary, or now if it is
+    /// idle. Steers use `boundary` or `now` (see [`SendMode`]); an older node ignores `mode` and sends plainly.
     #[serde(rename_all = "camelCase")]
     Send {
         session_id: ThreadId,
         run_id: NonEmpty,
         text: NonEmpty,
+        #[serde(default, skip_serializing_if = "SendMode::is_plain")]
+        mode: SendMode,
+        /// Set when the send is a steer: the node reports its receipts as `MachineEvent::Steer`.
+        steer: Option<SteerTag>,
+    },
+    /// Withdraw a send claude still holds queued (`cancel_async_message`). A no-op once it has started.
+    #[serde(rename_all = "camelCase")]
+    Withdraw {
+        session_id: ThreadId,
+        run_id: NonEmpty,
     },
     /// Interrupt the active run (or `run_id` when it is still the active one).
     #[serde(rename_all = "camelCase")]
@@ -245,6 +257,38 @@ pub struct SessionError {
     pub fix: Option<String>,
 }
 
+/// How a send reaches a session whose turn is running.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SendMode {
+    /// Today's send (wakes, nudges, `thread_send`): no priority, claude may join it to the running turn.
+    #[default]
+    Plain,
+    /// `priority: "now"`: the running turn ends at its next tool boundary (the tool's result kept) and this message
+    /// gets its own turn.
+    Boundary,
+    /// Stop the running step and deliver at once (`interrupt` with `send_now`, or its fallbacks).
+    Now,
+}
+
+impl SendMode {
+    pub fn is_plain(&self) -> bool {
+        *self == Self::Plain
+    }
+}
+
+/// claude's answer to a `send_now` interrupt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SendNow {
+    /// The running step was stopped and the message starts now.
+    Stopped,
+    /// The CLI is delivering it without a stop (it backgrounded what the turn waited on).
+    Delivering,
+    /// Nothing was queued to send now (it had already started, or the session was idle).
+    NothingWaiting,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -252,6 +296,8 @@ pub struct SendAccepted {
     pub run_id: NonEmpty,
     /// True when it waits behind an active run.
     pub queued: bool,
+    /// Mode `now` while a run was active: what claude did.
+    pub send_now: Option<SendNow>,
 }
 
 #[skip_serializing_none]
@@ -340,6 +386,10 @@ pub enum SessionOutput {
     Window {
         entries: Vec<WindowEntry>,
         focus: Option<u64>,
+    },
+    /// Answer to `withdraw`: whether claude dropped it.
+    Withdrawn {
+        cancelled: bool,
     },
     /// Answer to `list_files`: repo-relative paths.
     Files {
@@ -522,6 +572,9 @@ pub struct RunInfo {
     pub ended_at: Option<Timestamp>,
     pub failure: Option<RunFailure>,
     pub usage: Option<RunUsage>,
+    /// A steer (`boundary` or `now`) cut this run short at a tool boundary: its status is `interrupted`, but it is
+    /// not a failure. The steer's run id.
+    pub superseded_by: Option<NonEmpty>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -601,6 +654,8 @@ pub enum MachineEvent {
     SessionUpdated(SessionSummary),
     /// The runner's state changed: a probe (at start, every 6 h), a login that expired, or one that came back.
     RunnerInfo(RunnerInfo),
+    /// A steer's receipt moved (delivered, acknowledged, unacknowledged, withdrawn, failed).
+    Steer(SteerReceipt),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -767,6 +822,10 @@ mod tests {
             r#"{"id":"c1","call":{"op":"send","sessionId":"7f0c","runId":"r2","text":"continue"}}"#;
         let decoded: SessionCallFrame = serde_json::from_str(call).unwrap();
         assert_eq!(serde_json::to_string(&decoded).unwrap(), call);
+
+        let steer = r#"{"id":"c3","call":{"op":"send","sessionId":"7f0c","runId":"r3","text":"S1 · stop","mode":"now","steer":{"id":"S1"}}}"#;
+        let decoded: SessionCallFrame = serde_json::from_str(steer).unwrap();
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), steer);
 
         let answer = r#"{"id":"c2","call":{"op":"answer","sessionId":"7f0c","requestId":"q1","decision":{"behavior":"deny","message":"no"}}}"#;
         let decoded: SessionCallFrame = serde_json::from_str(answer).unwrap();

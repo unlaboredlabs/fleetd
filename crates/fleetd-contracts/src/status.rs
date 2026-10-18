@@ -11,6 +11,7 @@ use crate::model::MachineStatus;
 use crate::plan::{MilestoneId, PlanItemId};
 use crate::prim::{AnyInt, Count, Int, Line, List, NonNegative, Text};
 use crate::prompts::PromptRef;
+use crate::steer::{SteerId, SteerStage};
 use crate::tasks::TaskId;
 use crate::train::{ChangeId, ChangeState, GitHubRepo};
 
@@ -239,6 +240,21 @@ pub struct InProgressRow {
     /// Minutes past `eta`.
     pub overdue_minutes: Option<Count>,
     pub stale: Option<StaleMark>,
+    /// The order's latest steers, newest first, on its first in-progress row only.
+    pub steers: Option<List<StatusSteer, 0, 3>>,
+}
+
+/// A steer as the status doc shows it: "↳ you steered S12 14:02 · acknowledged · −1 item".
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusSteer {
+    pub id: SteerId,
+    pub text: Line<1, 120>,
+    pub stage: SteerStage,
+    pub at: Timestamp,
+    /// The plan change it made, e.g. "−1 item".
+    pub plan_change: Option<Line<1, 200>>,
 }
 
 #[skip_serializing_none]
@@ -275,6 +291,8 @@ pub enum RiskRule {
     SlotsFull,
     GithubDrift,
     NoPlan,
+    /// A steer was not acknowledged, or has gone 10 minutes delivered without it.
+    SteerUnacknowledged,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

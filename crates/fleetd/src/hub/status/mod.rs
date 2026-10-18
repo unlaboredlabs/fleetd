@@ -70,6 +70,12 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::GithubDrift,
     HubEventType::SourceStale,
     HubEventType::SourceFresh,
+    HubEventType::SteerQueued,
+    HubEventType::SteerDelivered,
+    HubEventType::SteerAcknowledged,
+    HubEventType::SteerUnacknowledged,
+    HubEventType::SteerWithdrawn,
+    HubEventType::SteerFailed,
 ];
 
 /// Events after which an order's plan items are checked against the done rule again.

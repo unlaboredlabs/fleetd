@@ -1,0 +1,1 @@
+- The human steered {{taskId}} ({{kind}}) directly ({{id}}): '{{text}}'. {{taskId}} now works to it; keep your plan and any task message to {{taskId}} in line.

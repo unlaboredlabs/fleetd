@@ -9,9 +9,11 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunFailure,
-    RunStatus, SessionCall, SessionCallFrame, SessionErrorCode, SessionLaunch, SessionOutput,
-    SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
+    RunStatus, SendAccepted, SendMode, SendNow, SessionCall, SessionCallFrame, SessionErrorCode,
+    SessionLaunch, SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace,
+    ThreadEvent,
 };
+use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, SteerTag};
 use tokio::sync::mpsc;
 
 use super::fake::FakeRunner;
@@ -88,6 +90,8 @@ fn send(id: &str, run_id: &str) -> SessionCall {
         session_id: ThreadId::unchecked(id),
         run_id: NonEmpty::unchecked(run_id),
         text: NonEmpty::unchecked("Reply with the word TWO and nothing else."),
+        mode: SendMode::Plain,
+        steer: None,
     }
 }
 
@@ -606,7 +610,7 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
         .received()
         .into_iter()
         .filter_map(|c| match c {
-            SessionCommand::Send { run_id, text } => Some((run_id, text)),
+            SessionCommand::Send { run_id, text, .. } => Some((run_id, text)),
             _ => None,
         })
         .collect();
@@ -960,4 +964,313 @@ fn a_machine_given_a_config_dir_keeps_it_in_its_node_config() {
         SessionConfig::for_node(dir.path()).config_dir,
         Some(PathBuf::from("/srv/claude-profile"))
     );
+}
+
+/// Three turns: a 30 s Bash call, then a reply naming S1, then a plain reply.
+const STEER_TURNS: &str = r#"{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"sleep 30"}}]}}}
+{"dir":"out","ms":30000,"msg":{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"","is_error":false}]}}}
+{"dir":"out","ms":30010,"msg":{"type":"result","subtype":"success","is_error":false,"result":"slept"}}
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"S1: dropping the docs page"}]}}}
+{"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"S1: dropping the docs page"}}
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":"OK"}]}}}
+{"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"OK"}}
+"#;
+
+fn steer(id: &str, run_id: &str, mode: SendMode, tag: Option<&str>) -> SessionCall {
+    SessionCall::Send {
+        session_id: ThreadId::unchecked(id),
+        run_id: NonEmpty::unchecked(run_id),
+        text: NonEmpty::unchecked("S1 · the human steers you: skip the docs page"),
+        mode,
+        steer: tag.map(|t| SteerTag {
+            id: SteerId::unchecked(t),
+            riders: vec![],
+        }),
+    }
+}
+
+impl Hub {
+    /// Every steer receipt sent until run `run_id` has settled.
+    async fn receipts_until_settled(&mut self, run_id: &str) -> Vec<SteerReceipt> {
+        let mut receipts = Vec::new();
+        self.until(|frame| match frame {
+            NodeToHub::MachineEvent(f) => match f.event {
+                MachineEvent::Steer(r) => {
+                    receipts.push(r);
+                    None
+                }
+                MachineEvent::SessionUpdated(s)
+                    if s.active_run_id.is_none()
+                        && s.latest_run.as_ref().is_some_and(|r| r.id == run_id) =>
+                {
+                    Some(())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .await;
+        receipts
+    }
+
+    /// Every steer receipt up to the first final one.
+    async fn receipts_until_final(&mut self) -> Vec<SteerReceipt> {
+        let mut receipts = Vec::new();
+        self.until(|frame| match frame {
+            NodeToHub::MachineEvent(f) => match f.event {
+                MachineEvent::Steer(r) => {
+                    let last = r.stage.is_final();
+                    receipts.push(r);
+                    last.then_some(())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .await;
+        receipts
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_steer_mid_turn_supersedes_the_run_and_its_receipts_follow_claudes_frames() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
+        .await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let SessionOutput::Sent(sent) = hub.ok(steer("s1", "r2", SendMode::Now, Some("S1"))).await
+    else {
+        panic!("not sent")
+    };
+    assert!(sent.queued);
+    assert_eq!(sent.send_now, Some(SendNow::Stopped));
+    let receipts = hub.receipts_until_final().await;
+    let stages: Vec<_> = receipts.iter().map(|r| (r.stage, r.how)).collect();
+    assert_eq!(
+        stages,
+        [
+            (SteerStage::Delivered, Some(DeliveredHow::Stopped)),
+            (SteerStage::Acknowledged, None),
+        ]
+    );
+    assert_eq!(
+        receipts[1].excerpt.as_deref(),
+        Some("S1: dropping the docs page")
+    );
+    hub.settled("r2").await;
+    let runs = hub.service.store().runs("s1").unwrap();
+    assert_eq!(runs[0].status, RunStatus::Interrupted);
+    assert_eq!(runs[0].superseded_by.as_deref(), Some("r2"));
+
+    // A steer whose reply does not name it is unacknowledged, with that reply.
+    hub.ok(steer("s1", "r3", SendMode::Boundary, Some("S2")))
+        .await;
+    let receipts = hub.receipts_until_final().await;
+    let stages: Vec<_> = receipts.iter().map(|r| (r.stage, r.how)).collect();
+    assert_eq!(
+        stages,
+        [
+            (SteerStage::Delivered, Some(DeliveredHow::Turn)),
+            (SteerStage::Unacknowledged, None),
+        ]
+    );
+    assert_eq!(receipts[1].excerpt.as_deref(), Some("OK"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_untagged_send_behaves_as_before_and_reports_no_steer_receipts() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
+        .await;
+    // An older hub's frame: no mode, no steer tag.
+    let frame =
+        r#"{"id":"c1","call":{"op":"send","sessionId":"s1","runId":"r2","text":"S1: and then?"}}"#;
+    let reply = hub
+        .service
+        .handle(serde_json::from_str(frame).unwrap())
+        .await;
+    assert!(matches!(
+        reply.result,
+        SessionResult::Ok(SessionOutput::Sent(SendAccepted {
+            queued: true,
+            send_now: None,
+            ..
+        }))
+    ));
+    let receipts = hub.receipts_until_settled("r2").await;
+    assert!(receipts.is_empty(), "{receipts:?}");
+    let runs = hub.service.store().runs("s1").unwrap();
+    // The plain send waited for the running turn, which completed uncut.
+    assert_eq!(runs[0].status, RunStatus::Completed);
+    assert_eq!(runs[0].superseded_by, None);
+    assert!(matches!(
+        hub.runner.received()[1],
+        SessionCommand::Send {
+            mode: SendMode::Plain,
+            ..
+        }
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_queued_steer_can_be_withdrawn_and_the_session_does_not_read_as_interrupted() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
+        .await;
+    // Plain, so the fake keeps it queued behind the turn.
+    hub.ok(steer("s1", "r2", SendMode::Plain, Some("S1"))).await;
+    let withdraw = SessionCall::Withdraw {
+        session_id: ThreadId::unchecked("s1"),
+        run_id: NonEmpty::unchecked("r2"),
+    };
+    assert_eq!(
+        hub.ok(withdraw.clone()).await,
+        SessionOutput::Withdrawn { cancelled: true }
+    );
+    let receipt = hub
+        .until(|f| match f {
+            NodeToHub::MachineEvent(f) => match f.event {
+                MachineEvent::Steer(r) => Some(r),
+                _ => None,
+            },
+            _ => None,
+        })
+        .await;
+    assert_eq!(receipt.stage, SteerStage::Withdrawn);
+    let done = hub.settled("r1").await;
+    assert_eq!(done.status, SessionStatus::Idle);
+    // Once it is gone (or started) there is nothing to withdraw.
+    assert_eq!(
+        hub.ok(withdraw).await,
+        SessionOutput::Withdrawn { cancelled: false }
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_steer_still_open_when_claude_exits_gets_its_final_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
+        .await;
+    // Plain, so the fake keeps it queued behind the turn; then the process goes.
+    hub.ok(steer("s1", "r2", SendMode::Plain, Some("S1"))).await;
+    hub.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    })
+    .await;
+    let receipts = hub.receipts_until_final().await;
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].stage, SteerStage::Failed);
+    assert!(
+        receipts[0]
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.contains("before taking it in")),
+        "{receipts:?}"
+    );
+    assert!(hub.service.st().steers.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn each_steer_a_run_carries_gets_its_own_receipts() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
+        .await;
+    // One message carrying S2 and, held before it, S1; the reply names only S1.
+    let SessionCall::Send {
+        session_id,
+        run_id,
+        text,
+        mode,
+        ..
+    } = steer("s1", "r2", SendMode::Now, None)
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Send {
+        session_id,
+        run_id,
+        text,
+        mode,
+        steer: Some(SteerTag {
+            id: SteerId::unchecked("S2"),
+            riders: vec![SteerId::unchecked("S1")],
+        }),
+    })
+    .await;
+    let mut finals = std::collections::BTreeMap::new();
+    while finals.len() < 2 {
+        let r = hub
+            .until(|f| match f {
+                NodeToHub::MachineEvent(f) => match f.event {
+                    MachineEvent::Steer(r) => Some(r),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .await;
+        assert_eq!(r.run_id, "r2");
+        if r.stage.is_final() {
+            finals.insert(r.steer_id.to_string(), r.stage);
+        }
+    }
+    assert_eq!(finals["S1"], SteerStage::Acknowledged);
+    assert_eq!(finals["S2"], SteerStage::Unacknowledged);
 }

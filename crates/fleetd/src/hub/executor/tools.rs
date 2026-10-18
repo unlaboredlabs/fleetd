@@ -462,7 +462,7 @@ async fn thread_send(
     }
     .map_err(from_executor)?;
     let next = if sent.queued && sent.queued_until.is_none() {
-        "Queued behind the thread's active run; it starts when that run ends. Call events_wait to wait for it."
+        "Taken in at the thread's next tool boundary, or now if it is idle. Call events_wait to wait for it."
             .to_owned()
     } else if sent.queued {
         format!(

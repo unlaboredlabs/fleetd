@@ -20,7 +20,9 @@ use crate::hub::sweep::{SweepCheck, WAKE_OVERDUE_MS};
 use crate::hub::wakes::schedule::iso;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
-use ports::{DbRun, ExecutorError, ThreadWriter, emit, now_ms};
+use fleetd_contracts::sessions::SendMode;
+use fleetd_contracts::steer::SteerId;
+use ports::{DbRun, ExecutorError, SendOpts, ThreadWriter, emit, now_ms};
 
 /// Default `--queue-ttl`.
 pub const DEFAULT_TTL: Duration = Duration::from_secs(24 * 3600);
@@ -51,6 +53,15 @@ struct Row {
     wake_id: Option<String>,
     queued_ms: i64,
     expires_ms: i64,
+    opts: SendOpts,
+}
+
+fn mode_name(mode: SendMode) -> Option<&'static str> {
+    match mode {
+        SendMode::Plain => None,
+        SendMode::Boundary => Some("boundary"),
+        SendMode::Now => Some("now"),
+    }
 }
 
 fn to_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
@@ -65,6 +76,17 @@ fn to_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
         wake_id: r.get("wake_id")?,
         queued_ms: r.get("queued_ms")?,
         expires_ms: r.get("expires_ms")?,
+        opts: SendOpts {
+            mode: match r.get::<_, Option<String>>("mode")?.as_deref() {
+                Some("boundary") => SendMode::Boundary,
+                Some("now") => SendMode::Now,
+                _ => SendMode::Plain,
+            },
+            steer: r
+                .get::<_, Option<String>>("steer_id")?
+                .map(SteerId::unchecked),
+            riders: Vec::new(),
+        },
     })
 }
 
@@ -97,7 +119,11 @@ pub struct WriteQueue {
     flushers: Mutex<HashMap<String, JoinHandle<()>>>,
     changed: watch::Sender<u64>,
     expiry: Mutex<Option<JoinHandle<()>>>,
+    /// Told when a queued steer expires or is refused, so its receipt says so.
+    steer_expired: Mutex<Option<SteerExpired>>,
 }
+
+pub type SteerExpired = Arc<dyn Fn(&SteerId, &str) + Send + Sync>;
 
 impl WriteQueue {
     pub fn new(
@@ -116,6 +142,7 @@ impl WriteQueue {
             in_flight: Mutex::new(HashSet::new()),
             flushers: Mutex::new(HashMap::new()),
             changed: watch::channel(0).0,
+            steer_expired: Mutex::default(),
             expiry: Mutex::new(None),
         })
     }
@@ -182,12 +209,35 @@ impl WriteQueue {
     /// is. `client_request_id` names the node's run, so a retried or re-queued send is delivered once. The error is
     /// ThreadNotFound or NodeRequestFailed (also for a linked machine whose runner can't run), never
     /// MachineNotConnected.
+    pub fn on_steer_expired(&self, f: SteerExpired) {
+        *self.steer_expired.lock().expect("lock") = Some(f);
+    }
+
     pub async fn send(
         self: &Arc<Self>,
         target: &ThreadRef,
         message: &str,
         client_request_id: &str,
         wake_id: Option<&str>,
+    ) -> Result<SendResult, ExecutorError> {
+        self.send_with(
+            target,
+            message,
+            client_request_id,
+            wake_id,
+            SendOpts::default(),
+        )
+        .await
+    }
+
+    /// `send` with a mode: a steer that waits here goes out as it was given when the machine is back.
+    pub async fn send_with(
+        self: &Arc<Self>,
+        target: &ThreadRef,
+        message: &str,
+        client_request_id: &str,
+        wake_id: Option<&str>,
+        opts: SendOpts,
     ) -> Result<SendResult, ExecutorError> {
         // Linked but unusable (logged out, claude out of range): fail now in the runner's words. Only a machine
         // that is truly away waits in the queue.
@@ -203,16 +253,17 @@ impl WriteQueue {
             .unwrap_or(0)
         });
         if behind > 0 || !self.writer.is_connected(&target.machine_id) {
-            return Ok(self.enqueue(target, message, client_request_id, wake_id));
+            return Ok(self.enqueue(target, message, client_request_id, wake_id, &opts));
         }
         match tokio::time::timeout(
             SEND_TIMEOUT,
-            self.writer.send(target, message, client_request_id),
+            self.writer
+                .send_with(target, message, client_request_id, &opts),
         )
         .await
         {
             Err(_) | Ok(Err(ExecutorError::MachineNotConnected { .. })) => {
-                Ok(self.enqueue(target, message, client_request_id, wake_id))
+                Ok(self.enqueue(target, message, client_request_id, wake_id, &opts))
             }
             Ok(Err(e)) => Err(e),
             Ok(Ok(sent)) => Ok(SendResult {
@@ -234,14 +285,15 @@ impl WriteQueue {
         message: &str,
         client_request_id: &str,
         wake_id: Option<&str>,
+        opts: &SendOpts,
     ) -> SendResult {
         let now = now_ms(&*self.clock);
         let expires_ms: i64 = {
             self.db.run(|db| {
             db.execute(
-                "INSERT INTO queued_writes (machine_id, thread_id, client_request_id, message, wake_id, queued_ms, expires_ms)
-                 VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_request_id) DO NOTHING",
-                params![target.machine_id.as_str(), target.thread_id.as_str(), client_request_id, message, wake_id, now, now + self.ttl_ms],
+                "INSERT INTO queued_writes (machine_id, thread_id, client_request_id, message, wake_id, queued_ms, expires_ms, mode, steer_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_request_id) DO NOTHING",
+                params![target.machine_id.as_str(), target.thread_id.as_str(), client_request_id, message, wake_id, now, now + self.ttl_ms, mode_name(opts.mode), opts.steer.as_ref().map(|s| s.as_str())],
             )
             .expect("sql");
             db.query_row(
@@ -260,6 +312,68 @@ impl WriteQueue {
             queued_until: Some(iso(expires_ms)),
             behind_run: false,
         }
+    }
+
+    pub fn has_steer(&self, steer: &SteerId) -> bool {
+        self.db.run(|db| {
+            db.query_row(
+                "SELECT COUNT(*) FROM queued_writes WHERE steer_id = ?",
+                [steer.as_str()],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+                > 0
+        })
+    }
+
+    /// Drops a steer still waiting here for its machine; true when this call did. One the flusher is sending right
+    /// now is not dropped: the in-flight lock makes the two exclusive, and the flusher re-checks its row under it.
+    pub fn withdraw_steer(&self, steer: &SteerId) -> bool {
+        let in_flight = self.in_flight.lock().expect("lock");
+        self.db.run(|db| {
+            let row: Option<i64> = db
+                .query_row(
+                    "SELECT write_id FROM queued_writes WHERE steer_id = ?",
+                    [steer.as_str()],
+                    |r| r.get(0),
+                )
+                .optional()
+                .expect("sql");
+            match row {
+                Some(write_id) if !in_flight.contains(&write_id) => {
+                    db.execute("DELETE FROM queued_writes WHERE write_id = ?", [write_id])
+                        .unwrap_or(0)
+                        > 0
+                }
+                _ => false,
+            }
+        })
+    }
+
+    /// As the flusher does while it sends a steer's write.
+    #[cfg(test)]
+    pub(crate) fn mark_sending(&self, steer: &SteerId) {
+        let write_id: i64 = self.db.run(|db| {
+            db.query_row(
+                "SELECT write_id FROM queued_writes WHERE steer_id = ?",
+                [steer.as_str()],
+                |r| r.get(0),
+            )
+            .expect("sql")
+        });
+        self.in_flight.lock().expect("lock").insert(write_id);
+    }
+
+    fn still_queued(&self, write_id: i64) -> bool {
+        self.db.run(|db| {
+            db.query_row(
+                "SELECT COUNT(*) FROM queued_writes WHERE write_id = ?",
+                [write_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+                > 0
+        })
     }
 
     fn head(&self, machine_id: &MachineId) -> Option<Row> {
@@ -346,6 +460,13 @@ impl WriteQueue {
         };
         let mut data = Self::fields(row);
         data.insert("reason".into(), json!(reason));
+        if let Some(steer) = &row.opts.steer {
+            data.insert("steerId".into(), json!(steer));
+            let tell = self.steer_expired.lock().expect("lock").clone();
+            if let Some(tell) = tell {
+                tell(steer, reason);
+            }
+        }
         emit(
             &self.events,
             NewEvent {
@@ -398,11 +519,18 @@ impl WriteQueue {
                 self.writer.await_live(&machine_id).await;
                 continue;
             }
-            self.in_flight.lock().expect("lock").insert(row.write_id);
+            {
+                let mut in_flight = self.in_flight.lock().expect("lock");
+                // Withdrawn between the read and now: nothing to send.
+                if !self.still_queued(row.write_id) {
+                    continue;
+                }
+                in_flight.insert(row.write_id);
+            }
             let result = tokio::time::timeout(
                 SEND_TIMEOUT,
                 self.writer
-                    .send(&row.target, &row.message, &row.client_request_id),
+                    .send_with(&row.target, &row.message, &row.client_request_id, &row.opts),
             )
             .await;
             self.in_flight.lock().expect("lock").remove(&row.write_id);

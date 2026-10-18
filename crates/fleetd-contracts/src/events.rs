@@ -192,6 +192,25 @@ pub enum HubEventType {
     /// reset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.
     #[serde(rename = "prompt.default_changed")]
     PromptDefaultChanged,
+    /// A steer was stored (or put in the offline queue). `data` is a `SteerEventData`, plus `data.text` (first 120
+    /// characters), `data.mode` and `data.by`.
+    #[serde(rename = "steer.queued")]
+    SteerQueued,
+    /// claude took the steer in; `data.how`.
+    #[serde(rename = "steer.delivered")]
+    SteerDelivered,
+    /// The agent named the steer (`data.excerpt`), or a lead call did.
+    #[serde(rename = "steer.acknowledged")]
+    SteerAcknowledged,
+    /// The steer's run ended with no reply naming it; `data.excerpt` is its first reply.
+    #[serde(rename = "steer.unacknowledged")]
+    SteerUnacknowledged,
+    #[serde(rename = "steer.withdrawn")]
+    SteerWithdrawn,
+    /// Refused by the node, the process exited before taking it in, or it expired in the offline queue;
+    /// `data.reason`.
+    #[serde(rename = "steer.failed")]
+    SteerFailed,
     /// A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).
     #[serde(rename = "plan.changed")]
     PlanChanged,
@@ -286,6 +305,12 @@ impl HubEventType {
             Self::WorkstreamNote => "workstream.note",
             Self::PromptChanged => "prompt.changed",
             Self::PromptDefaultChanged => "prompt.default_changed",
+            Self::SteerQueued => "steer.queued",
+            Self::SteerDelivered => "steer.delivered",
+            Self::SteerAcknowledged => "steer.acknowledged",
+            Self::SteerUnacknowledged => "steer.unacknowledged",
+            Self::SteerWithdrawn => "steer.withdrawn",
+            Self::SteerFailed => "steer.failed",
             Self::PlanChanged => "plan.changed",
             Self::PlanVerified => "plan.verified",
             Self::ChangeState => "change.state",

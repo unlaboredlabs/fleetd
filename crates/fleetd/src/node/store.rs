@@ -164,6 +164,14 @@ impl NodeStore {
         self.tx(|conn| self.append(conn, MachineEvent::RunnerInfo(info.clone())))
     }
 
+    /// Logs a steer's receipt, so a hub that reconnects with a cursor replays it.
+    pub fn steer_receipt(
+        &self,
+        receipt: &fleetd_contracts::steer::SteerReceipt,
+    ) -> StoreResult<MachineEventFrame> {
+        self.tx(|conn| self.append(conn, MachineEvent::Steer(receipt.clone())))
+    }
+
     /// `None` when there was no such project.
     pub fn remove_project(&self, id: &str) -> StoreResult<Option<MachineEventFrame>> {
         self.tx(|conn| {
