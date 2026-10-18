@@ -20,9 +20,9 @@ use super::{Probe, T3_NPM_VERSION, current_exe, parse_listen, probe_listen, say}
 
 pub fn machine_usage() -> String {
     format!(
-        "  machine add <ssh-host> [--machine-id <id>] [--tags a,b] [--dry-run] [--t3-port <port>]
+        "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--t3-port <port>]
             [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]
-             set up a worker over SSH: installs T3 {T3_NPM_VERSION} and the fleetd node under the SSH
+             set up a worker over SSH (--local: this machine, without SSH): installs T3 {T3_NPM_VERSION} and the fleetd node under the SSH
              user, configures the fleetd Claude instance, enrolls the node, starts both as services and
              waits until the machine is online; prints every remote command first, --dry-run only prints
              (for a fresh machine, without connecting); safe to run again
@@ -139,8 +139,48 @@ async fn wait_online(
     false
 }
 
+/// This machine's name, as a machine id would be made from it.
+pub fn local_host_name() -> String {
+    std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            std::process::Command::new("hostname")
+                .arg("-s")
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|name| name.trim().to_owned())
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "this-machine".into())
+}
+
+/// What a finished `machine add` set up, for `fleetd init` to check the machine's Claude login.
+pub struct Added {
+    pub machine_id: String,
+    pub target: SshTarget,
+    /// The fleetd instance's own Claude config dir and login file on the machine.
+    pub claude_dir: String,
+    pub env_file: String,
+    /// `claude` on the machine's PATH, if any.
+    pub claude: Option<String>,
+}
+
 async fn add_command(argv: &[String]) -> u8 {
+    match add(argv).await {
+        Ok(_) => 0,
+        Err(code) => code,
+    }
+}
+
+/// `machine add`, returning what it set up; `Err` carries the exit code after the error is printed.
+pub async fn add(argv: &[String]) -> Result<Option<Added>, u8> {
+    let fail = |message: &str| Err(fail(message));
+    let usage = |message: &str| Err(usage(message));
     const OPTIONS: &[(&str, Kind)] = &[
+        ("local", Kind::Bool),
         ("machine-id", Kind::Str),
         ("tags", Kind::Str),
         ("dry-run", Kind::Bool),
@@ -160,12 +200,20 @@ async fn add_command(argv: &[String]) -> u8 {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
-    let [host] = v.positionals.as_slice() else {
-        return usage("machine add takes one ssh host");
+    let local = v.flag("local");
+    let host = match (v.positionals.as_slice(), local) {
+        ([host], false) => host.clone(),
+        ([], true) => "localhost".to_owned(),
+        _ => return usage("machine add takes one ssh host, or --local for this machine"),
     };
-    let machine_id = v
-        .string("machine-id")
-        .unwrap_or_else(|| machine_id_from_host(host));
+    let host = &host;
+    let machine_id = v.string("machine-id").unwrap_or_else(|| {
+        machine_id_from_host(&if local {
+            local_host_name()
+        } else {
+            host.clone()
+        })
+    });
     let Ok(machine) = MachineId::new(machine_id.clone()) else {
         return usage(&format!(
             "'{machine_id}' is not a machine id ([a-z0-9-]{{1,32}}); pass --machine-id"
@@ -228,6 +276,7 @@ async fn add_command(argv: &[String]) -> u8 {
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| config.to_owned())
         }),
+        local,
     };
     let input = MachineAddInput {
         machine_id: machine_id.clone(),
@@ -279,7 +328,7 @@ async fn add_command(argv: &[String]) -> u8 {
         for note in &plan.notes {
             say(&format!("note: {note}"));
         }
-        return 0;
+        return Ok(None);
     }
 
     if parse_listen(&state.listen).is_none()
@@ -309,19 +358,31 @@ async fn add_command(argv: &[String]) -> u8 {
         Some(PROBE_SCRIPT.as_bytes()),
     )
     .await;
+    let again = if local {
+        "fleetd machine add --local".to_owned()
+    } else {
+        format!("fleetd machine add {host}")
+    };
     if probed.code != 0 {
         return fail(&format!(
-            "cannot read {host} over SSH (exit {}):\n{}",
+            "cannot read {host}{} (exit {}):\n{}\nfix: {}then run {again}",
+            if local { "" } else { " over SSH" },
             probed.code,
-            tail(&probed.stderr)
+            tail(&probed.stderr),
+            if local {
+                String::new()
+            } else {
+                format!("make `ssh {host} true` work without a password (ssh-copy-id {host}), ")
+            }
         ));
     }
     let last = probed.stdout.trim().split('\n').next_back().unwrap_or("{}");
     let parsed: serde_json::Value = serde_json::from_str(last).unwrap_or_default();
     if parsed.get("error").is_some() {
         return fail(&format!(
-            "no Node on {host}: install Node 24 or newer for {}, then run again",
-            host.split('@').next().unwrap_or(host)
+            "no Node 24+ on {host}. fix: on {host}, run `{}` (macOS: `{}`), then run {again}",
+            super::detect::install_command("node", "linux", None),
+            super::detect::install_command("node", "macos", None)
         ));
     }
     let facts: Facts = match serde_json::from_value(parsed) {
@@ -343,7 +404,7 @@ async fn add_command(argv: &[String]) -> u8 {
     };
     let plan = match plan_machine_add(&facts, &input) {
         Ok(plan) => plan,
-        Err(message) => return fail(&message),
+        Err(message) => return fail(&format!("{message}\nfix that, then run {again}")),
     };
     // Recorded before anything changes, so `machine remove` can undo a run that stopped half way.
     let mut recorded = state.clone();
@@ -352,6 +413,7 @@ async fn add_command(argv: &[String]) -> u8 {
         MachineRecord {
             ssh_host: host.clone(),
             ssh_config: target.config.clone(),
+            local,
             platform: plan.platform,
             home: facts.home.clone(),
             config_home: facts.config_home.clone(),
@@ -380,7 +442,7 @@ async fn add_command(argv: &[String]) -> u8 {
         let result = run_ssh(&target, &step.command, stdin.as_deref()).await;
         if result.code != 0 {
             return fail(&format!(
-                "step {} failed (exit {}):\n{}\nfix that and run the same command again; finished steps are skipped.",
+                "step {} failed (exit {}):\n{}\nfix that, then run {again}; finished steps are skipped.",
                 i + 1,
                 result.code,
                 tail(&format!("{}\n{}", result.stdout, result.stderr))
@@ -406,7 +468,7 @@ async fn add_command(argv: &[String]) -> u8 {
         ));
         if !wait_online(&hub, &machine, steps_done, Duration::from_secs(120)).await {
             return fail(&format!(
-                "{machine_id} did not come online within 2 min. Its node log is {}/node.log on {host}; the node must reach the hub at {}.",
+                "{machine_id} did not come online within 2 min. Its node log is {}/node.log on {host}; the node must reach the hub at {}. fix: make that address reachable from {host} (fleetd init --url <address>), then run {again}",
                 plan.layout.logs, input.hub_url
             ));
         }
@@ -415,7 +477,13 @@ async fn add_command(argv: &[String]) -> u8 {
     for note in &plan.notes {
         say(&format!("note: {note}"));
     }
-    0
+    Ok(Some(Added {
+        machine_id,
+        target,
+        claude_dir: plan.layout.claude_dir.clone(),
+        env_file: plan.layout.env_file.clone(),
+        claude: facts.claude.clone(),
+    }))
 }
 
 async fn remove_command(argv: &[String]) -> u8 {
@@ -460,6 +528,7 @@ async fn remove_command(argv: &[String]) -> u8 {
             let target = SshTarget {
                 host: record.ssh_host.clone(),
                 config: record.ssh_config.clone(),
+                local: record.local,
             };
             let steps = plan_machine_remove(
                 record.platform,

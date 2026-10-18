@@ -1,5 +1,8 @@
 //! Setup: `fleetd init` and `fleetd uninstall` on the hub machine, `fleetd machine add|remove` for workers.
 
+mod checklist;
+pub mod detect;
+pub mod doctor;
 pub mod machine;
 pub mod machine_plan;
 pub mod ordered_json;
@@ -7,15 +10,18 @@ pub mod ssh;
 pub mod state;
 pub mod t3_settings;
 pub mod units;
+mod wizard;
 
+use std::io::IsTerminal;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use super::args::{self, Kind, Spec};
 use super::hub_key::resolve_home;
 use ssh::run_local;
-use state::{is_noreply, parse_git_identity, read_setup, write_setup};
+use state::{GitIdentity, is_noreply, parse_git_identity, read_setup, write_setup};
 use units::{
     Dirs, Platform, Role, ServiceManager, ServiceSpec, render_unit, unit_path, unit_suffix,
 };
@@ -26,18 +32,34 @@ pub const T3_NPM_VERSION: &str = env!("FLEETD_T3_NPM_VERSION");
 /// Where `hub start` listens unless told otherwise (the hub's own default).
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:4790";
 
-pub const SETUP_USAGE: &str = r#"  init [--home <dir>] [--listen <host:port>] [--url <url>]
+pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:port>] [--url <url>]
        [--git-identity "Name <email>"] [--no-service] [--unit-suffix <s>]
-             set up this machine as the hub: home (default ~/.fleetd/hub) and a user service
-             (systemd or launchd) that keeps it running, reached at --url (default http://<listen>);
-             --git-identity is the commit author for every machine (the GitHub noreply address
-             for public repos); --no-service prepares everything but leaves starting it to you
+             set up fleetd step by step in a terminal: the hub on this machine (home default
+             ~/.fleetd/hub, kept running by a systemd or launchd user service), where it listens
+             (your tailnet when there is one), the claude and gh logins, the machines that run
+             agents, a first project and the desktop app, then fleetd doctor. Run it again to
+             check and repair; it keeps what works. --yes takes every default. Without a
+             terminal and without --yes it only sets up the hub. --url is how devices reach the
+             hub (default http://<listen>); --git-identity is the commit author for every
+             machine (the GitHub noreply address for public repos); --no-service prepares
+             everything but leaves starting the hub to you
+  doctor [--fix] [--home <dir>]
+             run every setup check on the hub now and print each problem with its fix;
+             --fix also applies the fixes the hub can make by itself
   uninstall [--home <dir>] [--purge]
              stop and remove the hub's service; its data stays unless --purge
 "#;
 
+static SAID: AtomicUsize = AtomicUsize::new(0);
+
 pub(crate) fn say(line: &str) {
+    SAID.fetch_add(1, Ordering::Relaxed);
     eprintln!("{line}");
+}
+
+/// Lines `say` printed so far: the checklist rewrites a step's line only while nothing came after it.
+pub(crate) fn said() -> usize {
+    SAID.load(Ordering::Relaxed)
 }
 
 fn fail(message: &str) -> u8 {
@@ -232,8 +254,8 @@ pub fn processes_holding(file: &Path) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-async fn sh(command: &str) -> Result<(), String> {
-    say(&format!("  $ {command}"));
+async fn sh(command: &str, log: &dyn Fn(&str)) -> Result<(), String> {
+    log(&format!("  $ {command}"));
     let result = run_local("/bin/sh", &["-c".to_owned(), command.to_owned()], None).await;
     if result.code != 0 {
         return Err(format!(
@@ -280,120 +302,324 @@ pub fn current_exe() -> Result<PathBuf, String> {
         .map_err(|error| format!("cannot find the running fleetd executable: {error}"))
 }
 
-async fn init_command(argv: &[String]) -> u8 {
-    const OPTIONS: &[(&str, Kind)] = &[
-        ("home", Kind::Str),
-        ("listen", Kind::Str),
-        ("url", Kind::Str),
-        ("git-identity", Kind::Str),
-        ("no-service", Kind::Bool),
-        ("unit-suffix", Kind::Str),
-    ];
-    let v = match args::parse(
+/// What `fleetd init` was told on its command line, checked; the rest comes from the previous run or the wizard.
+pub struct InitOptions {
+    pub home: PathBuf,
+    pub previous: Option<state::SetupState>,
+    pub listen: Option<String>,
+    pub url: Option<String>,
+    pub identity: Option<GitIdentity>,
+    pub suffix: String,
+    pub with_service: bool,
+    pub yes: bool,
+}
+
+/// Everything `install_hub` writes and starts.
+pub struct HubPlan<'a> {
+    pub home: &'a Path,
+    pub listen: String,
+    pub url: String,
+    pub suffix: String,
+    pub identity: Option<GitIdentity>,
+    pub with_service: bool,
+}
+
+/// A failed step: what is wrong, and the exact command or action that fixes it.
+pub struct Failure {
+    pub message: String,
+    pub fix: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unit {
+    Missing,
+    Same,
+    Changed,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum HubAction {
+    /// Write the unit and (re)start the service.
+    Install,
+    /// The service runs this very unit and answers: leave it.
+    Keep,
+    /// No service wanted, and a hub someone started answers here.
+    ByHand,
+    /// No service wanted, and nothing runs yet.
+    NotRunning,
+    Refuse {
+        message: String,
+        fix: String,
+    },
+}
+
+/// What `fleetd init` does about the hub, from what it found: run again on a working setup it changes nothing.
+pub fn hub_action(
+    with_service: bool,
+    unit: Unit,
+    holders: &[u32],
+    probe: &Probe,
+    listen: &str,
+    home: &str,
+) -> HubAction {
+    let pids = holders
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let busy = |what: &str| HubAction::Refuse {
+        message: format!("{listen} is in use by {what}"),
+        fix: "pick a free address: fleetd init --listen 127.0.0.1:4791".into(),
+    };
+    match (with_service, holders.is_empty(), probe) {
+        (true, false, _) if unit == Unit::Missing => HubAction::Refuse {
+            message: format!("a hub started by hand runs on {home} (pid {pids})"),
+            fix: format!(
+                "stop it (kill {pids}), then run fleetd init again; or keep running it yourself: fleetd init --no-service"
+            ),
+        },
+        (true, false, Probe::Hub) if unit == Unit::Same => HubAction::Keep,
+        (true, false, _) => HubAction::Install,
+        (false, false, Probe::Hub) => HubAction::ByHand,
+        (false, false, _) => HubAction::Refuse {
+            message: format!("a hub runs on {home} (pid {pids}) but does not answer at {listen}"),
+            fix: format!(
+                "run fleetd init --no-service --listen <the address it listens on>, or stop it (kill {pids})"
+            ),
+        },
+        (_, true, Probe::Free) if with_service => HubAction::Install,
+        (_, true, Probe::Free) => HubAction::NotRunning,
+        (_, true, Probe::Hub) => busy("another fleetd hub"),
+        (_, true, Probe::Other) => busy("something else"),
+    }
+}
+
+/// The hub home, setup.json and, unless `--no-service`, the user service that runs the hub. `log` gets each
+/// command before it runs. Returns how the hub runs now.
+pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<String, Failure> {
+    let fail = |message: String| Failure {
+        message,
+        fix: "fix the cause above, then run fleetd init again".into(),
+    };
+    let Some(listen) = parse_listen(&plan.listen) else {
+        return Err(Failure {
+            message: format!("--listen must be host:port, got '{}'", plan.listen),
+            fix: "fleetd init --listen 127.0.0.1:4790".into(),
+        });
+    };
+    let home_text = plan.home.to_string_lossy().into_owned();
+    let platform = local_platform();
+    if plan.with_service && platform.is_none() {
+        return Err(Failure {
+            message: format!(
+                "fleetd runs the hub as a systemd or launchd service, not on {}",
+                std::env::consts::OS
+            ),
+            fix: "fleetd init --no-service, then run fleetd hub start yourself".into(),
+        });
+    }
+    let dirs = local_dirs();
+    let unit_file = platform.map(|platform| {
+        unit_path(
+            platform,
+            &Dirs {
+                home: &dirs.home,
+                config_home: &dirs.config_home,
+            },
+            Role::Hub,
+            &plan.suffix,
+        )
+    });
+    let exe = current_exe().map_err(fail)?;
+    let exe_dir = exe
+        .parent()
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let path = format!("{exe_dir}:{}", std::env::var("PATH").unwrap_or_default());
+    let spec = hub_service_spec(
+        &home_text,
+        &plan.listen,
+        &plan.suffix,
+        &exe.to_string_lossy(),
+        &path,
+        &dirs.home,
+    );
+    let text = platform.map(|platform| render_unit(platform, &spec));
+    let existing = unit_file
+        .as_ref()
+        .and_then(|file| std::fs::read_to_string(file).ok());
+    let unit = match (&existing, &text) {
+        (None, _) => Unit::Missing,
+        (Some(old), Some(new)) if old == new => Unit::Same,
+        _ => Unit::Changed,
+    };
+    let holders = processes_holding(&plan.home.join("hub.sqlite"));
+    let probe = probe_listen(&listen).await;
+    let action = hub_action(
+        plan.with_service,
+        unit,
+        &holders,
+        &probe,
+        &plan.listen,
+        &home_text,
+    );
+    if let HubAction::Refuse { message, fix } = action {
+        return Err(Failure { message, fix });
+    }
+
+    mkdir_private(plan.home).map_err(fail)?;
+    let state = state::SetupState {
+        listen: plan.listen.clone(),
+        url: plan.url.clone(),
+        unit_suffix: plan.suffix.clone(),
+        git_identity: plan.identity.clone(),
+        machines: read_setup(plan.home)
+            .ok()
+            .flatten()
+            .map(|p| p.machines)
+            .unwrap_or_default(),
+    };
+    write_setup(plan.home, &state).map_err(fail)?;
+    match action {
+        HubAction::Keep => {
+            return Ok(format!("runs as a service and answers at {}", plan.listen));
+        }
+        HubAction::ByHand => {
+            return Ok(format!("answers at {}; you run it yourself", plan.listen));
+        }
+        HubAction::NotRunning => {
+            return Ok(format!(
+                "not started; run it yourself with: fleetd hub start --home {home_text} --listen {}",
+                plan.listen
+            ));
+        }
+        _ => {}
+    }
+    let (Some(platform), Some(file), Some(text)) = (platform, unit_file, text) else {
+        unreachable!("Install needs a platform");
+    };
+    Path::new(&file)
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&file, &text))
+        .map_err(|error| fail(format!("cannot write {file}: {error}")))?;
+    log(&format!(
+        "{} {file}",
+        if unit == Unit::Same { "kept" } else { "wrote" }
+    ));
+    let services = ServiceManager::new(platform, local_uid(), &plan.suffix, |_| file.clone());
+    sh(&services.restart(Role::Hub, unit == Unit::Changed), log)
+        .await
+        .map_err(|message| Failure {
+            message,
+            fix: if platform == Platform::Linux {
+                format!(
+                    "systemctl --user status {} shows why",
+                    units::systemd_name(Role::Hub, &plan.suffix)
+                )
+            } else {
+                format!("see {}", spec.log_path)
+            },
+        })?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while probe_listen(&listen).await != Probe::Hub {
+        if Instant::now() > deadline {
+            return Err(Failure {
+                message: format!(
+                    "the hub service did not answer at {} within 30 s",
+                    plan.listen
+                ),
+                fix: format!("read {} for why, then run fleetd init again", spec.log_path),
+            });
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    Ok(format!("runs as a service and answers at {}", plan.listen))
+}
+
+const INIT_OPTIONS: &[(&str, Kind)] = &[
+    ("home", Kind::Str),
+    ("listen", Kind::Str),
+    ("url", Kind::Str),
+    ("git-identity", Kind::Str),
+    ("no-service", Kind::Bool),
+    ("unit-suffix", Kind::Str),
+    ("yes", Kind::Bool),
+];
+
+fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
+    let v = args::parse(
         argv,
         &Spec {
-            options: OPTIONS,
+            options: INIT_OPTIONS,
             positionals: false,
         },
-    ) {
-        Ok(v) => v,
-        Err(message) => return usage(&message),
-    };
-    let home = match resolve_home(v.str("home")) {
-        Ok(home) => home,
-        Err(message) => return fail(&message),
-    };
-    let previous = match read_setup(&home) {
-        Ok(previous) => previous,
-        Err(message) => return fail(&message),
-    };
-    let listen_text = v
-        .string("listen")
-        .or_else(|| previous.as_ref().map(|p| p.listen.clone()))
-        .unwrap_or_else(|| DEFAULT_LISTEN.to_owned());
-    let Some(listen) = parse_listen(&listen_text) else {
-        return usage(&format!("--listen must be host:port, got '{listen_text}'"));
-    };
-    let url = v
-        .string("url")
-        .or_else(|| previous.as_ref().map(|p| p.url.clone()))
-        .unwrap_or_else(|| format!("http://{listen_text}"));
-    if reqwest::Url::parse(&url).is_err() {
-        return usage(&format!(
+    )
+    .map_err(|message| usage(&message))?;
+    let home = resolve_home(v.str("home")).map_err(|message| fail(&message))?;
+    let previous = read_setup(&home).map_err(|message| fail(&message))?;
+    if let Some(listen) = v.str("listen")
+        && parse_listen(listen).is_none()
+    {
+        return Err(usage(&format!(
+            "--listen must be host:port, got '{listen}'"
+        )));
+    }
+    if let Some(url) = v.str("url")
+        && reqwest::Url::parse(url).is_err()
+    {
+        return Err(usage(&format!(
             "--url must be the hub's address, e.g. https://forge.tailnet.ts.net, got '{url}'"
-        ));
+        )));
     }
     let identity = match v.str("git-identity") {
-        None => previous.as_ref().and_then(|p| p.git_identity.clone()),
-        Some(text) => match parse_git_identity(text) {
-            Some(identity) => Some(identity),
-            None => {
-                return usage(&format!(
-                    "--git-identity must look like \"Name <email>\", got '{text}'"
-                ));
-            }
-        },
+        None => None,
+        Some(text) => Some(parse_git_identity(text).ok_or_else(|| {
+            usage(&format!(
+                "--git-identity must look like \"Name <email>\", got '{text}'"
+            ))
+        })?),
     };
     let suffix = match v.str("unit-suffix") {
         None => previous
             .as_ref()
             .map(|p| p.unit_suffix.clone())
             .unwrap_or_default(),
-        Some(text) => match unit_suffix(Some(text)) {
-            Some(suffix) => suffix,
-            None => {
-                return usage(&format!(
-                    "--unit-suffix takes letters, digits and dashes, got '{text}'"
-                ));
-            }
-        },
+        Some(text) => unit_suffix(Some(text)).ok_or_else(|| {
+            usage(&format!(
+                "--unit-suffix takes letters, digits and dashes, got '{text}'"
+            ))
+        })?,
     };
-    let with_service = !v.flag("no-service");
-    let platform = local_platform();
-    if with_service && platform.is_none() {
-        return fail(&format!(
-            "fleetd runs the hub as a systemd or launchd service, not on {}; use --no-service and run fleetd hub start yourself",
-            std::env::consts::OS
-        ));
-    }
+    Ok(InitOptions {
+        home,
+        previous,
+        listen: v.string("listen"),
+        url: v.string("url"),
+        identity,
+        suffix,
+        with_service: !v.flag("no-service"),
+        yes: v.flag("yes"),
+    })
+}
 
-    let holders = processes_holding(&home.join("hub.sqlite"));
-    if !holders.is_empty() {
-        return fail(&format!(
-            "a hub already runs on {} (pid {}); stop it first (fleetd uninstall keeps its data)",
-            home.display(),
-            holders
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    match probe_listen(&listen).await {
-        Probe::Free => {}
-        Probe::Hub => return fail(&format!("a fleetd hub already answers at {listen_text}")),
-        Probe::Other => {
-            return fail(&format!(
-                "{listen_text} is in use by something else; pick another --listen"
-            ));
-        }
-    }
-
-    if let Err(message) = mkdir_private(&home) {
-        return fail(&message);
-    }
-    let home_text = home.to_string_lossy().into_owned();
-    say(&format!("hub home {home_text}"));
-    let state = state::SetupState {
-        listen: listen_text.clone(),
-        url: url.clone(),
-        unit_suffix: suffix.clone(),
-        git_identity: identity.clone(),
-        machines: previous.map(|p| p.machines).unwrap_or_default(),
-    };
-    if let Err(message) = write_setup(&home, &state) {
-        return fail(&message);
-    }
+/// Without a terminal and without --yes: only the hub, as older releases did, so scripts see no prompt.
+async fn init_plain(opts: InitOptions) -> u8 {
+    let listen = opts
+        .listen
+        .clone()
+        .or_else(|| opts.previous.as_ref().map(|p| p.listen.clone()))
+        .unwrap_or_else(|| DEFAULT_LISTEN.to_owned());
+    let url = opts
+        .url
+        .clone()
+        .or_else(|| opts.previous.as_ref().map(|p| p.url.clone()))
+        .unwrap_or_else(|| format!("http://{listen}"));
+    let identity = opts
+        .identity
+        .clone()
+        .or_else(|| opts.previous.as_ref().and_then(|p| p.git_identity.clone()));
+    say(&format!("hub home {}", opts.home.display()));
     match &identity {
         None => say(
             r#"no commit identity yet: add one with --git-identity "Name <id+user@users.noreply.github.com>" before adding machines"#,
@@ -409,79 +635,36 @@ async fn init_command(argv: &[String]) -> u8 {
             }
         )),
     }
-
-    if let (true, Some(platform)) = (with_service, platform) {
-        let exe = match current_exe() {
-            Ok(exe) => exe,
-            Err(message) => return fail(&message),
-        };
-        let exe_dir = exe
-            .parent()
-            .map(|d| d.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let path = format!("{exe_dir}:{}", std::env::var("PATH").unwrap_or_default());
-        let dirs = local_dirs();
-        let spec = hub_service_spec(
-            &home_text,
-            &listen_text,
-            &suffix,
-            &exe.to_string_lossy(),
-            &path,
-            &dirs.home,
-        );
-        let file = unit_path(
-            platform,
-            &Dirs {
-                home: &dirs.home,
-                config_home: &dirs.config_home,
-            },
-            Role::Hub,
-            &suffix,
-        );
-        let text = render_unit(platform, &spec);
-        let existing = std::fs::read_to_string(&file).ok();
-        let changed = existing.as_deref() != Some(text.as_str());
-        let written = Path::new(&file)
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&file, &text))
-            .map_err(|error| format!("cannot write {file}: {error}"));
-        if let Err(message) = written {
-            return fail(&message);
-        }
-        say(&format!(
-            "{} {file}",
-            if changed { "wrote" } else { "kept" }
-        ));
-        let services = ServiceManager::new(platform, local_uid(), &suffix, |_| file.clone());
-        if let Err(message) = sh(&services.restart(Role::Hub, changed && existing.is_some())).await
-        {
-            return fail(&message);
-        }
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while probe_listen(&listen).await != Probe::Hub {
-            if Instant::now() > deadline {
-                return fail(&format!(
-                    "the hub service did not answer at {listen_text} within 30 s; see {}",
-                    spec.log_path
-                ));
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-        say(&format!(
-            "the hub runs as a service and answers at {listen_text}"
-        ));
-    } else {
-        say(&format!(
-            "not installing a service; run the hub yourself with:\n  fleetd hub start --home {home_text} --listen {listen_text}"
-        ));
+    let plan = HubPlan {
+        home: &opts.home,
+        listen,
+        url,
+        suffix: opts.suffix.clone(),
+        identity,
+        with_service: opts.with_service,
+    };
+    match install_hub(&plan, &say).await {
+        Ok(how) => say(&format!("the hub {how}")),
+        Err(failure) => return fail(&format!("{}. Fix: {}", failure.message, failure.fix)),
     }
-
-    say(&format!(
-        "next: fleetd hub key create --human --name <device> prints the key the desktop app connects to {url} with"
-    ));
-    say("then: fleetd machine add <ssh-host> for each machine that runs agents");
+    say(
+        "next: run fleetd init in a terminal to add workers, a first project and the desktop app (fleetd init --yes takes every default)",
+    );
     0
+}
+
+async fn init_command(argv: &[String]) -> u8 {
+    let opts = match init_options(argv) {
+        Ok(opts) => opts,
+        Err(code) => return code,
+    };
+    let terminal = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+    if opts.yes || terminal {
+        let interactive = terminal && !opts.yes;
+        wizard::run(opts, interactive).await
+    } else {
+        init_plain(opts).await
+    }
 }
 
 async fn uninstall_command(argv: &[String]) -> u8 {
@@ -522,6 +705,7 @@ async fn uninstall_command(argv: &[String]) -> u8 {
             let uid = local_uid();
             if let Err(message) = sh(
                 &ServiceManager::new(platform, uid, &suffix, |_| file.clone()).remove(Role::Hub),
+                &say,
             )
             .await
             {
@@ -532,9 +716,10 @@ async fn uninstall_command(argv: &[String]) -> u8 {
             }
             say(&format!("removed {file}"));
             if platform == Platform::Linux {
-                let _ = sh(&format!(
-                    "XDG_RUNTIME_DIR=/run/user/{uid} systemctl --user daemon-reload"
-                ))
+                let _ = sh(
+                    &format!("XDG_RUNTIME_DIR=/run/user/{uid} systemctl --user daemon-reload"),
+                    &say,
+                )
                 .await;
             }
         } else {
@@ -583,11 +768,76 @@ async fn uninstall_command(argv: &[String]) -> u8 {
     0
 }
 
-/// `fleetd init` and `fleetd uninstall`.
+/// `fleetd init`, `fleetd doctor` and `fleetd uninstall`.
 pub async fn setup_command(command: &str, argv: &[String]) -> u8 {
-    if command == "init" {
-        init_command(argv).await
-    } else {
-        uninstall_command(argv).await
+    match command {
+        "init" => init_command(argv).await,
+        "doctor" => doctor::doctor_command(argv).await,
+        _ => uninstall_command(argv).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn action(service: bool, unit: Unit, holders: &[u32], probe: Probe) -> HubAction {
+        hub_action(service, unit, holders, &probe, "127.0.0.1:4790", "/h")
+    }
+
+    fn refused(action: HubAction) -> String {
+        match action {
+            HubAction::Refuse { message, fix } => format!("{message} | {fix}"),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rerunning_init_keeps_a_working_hub_and_repairs_the_rest() {
+        // First run, and a stopped or edited service: (re)install.
+        assert_eq!(
+            action(true, Unit::Missing, &[], Probe::Free),
+            HubAction::Install
+        );
+        assert_eq!(
+            action(true, Unit::Same, &[], Probe::Free),
+            HubAction::Install
+        );
+        assert_eq!(
+            action(true, Unit::Changed, &[7], Probe::Hub),
+            HubAction::Install
+        );
+        assert_eq!(
+            action(true, Unit::Same, &[7], Probe::Other),
+            HubAction::Install
+        );
+        // The service runs the same unit and answers: nothing to do.
+        assert_eq!(action(true, Unit::Same, &[7], Probe::Hub), HubAction::Keep);
+        // --no-service: a hub someone runs is used as is; none yet is left to them.
+        assert_eq!(
+            action(false, Unit::Missing, &[7], Probe::Hub),
+            HubAction::ByHand
+        );
+        assert_eq!(
+            action(false, Unit::Missing, &[], Probe::Free),
+            HubAction::NotRunning
+        );
+    }
+
+    #[test]
+    fn init_never_takes_over_what_it_did_not_start() {
+        assert!(
+            refused(action(true, Unit::Missing, &[7, 9], Probe::Hub))
+                .contains("started by hand runs on /h (pid 7, 9) | stop it (kill 7, 9)")
+        );
+        assert!(
+            refused(action(true, Unit::Missing, &[], Probe::Hub)).contains(
+                "in use by another fleetd hub | pick a free address: fleetd init --listen"
+            )
+        );
+        assert!(
+            refused(action(false, Unit::Missing, &[], Probe::Other)).contains("by something else")
+        );
+        assert!(refused(action(false, Unit::Same, &[7], Probe::Free)).contains("does not answer"));
     }
 }

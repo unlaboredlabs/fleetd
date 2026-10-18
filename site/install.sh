@@ -215,11 +215,12 @@ main() {
   [ "$installed" = 1 ] || die "nothing to install from $base"
 
   if [ -x "$bin_dir/fleetd" ]; then
+    # One next command; `fleetd init` itself says how to put ~/.local/bin on PATH when it isn't.
     case ":$PATH:" in
-      *":$HOME/.local/bin:"*) ;;
-      *) say "add ~/.local/bin to your PATH:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+      *":$HOME/.local/bin:"*) next="fleetd init" ;;
+      *) next="~/.local/bin/fleetd init" ;;
     esac
-    say "next: fleetd init"
+    printf '\nNext, run:\n  %s\n' "$next"
   fi
 }
 

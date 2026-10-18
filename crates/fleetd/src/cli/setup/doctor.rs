@@ -1,0 +1,192 @@
+//! `fleetd doctor [--fix]`: every setup check on the hub, run now over its MCP endpoint (doctor_list), each problem
+//! with its fix; `--fix` also applies the automatic ones (doctor_fix). `fleetd init` ends with the same run.
+
+use std::path::Path;
+use std::time::Duration;
+
+use fleetd_contracts::auth::{Grant, GrantMachines, KeyKind, Role};
+use fleetd_contracts::subscriptions::Star;
+use serde_json::json;
+
+use super::super::args::{self, Kind, Spec};
+use super::super::hub_key::{open_hub, resolve_home};
+use super::super::mcp_client::McpClient;
+use super::checklist::{Checklist, State};
+use super::state::read_setup;
+use super::{Failure, write_private};
+use crate::hub::doctor::checks::{DoctorCheck, DoctorStatus};
+
+const KEY_FILE: &str = "cli.key";
+
+/// The CLI's own key, kept 0600 in the hub home beside the database it was minted from (so it grants nothing that
+/// reading the home doesn't), and minted again only when it is gone or revoked.
+fn cli_key(home: &Path) -> Result<String, String> {
+    let file = home.join(KEY_FILE);
+    let hub = open_hub(home)?;
+    if let Ok(key) = std::fs::read_to_string(&file)
+        && hub.auth.verify(key.trim()).is_ok()
+    {
+        return Ok(key.trim().to_owned());
+    }
+    let created = hub
+        .auth
+        .create_key(
+            "fleetd-cli",
+            &[Grant {
+                role: Role::Admin,
+                machines: GrantMachines::All(Star::Value),
+            }],
+            KeyKind::Agent,
+        )
+        .map_err(|error| error.to_string())?;
+    write_private(&file, &format!("{}\n", created.key))?;
+    Ok(created.key)
+}
+
+async fn connect(home: &Path) -> Result<McpClient, Failure> {
+    let again = |message: String| Failure {
+        message,
+        fix: "fleetd init (it starts the hub and repairs its setup)".into(),
+    };
+    let state = read_setup(home)
+        .map_err(again)?
+        .ok_or_else(|| again(format!("{} has no hub set up", home.display())))?;
+    let key = cli_key(home).map_err(again)?;
+    McpClient::connect(
+        &format!("http://{}", state.listen),
+        &key,
+        "fleetd-doctor",
+        Duration::from_secs(15),
+    )
+    .await
+    .map_err(|error| {
+        again(format!(
+            "the hub does not answer at {}: {}",
+            state.listen,
+            error.message()
+        ))
+    })
+}
+
+async fn list(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
+    let result = client
+        .call_tool(
+            "doctor_list",
+            json!({ "rerun": true }),
+            Duration::from_secs(120),
+        )
+        .await
+        .map_err(|error| Failure {
+            message: format!("doctor_list failed: {}", error.message()),
+            fix: "fleetd doctor again in a minute; if it keeps failing, fleetd init".into(),
+        })?;
+    serde_json::from_value(result.body.get("checks").cloned().unwrap_or_default()).map_err(
+        |error| Failure {
+            message: format!("doctor_list answered in an unknown shape: {error}"),
+            fix: "fleetd update, so this CLI matches the hub".into(),
+        },
+    )
+}
+
+/// Runs every check; with `fix`, applies each automatic fix of a failing check first and runs them again.
+pub async fn run(home: &Path, fix: bool) -> Result<Vec<DoctorCheck>, Failure> {
+    let mut client = connect(home).await?;
+    let checks = list(&mut client).await?;
+    let auto: Vec<&DoctorCheck> = checks
+        .iter()
+        .filter(|c| c.status != DoctorStatus::Ok)
+        .filter(|c| c.fix.as_ref().is_some_and(|f| f.kind == "auto"))
+        .collect();
+    if !fix || auto.is_empty() {
+        return Ok(checks);
+    }
+    for check in auto {
+        super::say(&format!(
+            "  fixing {}: {}",
+            check.id,
+            check.fix.as_ref().map_or("", |f| &f.label)
+        ));
+        let _ = client
+            .call_tool(
+                "doctor_fix",
+                json!({ "checkId": check.id }),
+                Duration::from_secs(240),
+            )
+            .await;
+    }
+    list(&mut client).await
+}
+
+/// One checklist line per check that isn't ok, except those in `shown`; how many passed.
+pub fn show(list: &mut Checklist, checks: &[DoctorCheck], shown: &[&str]) -> usize {
+    for check in checks
+        .iter()
+        .filter(|c| c.status != DoctorStatus::Ok && !shown.contains(&c.id.as_str()))
+    {
+        let state = match check.status {
+            DoctorStatus::Fail => State::Failed,
+            _ => State::Warn,
+        };
+        let fix = check
+            .fix
+            .as_ref()
+            .map(|f| match (&f.command, f.kind.as_str()) {
+                (Some(command), _) => command.clone(),
+                (None, "auto") => "fleetd doctor --fix".to_owned(),
+                (None, _) => f.label.clone(),
+            });
+        let fix = match (state, fix) {
+            (State::Failed, None) => Some("fleetd doctor again once the cause is gone".to_owned()),
+            (_, fix) => fix,
+        };
+        let title = check.machine_id.as_deref().unwrap_or("hub");
+        list.finish(
+            &format!("doctor {title}"),
+            state,
+            check.message.trim_end_matches('.'),
+            fix.as_deref(),
+        );
+    }
+    checks
+        .iter()
+        .filter(|c| c.status == DoctorStatus::Ok)
+        .count()
+}
+
+pub async fn doctor_command(argv: &[String]) -> u8 {
+    let v = match args::parse(
+        argv,
+        &Spec {
+            options: &[("home", Kind::Str), ("fix", Kind::Bool)],
+            positionals: false,
+        },
+    ) {
+        Ok(v) => v,
+        Err(message) => {
+            super::say(&format!(
+                "fleetd: {message}\n\nusage:\n{}",
+                super::SETUP_USAGE
+            ));
+            return 2;
+        }
+    };
+    let home = match resolve_home(v.str("home")) {
+        Ok(home) => home,
+        Err(message) => {
+            super::say(&format!("fleetd: {message}"));
+            return 1;
+        }
+    };
+    let mut list = Checklist::new();
+    match run(&home, v.flag("fix")).await {
+        Ok(checks) => {
+            let ok = show(&mut list, &checks, &[]);
+            list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
+            u8::from(list.failures().next().is_some())
+        }
+        Err(failure) => {
+            list.failed("doctor", &failure.message, &failure.fix);
+            4
+        }
+    }
+}

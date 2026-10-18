@@ -11,6 +11,8 @@ pub struct SshTarget {
     pub host: String,
     /// An ssh_config file (`ssh -F`), e.g. a lab's own host, port and key.
     pub config: Option<String>,
+    /// This machine, without SSH: `machine add --local`.
+    pub local: bool,
 }
 
 pub struct RunResult {
@@ -29,6 +31,9 @@ fn config_args(target: &SshTarget) -> Vec<String> {
 
 /// How a command is shown before it runs: what you would type to run it yourself.
 pub fn show_ssh(target: &SshTarget, command: &str) -> String {
+    if target.local {
+        return command.to_owned();
+    }
     let mut words = config_args(target);
     words.push(target.host.clone());
     format!(
@@ -40,12 +45,34 @@ pub fn show_ssh(target: &SshTarget, command: &str) -> String {
 
 /// Runs `command` under the remote user's `sh`, whatever their login shell is.
 pub async fn run_ssh(target: &SshTarget, command: &str, stdin: Option<&[u8]>) -> RunResult {
+    if target.local {
+        return run_local("/bin/sh", &["-c".to_owned(), command.to_owned()], stdin).await;
+    }
     let mut args = config_args(target);
     args.extend(["-o", "BatchMode=yes", "-o", "ConnectTimeout=15"].map(String::from));
     args.push(target.host.clone());
     args.push("--".into());
     args.push(format!("sh -c {}", q(command)));
     run_local("ssh", &args, stdin).await
+}
+
+/// Runs `command` with this terminal attached (a login flow), on the machine or here.
+pub fn run_attached(target: &SshTarget, command: &str) -> bool {
+    let mut child = if target.local {
+        let mut child = std::process::Command::new("/bin/sh");
+        child.args(["-c", command]);
+        child
+    } else {
+        let mut child = std::process::Command::new("ssh");
+        child
+            .args(config_args(target))
+            .arg("-t")
+            .arg(&target.host)
+            .arg("--");
+        child.arg(format!("sh -c {}", q(command)));
+        child
+    };
+    child.status().is_ok_and(|status| status.success())
 }
 
 pub async fn run_local(file: &str, args: &[String], stdin: Option<&[u8]>) -> RunResult {

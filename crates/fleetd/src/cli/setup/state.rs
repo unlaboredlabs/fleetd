@@ -20,6 +20,9 @@ pub struct MachineRecord {
     pub ssh_host: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub ssh_config: Option<String>,
+    /// The hub's own machine, set up without SSH.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub local: bool,
     pub platform: Platform,
     pub home: String,
     pub config_home: String,
