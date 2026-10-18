@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::lead::js_number;
 use super::mcp_client::{McpClient, McpError};
+use super::time::resolve_project;
 
 pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path>]
              progress fleetd verified, the ETA from measured speed, what it waits on, what changed
@@ -91,43 +92,6 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
         watch: v.flag("watch"),
         json: v.flag("json"),
     })
-}
-
-/// The project a name means, from `projects_list`: its id, its title or its folder's name, optionally after
-/// `<machine>/`. Several machines with the same name need the machine.
-pub fn resolve_project(name: &str, projects: &[Value]) -> Result<Value, String> {
-    let (machine, rest) = match name.split_once('/') {
-        Some((m, rest)) if super::is_machine_id(m) => (Some(m), rest),
-        _ => (None, name),
-    };
-    let found: Vec<&Value> = projects
-        .iter()
-        .filter(|p| machine.is_none_or(|m| st(p, "machineId") == m))
-        .filter(|p| {
-            let folder = st(p, "workspaceRoot").rsplit('/').next().unwrap_or("");
-            [st(p, "projectId"), st(p, "title"), folder].contains(&rest)
-        })
-        .collect();
-    match found.as_slice() {
-        [one] => {
-            Ok(json!({ "machineId": st(one, "machineId"), "projectId": st(one, "projectId") }))
-        }
-        [] => Err(format!(
-            "no order or project '{name}'; projects: {}",
-            projects
-                .iter()
-                .map(|p| format!("{}/{}", st(p, "machineId"), st(p, "title")))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-        many => Err(format!(
-            "'{name}' is on several machines; say which: {}",
-            many.iter()
-                .map(|p| format!("{}/{rest}", st(p, "machineId")))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-    }
 }
 
 // ---- reading the doc ----
@@ -1118,23 +1082,6 @@ mod tests {
         assert_eq!(
             not_live_banner(&doc(json!([])), chrono_tz::UTC, "connection refused"),
             "NOT LIVE: reconnecting to the hub (connection refused) · data from 14:02:07"
-        );
-    }
-
-    #[test]
-    fn a_project_by_id_title_or_folder() {
-        let projects = vec![
-            json!({ "machineId": "devbox", "projectId": "p1", "title": "storefront", "workspaceRoot": "/srv/storefront" }),
-            json!({ "machineId": "buildbox", "projectId": "p2", "title": "storefront", "workspaceRoot": "/w/sf" }),
-        ];
-        assert!(
-            resolve_project("storefront", &projects)
-                .unwrap_err()
-                .contains("several machines")
-        );
-        assert_eq!(
-            resolve_project("buildbox/sf", &projects).unwrap(),
-            json!({ "machineId": "buildbox", "projectId": "p2" })
         );
     }
 }
