@@ -55,6 +55,7 @@ import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
+import { timeInspector } from "./timeInspector.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
 import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
 
@@ -79,6 +80,9 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m8", run: m8Desktop },
   // After m7, which leaves no testbed project: its router must choose among the lab projects only.
   { name: "m9", run: m9Playbooks },
+  // One order on the testbed through the train, with a human-approved gated run: its timeline must add up. After m9,
+  // whose router must not see the testbed project.
+  { name: "time", run: timeInspector },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.
   { name: "demo", run: demoFanout, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.

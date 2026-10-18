@@ -38,6 +38,7 @@
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
+<li><a href="/docs/time-inspector">Where time went</a></li>
 </ul>
 <p>Reference</p>
 <ul>
@@ -121,6 +122,10 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dd>shipped vs yours; after a release changed it, what changed in each</dd>
 <dt id="instructions"><a class="anchor" href="#instructions" aria-label="Link to fleetd instructions">#</a><pre class="syn"><code>fleetd instructions show|edit [--project &lt;machine&gt;/&lt;project&gt;] [--home &lt;dir&gt;]</code></pre></dt>
 <dd>your custom instructions, appended to every lead and task</dd>
+<dt id="time"><a class="anchor" href="#time" aria-label="Link to fleetd time">#</a><pre class="syn"><code>fleetd time [&lt;order&gt;|&lt;project&gt;] [--since 7d] [--spans &lt;rule&gt;] [--json] [--hub &lt;url&gt; --key-file &lt;path&gt;]</code></pre></dt>
+<dd>where agents' time went: an order's critical path, agent time by category, the slowest commands and the findings; a project by id or title (&lt;machine&gt;/&lt;project&gt; when two machines have one), the whole fleet with neither. <code>--since</code> takes 1h to 400d, a date or an ISO time; <code>--spans</code> &lt;rule&gt; lists the spans a finding points at. On the hub machine it needs no <code>--hub</code> or <code>--key-file</code></dd>
+<dt id="time-retention"><a class="anchor" href="#time-retention" aria-label="Link to fleetd time">#</a><pre class="syn"><code>fleetd time --retention &lt;days&gt; [--hub &lt;url&gt; --key-file &lt;path&gt;]</code></pre></dt>
+<dd>keep 1-365 days of timelines (admin key); daily totals are kept 400 days</dd>
 </dl>
 <h2 id="lead-side-commands">Lead-side commands<a class="anchor" href="#lead-side-commands" aria-label="Link to this section">#</a></h2>
 <p class="lede">Run by a lead or task inside a project workspace.</p>
@@ -168,7 +173,7 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 </dl>
 <p class="note">lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default <code>~/.fleetd/node/node.sock</code>); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable</p>
 <nav class="pn" aria-label="Previous and next">
-<a class="prev" href="/docs/desktop-app"><span>Previous</span>The desktop app</a>
+<a class="prev" href="/docs/time-inspector"><span>Previous</span>Where time went</a>
 <a class="next" href="/docs/config-and-files"><span>Next</span>Config &amp; files</a>
 </nav>
 <p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/cli.md">Edit this page</a></p>
