@@ -28,11 +28,10 @@ use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
     CloneProgressFrame, FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame,
     MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo,
-    RunStatus, RunUsage, RunnerInfo, SendAccepted, SendMode, SendNow, SessionCall, SessionCallFrame,
-    SessionChanges,
-    SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult,
-    SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
-    ThreadMessage, ThreadSnapshot,
+    RunStatus, RunUsage, RunnerInfo, SendAccepted, SendMode, SendNow, SessionCall,
+    SessionCallFrame, SessionChanges, SessionError, SessionErrorCode, SessionLaunch, SessionOutput,
+    SessionReplyFrame, SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
+    ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot,
 };
 use fleetd_contracts::steer::SteerTag;
 use tokio::sync::{mpsc, oneshot, watch};
