@@ -25,7 +25,8 @@ fleetd is built for one person or a small team running their own fleet. This is 
 - **Installs are checksummed.** The installer and `fleetd update` download release assets from GitHub Releases and
   refuse any file whose SHA-256 does not match the release's `SHA256SUMS`. `fleetd machine add` copies the hub's own
   binary to a worker over SSH.
-- **Models are reached only through the `claude` CLI** running inside T3. fleetd itself never calls a model or
-  usage API.
+- **Models are reached only through the `claude` CLI**, which each node runs with a Claude login of its own
+  (`~/.fleetd/claude`). fleetd itself never calls a model or usage API. A tool-permission prompt from `claude` is
+  answered from the project's policy or sent to you as a question.
 
 Report a vulnerability privately through GitHub's security advisories for `unlaboredlabs/fleetd`.

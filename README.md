@@ -4,83 +4,125 @@ An open-source software factory. Send a one-line order from the desktop app or a
 the project turns it into a brief and runs coding agents across your machines. It asks you only about product calls,
 money, credentials and irreversible steps, and reports "done" only after fleetd has checked the work itself.
 
+## Quick start
+
+Run steps 1 and 2 on the always-on machine that will be your hub (Linux x64, or macOS arm64 or x64). You need `git`,
+plus the `claude` and `gh` CLIs logged in to your own accounts. `fleetd init` checks both, prints the install command
+for anything missing and offers to log you in.
+
+**1. Install fleetd**
+
 ```sh
 curl -fsSL https://fleetd.sh | sh
 ```
 
-This installs the `fleetd` binary from the nightly GitHub release (Linux x64, macOS arm64 and x64) after checking its
-checksum. On a desktop it installs the fleetd app too.
+<!-- expected-output: installer output for a headless machine, from site/install.sh (paths shortened to ~). -->
+```text
+fleetd: installed the CLI: ~/.fleetd/bin/fleetd
 
-## Quick start
-
-On the always-on machine that will be the hub:
-
-```sh
-fleetd init --git-identity "Name <id+user@users.noreply.github.com>"   # the hub, as a user service
-fleetd hub key create --human --name laptop                             # the key the desktop app connects with
-fleetd machine add <ssh-host>                                           # per worker: T3 and the node, as services
+Next, run:
+  fleetd init
 ```
 
-Open the desktop app and connect it to the hub's URL with the key from `hub key create --human`. The hub listens on
-`127.0.0.1:4790`. To reach it from other devices, use Tailscale Serve or your own TLS proxy, and pass that address
-to `fleetd init --url`.
+It checks the binary's checksum before installing it. On a machine with a desktop it installs the app too.
 
-`machine add` runs over SSH and prints every remote command first; `--dry-run` only prints them. Each worker needs
-Node 24 or newer (for T3) and the `claude` CLI, logged in. For now, a worker must have the same OS and architecture
-as the hub.
+**2. Set it up**
 
-To give an outside agent the MCP endpoint (`<hub url>/mcp`), create an agent key:
-`fleetd hub key create --name <agent> --role operate --machines '*'`.
+```sh
+fleetd init
+```
 
-`fleetd machine remove <id>` and `fleetd uninstall` undo the setup. `fleetd update` installs the latest build.
-`fleetd help` lists every command and option.
+It asks a few questions (Enter takes the default) and ticks off each step. A ✗ line ends with the exact command
+that fixes it. Run `fleetd init` again at any time: it keeps what works and repairs the rest.
+
+<!-- expected-output: a real `fleetd init` run, sanitized (host, IP, port, names). The real run picked "not now" for the
+     first project; those two lines use the wizard's exact strings (wizard.rs) for a picked repo. -->
+```text
+fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
+✔ Is this machine the hub (the always-on machine that runs your fleet)? · yes
+✓ reachability: the hub listens on 100.x.y.z:4790, reached at http://hub.your-tailnet.ts.net:4790
+✓ claude: 2.1.302, logged in (claude.ai)
+✓ gh: logged in as ada-lovelace
+✔ Commit author for your agents' commits (Name <email>) · ada-lovelace <1234567+ada-lovelace@users.noreply.github.com>
+✓ commit author: ada-lovelace <1234567+ada-lovelace@users.noreply.github.com>
+✓ hub: runs as a service and answers at 100.x.y.z:4790 (home ~/.fleetd/hub)
+✔ Which machines should run agents? (space toggles, enter accepts) · homeserver (this machine)
+✓ worker homeserver: online
+✓ claude on homeserver: fleetd's Claude is logged in
+✔ Which repo should be your first project? · ~/src/myapp  github.com/ada-lovelace/myapp
+✓ first project: ~/src/myapp on homeserver
+✔ Pair the desktop app with this hub now? · yes
+✓ pairing code: 8X5X-DJ0M for http://hub.your-tailnet.ts.net:4790 (one use, until 2026-10-18T12:00:24.131Z)
+    The app on this machine pairs by itself (~/.config/fleetd/app-pair.json).
+    On another computer: open the app, enter http://hub.your-tailnet.ts.net:4790 and the code, or open fleetd://pair?hub=…&code=8X5X-DJ0M
+✓ doctor: 9 of 9 checks pass
+
+fleetd is set up.
+Next: install the desktop app on the computer you work from (curl -fsSL https://fleetd.sh | sh -s -- --app), open it and enter the pairing code; then type your first order in it.
+```
+
+**3. Open the app and send your first order**
+
+On the computer you work from, install fleetd with its desktop app and open the app:
+
+```sh
+curl -fsSL https://fleetd.sh | sh -s -- --app
+open ~/Applications/fleetd.app                    # macOS
+~/.local/share/fleetd/app/fleetd-app &            # Linux (or "fleetd" in your app menu)
+```
+
+On "Connect to your fleetd hub", enter the hub address and the pairing code `fleetd init` printed. If the hub
+machine has a desktop, the app there connects by itself. Codes last 15 minutes; `fleetd pair` on the hub prints a
+new one. Then type an order, such as `fix the typo in the README`. The project's lead answers with a brief and starts
+work, and its questions show up in the inbox.
+
+## After setup
+
+- **More machines:** on the hub, `fleetd pair --worker <machine-id>` prints one line to paste on the new machine. It
+  installs fleetd there and joins it to the hub with a one-time code. To set one up from the hub over SSH instead,
+  run `fleetd init` again and pick it, or run `fleetd machine add <ssh-host>`, which prints every remote command
+  first (`--dry-run` only prints them). A worker needs only the `claude` CLI. For now it must have the same OS and
+  architecture as the hub.
+- **Reaching the hub:** `fleetd init` listens on your tailnet when it finds Tailscale, and otherwise on
+  `127.0.0.1:4790` only. It never opens the hub to the internet. To change the address later, run
+  `fleetd init --listen <host:port> --url <url>`.
+- **Other agents:** the MCP endpoint is `<hub url>/mcp`. Give an outside agent a key with
+  `fleetd hub key create --name <agent> --role operate --machines '*'`.
+- **Your first order:** adding projects, sending orders and answering asks: [docs/FIRST-USE.md](docs/FIRST-USE.md).
+- **Health:** `fleetd doctor` checks every machine and prints the fix for anything wrong. The app shows the same
+  checks.
+- **Update and undo:** `fleetd update` installs the latest build. `fleetd machine remove <id>` and
+  `fleetd uninstall` undo the setup. `fleetd help` lists every command and option.
 
 ## How it works
 
 - **Hub** (`fleetd hub`): one per fleet, on an always-on machine. It holds the leads, briefs, tasks, slots, merge
   train, questions and decisions, checks and wakes, and serves one MCP endpoint over all machines.
-- **Node** (`fleetd node`): one per machine. It dials out to the hub, so no machine opens a port.
-- **Stock T3 Code:** each machine runs an unmodified, version-pinned [T3 Code](https://github.com/pingdotgg/t3code)
-  daemon. The hub drives it as an ordinary client of its WebSocket RPC. Agents run Claude only through the `claude`
-  CLI with your own login; fleetd never calls a model API.
-- **Desktop app** (GPUI): the only human surface. It is where you answer questions, approve commands and enter
-  secrets, which the app seals to the target machine.
+- **Node** (`fleetd node`): one per machine. It dials out to the hub, so no machine opens a port. It runs the agents
+  itself: one `claude` process per live session, each in its own git worktree. It uses a Claude login of its own in
+  `~/.fleetd/claude`, separate from yours in `~/.claude`.
+- **Desktop app:** the only human surface. It is where you answer questions, approve commands and enter secrets,
+  which the app seals to the target machine.
 
+Agents reach Claude only through the `claude` CLI with your own login. fleetd never calls a model API.
 Security model: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Status
 
-Early. Every planned piece is built and passes an end-to-end lab suite against real T3 daemons and real `claude`
-turns, but fleetd has not yet run real work. Releases are nightly builds for now; `fleetd update` stays on the
-channel you installed from.
+Early. Every planned piece is built and passes an end-to-end lab suite with real `claude` turns, but fleetd has not
+yet run real work. Releases are nightly builds for now, and `fleetd update` stays on the channel you installed
+from.
 
 ## Contributing
 
-fleetd is one Cargo workspace: `crates/fleetd` (the binary: hub, node and CLI), `crates/fleetd-contracts` (wire
-types), `crates/t3-wire` (the T3 RPC client) and `app/` (the desktop app). Building from source needs a recent stable
-Rust:
+fleetd is one Cargo workspace and builds with a recent stable Rust:
 
 ```sh
 git clone https://github.com/unlaboredlabs/fleetd && cd fleetd
 cargo build --release -p fleetd        # target/release/fleetd
-cargo test --workspace --exclude fleetd-app --exclude fleetd-bench
 ```
 
-Layout, checks, building the app and conventions: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
-
-The lab suite (`tests/lab`) runs the binary end to end against two disposable T3 instances built from source at the
-pinned commit (`vendor/t3/pin.json`). It costs a handful of small `claude-haiku-5-5` turns. It is the only Node
-piece in the repo, because T3 itself is a Node app. It needs Node 24 or newer and a logged-in `claude`; the m7 and
-m9 scenarios also use the `gh` login.
-
-```sh
-cargo build --release -p fleetd
-npm ci --prefix tests/lab
-npm --prefix tests/lab run lab -- m1   # name scenarios, or none for the full suite
-```
-
-`FLEETD_LAB_SLOT=<0-9>` runs an independent lab with its own directory and ports. `FLEETD_BIN` picks another
-binary.
+Layout, checks, the lab suite and conventions: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## License
 
