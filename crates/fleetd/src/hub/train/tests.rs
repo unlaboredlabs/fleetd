@@ -187,6 +187,7 @@ impl FakeGh {
         let parts: Vec<&str> = path.split('/').skip(3).collect();
         let number = |s: Option<&&str>| s.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
         match (parts.as_slice(), method) {
+            ([], "GET") => ok(json!({ "default_branch": "main" })),
             (["pulls"], _) if query.contains("state=closed") => {
                 let pulls = self.pulls.lock().unwrap();
                 ok(Value::Array(
@@ -860,9 +861,37 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
     assert_eq!(
         kit.host.events_of("pr.merged"),
         [
-            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha })
+            json!({ "changeId": change_id, "workstreamId": "W1", "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha })
         ]
     );
+    let moves: Vec<(String, String)> = kit
+        .host
+        .events_of("change.state")
+        .iter()
+        .map(|d| {
+            (
+                d["from"].as_str().unwrap().into(),
+                d["to"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    assert!(
+        moves.ends_with(&[
+            ("ready".into(), "rebasing".into()),
+            ("rebasing".into(), "ci".into()),
+            ("ci".into(), "merging".into()),
+            ("merging".into(), "merged".into()),
+        ]),
+        "{moves:?}"
+    );
+    let ci_main = kit.host.events_of("ci.main");
+    assert_eq!(
+        ci_main.len(),
+        1,
+        "one read per minute, one event per state change"
+    );
+    assert_eq!(ci_main[0]["state"], "green");
+
     let state = kit.train.state(REPO);
     assert_eq!(
         (
@@ -909,7 +938,7 @@ async fn sends_a_conflicting_pr_back_to_its_author_with_the_paths_moves_on_and_m
     );
     assert_eq!(
         kit.host.events_of("change.needs_rebase"),
-        [json!({ "changeId": first, "paths": ["a.txt"] })]
+        [json!({ "changeId": first, "workstreamId": "W1", "paths": ["a.txt"] })]
     );
     let (to, message) = kit.host.sends.lock().unwrap().last().cloned().unwrap();
     assert_eq!(to, "T1");
@@ -949,7 +978,9 @@ async fn parks_a_pr_whose_ci_is_red_wakes_its_author_with_the_failing_check_and_
     let log_url = format!("https://github.com/{REPO}/actions/runs/1");
     assert_eq!(
         kit.host.events_of("change.ci_failed"),
-        [json!({ "changeId": change_id, "checks": ["ci"], "logUrl": log_url })]
+        [
+            json!({ "changeId": change_id, "workstreamId": "W1", "checks": ["ci"], "logUrl": log_url })
+        ]
     );
     assert!(
         kit.host

@@ -288,7 +288,10 @@ pub fn build_on(
         clock.clone(),
         db.clone(),
         Arc::new(crate::hub::train::github::SystemGh),
-        crate::hub::train::TrainOptions::default(),
+        crate::hub::train::TrainOptions {
+            fresh: fresh.clone(),
+            ..Default::default()
+        },
     );
     let hub_task_ports =
         crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
@@ -390,6 +393,7 @@ pub fn build_on(
         time,
         status: crate::hub::status::Status::new(fresh),
     });
+    crate::hub::train::hooks::restore(&hub);
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     hub.checks.set_time(hub.time.sink());

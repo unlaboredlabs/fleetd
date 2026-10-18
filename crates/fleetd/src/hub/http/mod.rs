@@ -1,7 +1,9 @@
-//! The hub's HTTP server: /healthz, /mcp, /app, /pair and /node/link on one port,
+//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link and (opt-in) /github on one port,
 //! loopback by default.
 use crate::hub::api::{Hub, Registry};
 use crate::hub::{app_ws, mcp, pair};
+mod github;
+
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::ws::WebSocketUpgrade;
@@ -36,6 +38,7 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
         .route("/app", get(app_route))
         .route("/pair", post(pair_route))
         .route("/node/link", get(node_link_route))
+        .route("/github", post(github_route))
         .with_state(Server {
             hub,
             tools,
@@ -81,6 +84,14 @@ async fn pair_route(State(server): State<Server>, request: Request) -> Response 
     };
     let (status, json) = pair::handle(&server.hub, &server.pair_limiter, remote, host, &body);
     (status, axum::Json(json)).into_response()
+}
+
+async fn github_route(
+    State(server): State<Server>,
+    headers: HeaderMap,
+    request: Request,
+) -> Response {
+    github::handle(server.hub, headers, request.into_body()).await
 }
 
 fn expect_upgrade() -> Response {

@@ -256,4 +256,8 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "thread_window",
         "The items and messages around one item of a thread (before and after default 10, max 25), oldest first, from the node's own log: opens a time span's transcript by its itemId.",
     ),
+    (
+        "github_webhook_set",
+        "Turn opt-in GitHub webhooks on (url: a public URL GitHub can reach that forwards to this hub's /github; fleetd never creates one) or off (no url). Makes a secret and a repo hook on every train repo for check_suite, pull_request and push. Deliveries only make the train sync sooner; without them it reconciles every pass. Admin keys on every machine.",
+    ),
 ];

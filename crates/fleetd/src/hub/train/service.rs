@@ -17,13 +17,16 @@ use super::contract::{
 use super::git::{BLOCKED, GitError, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TrainGitHub};
 use super::host::{BoxFut, IncidentInput, TrainHost};
+use super::main_ci::{DriftCounts, GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
 use super::rules::{Refusal, check_source, check_tier, freeze_key, is_frozen_value};
 use super::time::{iso, millis, parse_iso};
 use crate::clock::Clock;
+use crate::hub::status::fresh::{self, Fresh};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::projects::CiInfo;
+use fleetd_contracts::status::{ChangeStateData, CiMainData, CiState, DriftKind, GithubDriftData};
 
 /// Recorded as the sender of the train's task messages.
 pub const TRAIN_BY: &str = "hub:train";
@@ -79,6 +82,8 @@ pub struct TrainOptions {
     pub auto_run: bool,
     /// Where a project's train worktree lives, from its checkout.
     pub worktree_for: WorktreeFor,
+    /// The status view's freshness registry: every GitHub answer and every pass keeps a repo's sources live.
+    pub fresh: Arc<Fresh>,
 }
 
 impl Default for TrainOptions {
@@ -91,6 +96,7 @@ impl Default for TrainOptions {
             merge_attempts: 3,
             auto_run: true,
             worktree_for: Arc::new(default_worktree),
+            fresh: Arc::default(),
         }
     }
 }
@@ -100,7 +106,7 @@ const CI_CONFIG_TTL_MS: i64 = 10 * 60_000;
 
 const GREEN: [&str; 3] = ["success", "neutral", "skipped"];
 
-fn is_red(run: &CheckRun) -> bool {
+pub(super) fn is_red(run: &CheckRun) -> bool {
     run.status == "completed" && !GREEN.contains(&run.conclusion.as_deref().unwrap_or(""))
 }
 
@@ -167,6 +173,7 @@ pub struct Train {
     pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
     ci_configs: Mutex<HashMap<(String, String), (i64, CiInfo)>>,
+    sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
@@ -193,9 +200,9 @@ impl Train {
             me: me.clone(),
             gate: gate(me.clone()),
             host,
+            github: TrainGitHub::new(gh, options.fresh.clone(), clock.clone()),
             clock,
             records: ChangeRecords::new(db),
-            github: TrainGitHub::new(gh),
             options,
             rows: Mutex::new(()),
             git_locks: Mutex::default(),
@@ -207,6 +214,7 @@ impl Train {
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
+            sync: GithubSync::default(),
             tasks: Mutex::default(),
         })
     }
@@ -306,12 +314,33 @@ impl Train {
         if from.is_some_and(|from| !from.contains(&current.state)) {
             return None;
         }
-        let before = current.state;
+        let from = current.state;
         let mut changed = next(current);
         changed.updated_at = self.now_iso();
         self.records.put(&changed);
-        if changed.state != before {
-            self.state_span(Some(before), &changed);
+        if changed.state != from {
+            self.state_span(Some(from), &changed);
+            let data = ChangeStateData {
+                change_id: changed.change_id.clone(),
+                workstream_id: Some(changed.workstream_id.clone()),
+                repo: changed.repo.clone(),
+                pr_number: Count::unchecked(changed.pr_number.get()),
+                from,
+                to: changed.state,
+            };
+            self.emit(
+                &changed.project_ref,
+                "change.state",
+                format!(
+                    "{} {} → {}: {}#{}",
+                    changed.change_id,
+                    state_str(from),
+                    state_str(changed.state),
+                    changed.repo,
+                    changed.pr_number
+                ),
+                serde_json::to_value(data).unwrap_or(Value::Null),
+            );
         }
         Some(changed)
     }
@@ -460,7 +489,7 @@ impl Train {
                 "{} ready for the train: {}#{}",
                 ready.change_id, ready.repo, ready.pr_number
             ),
-            json!({ "changeId": ready.change_id }),
+            json!({ "changeId": ready.change_id, "workstreamId": ready.workstream_id }),
         );
         self.kick(&ready.repo);
         Some(ready)
@@ -582,11 +611,14 @@ impl Train {
             return;
         };
         lock(&self.merge_refusals).remove(&change.change_id);
+        if let Some(sha) = &sha {
+            self.sync.train_merged(&merged.repo, sha);
+        }
         let as_sha = sha
             .as_deref()
             .map(|s| format!(" as {}", short(s)))
             .unwrap_or_default();
-        let mut data = json!({ "changeId": merged.change_id, "repo": merged.repo, "prNumber": merged.pr_number });
+        let mut data = json!({ "changeId": merged.change_id, "workstreamId": merged.workstream_id, "repo": merged.repo, "prNumber": merged.pr_number });
         if let Some(sha) = &sha {
             data["mergedSha"] = json!(sha);
         }
@@ -643,7 +675,7 @@ impl Train {
             &change.project_ref,
             "change.needs_rebase",
             format!("{} needs a rebase: {why}", change.change_id),
-            json!({ "changeId": change.change_id, "paths": paths.iter().take(50).collect::<Vec<_>>() }),
+            json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "paths": paths.iter().take(50).collect::<Vec<_>>() }),
         );
         let text = self.author_prompts(&parked).render(
             "task.train_rebase",
@@ -701,7 +733,7 @@ impl Train {
         }) else {
             return;
         };
-        let mut data = json!({ "changeId": change.change_id, "checks": failing.iter().map(|r| r.name.clone()).collect::<Vec<_>>() });
+        let mut data = json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "checks": failing.iter().map(|r| r.name.clone()).collect::<Vec<_>>() });
         if let Some(url) = &log_url {
             data["logUrl"] = json!(url);
         }
@@ -785,6 +817,11 @@ impl Train {
             if elapsed >= self.options.ci_timeout.as_millis() as i64 {
                 self.check_spans(change, sha, &last);
                 return CiOutcome::Timeout(unread);
+            }
+            // A pass waiting on CI is the train running: keep its source live and main CI read.
+            self.options.fresh.touch(&fresh::train(repo), self.now_ms());
+            if let Some(train) = self.records.train(repo) {
+                self.main_ci_pass(repo, &train.project_ref).await;
             }
             self.clock.sleep(self.options.poll_interval).await;
         }
@@ -954,10 +991,15 @@ impl Train {
             return Ok(());
         }
         if pull.state != "open" {
-            self.abandon(change, "was closed").await;
+            self.closed_outside(change).await;
             return Ok(());
         }
         if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
+            self.saw_change(
+                &change.project_ref,
+                repo,
+                &format!("{repo}#{} got a new head", change.pr_number),
+            );
             return Ok(self.ready_moved(change, &pull).await?);
         }
         let Some(rebasing) =
@@ -1148,11 +1190,26 @@ impl Train {
                 }
             };
             if pull.merged {
+                self.saw_change(
+                    &change.project_ref,
+                    repo,
+                    &format!("{repo}#{} merged", change.pr_number),
+                );
                 self.abandon(&change, "was merged outside the train").await;
             } else if pull.state != "open" {
-                self.abandon(&change, "was closed").await;
+                self.closed_outside(&change).await;
             } else if (change.state == ChangeState::Queued
                 || pull.head.sha.to_lowercase() != change.head_sha.as_str())
+                && {
+                    if change.state != ChangeState::Queued {
+                        self.saw_change(
+                            &change.project_ref,
+                            repo,
+                            &format!("{repo}#{} got a new head", change.pr_number),
+                        );
+                    }
+                    true
+                }
                 && let Err(GitError(e)) = self.admit(&change, &pull).await
             {
                 let why = self.git_failed(&change, &e);
@@ -1209,6 +1266,13 @@ impl Train {
             if !self.records.mark_bypass(repo, pr.number) {
                 continue;
             }
+            self.drift(
+                change.as_ref().map_or(project_ref, |c| &c.project_ref),
+                repo,
+                DriftKind::OutsideFleetd,
+                format!("{repo}#{} was merged outside the train", pr.number),
+                None,
+            );
             let sha = pr
                 .merge_sha
                 .as_deref()
@@ -1274,6 +1338,15 @@ impl Train {
         let repo = raw_repo.to_lowercase();
         let step_lock = repo_lock(&self.step_locks, &repo);
         let _held = step_lock.lock().await;
+        let took = self.step_inner(&repo).await;
+        self.options
+            .fresh
+            .touch(&fresh::train(&repo), self.now_ms());
+        took
+    }
+
+    async fn step_inner(&self, repo: &str) -> bool {
+        let repo = repo.to_string();
         let Some(train) = self.records.train(&repo) else {
             return false;
         };
@@ -1281,6 +1354,7 @@ impl Train {
             self.recover(&repo).await;
         }
         self.refresh(&repo).await;
+        self.main_ci_pass(&repo, &train.project_ref).await;
         self.check_bypasses(&repo, train.watch_since_ms, &train.project_ref)
             .await;
         if self.frozen(&repo, train.frozen, &train.project_ref) {
@@ -1302,6 +1376,7 @@ impl Train {
         if !self.options.auto_run || !lock(&self.loops).insert(repo.to_string()) {
             return;
         }
+        self.expect_sources(repo);
         let notify = lock(&self.kicks)
             .entry(repo.to_string())
             .or_default()
@@ -1330,6 +1405,214 @@ impl Train {
             }
         });
         lock(&self.tasks).push(task);
+    }
+
+    /// The repo's status sources: GitHub answers, train passes, and deliveries while webhooks are on.
+    fn expect_sources(&self, repo: &str) {
+        let (fresh, now) = (&self.options.fresh, self.now_ms());
+        fresh.expect(&fresh::github(repo), fresh::github_stale_ms(), now);
+        fresh.expect(&fresh::train(repo), fresh::TRAIN_STALE_MS, now);
+        if self.sync.webhooks_on() {
+            // Deliveries come only when something happens, so silence is no sign; only a missed one is.
+            fresh.expect(&fresh::webhook(repo), i64::MAX / 4, now);
+            fresh.touch(&fresh::webhook(repo), now);
+        }
+    }
+
+    /// Reads main-branch CI when due: `ci.main` on a state change, and drift when the base moved without the train.
+    async fn main_ci_pass(&self, repo: &str, project_ref: &ProjectRef) {
+        if !self.sync.take_due(repo, self.now_ms()) {
+            return;
+        }
+        let base = match self.sync.base(repo) {
+            Some(base) => base,
+            None => match self.github.default_branch(repo).await {
+                Ok(base) => {
+                    self.sync.set_base(repo, base.clone());
+                    base
+                }
+                Err(e) => {
+                    return tracing::warn!(repo, error = %e.message, "train: default branch not read");
+                }
+            },
+        };
+        let runs = match self.github.check_runs(repo, &base).await {
+            Ok(runs) => runs,
+            Err(e) => return tracing::warn!(repo, error = %e.message, "train: main CI not read"),
+        };
+        let (state, failing) = ci_state(&runs);
+        let sha = runs
+            .iter()
+            .find_map(|r| r.head_sha.clone())
+            .unwrap_or_default()
+            .to_lowercase();
+        let read = self
+            .sync
+            .record(repo, sha.clone(), state, failing.clone(), self.now_ms());
+        if read.sha_changed && !sha.is_empty() && !self.sync.is_train_merge(repo, &sha) {
+            self.drift(
+                project_ref,
+                repo,
+                DriftKind::OutsideFleetd,
+                format!("{base} moved to {} outside the train", short(&sha)),
+                None,
+            );
+        }
+        if read.previous.is_some() && (read.state_changed || read.sha_changed) {
+            self.saw_change(project_ref, repo, &format!("main CI on {repo} changed"));
+        }
+        if read.state_changed {
+            let word = match state {
+                CiState::Green => "green",
+                CiState::Red => "red",
+                CiState::Pending => "pending",
+                CiState::Unknown => "unknown",
+            };
+            let failing_text = if failing.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", failing.join(", "))
+            };
+            let data = CiMainData {
+                repo: GitHubRepo::unchecked(repo),
+                sha,
+                state,
+                failing: failing
+                    .iter()
+                    .filter_map(|f| Text::new(f.chars().take(120).collect::<String>()).ok())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap_or_default(),
+            };
+            self.emit(
+                project_ref,
+                "ci.main",
+                format!("main CI {word} on {repo}{failing_text}"),
+                serde_json::to_value(data).unwrap_or(Value::Null),
+            );
+        }
+    }
+
+    fn drift(
+        &self,
+        project_ref: &ProjectRef,
+        repo: &str,
+        kind: DriftKind,
+        what: String,
+        lag_ms: Option<i64>,
+    ) {
+        self.sync.note_drift(repo, kind, self.now_ms());
+        let summary = match kind {
+            DriftKind::OutsideFleetd => format!("GitHub drift on {repo}: {what}"),
+            DriftKind::MissedWebhook => format!("Missed webhook on {repo}: {what}"),
+        };
+        let data = GithubDriftData {
+            repo: GitHubRepo::unchecked(repo),
+            kind,
+            what: Text::unchecked(what.chars().take(200).collect::<String>()),
+            lag_ms: lag_ms.and_then(|l| Count::new(l).ok()),
+        };
+        self.emit(
+            project_ref,
+            "github.drift",
+            summary,
+            serde_json::to_value(data).unwrap_or(Value::Null),
+        );
+    }
+
+    /// Reconciliation saw `what` change. With webhooks on and no delivery just before, that is a missed webhook:
+    /// main CI drops back to every minute and the webhook source shows stale for a while.
+    fn saw_change(&self, project_ref: &ProjectRef, repo: &str, what: &str) {
+        let now = self.now_ms();
+        if !self.sync.missed(repo, now) {
+            return;
+        }
+        self.drift(
+            project_ref,
+            repo,
+            DriftKind::MissedWebhook,
+            what.to_string(),
+            None,
+        );
+        let n = self
+            .sync
+            .drift_counts(repo, now - super::main_ci::FALLBACK_MS)
+            .missed_webhook;
+        let plural = if n == 1 { "" } else { "s" };
+        self.options.fresh.hold_stale(
+            &fresh::webhook(repo),
+            &format!("webhooks missed {n} change{plural}; syncing every 60 s"),
+            now,
+            now + super::main_ci::FALLBACK_MS,
+        );
+    }
+
+    /// A PR closed (not merged) outside the train.
+    async fn closed_outside(&self, change: &Change) {
+        self.drift(
+            &change.project_ref,
+            &change.repo,
+            DriftKind::OutsideFleetd,
+            format!(
+                "{}#{} was closed outside the train",
+                change.repo, change.pr_number
+            ),
+            None,
+        );
+        self.saw_change(
+            &change.project_ref,
+            &change.repo,
+            &format!("{}#{} closed", change.repo, change.pr_number),
+        );
+        self.abandon(change, "was closed").await;
+    }
+
+    /// Main-branch CI as last read, for the status view.
+    pub fn main_ci(&self, repo: &str) -> Option<MainCi> {
+        self.sync.main_ci(&repo.to_lowercase())
+    }
+
+    /// Every repo with a train, and the project it belongs to.
+    pub fn repos(&self) -> Vec<(String, ProjectRef)> {
+        self.records
+            .trains()
+            .into_iter()
+            .map(|t| (t.repo, t.project_ref))
+            .collect()
+    }
+
+    /// Drift recorded for `repo` since `since_ms` (kept for 24 h, in memory).
+    pub fn drift_counts(&self, repo: &str, since_ms: i64) -> DriftCounts {
+        self.sync.drift_counts(&repo.to_lowercase(), since_ms)
+    }
+
+    pub fn webhooks_on(&self) -> bool {
+        self.sync.webhooks_on()
+    }
+
+    /// The last verified delivery for `repo`, epoch ms.
+    pub fn last_delivery(&self, repo: &str) -> Option<i64> {
+        self.sync.last_delivery(&repo.to_lowercase())
+    }
+
+    /// Turns webhook bookkeeping on or off for every train repo.
+    pub fn set_webhooks(&self, on: bool) {
+        self.sync.set_webhooks(on);
+        for train in self.records.trains() {
+            if on {
+                self.expect_sources(&train.repo);
+            } else {
+                self.options.fresh.forget(&fresh::webhook(&train.repo));
+            }
+        }
+    }
+
+    /// A verified delivery for `repo`: a latency hint only. It kicks the repo's pass, which reconciles from GitHub.
+    pub fn webhook_delivered(&self, repo: &str, event: &str) {
+        let (repo, now) = (repo.to_lowercase(), self.now_ms());
+        self.sync.delivered(&repo, event, now);
+        self.options.fresh.touch(&fresh::webhook(&repo), now);
+        self.kick(&repo);
     }
 
     async fn refuse(
@@ -1535,7 +1818,7 @@ impl Train {
                 change.pr_number,
                 tier_str(change.tier)
             ),
-            json!({ "changeId": change.change_id, "repo": repo, "prNumber": change.pr_number }),
+            json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "repo": repo, "prNumber": change.pr_number }),
         );
         // Reading the patch id needs the machine; if that fails, the loop retries it from `queued`.
         if let Err(GitError(e)) = self.admit(&change, &pull).await {
