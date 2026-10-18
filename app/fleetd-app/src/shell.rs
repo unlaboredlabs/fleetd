@@ -1240,6 +1240,7 @@ impl Render for Shell {
             .font_family(UI_FONT)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
+            .child(crate::titlebar::TitleBar::new())
             .child(
                 div()
                     .flex_1()
