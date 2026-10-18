@@ -12,6 +12,7 @@
 pub mod claude;
 pub mod conformance;
 pub mod failure;
+pub mod process;
 pub mod version;
 
 use std::future::Future;
