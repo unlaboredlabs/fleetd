@@ -77,6 +77,10 @@ pub fn stage(name: &'static str, detail: &str) {
     let _ = writeln!(std::io::stderr(), "FLEETD_BENCH stage={name} t_ms={t_ms:.1}{sep}{detail}");
 }
 
+fn presented() -> bool {
+    PROGRESS.lock().unwrap_or_else(|e| e.into_inner()).1
+}
+
 /// `FLEETD_BENCH_TIMEOUT_MS`: how long a run may go without presenting a frame. 0 turns the watchdog off.
 pub fn timeout_from(value: Option<&str>) -> Option<Duration> {
     match value.map(str::trim).filter(|v| !v.is_empty()).map(str::parse::<u64>) {
@@ -105,7 +109,18 @@ pub fn start_watchdog() {
 /// before the window's first frame.
 pub fn watch_window<T: 'static>(window: &mut Window, cx: &mut Context<T>) {
     stage("window_created", &window_state(window));
-    window.observe_window_visibility(|_, window, _| stage("visibility", &window_state(window))).detach();
+    window
+        .observe_window_visibility(|visibility, window, _| {
+            stage("visibility", &window_state(window));
+            // gpui's profiler drops the present of a frame drawn before the window became visible. macOS
+            // draws the first frame while the window is still occluded (Metal presents it to the layer all
+            // the same), and an idle window with nothing streaming never draws again, so the run would
+            // never see a present. A product window doesn't need this: what it drew is on the layer.
+            if visibility.is_visible() && !presented() {
+                window.refresh();
+            }
+        })
+        .detach();
     cx.observe_window_activation(window, |_, window, _| stage("activation", &window_state(window))).detach();
     gpui::set_trace_enabled(true);
     let mut frames = FrameTimingCollector::new();

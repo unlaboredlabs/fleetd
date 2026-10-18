@@ -28,10 +28,10 @@ Any other value (such as `FLEETD_BENCH=1`) prints the list of modes and exits wi
 ever panics it says where on stderr and appends the same report to `~/.fleetd/app.log`.
 
 Startup progress goes to **stderr**, one line per milestone, timed from the start of `main`:
-`FLEETD_BENCH stage=<name> t_ms=<ms>`. In order: `process_start`, `app_launched` (AppKit has finished
-launching and handed over), `window_opening` (the displays and the window's bounds), `window_created`
-(`active=`, `visible=`, `bounds=`, `scale=`), `activate_requested`, `visibility` and `activation` whenever
-those change, `first_draw`, `first_present`. A run with no presented frame after 15 s prints
+`FLEETD_BENCH stage=<name> t_ms=<ms>`. In order: `process_start`, `platform_ready` (gpui's platform
+is set up and AppKit's launch starts), `app_launched` (AppKit has finished launching and handed over),
+`window_opening` (the displays and the window's bounds), `window_created` (`active=`, `visible=`,
+`bounds=`, `scale=`), `activate_requested`, `visibility` and `activation` whenever those change, `first_draw`, `first_present`. A run with no presented frame after 15 s prints
 `FLEETD_BENCH stage=timeout last=<last stage reached>` and exits with status 3 (`FLEETD_BENCH_TIMEOUT_MS`
 sets the limit; 0 turns it off).
 
