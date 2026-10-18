@@ -14,7 +14,7 @@ use fleetd_contracts::hello::{PROTOCOL_VERSION, ProtocolVersion};
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::model::{Machine, MachineStatus};
+use fleetd_contracts::model::{Machine, MachineStatus, SleptSpan, duration_text};
 use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeLoad, NodeToHub, close};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
@@ -291,6 +291,29 @@ impl NodeLinkServer {
         });
     }
 
+    /// The node woke from sleep: kept on the machine for the status views, and logged as machine.slept.
+    fn slept(&self, machine_id: &MachineId, span: SleptSpan) {
+        let stored = match self.deps.store.machine_get(machine_id) {
+            Ok(Some(m)) => m,
+            Ok(None) => return,
+            Err(e) => return tracing::error!(error = %e, "node link: machine read failed"),
+        };
+        let machine = Machine {
+            last_slept: Some(span),
+            ..stored
+        };
+        if let Err(e) = self.deps.store.machine_upsert(&machine, None) {
+            tracing::error!(error = %e, "node link: machine write failed");
+        }
+        self.append(event(
+            &self.now_iso(),
+            "machine.slept",
+            machine_id,
+            format!("{machine_id} slept {}", duration_text(span.ms())),
+            Some(json!({ "fromMs": span.from_ms, "toMs": span.to_ms })),
+        ));
+    }
+
     async fn mark_offline(&self, machine_id: &MachineId) {
         let live = {
             let mut state = self.state.lock().unwrap();
@@ -538,6 +561,10 @@ impl NodeLinkServer {
 
         let at = self.now_iso();
         let hello_reason = "checking the node's claude runner";
+        let last_slept = match self.deps.store.machine_get(&machine_id) {
+            Ok(stored) => stored.and_then(|m| m.last_slept),
+            Err(_) => None,
+        };
         let machine: Machine = serde_json::from_value(json!({
             "machineId": machine_id,
             "name": hello.name,
@@ -549,6 +576,7 @@ impl NodeLinkServer {
             // Browsers seal this machine's secrets to it; a node from before M8 sends none and takes none.
             "boxPubKey": hello.box_pub_key,
             "degradedReason": hello_reason,
+            "lastSlept": last_slept,
         }))
         .map_err(|e| Refused {
             code: close::BAD_FRAME,
@@ -678,6 +706,7 @@ impl NodeLinkServer {
                 | NodeToHub::ThreadEvent(_)) => {
                     self.deps.executors.handle_frame(&machine_id, frame)
                 }
+                NodeToHub::Slept(span) => self.slept(&machine_id, span),
                 NodeToHub::Hello(_) => return refuse(close::BAD_FRAME, "hello after welcome"),
             }
         }

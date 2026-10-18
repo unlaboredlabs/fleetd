@@ -14,6 +14,7 @@ use super::actions::run_node_action;
 use super::cmd::run_cmd_check;
 use super::identity::{NodeBoxKey, NodeIdentity};
 use super::lead::LeadRelay;
+use super::power::Wakes;
 use super::secrets::{SecretsContext, deliver_secret, run_gated};
 use super::sessions::SessionService;
 use super::util::now_iso;
@@ -21,6 +22,7 @@ use super::wire::{
     Heartbeat, HubToNode, MachineId, NodeHello, NodeToHub, PROTOCOL_VERSION, ProtocolVersion, Text,
     Timestamp, close, decode_hub_frame, to_json,
 };
+use fleetd_contracts::model::SleptSpan;
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(45);
@@ -42,6 +44,8 @@ impl std::fmt::Display for LinkFatal {
 enum LinkEnd {
     Lost(String),
     Fatal(LinkFatal),
+    /// The machine woke from sleep: reconnect now, without backoff.
+    Woke,
 }
 
 /// `<hub>/node/link` as a ws(s) URL.
@@ -79,6 +83,8 @@ pub struct RunNodeOptions {
     pub on_enrolled: Option<Box<dyn FnOnce() + Send>>,
     /// Runs the hub's `session_call`s and feeds the machine and thread streams.
     pub node_sessions: SessionService,
+    /// A wake ends the link at once (its socket died while asleep) and the next one reports the sleep.
+    pub wakes: Arc<Wakes>,
     pub lead_calls: LeadRelay,
     /// Directories `cmd_check` and approved commands may run in (and below), and secret sinks may be written in.
     pub cmd_roots: Vec<String>,
@@ -90,6 +96,7 @@ struct Shared {
     settings: LinkSettings,
     identity: NodeIdentity,
     node_sessions: SessionService,
+    wakes: Arc<Wakes>,
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
@@ -115,6 +122,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         settings: options.settings,
         identity: options.identity,
         node_sessions: options.node_sessions,
+        wakes: options.wakes,
         lead_calls: options.lead_calls,
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
@@ -135,6 +143,10 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         .await;
         match end {
             LinkEnd::Fatal(fatal) => return fatal,
+            LinkEnd::Woke => {
+                tracing::info!("the machine woke; linking to the hub again");
+                continue;
+            }
             LinkEnd::Lost(why) => tracing::warn!(%why, "hub link lost"),
         }
         let jitter: f64 = rand::thread_rng().gen_range(0.8..1.2);
@@ -281,6 +293,13 @@ async fn run_link_once(
     };
     on_welcome();
     tracing::info!(%hub_id, machine_id = %shared.settings.machine_id, "linked to hub");
+    let mut woke = shared.wakes.watch();
+    woke.borrow_and_update();
+    for slept in shared.wakes.take() {
+        if let Ok(span) = SleptSpan::new(slept.from_ms, slept.to_ms) {
+            send(NodeToHub::Slept(span));
+        }
+    }
 
     {
         let tx = tx.clone();
@@ -310,9 +329,12 @@ async fn run_link_once(
 
     loop {
         while tasks.try_join_next().is_some() {}
-        let frame = match next_frame(&mut stream, SILENCE_TIMEOUT, "frame").await {
-            Ok(frame) => frame,
-            Err(end) => return end,
+        let frame = tokio::select! {
+            next = next_frame(&mut stream, SILENCE_TIMEOUT, "frame") => match next {
+                Ok(frame) => frame,
+                Err(end) => return end,
+            },
+            _ = woke.changed() => return LinkEnd::Woke,
         };
         match frame {
             HubToNode::LeadResult(result) => shared.lead_calls.resolve(result),

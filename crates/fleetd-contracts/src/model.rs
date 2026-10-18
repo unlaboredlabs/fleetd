@@ -32,6 +32,57 @@ pub struct Machine {
     /// M8: the node's X25519 key from its hello; clients seal this machine's secrets to it. Absent: it takes no
     /// secrets.
     pub box_pub_key: Option<BoxPublicKey>,
+    /// The machine's latest sleep its node reported on waking.
+    pub last_slept: Option<SleptSpan>,
+}
+
+/// A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(remote = "Self", rename_all = "camelCase")]
+pub struct SleptSpan {
+    pub from_ms: Count,
+    pub to_ms: Count,
+}
+crate::checked!(SleptSpan, |span| {
+    if span.to_ms <= span.from_ms {
+        return Err("toMs must be after fromMs".into());
+    }
+    Ok(())
+});
+
+/// Status views show a sleep for this long after the machine woke.
+pub const SLEPT_SHOWN_MS: i64 = 60 * 60 * 1000;
+
+impl SleptSpan {
+    pub fn new(from_ms: i64, to_ms: i64) -> Result<Self, String> {
+        if to_ms <= from_ms {
+            return Err("toMs must be after fromMs".into());
+        }
+        Ok(Self {
+            from_ms: Count::new(from_ms)?,
+            to_ms: Count::new(to_ms)?,
+        })
+    }
+
+    pub fn ms(&self) -> i64 {
+        self.to_ms.get() - self.from_ms.get()
+    }
+
+    /// "slept 10m46s", while the wake is under [`SLEPT_SHOWN_MS`] old at `now_ms`.
+    pub fn recent_text(&self, now_ms: i64) -> Option<String> {
+        (now_ms - self.to_ms.get() < SLEPT_SHOWN_MS)
+            .then(|| format!("slept {}", duration_text(self.ms())))
+    }
+}
+
+/// "46s", "10m46s", "2h05m".
+pub fn duration_text(ms: i64) -> String {
+    let s = ms.max(0) / 1000;
+    match s {
+        0..60 => format!("{s}s"),
+        60..3600 => format!("{}m{:02}s", s / 60, s % 60),
+        _ => format!("{}h{:02}m", s / 3600, s % 3600 / 60),
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

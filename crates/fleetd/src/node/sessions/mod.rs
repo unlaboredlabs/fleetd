@@ -69,6 +69,8 @@ const EXIT_WAIT: Duration = Duration::from_secs(20);
 const REMOVE_WAIT: Duration = Duration::from_secs(12);
 /// Node shutdown: how long interrupted runs get to end before every process is closed.
 const SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
+/// After the machine wakes, how long a running claude gets to say anything before its stream counts as lost.
+const WAKE_GRACE: Duration = Duration::from_secs(60);
 
 /// Where sessions live and what their processes get.
 #[derive(Clone, Debug)]
@@ -328,6 +330,9 @@ struct Live {
     /// claude's user-message uuid → fleetd run id, for node retries sent under a fresh uuid.
     aliases: HashMap<String, String>,
     exited: watch::Receiver<bool>,
+    /// The run the node interrupted because claude said nothing after the machine woke: it ends as a network
+    /// failure, so the node's retry resumes it.
+    slept: Option<String>,
 }
 
 #[derive(Default)]
@@ -341,6 +346,8 @@ struct State {
     stopping: bool,
     /// Node retries done per run.
     retries: HashMap<String, u32>,
+    /// Sessions with an active run, for the sleep inhibitor.
+    active: HashSet<String>,
 }
 
 impl State {
@@ -386,6 +393,8 @@ struct Inner {
     limits: Mutex<std::collections::BTreeMap<String, crate::node::runner::RateLimit>>,
     /// Project files for @-mentions, per project, for `FILES_FOR`.
     files: Mutex<HashMap<String, Listed>>,
+    /// How many sessions have an active run.
+    running: watch::Sender<usize>,
 }
 
 /// A project's file list and when it was read.
@@ -515,6 +524,7 @@ impl SessionService {
                 health_changed: Arc::new(tokio::sync::Notify::new()),
                 limits: Mutex::default(),
                 files: Mutex::default(),
+                running: watch::Sender::new(0),
             }),
         };
         for row in service.inner.store.sessions()? {
@@ -746,7 +756,7 @@ impl SessionService {
     /// Loads a session and its runs, applies `f`, settles the summary and commits, then sends what changed: the
     /// summary on the machine stream, items, messages and runs on the thread stream.
     fn update<R>(&self, id: &str, f: impl FnOnce(&mut Change) -> R) -> Result<R, SessionError> {
-        let st = self.st();
+        let mut st = self.st();
         let row = self.session(id)?;
         let runs = self.store().runs(id)?;
         let before = (row.summary.clone(), runs.clone());
@@ -786,7 +796,92 @@ impl SessionService {
         if let Some(frame) = frame {
             st.machine(frame);
         }
+        if row.summary.active_run_id.is_some() {
+            st.active.insert(id.to_owned());
+        } else {
+            st.active.remove(id);
+        }
+        let running = st.active.len();
+        self.inner
+            .running
+            .send_if_modified(|n| std::mem::replace(n, running) != running);
         Ok(out)
+    }
+
+    /// How many sessions have an active run, updated as runs start and end.
+    pub fn running(&self) -> watch::Receiver<usize> {
+        self.inner.running.subscribe()
+    }
+
+    /// The machine just woke. A run whose claude has said nothing since, and waits on no tool and no person, lost
+    /// its stream with the network: after [`WAKE_GRACE`] it is interrupted and retried like a network failure, with
+    /// `--resume` if the process has to go.
+    pub fn woke(&self) {
+        let service = self.clone();
+        let since = Instant::now();
+        tokio::spawn(async move {
+            tokio::time::sleep(WAKE_GRACE).await;
+            service.recover_after_sleep(since).await;
+        });
+    }
+
+    async fn recover_after_sleep(&self, since: Instant) {
+        let quiet: Vec<(String, u64)> = self
+            .st()
+            .live
+            .iter()
+            .filter(|(_, l)| !l.closing && l.last_active < since)
+            .map(|(id, l)| (id.clone(), l.generation))
+            .collect();
+        for (id, generation) in quiet {
+            let Ok(row) = self.session(&id) else { continue };
+            let Some(run) = row
+                .summary
+                .active_run_id
+                .filter(|_| row.summary.pending_permission.is_none())
+            else {
+                continue;
+            };
+            let busy = self
+                .store()
+                .newest_items(&id, 20)
+                .is_ok_and(|(items, _)| items.iter().any(|i| i.status == ItemStatus::Running));
+            if busy {
+                continue;
+            }
+            let commands = self
+                .st()
+                .live
+                .get_mut(&id)
+                .filter(|l| l.generation == generation)
+                .map(|l| {
+                    l.slept = Some(run.to_string());
+                    l.commands.clone()
+                });
+            let Some(commands) = commands else { continue };
+            tracing::info!(session_id = %id, "claude said nothing since the machine woke; interrupting it to resume the run");
+            let _ = commands.send(SessionCommand::Interrupt).await;
+            let service = self.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(INTERRUPT_GRACE).await;
+                let commands = service
+                    .st()
+                    .live
+                    .get_mut(&id)
+                    .filter(|l| l.generation == generation && l.slept.is_some())
+                    .map(|l| {
+                        l.closing = true;
+                        l.commands.clone()
+                    });
+                if let Some(commands) = commands {
+                    let _ = commands
+                        .send(SessionCommand::Shutdown {
+                            grace: Duration::ZERO,
+                        })
+                        .await;
+                }
+            });
+        }
     }
 
     fn project_upsert(&self, project_id: ProjectId, title: String, root: String) -> Reply {
@@ -1077,6 +1172,7 @@ impl SessionService {
                     closing: false,
                     aliases: HashMap::new(),
                     exited: exited_rx,
+                    slept: None,
                 },
             );
             generation
@@ -1414,6 +1510,28 @@ impl SessionService {
         outcome: RunOutcome,
         usage: Option<fleetd_contracts::sessions::RunUsage>,
     ) {
+        let slept = self.st().live.get_mut(id).is_some_and(|l| {
+            let marked = l.slept.as_deref() == Some(run_id);
+            if marked {
+                l.slept = None;
+                l.ending = None;
+            }
+            marked
+        });
+        let outcome = match outcome {
+            RunOutcome::Interrupted | RunOutcome::Failed(_) if slept => {
+                RunOutcome::Failed(RunFailure {
+                    class: FailureClass::Network,
+                    message: Text::unchecked(
+                        "the machine slept, and claude's stream did not come back after it woke",
+                    ),
+                    api_status: None,
+                    reset_at: None,
+                    retries: 0,
+                })
+            }
+            outcome => outcome,
+        };
         let mut retries = 0;
         if let RunOutcome::Failed(failure) = &outcome
             && matches!(
@@ -1543,8 +1661,13 @@ impl SessionService {
             Some(why) => EndCause::Requested(why),
             None => EndCause::Exited(exit),
         };
+        // A run the node is retrying outlives its process: the retry resumes the session.
+        let retrying: HashSet<String> = self.st().retries.keys().cloned().collect();
         self.log(self.update(id, |c| {
-            state::close_out(&mut c.runs, &cause, &c.at);
+            let retried = |r: &RunInfo| r.status.is_active() && retrying.contains(r.id.as_str());
+            if !c.runs.iter().any(retried) {
+                state::close_out(&mut c.runs, &cause, &c.at);
+            }
             c.cancel_pending();
             // A replacement process may already be recorded.
             if c.row.local.pid == Some(pid) {

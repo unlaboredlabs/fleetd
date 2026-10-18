@@ -14,7 +14,8 @@ use crate::hello::ProtocolVersion;
 use crate::ids::{MachineId, Timestamp};
 use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
 use crate::ledger::{AskId, DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
-use crate::prim::{AnyInt, Finite, Int, List, NonEmpty, NonNegative, Text};
+use crate::model::SleptSpan;
+use crate::prim::{AnyInt, Count, Finite, Int, List, NonEmpty, NonNegative, Text};
 use crate::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink};
 use crate::sessions::{MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame};
 use crate::tasks::AbsolutePath;
@@ -236,6 +237,21 @@ pub struct NodeProbe {
     pub git_email_from: Option<GitEmailFrom>,
     pub disk_path: String,
     pub disk_free_bytes: Finite,
+    /// Settings that make the machine sleep when idle on AC power; empty when none do. Absent from older nodes.
+    pub idle_sleep: Option<List<IdleSleep, 0, 8>>,
+}
+
+/// One setting that puts the machine to sleep when idle on AC, and the exact change that stops it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IdleSleep {
+    /// Where it is set, e.g. "KDE power management", "logind IdleAction".
+    pub source: Text<1, 80>,
+    /// "sleeps", "hibernates" or "shuts down".
+    pub action: Text<1, 40>,
+    pub after_sec: Option<Count>,
+    pub fix: Text<1, 400>,
 }
 
 /// Node -> hub, one per `node_action`.
@@ -265,6 +281,8 @@ pub enum NodeToHub {
     SessionReply(SessionReplyFrame),
     MachineEvent(MachineEventFrame),
     ThreadEvent(ThreadEventFrame),
+    /// After the machine woke: how long it slept, once per sleep.
+    Slept(SleptSpan),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -297,6 +315,15 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<NodeToHub>(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_sleep_ends_after_it_starts() {
+        let slept = r#"{"t":"slept","fromMs":1760000000000,"toMs":1760000646000}"#;
+        let decoded: NodeToHub = serde_json::from_str(slept).unwrap();
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), slept);
+        let backwards = r#"{"t":"slept","fromMs":1760000646000,"toMs":1760000000000}"#;
+        assert!(serde_json::from_str::<NodeToHub>(backwards).is_err());
     }
 
     #[test]
