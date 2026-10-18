@@ -241,8 +241,10 @@ p{margin:0}
     </ol>
     <div class="digest">
       <p class="quote">And what you get at 09:00 and 18:00 when that’s all there is:</p>
+      <!-- capture:digest -->
       <pre class="lines"><span class="c">fleetd digest · Sun 18 Oct, 10:30</span>
 <span class="o">Nothing needs you · 0 running · 0 done</span></pre>
+      <!-- /capture:digest -->
     </div>
   </div>
 </section>
@@ -253,6 +255,7 @@ p{margin:0}
     <p class="lede">Merge-train events from a lab run against the public <a href="https://github.com/unlaboredlabs/fleetd-testbed">fleetd-testbed</a> repo, 18 Oct 2026, UTC. The hub’s own summaries (one log link shortened), with the commit status the train posts before each merge.</p>
   </div>
   <ol class="train">
+    <!-- capture:train -->
     <li class="bad"><span class="t">00:37:45</span><span class="e">change.refused</span><span class="s">Refused https://github.com/unlaboredlabs/fleetd-testbed/pull/74: The PR body has no 'Source:' line.</span></li>
     <li><span class="t">00:38:05</span><span class="e">change.queued</span><span class="s">X1 queued: unlaboredlabs/fleetd-testbed#76 (tier M, done:0)</span></li>
     <li><span class="t">00:38:06</span><span class="e">train.frozen</span><span class="s">Train for unlaboredlabs/fleetd-testbed frozen: M7 lab: hold until every PR is ready</span></li>
@@ -269,6 +272,7 @@ p{margin:0}
     <li><span class="t">00:39:43</span><span class="e">change.ready</span><span class="s">X4 ready for the train: unlaboredlabs/fleetd-testbed#78</span></li>
     <li><span class="t">00:39:59</span><span class="e">fleetd/train</span><span class="s">X4: rebased onto main, CI green <span class="x">· commit status on f330188</span></span></li>
     <li class="ok"><span class="t">00:40:03</span><span class="e">pr.merged</span><span class="s">X4 merged: unlaboredlabs/fleetd-testbed#78 as 7dbe340fb72a</span></li>
+    <!-- /capture:train -->
   </ol>
 </section>
 
@@ -280,6 +284,7 @@ p{margin:0}
   <div class="setup">
     <figure>
       <figcaption>The hub, on the machine you installed on.</figcaption>
+<!-- capture:init -->
 <pre class="lines"><span class="c">$ fleetd init --listen 127.0.0.1:4778 --git-identity "Demo &lt;demo@users.noreply.github.com&gt;" --no-service</span>
 <span class="o">hub home ~/.fleetd/hub
 commit identity Demo &lt;demo@users.noreply.github.com&gt;
@@ -288,9 +293,11 @@ not installing a service; run the hub yourself with:
 next: fleetd hub key create --human --name &lt;device&gt; prints the key the desktop app connects to http://127.0.0.1:4778 with
 then: fleetd machine add &lt;ssh-host&gt; for each machine that runs agents
 [exit 0]</span></pre>
+<!-- /capture:init -->
     </figure>
     <figure>
       <figcaption>A worker. <code>--dry-run</code> prints the plan and runs nothing; the shell command under each step is left out here.</figcaption>
+<!-- capture:machine-add -->
 <pre class="lines"><span class="c">$ fleetd machine add builder-1 --dry-run</span>
 <span class="o">dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state over SSH and leaves out what is already done:
 [probe] read the machine's state (read-only)
@@ -307,6 +314,7 @@ then: fleetd machine add &lt;ssh-host&gt; for each machine that runs agents
 [11/11] (re)start the node
 [hub] wait until builder-1 is online
 [exit 0]</span></pre>
+<!-- /capture:machine-add -->
     </figure>
   </div>
 </section>

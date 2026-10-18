@@ -62,6 +62,13 @@ day to day.
 `tests/lab` is TypeScript run directly by Node: relative imports with `.ts` extensions and erasable syntax only
 (`npm --prefix tests/lab run typecheck`).
 
+## The landing page
+
+`site/` shows real app screenshots and real setup output. A change that alters what the app shows or what `fleetd
+init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts` and commits the updated `site/` in the same
+PR (see `site/README.md`). A change that removes something the page mentions adds it to `site/.stale-terms`, which CI
+checks the page against.
+
 ## Conventions
 
 - Rust edition 2024, no `unsafe`.
