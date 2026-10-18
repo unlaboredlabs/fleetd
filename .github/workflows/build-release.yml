@@ -247,10 +247,13 @@ jobs:
       - name: Notarize
         if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
         run: |
-          ditto -c -k dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64 "$RUNNER_TEMP/fleetd-cli-notarize.zip"
+          mkdir -p "$RUNNER_TEMP/fleetd-cli"
+          cp dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64 "$RUNNER_TEMP/fleetd-cli/"
+          ditto -c -k --keepParent "$RUNNER_TEMP/fleetd-cli" "$RUNNER_TEMP/fleetd-cli-notarize.zip"
           .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-cli-notarize.zip"
+          # Logged, not enforced: Gatekeeper's verdict on a bare binary depends on fetching its ticket online.
           for bin in dist/fleetd-darwin-*; do
-            echo "$bin: $(spctl -a -vv -t install "$bin" 2>&1 | tr '\n' ' ' || true)"
+            echo "$bin: $(spctl -a -vv -t open --context context:primary-signature "$bin" 2>&1 | tr '\n' ' ' || true)"
           done
       - name: Remove the signing keychain
         if: always()

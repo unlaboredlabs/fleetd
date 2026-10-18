@@ -64,7 +64,7 @@ sign)
   sign() { codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" "$@"; }
   for path in "$@"; do
     if [ -d "$path" ]; then
-      main="$path/Contents/MacOS/$(defaults read "$path/Contents/Info.plist" CFBundleExecutable)"
+      main="$path/Contents/MacOS/$(plutil -extract CFBundleExecutable raw -o - "$path/Contents/Info.plist")"
       # Inside out: every other Mach-O in the bundle (helpers, dylibs; none today), deepest first, then the bundle,
       # which signs its main executable with the entitlements.
       find "$path/Contents" -type f -print0 | xargs -0 file | awk -F': ' '/Mach-O/ { print $1 }' |
@@ -73,7 +73,8 @@ sign)
         done
       sign --entitlements "$entitlements" "$path"
     else
-      sign "$path"
+      # One identifier for the CLI, whatever the asset is called (it's installed as `fleetd`).
+      sign --identifier sh.fleetd.cli "$path"
     fi
     verify "$path"
   done
