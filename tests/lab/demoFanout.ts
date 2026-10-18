@@ -172,14 +172,26 @@ export async function demoFanout(lab: Lab) {
     check(roles.has("implementer") && roles.has("reviewer"), `order_get shows implementer and reviewer lanes: ${[...roles].join(", ")}`);
     mark("order_get", { phase: order.order.phase, detail: order.order.phaseDetail, roles: [...roles], prs: (order.order.prs as Array<Body>).map((p) => `#${p.number} ${p.state} ${p.reviewsDone}/${p.reviewsNeeded}`) });
 
+    // Until three PRs merged or the order is done (a lead may claim done once its doneWhen passes, with a PR still
+    // in review): either way the train moved.
     const merged = new Set<number>();
     cursor = orderCursor;
-    while (merged.size < 3) {
-      const m = await lab.waitEvent(`pr.merged ${merged.size + 1} of 3`, CI_MS + TURN_MS, { cursor, types: ["pr.merged"], match: (e) => e.data?.repo === REPO });
-      cursor = m.cursor;
-      merged.add(m.event.data.prNumber as number);
-      mark(`PR ${merged.size} of 3 merged`, { pr: m.event.data.prNumber });
+    for (let done = false; merged.size < 3 && !done; ) {
+      const next = await lab.waitEvent(`pr.merged ${merged.size + 1} of 3 or ${workstreamId} done`, CI_MS + TURN_MS, {
+        cursor,
+        types: ["pr.merged", "workstream.done"],
+        match: (e) => (e.type === "pr.merged" ? e.data?.repo === REPO : e.data?.workstreamId === workstreamId),
+      });
+      cursor = next.cursor;
+      if (next.event.type === "workstream.done") {
+        done = true;
+        mark(`${workstreamId} done`, { merged: [...merged] });
+      } else {
+        merged.add(next.event.data.prNumber as number);
+        mark(`PR ${merged.size} of 3 merged`, { pr: next.event.data.prNumber });
+      }
     }
+    check(merged.size > 0, "the train merged at least one of the order's PRs");
     const board = await app.call("orders_board", { projectRef: ref, includeDoneSince: new Date(Date.now() - 3_600_000).toISOString() });
     const trains = board.trains as Array<Body>;
     mark("board", { orders: (board.orders as Array<Body>).map((o) => `${o.workstreamId} ${o.phase} ${o.settled}/${o.total}`), mergedToday: trains[0]?.mergedToday });
