@@ -598,6 +598,8 @@ pub fn apply_machine_event(
             a.state.projects.remove(project_id.as_str());
         }
         MachineEvent::SessionUpdated(s) => a.upsert_thread(s, seq, false, false),
+        // The executor caches it for the link's online/degraded status; it changes no thread or project.
+        MachineEvent::RunnerInfo(_) => {}
     }
     if let Some(seq) = seq {
         a.advance(seq);

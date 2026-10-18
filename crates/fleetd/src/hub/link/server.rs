@@ -16,7 +16,6 @@ use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::{Machine, MachineStatus, MachineT3};
 use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeT3Endpoint, NodeToHub, close};
-use fleetd_contracts::sessions::LoginStatus;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -28,6 +27,7 @@ use super::lead_calls::{
 };
 use crate::clock::Clock;
 use crate::hub::auth::{Auth, AuthError};
+use crate::hub::executor::providers::runner_problem;
 use crate::hub::executor::{Executors, NodeSessions};
 use crate::hub::store::{EventLog, HubStore, NewEvent, iso_ms, now_ms};
 
@@ -469,42 +469,46 @@ impl NodeLinkServer {
         let machine_id = machine_id.clone();
         tokio::spawn(async move {
             let problem = match this.deps.executors.runner_info(&machine_id).await {
-                Ok(info) if info.version_ok && info.login == LoginStatus::LoggedIn => None,
-                Ok(info) => Some(info.problem.unwrap_or_else(|| {
-                    if info.version_ok {
-                        "claude is not logged in on this machine".into()
-                    } else {
-                        format!(
-                            "claude {} is outside the supported range {}",
-                            info.version.as_deref().unwrap_or("(missing)"),
-                            info.supported
-                        )
-                    }
-                })),
+                Ok(info) => runner_problem(&info),
                 Err(e) => Some(e.to_string()),
             };
-            // A link that went away meanwhile must not announce anything.
-            if !this.state.lock().unwrap().links.contains_key(&machine_id) {
-                return;
-            }
-            let at = this.now_iso();
-            match problem {
-                None => {
-                    this.write_status(&machine_id, &at, MachineStatus::Online, None, None);
-                    this.announce(&machine_id, &at, Announced::Online, None);
-                }
-                Some(reason) => {
-                    this.write_status(
-                        &machine_id,
-                        &at,
-                        MachineStatus::Degraded,
-                        Some(&reason),
-                        None,
-                    );
-                    this.announce(&machine_id, &at, Announced::Degraded, Some(&reason));
-                }
-            }
+            this.apply_runner(&machine_id, problem);
         });
+    }
+
+    /// Follows the runner the node pushes (a probe, a login that expired or came back) while the link lives.
+    fn follow_runner(self: &Arc<Self>, machine_id: &MachineId) -> JoinHandle<()> {
+        let this = self.clone();
+        let machine_id = machine_id.clone();
+        let mut runner = self.deps.executors.runner_watch(&machine_id);
+        tokio::spawn(async move {
+            while runner.changed().await.is_ok() {
+                let problem = runner.borrow_and_update().as_ref().map(runner_problem);
+                if let Some(problem) = problem {
+                    this.apply_runner(&machine_id, problem);
+                }
+            }
+        })
+    }
+
+    /// Online when `problem` is None, else degraded with it.
+    fn apply_runner(&self, machine_id: &MachineId, problem: Option<String>) {
+        // A link that went away meanwhile must not announce anything.
+        if !self.state.lock().unwrap().links.contains_key(machine_id) {
+            return;
+        }
+        let at = self.now_iso();
+        match problem {
+            None => {
+                self.write_status(machine_id, &at, MachineStatus::Online, None, None);
+                self.announce(machine_id, &at, Announced::Online, None);
+            }
+            Some(reason) => {
+                let status = MachineStatus::Degraded;
+                self.write_status(machine_id, &at, status, Some(&reason), None);
+                self.announce(machine_id, &at, Announced::Degraded, Some(&reason));
+            }
+        }
     }
 
     async fn serve(self: &Arc<Self>, ws: &mut Rx, tx: &LinkTx) -> Result<(), Refused> {
@@ -593,6 +597,7 @@ impl NodeLinkServer {
         };
         let _commands = self.deps.commands.attach(&machine_id, cmd_tx);
         // After the attaches, so whoever acts on the announcement can already run commands and sessions there.
+        let _runner = AbortOnDrop(self.follow_runner(&machine_id));
         self.check_runner(&machine_id);
         tracing::info!(machine_id = %machine_id, link_id = id, "node link: welcomed");
 

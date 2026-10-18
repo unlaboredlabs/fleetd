@@ -81,11 +81,12 @@ impl Node {
         self.frame(json!({ "t": "machine_event", "seq": self.seq, "at": "2026-10-17T10:00:00.000Z", "event": event }));
     }
 
-    /// Answers the subscription with a snapshot of one project and `sessions`.
+    /// Answers the subscription with a snapshot of one project and `sessions`, and a runner that is logged in.
     async fn subscribe(&mut self, sessions: Value) {
         let (id, call) = self.call().await;
         assert_eq!(call, SessionCall::Subscribe { after: None });
         self.push(json!({ "type": "snapshot", "projects": [project()], "sessions": sessions }));
+        self.push(runner_event("logged_in", None));
         self.reply(&id, json!({ "ok": { "kind": "done" } }));
         self.executors.await_live(&self.machine).await;
     }
@@ -112,6 +113,16 @@ impl Node {
             thread_id: ThreadId::unchecked(id),
         }
     }
+}
+
+fn runner_event(login: &str, problem: Option<&str>) -> Value {
+    let mut v = json!({ "type": "runner_info", "runner": "claude", "version": "2.1.302",
+        "supported": ">=2.1.300, <2.2.0", "versionOk": true, "login": login, "loginKind": "subscription",
+        "conformanceOk": true });
+    if let Some(p) = problem {
+        v["problem"] = json!(p);
+    }
+    v
 }
 
 fn project() -> Value {
@@ -427,4 +438,58 @@ async fn a_tail_follows_the_session_and_fetches_cut_outputs() {
         node.executors.send(&r, "hi", "req-9").await,
         Err(ExecutorError::MachineNotConnected { .. })
     ));
+}
+
+#[tokio::test]
+async fn a_logged_out_runner_refuses_launches_until_it_logs_back_in() {
+    let mut node = Node::start(None).await;
+    node.subscribe(json!([])).await;
+    let mut runner = node.executors.runner_watch(&node.machine);
+    let problem = "claude is not logged in for fleetd on lab-b";
+    node.push(runner_event("logged_out", Some(problem)));
+    runner.changed().await.unwrap();
+    let seen = runner.borrow_and_update().clone().unwrap();
+    // What the link server announces: degraded with the node's own words.
+    assert_eq!(providers::runner_problem(&seen).as_deref(), Some(problem));
+    assert!(!providers::to_instance(&seen).usable);
+    // Refused by the hub before any call goes out, with the fix to run on the machine.
+    match node
+        .executors
+        .launch(
+            &node.machine,
+            &launch_input("req-1"),
+            LaunchOptions::default(),
+        )
+        .await
+    {
+        Err(ExecutorError::NodeRequestFailed { message, fix, .. }) => {
+            assert_eq!(message, problem);
+            assert!(fix.unwrap().contains("claude auth login"));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(node.rx.try_recv().is_err());
+
+    node.push(runner_event("logged_in", None));
+    runner.changed().await.unwrap();
+    let seen = runner.borrow_and_update().clone().unwrap();
+    assert_eq!(providers::runner_problem(&seen), None);
+    assert!(providers::to_instance(&seen).usable);
+    assert_eq!(node.executors.cached_runner(&node.machine), Some(seen));
+    let executors = node.executors.clone();
+    let machine = node.machine.clone();
+    let launched = tokio::spawn(async move {
+        executors
+            .launch(&machine, &launch_input("req-2"), LaunchOptions::default())
+            .await
+    });
+    let (id, call) = node.call().await;
+    let SessionCall::Launch(l) = call else {
+        panic!("not a launch: {call:?}")
+    };
+    node.reply(
+        &id,
+        json!({ "ok": { "kind": "launched", "summary": session(l.session_id.as_str(), json!({})) } }),
+    );
+    launched.await.unwrap().unwrap();
 }

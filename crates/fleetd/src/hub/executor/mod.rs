@@ -298,6 +298,8 @@ pub struct Executors {
     /// Per machine: true while live. `await_live` waits on it.
     live: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
     offline_writer: Mutex<Option<Arc<dyn OfflineWriter>>>,
+    /// Per machine: the runner as the node last reported it, by a `runner_info` answer or a pushed event.
+    runners: Mutex<HashMap<MachineId, watch::Sender<Option<RunnerInfo>>>>,
     tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
@@ -421,6 +423,7 @@ impl Executors {
             machines: Mutex::default(),
             live: Mutex::default(),
             offline_writer: Mutex::default(),
+            runners: Mutex::default(),
             tool_policy: Mutex::default(),
             hooks: tools::ToolHooks::default(),
         })
@@ -549,6 +552,36 @@ impl Executors {
         let _ = rx.wait_for(|live| *live).await;
     }
 
+    fn runner_slot(&self, machine_id: &MachineId) -> watch::Sender<Option<RunnerInfo>> {
+        self.runners
+            .lock()
+            .unwrap()
+            .entry(machine_id.clone())
+            .or_insert_with(|| watch::channel(None).0)
+            .clone()
+    }
+
+    /// The runner as last reported; it changes on every `runner_info` answer and every pushed runner event, which
+    /// the link server follows for the machine's online/degraded status.
+    pub fn runner_watch(&self, machine_id: &MachineId) -> watch::Receiver<Option<RunnerInfo>> {
+        self.runner_slot(machine_id).subscribe()
+    }
+
+    /// The runner as last reported, without asking the node.
+    pub fn cached_runner(&self, machine_id: &MachineId) -> Option<RunnerInfo> {
+        self.runner_slot(machine_id).borrow().clone()
+    }
+
+    fn remember_runner(&self, machine_id: &MachineId, info: &RunnerInfo) {
+        self.runner_slot(machine_id).send_if_modified(|current| {
+            let changed = current.as_ref() != Some(info);
+            if changed {
+                *current = Some(info.clone());
+            }
+            changed
+        });
+    }
+
     /// The link server hands over every session frame the node sends.
     pub fn handle_frame(&self, machine_id: &MachineId, frame: NodeToHub) {
         match frame {
@@ -564,6 +597,9 @@ impl Executors {
                 }
             }
             NodeToHub::MachineEvent(frame) => {
+                if let MachineEvent::RunnerInfo(info) = &frame.event {
+                    self.remember_runner(machine_id, info);
+                }
                 let machines = self.machines.lock().unwrap();
                 let Some(slot) = machines.get(machine_id) else {
                     return;
@@ -1115,6 +1151,22 @@ impl Executors {
                 fix: Some("Launch it with a claude-* model.".into()),
             }
         })?;
+        // No new session goes to a runner the node says can't run it (spec §3.6): an expired login or a claude
+        // outside the supported range. Unknown (the node can't say) leaves it to the node.
+        let runner_state = match self.cached_runner(machine_id) {
+            Some(info) => Some(info),
+            None => self.runner_info(machine_id).await.ok(),
+        };
+        if let Some(info) = runner_state
+            && let Some(problem) = providers::runner_problem(&info)
+        {
+            return Err(ExecutorError::NodeRequestFailed {
+                machine_id: machine_id.clone(),
+                operation: op,
+                message: problem,
+                fix: Some(providers::runner_fix(&info, machine_id.as_str())),
+            });
+        }
         let title = match input.title.as_deref().map(str::trim) {
             Some(t) if !t.is_empty() => t.to_owned(),
             _ => js_take(input.prompt.trim().split('\n').next().unwrap_or(""), 80).to_owned(),
@@ -1391,7 +1443,10 @@ impl Executors {
             )
             .await?
         {
-            SessionOutput::RunnerInfo(info) => Ok(info),
+            SessionOutput::RunnerInfo(info) => {
+                self.remember_runner(machine_id, &info);
+                Ok(info)
+            }
             _ => Err(failed(
                 machine_id,
                 NodeOperation::Read,

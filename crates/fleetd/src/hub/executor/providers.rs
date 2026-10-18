@@ -29,6 +29,38 @@ pub fn to_instance(info: &RunnerInfo) -> ProviderInstance {
     }
 }
 
+/// Why the machine's runner can't take sessions, or None when it can (a supported version, logged in).
+pub fn runner_problem(info: &RunnerInfo) -> Option<String> {
+    if info.version_ok && info.login == LoginStatus::LoggedIn {
+        return None;
+    }
+    Some(info.problem.clone().unwrap_or_else(|| {
+        if info.version_ok {
+            "claude is not logged in on this machine".into()
+        } else {
+            format!(
+                "claude {} is outside the supported range {}",
+                info.version.as_deref().unwrap_or("(missing)"),
+                info.supported
+            )
+        }
+    }))
+}
+
+/// What to run on the machine for a runner problem: a login, or an update into the supported range.
+pub fn runner_fix(info: &RunnerInfo, machine_id: &str) -> String {
+    if info.version_ok {
+        format!(
+            "On {machine_id}: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login (or claude setup-token, then put the token in ~/.fleetd/claude.env)."
+        )
+    } else {
+        format!(
+            "On {machine_id}: claude update, so its version is in {}.",
+            info.supported
+        )
+    }
+}
+
 /// The runner a model runs on, or why none does.
 pub fn route_model(model: &str) -> Result<RunnerKind, String> {
     if model.starts_with("claude") {

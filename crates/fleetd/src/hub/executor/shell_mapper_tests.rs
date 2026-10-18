@@ -699,3 +699,25 @@ fn backoff_doubles_to_a_cap_with_jitter() {
     assert!(backoff_ms(0, 0.999) <= 1250);
     assert_eq!(backoff_ms(9, 0.999), 30000);
 }
+
+#[test]
+fn a_runner_event_moves_the_cursor_and_nothing_else() {
+    let mut state = after_turns();
+    let before = state.threads.clone();
+    let info: MachineEvent =
+        serde_json::from_value(json!({ "type": "runner_info", "runner": "claude",
+        "supported": ">=2.1.300, <2.2.0", "versionOk": true, "login": "logged_out" }))
+        .unwrap();
+    let ctx = ApplyContext {
+        machine_id: MACHINE,
+        now: NOW,
+        stored: &HashMap::new(),
+        baseline: false,
+    };
+    let applied = apply_machine_event(&mut state, Some(AFTER + 1), &info, &ctx);
+    assert!(
+        applied.transitions.is_empty() && applied.threads.is_empty() && applied.projects.is_empty()
+    );
+    assert_eq!(applied.cursor, Some(AFTER + 1));
+    assert_eq!(state.threads, before);
+}

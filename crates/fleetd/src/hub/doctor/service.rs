@@ -9,6 +9,7 @@ use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
 use crate::hub::usage::service::UsageStatus;
 use crate::hub::usage::time::{clip, iso, system_ms};
+use fleetd_contracts::sessions::RunnerInfo;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
@@ -71,6 +72,11 @@ pub trait DoctorFleet: Send + Sync {
         machine_id: &str,
         action: &str,
     ) -> BoxFut<'_, Result<ActionOutcome, String>>;
+    /// The node's runner (`runner_info` over the link): claude's version, login and conformance. `None` while the
+    /// machine's node can't answer it; the claude checks then wait for it.
+    fn runner_info(&self, _machine_id: &str) -> BoxFut<'_, Option<RunnerInfo>> {
+        Box::pin(async { None })
+    }
 }
 
 pub struct DoctorDeps {

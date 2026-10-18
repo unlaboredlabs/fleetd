@@ -448,6 +448,8 @@ pub enum MachineEvent {
         project_id: ProjectId,
     },
     SessionUpdated(SessionSummary),
+    /// The runner's state changed: a probe (at start, every 6 h), a login that expired, or one that came back.
+    RunnerInfo(RunnerInfo),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

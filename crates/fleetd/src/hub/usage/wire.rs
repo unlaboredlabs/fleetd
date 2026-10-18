@@ -181,6 +181,21 @@ impl DoctorFleet for OpsPorts {
                 .await
         })
     }
+    /// The runner as the node last reported it (pushed events keep it fresh), else asked for now.
+    fn runner_info(
+        &self,
+        machine_id: &str,
+    ) -> BoxFut<'_, Option<fleetd_contracts::sessions::RunnerInfo>> {
+        let m = machine(machine_id);
+        Box::pin(async move {
+            let m = m?;
+            let executors = &self.hub().executors;
+            match executors.cached_runner(&m) {
+                Some(info) => Some(info),
+                None => executors.runner_info(&m).await.ok(),
+            }
+        })
+    }
     fn node_action(
         &self,
         machine_id: &str,
