@@ -122,7 +122,6 @@ impl Decisions {
             .map(|d| d.value.trim().to_string()))
     }
 
-    // PORT: leads (Workstreams) calls this; until then workstream scopes and --workstream are refused as unknown.
     /// The leads area's workstream lookup, for workstream-scoped decisions in tools and lead calls.
     pub fn set_workstreams(&self, lookup: Arc<dyn WorkstreamLookup>) {
         *self.workstreams.write().unwrap_or_else(|p| p.into_inner()) = Some(lookup);

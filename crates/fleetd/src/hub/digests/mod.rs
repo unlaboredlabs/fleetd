@@ -86,7 +86,6 @@ type FactsFeed = Box<dyn Fn(&[Workstream]) -> HashMap<String, WorkstreamFacts> +
 type TrainFeed = Box<dyn Fn(&dyn Fn(&ProjectRef) -> bool, i64) -> Vec<String> + Send + Sync>;
 type SuggestedFeed = Box<dyn Fn(Visible<'_>) -> Vec<String> + Send + Sync>;
 
-// PORT: leads (workstreams, facts), train (train_lines) and retro (suggested_lines) each set their feed.
 /// What the digest reads from areas that merge after this one. The owning area sets each feed when it is built;
 /// a feed not set yet renders as nothing.
 #[derive(Default)]

@@ -1,6 +1,5 @@
-//! PORT: everything tasks, slots and leases call in areas that are not on main yet (executor, link, leads). The
-//! integration slice implements `TaskPorts` over those areas and passes it to `hub/serve` in place of
-//! `UnwiredPorts`. Each method mirrors one TS cross-service call, named in its doc.
+//! Everything tasks, slots and leases call in the executor, node link and leads. `wire::HubTaskPorts` implements it
+//! over those areas; tests use a fake. Each method mirrors one TS cross-service call, named in its doc.
 use std::future::Future;
 use std::pin::Pin;
 
@@ -147,85 +146,4 @@ pub trait TaskPorts: Send + Sync {
     fn lead_of(&self, machine_id: &MachineId, thread_id: &ThreadId) -> Option<ProjectRef>;
     /// leads/digest.ts doneWhenText(brief.doneWhen, undefined, 200), for the task prompt's "Done when:".
     fn done_when_text(&self, brief: &Brief) -> String;
-}
-
-/// PORT: until the executor, link and leads areas are wired. Every machine reads offline, so tasks queue with
-/// "machine <id> is offline" and nothing launches; spawns are refused for an unknown workstream.
-pub struct UnwiredPorts;
-
-impl TaskPorts for UnwiredPorts {
-    fn is_connected(&self, _: &MachineId) -> bool {
-        false
-    }
-    fn await_live<'a>(&'a self, _: &'a MachineId) -> BoxFut<'a, ()> {
-        Box::pin(std::future::pending())
-    }
-    fn launch<'a>(
-        &'a self,
-        _: &'a MachineId,
-        _: LaunchRequest,
-    ) -> BoxFut<'a, Result<ThreadId, PortError>> {
-        Box::pin(async { Err(PortError::Offline) })
-    }
-    fn send<'a>(
-        &'a self,
-        _: &'a ThreadRef,
-        _: &'a str,
-        _: &'a str,
-    ) -> BoxFut<'a, Result<(), PortError>> {
-        Box::pin(async { Err(PortError::Offline) })
-    }
-    fn interrupt<'a>(&'a self, _: &'a ThreadRef, _: &'a str) -> BoxFut<'a, Result<(), PortError>> {
-        Box::pin(async { Err(PortError::Offline) })
-    }
-    fn action_texts<'a>(
-        &'a self,
-        _: &'a ThreadRef,
-        _: usize,
-    ) -> BoxFut<'a, Vec<(String, Option<String>)>> {
-        Box::pin(async { Vec::new() })
-    }
-    fn default_branch<'a>(
-        &'a self,
-        _: &'a MachineId,
-        _: &'a str,
-    ) -> BoxFut<'a, Result<String, PortError>> {
-        Box::pin(async { Err(PortError::Offline) })
-    }
-    fn changes<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>> {
-        Box::pin(async { None })
-    }
-    fn pending_question<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
-        Box::pin(async { None })
-    }
-    fn read_file<'a>(
-        &'a self,
-        _: &'a MachineId,
-        _: &'a str,
-        _: &'a str,
-    ) -> BoxFut<'a, Result<Option<String>, PortError>> {
-        Box::pin(async { Err(PortError::Offline) })
-    }
-    fn run_command<'a>(
-        &'a self,
-        _: &'a MachineId,
-        _: &'a str,
-        _: Vec<String>,
-        _: u32,
-    ) -> BoxFut<'a, Option<CmdOutput>> {
-        Box::pin(async { None })
-    }
-    fn workstream(&self, _: &WorkstreamId) -> Option<Workstream> {
-        None
-    }
-    fn lead_settings(&self, _: &ProjectRef) -> Option<ModelEffort> {
-        None
-    }
-    fn wake(&self, _: &ProjectRef, _: WakeKind, _: String) {}
-    fn lead_of(&self, _: &MachineId, _: &ThreadId) -> Option<ProjectRef> {
-        None
-    }
-    fn done_when_text(&self, _: &Brief) -> String {
-        String::new()
-    }
 }

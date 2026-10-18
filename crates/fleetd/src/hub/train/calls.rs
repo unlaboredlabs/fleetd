@@ -1,10 +1,57 @@
 //! The lead's `fleetd change enqueue|status` (leads/LeadCallHandler.ts `change_enqueue`, `change_status`). The
 //! caller is already attributed to a project by its cwd; both act only within that project.
-//!
-//! PORT: link. Register both in link's `LeadCalls` under `change_enqueue` and `change_status`, answering
-//! `LeadCallResult { op, change, next }` and mapping `TrainError` to `LeadCallRefused` with `tools::tool_error`.
+//! Both are registered in link's `LeadCalls` by [`register_lead_calls`].
 use super::contract::{Change, ChangeEnqueueCall, ChangeId, ChangeState, ProjectRef};
 use super::service::{Train, TrainError};
+use crate::hub::api::Hub;
+use crate::hub::link::lead_calls::LeadCallFuture;
+use crate::hub::link::{LeadCaller, LeadCalls};
+use fleetd_contracts::lead_calls::{ChangeResult, LeadCall, LeadCallResult};
+use std::sync::{Arc, Weak};
+
+/// Registers `change_enqueue` and `change_status` in the hub's `LeadCalls`. The handler holds the hub weakly, since
+/// the hub holds the registry.
+pub fn register_lead_calls(hub: &Arc<Hub>) {
+    let weak: Weak<Hub> = Arc::downgrade(hub);
+    let handler = Arc::new(
+        move |caller: LeadCaller, call: LeadCall| -> LeadCallFuture {
+            let hub = weak.upgrade();
+            Box::pin(async move {
+                let hub = hub.ok_or_else(|| {
+                    super::tools::tool_error(TrainError {
+                        code: "invalid",
+                        message: "The hub is shutting down.".into(),
+                        fix: None,
+                    })
+                })?;
+                let r = &caller.project_ref;
+                let result = |(change, next): (Change, String)| ChangeResult {
+                    change,
+                    next: Some(next),
+                };
+                match call {
+                    LeadCall::ChangeEnqueue(input) => change_enqueue(&hub.train, r, input)
+                        .await
+                        .map(|c| LeadCallResult::ChangeEnqueue(result(c))),
+                    LeadCall::ChangeStatus(c) => change_status(&hub.train, r, &c.change_id)
+                        .map(|c| LeadCallResult::ChangeStatus(result(c))),
+                    other => Err(TrainError {
+                        code: "invalid",
+                        message: format!(
+                            "{} is not a merge train call.",
+                            crate::hub::link::lead_calls::op_of(&other)
+                        ),
+                        fix: None,
+                    }),
+                }
+                .map_err(super::tools::tool_error)
+            })
+        },
+    );
+    let calls: &LeadCalls = &hub.lead_calls;
+    calls.register("change_enqueue", handler.clone());
+    calls.register("change_status", handler);
+}
 
 /// What the lead does next about a Change: almost always nothing, since the train and reviews move it on.
 pub fn change_next(change: &Change) -> String {

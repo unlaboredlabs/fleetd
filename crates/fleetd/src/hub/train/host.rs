@@ -1,6 +1,6 @@
 //! What the train and the review gate take from other hub areas: tasks, workstreams, playbooks, decisions,
 //! incidents, the event log, wakes, node commands and the provider list. One port, so the logic tests run on a fake
-//! and the hub provides it from its services (`HubHost`, once those areas land).
+//! and the hub provides it from its services (`HubHost`).
 use std::future::Future;
 use std::pin::Pin;
 
@@ -57,7 +57,7 @@ pub struct WorkstreamView {
 }
 
 /// The parts of a pinned playbook the train and reviews read.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlaybookView {
     /// `valueBar.requireSource`.
     pub require_source: bool,
@@ -106,22 +106,10 @@ pub struct ReviewSpawn {
 }
 
 /// One provider instance on a machine, as executor/ProviderList reads it from T3.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProviderView {
-    pub instance_id: String,
-    pub driver: String,
-    pub usable: bool,
-    pub models: Vec<String>,
-    pub default_model: Option<String>,
-}
+pub use crate::hub::executor::providers::ProviderInstance as ProviderView;
 
 /// One entry of a PR's verdict history, newest first, as the value bar's review rules read it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PrVerdict {
-    pub task_id: String,
-    pub sha: String,
-    pub blocking: i64,
-}
+pub use crate::hub::valuebar::rules::PrVerdict;
 
 /// The value bar's review refusal (valuebar/rules.ts `reviewRefusal`), for a hub-spawned review round.
 #[derive(Clone, Debug, PartialEq, Eq)]

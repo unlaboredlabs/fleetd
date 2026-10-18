@@ -14,6 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
+mod wire;
+
 pub const HUB_START_USAGE: &str = "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--router-model <model>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
              writes to an offline machine wait 24 h, intents without a project
@@ -271,21 +273,18 @@ pub fn build_on(
         clock.clone(),
     )?;
     let checks = crate::hub::checks::build(&db, &events, &clock);
-    let train_host = Arc::new(crate::hub::train::hub_host::HubHost {
-        clock: clock.clone(),
-        events: events.clone(),
-        store: store.clone(),
-    });
+    let train_host =
+        crate::hub::train::hub_host::HubHost::new(clock.clone(), events.clone(), store.clone());
     let (train, reviews) = crate::hub::reviews::build(
-        train_host,
+        train_host.clone(),
         clock.clone(),
         db.clone(),
         Arc::new(crate::hub::train::github::SystemGh),
         crate::hub::train::TrainOptions::default(),
     );
-    // PORT: executor, link and leads are not wired into tasks, slots and leases yet.
-    let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> =
-        Arc::new(crate::hub::tasks::ports::UnwiredPorts);
+    let hub_task_ports =
+        crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
+    let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> = hub_task_ports.clone();
     let lead_ports = task_ports.clone();
     let slots = crate::hub::slots::Slots::new(
         db.clone(),
@@ -375,6 +374,12 @@ pub fn build_on(
         leads,
     });
     checks.ports.bind(&hub);
+    train_host.bind(&hub);
+    crate::hub::train::calls::register_lead_calls(&hub);
+    crate::hub::checks::hub_ports::wire_misfiled(&hub);
+    crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
+    wire::wire(&hub);
+    crate::hub::approvals::tools::register_lead_calls(&hub);
     Ok(hub)
 }
 

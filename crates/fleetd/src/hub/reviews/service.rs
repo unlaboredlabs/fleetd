@@ -32,20 +32,8 @@ const FOLLOWED: [&str; 4] = [
     "task.cancelled",
 ];
 
-/// One key per PR however its URL is written: host and path, lowercased, `/pulls/` as `/pull/`, no trailing slash.
-/// The value bar keys its verdict history the same way (valuebar/rules.ts `prKey`).
-pub fn pr_key(url: &str) -> String {
-    let url = url.trim();
-    let Some((_, rest)) = url
-        .split_once("://")
-        .filter(|(scheme, rest)| !scheme.is_empty() && !rest.is_empty())
-    else {
-        return url.to_lowercase();
-    };
-    let rest = &rest[..rest.find(['?', '#']).unwrap_or(rest.len())];
-    let lowered = rest.to_lowercase().replacen("/pulls/", "/pull/", 1);
-    lowered.trim_end_matches('/').to_string()
-}
+/// One key per PR however its URL is written; the value bar keys its verdict history the same way.
+pub use crate::hub::valuebar::rules::pr_key;
 
 pub struct Reviews {
     host: Arc<dyn TrainHost>,
@@ -239,7 +227,7 @@ impl Reviews {
     async fn ensure_round(&self, change: &Change, patch_id: &str) {
         let rule = self.rule_of(change);
         // Codex takes the second reviewer, so it matters only from two reviewers on.
-        let wants_codex = rule.reviewers >= 2;
+        let wants_codex = rule.reviewers.get() >= 2;
         let instances = if wants_codex {
             self.host
                 .provider_instances(&change.project_ref.machine_id)
@@ -326,7 +314,7 @@ impl Reviews {
                 },
             );
         }
-        let codex_model = codex.map(|(_, model)| model.to_string());
+        let codex_model = codex.and_then(|i| i.default_model.clone());
         for planned in missing {
             let verb = if planned.role == ReviewRole::Verifier {
                 "Verify"
@@ -592,22 +580,4 @@ pub fn build(
         .unwrap_or_else(|e| e.into_inner())
         .expect("the gate was built");
     (train, reviews)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::pr_key;
-
-    #[test]
-    fn keys_a_pr_however_its_url_is_written() {
-        assert_eq!(
-            pr_key(" https://GitHub.com/Wynn-Dev/Lab/pulls/7/ "),
-            "github.com/wynn-dev/lab/pull/7"
-        );
-        assert_eq!(
-            pr_key("https://github.com/o/r/pull/7?x=1#y"),
-            "github.com/o/r/pull/7"
-        );
-        assert_eq!(pr_key("not a url"), "not a url");
-    }
 }

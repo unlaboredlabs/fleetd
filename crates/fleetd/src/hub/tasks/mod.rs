@@ -11,6 +11,7 @@ pub mod records;
 pub mod render;
 pub mod resolve;
 pub mod tools;
+pub mod wire;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -65,7 +66,7 @@ pub struct TaskDeps {
     pub store: Arc<HubStore>,
     pub events: Arc<EventLog>,
     pub clock: Arc<dyn Clock>,
-    /// PORT: executor, link and leads (see `ports`).
+    /// The executor, node link and leads (see `ports`).
     pub ports: Arc<dyn TaskPorts>,
     pub slots: Arc<Slots>,
     pub leases: Arc<Leases>,
@@ -210,10 +211,11 @@ pub struct Tasks {
     lock: tokio::sync::Mutex<()>,
     /// Machines a queued task waits on; one waiter each.
     awaiting: Mutex<HashSet<MachineId>>,
-    /// PORT: set once in `hub/serve` by usage, valuebar and receipts; unset passes through, as the TS hub did
-    /// before those milestones.
+    /// Set once in `hub/serve` (`wire::wire`) to usage, the value bar and receipts; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
+    /// The last thread event applied, by the follower or by a retry catching up (read and written under `lock`).
+    applied: std::sync::atomic::AtomicI64,
 }
 
 #[derive(Default)]
@@ -233,6 +235,7 @@ impl Tasks {
             awaiting: Mutex::new(HashSet::new()),
             hooks: TaskHooks::default(),
             cursor,
+            applied: std::sync::atomic::AtomicI64::new(cursor),
         })
     }
 
@@ -462,8 +465,48 @@ impl Tasks {
         let tasks = self.clone();
         tokio::spawn(async move {
             let _guard = tasks.lock.lock().await;
+            // The slot board follows thread events on its own, so it can free a slot before this area's follower has
+            // ended the task whose thread stopped. Apply those events first, so `task.completed` precedes the next
+            // start, as in the TS hub (whose single-threaded followers ran in that order).
+            tasks.catch_up().await;
             tasks.retry_queue().await;
         });
+    }
+
+    /// Applies every thread event appended since the last one applied. Call with the lock held.
+    async fn catch_up(self: &Arc<Self>) {
+        use std::sync::atomic::Ordering;
+        loop {
+            let input = WaitInput {
+                cursor: Some(self.applied.load(Ordering::SeqCst)),
+                types: Some(THREAD_EVENTS.to_vec()),
+                machine_id: None,
+                timeout_sec: 0,
+            };
+            let Ok(page) = self.d.events.wait(input).await else {
+                return;
+            };
+            for event in &page.events {
+                self.apply(event).await;
+            }
+            self.applied.fetch_max(page.cursor, Ordering::SeqCst);
+            if !page.more {
+                return;
+            }
+        }
+    }
+
+    /// One thread event, once: the follower and `catch_up` both pass every event here. Call with the lock held.
+    async fn apply(self: &Arc<Self>, event: &HubEvent) {
+        use std::sync::atomic::Ordering;
+        let seq = event.seq.get();
+        if seq <= self.applied.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Err(error) = self.on_thread_event(event).await {
+            tracing::warn!(seq, %error, "task event not handled");
+        }
+        self.applied.store(seq, Ordering::SeqCst);
     }
 
     /// Leases, then a slot, then the launch or the pending message. Queues with the first reason it cannot go.
@@ -889,9 +932,7 @@ impl Tasks {
             cursor = page.cursor;
             for event in &page.events {
                 let _guard = self.lock.lock().await;
-                if let Err(error) = self.on_thread_event(event).await {
-                    tracing::warn!(seq = ?event.seq, %error, "task event not handled");
-                }
+                self.apply(event).await;
             }
         }
     }
@@ -1180,8 +1221,8 @@ impl Tasks {
 const LIVE_TASKS: [TaskState; 3] = [TaskState::Queued, TaskState::Running, TaskState::Idle];
 const SCAN_LIMIT: usize = 10_000;
 
-/// What leads read from tasks: digest lines, live tasks and cancels for removed projects. PORT: the leads area's
-/// TasksHook forwards to these.
+/// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads' TasksHook, set in
+/// `wire`).
 impl Tasks {
     pub fn digest_lines(
         &self,

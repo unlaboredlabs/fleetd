@@ -4,7 +4,6 @@
 //!
 //! One `Executors` serves what TS split into Executors, ThreadWatch, WorkspaceFiles, ThreadWorkspace, ProviderList,
 //! UsageSource and T3Settings.
-pub mod branch_diff;
 pub mod limit;
 pub mod providers;
 pub mod shell_mapper;
