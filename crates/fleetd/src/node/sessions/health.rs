@@ -4,8 +4,9 @@
 //! A run that fails Auth marks the login logged out at once, so the hub shows the `claude auth login` fix without
 //! waiting for a probe. Any later probe that reports logged in clears the mark. That includes a login in the macOS
 //! keychain, which changes no file the node could watch, and the probe makes no model call. A probe that started
-//! before the failure says nothing about it. While the runner is unusable, `runner_info` re-probes every
-//! [`RECHECK_AFTER`], so a launch right after the fix works within seconds.
+//! before the failure says nothing about it. While the runner is unusable the node re-probes every
+//! [`RECHECK_AFTER`] and pushes each change, so the hub's cached state, and with it its launch gate, flips back
+//! within seconds of the fix.
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -16,8 +17,7 @@ use crate::node::runner::failure::LOGIN_FIX;
 
 /// The scheduled probe: version drift, a login that expired, a conformance break after `claude update`.
 pub const PROBE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
-/// A runner that can't run sessions is re-probed on demand at most this often, so a fix shows within seconds while
-/// a hub asking repeatedly never spawns claude for every call.
+/// How often a runner that can't run sessions is re-probed.
 pub const RECHECK_AFTER: Duration = Duration::from_secs(15);
 
 struct AuthMark {
@@ -51,22 +51,18 @@ impl Health {
         Some(info)
     }
 
-    /// Whether a `runner_info` call probes rather than answering from the last probe: when there is no answer yet,
-    /// the scheduled probe is due, or the runner is unusable and was last probed at least [`RECHECK_AFTER`] ago.
-    pub fn recheck_due(&self, now: Instant) -> bool {
+    /// How long until the next probe: none yet, then [`PROBE_EVERY`] after the last one while the runner is usable
+    /// and [`RECHECK_AFTER`] while it is not. A `runner_info` call answers from the last probe until then.
+    pub fn next_probe_in(&self, now: Instant) -> Duration {
         let Some((_, at)) = &self.probed else {
-            return true;
+            return Duration::ZERO;
         };
-        let age = now.saturating_duration_since(*at);
-        age >= PROBE_EVERY || (age >= RECHECK_AFTER && !self.info().is_some_and(|i| usable(&i)))
-    }
-
-    /// How long until the scheduled probe: zero before the first, then [`PROBE_EVERY`] after the last probe of any
-    /// kind.
-    pub fn until_scheduled(&self, now: Instant) -> Duration {
-        self.probed.as_ref().map_or(Duration::ZERO, |(_, at)| {
-            PROBE_EVERY.saturating_sub(now.saturating_duration_since(*at))
-        })
+        let every = if self.info().is_some_and(|i| usable(&i)) {
+            PROBE_EVERY
+        } else {
+            RECHECK_AFTER
+        };
+        every.saturating_sub(now.saturating_duration_since(*at))
     }
 
     /// Records a probe that started at `started`.
@@ -119,31 +115,39 @@ mod tests {
     }
 
     #[test]
-    fn probes_run_at_start_every_six_hours_and_on_demand_only_while_unusable() {
+    fn a_usable_runner_is_probed_every_six_hours_and_an_unusable_one_every_fifteen_seconds() {
         let t0 = Instant::now();
         let mut health = Health::default();
-        assert!(health.recheck_due(t0));
-        assert_eq!(health.until_scheduled(t0), Duration::ZERO);
+        assert_eq!(health.next_probe_in(t0), Duration::ZERO);
 
         health.probed(info(LoginStatus::LoggedIn), t0);
-        let hour = t0 + Duration::from_secs(3600);
-        // A healthy runner answers from the last probe however often the hub asks.
-        assert!(!health.recheck_due(hour));
-        assert_eq!(
-            health.until_scheduled(hour),
-            PROBE_EVERY - Duration::from_secs(3600)
-        );
-        assert_eq!(health.until_scheduled(t0 + PROBE_EVERY), Duration::ZERO);
-        assert!(health.recheck_due(t0 + PROBE_EVERY));
+        let hour = Duration::from_secs(3600);
+        assert_eq!(health.next_probe_in(t0 + hour), PROBE_EVERY - hour);
+        assert_eq!(health.next_probe_in(t0 + PROBE_EVERY), Duration::ZERO);
 
-        // An unusable one is re-checked on demand, but not more often than RECHECK_AFTER.
-        health.probed(info(LoginStatus::LoggedOut), t0);
-        assert!(!health.recheck_due(t0 + Duration::from_secs(5)));
-        assert!(health.recheck_due(t0 + RECHECK_AFTER));
-        let mut drifted = info(LoginStatus::LoggedIn);
-        drifted.conformance_ok = Some(false);
-        health.probed(drifted, t0);
-        assert!(health.recheck_due(t0 + RECHECK_AFTER));
+        for unusable in [
+            info(LoginStatus::LoggedOut),
+            RunnerInfo {
+                version_ok: false,
+                ..info(LoginStatus::LoggedIn)
+            },
+            RunnerInfo {
+                conformance_ok: Some(false),
+                ..info(LoginStatus::LoggedIn)
+            },
+        ] {
+            health.probed(unusable, t0);
+            assert_eq!(health.next_probe_in(t0), RECHECK_AFTER);
+            assert_eq!(health.next_probe_in(t0 + RECHECK_AFTER), Duration::ZERO);
+        }
+
+        // An Auth failure makes a usable runner unusable without a probe: re-checked RECHECK_AFTER after the last one.
+        health.probed(info(LoginStatus::LoggedIn), t0);
+        health.auth_failed("Not logged in · Please run /login", t0 + hour);
+        assert_eq!(health.next_probe_in(t0 + hour), Duration::ZERO);
+        // The fix lands; the next probe sees it and the schedule goes back to six hours.
+        health.probed(info(LoginStatus::LoggedIn), t0 + hour);
+        assert_eq!(health.next_probe_in(t0 + hour), PROBE_EVERY);
     }
 
     #[test]
@@ -168,8 +172,8 @@ mod tests {
                  Fix: {LOGIN_FIX}"
             ))
         );
-        // Logged out is unusable and the last probe is older than RECHECK_AFTER: the hub's next call re-probes.
-        assert!(health.recheck_due(failed));
+        // Logged out is unusable and the last probe is older than RECHECK_AFTER: probed again now.
+        assert_eq!(health.next_probe_in(failed), Duration::ZERO);
 
         // A probe that started before the failure, finishing after it, says nothing about it.
         health.probed(info(LoginStatus::LoggedIn), failed - Duration::from_secs(1));

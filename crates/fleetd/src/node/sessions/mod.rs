@@ -323,6 +323,9 @@ struct Inner {
     health: Mutex<Health>,
     /// One probe at a time; a caller that waited answers from the probe it waited for.
     probing: tokio::sync::Mutex<()>,
+    /// Wakes the prober when health changed without a probe, so an unusable runner is re-checked on its short
+    /// schedule.
+    health_changed: Arc<tokio::sync::Notify>,
 }
 
 /// One session's pending change, applied by [`SessionService::update`].
@@ -446,6 +449,7 @@ impl SessionService {
                 launching: tokio::sync::Mutex::new(()),
                 health: Mutex::new(Health::default()),
                 probing: tokio::sync::Mutex::new(()),
+                health_changed: Arc::new(tokio::sync::Notify::new()),
             }),
         };
         for row in service.inner.store.sessions()? {
@@ -1594,20 +1598,16 @@ impl SessionService {
         self.inner.health.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// `runner_info`: the last probe, unless [`Health::recheck_due`] says to look again.
+    /// `runner_info`: the last probe, unless the next one is due ([`Health::next_probe_in`]).
     async fn runner_info(&self) -> RunnerInfo {
-        self.probe_if(Health::recheck_due).await
-    }
-
-    /// Probes when `due` still holds once it is this caller's turn; a caller that waited behind another probe
-    /// usually answers from that one.
-    async fn probe_if(&self, due: fn(&Health, Instant) -> bool) -> RunnerInfo {
         let _probing = self.inner.probing.lock().await;
         let cached = {
             let health = self.health();
-            (!due(&health, Instant::now()))
-                .then(|| health.info())
-                .flatten()
+            if health.next_probe_in(Instant::now()).is_zero() {
+                None
+            } else {
+                health.info()
+            }
         };
         if let Some(info) = cached {
             return info;
@@ -1620,24 +1620,27 @@ impl SessionService {
         self.health().info().unwrap_or(shown)
     }
 
-    /// The probe at start and every [`health::PROBE_EVERY`] after the last one.
+    /// Probes whenever [`Health::next_probe_in`] says so: at start, every 6 h while the runner is usable and every
+    /// 15 s while it is not. A change of health (an Auth failure) wakes it to recompute.
     fn spawn_prober(&self) {
         let weak = Arc::downgrade(&self.inner);
+        let changed = self.inner.health_changed.clone();
         tokio::spawn(async move {
             loop {
                 let wait = {
                     let Some(inner) = weak.upgrade() else { return };
                     let health = inner.health.lock().unwrap_or_else(|p| p.into_inner());
-                    health.until_scheduled(Instant::now())
+                    health.next_probe_in(Instant::now())
                 };
                 if !wait.is_zero() {
-                    tokio::time::sleep(wait).await;
+                    tokio::select! {
+                        () = tokio::time::sleep(wait) => {}
+                        () = changed.notified() => {}
+                    }
                     continue;
                 }
                 let Some(inner) = weak.upgrade() else { return };
-                SessionService { inner }
-                    .probe_if(|h, now| h.until_scheduled(now).is_zero())
-                    .await;
+                SessionService { inner }.runner_info().await;
             }
         });
     }
@@ -1652,6 +1655,7 @@ impl SessionService {
             (after != before).then_some(after).flatten()
         };
         if let Some(info) = changed {
+            self.inner.health_changed.notify_one();
             self.push_runner_info(info);
         }
     }
