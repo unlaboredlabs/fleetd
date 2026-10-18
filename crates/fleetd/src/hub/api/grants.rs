@@ -133,15 +133,6 @@ pub fn internal_error() -> ToolError {
     )
 }
 
-/// A tool whose area is not ported to this hub yet.
-pub fn not_wired(tool: &str) -> ToolError {
-    error(
-        ErrorCode::T3Error,
-        format!("{tool} is not wired in this hub yet."),
-        "Use the TypeScript hub for this tool until its area is ported.",
-    )
-}
-
 /// `role` as it reads on the wire: read, operate, admin.
 pub fn role_name(role: Role) -> &'static str {
     match role {
