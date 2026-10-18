@@ -1985,7 +1985,7 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
         };
         match mode {
             Mode::Cold => {}
-            Mode::Idle => return,
+            Mode::Idle | Mode::Live => return,
             Mode::KeysInternal => {
                 wait(cx, Duration::from_secs(1)).await;
                 for i in 0..bench::KEYSTROKES {
