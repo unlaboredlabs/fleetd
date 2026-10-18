@@ -6,6 +6,7 @@
 //! on start, runs that were active are closed as interrupted (the hub's watchdog decides whether to continue them)
 //! and the next `send` resumes the claude session in the same cwd and config dir. Idle processes are reaped and
 //! respawned on demand. Permission prompts are answered from policy or held as a pending approval for the hub.
+mod health;
 mod proc;
 pub mod state;
 pub mod t3;
@@ -24,7 +25,7 @@ use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame, MessageRole,
-    PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo, RunStatus,
+    PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo, RunStatus, RunnerInfo,
     SendAccepted, SessionCall, SessionCallFrame, SessionChanges, SessionError, SessionErrorCode,
     SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult, SessionStatus, SessionSummary,
     SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot,
@@ -42,6 +43,7 @@ use super::store::{NodeStore, SessionLocal, SessionRow, StoreError};
 use super::util::{now_iso, tail_utf16};
 use super::wire::{NodeToHub, head_text, to_json};
 use super::worktree;
+use health::Health;
 use state::EndCause;
 
 /// What the node sends after a retryable failure (Overloaded, Network) to continue the same run.
@@ -114,6 +116,44 @@ impl SessionConfig {
             idle_reap,
             retry_schedule_ms,
         }
+    }
+}
+
+impl SessionConfig {
+    /// What every claude the node starts gets, sessions and probes alike: the base environment, then `claude.env`
+    /// (re-read on each call), then fleetd's own values, which win.
+    pub fn runner_env(&self) -> Vec<(String, String)> {
+        let mut env = self.base_env.clone();
+        if let Ok(text) = std::fs::read_to_string(&self.claude_env) {
+            env.extend(parse_env_file(&text));
+        }
+        env.extend([
+            (
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                self.config_dir.to_string_lossy().into_owned(),
+            ),
+            // claude never updates itself out of the pinned, tested range.
+            ("DISABLE_AUTOUPDATER".to_owned(), "1".to_owned()),
+            // Startup failures come back as result messages the failure classifier reads.
+            (
+                "CLAUDE_CODE_STARTUP_FAILURE_RESULTS".to_owned(),
+                "1".to_owned(),
+            ),
+        ]);
+        env
+    }
+
+    /// Changes when the login can have: `claude.env`'s contents, or the credentials file `claude auth login`
+    /// writes. claude's other files in the config dir change on every run, so they are left out.
+    fn login_fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::fs::read(&self.claude_env).ok().hash(&mut hasher);
+        std::fs::metadata(self.config_dir.join(".credentials.json"))
+            .ok()
+            .map(|m| (m.len(), m.modified().ok()))
+            .hash(&mut hasher);
+        hasher.finish()
     }
 }
 
@@ -307,6 +347,9 @@ struct Inner {
     /// One spawn at a time, so two sends never start two processes for a session.
     spawning: tokio::sync::Mutex<()>,
     launching: tokio::sync::Mutex<()>,
+    health: Mutex<Health>,
+    /// One probe at a time; a caller that waited answers from the probe it waited for.
+    probing: tokio::sync::Mutex<()>,
 }
 
 /// One session's pending change, applied by [`SessionService::update`].
@@ -349,15 +392,42 @@ impl Change<'_> {
 
     /// Marks a prompt that can no longer be answered; the hub closes its ask.
     fn cancel_pending(&mut self) {
-        let Some(pending) = self.row.summary.pending_permission.take() else {
-            return;
-        };
-        let id = permission_item_id(&pending.request_id);
-        if let Ok(Some(mut item)) = self.store.item(&self.id(), &id) {
+        if let Some(pending) = self.row.summary.pending_permission.take() {
+            self.cancel_prompt(&pending.request_id);
+        }
+    }
+
+    fn cancel_prompt(&mut self, request_id: &str) {
+        let id = permission_item_id(request_id);
+        if let Ok(Some(mut item)) = self.store.item(&self.id(), &id)
+            && item.status == ItemStatus::Running
+        {
             item.status = ItemStatus::Cancelled;
             item.completed_at = Some(self.at.clone());
             item.updated_at = self.at.clone();
             self.put_item(item);
+        }
+    }
+
+    /// claude withdrew prompt `request_id` (`control_cancel_request`, e.g. its tool call was aborted): nobody can
+    /// answer it any more, so the pending permission clears and the run is no longer waiting.
+    fn withdraw_prompt(&mut self, request_id: &str) {
+        self.cancel_prompt(request_id);
+        if self
+            .row
+            .summary
+            .pending_permission
+            .as_ref()
+            .is_some_and(|p| p.request_id == request_id)
+        {
+            self.row.summary.pending_permission = None;
+            for run in self
+                .runs
+                .iter_mut()
+                .filter(|r| r.status == RunStatus::Waiting)
+            {
+                run.status = RunStatus::Running;
+            }
         }
     }
 }
@@ -401,11 +471,13 @@ impl SessionService {
                 state: Mutex::new(State::default()),
                 spawning: tokio::sync::Mutex::new(()),
                 launching: tokio::sync::Mutex::new(()),
+                health: Mutex::new(Health::default()),
+                probing: tokio::sync::Mutex::new(()),
             }),
         };
         for row in service.inner.store.sessions()? {
             if let (Some(pid), Some(started)) = (row.local.pid, &row.local.pid_start) {
-                proc::kill_recorded(pid, started, INTERRUPT_GRACE).await;
+                proc::kill_recorded(pid, started, &row.summary.session_id, INTERRUPT_GRACE).await;
             }
             let leftover = row.local.pid.is_some()
                 || row.summary.active_run_id.is_some()
@@ -424,6 +496,7 @@ impl SessionService {
             }
         }
         service.spawn_reaper();
+        service.spawn_prober();
         Ok(service)
     }
 
@@ -540,12 +613,7 @@ impl SessionService {
                     paths,
                 }))
             }
-            SessionCall::RunnerInfo => {
-                let env = claude_env(&self.inner.config);
-                Ok(SessionOutput::RunnerInfo(
-                    self.inner.runner.probe(&env).await,
-                ))
-            }
+            SessionCall::RunnerInfo => Ok(SessionOutput::RunnerInfo(self.runner_info().await)),
         }
     }
 
@@ -919,20 +987,12 @@ impl SessionService {
         let transcript = transcripts.join(format!("{id}.jsonl"));
         state::cap_transcript(&transcript, TRANSCRIPT_CAP)?;
 
-        let mut env = claude_env(config);
-        // After claude.env, so fleetd's own values win.
+        let mut env = config.runner_env();
         let sock = super::lead::lead_socket_path(&config.home);
         env.extend([
             (
                 "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS".to_owned(),
                 "2".to_owned(),
-            ),
-            // claude never updates itself out of the pinned, tested range.
-            ("DISABLE_AUTOUPDATER".to_owned(), "1".to_owned()),
-            // Startup failures come back as result messages the failure classifier reads.
-            (
-                "CLAUDE_CODE_STARTUP_FAILURE_RESULTS".to_owned(),
-                "1".to_owned(),
             ),
             (
                 "FLEETD_NODE_SOCK".to_owned(),
@@ -1043,6 +1103,11 @@ impl SessionService {
                     }
                     self.assistant_text(&id, message_id, text, &run_id);
                 }
+                // The runner's only Permission item is a withdrawn prompt; the node keeps its own item per prompt.
+                RunnerEvent::Item(ThreadItem {
+                    kind: ItemKind::Permission { request_id, .. },
+                    ..
+                }) => self.log(self.update(&id, |c| c.withdraw_prompt(&request_id))),
                 RunnerEvent::Item(item) => self.log(self.update(&id, |c| c.put_item(item))),
                 // Progress for the watchdog: a long compaction is not a stall.
                 RunnerEvent::Compacting(_) => self.log(self.update(&id, |c| c.announce = true)),
@@ -1212,6 +1277,14 @@ impl SessionService {
         self.st().retries.remove(run_id);
         if let Some(live) = self.st().live.get_mut(id) {
             live.ending = None;
+        }
+        match &outcome {
+            RunOutcome::Failed(failure) if failure.class == FailureClass::Auth => {
+                let login = self.inner.config.login_fingerprint();
+                self.health_changed(|h| h.auth_failed(&failure.message, login, Instant::now()));
+            }
+            RunOutcome::Completed { .. } => self.health_changed(Health::run_completed),
+            _ => {}
         }
         self.log(self.update(id, |c| {
             let at = c.at.clone();
@@ -1524,6 +1597,82 @@ impl SessionService {
             }
             Err(e) => Err(invalid(format!("cannot read {path}: {e}"))),
         }
+    }
+
+    fn health(&self) -> MutexGuard<'_, Health> {
+        self.inner.health.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// `runner_info`: the last probe, unless [`Health::recheck_due`] says to look again.
+    async fn runner_info(&self) -> RunnerInfo {
+        self.probe_if(Health::recheck_due).await
+    }
+
+    /// Probes when `due` still holds once it is this caller's turn; a caller that waited behind another probe
+    /// usually answers from that one.
+    async fn probe_if(&self, due: fn(&Health, Instant) -> bool) -> RunnerInfo {
+        let _probing = self.inner.probing.lock().await;
+        let cached = {
+            let health = self.health();
+            (!due(&health, Instant::now()))
+                .then(|| health.info())
+                .flatten()
+        };
+        if let Some(info) = cached {
+            return info;
+        }
+        let login = self.inner.config.login_fingerprint();
+        let info = self.inner.runner.probe().await;
+        let shown = info.clone();
+        self.health_changed(|h| h.probed(info, login, Instant::now()));
+        self.health().info().unwrap_or(shown)
+    }
+
+    /// The probe at start and every [`health::PROBE_EVERY`] after the last one.
+    fn spawn_prober(&self) {
+        let weak = Arc::downgrade(&self.inner);
+        tokio::spawn(async move {
+            loop {
+                let wait = {
+                    let Some(inner) = weak.upgrade() else { return };
+                    let health = inner.health.lock().unwrap_or_else(|p| p.into_inner());
+                    health.until_scheduled(Instant::now())
+                };
+                if !wait.is_zero() {
+                    tokio::time::sleep(wait).await;
+                    continue;
+                }
+                let Some(inner) = weak.upgrade() else { return };
+                SessionService { inner }
+                    .probe_if(|h, now| h.until_scheduled(now).is_zero())
+                    .await;
+            }
+        });
+    }
+
+    /// Applies `f` and pushes `runner_info` when what it reports changed.
+    fn health_changed(&self, f: impl FnOnce(&mut Health)) {
+        let changed = {
+            let mut health = self.health();
+            let before = health.info();
+            f(&mut health);
+            let after = health.info();
+            (after != before).then_some(after).flatten()
+        };
+        if let Some(info) = changed {
+            self.push_runner_info(info);
+        }
+    }
+
+    fn push_runner_info(&self, info: RunnerInfo) {
+        tracing::info!(
+            version = info.version.as_deref().unwrap_or("(missing)"),
+            version_ok = info.version_ok,
+            login = ?info.login,
+            conformance_ok = ?info.conformance_ok,
+            problem = info.problem.as_deref().unwrap_or(""),
+            "runner_info changed"
+        );
     }
 
     fn spawn_reaper(&self) {
