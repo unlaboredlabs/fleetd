@@ -246,6 +246,7 @@ async fn shutdown_interrupts_the_run_then_escalates_to_sigkill_and_takes_escaped
     let send = SessionCommand::Send {
         run_id: run_id.clone(),
         text: "Run `sleep 300`.".into(),
+        mode: fleetd_contracts::sessions::SendMode::Plain,
     };
     fake.handle.commands.send(send).await.unwrap();
     let shutdown = SessionCommand::Shutdown {
@@ -355,6 +356,7 @@ async fn real_claude_without_a_login_fails_loudly_at_no_cost() {
         let send = SessionCommand::Send {
             run_id: run.into(),
             text: "Reply OK.".into(),
+            mode: fleetd_contracts::sessions::SendMode::Plain,
         };
         handle.commands.send(send).await.unwrap();
         let mut events = Vec::new();

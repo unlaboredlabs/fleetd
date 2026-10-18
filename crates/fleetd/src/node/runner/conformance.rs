@@ -25,6 +25,10 @@ pub const REQUIRED_INIT_CAPABILITIES: &[&str] = &[
     "msg_lifecycle_v1",
 ];
 
+/// Optional: a steer sent with ⌘Enter stops the running step with `interrupt {send_now}`. Without it the runner falls
+/// back to an interrupt scoped to the running message (`interrupt_receipt_v1`), then to a plain interrupt.
+pub const SEND_NOW_CAPABILITY: &str = "interrupt_send_now_v1";
+
 const REQUEST_ID: &str = "fleetd-probe-1";
 /// The probe's argv: no model, no MCP servers (starting them would cost time, not decide anything), and only the
 /// user settings of the config dir sessions use (they may carry the proxy or gateway variables, which decide the

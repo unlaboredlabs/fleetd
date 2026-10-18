@@ -258,13 +258,21 @@ impl Session {
 
     fn command(&mut self, cmd: SessionCommand) {
         match cmd {
-            SessionCommand::Send { run_id, text } => {
-                let input = self.mapper.send(&run_id, &text);
-                if !self.write(input) {
-                    // stdin is closed: the run can never start, and ends with the exit like any other open run.
-                    tracing::warn!("send {run_id} after stdin closed");
+            SessionCommand::Send { run_id, text, mode } => {
+                for input in self.mapper.send(&run_id, &text, mode) {
+                    if !self.write(input) {
+                        // stdin is closed: the run can never start, and ends with the exit like any other open run.
+                        tracing::warn!("send {run_id} after stdin closed");
+                    }
                 }
             }
+            SessionCommand::Withdraw { run_id } => match self.mapper.withdraw(&run_id) {
+                Some(input) if self.write(input.clone()) => {}
+                _ => self.push(vec![RunnerEvent::Withdrawn {
+                    run_id,
+                    cancelled: false,
+                }]),
+            },
             SessionCommand::Interrupt => {
                 let input = self.mapper.interrupt();
                 self.write(input);

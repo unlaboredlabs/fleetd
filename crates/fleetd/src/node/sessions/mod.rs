@@ -11,6 +11,7 @@ mod health;
 mod proc;
 mod spans;
 pub mod state;
+mod steers;
 
 #[cfg(test)]
 mod fake;
@@ -27,12 +28,14 @@ use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
     CloneProgressFrame, FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame,
     MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo,
-    RunStatus, RunUsage, RunnerInfo, SendAccepted, SessionCall, SessionCallFrame, SessionChanges,
+    RunStatus, RunUsage, RunnerInfo, SendAccepted, SendMode, SendNow, SessionCall, SessionCallFrame,
+    SessionChanges,
     SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult,
     SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
     ThreadMessage, ThreadSnapshot,
 };
-use tokio::sync::{mpsc, watch};
+use fleetd_contracts::steer::SteerTag;
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
 use super::runner::claude::{ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV};
@@ -359,6 +362,10 @@ struct State {
     spawned: HashSet<String>,
     /// Runs the node is retrying: when the retry was scheduled (ms), its attempt and delay.
     node_retry: HashMap<String, (u64, u32, u64)>,
+    /// Tagged sends (steers) by run id, until their receipt is final.
+    steers: HashMap<String, steers::SteerTrack>,
+    send_now_waiters: HashMap<String, oneshot::Sender<SendNow>>,
+    withdraw_waiters: HashMap<String, oneshot::Sender<bool>>,
 }
 
 impl State {
@@ -619,20 +626,34 @@ impl SessionService {
                 session_id,
                 run_id,
                 text,
-                mode: _,
-                steer: _,
+                mode,
+                steer,
             } => {
-                let queued = self.begin_run(&session_id, &run_id, &text).await?;
+                let waiter = (mode == SendMode::Now).then(|| {
+                    let (tx, rx) = oneshot::channel();
+                    self.st().send_now_waiters.insert(run_id.to_string(), tx);
+                    rx
+                });
+                let queued = self
+                    .begin_run(&session_id, &run_id, &text, mode, steer)
+                    .await;
+                let send_now = match (waiter, &queued) {
+                    (Some(rx), Ok(true)) => tokio::time::timeout(steers::SEND_NOW_WAIT, rx)
+                        .await
+                        .ok()
+                        .and_then(Result::ok),
+                    _ => None,
+                };
+                self.st().send_now_waiters.remove(run_id.as_str());
                 Ok(SessionOutput::Sent(SendAccepted {
                     run_id,
-                    queued,
-                    send_now: None,
+                    queued: queued?,
+                    send_now,
                 }))
             }
-            SessionCall::Withdraw { .. } => Err(error(
-                SessionErrorCode::Invalid,
-                "this node cannot withdraw a send yet",
-            )),
+            SessionCall::Withdraw { session_id, run_id } => {
+                self.withdraw(&session_id, &run_id).await
+            }
             SessionCall::Interrupt {
                 session_id,
                 run_id,
@@ -1074,7 +1095,8 @@ impl SessionService {
             },
         };
         self.store().commit(&row, &[], false)?;
-        self.begin_run(&id, &launch.run_id, &launch.prompt).await?;
+        self.begin_run(&id, &launch.run_id, &launch.prompt, SendMode::Plain, None)
+            .await?;
         Ok(SessionOutput::Launched {
             summary: self.session(&id)?.summary,
         })
@@ -1087,6 +1109,8 @@ impl SessionService {
         id: &str,
         run_id: &NonEmpty,
         text: &str,
+        mode: SendMode,
+        steer: Option<SteerTag>,
     ) -> Result<bool, SessionError> {
         let recorded = self.update(id, |c| {
             if let Some(run) = c.runs.iter().find(|r| r.id == *run_id) {
@@ -1128,12 +1152,17 @@ impl SessionService {
                 st.spawned.insert(run_id.to_string());
             }
         }
+        if let Some(tag) = steer {
+            self.track_steer(id, run_id, tag.id, queued);
+        }
         let command = SessionCommand::Send {
             run_id: run_id.to_string(),
             text: text.to_owned(),
+            mode,
         };
         if let Err(e) = self.dispatch(id, command, None).await {
             self.fail_run(id, run_id, FailureClass::Other, e.message.as_str());
+            self.steer_failed(run_id, e.message.as_str());
             return Err(e);
         }
         Ok(queued)
@@ -1439,6 +1468,7 @@ impl SessionService {
                         Ok(pre) => self.run_began(&id, &started, pre),
                         Err(e) => tracing::warn!(error = %e.message, "session event not applied"),
                     }
+                    self.steer_delivered(&started, false);
                 }
                 RunnerEvent::Spans(mut spans) => {
                     for span in &mut spans {
@@ -1449,10 +1479,39 @@ impl SessionService {
                     }
                     self.put_spans(&spans, true);
                 }
+                RunnerEvent::Joined { run_id: joined } => {
+                    let joined = self.resolve(&id, &joined);
+                    self.log(self.update(&id, |c| {
+                        let at = c.at.clone();
+                        if let Some(run) = c.run_mut(&joined)
+                            && matches!(run.status, RunStatus::Queued | RunStatus::Starting)
+                        {
+                            run.status = RunStatus::Running;
+                            run.started_at.get_or_insert(at);
+                        }
+                    }));
+                    self.steer_delivered(&joined, true);
+                }
+                RunnerEvent::Queued { .. } => {}
+                RunnerEvent::Seen { run_ids } => {
+                    let run_ids: Vec<String> =
+                        run_ids.iter().map(|r| self.resolve(&id, r)).collect();
+                    self.steer_seen(&run_ids);
+                }
+                RunnerEvent::SendNow {
+                    run_id: steer,
+                    outcome,
+                    stopped_tool,
+                } => self.steer_send_now(&self.resolve(&id, &steer), outcome, stopped_tool),
+                RunnerEvent::Withdrawn {
+                    run_id: steer,
+                    cancelled,
+                } => self.steer_withdrawn(&self.resolve(&id, &steer), cancelled),
                 RunnerEvent::AssistantText { message_id, text } => {
                     if delta.as_ref().is_some_and(|(m, _)| *m == message_id) {
                         delta = None;
                     }
+                    self.steer_text(&id, &message_id, &text);
                     self.assistant_text(&id, message_id, text, &run_id);
                 }
                 // The runner's only Permission item is a withdrawn prompt; the node keeps its own item per prompt.
@@ -1483,7 +1542,14 @@ impl SessionService {
                     if usage.as_ref().is_some_and(|(r, _)| *r == ended) {
                         usage = None;
                     }
-                    self.run_ended(&id, &ended, outcome, usage_of_run);
+                    self.run_ended(&id, &ended, outcome.clone(), usage_of_run);
+                    let retrying = self.store().runs(&id).is_ok_and(|runs| {
+                        runs.iter()
+                            .any(|r| r.id.as_str() == ended && r.status.is_active())
+                    });
+                    if !retrying {
+                        self.steer_ended(&ended, &outcome);
+                    }
                 }
                 RunnerEvent::Usage {
                     run_id: run,
@@ -1708,6 +1774,10 @@ impl SessionService {
                 (run.status, run.failure) = match outcome {
                     RunOutcome::Completed { .. } => (RunStatus::Completed, None),
                     RunOutcome::Interrupted => (RunStatus::Interrupted, None),
+                    RunOutcome::Superseded { by } => {
+                        run.superseded_by = NonEmpty::new(by).ok();
+                        (RunStatus::Interrupted, None)
+                    }
                     RunOutcome::Failed(failure) => {
                         (RunStatus::Failed, Some(RunFailure { retries, ..failure }))
                     }
@@ -1769,6 +1839,7 @@ impl SessionService {
             let command = SessionCommand::Send {
                 run_id: uuid.clone(),
                 text: CONTINUE_PROMPT.to_owned(),
+                mode: SendMode::Plain,
             };
             if let Err(e) = service
                 .dispatch(&id, command, Some((uuid, run_id.clone())))

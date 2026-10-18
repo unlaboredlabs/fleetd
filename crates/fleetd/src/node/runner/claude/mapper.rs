@@ -12,7 +12,8 @@ use std::sync::Arc;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, ItemStatus, PermissionDecision, RunFailure, RunUsage, ThreadItem,
+    FailureClass, ItemKind, ItemStatus, PermissionDecision, RunFailure, RunUsage, SendMode,
+    SendNow, ThreadItem,
 };
 use fleetd_contracts::time::{DecidedBy, SpanStatus};
 use serde_json::{Value, json};
@@ -22,7 +23,9 @@ use super::protocol::{
     StreamEvent, System, User, UserContent,
 };
 use super::spans::SpanBuilder;
-use crate::node::runner::conformance::{auto_memory_on, missing_init_capabilities};
+use crate::node::runner::conformance::{
+    SEND_NOW_CAPABILITY, auto_memory_on, missing_init_capabilities,
+};
 use crate::node::runner::failure::FailureEvidence;
 use crate::node::runner::{ExitInfo, RateLimit, RunOutcome, RunnerEvent};
 use crate::node::util::{head_utf16, tail_utf16};
@@ -66,6 +69,18 @@ struct OpenTool {
     title: String,
     started_at: Timestamp,
     kind: ItemKind,
+}
+
+/// A control request fleetd sent whose answer it reads.
+enum Control {
+    /// A mode-`now` send's stop (`send_now`, or an interrupt in its place).
+    Stop {
+        run_id: String,
+        stopped_tool: Option<String>,
+    },
+    Withdraw {
+        run_id: String,
+    },
 }
 
 struct PendingPermission {
@@ -114,6 +129,16 @@ pub struct StreamMapper {
     minted: u64,
     warned_capabilities: bool,
     spans: SpanBuilder,
+    /// The latest `system/init` capabilities; none before the process's first turn.
+    capabilities: Option<Vec<String>>,
+    /// Steers (`boundary`, `now`) sent while a turn ran and not yet started: an aborted `result` then supersedes.
+    steers_waiting: Vec<String>,
+    /// A mode-`now` send waiting for its `queued` before fleetd asks claude to send it now.
+    send_now: Option<String>,
+    controls: HashMap<String, Control>,
+    /// Runs an older claude merged into the running turn; they end with its `result`.
+    joined: Vec<String>,
+    withdraws_sent: u64,
 }
 
 impl StreamMapper {
@@ -144,13 +169,43 @@ impl StreamMapper {
             minted: 0,
             warned_capabilities: false,
             spans: SpanBuilder::new(session_id_for_spans.clone()),
+            capabilities: None,
+            steers_waiting: Vec::new(),
+            send_now: None,
+            controls: HashMap::new(),
+            joined: Vec::new(),
+            withdraws_sent: 0,
         }
     }
 
-    /// The user message that starts run `run_id`. claude echoes the uuid on `command_lifecycle` and the `result`.
-    pub fn send(&mut self, run_id: &str, text: &str) -> Input {
+    /// The stdin lines that start run `run_id`. claude echoes the uuid on `command_lifecycle` and the `result`.
+    ///
+    /// `Plain` is today's send. `Boundary` asks for `priority: "now"`: the running turn ends at its next tool boundary
+    /// and the message gets its own turn. `Now` sends the message, then on its `queued` asks claude to send it now,
+    /// which stops the running step; without `interrupt_send_now_v1` it first interrupts the running message
+    /// (`interrupt_receipt_v1`), else interrupts plainly. Between turns every mode is a plain new turn.
+    pub fn send(&mut self, run_id: &str, text: &str, mode: SendMode) -> Vec<Input> {
+        let mut out = Vec::new();
+        let running = self.active_run.clone();
+        if mode != SendMode::Plain && running.is_some() {
+            self.steers_waiting.push(run_id.to_owned());
+        }
+        if let (SendMode::Now, Some(running)) = (mode, running) {
+            let caps = self.capabilities.as_deref().unwrap_or_default();
+            let has = |c: &str| caps.iter().any(|x| x == c);
+            if has(SEND_NOW_CAPABILITY) && has("msg_lifecycle_v1") {
+                self.send_now = Some(run_id.to_owned());
+            } else {
+                let request = if has("interrupt_receipt_v1") {
+                    json!({"subtype": "interrupt", "for_user_message_uuids": [running]})
+                } else {
+                    json!({"subtype": "interrupt"})
+                };
+                out.push(self.stop_request(run_id, request));
+            }
+        }
         self.open_runs.push(run_id.to_owned());
-        Input::User {
+        out.push(Input::User {
             message: InputMessage {
                 role: "user",
                 content: text.to_owned(),
@@ -158,17 +213,70 @@ impl StreamMapper {
             parent_tool_use_id: None,
             session_id: String::new(),
             uuid: run_id.to_owned(),
+            priority: (mode == SendMode::Boundary).then_some("now"),
+        });
+        out
+    }
+
+    /// `cancel_async_message` for a send claude still holds queued; `None` once it has started (nothing to withdraw).
+    pub fn withdraw(&mut self, run_id: &str) -> Option<Input> {
+        let waiting = self.open_runs.iter().any(|r| r == run_id)
+            && self.active_run.as_deref() != Some(run_id)
+            && !self.joined.iter().any(|r| r == run_id);
+        if !waiting {
+            return None;
         }
+        self.withdraws_sent += 1;
+        let request_id = format!("fleetd-withdraw-{}", self.withdraws_sent);
+        let run_id = run_id.to_owned();
+        let request = json!({"subtype": "cancel_async_message", "message_uuid": run_id});
+        self.controls
+            .insert(request_id.clone(), Control::Withdraw { run_id });
+        Some(Input::ControlRequest {
+            request_id,
+            request,
+        })
     }
 
     pub fn interrupt(&mut self) -> Input {
+        self.interrupt_request(json!({"subtype": "interrupt"}))
+    }
+
+    fn interrupt_request(&mut self, request: Value) -> Input {
         self.interrupts_sent += 1;
         let request_id = format!("fleetd-int-{}", self.interrupts_sent);
         self.interrupt = Some(request_id.clone());
         Input::ControlRequest {
             request_id,
-            request: json!({"subtype": "interrupt"}),
+            request,
         }
+    }
+
+    /// An interrupt that stops the running step for steer `run_id`; its answer becomes [`RunnerEvent::SendNow`].
+    fn stop_request(&mut self, run_id: &str, request: Value) -> Input {
+        let input = self.interrupt_request(request);
+        if let Input::ControlRequest { request_id, .. } = &input {
+            let stopped_tool = self.running_tool();
+            let run_id = run_id.to_owned();
+            self.controls.insert(
+                request_id.clone(),
+                Control::Stop {
+                    run_id,
+                    stopped_tool,
+                },
+            );
+        }
+        input
+    }
+
+    /// The title of the running turn's oldest unfinished tool call.
+    fn running_tool(&self) -> Option<String> {
+        let active = self.active_run.as_deref();
+        self.tools
+            .values()
+            .filter(|t| t.run_id.as_deref() == active)
+            .min_by(|a, b| a.started_at.cmp(&b.started_at))
+            .map(|t| t.title.clone())
     }
 
     /// The answer to a pending `can_use_tool`; `None` when claude no longer waits for it. An allow without an edited
@@ -232,6 +340,32 @@ impl StreamMapper {
             Line::ControlRequest(request) => self.control_request(request, now, &mut out),
             Line::ControlResponse(response) => {
                 let body = response.response;
+                if let Some(control) = self.controls.remove(&body.request_id) {
+                    let answer = body.response.clone().unwrap_or_default();
+                    let ok = body.subtype == "success";
+                    out.events.push(match control {
+                        Control::Stop {
+                            run_id,
+                            stopped_tool,
+                        } => {
+                            let outcome = send_now_outcome(ok, &answer);
+                            if outcome != SendNow::Stopped
+                                && self.interrupt.as_deref() == Some(body.request_id.as_str())
+                            {
+                                self.interrupt = None;
+                            }
+                            RunnerEvent::SendNow {
+                                run_id,
+                                stopped_tool: stopped_tool.filter(|_| outcome == SendNow::Stopped),
+                                outcome,
+                            }
+                        }
+                        Control::Withdraw { run_id } => RunnerEvent::Withdrawn {
+                            run_id,
+                            cancelled: ok && answer["cancelled"].as_bool() == Some(true),
+                        },
+                    });
+                }
                 if body.subtype != "success" {
                     tracing::warn!(
                         "claude refused control request {}: {}",
@@ -276,7 +410,7 @@ impl StreamMapper {
                 self.rate_limit = Some(limit.clone());
                 out.events.push(RunnerEvent::RateLimit(limit));
             }
-            Line::CommandLifecycle(lifecycle) => self.lifecycle(lifecycle, now, &mut out.events),
+            Line::CommandLifecycle(lifecycle) => self.lifecycle(lifecycle, now, &mut out),
             Line::Other => {}
         }
         out
@@ -314,6 +448,7 @@ impl StreamMapper {
             "init" => {
                 let missing =
                     missing_init_capabilities(system.capabilities.as_deref().unwrap_or_default());
+                self.capabilities = Some(system.capabilities.clone().unwrap_or_default());
                 if !missing.is_empty() && !self.warned_capabilities {
                     self.warned_capabilities = true;
                     tracing::warn!(
@@ -328,6 +463,12 @@ impl StreamMapper {
                 });
             }
             "status" => {
+                if system.status.as_deref() == Some("requesting")
+                    && let Some(run_ids) =
+                        system.user_message_uuids.clone().filter(|u| !u.is_empty())
+                {
+                    events.push(RunnerEvent::Seen { run_ids });
+                }
                 let compacting = system.status.as_deref() == Some("compacting");
                 if compacting != self.compacting {
                     self.compacting = compacting;
@@ -384,10 +525,36 @@ impl StreamMapper {
         }
     }
 
-    fn lifecycle(&mut self, lifecycle: CommandLifecycle, now: &Now, events: &mut Vec<RunnerEvent>) {
+    fn lifecycle(&mut self, lifecycle: CommandLifecycle, now: &Now, out: &mut Mapped) {
         let run_id = lifecycle.command_uuid;
         match lifecycle.state.as_str() {
+            "queued" if self.open_runs.contains(&run_id) => {
+                if self.send_now.as_deref() == Some(run_id.as_str()) {
+                    self.send_now = None;
+                    let request =
+                        json!({"subtype": "interrupt", "send_now": true, "message_uuid": run_id});
+                    out.replies.push(self.stop_request(&run_id, request));
+                }
+                out.events.push(RunnerEvent::Queued { run_id });
+            }
+            // A `started` while another run's turn is still open: claude joined this message to that turn.
+            "started"
+                if self
+                    .active_run
+                    .as_ref()
+                    .is_some_and(|a| *a != run_id && self.open_runs.contains(a)) =>
+            {
+                self.steers_waiting.retain(|r| *r != run_id);
+                if !self.open_runs.contains(&run_id) {
+                    self.open_runs.push(run_id.clone());
+                }
+                self.joined.push(run_id.clone());
+                out.events.push(RunnerEvent::Joined { run_id });
+            }
+            // A joined run ends with its turn's `result`.
+            "cancelled" | "completed" if self.joined.contains(&run_id) => {}
             "started" => {
+                self.steers_waiting.retain(|r| *r != run_id);
                 if !self.open_runs.contains(&run_id) {
                     self.open_runs.push(run_id.clone());
                 }
@@ -397,7 +564,7 @@ impl StreamMapper {
                 self.usage_done = RunUsage::default();
                 self.usage_now = RunUsage::default();
                 self.spans.run_started(&run_id, now.ms);
-                events.push(RunnerEvent::RunStarted { run_id });
+                out.events.push(RunnerEvent::RunStarted { run_id });
             }
             // After a `result` these are bookkeeping; without one the message never ran to a result.
             state @ ("cancelled" | "completed") if self.open_runs.contains(&run_id) => {
@@ -408,7 +575,7 @@ impl StreamMapper {
                         text: String::new(),
                     }
                 };
-                self.end_run(run_id, outcome, None, (None, None), now, events);
+                self.end_run(run_id, outcome, None, (None, None), now, &mut out.events);
             }
             _ => {}
         }
@@ -715,9 +882,12 @@ impl StreamMapper {
             .terminal_reason
             .as_deref()
             .is_some_and(|r| r.starts_with("aborted"));
-        let outcome = if aborted
-            || (self.interrupt.is_some() && result.subtype == "error_during_execution")
-        {
+        let cut =
+            aborted || (self.interrupt.is_some() && result.subtype == "error_during_execution");
+        let superseding = self.steers_waiting.iter().find(|r| **r != run_id).cloned();
+        let outcome = if let (true, Some(by)) = (cut, superseding) {
+            RunOutcome::Superseded { by }
+        } else if cut {
             RunOutcome::Interrupted
         } else if !result.is_error && result.subtype == "success" {
             RunOutcome::Completed {
@@ -750,7 +920,11 @@ impl StreamMapper {
             )
         };
         let durations = (result.duration_ms, result.duration_api_ms);
-        self.end_run(run_id, outcome, usage, durations, now, events);
+        let joined = std::mem::take(&mut self.joined);
+        self.end_run(run_id, outcome.clone(), usage, durations, now, events);
+        for run in joined {
+            self.end_run(run, outcome.clone(), None, (None, None), now, events);
+        }
     }
 
     fn end_run(
@@ -810,7 +984,7 @@ impl StreamMapper {
         }
         let span_status = match &outcome {
             RunOutcome::Completed { .. } => SpanStatus::Ok,
-            RunOutcome::Interrupted => SpanStatus::Cancelled,
+            RunOutcome::Interrupted | RunOutcome::Superseded { .. } => SpanStatus::Cancelled,
             RunOutcome::Failed(_) => SpanStatus::Failed,
         };
         let spans = self
@@ -820,6 +994,11 @@ impl StreamMapper {
             events.push(RunnerEvent::Spans(spans));
         }
         self.open_runs.retain(|r| *r != run_id);
+        self.steers_waiting.retain(|r| *r != run_id);
+        self.joined.retain(|r| *r != run_id);
+        if self.send_now.as_deref() == Some(run_id.as_str()) {
+            self.send_now = None;
+        }
         if self.active_run.as_deref() == Some(run_id.as_str()) {
             self.active_run = None;
         }
@@ -878,6 +1057,17 @@ impl StreamMapper {
     fn mint(&mut self, what: &str) -> String {
         self.minted += 1;
         format!("{}-{what}-{}", self.session_id, self.minted)
+    }
+}
+
+/// claude's answer to a stop: `send_now` (interrupt_send_now_v1) or `turn` (interrupt_receipt_v1); a plain
+/// interrupt answers only success.
+fn send_now_outcome(ok: bool, answer: &Value) -> SendNow {
+    match (ok, answer["send_now"].as_str(), answer["turn"].as_str()) {
+        (false, _, _) => SendNow::NothingWaiting,
+        (_, Some("stopped"), _) | (_, None, Some("stopped") | None) => SendNow::Stopped,
+        (_, Some("delivering"), _) => SendNow::Delivering,
+        _ => SendNow::NothingWaiting,
     }
 }
 
