@@ -1,15 +1,19 @@
 //! The board (spec 2.2), the default screen: the docked composer, the needs-you strip, then the open orders,
-//! grouped by project (or by status, ⌘⇧G). Quiet work, loud decision: an order that needs you is full weight
-//! with the amber dot; working orders recede. Nothing reorders under the pointer or the keyboard selection; the
-//! board resorts 2 s after the last interaction.
+//! grouped by project (or by status, ⌘⇧G). An order that needs you carries the amber dot. Nothing reorders under
+//! the pointer or the keyboard selection; the board resorts 2 s after the last interaction. When exactly one
+//! order is open, it takes the stage (`live::stage`): its whole fleet under the composer instead of one card
+//! above an empty board.
 
 use std::collections::HashMap;
 
 use fleetd_contracts::ledger::LeadState;
-use fleetd_contracts::live::{LaneStatus, OrderCard, OrderPhase};
+use fleetd_contracts::live::{LaneStatus, OrderCard, OrderPhase, lead_lane_id};
 use gpui::{AnyElement, Context, Div, ExternalPaths, Focusable, SharedString, Stateful, div, prelude::*, px};
 
 use crate::live;
+use crate::live::lanes::Density;
+use crate::live::stage::{Stage, agents_at_work, lead_lane, lead_note, pr_progress};
+use crate::live::state::{fleet_activity, parse_ms};
 use crate::notify::unix_secs;
 use crate::shell::{Shell, ago_short};
 use crate::state::{ProjectKey, Sent, SentOrder, State};
@@ -184,18 +188,79 @@ impl Shell {
             self.board_list.remeasure_items(0..old);
         }
         self.board_now = rows;
+        let staged = self.staged_card();
+        let since = staged.as_deref().and_then(|id| self.state.card(id)).and_then(|c| parse_ms(c.created_at.as_str()));
+        for (id, lanes) in &self.card_lanes {
+            let (density, started) = if staged.as_deref() == Some(id.as_str()) { (Density::Stage, since) } else { (Density::Card, None) };
+            lanes.update(cx, |l, cx| l.set_density(density, started, cx));
+        }
+        let board = div().id("board").flex_1().min_w_0().on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hold_board(*hovered, cx)));
+        if let Some(id) = staged {
+            return board
+                .flex()
+                .flex_col()
+                .child(board_frame(self.board_top(cx).into_any_element()))
+                .child(self.stage_area(&id, cx))
+                .into_any_element();
+        }
+        board.child(gpui::list(self.board_list.clone(), cx.processor(|this, ix, _, cx| this.board_item(ix, cx))).size_full()).into_any_element()
+    }
+
+    /// The order on the stage: the only open order on the board, when nothing else is in flight there.
+    fn staged_card(&self) -> Option<String> {
+        if self.board_now.iter().any(|r| matches!(r, Row::Sent(_) | Row::Routing)) {
+            return None;
+        }
+        let mut open = self.board_now.iter().filter_map(|r| match r {
+            Row::Card(id) => self.state.card(id).filter(|c| !matches!(c.phase, OrderPhase::Done | OrderPhase::Stopped)).map(|_| id.clone()),
+            _ => None,
+        });
+        let one = open.next()?;
+        open.next().is_none().then_some(one)
+    }
+
+    /// The staged order, a fixed gap under the composer, with the board's finished orders beneath it.
+    fn stage_area(&mut self, id: &str, cx: &mut Context<Self>) -> AnyElement {
+        let t = &theme(cx).clone();
+        let Some(card) = self.state.card(id).cloned() else { return div().into_any_element() };
+        let Some(lanes) = self.card_lanes.get(id).cloned() else { return div().into_any_element() };
+        let lead = self.state.live.live_lane(lead_lane_id(&card.project_ref).as_str()).map(lead_lane);
+        let lead_state = self
+            .state
+            .project(&(card.project_ref.machine_id.to_string(), card.project_ref.project_id.to_string()))
+            .map(|r| lead_words(r.lead().map(|l| l.state)));
+        let agents = self.state.live.lanes(&card.workstream_id);
+        let lanes_h = lanes.read(cx).height();
+        let open_id = id.to_string();
+        let on_open: live::stage::OnOpen = Box::new(cx.listener(move |this, _, _, cx| this.open_order(&open_id, cx)));
+        let stage = live::stage::stage(t, Stage { card: &card, agents: &agents, lanes, lead, lead_state, lanes_h, on_open: Some(on_open) });
+        let rest: Vec<AnyElement> = self
+            .board_now
+            .clone()
+            .iter()
+            .filter_map(|r| if let Row::Card(other) = r { (other != id).then(|| other.clone()) } else { None })
+            .map(|other| self.order_card(&other, cx).into_any_element())
+            .collect();
         div()
-            .id("board")
+            .id("stage")
             .flex_1()
-            .min_w_0()
-            .on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hold_board(*hovered, cx)))
-            .child(gpui::list(self.board_list.clone(), cx.processor(|this, ix, _, cx| this.board_item(ix, cx))).size_full())
+            .min_h_0()
+            .overflow_y_scroll()
+            .child(
+                // A fixed gap under the composer; spare room falls below the card, never between them.
+                div()
+                    .pt_8()
+                    .pb_6()
+                    .flex()
+                    .flex_col()
+                    .child(board_frame(stage.into_any_element()))
+                    .when(!rest.is_empty(), |d| d.child(board_frame(div().pt_8().flex().flex_col().children(rest).into_any_element()))),
+            )
             .into_any_element()
     }
 
     fn board_item(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
-        // A list item is laid out on its own: without a width it shrinks to its content.
-        let frame = |el: AnyElement| div().w_full().child(div().max_w(px(metric::MEASURE + 260.)).px_6().child(el)).into_any_element();
+        let frame = board_frame;
         if ix == 0 {
             return frame(self.board_top(cx).into_any_element());
         }
@@ -244,7 +309,8 @@ impl Shell {
     }
 
     fn boards_loaded(&self) -> bool {
-        self.state.projects.iter().all(|r| !self.state.live.orders(&r.key()).is_empty() || self.state.board_errors.contains_key(&r.key()))
+        // A project with no orders has a board too: an empty one is loaded, not loading.
+        self.state.projects.iter().all(|r| self.state.live.has_board(&r.key()) || self.state.board_errors.contains_key(&r.key()))
             || self.bench.is_some()
     }
 
@@ -278,14 +344,7 @@ impl Shell {
         let now = self.now_secs();
         let cards: Vec<&OrderCard> = self.state.live.orders(key).iter().filter(|c| on_board(c, now)).collect();
         let open = cards.iter().filter(|c| !matches!(c.phase, OrderPhase::Done | OrderPhase::Stopped)).count();
-        let lead = match row.and_then(|r| r.lead()).map(|l| l.state) {
-            Some(LeadState::Working) => "lead working",
-            Some(LeadState::Idle) => "lead idle",
-            Some(LeadState::Starting) => "lead starting",
-            Some(LeadState::Stalled) => "lead stalled",
-            Some(LeadState::Stopped) => "lead stopped",
-            None => "no lead",
-        };
+        let lead = lead_words(row.and_then(|r| r.lead()).map(|l| l.state));
         let mut facts = vec![lead.to_string(), format!("{open} order{}", if open == 1 { "" } else { "s" })];
         facts.extend(settled_line(&cards));
         let done_today = cards.iter().filter(|c| c.phase == OrderPhase::Done).count();
@@ -332,19 +391,22 @@ impl Shell {
     fn order_card(&self, id: &str, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = &theme(cx).clone();
         let Some(card) = self.state.card(id).cloned() else { return div().id(SharedString::from(format!("card-{id}"))) };
-        let needs = card.phase == OrderPhase::WaitingOnYou;
         let selected = self.selected_card.as_deref() == Some(id);
         let active = card.lanes.iter().any(|l| !matches!(l.status, LaneStatus::Done | LaneStatus::Failed | LaneStatus::Cancelled));
         let quiet_phase = matches!(card.phase, OrderPhase::Merging | OrderPhase::Verifying | OrderPhase::Idle | OrderPhase::Queued);
         let collapsed = quiet_phase && !active;
         let done = matches!(card.phase, OrderPhase::Done | OrderPhase::Stopped);
         let age = ago_short(card.created_at.as_str(), self.now_secs());
-        let prs: Vec<String> = card.prs.iter().map(pr_line).collect();
-        let next = card.next.as_ref().map(|n| format!("next: {n}"));
-        let detail_line = (!collapsed && !done && (!prs.is_empty() || next.is_some())).then(|| {
-            let mut parts = prs.clone();
-            parts.extend(next.clone());
-            parts.join("   ")
+        let agents = self.state.live.lanes(&card.workstream_id);
+        let busy = agents_at_work(&agents);
+        let next = lead_note(card.next.as_deref(), &agents, &card.prs).map(|n| format!("next: {n}"));
+        let detail_line = (!collapsed && !done && (!card.prs.is_empty() || next.is_some())).then(|| {
+            div()
+                .flex()
+                .items_center()
+                .gap_4()
+                .children(card.prs.iter().map(|p| pr_progress(t, p)))
+                .children(next.clone().map(|n| div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(n)))
         });
         let lanes = (!collapsed && !done && active).then(|| self.card_lanes.get(id).cloned()).flatten();
         // A card without lane rows still says what its most relevant agent is doing now; with rows, each row does.
@@ -362,14 +424,12 @@ impl Shell {
         let drop_id = id.to_string();
         let hover = t.hover;
         let wid = card.workstream_id.to_string();
-        let title_color = if needs {
-            t.text
-        } else if done {
-            t.quiet
-        } else {
-            t.text
+        let title_color = if done { t.quiet } else { t.text };
+        // A working order's chip counts its fleet from the lanes, which move with every agent event.
+        let chip = match fleet_activity(&agents) {
+            doing if busy && card.phase == OrderPhase::Working && !doing.is_empty() => live::chips::phase_chip(t, OrderPhase::Working, Some(&doing)),
+            _ => live::chips::phase_chip(t, card.phase, card.phase_detail.as_deref()),
         };
-        let chip = live::chips::phase_chip(t, card.phase, card.phase_detail.as_deref());
         live_enter(
             &wid,
             div()
@@ -412,7 +472,7 @@ impl Shell {
                                 .text_ellipsis()
                                 .whitespace_nowrap()
                                 .text_color(title_color)
-                                .when(needs, |d| d.font_weight(STRONG))
+                                .when(!done, |d| d.font_weight(STRONG))
                                 .child(card.title.to_string()),
                         )
                         .child(chip)
@@ -428,14 +488,12 @@ impl Shell {
                     d.child(
                         div()
                             .pl(px(48.))
-                            .h(px(metric::LINE + 2.))
+                            .h(px(metric::LINE + 6.))
                             .flex()
                             .items_center()
                             .text_size(px(size::XS))
                             .text_color(t.quiet)
                             .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
                             .child(line),
                     )
                 }),
@@ -521,6 +579,23 @@ impl Shell {
                 )
                 .when_some(line, |d, line| d.child(div().pl(px(48.)).text_size(px(size::XS)).child(line))),
         )
+    }
+}
+
+/// One board column: the composer's measure, with its padding. A list item is laid out on its own: without a
+/// width it shrinks to its content.
+fn board_frame(el: AnyElement) -> AnyElement {
+    div().w_full().child(div().max_w(px(metric::MEASURE + 260.)).px_6().child(el)).into_any_element()
+}
+
+fn lead_words(state: Option<LeadState>) -> &'static str {
+    match state {
+        Some(LeadState::Working) => "lead working",
+        Some(LeadState::Idle) => "lead idle",
+        Some(LeadState::Starting) => "lead starting",
+        Some(LeadState::Stalled) => "lead stalled",
+        Some(LeadState::Stopped) => "lead stopped",
+        None => "no lead",
     }
 }
 

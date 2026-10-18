@@ -83,12 +83,21 @@ pub fn activity_line(t: &Theme, lane: &AgentLane) -> Div {
 
 /// `stale`: the live feed is reconnecting; the last line stays, in italics (still readable: `quiet`, AA).
 pub fn render(t: &Theme, line: &Line, stale: bool) -> Div {
+    render_at(t, line, stale, size::XS, false)
+}
+
+/// The line at `words` px (machine text one step up, in mono). `live`: an agent at work, whose line is the thing
+/// to read, so it is primary text rather than quiet.
+pub fn render_at(t: &Theme, line: &Line, stale: bool, words: f32, live: bool) -> Div {
     let (color, weight): (Hsla, FontWeight) = match (stale, line.tone) {
         (true, _) => (t.quiet, REGULAR),
+        (false, Tone::Quiet) if live => (t.text, REGULAR),
         (false, Tone::Quiet) => (t.quiet, REGULAR),
         (false, Tone::Loud) => (t.text, STRONG),
         (false, Tone::Danger) => (t.danger, REGULAR),
     };
+    // Mono reads a step larger than the UI face at the same size: at body size it sits one px under.
+    let mono = if words < size::MD { size::SM } else { words - 1. };
     div()
         .flex()
         .items_baseline()
@@ -96,13 +105,13 @@ pub fn render(t: &Theme, line: &Line, stale: bool) -> Div {
         .min_w_0()
         .overflow_hidden()
         .whitespace_nowrap()
-        .text_size(px(size::XS))
+        .text_size(px(words))
         .text_color(color)
         .font_weight(weight)
         .when(stale, |d| d.italic())
         .child(div().flex_none().child(SharedString::from(line.words.clone())))
         .when_some(line.machine.clone(), |d, m| {
-            d.child(div().min_w_0().overflow_hidden().text_ellipsis().font_family(t.mono_font.clone()).text_size(px(size::SM)).child(m))
+            d.child(div().min_w_0().overflow_hidden().text_ellipsis().font_family(t.mono_font.clone()).text_size(px(mono)).child(m))
         })
 }
 

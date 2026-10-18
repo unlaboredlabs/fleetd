@@ -113,7 +113,8 @@ pub const SPARK_BUCKET_SECS: u32 = 2;
 pub const SPARK_BUCKETS: usize = 30;
 
 /// Work per 2 s bucket, oldest first, ending with the bucket that ends at `end_at`. A sample is
-/// `min(255, 16 × items started + streamed chars / 32)`; a bucket with no frames is 0.
+/// `min(255, 16 × items started + streamed chars / 32 + output tokens not streamed as text / 8)`; a bucket with
+/// no frames is 0.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Spark {
