@@ -227,8 +227,8 @@ impl Shell {
                     .flex_col()
                     .gap_2()
                     .text_color(t.quiet)
-                    .child("No projects yet. Add one on a machine:")
-                    .child(div().max_w(px(420.)).child(self.command_line("copy-project-add", "fleetd project add <path>", cx))),
+                    .child("No projects yet. On the hub, run this again: it offers the repos it finds and keeps what already works.")
+                    .child(div().max_w(px(420.)).child(self.command_line("copy-init", "fleetd init", cx))),
             )
         } else if !self.boards_loaded() {
             Some(ui::loading(t, "Loading orders…"))

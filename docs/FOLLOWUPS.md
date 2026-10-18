@@ -14,6 +14,9 @@ Things a daily user will notice that the design pass left for later. Remove a li
 - **Threads in the palette.** ⌘K finds a project's threads only after that project's details have loaded.
 - **Jump to an ask.** A notification or a palette hit marks the ask in the inbox, but a long inbox doesn't scroll
   to it yet.
+- **Add a project from the app.** With no projects, the board and sidebar point at `fleetd init` on the hub. The
+  hub already has `project_add`; an "Add project…" action (a machine and a path) in the composer's project picker
+  and the empty state would save the trip to a terminal.
 - **Unverified on a Mac.** The system font, SF Mono with its Menlo fallback, and Match system following the OS live
   were all checked on Linux only.
 
