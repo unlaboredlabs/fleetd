@@ -432,8 +432,9 @@ pub enum WorkstreamState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum IntakeChannel {
+    // The removed phone app wrote "phone"; old records read back as the app.
+    #[serde(alias = "phone")]
     App,
-    Phone,
     Mcp,
     Lead,
 }
@@ -628,10 +629,10 @@ brand!(
 #[serde(rename_all = "lowercase")]
 pub enum StepPlace {
     Browser,
-    Phone,
 }
 
-/// A machineId, "browser" or "phone".
+// A "phone" stored before the phone app's removal reads back as a machine id.
+/// A machineId or "browser".
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum StepWhere {
@@ -992,7 +993,7 @@ mod tests {
         ] {
             assert!(accepts::<Step>(step(command)), "{command}");
         }
-        assert!(accepts::<Step>(json!({ "text": "t", "where": "phone" })));
+        assert!(accepts::<Step>(json!({ "text": "t", "where": "browser" })));
         assert!(!accepts::<Step>(json!({ "text": "t", "where": "My Mac" })));
     }
 
@@ -1112,7 +1113,7 @@ mod tests {
         assert!(!accepts::<Ask>(no_rec.clone()));
         assert!(accepts::<Ask>(with(
             no_rec.clone(),
-            json!({ "kind": "do", "steps": [{ "text": "Tick the box", "where": "phone" }] })
+            json!({ "kind": "do", "steps": [{ "text": "Tick the box", "where": "browser" }] })
         )));
         assert!(!accepts::<Ask>(with(
             no_rec,
@@ -1183,5 +1184,18 @@ mod tests {
         let entry = |name: &str| json!({ "name": name, "secretKey": "stripe.key" });
         assert!(accepts::<SecretEnv>(json!([entry("A"), entry("B")])));
         assert!(!accepts::<SecretEnv>(json!([entry("A"), entry("A")])));
+    }
+
+    #[test]
+    fn records_from_the_phone_app_still_decode() {
+        assert_eq!(
+            serde_json::from_value::<IntakeChannel>(json!("phone")).unwrap(),
+            IntakeChannel::App
+        );
+        assert_eq!(
+            serde_json::to_value(IntakeChannel::App).unwrap(),
+            json!("app")
+        );
+        assert!(accepts::<Step>(json!({ "text": "t", "where": "phone" })));
     }
 }

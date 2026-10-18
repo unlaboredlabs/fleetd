@@ -485,8 +485,7 @@
     },
     "StepPlace": {
       "enum": [
-        "browser",
-        "phone"
+        "browser"
       ],
       "type": "string"
     },
@@ -499,7 +498,7 @@
           "$ref": "#/$defs/MachineId"
         }
       ],
-      "description": "A machineId, \"browser\" or \"phone\"."
+      "description": "A machineId or \"browser\"."
     },
     "Timestamp": {
       "format": "date-time",

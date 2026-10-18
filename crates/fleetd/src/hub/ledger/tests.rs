@@ -40,7 +40,7 @@ fn key(k: &str) -> DecisionKey {
 fn human() -> Actor {
     Actor {
         source: DecisionSource::Human,
-        by: "human:phone".into(),
+        by: "human:desk".into(),
     }
 }
 

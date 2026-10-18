@@ -22,7 +22,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
       [--options a,b] [--blocks "<step>"] [--proceeded] [--workstream <W>]
   ask --kind do --key <k> --class <c> --text <t> --step '<json>' [--step '<json>' ...]
       [--verify '<check json>']
-             a step is {"text","where":"<machine>|browser|phone","command"?,"expect"?}; --verify is a
+             a step is {"text","where":"<machine>|browser","command"?,"expect"?}; --verify is a
              cmd or http check fleetd runs once the human ticks it done (a failure reopens it)
              ask the human; answers already in the decision log come back at once
   ask --kind secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
@@ -1444,7 +1444,7 @@ mod tests {
         // The contract's own checks: a do ask needs a step, and a step command takes no <placeholders>.
         assert!(with(&[]).unwrap_err().starts_with("invalid input: "));
         let placeholder =
-            json!({ "text": "x", "where": "phone", "command": "login <token>" }).to_string();
+            json!({ "text": "x", "where": "browser", "command": "login <token>" }).to_string();
         assert!(
             with(&["--step", &placeholder])
                 .unwrap_err()
