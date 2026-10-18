@@ -165,12 +165,12 @@ fn launch_input(request: &str) -> LaunchInput {
 #[tokio::test]
 async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls() {
     let mut node = Node::start(None).await;
-    // A thread the hub stored in the T3 days, which the node has never heard of.
-    let old = node.thread("t3-thread");
+    // A thread the hub stored before the native runner, which the node has never heard of.
+    let old = node.thread("pre-runner-thread");
     node.store
         .thread_upsert(&crate::hub::store::StoredThread {
             thread: serde_json::from_value(json!({
-                "machineId": "lab-b", "threadId": "t3-thread", "projectId": "p1", "title": "old", "status": "running",
+                "machineId": "lab-b", "threadId": "pre-runner-thread", "projectId": "p1", "title": "old", "status": "running",
                 "headline": "", "latestMessageTail": "", "lastProgressAt": "2026-10-01T10:00:00.000Z",
                 "stale": false, "asOf": "2026-10-01T10:00:00.000Z",
             }))
@@ -236,7 +236,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     );
     again.await.unwrap().unwrap();
 
-    // The run starts: thread.started, and the old T3 row is now stale and no longer counts as running.
+    // The run starts: thread.started, and the old row is now stale and no longer counts as running.
     node.push(json!({ "type": "session_updated", "status": "running", "activeRunId": run_id,
         "latestRun": { "id": run_id, "status": "running", "ordinal": 1 },
         "sessionId": session_id, "projectId": "p1", "title": "say OK", "model": "claude-haiku-5-5", "effort": "low",
@@ -250,7 +250,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
             .threads_running()
             .unwrap()
             .iter()
-            .all(|t| t.thread_id.as_str() != "t3-thread")
+            .all(|t| t.thread_id.as_str() != "pre-runner-thread")
     );
     let r = node.thread(&session_id);
     assert_eq!(

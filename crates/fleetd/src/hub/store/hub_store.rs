@@ -12,7 +12,7 @@ pub struct StoredThread {
     pub thread: ThreadSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_sequence: Option<i64>,
-    /// T3's latest run id when this row was written.
+    /// The session's latest run id when this row was written.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_run_id: Option<String>,
     /// That run's phase: a ThreadStatus, or "usage_limited".
@@ -186,7 +186,7 @@ impl HubStore {
         })
     }
 
-    /// Drops the project and its cached threads, once T3 no longer has it.
+    /// Drops the project and its cached threads, once its node no longer has it.
     pub fn project_remove(&self, r: &ProjectRef) -> Result<(), StoreError> {
         self.db.transaction(|conn| {
             conn.prepare_cached("DELETE FROM projects WHERE machine_id = ? AND project_id = ?")?
@@ -269,7 +269,7 @@ impl HubStore {
     }
 
     /// Marks the machine's rows outside `present` stale, as of `as_of`; returns how many it marked. A thread its node
-    /// has no session for never resumes (risk 7 of the native runner: T3 threads from before it).
+    /// has no session for never resumes (risk 7 of the native runner: threads from before it).
     pub fn threads_mark_stale(
         &self,
         machine_id: &MachineId,

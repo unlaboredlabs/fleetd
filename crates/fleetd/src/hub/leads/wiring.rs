@@ -109,6 +109,14 @@ impl LeadPorts for HubPorts {
                     crate::hub::queue::ports::ExecutorError::MachineNotConnected { machine_id } => {
                         LeadError::machine_offline(&machine_id)
                     }
+                    // The node's own words and fix, e.g. claude not logged in and how to log it in.
+                    crate::hub::queue::ports::ExecutorError::NodeRequestFailed {
+                        fix: Some(ref fix),
+                        ..
+                    } => LeadError {
+                        fix: Some(fix.clone()),
+                        ..LeadError::t3_error(error.to_string())
+                    },
                     other => LeadError::t3_error(other.to_string()),
                 })
         })

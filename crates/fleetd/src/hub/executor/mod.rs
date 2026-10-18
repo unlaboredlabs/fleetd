@@ -728,7 +728,7 @@ impl Executors {
             .is_some_and(|s| s.shell.complete);
         // A replay only carries changed rows, and project counts need every row, so the first stream in this process
         // starts from a snapshot; it is diffed against the stored summaries, so nothing is missed. It also means a
-        // cursor stored before the native runner (T3's sequence) is never sent to a node.
+        // cursor stored before the native runner, from another sequence, is never sent to a node.
         let after = if complete {
             cursor.map(|c| c.max(0) as u64)
         } else {
@@ -883,7 +883,7 @@ impl Executors {
             }
         }
         if let Some(present) = &applied.present {
-            // Rows the node has no session for, such as T3 threads from before the native runner, never resume.
+            // Rows the node has no session for, such as threads from before the native runner, never resume.
             match self.store.threads_mark_stale(machine_id, present, &now) {
                 Ok(0) => {}
                 Ok(n) => {

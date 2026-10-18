@@ -48,11 +48,22 @@ pub enum ExecutorError {
         machine_id: MachineId,
         thread_id: ThreadId,
     },
-    #[error("the node on {machine_id} refused or failed the {operation} request")]
+    /// `message` and `fix` are the node's own words (claude not logged in, and the command that logs it in).
+    #[error("the node on {machine_id} refused or failed the {operation} request: {message}")]
     NodeRequestFailed {
         machine_id: MachineId,
         operation: &'static str,
+        message: String,
+        fix: Option<String>,
     },
+}
+
+/// A message the node took.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Sent {
+    pub run_id: Option<String>,
+    /// It waits behind the thread's active run.
+    pub behind_run: bool,
 }
 
 impl ExecutorError {
@@ -71,13 +82,12 @@ pub trait ThreadWriter: Send + Sync {
     fn is_connected(&self, machine_id: &MachineId) -> bool;
     /// Returns once the machine's node link is live, at once if it is now.
     fn await_live(&self, machine_id: &MachineId) -> BoxFuture<'_, ()>;
-    /// Ok carries the node's run id, when it reported one.
     fn send(
         &self,
         target: &ThreadRef,
         message: &str,
         client_request_id: &str,
-    ) -> BoxFuture<'_, Result<Option<String>, ExecutorError>>;
+    ) -> BoxFuture<'_, Result<Sent, ExecutorError>>;
 }
 
 impl From<executor::ExecutorError> for ExecutorError {
@@ -97,12 +107,14 @@ impl From<executor::ExecutorError> for ExecutorError {
                 machine_id,
                 operation,
                 message,
-                ..
+                fix,
             } => {
                 tracing::warn!(machine_id = %machine_id, message = %message, "node {} request failed", operation.as_str());
                 Self::NodeRequestFailed {
                     machine_id,
                     operation: operation.as_str(),
+                    message,
+                    fix,
                 }
             }
         }
@@ -123,11 +135,16 @@ impl From<ExecutorError> for executor::ExecutorError {
                 thread_id,
             },
             // The queue only sends, so the operation is always a send.
-            ExecutorError::NodeRequestFailed { machine_id, .. } => Self::NodeRequestFailed {
+            ExecutorError::NodeRequestFailed {
+                machine_id,
+                message,
+                fix,
+                ..
+            } => Self::NodeRequestFailed {
                 machine_id,
                 operation: executor::NodeOperation::Send,
-                message: "the node refused the send".into(),
-                fix: None,
+                message,
+                fix,
             },
         }
     }
@@ -146,7 +163,7 @@ impl ThreadWriter for executor::Executors {
         target: &ThreadRef,
         message: &str,
         client_request_id: &str,
-    ) -> BoxFuture<'_, Result<Option<String>, ExecutorError>> {
+    ) -> BoxFuture<'_, Result<Sent, ExecutorError>> {
         let (target, message, id) = (
             target.clone(),
             message.to_owned(),
@@ -155,7 +172,10 @@ impl ThreadWriter for executor::Executors {
         Box::pin(async move {
             executor::Executors::send(self, &target, &message, &id)
                 .await
-                .map(|sent| sent.run_id)
+                .map(|sent| Sent {
+                    run_id: sent.run_id,
+                    behind_run: sent.queued,
+                })
                 .map_err(Into::into)
         })
     }
@@ -177,7 +197,8 @@ impl executor::OfflineWriter for QueueWriter {
                 .await
                 .map(|sent| executor::WriteOutcome {
                     run_id: sent.run_id,
-                    queued: sent.queued,
+                    // Behind a run: queued with no expiry, which thread_send tells apart from offline.
+                    queued: sent.queued || sent.behind_run,
                     queued_until: sent.queued_until,
                 })
                 .map_err(Into::into)

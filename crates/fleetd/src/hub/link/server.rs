@@ -14,8 +14,8 @@ use fleetd_contracts::hello::{PROTOCOL_VERSION, ProtocolVersion};
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::model::{Machine, MachineStatus, MachineT3};
-use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeT3Endpoint, NodeToHub, close};
+use fleetd_contracts::model::{Machine, MachineStatus};
+use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeToHub, close};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -219,14 +219,13 @@ impl NodeLinkServer {
         }
     }
 
-    /// Rewrites the stored machine's status (and T3 info, when given); `degraded_reason` is kept only while degraded.
+    /// Rewrites the stored machine's status; `degraded_reason` is kept only while degraded.
     fn write_status(
         &self,
         machine_id: &MachineId,
         at: &str,
         status: MachineStatus,
         reason: Option<&str>,
-        t3: Option<&NodeT3Endpoint>,
     ) {
         let stored = match self.deps.store.machine_get(machine_id) {
             Ok(Some(m)) => m,
@@ -240,12 +239,6 @@ impl NodeLinkServer {
             degraded_reason: None,
             ..stored
         };
-        if let Some(t3) = t3 {
-            machine.t3 = Some(MachineT3 {
-                version: t3.version.clone(),
-                protocol: t3.protocol,
-            });
-        }
         if status == MachineStatus::Degraded {
             machine.degraded_reason = Some(
                 reason
@@ -298,7 +291,7 @@ impl NodeLinkServer {
         };
         let at = self.now_iso();
         let seconds = self.silence_timeout.as_secs();
-        self.write_status(machine_id, &at, MachineStatus::Offline, None, None);
+        self.write_status(machine_id, &at, MachineStatus::Offline, None);
         // It needs the human only while runs were going there: nobody is watching them now.
         let running = match self.deps.store.threads_running() {
             Ok(threads) => threads.iter().any(|t| &t.machine_id == machine_id),
@@ -500,12 +493,12 @@ impl NodeLinkServer {
         let at = self.now_iso();
         match problem {
             None => {
-                self.write_status(machine_id, &at, MachineStatus::Online, None, None);
+                self.write_status(machine_id, &at, MachineStatus::Online, None);
                 self.announce(machine_id, &at, Announced::Online, None);
             }
             Some(reason) => {
                 let status = MachineStatus::Degraded;
-                self.write_status(machine_id, &at, status, Some(&reason), None);
+                self.write_status(machine_id, &at, status, Some(&reason));
                 self.announce(machine_id, &at, Announced::Degraded, Some(&reason));
             }
         }
@@ -534,7 +527,6 @@ impl NodeLinkServer {
         };
 
         let at = self.now_iso();
-        let stored = self.deps.store.machine_get(&machine_id).ok().flatten();
         let hello_reason = "checking the node's claude runner";
         let machine: Machine = serde_json::from_value(json!({
             "machineId": machine_id,
@@ -543,11 +535,6 @@ impl NodeLinkServer {
             // Until the runner check answers.
             "status": "degraded",
             "lastSeenAt": at,
-            // Kept from before the native runner; nodes no longer report a T3.
-            "t3": match &hello.t3 {
-                Some(t3) => json!({ "version": t3.version, "protocol": t3.protocol }),
-                None => json!(stored.and_then(|m| m.t3)),
-            },
             "nodeVersion": hello.node_version,
             // Browsers seal this machine's secrets to it; a node from before M8 sends none and takes none.
             "boxPubKey": hello.box_pub_key,
@@ -655,9 +642,9 @@ impl NodeLinkServer {
                         self.check_runner(&machine_id);
                     }
                 }
-                // From nodes that still run T3; the native runner replaced both.
+                // From nodes older than the native runner, which replaced both.
                 NodeToHub::T3Session(_) | NodeToHub::T3State(_) => {
-                    tracing::debug!(machine_id = %machine_id, "node link: T3 frame ignored");
+                    tracing::debug!(machine_id = %machine_id, "node link: pre-runner session frame ignored");
                 }
                 NodeToHub::LeadCall(call) => {
                     // Off the frame loop: a slow call must not hold up heartbeats or other calls.

@@ -80,6 +80,7 @@ pub struct FakeWriter {
     live: watch::Sender<u64>,
     sends: Mutex<Vec<(ThreadRef, String, String)>>,
     refused: Mutex<HashSet<String>>,
+    behind_run: Mutex<HashSet<String>>,
 }
 
 impl FakeWriter {
@@ -92,6 +93,13 @@ impl FakeWriter {
     }
     pub fn refuse(&self, client_request_id: &str) {
         self.refused
+            .lock()
+            .unwrap()
+            .insert(client_request_id.into());
+    }
+    /// The node takes this send behind the thread's active run.
+    pub fn behind_run(&self, client_request_id: &str) {
+        self.behind_run
             .lock()
             .unwrap()
             .insert(client_request_id.into());
@@ -122,7 +130,7 @@ impl ThreadWriter for FakeWriter {
         target: &ThreadRef,
         message: &str,
         client_request_id: &str,
-    ) -> BoxFuture<'_, Result<Option<String>, ExecutorError>> {
+    ) -> BoxFuture<'_, Result<Sent, ExecutorError>> {
         let result = if !self.is_connected(&target.machine_id) {
             Err(ExecutorError::MachineNotConnected {
                 machine_id: target.machine_id.clone(),
@@ -131,11 +139,16 @@ impl ThreadWriter for FakeWriter {
             Err(ExecutorError::NodeRequestFailed {
                 machine_id: target.machine_id.clone(),
                 operation: "send",
+                message: "claude is not logged in for fleetd on this machine".into(),
+                fix: Some("On lab-a: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login".into()),
             })
         } else {
             let mut sends = self.sends.lock().unwrap();
             sends.push((target.clone(), message.into(), client_request_id.into()));
-            Ok(Some(format!("run-{}", sends.len())))
+            Ok(Sent {
+                run_id: Some(format!("run-{}", sends.len())),
+                behind_run: self.behind_run.lock().unwrap().contains(client_request_id),
+            })
         };
         Box::pin(async move { result })
     }
