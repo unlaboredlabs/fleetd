@@ -8,6 +8,7 @@
   },
   "scripts": {
     "lab": "node testLab.ts",
+    "record-fixtures": "node failure/recordFixtures.ts",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

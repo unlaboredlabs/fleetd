@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { degradedMachine } from "./degradedMachine.ts";
+import { FAILURE_SCENARIOS } from "./failure/index.ts";
 import {
   type Body,
   callToolWith,
@@ -71,6 +72,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m8", run: m8Desktop },
   // After m7, which leaves no testbed project: its router must choose among the lab projects only.
   { name: "m9", run: m9Playbooks },
+  // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
+  ...FAILURE_SCENARIOS,
 ];
 
 const hubHome = path.join(RUN, "hub");
