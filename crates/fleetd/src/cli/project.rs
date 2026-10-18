@@ -166,10 +166,12 @@ fn describe(inspect: &Value) -> String {
             .pointer(p)
             .and_then(Value::as_array)
             .map(|a| {
-                a.iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                let names: Vec<&str> = a.iter().filter_map(Value::as_str).collect();
+                let shown = names[..names.len().min(6)].join(", ");
+                match names.len().saturating_sub(6) {
+                    0 => shown,
+                    more => format!("{shown} and {more} more"),
+                }
             })
             .filter(|t| !t.is_empty())
     };
