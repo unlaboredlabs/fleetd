@@ -43,8 +43,9 @@ required item is verified.
 Items are **must** or **polish**. Polish shows beside the number ("polish 2/5") and never holds it back. Sizes are s,
 m and l, worth 1, 3 and 8 points, so a large item moves the number more than a small one.
 
-An order without a plan counts as one must item sized by its tier, done when the order is. The view lists it as a risk
-after half an hour ("W41 has no plan"), since its number can only jump from 0 to 100.
+An order without a plan counts as one must item sized by its tier, done when the order is. It enters the figure with a
+marker ("+1 item: W41 (no plan yet)") and leaves it once it gets a plan, is stopped, or a day after it finishes. The
+view lists it as a risk after half an hour ("W41 has no plan"), since its number can only jump from 0 to 100.
 
 ## Plans and markers
 
@@ -99,6 +100,7 @@ quiet for longer than its normal rhythm:
 | a machine | a heartbeat every 15 s | 45 s of silence, until it's back | "no heartbeat from devbox for 4m"; after it wakes, "devbox slept 10m46s" |
 | Claude usage | each Claude reply | its reset time passes, or its machine is stale | "5h reading from 13:10, before the 14:00 reset" |
 | GitHub | every train pass (15 s) and main CI (60 s) | 180 s without a good answer | "GitHub not reached for 4m: …" |
+| main CI | read every 60 s | its period plus 180 s unread | "main CI of acme/storefront unread since 14:05" |
 | a merge train | every 15 s | 120 s | "the acme/storefront train hasn't run for 3m" |
 
 A stale part keeps its last value with the time it's from and a warning, and the generated headline starts with "Not

@@ -82,8 +82,9 @@ it lists passed in the latest claim. A lead saying it's done moves nothing. The 
 required item is verified.</p>
 <p>Items are <strong>must</strong> or <strong>polish</strong>. Polish shows beside the number ("polish 2/5") and never holds it back. Sizes are s,
 m and l, worth 1, 3 and 8 points, so a large item moves the number more than a small one.</p>
-<p>An order without a plan counts as one must item sized by its tier, done when the order is. The view lists it as a risk
-after half an hour ("W41 has no plan"), since its number can only jump from 0 to 100.</p>
+<p>An order without a plan counts as one must item sized by its tier, done when the order is. It enters the figure with a
+marker ("+1 item: W41 (no plan yet)") and leaves it once it gets a plan, is stopped, or a day after it finishes. The
+view lists it as a risk after half an hour ("W41 has no plan"), since its number can only jump from 0 to 100.</p>
 <h2 id="plans-and-markers">Plans and markers<a class="anchor" href="#plans-and-markers" aria-label="Link to this section">#</a></h2>
 <p>A project's plan is milestones of items. The project lead keeps it with <code>fleetd plan</code> and links work to items with
 <code>--item P12</code> when it spawns a task or enqueues a PR; you can run the same commands in the project's folder. A project's
@@ -123,6 +124,7 @@ quiet for longer than its normal rhythm:</p>
 <tr><td>a machine</td><td>a heartbeat every 15 s</td><td>45 s of silence, until it's back</td><td>"no heartbeat from devbox for 4m"; after it wakes, "devbox slept 10m46s"</td></tr>
 <tr><td>Claude usage</td><td>each Claude reply</td><td>its reset time passes, or its machine is stale</td><td>"5h reading from 13:10, before the 14:00 reset"</td></tr>
 <tr><td>GitHub</td><td>every train pass (15 s) and main CI (60 s)</td><td>180 s without a good answer</td><td>"GitHub not reached for 4m: …"</td></tr>
+<tr><td>main CI</td><td>read every 60 s</td><td>its period plus 180 s unread</td><td>"main CI of acme/storefront unread since 14:05"</td></tr>
 <tr><td>a merge train</td><td>every 15 s</td><td>120 s</td><td>"the acme/storefront train hasn't run for 3m"</td></tr>
 </tbody></table></div>
 <p>A stale part keeps its last value with the time it's from and a warning, and the generated headline starts with "Not
