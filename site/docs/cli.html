@@ -87,6 +87,15 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dt id="pair-worker"><a class="anchor" href="#pair-worker" aria-label="Link to fleetd pair">#</a><pre class="syn"><code>fleetd pair --worker &lt;machine-id&gt; [--home &lt;dir&gt;]</code></pre></dt>
 <dd>print the one command that makes another machine a worker of this hub, with a one-time code (15 min): for a machine the hub can't reach over SSH</dd>
 </dl>
+<h2 id="projects">Projects<a class="anchor" href="#projects" aria-label="Link to this section">#</a></h2>
+<dl class="cli">
+<dt id="project-add"><a class="anchor" href="#project-add" aria-label="Link to fleetd project add">#</a><pre class="syn"><code>fleetd project add [&lt;path|github-url&gt;] [--machine &lt;id&gt;] [--title &lt;t&gt;] [--dest &lt;dir&gt;]
+    [--use-existing] [--yes] [--home &lt;dir&gt;] [--hub &lt;url&gt;]</code></pre></dt>
+<dd>add a project: a checkout on a machine (this one by default), or a GitHub repo cloned onto one (the least busy worker by default), with progress; then its CI, merge rules and what the lead will need. No argument: pick one</dd>
+<dt id="project-list"><a class="anchor" href="#project-list" aria-label="Link to fleetd project list">#</a><pre class="syn"><code>fleetd project list [--machine &lt;id&gt;] [--home &lt;dir&gt;] [--hub &lt;url&gt;]</code></pre></dt>
+<dt id="project-remove"><a class="anchor" href="#project-remove" aria-label="Link to fleetd project remove">#</a><pre class="syn"><code>fleetd project remove &lt;machine&gt;/&lt;project&gt; [--yes] [--home &lt;dir&gt;] [--hub &lt;url&gt;]</code></pre></dt>
+<dd>stop its agents and forget it; its files, branches and worktrees stay</dd>
+</dl>
 <h2 id="running-by-hand">Running by hand<a class="anchor" href="#running-by-hand" aria-label="Link to this section">#</a></h2>
 <dl class="cli">
 <dt id="hub-start"><a class="anchor" href="#hub-start" aria-label="Link to fleetd hub start">#</a><pre class="syn"><code>fleetd hub start [--home &lt;dir&gt;] [--listen &lt;host:port&gt;] [--queue-ttl &lt;seconds&gt;] [--router-model &lt;model&gt;]</code></pre></dt>
@@ -183,6 +192,7 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <ul>
 <li><a href="#commands">Commands</a></li>
 <li><a href="#setting-up">Setting up</a></li>
+<li><a href="#projects">Projects</a></li>
 <li><a href="#running-by-hand">Running by hand</a></li>
 <li><a href="#lead-side-commands">Lead-side commands</a></li>
 </ul>

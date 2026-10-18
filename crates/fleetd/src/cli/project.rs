@@ -16,7 +16,7 @@ use super::setup::state::read_setup;
 
 pub const PROJECT_USAGE: &str =
     "  project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <dir>]
-              [--use-existing] [--yes] [--home <dir>] [--hub <url>]
+         [--use-existing] [--yes] [--home <dir>] [--hub <url>]
              add a project: a checkout on a machine (this one by default), or a GitHub
              repo cloned onto one (the least busy worker by default), with progress;
              then its CI, merge rules and what the lead will need. No argument: pick one
@@ -495,7 +495,9 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
             if !machine.is_empty() {
                 input["machineId"] = json!(machine);
             }
-            out.info(&describe(&preview));
+            if out.tty {
+                out.info(&describe(&preview));
+            }
             let same = target.get("sameRemote") == Some(&Value::Bool(true));
             if v.flag("use-existing") {
                 input["useExisting"] = json!(true);
@@ -555,7 +557,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
         bar
     });
     if !out.tty {
-        println!("cloning into {path} on {machine} ({add_id})");
+        println!("cloning into {path} on {machine}");
     }
     let mut last_phase = String::new();
     loop {
@@ -622,7 +624,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
 }
 
 fn finish(out: &Out) -> Result<(), Stop> {
-    let next = "Give it an order from the app (⌘N) or any agent with intake_submit; its lead starts with the first one.";
+    let next = "Give it an order in the app's composer, or from any agent with intake_submit; its lead starts with the first one.";
     if out.tty {
         let _ = cliclack::outro(next);
     } else {

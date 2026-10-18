@@ -53,10 +53,38 @@
 <p class="kicker">Using fleetd</p>
 <h1>Projects &amp; orders</h1>
 <h2 id="add-a-project">Add a project<a class="anchor" href="#add-a-project" aria-label="Link to this section">#</a></h2>
-<p>Run <code>fleetd init</code> again and pick a repo: a checkout it finds on a worker, or a GitHub URL, which it clones. The rest
-of your setup stays as it is.</p>
-<p>From an MCP client, <code>project_add {machineId, path, title}</code> adds one and <code>project_remove {machineId, projectId}</code>
-stops its threads and forgets it (its files, branches and worktrees stay).</p>
+<pre class="code console" data-copy><code><span class="c">$ fleetd project add https://github.com/acme/storefront</span>
+<span class="o">cloning into /home/me/src/storefront on devbox
+  starting
+  receiving
+  resolving
+  inspecting
+✓ ~/src/storefront cloned and added on devbox
+Lead needs: no CI found: the merge train will only use local checks
+Default branch: main
+CI: none; required checks: none
+Merge: unprotected, squash allowed</span></code></pre>
+<p>Give it a GitHub URL (or <code>owner/repo</code>) to clone the repo onto a worker, or a path to add a checkout that is already
+there: <code>fleetd project add ~/src/storefront</code>. With nothing after <code>add</code>, in a terminal, it lists what it finds to pick
+from: checkouts under <code>~/src</code>, <code>~/code</code>, <code>~/projects</code>, <code>~/dev</code> and similar on every worker, and your repos and your
+orgs' repos from <code>gh repo list</code>.</p>
+<ul>
+<li><strong>Where.</strong> A clone goes to the least busy online worker, into its <code>~/src</code> (or <code>~/code</code>, <code>~/projects</code>), unless you
+pass <code>--machine &lt;id&gt;</code> or <code>--dest &lt;dir&gt;</code>. A path is on this machine unless you pass <code>--machine</code>.</li>
+<li><strong>What the lead will need.</strong> Before it clones, fleetd reads the repo's default branch, its CI (workflows and the
+checks the default branch requires) and its merge rules (branch protection, rulesets, whether squash merges are
+allowed), and says in one line what that means, such as <code>no CI found: the merge train will only use local checks</code>
+or <code>squash merges are off on acme/storefront</code>. Fix those on GitHub before the first PR.</li>
+<li><strong>Already cloned.</strong> When the folder it would clone into already holds the same repo, <code>fleetd project add</code> offers
+to add that checkout; without a terminal, pass <code>--use-existing</code>.</li>
+<li><strong>gh.</strong> fleetd reads GitHub through <code>gh</code> on the hub machine; <code>gh repo list</code> falls back to the worker when the hub's
+<code>gh</code> is logged out. A private repo clones on any worker where <code>gh auth login</code> was run.</li>
+</ul>
+<p>When something is in the way (the worker is offline, the path is not a git repo, <code>gh</code> can't see the repo, the folder
+exists), it says so with the command that fixes it. <code>fleetd project list</code> shows your projects, and <code>fleetd project remove &lt;machine&gt;/&lt;project&gt;</code> stops a project's threads and forgets it; its files, branches and worktrees stay.</p>
+<p>Agents do the same through MCP: <code>project_discover</code>, <code>project_inspect</code>, <code>project_add {path | url}</code> (a clone answers
+with an <code>addId</code>, then <code>project.clone_progress</code> events, then <code>project.added</code> or <code>project.add_failed</code>) and
+<code>project_remove</code>.</p>
 <h2 id="its-lead">Its lead<a class="anchor" href="#its-lead" aria-label="Link to this section">#</a></h2>
 <p>Each project has one lead, and the project's first order starts it: there is nothing to start by hand. The lead's
 first message lists the order, and the app shows the lead starting.</p>

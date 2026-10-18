@@ -7,11 +7,43 @@ description: Add a project, send an order, follow it, and see how "done" is chec
 
 ## Add a project
 
-Run `fleetd init` again and pick a repo: a checkout it finds on a worker, or a GitHub URL, which it clones. The rest
-of your setup stays as it is.
+```console
+$ fleetd project add https://github.com/acme/storefront
+cloning into /home/me/src/storefront on devbox
+  starting
+  receiving
+  resolving
+  inspecting
+✓ ~/src/storefront cloned and added on devbox
+Lead needs: no CI found: the merge train will only use local checks
+Default branch: main
+CI: none; required checks: none
+Merge: unprotected, squash allowed
+```
 
-From an MCP client, `project_add {machineId, path, title}` adds one and `project_remove {machineId, projectId}`
-stops its threads and forgets it (its files, branches and worktrees stay).
+Give it a GitHub URL (or `owner/repo`) to clone the repo onto a worker, or a path to add a checkout that is already
+there: `fleetd project add ~/src/storefront`. With nothing after `add`, in a terminal, it lists what it finds to pick
+from: checkouts under `~/src`, `~/code`, `~/projects`, `~/dev` and similar on every worker, and your repos and your
+orgs' repos from `gh repo list`.
+
+- **Where.** A clone goes to the least busy online worker, into its `~/src` (or `~/code`, `~/projects`), unless you
+  pass `--machine <id>` or `--dest <dir>`. A path is on this machine unless you pass `--machine`.
+- **What the lead will need.** Before it clones, fleetd reads the repo's default branch, its CI (workflows and the
+  checks the default branch requires) and its merge rules (branch protection, rulesets, whether squash merges are
+  allowed), and says in one line what that means, such as `no CI found: the merge train will only use local checks`
+  or `squash merges are off on acme/storefront`. Fix those on GitHub before the first PR.
+- **Already cloned.** When the folder it would clone into already holds the same repo, `fleetd project add` offers
+  to add that checkout; without a terminal, pass `--use-existing`.
+- **gh.** fleetd reads GitHub through `gh` on the hub machine; `gh repo list` falls back to the worker when the hub's
+  `gh` is logged out. A private repo clones on any worker where `gh auth login` was run.
+
+When something is in the way (the worker is offline, the path is not a git repo, `gh` can't see the repo, the folder
+exists), it says so with the command that fixes it. `fleetd project list` shows your projects, and `fleetd project
+remove <machine>/<project>` stops a project's threads and forgets it; its files, branches and worktrees stay.
+
+Agents do the same through MCP: `project_discover`, `project_inspect`, `project_add {path | url}` (a clone answers
+with an `addId`, then `project.clone_progress` events, then `project.added` or `project.add_failed`) and
+`project_remove`.
 
 ## Its lead
 
