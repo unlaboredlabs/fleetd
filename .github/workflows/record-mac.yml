@@ -81,7 +81,7 @@ jobs:
           for t in 2 8 14 20; do ffmpeg -v error -ss "$t" -i "$out/fleetd.mp4" -frames:v 1 "$out/from-mp4/at-${t}s.png"; done
           ffmpeg -v error -ss 4 -i "$out/no-permission/fleetd.mp4" -frames:v 1 "$out/from-mp4/no-permission-at-4s.png"
           for f in "$out"/*.sb-* "$out"/no-permission/*.sb-*; do
-            [ -e "$f" ] && { echo "::error::a writer temporary was left behind: $f"; exit 1; }
+            if [ -e "$f" ]; then echo "::error::a writer temporary was left behind: $f"; exit 1; fi
           done
       - uses: actions/upload-artifact@v7
         if: always()

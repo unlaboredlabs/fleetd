@@ -110,9 +110,11 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
     let (mut grab, mut encode) = (Duration::ZERO, Duration::ZERO);
     // Ticks run, and ticks that started late (the previous one overran or the sleep overslept).
     let (mut ticks, mut late) = (0u64, 0u64);
+    let (mut busy, mut slept) = (Duration::ZERO, Duration::ZERO);
     let mut next_png = Duration::ZERO;
     let mut tick = started;
     while !STOP.load(Ordering::SeqCst) && !failed {
+        let body = Instant::now();
         autoreleasepool(|_| {
             let t = Instant::now();
             let Some(image) = capture(window) else { return };
@@ -145,9 +147,14 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
             }
         });
         ticks += 1;
+        busy += body.elapsed();
         tick += interval;
         match tick.checked_duration_since(Instant::now()) {
-            Some(wait) => std::thread::sleep(wait),
+            Some(wait) => {
+                let t = Instant::now();
+                std::thread::sleep(wait);
+                slept += t.elapsed();
+            }
             // Behind: the next frame is due now, and the missed ticks are simply not recorded.
             None => {
                 late += 1;
@@ -162,10 +169,12 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
             remove_writer_temporaries(dir);
             let per_frame = |d: Duration| d.as_secs_f64() * 1000. / (frames + skipped).max(1) as f64;
             eprintln!(
-                "FLEETD_RECORD done mp4={} frames={frames} skipped={skipped} ticks={ticks} late={late} pngs={pngs} seconds={seconds:.1} grab_ms={:.1} encode_ms={:.1}",
+                "FLEETD_RECORD done mp4={} frames={frames} skipped={skipped} ticks={ticks} late={late} pngs={pngs} seconds={seconds:.1} grab_ms={:.1} encode_ms={:.1} busy_ms={:.1} slept_ms={:.1}",
                 mp4.display(),
                 per_frame(grab),
-                per_frame(encode)
+                per_frame(encode),
+                per_frame(busy),
+                per_frame(slept)
             );
         }
         Some(Err(e)) => eprintln!("FLEETD_RECORD error={e}"),
