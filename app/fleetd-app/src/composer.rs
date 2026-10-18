@@ -882,6 +882,7 @@ impl Composer {
         };
         div()
             .flex()
+            .flex_wrap()
             .items_center()
             .gap_3()
             .text_size(px(size::XS))
@@ -895,8 +896,8 @@ impl Composer {
                 });
                 window.focus(&this.input.focus_handle(cx), cx);
             })))
-            .child(div().flex_1())
-            .child(keys)
+            // The hint takes what room is left and wraps there, so both buttons always fit (the agent sheet is narrow).
+            .child(div().flex_1().min_w_0().text_right().whitespace_normal().child(keys))
             .children(steer)
             .child(send)
     }

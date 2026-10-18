@@ -706,22 +706,47 @@ impl State {
         if !self.live_or_echo("Not connected to the hub; the steer was not sent.") {
             return Vec::new();
         }
-        let (body, id) = match (Text::new(text), fleetd_contracts::mcp::RequestId::new(request_id)) {
-            (Ok(body), Ok(id)) => (body, id),
-            (Err(e), _) | (_, Err(e)) => return self.refuse(format!("The steer was not sent: {e}.")),
-        };
-        let input = SteerSendInput {
-            target: target.clone(),
-            text: body,
+        let at = crate::live::state::fmt_iso(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64));
+        let sending = Sending {
+            request_id: request_id.to_string(),
+            target,
+            workstream_id,
+            text: text.to_string(),
             mode,
-            refs: (!refs.is_empty()).then(|| List::unchecked(refs)),
-            attachments: attachments(&attachments_in),
+            attachments: attachments_in,
+            refs,
+            at,
+            error: None,
+        };
+        let call = match self.send_steer_call(&sending) {
+            Ok(call) => call,
+            Err(e) => return self.refuse(format!("The steer was not sent: {e}.")),
+        };
+        self.steer_sends.push(sending);
+        vec![call]
+    }
+
+    fn send_steer_call(&mut self, s: &Sending) -> Result<AppClientMessage, String> {
+        let body = Text::new(s.text.as_str()).map_err(|e| e.to_string())?;
+        let id = fleetd_contracts::mcp::RequestId::new(s.request_id.as_str()).map_err(|e| e.to_string())?;
+        let input = SteerSendInput {
+            target: s.target.clone(),
+            text: body,
+            mode: s.mode,
+            refs: (!s.refs.is_empty()).then(|| List::unchecked(s.refs.clone())),
+            attachments: attachments(&s.attachments),
             client_request_id: id,
         };
-        let call = self.call(Purpose::SteerSend { request_id: request_id.to_string() }, &input);
-        let at = crate::live::state::fmt_iso(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64));
-        self.steer_sends.push(Sending { request_id: request_id.to_string(), target, workstream_id, text: text.to_string(), mode, at, error: None });
-        vec![call]
+        Ok(self.call(Purpose::SteerSend { request_id: s.request_id.clone() }, &input))
+    }
+
+    /// After a reconnect: steers whose answer was lost with the link are sent again with the same clientRequestId,
+    /// so the hub answers each once (with the steer it already made, if it did), and the receipts are fetched anew.
+    fn steers_reconnected(&mut self) -> Out {
+        let lost: Vec<Sending> = self.steer_sends.iter().filter(|s| s.error.is_none()).cloned().collect();
+        let mut out: Out = lost.iter().filter_map(|s| self.send_steer_call(s).ok()).collect();
+        out.extend(self.request_steers());
+        out
     }
 
     /// Drops a queued steer before the agent takes it in.
@@ -1304,6 +1329,7 @@ impl State {
         out.extend(self.prompts_reconnected());
         self.add_saw(status.cursor);
         out.extend(self.add_reconnected());
+        out.extend(self.steers_reconnected());
         out
     }
 
@@ -2023,6 +2049,33 @@ mod tests {
         withdrawn["stage"] = json!("withdrawn");
         s.apply(result(id, withdrawn));
         assert_eq!(s.steers[0].stage, crate::steer::SteerStage::Withdrawn);
+    }
+
+    #[test]
+    fn a_steer_sent_as_the_link_dropped_is_resent_once_with_its_request_id_and_receipts_refetched() {
+        let mut s = synced();
+        s.open_order("W7");
+        let target = SteerTarget::Lead { workstream_id: WorkstreamId::unchecked("W7") };
+        s.steer(target, "skip the docs page", SteerMode::Queue, Vec::new(), Vec::new(), "n-3");
+        s.apply(Incoming::Disconnected { reason: "gone".into(), retry_in: Duration::from_secs(1) });
+        s.apply(Incoming::Ready);
+        let out = s.apply(snapshot(&[("lab-a", "p1"), ("lab-a", "p2")], 1));
+        let resent: Vec<&Value> = out
+            .iter()
+            .filter_map(|m| match m {
+                AppClientMessage::Call { tool, input, .. } if tool.as_str() == "steer_send" => Some(input),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(resent.len(), 1);
+        assert_eq!(resent[0]["clientRequestId"], "n-3", "the same request id, so the hub makes it once");
+        assert!(tools_of(&out).contains(&"steers_list".to_string()), "receipts that moved while away are fetched");
+        let id = calls(&out).into_iter().find(|(_, t)| t == "steer_send").unwrap().0;
+        let steer = json!({ "id": "S12", "target": { "workstreamId": "W7" }, "workstreamId": "W7", "runId": "r1", "by": { "kind": "human", "keyName": "app" },
+            "thread": { "machineId": "lab-a", "threadId": "t-lead" }, "mode": "queue", "text": "skip the docs page", "stage": "delivered", "queuedAt": AT });
+        s.apply(result(&id, steer));
+        assert!(s.steer_sends.is_empty(), "no longer \"sending…\"");
+        assert_eq!(s.steers[0].stage, crate::steer::SteerStage::Delivered);
     }
 
     #[test]

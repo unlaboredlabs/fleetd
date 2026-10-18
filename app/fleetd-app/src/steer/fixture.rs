@@ -122,12 +122,12 @@ fn agent_tail() -> Value {
         act("06:44", "command", "npm test -- cart"),
         msg("06:40", "assistant", "Tests pass for USD and EUR. Adding the GBP and JPY cases next."),
         act("06:02", "command", "rg -n roundTotal src"),
+        msg("05:33", "assistant", "Continuing with the rounding tests in src/cart/total.test.ts."),
         msg(
             "05:31",
             "user",
             "S12 · the human steers you (T31, writer of W14): 'Round half to even, not half up; finance asked for banker's rounding.'"
         ),
-        msg("05:33", "assistant", "Continuing with the rounding tests in src/cart/total.test.ts."),
         msg("03:10", "user", "Implement W14: fix the cart total rounding for multi-currency orders."),
     ])
 }

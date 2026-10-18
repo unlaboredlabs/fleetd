@@ -719,14 +719,14 @@ pub fn receipt_line(t: &Theme, id: impl Into<gpui::ElementId>, r: &Receipt, on_s
         ui::clickable(t, div().id(id.into())).text_color(t.text).underline().child(label).on_click(move |_, _, cx| on_steer(act.clone(), cx))
     });
     div()
+        .w_full()
         .pt_0p5()
         .flex()
-        .flex_wrap()
         .items_baseline()
         .gap_x_2()
         .text_size(px(size::XS))
-        .child(div().text_color(color).whitespace_normal().child(r.line.clone()))
-        .children(act)
+        .child(div().min_w_0().text_color(color).whitespace_normal().child(r.line.clone()))
+        .children(act.map(|a| a.flex_none()))
 }
 
 pub type OnTold = std::rc::Rc<dyn Fn(fleetd_contracts::ids::ThreadRef, &mut gpui::App)>;

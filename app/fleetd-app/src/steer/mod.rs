@@ -7,6 +7,7 @@ pub mod receipts;
 pub mod sheet;
 
 use fleetd_contracts::ids::ThreadRef;
+use fleetd_contracts::mcp::IntakeRef;
 
 pub use fleetd_contracts::mcp::{SteerSendInput, SteerSendOutput, SteerWithdrawInput, SteerWithdrawOutput, SteersListInput, SteersListOutput};
 pub use fleetd_contracts::steer::{DeliveredHow, Steer, SteerBy, SteerMode, SteerStage, SteerTarget};
@@ -32,6 +33,8 @@ pub struct Sending {
     pub workstream_id: String,
     pub text: String,
     pub mode: SteerMode,
+    pub attachments: Vec<String>,
+    pub refs: Vec<IntakeRef>,
     pub at: String,
     pub error: Option<String>,
 }

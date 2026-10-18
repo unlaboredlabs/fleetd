@@ -108,7 +108,7 @@ pub fn sending(s: &Sending) -> Receipt {
     }
 }
 
-/// "S12 waits for the lead's next step (`cargo test` running 1m12s)": the oldest queued steer to this agent while
+/// "S12 waits for the lead's next step (running cargo test for 1m12s)": the oldest queued steer to this agent while
 /// it is mid-step. None when nothing waits or the agent isn't working (a steer to an idle agent starts its turn).
 pub fn waiting_line<'a>(steers: impl IntoIterator<Item = &'a Steer>, lane: &AgentLane, possessive: &str, now_ms: i64) -> Option<String> {
     let s = steers.into_iter().find(|s| s.stage == SteerStage::Queued)?;
@@ -118,7 +118,7 @@ pub fn waiting_line<'a>(steers: impl IntoIterator<Item = &'a Steer>, lane: &Agen
     let now = lane.live.as_ref().and_then(|l| l.activity.as_ref());
     let took = now.and_then(|a| parse_ms(a.since.as_str())).map(|since| short_elapsed(now_ms - since));
     let doing = match (now.map(|a| &a.activity), took) {
-        (Some(Activity::Command { text }), Some(t)) => format!(" (`{}` running {t})", clip(text, 48)),
+        (Some(Activity::Command { text }), Some(t)) => format!(" (running {} for {t})", clip(text, 48)),
         (Some(_), Some(t)) => {
             let line = crate::live::activity::describe(lane);
             let what = line.machine.map_or(line.words.clone(), |m| format!("{} {}", line.words, clip(&m, 48)));
@@ -241,7 +241,10 @@ mod tests {
         .unwrap();
         let now = parse_ms("2026-10-18T14:01:12.000Z").unwrap();
         let rows = [steer("S11", SteerStage::Delivered), steer("S12", SteerStage::Queued)];
-        assert_eq!(waiting_line(&rows, &lane, "the lead's", now).as_deref(), Some("S12 waits for the lead's next step (`cargo test` running 1m12s)"));
+        assert_eq!(
+            waiting_line(&rows, &lane, "the lead's", now).as_deref(),
+            Some("S12 waits for the lead's next step (running cargo test for 1m12s)")
+        );
         let idle = AgentLane { status: LaneStatus::Idle, ..lane.clone() };
         assert_eq!(waiting_line(&rows, &idle, "the lead's", now), None, "an idle agent takes it in as a new turn");
         assert_eq!(waiting_line(&rows[..1], &lane, "the lead's", now), None);
