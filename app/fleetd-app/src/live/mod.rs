@@ -5,6 +5,7 @@
 pub mod activity;
 pub mod chips;
 pub mod fixture;
+pub mod fleet;
 pub mod lanes;
 pub mod motion;
 pub mod spark;

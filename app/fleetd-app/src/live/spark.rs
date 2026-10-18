@@ -12,16 +12,17 @@ use gpui::{Animation, AnimationExt, AnyElement, Bounds, ElementId, Hsla, Pixels,
 use super::motion::dur;
 use super::state::parse_ms;
 
-/// Below this the scale stays put, so one tool call reads as a small bar, not a full one.
-const PEAK_FLOOR: u8 = 48;
+/// One fixed scale for every lane and every moment: a full bar is this much work in a bucket (about four tool
+/// calls, or a few hundred tokens written). Bars never rescale as a lane's busiest bucket rolls off, and two lanes'
+/// bars compare.
+const FULL: u8 = 64;
 
 /// Bar heights in pixels, oldest first, always `SPARK_BUCKETS` of them: short sparks are padded on the left
 /// with idle buckets. Every bar is at least 1 px, which draws the baseline.
 pub fn bar_heights(samples: &[u8], height: f32) -> Vec<f32> {
     let pad = SPARK_BUCKETS.saturating_sub(samples.len());
     let tail = &samples[samples.len().saturating_sub(SPARK_BUCKETS)..];
-    let peak = tail.iter().copied().max().unwrap_or(0).max(PEAK_FLOOR) as f32;
-    std::iter::repeat_n(0u8, pad).chain(tail.iter().copied()).map(|s| (height * s as f32 / peak).round().clamp(1., height)).collect()
+    std::iter::repeat_n(0u8, pad).chain(tail.iter().copied()).map(|s| (height * s as f32 / FULL as f32).round().clamp(1., height)).collect()
 }
 
 /// How many of the `SPARK_BUCKETS` slots, counted from the left, end before the lane started: those are not
@@ -102,7 +103,7 @@ mod tests {
     #[test]
     fn idle_is_a_baseline_and_short_sparks_pad_on_the_left() {
         assert_eq!(bar_heights(&[], 12.), vec![1.; 30]);
-        let bars = bar_heights(&[48, 24], 12.);
+        let bars = bar_heights(&[64, 32], 12.);
         assert_eq!(bars.len(), 30);
         assert_eq!(&bars[28..], &[12., 6.]);
         assert!(bars[..28].iter().all(|&h| h == 1.));
@@ -118,16 +119,5 @@ mod tests {
         assert_eq!(unlived(end, None), 0);
         // Started after the newest bucket ended: nothing lived yet.
         assert_eq!(unlived(end, Some(end + 500)), SPARK_BUCKETS);
-    }
-
-    #[test]
-    fn scale_follows_the_busiest_bucket_above_a_floor() {
-        // One tool call (16) against the floor: a third of the height, not all of it.
-        assert_eq!(bar_heights(&[16], 12.)[29], 4.);
-        // A busy minute scales to its own peak.
-        let bars = bar_heights(&[255, 128, 0], 12.);
-        assert_eq!(&bars[27..], &[12., 6., 1.]);
-        // More than 30 samples: the newest 30.
-        assert_eq!(bar_heights(&[255; 40], 12.).len(), 30);
     }
 }

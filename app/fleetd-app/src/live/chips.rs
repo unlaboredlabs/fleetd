@@ -120,43 +120,49 @@ pub fn check(color: Hsla, size: f32) -> Div {
     div().flex_none().size(px(size)).child(paint.size_full())
 }
 
-/// How far along the train a PR is, as three steps: review, CI, merged. `None` for states off the main line
-/// (a failure, a refusal), which say so in words instead.
-pub fn track_steps(state: ChangeState) -> Option<usize> {
+/// How full each of the track's three segments is, 0..=1: review (its checks done of needed), CI (half while it
+/// runs, full once it passed), merged. `None` for states off the main line (a failure, a refusal), which say so in
+/// words instead.
+pub fn track_fill(state: ChangeState, review: f32) -> Option<[f32; 3]> {
+    let review = review.clamp(0., 1.);
     Some(match state {
-        ChangeState::Queued => 0,
-        ChangeState::Reviewing | ChangeState::Ready => 1,
-        ChangeState::Rebasing | ChangeState::Ci | ChangeState::Merging => 2,
-        ChangeState::Merged => 3,
+        ChangeState::Queued | ChangeState::Reviewing => [review, 0., 0.],
+        ChangeState::Ready => [1., 0., 0.],
+        ChangeState::Rebasing | ChangeState::Ci => [1., 0.5, 0.],
+        ChangeState::Merging => [1., 1., 0.],
+        ChangeState::Merged => [1., 1., 1.],
         ChangeState::NeedsRebase | ChangeState::CiFailed | ChangeState::Refused | ChangeState::Abandoned => return None,
     })
 }
 
-/// The PR's progress as three short segments; the segment it just reached fills in once, keyed by `id` and its
-/// state, so a stage change reads as movement. A state off the main line draws nothing.
-pub fn pr_track(t: &Theme, id: &str, state: ChangeState) -> AnyElement {
-    const SEG: f32 = 10.;
-    let Some(done) = track_steps(state) else { return div().into_any_element() };
+/// The review fraction a PR reports itself: its clean verdicts of those needed.
+pub fn pr_review(pr: &PrRef) -> f32 {
+    let needed = pr.reviews_needed.get();
+    if needed <= 0 { 1. } else { pr.reviews_done.get() as f32 / needed as f32 }
+}
+
+/// The PR's progress as three short segments, filled as [`track_fill`] says, so the bar and the words beside it
+/// read the same numbers. A segment that just gained fills in once, keyed by `id` and its fill, so a step reads as
+/// movement. A state off the main line draws nothing.
+pub fn pr_track(t: &Theme, id: &str, state: ChangeState, review: f32) -> AnyElement {
+    const SEG: f32 = 12.;
+    let Some(fill) = track_fill(state, review) else { return div().into_any_element() };
     let tone = match state {
         ChangeState::Merged => t.success,
         _ => t.quiet,
     };
-    let empty = t.hairline;
     let mut row = div().flex().flex_none().items_center().gap(px(2.));
-    for i in 0..3 {
-        let seg = div().w(px(SEG)).h(px(3.)).rounded(px(1.5)).bg(empty);
-        row = row.child(if i + 1 == done {
-            // The newest step grows across its slot.
-            seg.child(div().h_full().rounded(px(1.5)).bg(tone).with_animation(
-                SharedString::from(format!("track-{id}-{state:?}")),
+    for (i, f) in fill.into_iter().enumerate() {
+        let seg = div().w(px(SEG)).h(px(3.)).rounded(px(1.5)).bg(t.hairline);
+        let w = SEG * f;
+        row = row.child(if f > 0. {
+            seg.child(div().h_full().rounded(px(1.5)).bg(tone).w(px(w)).with_animation(
+                SharedString::from(format!("track-{id}-{i}-{}", (f * 100.).round())),
                 Animation::new(dur::TRAIN).with_easing(ease_out_quint()),
-                |d, p| d.w(px(SEG * p)),
+                move |d, p| d.w(px(w * p)),
             ))
-            .into_any_element()
-        } else if i < done {
-            seg.bg(tone).into_any_element()
         } else {
-            seg.into_any_element()
+            seg
         });
     }
     row.into_any_element()
@@ -264,11 +270,11 @@ mod tests {
     }
 
     #[test]
-    fn the_track_follows_the_train_and_steps_off_it_on_failure() {
-        assert_eq!(track_steps(ChangeState::Queued), Some(0));
-        assert_eq!(track_steps(ChangeState::Ready), Some(1));
-        assert_eq!(track_steps(ChangeState::Ci), Some(2));
-        assert_eq!(track_steps(ChangeState::Merged), Some(3));
-        assert_eq!(track_steps(ChangeState::CiFailed), None);
+    fn the_track_and_its_words_read_the_same_numbers() {
+        assert_eq!(track_fill(ChangeState::Reviewing, 1. / 3.), Some([1. / 3., 0., 0.]));
+        assert_eq!(track_fill(ChangeState::Ready, 0.), Some([1., 0., 0.]), "reviewed: the review segment is full");
+        assert_eq!(track_fill(ChangeState::Ci, 1.), Some([1., 0.5, 0.]));
+        assert_eq!(track_fill(ChangeState::Merged, 0.), Some([1., 1., 1.]));
+        assert_eq!(track_fill(ChangeState::CiFailed, 1.), None);
     }
 }

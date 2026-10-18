@@ -80,6 +80,7 @@ impl LiveState {
         if let Some(machines) = frame.machines {
             self.machines = machines.into_inner();
         }
+        self.count_running();
         if let Some(slots) = frame.slots {
             self.slots = Some(slots);
         }
@@ -107,6 +108,21 @@ impl LiveState {
         self.ended.retain(|id, _| live.contains(id));
         self.boards.insert(project.clone(), out);
         self.rebuild_trains();
+        self.count_running();
+    }
+
+    /// Each machine's "running" from the same lanes the board draws (agents at work there, the leads not, as the
+    /// slot board counts), so the strip and the lanes never disagree. A machine with no board lanes keeps what its
+    /// node reported only until the boards load.
+    fn count_running(&mut self) {
+        if self.boards.is_empty() {
+            return;
+        }
+        let lanes: Vec<AgentLane> = self.boards.values().flat_map(|b| b.orders.iter()).flat_map(|o| self.lanes(&o.workstream_id)).collect();
+        let by = running_by_machine(&lanes);
+        for m in &mut self.machines {
+            m.running = fleetd_contracts::prim::Count::unchecked(*by.get(m.machine_id.as_str()).unwrap_or(&0) as i64);
+        }
     }
 
     pub fn set_order(&mut self, out: OrderGetOutput) {
@@ -223,6 +239,17 @@ fn merge(snapshot: &AgentLane, live: Option<&LiveLane>, ended: Option<&fleetd_co
     }
     lane.live = Some(LiveLane { spark, ..live.clone() });
     lane
+}
+
+/// Agents at work per machine id: lanes other than a lead's whose status has a clock running.
+pub fn running_by_machine(lanes: &[AgentLane]) -> HashMap<String, usize> {
+    let mut out = HashMap::new();
+    for l in lanes.iter().filter(|l| l.role != fleetd_contracts::live::AgentRole::Lead && is_running(l.status)) {
+        if let Some(r) = &l.thread_ref {
+            *out.entry(r.machine_id.to_string()).or_insert(0) += 1;
+        }
+    }
+    out
 }
 
 pub fn is_final(status: LaneStatus) -> bool {
@@ -520,6 +547,25 @@ mod tests {
         // A minute on, it is forgotten.
         s.set_board(&key(), OrdersBoardOutput { at: Timestamp::from("2026-10-18T10:01:10Z"), ..board("W1", vec![]) });
         assert!(s.lanes(&w("W1")).is_empty());
+    }
+
+    #[test]
+    fn a_machines_running_count_is_the_agents_the_board_draws_there() {
+        let on = |id: &str, status, machine: &str| AgentLane {
+            thread_ref: Some(serde_json::from_value(serde_json::json!({"machineId": machine, "threadId": format!("s-{id}")})).unwrap()),
+            ..lane(id, status)
+        };
+        let lanes = vec![
+            on("T1", LaneStatus::Working, "lab-a"),
+            on("T2", LaneStatus::Starting, "lab-a"),
+            on("T3", LaneStatus::Done, "lab-a"),
+            on("T4", LaneStatus::Queued, "lab-a"),
+            on("T5", LaneStatus::Working, "lab-b"),
+            AgentLane { role: fleetd_contracts::live::AgentRole::Lead, ..on("lead", LaneStatus::Working, "lab-a") },
+        ];
+        let by = running_by_machine(&lanes);
+        assert_eq!(by.get("lab-a"), Some(&2), "done and queued agents and the lead are not running there");
+        assert_eq!(by.get("lab-b"), Some(&1));
     }
 
     #[test]
