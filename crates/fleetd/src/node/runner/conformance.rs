@@ -13,6 +13,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use super::claude::protocol::Line;
+use super::claude::{AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS};
 use super::version::{self, SUPPORTED, TESTED};
 use super::{claude_setup, failure};
 
@@ -27,7 +28,7 @@ pub const REQUIRED_INIT_CAPABILITIES: &[&str] = &[
 const REQUEST_ID: &str = "fleetd-probe-1";
 /// The probe's argv: no model, no MCP servers (starting them would cost time, not decide anything), and only the
 /// user settings of the config dir sessions use (they may carry the proxy or gateway variables, which decide the
-/// login).
+/// login). Auto memory off, as in every claude fleetd starts.
 const PROBE_ARGS: &[&str] = &[
     "-p",
     "--verbose",
@@ -38,6 +39,8 @@ const PROBE_ARGS: &[&str] = &[
     "--strict-mcp-config",
     "--setting-sources",
     "user",
+    "--settings",
+    AUTO_MEMORY_OFF_SETTINGS,
 ];
 /// claude answers in about 0.2 s; a cold start of a 280 MB binary on a loaded machine takes a few.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -72,6 +75,7 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
         proxy: None,
         proxy_source: None,
         config_dir: Some(claude_setup::config_dir(env).to_string_lossy().into_owned()),
+        auto_memory: None,
     };
     if let Some((url, source)) = claude_setup::proxy_of(env) {
         info.proxy = Some(url);
@@ -144,6 +148,7 @@ fn command(binary: &Path, env: &[(String, String)]) -> Command {
                 .filter(|(k, _)| k != claude_setup::FLEETD_ENV_SOURCE)
                 .map(|(k, v)| (k, v)),
         )
+        .env(AUTO_MEMORY_OFF_ENV.0, AUTO_MEMORY_OFF_ENV.1)
         .current_dir(std::env::temp_dir())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -364,6 +369,17 @@ pub fn missing_init_capabilities(capabilities: &[String]) -> Vec<&'static str> {
         .collect()
 }
 
+/// The conformance check on a session's `system/init`: claude's auto memory is off when `memory_paths` is absent,
+/// null or names no dir. A dir there means claude ignored both of fleetd's knobs
+/// ([`super::claude::AUTO_MEMORY_OFF_ENV`]).
+pub fn auto_memory_on(memory_paths: Option<&Value>) -> bool {
+    match memory_paths {
+        None | Some(Value::Null) => false,
+        Some(Value::Object(paths)) => paths.values().any(|p| !p.is_null()),
+        Some(_) => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
@@ -398,6 +414,19 @@ mod tests {
 
     fn account(json: Value) -> Account {
         serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn auto_memory_is_off_only_when_init_names_no_memory_dir() {
+        use serde_json::json;
+        // What claude 2.1.302 sent with auto memory on (every recorded fixture).
+        let recorded = json!({"auto": "/work/claude-config/projects/-work-project/memory/"});
+        assert!(auto_memory_on(Some(&recorded)));
+        assert!(auto_memory_on(Some(&json!("/some/dir"))));
+        for off in [json!(null), json!({}), json!({"auto": null})] {
+            assert!(!auto_memory_on(Some(&off)), "{off}");
+        }
+        assert!(!auto_memory_on(None));
     }
 
     #[test]

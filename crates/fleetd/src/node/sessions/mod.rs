@@ -34,7 +34,7 @@ use fleetd_contracts::sessions::{
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
-use super::runner::claude::ALWAYS_DISALLOWED;
+use super::runner::claude::{ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV};
 use super::runner::claude_setup;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
@@ -209,16 +209,21 @@ pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
 }
 
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
-/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), the subagent cap, and the tools
-/// fleetd never gives an agent.
-fn settings_overlay() -> String {
-    let overlay = serde_json::json!({
+/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), the subagent cap, the tools
+/// fleetd never gives an agent, and auto memory off unless the project opted in ([`AUTO_MEMORY_OFF_ENV`]).
+fn settings_overlay(auto_memory: bool) -> String {
+    let mut overlay = serde_json::json!({
         "env": {
             "DISABLE_AUTOUPDATER": "1",
             "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "2",
         },
         "permissions": { "deny": ALWAYS_DISALLOWED },
     });
+    if !auto_memory {
+        let (key, value) = AUTO_MEMORY_OFF_ENV;
+        overlay["env"][key] = value.into();
+        overlay["autoMemoryEnabled"] = false.into();
+    }
     format!("{overlay}\n")
 }
 
@@ -984,6 +989,7 @@ impl SessionService {
                 pid_start: None,
                 allowed_tools: launch.allowed_tools.clone(),
                 disallowed_tools: launch.disallowed_tools.clone(),
+                auto_memory: launch.auto_memory,
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -1196,7 +1202,7 @@ impl SessionService {
             std::fs::write(&mcp, MCP_CONFIG)?;
         }
         let settings = dir.join("settings.json");
-        std::fs::write(&settings, settings_overlay())?;
+        std::fs::write(&settings, settings_overlay(row.local.auto_memory))?;
         let transcripts = config.home.join("transcripts");
         super::config::mkdir_private(&transcripts)?;
         let transcript = transcripts.join(format!("{id}.jsonl"));
@@ -1219,6 +1225,11 @@ impl SessionService {
                 row.summary.project_id.to_string(),
             ),
         ]);
+        if !row.local.auto_memory {
+            let (key, value) = AUTO_MEMORY_OFF_ENV;
+            env.retain(|(k, _)| k != key);
+            env.push((key.to_owned(), value.to_owned()));
+        }
         Ok(SessionSpec {
             session_id: id.to_owned(),
             resume,
@@ -1377,7 +1388,18 @@ impl SessionService {
                     }
                 }
                 RunnerEvent::RateLimit(limit) => self.remember_limit(limit),
-                RunnerEvent::Init { .. } => {}
+                RunnerEvent::Init { auto_memory, .. } => {
+                    // A project that opted back in proves nothing about fleetd's knobs.
+                    if !self.session(&id).is_ok_and(|row| row.local.auto_memory) {
+                        if auto_memory {
+                            tracing::warn!(
+                                session = %id,
+                                "claude kept its auto memory on despite CLAUDE_CODE_DISABLE_AUTO_MEMORY and autoMemoryEnabled"
+                            );
+                        }
+                        self.health_changed(|h| h.auto_memory_seen(auto_memory));
+                    }
+                }
             }
         }
         let _ = exited.send(true);

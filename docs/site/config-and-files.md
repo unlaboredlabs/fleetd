@@ -43,8 +43,9 @@ for fleetd. Otherwise log in as you normally do: `claude auth login`, or through
 from ~/.claude/settings.json`.
 
 fleetd adds its own settings per session on top of yours, never in their place: an `--mcp-config` for its servers and
-a `--settings` overlay that pins claude's version and denies the tools agents never get (subagents, plan mode,
-worktrees, cron).
+a `--settings` overlay that pins claude's version, turns claude's auto memory off
+([why](what-agents-are-told.md#auto-memory)) and denies the tools agents never get (subagents, plan mode, worktrees,
+cron).
 
 To give a worker's sessions a dedicated claude profile instead, set `"claudeConfigDir": "<dir>"` in
 `~/.fleetd/node/node.json` (or join with `fleetd node join --claude-config-dir <dir>`) and restart the node. A
@@ -90,6 +91,8 @@ tools:                    # optional: claude permission rules for every session
   deny: ["Bash(git push:*)"]
 lead:                     # optional
   autoStart: false        # orders wait for lead_start instead of starting the lead (default true)
+claude:                   # optional
+  autoMemory: true        # the sessions keep claude's own auto memory (default false: fleetd turns it off)
 ```
 
 Area names are lowercase slugs. A broken file is refused with the exact problem, never ignored, so a typo can't widen

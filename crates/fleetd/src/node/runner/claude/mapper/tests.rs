@@ -216,6 +216,8 @@ fn two_turns_in_one_process() {
         version: "2.1.302".into(),
         model: "claude-haiku-5-5".into(),
         cwd: "/work/project".into(),
+        // Recorded before fleetd turned auto memory off.
+        auto_memory: true,
     };
     let (r1, m1) = (
         "e8d52832-5cea-4aac-ba3b-f1e6763315a8",

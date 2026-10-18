@@ -80,8 +80,9 @@ do in your shell. If <code>claude</code> works for you on the worker, it works
 for fleetd. Otherwise log in as you normally do: <code>claude auth login</code>, or through your proxy.</p>
 <p><code>fleetd doctor</code> shows what each worker uses, e.g. <code>claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317 from ~/.claude/settings.json</code>.</p>
 <p>fleetd adds its own settings per session on top of yours, never in their place: an <code>--mcp-config</code> for its servers and
-a <code>--settings</code> overlay that pins claude's version and denies the tools agents never get (subagents, plan mode,
-worktrees, cron).</p>
+a <code>--settings</code> overlay that pins claude's version, turns claude's auto memory off
+(<a href="/docs/what-agents-are-told#auto-memory">why</a>) and denies the tools agents never get (subagents, plan mode, worktrees,
+cron).</p>
 <p>To give a worker's sessions a dedicated claude profile instead, set <code>"claudeConfigDir": "&lt;dir&gt;"</code> in
 <code>~/.fleetd/node/node.json</code> (or join with <code>fleetd node join --claude-config-dir &lt;dir&gt;</code>) and restart the node. A
 session resumes only under the config dir it started in; the node refuses a resume under another one and says so.</p>
@@ -115,7 +116,9 @@ tools:                    # optional: claude permission rules for every session
   allow: [&quot;Bash(npm test:*)&quot;]
   deny: [&quot;Bash(git push:*)&quot;]
 lead:                     # optional
-  autoStart: false        # orders wait for lead_start instead of starting the lead (default true)</code></pre>
+  autoStart: false        # orders wait for lead_start instead of starting the lead (default true)
+claude:                   # optional
+  autoMemory: true        # the sessions keep claude's own auto memory (default false: fleetd turns it off)</code></pre>
 <p>Area names are lowercase slugs. A broken file is refused with the exact problem, never ignored, so a typo can't widen
 what a writer may touch.</p>
 <h2 id="services">Services<a class="anchor" href="#services" aria-label="Link to this section">#</a></h2>

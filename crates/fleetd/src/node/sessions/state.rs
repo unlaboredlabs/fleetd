@@ -329,6 +329,7 @@ mod tests {
             pid_start: None,
             allowed_tools: vec![],
             disallowed_tools: vec![],
+            auto_memory: false,
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
         local.started = true;

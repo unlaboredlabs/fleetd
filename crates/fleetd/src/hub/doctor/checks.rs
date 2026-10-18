@@ -566,7 +566,42 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
             None,
         ),
     };
-    vec![version, login, conformance]
+    let mut out = vec![version, login, conformance];
+    out.extend(auto_memory_check(machine_id, info));
+    out
+}
+
+/// What the latest session's `system/init` showed of claude's auto memory, which fleetd keeps off. No line until a
+/// session has run there, nor from a node that predates the check.
+fn auto_memory_check(machine_id: &str, info: &RunnerInfo) -> Option<Entry> {
+    Some(match info.auto_memory? {
+        false => machine_entry(
+            machine_id,
+            "claude_auto_memory",
+            Pass,
+            "claude auto memory off.",
+            None,
+        ),
+        true => {
+            let dir = info.config_dir.as_deref().unwrap_or("~/.claude");
+            machine_entry(
+                machine_id,
+                "claude_auto_memory",
+                Warn,
+                &format!(
+                    "claude on {machine_id} kept its auto memory on despite CLAUDE_CODE_DISABLE_AUTO_MEMORY and \
+                     autoMemoryEnabled: its agents may carry notes from one worktree to the next."
+                ),
+                Some(manual(
+                    &format!(
+                        "On {machine_id}, set \"autoMemoryEnabled\": false in {dir}/settings.json, and run \
+                         fleetd update"
+                    ),
+                    None,
+                )),
+            )
+        }
+    })
 }
 
 /// The version verdict as a check: a warning outside the tested versions that still run (older, or newer within the
@@ -965,6 +1000,7 @@ mod tests {
             proxy: proxy.map(str::to_owned),
             proxy_source: None,
             config_dir: None,
+            auto_memory: None,
         };
         let fix = |info: Option<RunnerInfo>| {
             let entry = machine_online(&degraded, None, info.as_ref());
@@ -1053,6 +1089,7 @@ mod tests {
             proxy: None,
             proxy_source: None,
             config_dir: None,
+            auto_memory: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)
@@ -1071,6 +1108,31 @@ mod tests {
                 ("mac/claude_login".to_owned(), Pass),
                 ("mac/runner_conformance".to_owned(), Pass)
             ]
+        );
+        // Auto memory: a line once a session has shown it, a warning with the fix when claude kept it on.
+        let memory = |on| {
+            runner_checks(
+                "mac",
+                &RunnerInfo {
+                    auto_memory: Some(on),
+                    ..info(Some("2.1.302"), LoginStatus::LoggedIn, Some(true))
+                },
+            )
+            .pop()
+            .unwrap()
+            .check
+        };
+        assert_eq!(
+            (memory(false).status, memory(false).message.as_str()),
+            (Pass, "claude auto memory off.")
+        );
+        let kept = memory(true);
+        assert_eq!(kept.status, Warn);
+        assert!(
+            kept.fix
+                .unwrap()
+                .label
+                .contains("set \"autoMemoryEnabled\": false in ~/.claude/settings.json")
         );
         let bad = runner_checks(
             "mac",

@@ -161,7 +161,13 @@ struct Rules;
 
 impl ToolPolicy for Rules {
     fn tools<'a>(&'a self, _: &'a ProjectRef) -> ToolRulesFuture<'a> {
-        Box::pin(async { Ok((vec!["Bash(npm test:*)".into()], vec!["WebFetch".into()])) })
+        Box::pin(async {
+            Ok(super::SessionRules {
+                allow: vec!["Bash(npm test:*)".into()],
+                deny: vec!["WebFetch".into()],
+                auto_memory: false,
+            })
+        })
     }
 }
 

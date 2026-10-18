@@ -163,12 +163,22 @@ pub struct WriteOutcome {
     pub queued_until: Option<String>,
 }
 
-/// (allow, deny) rules, in claude's syntax.
-pub type ToolRulesFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(Vec<String>, Vec<String>), McpToolError>> + Send + 'a>>;
+/// What a project's policy file says about its sessions' claude.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SessionRules {
+    /// `tools.allow` and `tools.deny`, in claude's syntax.
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+    /// `claude.autoMemory`.
+    pub auto_memory: bool,
+}
 
-/// A project's tool rules (`tools.allow`, `tools.deny` in its policy file), read at every launch. The leases area's
-/// cached policy reader implements it; a file that does not decode refuses the launch rather than drop its denies.
+pub type ToolRulesFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<SessionRules, McpToolError>> + Send + 'a>>;
+
+/// A project's session rules (`tools.allow`, `tools.deny`, `claude.autoMemory` in its policy file), read at every
+/// launch. The leases area's cached policy reader implements it; a file that does not decode refuses the launch
+/// rather than drop its denies.
 pub trait ToolPolicy: Send + Sync + 'static {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a>;
 }
@@ -176,11 +186,16 @@ pub trait ToolPolicy: Send + Sync + 'static {
 impl ToolPolicy for crate::hub::leases::Policies {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a> {
         Box::pin(async move {
-            let tools = self.get(project).await?.tools.unwrap_or_default();
+            let policy = self.get(project).await?;
+            let tools = policy.tools.unwrap_or_default();
             let rules = |l: &[fleetd_contracts::prim::Text<1, 200>]| {
                 l.iter().map(|t| t.as_str().to_owned()).collect::<Vec<_>>()
             };
-            Ok((rules(&tools.allow), rules(&tools.deny)))
+            Ok(SessionRules {
+                allow: rules(&tools.allow),
+                deny: rules(&tools.deny),
+                auto_memory: policy.claude.is_some_and(|c| c.auto_memory),
+            })
         })
     }
 }
@@ -1254,8 +1269,8 @@ impl Executors {
             _ => js_take(input.prompt.trim().split('\n').next().unwrap_or(""), 80).to_owned(),
         };
         let policy = self.tool_policy.lock().unwrap().clone();
-        let (allowed_tools, disallowed_tools) = match policy {
-            None => (vec![], vec![]),
+        let rules = match policy {
+            None => SessionRules::default(),
             Some(policy) => {
                 let project = ProjectRef {
                     machine_id: machine_id.clone(),
@@ -1285,8 +1300,9 @@ impl Executors {
             workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
             prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
             run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
-            allowed_tools,
-            disallowed_tools,
+            allowed_tools: rules.allow,
+            disallowed_tools: rules.deny,
+            auto_memory: rules.auto_memory,
         };
         self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
             .await?;

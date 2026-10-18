@@ -115,6 +115,8 @@ pub enum RunnerEvent {
         version: String,
         model: String,
         cwd: String,
+        /// The init named an auto memory dir ([`conformance::auto_memory_on`]).
+        auto_memory: bool,
     },
     /// `command_lifecycle` started.
     RunStarted {

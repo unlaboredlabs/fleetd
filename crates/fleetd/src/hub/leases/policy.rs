@@ -176,6 +176,20 @@ fn check_shape(value: &Value) -> Result<(), String> {
             Some(_) => return Err(format!("Expected boolean at {p}")),
         }
     }
+    if let Some(claude) = root.get("claude") {
+        let Value::Mapping(claude) = claude else {
+            return Err(format!("Expected object at {}", key("claude")));
+        };
+        if claude
+            .get("autoMemory")
+            .is_some_and(|v| !matches!(v, Value::Bool(_)))
+        {
+            return Err(format!(
+                "Expected boolean at {}",
+                at(&[key("claude"), key("autoMemory")])
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -315,12 +329,15 @@ mod tests {
 
     #[test]
     fn reads_areas_and_defaults() {
-        let text = "areas:\n  docs: [\"docs/**\"]\n  hub: [apps/hub/**, packages/contracts/**]\ndefaults:\n  model: claude-sonnet-5-5\n  effort: high\nlead:\n  autoStart: false\n";
+        let text = "areas:\n  docs: [\"docs/**\"]\n  hub: [apps/hub/**, packages/contracts/**]\ndefaults:\n  model: claude-sonnet-5-5\n  effort: high\nlead:\n  autoStart: false\nclaude:\n  autoMemory: true\n";
         let policy = parse_policy(text).unwrap();
         assert_eq!(
             serde_json::to_value(policy).unwrap(),
-            json!({ "areas": { "docs": ["docs/**"], "hub": ["apps/hub/**", "packages/contracts/**"] }, "defaults": { "model": "claude-sonnet-5-5", "effort": "high" }, "lead": { "autoStart": false } })
+            json!({ "areas": { "docs": ["docs/**"], "hub": ["apps/hub/**", "packages/contracts/**"] }, "defaults": { "model": "claude-sonnet-5-5", "effort": "high" }, "lead": { "autoStart": false }, "claude": { "autoMemory": true } })
         );
+        // Off unless the file turns it on.
+        let bare = parse_policy("areas:\n  docs: [docs/**]\nclaude: {}\n").unwrap();
+        assert!(!bare.claude.unwrap().auto_memory);
     }
 
     #[test]
@@ -355,6 +372,10 @@ mod tests {
             (
                 "areas:\n  docs: [docs/**]\nlead:\n  autoStart: no thanks\n",
                 "is invalid: Expected boolean at [\"lead\"][\"autoStart\"]",
+            ),
+            (
+                "areas:\n  docs: [docs/**]\nclaude:\n  autoMemory: sometimes\n",
+                "is invalid: Expected boolean at [\"claude\"][\"autoMemory\"]",
             ),
         ];
         for (text, message) in cases {
