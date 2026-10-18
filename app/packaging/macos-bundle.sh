@@ -70,6 +70,6 @@ if [ "$(uname -s)" = Darwin ]; then
   rm -rf "$(dirname "$iconset")"
   plutil -lint "$app/Contents/Info.plist" >&2
   # Ad-hoc signature: enough for a bundle fetched with curl (no quarantine) or built on this Mac.
-  codesign --force --deep --sign - "$app" >&2
+  codesign --force --sign - "$app" >&2
 fi
 echo "$app"

@@ -6150,6 +6150,10 @@
         "state": {
           "$ref": "#/$defs/ChangeState"
         },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "The task that opened it (its writer), when the hub knows: the board groups the PR's checkers under it."
+        },
         "url": {
           "$ref": "#/$defs/GitHubPrUrl"
         }

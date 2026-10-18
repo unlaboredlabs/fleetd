@@ -558,7 +558,7 @@ impl Feed {
                     for (k, n) in next.iter().enumerate() {
                         let (role, title) =
                             if k < 2 { (AgentRole::Reviewer, format!("review #{pr}")) } else { (AgentRole::Verifier, format!("verify #{pr}")) };
-                        self.start_lane(now_ms, n, role, &title);
+                        self.start_lane(now_ms, n, role, &title, Some(*pr));
                     }
                     done.push(id.to_string());
                 }
@@ -594,14 +594,16 @@ impl Feed {
                 if let Some(l) = lanes.iter_mut().find(|l| l.lane_id.as_str() == id) {
                     l.status = LaneStatus::Done;
                     l.ended_at = Some(at);
-                    l.pr = pr.map(|n| pr_ref(n, ChangeState::Reviewing, 0));
+                    if let Some(n) = pr {
+                        l.pr = Some(pr_ref(n, ChangeState::Reviewing, 0));
+                    }
                 }
             });
             card.settled = fleetd_contracts::prim::Count::unchecked(card.settled.get() + 1);
         });
     }
 
-    fn start_lane(&mut self, now_ms: i64, id: &str, role: AgentRole, title: &str) {
+    fn start_lane(&mut self, now_ms: i64, id: &str, role: AgentRole, title: &str, pr: Option<i64>) {
         let at = Timestamp::from(fmt_iso(now_ms));
         self.card_mut(|card| {
             edit(&mut card.lanes, |lanes| {
@@ -613,7 +615,7 @@ impl Feed {
                 l.status = LaneStatus::Starting;
                 l.started_at = Some(at);
                 l.ended_at = None;
-                l.pr = None;
+                l.pr = pr.map(|n| pr_ref(n, ChangeState::Reviewing, 0));
                 l.live = None;
                 lanes.push(l);
             });
@@ -707,7 +709,7 @@ fn pr_ref(number: i64, state: ChangeState, reviews_done: i64) -> PrRef {
     serde_json::from_value(serde_json::json!({
         "changeId": format!("X{number}"), "repo": "acme/storefront", "number": number,
         "url": format!("https://github.com/acme/storefront/pull/{number}"), "state": state,
-        "reviewsDone": reviews_done, "reviewsNeeded": 2
+        "reviewsDone": reviews_done, "reviewsNeeded": 2, "taskId": format!("T{}", number - 180)
     }))
     .unwrap()
 }
@@ -842,8 +844,12 @@ impl BenchBoard {
                     e
                 }
             };
+            let card = self.feed.boards.iter().flat_map(|(_, b)| b.orders.iter()).find(|o| o.workstream_id == w).cloned();
             entity.update(cx, |l, cx| {
                 l.set_density(density, since, cx);
+                if let Some(card) = card.filter(|_| density == Density::Stage) {
+                    l.set_order(card.prs.to_vec(), card.phase, cx);
+                }
                 l.set(lanes, hub_now, stale, cx)
             });
         }
@@ -875,16 +881,10 @@ impl BenchBoard {
         cx.notify();
     }
 
-    /// The one open order, when there is exactly one: it takes the stage.
+    /// The order on the stage, as the board picks it (`board::stage_pick`).
     fn staged(&self) -> Option<fleetd_contracts::live::OrderCard> {
-        let mut open = self
-            .feed
-            .boards
-            .iter()
-            .flat_map(|(k, _)| self.state.orders(k).iter())
-            .filter(|o| !matches!(o.phase, OrderPhase::Done | OrderPhase::Stopped));
-        let one = open.next()?.clone();
-        open.next().is_none().then_some(one)
+        let cards: Vec<&fleetd_contracts::live::OrderCard> = self.feed.boards.iter().flat_map(|(k, _)| self.state.orders(k).iter()).collect();
+        crate::board::stage_pick(&cards).cloned()
     }
 
     fn show_order(&mut self, cx: &mut Context<Self>) {
@@ -1035,8 +1035,7 @@ impl Render for BenchBoard {
                 let lead = lead_lane_id(&card.project_ref);
                 let lead = self.state.live_lane(lead.as_str()).map(lead_lane);
                 let agents = self.state.lanes(&card.workstream_id);
-                let lanes_h = lanes.read(cx).height();
-                let staged = stage(&t, Stage { card: &card, agents: &agents, lanes, lead, lead_state: None, lanes_h, on_open: None });
+                let staged = stage(&t, Stage { card: &card, agents: &agents, lanes, lead, lead_state: None, on_open: None });
                 return div()
                     .size_full()
                     .flex()

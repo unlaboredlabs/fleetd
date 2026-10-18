@@ -189,10 +189,16 @@ impl Shell {
         }
         self.board_now = rows;
         let staged = self.staged_card();
-        let since = staged.as_deref().and_then(|id| self.state.card(id)).and_then(|c| parse_ms(c.created_at.as_str()));
+        let staged_card = staged.as_deref().and_then(|id| self.state.card(id)).cloned();
+        let since = staged_card.as_ref().and_then(|c| parse_ms(c.created_at.as_str()));
         for (id, lanes) in &self.card_lanes {
             let (density, started) = if staged.as_deref() == Some(id.as_str()) { (Density::Stage, since) } else { (Density::Card, None) };
-            lanes.update(cx, |l, cx| l.set_density(density, started, cx));
+            lanes.update(cx, |l, cx| {
+                l.set_density(density, started, cx);
+                if let Some(card) = staged_card.as_ref().filter(|c| c.workstream_id.as_str() == id) {
+                    l.set_order(card.prs.to_vec(), card.phase, cx);
+                }
+            });
         }
         let board = div().id("board").flex_1().min_w_0().on_hover(cx.listener(|this, hovered: &bool, _, cx| this.hold_board(*hovered, cx)));
         if let Some(id) = staged {
@@ -206,17 +212,13 @@ impl Shell {
         board.child(gpui::list(self.board_list.clone(), cx.processor(|this, ix, _, cx| this.board_item(ix, cx))).size_full()).into_any_element()
     }
 
-    /// The order on the stage: the only open order on the board, when nothing else is in flight there.
+    /// The order on the stage (see [`stage_pick`]), when nothing else is in flight on the board.
     fn staged_card(&self) -> Option<String> {
         if self.board_now.iter().any(|r| matches!(r, Row::Sent(_) | Row::Routing)) {
             return None;
         }
-        let mut open = self.board_now.iter().filter_map(|r| match r {
-            Row::Card(id) => self.state.card(id).filter(|c| !matches!(c.phase, OrderPhase::Done | OrderPhase::Stopped)).map(|_| id.clone()),
-            _ => None,
-        });
-        let one = open.next()?;
-        open.next().is_none().then_some(one)
+        let cards: Vec<&OrderCard> = self.board_now.iter().filter_map(|r| if let Row::Card(id) = r { self.state.card(id) } else { None }).collect();
+        stage_pick(&cards).map(|c| c.workstream_id.to_string())
     }
 
     /// The staged order, a fixed gap under the composer, with the board's finished orders beneath it.
@@ -230,10 +232,9 @@ impl Shell {
             .project(&(card.project_ref.machine_id.to_string(), card.project_ref.project_id.to_string()))
             .map(|r| lead_words(r.lead().map(|l| l.state)));
         let agents = self.state.live.lanes(&card.workstream_id);
-        let lanes_h = lanes.read(cx).height();
         let open_id = id.to_string();
         let on_open: live::stage::OnOpen = Box::new(cx.listener(move |this, _, _, cx| this.open_order(&open_id, cx)));
-        let stage = live::stage::stage(t, Stage { card: &card, agents: &agents, lanes, lead, lead_state, lanes_h, on_open: Some(on_open) });
+        let stage = live::stage::stage(t, Stage { card: &card, agents: &agents, lanes, lead, lead_state, on_open: Some(on_open) });
         let rest: Vec<AnyElement> = self
             .board_now
             .clone()
@@ -583,6 +584,17 @@ impl Shell {
                 )
                 .when_some(line, |d, line| d.child(div().pl(px(48.)).text_size(px(size::XS)).child(line))),
         )
+    }
+}
+
+/// The order that takes the stage: the only open one; or, with none open, the one that finished last, so its
+/// finish (what landed) holds the stage until it leaves the board.
+pub fn stage_pick<'a>(cards: &[&'a OrderCard]) -> Option<&'a OrderCard> {
+    let mut open = cards.iter().filter(|c| !matches!(c.phase, OrderPhase::Done | OrderPhase::Stopped));
+    match (open.next(), open.next()) {
+        (Some(one), None) => Some(*one),
+        (Some(_), Some(_)) => None,
+        (None, _) => cards.iter().filter(|c| c.phase == OrderPhase::Done).max_by(|a, b| a.updated_at.cmp(&b.updated_at)).copied(),
     }
 }
 

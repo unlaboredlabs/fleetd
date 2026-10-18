@@ -1,6 +1,6 @@
 //! The order view (spec 2.4): the fleet's lanes, PRs and done-when on the left; the project lead's
-//! conversation, focused on this order, on the right; its asks, the fan-out pill, queued notes and the follow-up
-//! composer at the bottom. Everything on it comes from the hub: the conversation's folds, merged event lines and
+//! conversation, focused on this order, with a receipt under each steer, on the right; its asks, the fan-out pill,
+//! the line for a steer waiting on the lead's next step, and the steer composer at the bottom. Everything on it comes from the hub: the conversation's folds, merged event lines and
 //! roll-up are built here from the lead's tail and the order's events, never by a model.
 
 use std::collections::HashSet;
@@ -15,7 +15,8 @@ use gpui::{AnyElement, Context, Div, Focusable, SharedString, Window, div, prelu
 use crate::board::pr_line;
 use crate::notify::unix_secs;
 use crate::shell::{Shell, clock, describe};
-use crate::state::NoteStatus;
+use crate::steer::receipts::{self, Act, Receipt, Tone};
+use crate::steer::{Sending, Steer, SteerTarget};
 use crate::theme::{STRONG, Theme, metric, size, theme};
 use crate::ui::{self, Variant};
 
@@ -33,32 +34,20 @@ pub enum Conv {
         at: String,
         who: Who,
         text: String,
-        steered: bool,
+        /// A steer sent straight to one of the order's agents: "T88".
+        to: Option<String>,
+        receipt: Option<Receipt>,
     },
     /// A finished run of tool calls: "Worked for 48s · ran 3 commands". `key` is stable across refetches.
-    Fold {
-        key: String,
-        secs: i64,
-        commands: usize,
-        failed: usize,
-        calls: Vec<(String, bool)>,
-    },
+    Fold { key: String, secs: i64, commands: usize, failed: usize, calls: Vec<(String, bool)> },
     /// The lead is mid-turn: its latest calls, unfolded.
-    Working {
-        calls: Vec<(String, bool)>,
-    },
+    Working { calls: Vec<(String, bool)> },
     /// "All 3 agents finished: #211 #212", once every agent settled.
     Rollup(String),
     /// A run of messages about other orders.
-    Others {
-        n: usize,
-        about: String,
-    },
+    Others { n: usize, about: String },
     /// Hub events about this order between messages, merged into one line.
-    Events {
-        at: String,
-        text: String,
-    },
+    Events { at: String, text: String },
 }
 
 /// The order ids (`W12`) a text mentions.
@@ -99,21 +88,27 @@ pub fn event_phrase(e: &HubEvent) -> String {
 
 /// The lead's tail, focused on order `w`: its messages at full weight, runs about other orders folded into one
 /// line, finished tool-call runs folded, and this order's hub events merged between messages.
-pub fn conversation(tail: &[TailItem], w: &str, events: &[&HubEvent], lead_working: bool, steered: &[String]) -> Vec<Conv> {
-    // Messages and actions in time order, with the events woven in by timestamp.
+pub fn conversation(tail: &[TailItem], w: &str, events: &[&HubEvent], lead_working: bool, steers: &[Steer], sending: &[Sending]) -> Vec<Conv> {
+    // Messages and actions in time order, with the events and the steers not in the lead's log (sent to an agent,
+    // or not taken in yet) woven in by timestamp.
     enum Item<'a> {
         Tail(&'a TailItem),
         Event(&'a HubEvent),
+        Steer(&'a Steer),
     }
     let at = |i: &Item| match i {
         Item::Tail(TailItem::Message(m)) => m.at.to_string(),
         Item::Tail(TailItem::Action(a)) => a.at.to_string(),
         Item::Event(e) => e.at.to_string(),
+        Item::Steer(s) => s.queued_at.to_string(),
     };
     let mut items: Vec<Item> = tail.iter().map(Item::Tail).collect();
-    for e in events {
-        let ix = items.iter().position(|i| at(i) > e.at.to_string()).unwrap_or(items.len());
-        items.insert(ix, Item::Event(e));
+    let in_log = |s: &Steer| {
+        tail.iter().any(|i| matches!(i, TailItem::Message(m) if m.role == TailRole::User && steer_of(&m.text, std::slice::from_ref(s)).is_some()))
+    };
+    for e in events.iter().map(|e| Item::Event(e)).chain(steers.iter().filter(|s| !in_log(s)).map(Item::Steer)) {
+        let ix = items.iter().position(|i| at(i) > at(&e)).unwrap_or(items.len());
+        items.insert(ix, e);
     }
     let mut out: Vec<Conv> = Vec::new();
     let mut calls: Vec<(String, bool, ActionKind, String)> = Vec::new();
@@ -141,8 +136,21 @@ pub fn conversation(tail: &[TailItem], w: &str, events: &[&HubEvent], lead_worki
             Item::Tail(TailItem::Action(a)) => {
                 calls.push((a.action.summary.to_string(), a.action.failed, a.action.kind, a.at.to_string()));
             }
+            Item::Steer(st) => {
+                flush_calls(&mut out, &mut calls, &mut fold_start);
+                out.push(steer_say(st, clock(st.queued_at.as_str())));
+            }
             Item::Tail(TailItem::Message(m)) => {
                 if m.role == TailRole::System {
+                    continue;
+                }
+                // A steer as the lead received it: your words and its receipt, whatever orders it names.
+                if m.role == TailRole::User
+                    && let Some(st) = steer_of(&m.text, steers)
+                {
+                    flush_calls(&mut out, &mut calls, &mut fold_start);
+                    fold_start = Some(m.at.to_string());
+                    out.push(steer_say(st, clock(m.at.as_str())));
                     continue;
                 }
                 let ids = mentions(&m.text);
@@ -160,11 +168,10 @@ pub fn conversation(tail: &[TailItem], w: &str, events: &[&HubEvent], lead_worki
                 if m.role == TailRole::User {
                     flush_calls(&mut out, &mut calls, &mut fold_start);
                     fold_start = Some(m.at.to_string());
-                    let steered = steered.iter().any(|s| m.text.contains(s.as_str()));
-                    out.push(Conv::Say { at: clock(m.at.as_str()).to_string(), who: Who::You, text: m.text.to_string(), steered });
+                    out.push(Conv::Say { at: clock(m.at.as_str()).to_string(), who: Who::You, text: m.text.to_string(), to: None, receipt: None });
                 } else {
                     flush_calls(&mut out, &mut calls, &mut fold_start);
-                    out.push(Conv::Say { at: clock(m.at.as_str()).to_string(), who: Who::Lead, text: m.text.to_string(), steered: false });
+                    out.push(Conv::Say { at: clock(m.at.as_str()).to_string(), who: Who::Lead, text: m.text.to_string(), to: None, receipt: None });
                 }
             }
             Item::Event(e) => {
@@ -185,7 +192,32 @@ pub fn conversation(tail: &[TailItem], w: &str, events: &[&HubEvent], lead_worki
     } else {
         flush_calls(&mut out, &mut calls, &mut fold_start);
     }
+    for s in sending {
+        out.push(Conv::Say {
+            at: clock(&s.at).to_string(),
+            who: Who::You,
+            text: s.text.clone(),
+            to: crate::steer::task_of(&s.target).map(str::to_string),
+            receipt: Some(receipts::sending(s)),
+        });
+    }
     out
+}
+
+/// The steer a user message in the lead's log is: the hub's steer text begins with its id ("S12 · the human…").
+pub fn steer_of<'a>(text: &str, steers: &'a [Steer]) -> Option<&'a Steer> {
+    let head = text.split_whitespace().next()?;
+    steers.iter().find(|s| s.id == head && matches!(s.target, SteerTarget::Lead { .. }))
+}
+
+fn steer_say(s: &Steer, at: &str) -> Conv {
+    Conv::Say {
+        at: at.to_string(),
+        who: Who::You,
+        text: s.text.to_string(),
+        to: crate::steer::task_of(&s.target).map(str::to_string),
+        receipt: Some(receipts::receipt(s)),
+    }
 }
 
 /// "Worked for 48s · ran 3 commands (1 failed)".
@@ -515,13 +547,13 @@ impl Shell {
                 .and_then(|r| r.lead())
                 .is_some_and(|l| l.state == fleetd_contracts::ledger::LeadState::Working);
         let events: Vec<&HubEvent> = self.state.order_events(w).collect();
-        let steered: Vec<String> = self.state.steered.iter().cloned().collect();
-        let mut entries = conversation(&tail, w, &events, working, &steered);
+        let sending: Vec<Sending> = self.state.steer_sends.iter().filter(|s| s.workstream_id == w).cloned().collect();
+        let mut entries = conversation(&tail, w, &events, working, &self.state.steers, &sending);
         // The lead's newest message as it streams; the tail refetch replaces it once complete.
         if let Some((_, text)) = lead.as_ref().and_then(|l| self.state.live.text(&l.lane_id)).filter(|(_, text)| !text.trim().is_empty())
             && !tail.iter().any(|i| matches!(i, TailItem::Message(m) if m.text.as_str() == text))
         {
-            entries.push(Conv::Say { at: String::new(), who: Who::Lead, text: text.to_string(), steered: false });
+            entries.push(Conv::Say { at: String::new(), who: Who::Lead, text: text.to_string(), to: None, receipt: None });
         }
         let notice = match tail_error {
             Some(e) => Some((e, true)),
@@ -552,8 +584,22 @@ impl Shell {
         let on_told: OnTold = std::rc::Rc::new(move |thread, cx| {
             shell.update(cx, |this, cx| this.open_told(thread, "the lead".into(), cx)).ok();
         });
+        let shell = cx.entity().downgrade();
+        let on_steer: OnSteer = std::rc::Rc::new(move |act, cx| {
+            shell.update(cx, |this, cx| this.steer_act(act, cx)).ok();
+        });
+        let shell = cx.entity().downgrade();
+        let on_lead: OnLead = std::rc::Rc::new(move |cx| {
+            shell
+                .update(cx, |this, cx| {
+                    if let Some(agent) = this.lead_agent() {
+                        this.open_steer_sheet(agent, cx);
+                    }
+                })
+                .ok();
+        });
         let snap = ConvSnapshot { head: head.join(" · "), told, lead: lead.filter(|l| l.live.is_some()), notice, entries };
-        self.conv.update(cx, |c, cx| c.set(snap, on_open, on_told, cx));
+        self.conv.update(cx, |c, cx| c.set(snap, on_open, on_told, on_steer, on_lead, cx));
     }
 
     fn order_bottom(&self, w: &str, lanes: &[AgentLane], cx: &mut Context<Self>) -> Div {
@@ -561,18 +607,11 @@ impl Shell {
         let asks = self.order_asks(w, cx);
         let pill = fan_out(lanes, self.state.order_asks(w).len());
         let needs = !self.state.order_asks(w).is_empty() || lanes.iter().any(|l| l.status == LaneStatus::Waiting);
-        let notes: Vec<(String, bool, NoteStatus)> =
-            self.state.order.as_ref().map(|o| o.notes.iter().map(|n| (n.text.clone(), n.urgent, n.status.clone())).collect()).unwrap_or_default();
-        let mut note_lines = div().flex().flex_col().text_size(px(size::XS)).text_color(t.quiet);
-        for (text, urgent, status) in notes {
-            let first = text.lines().next().unwrap_or_default().to_string();
-            note_lines = note_lines.child(match status {
-                NoteStatus::Sending => div().child(format!("sending: \"{}\"", crate::shell::clip(&first, 80))),
-                NoteStatus::Queued if urgent => div().child(format!("steering the lead now: \"{}\"", crate::shell::clip(&first, 80))),
-                NoteStatus::Queued => div().child(format!("queued for the lead: \"{}\"", crate::shell::clip(&first, 80))),
-                NoteStatus::Failed(e) => div().text_color(t.danger).whitespace_normal().child(format!("Not sent: {e}")),
-            });
-        }
+        // A queued steer waits for the lead's running step to end; say what that is and for how long. Its age moves
+        // only when the shell renders anyway (the lanes' 1 Hz tick while the lead works).
+        let lead = self.state.live.lead(&fleetd_contracts::ledger::WorkstreamId::unchecked(w));
+        let to_lead = self.state.steers.iter().filter(|s| matches!(s.target, SteerTarget::Lead { .. }));
+        let waiting = lead.and_then(|l| receipts::waiting_line(to_lead, &l, "the lead's", self.state.live.hub_now_ms(crate::shell::now_ms())));
         div()
             .flex_none()
             .px_4()
@@ -608,7 +647,7 @@ impl Shell {
                         )
                     })
                     .child(div().flex_1())
-                    .child(note_lines),
+                    .when_some(waiting, |d, line| d.child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(line))),
             )
             .child(self.follow.clone())
     }
@@ -652,7 +691,42 @@ pub struct LeadConv {
     list: gpui::ListState,
     on_open: crate::links::OnOpen,
     on_told: OnTold,
+    on_steer: OnSteer,
+    /// The lead's activity line opens its steer box, as an agent's lane does.
+    on_lead: OnLead,
     open_folds: OpenFolds,
+}
+
+pub type OnLead = std::rc::Rc<dyn Fn(&mut gpui::App)>;
+
+/// A receipt's withdraw or redirect, carried out by the shell.
+pub type OnSteer = std::rc::Rc<dyn Fn(Act, &mut gpui::App)>;
+
+/// One steer's receipt: its stage in words, coloured by how it went, and what you can do about it.
+pub fn receipt_line(t: &Theme, id: impl Into<gpui::ElementId>, r: &Receipt, on_steer: &OnSteer) -> Div {
+    let color = match r.tone {
+        Tone::Quiet => t.quiet,
+        Tone::Good => t.success,
+        Tone::Warn => t.warning,
+        Tone::Bad => t.danger,
+    };
+    let act = r.act.clone().map(|act| {
+        let label = match &act {
+            Act::Withdraw(_) => "Withdraw",
+            Act::Redirect(_) => "Interrupt and redirect",
+        };
+        let on_steer = on_steer.clone();
+        ui::clickable(t, div().id(id.into())).text_color(t.text).underline().child(label).on_click(move |_, _, cx| on_steer(act.clone(), cx))
+    });
+    div()
+        .w_full()
+        .pt_0p5()
+        .flex()
+        .items_baseline()
+        .gap_x_2()
+        .text_size(px(size::XS))
+        .child(div().min_w_0().text_color(color).whitespace_normal().child(r.line.clone()))
+        .children(act.map(|a| a.flex_none()))
 }
 
 pub type OnTold = std::rc::Rc<dyn Fn(fleetd_contracts::ids::ThreadRef, &mut gpui::App)>;
@@ -664,13 +738,25 @@ impl LeadConv {
             list: gpui::ListState::new(0, gpui::ListAlignment::Bottom, px(400.)),
             on_open: std::rc::Rc::new(|_, _, _| {}),
             on_told: std::rc::Rc::new(|_, _| {}),
+            on_steer: std::rc::Rc::new(|_, _| {}),
+            on_lead: std::rc::Rc::new(|_| {}),
             open_folds: OpenFolds::new(),
         }
     }
 
-    pub fn set(&mut self, snap: ConvSnapshot, on_open: crate::links::OnOpen, on_told: OnTold, cx: &mut Context<Self>) {
+    pub fn set(
+        &mut self,
+        snap: ConvSnapshot,
+        on_open: crate::links::OnOpen,
+        on_told: OnTold,
+        on_steer: OnSteer,
+        on_lead: OnLead,
+        cx: &mut Context<Self>,
+    ) {
         self.on_open = on_open;
         self.on_told = on_told;
+        self.on_steer = on_steer;
+        self.on_lead = on_lead;
         if snap == self.snap {
             return;
         }
@@ -687,7 +773,7 @@ impl LeadConv {
         let Some(entry) = self.snap.entries.get(ix).cloned() else { return div().into_any_element() };
         let on_open = self.on_open.clone();
         let el: AnyElement = match entry {
-            Conv::Say { at, who, text, steered } => div()
+            Conv::Say { at, who, text, to, receipt } => div()
                 .flex()
                 .gap_3()
                 .child(div().w(px(52.)).flex_none().text_size(px(size::XS)).text_color(t.quiet).pt(px(1.)).child(at))
@@ -709,8 +795,9 @@ impl LeadConv {
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .when(steered, |d| d.child(div().text_size(px(size::XS)).text_color(t.quiet).child("↳ steered")))
-                        .child(div().whitespace_normal().child(crate::links::text(t, format!("conv-{ix}"), text, true, on_open.clone()))),
+                        .when_some(to, |d, to| d.child(div().text_size(px(size::XS)).text_color(t.quiet).child(format!("to {to}, directly"))))
+                        .child(div().whitespace_normal().child(crate::links::text(t, format!("conv-{ix}"), text, true, on_open.clone())))
+                        .when_some(receipt, |d, r| d.child(receipt_line(t, ("conv-receipt", ix), &r, &self.on_steer))),
                 )
                 .into_any_element(),
             Conv::Fold { key, secs, commands, failed, calls } => {
@@ -781,7 +868,15 @@ impl Render for LeadConv {
         let head = section(t, "LEAD", self.snap.head.clone()).child(div().flex_1()).children(told);
         let mut col = div().px_4().flex().flex_col().gap_2().child(head);
         if let Some(lead) = &self.snap.lead {
-            col = col.child(div().pl(px(96.)).child(crate::live::activity::activity_line(t, lead)));
+            let on_lead = self.on_lead.clone();
+            col = col.child(
+                div().pl(px(96.)).child(
+                    ui::clickable(t, div().id("lead-activity"))
+                        .hover(|s| s.underline())
+                        .child(crate::live::activity::activity_line(t, lead))
+                        .on_click(move |_, _, cx| on_lead(cx)),
+                ),
+            );
         }
         if let Some((text, error)) = &self.snap.notice {
             col = col.child(div().whitespace_normal().text_color(if *error { t.danger } else { t.quiet }).child(text.clone()));
@@ -866,7 +961,7 @@ mod tests {
             msg("03:02", "assistant", "W12 rebased."),
             msg("03:10", "assistant", "Waiting on T33's review."),
         ]));
-        let conv = conversation(&items, "W14", &[], false, &[]);
+        let conv = conversation(&items, "W14", &[], false, &[], &[]);
         assert!(matches!(&conv[0], Conv::Say { who: Who::You, .. }));
         assert_eq!(
             conv[1],
@@ -899,7 +994,7 @@ mod tests {
         let e1 = event("03:00", "task.started", json!({ "workstreamId": "W14", "taskId": "T31" }));
         let e2 = event("03:01", "task.started", json!({ "workstreamId": "W14", "taskId": "T33" }));
         let e3 = event("03:02", "pr.merged", json!({ "workstreamId": "W14", "prNumber": 211 }));
-        let conv = conversation(&items, "W14", &[&e1, &e2, &e3], true, &[]);
+        let conv = conversation(&items, "W14", &[&e1, &e2, &e3], true, &[], &[]);
         assert_eq!(conv[1], Conv::Events { at: "10:03:00".into(), text: "T31 started, T33 started, #211 merged".into() });
         assert_eq!(conv[3], Conv::Working { calls: vec![("b".into(), false), ("c".into(), false), ("d".into(), false)] });
     }

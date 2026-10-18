@@ -54,6 +54,12 @@ pub enum Command {
     Connect,
     /// The Add project sheet.
     AddProject,
+    /// Focuses the open order's steer composer.
+    SteerLead,
+    /// Opens one agent's steer box (its lane id), or (None) lists the open order's agents to pick one.
+    SteerAgent(Option<String>),
+    /// Withdraws a queued steer.
+    Withdraw(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -139,6 +145,42 @@ pub fn items(state: &State) -> Vec<Item> {
             Command::Time(Some(w.clone())),
         ));
         out.push(item(Group::Action, format!("Status for {w}"), "Its verified progress, ETA and what it waits on", None, Command::Status(Some(w))));
+        // Steering: every steer is aimed at one of the open order's agents.
+        let w = order.workstream_id.as_str();
+        out.push(item(
+            Group::Action,
+            "Steer the lead",
+            format!("Enter queues for its next step · {} interrupts", ui::shortcut("Enter")),
+            None,
+            Command::SteerLead,
+        ));
+        out.push(item(Group::Action, "Steer an agent…", format!("Pick one of {w}'s agents"), None, Command::SteerAgent(None)));
+        for lane in state.live.lanes(&fleetd_contracts::ledger::WorkstreamId::unchecked(w)) {
+            if lane.role == fleetd_contracts::live::AgentRole::Lead || crate::live::state::is_final(lane.status) {
+                continue;
+            }
+            let Some(task) = lane.task_id.as_ref() else { continue };
+            let doing = crate::live::activity::describe(&lane);
+            let doing = doing.machine.map_or(doing.words.clone(), |m| format!("{} {m}", doing.words));
+            let role = crate::steer::sheet::role_label(lane.role);
+            out.push(item(
+                Group::Action,
+                format!("Steer {task}"),
+                format!("{role} · {doing}"),
+                None,
+                Command::SteerAgent(Some(lane.lane_id.to_string())),
+            ));
+        }
+        for s in state.steers.iter().filter(|s| crate::steer::receipts::can_withdraw(s)) {
+            let to = crate::steer::task_of(&s.target).unwrap_or("the lead");
+            out.push(item(
+                Group::Action,
+                format!("Withdraw {}", s.id),
+                format!("to {to}: {}", crate::shell::clip(&s.text, 60)),
+                None,
+                Command::Withdraw(s.id.to_string()),
+            ));
+        }
     }
     for row in &state.projects {
         let key = row.key();
@@ -153,7 +195,8 @@ pub fn items(state: &State) -> Vec<Item> {
 pub fn rank(query: &str, items: &[Item]) -> Vec<usize> {
     let query = query.trim();
     if query.is_empty() {
-        let mut all: Vec<usize> = (0..items.len()).filter(|&i| !matches!(items[i].command, Command::NewOrder(Some(_)))).collect();
+        let mut all: Vec<usize> =
+            (0..items.len()).filter(|&i| !matches!(items[i].command, Command::NewOrder(Some(_)) | Command::SteerAgent(Some(_)))).collect();
         all.sort_by_key(|&i| items[i].group);
         return all;
     }
@@ -240,6 +283,11 @@ impl Palette {
         });
         let matches = rank("", &items);
         Self { input, items, matches, typed: String::new(), selected: 0, scroll: UniformListScrollHandle::new(), _sub: sub }
+    }
+
+    /// Starts with `text` typed, e.g. "Steer " to list the agents.
+    pub fn set_query(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.input.update(cx, |i, cx| i.set_text(text, cx));
     }
 
     /// Rows: the matches, then "New order: <text>" once something is typed.
