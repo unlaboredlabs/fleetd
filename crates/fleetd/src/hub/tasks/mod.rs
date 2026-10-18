@@ -1199,6 +1199,34 @@ impl Tasks {
         }
     }
 
+    /// Removes `text` from a task's pending message (a withdrawn steer that was waiting for its next run); false once
+    /// that run went out.
+    pub async fn take_back(&self, task_id: &TaskId, text: &str) -> Result<bool, TaskError> {
+        let _guard = self.lock.lock().await;
+        let Some(mut stored) = self
+            .db(|c| TaskRecords::get(c, task_id))
+            .map_err(store_error)?
+        else {
+            return Ok(false);
+        };
+        let Some(pending) = stored.pending_message.take() else {
+            return Ok(false);
+        };
+        let parts: Vec<&str> = pending.split("\n\n").collect();
+        let ours: Vec<&str> = text.split("\n\n").collect();
+        let Some(at) = parts.windows(ours.len()).position(|w| w == ours.as_slice()) else {
+            return Ok(false);
+        };
+        let rest: Vec<&str> = parts[..at]
+            .iter()
+            .chain(&parts[at + ours.len()..])
+            .copied()
+            .collect();
+        stored.pending_message = (!rest.is_empty()).then(|| rest.join("\n\n"));
+        self.put(&stored).map_err(store_error)?;
+        Ok(true)
+    }
+
     /// Interrupts a running task and releases its slot and leases.
     pub async fn cancel(
         self: &Arc<Self>,

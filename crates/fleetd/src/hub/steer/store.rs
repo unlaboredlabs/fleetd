@@ -132,7 +132,8 @@ pub fn list(
 pub fn open(db: &HubDb) -> Result<Vec<(Steer, i64)>, StoreError> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT data, COALESCE(delivered_ms, queued_ms) FROM steers WHERE stage IN ('queued', 'delivered') AND held = 0",
+            "SELECT data, COALESCE(delivered_ms, queued_ms) FROM steers
+             WHERE stage IN ('queued', 'delivered') AND held = 0 AND rides_with IS NULL",
         )?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         rows.map(|r| {
@@ -143,18 +144,62 @@ pub fn open(db: &HubDb) -> Result<Vec<(Steer, i64)>, StoreError> {
     })
 }
 
-pub fn hold(db: &HubDb, id: &SteerId) -> Result<(), StoreError> {
+/// Holds a steer for its task's next run; `message` is the text it added to the task's pending message.
+pub fn hold(db: &HubDb, id: &SteerId, message: Option<&str>) -> Result<(), StoreError> {
     db.with(|conn| {
-        conn.execute("UPDATE steers SET held = 1 WHERE n = ?", [id.n()])?;
+        conn.execute(
+            "UPDATE steers SET held = 1, rides_with = NULL, message = COALESCE(?, message) WHERE n = ?",
+            params![message, id.n()],
+        )?;
         Ok(())
     })
 }
 
-/// The held steers of a task, newest first.
+/// A held steer's pending text, while it is still held.
+pub fn held_message(db: &HubDb, id: &SteerId) -> Result<Option<String>, StoreError> {
+    db.with(|conn| {
+        Ok(conn
+            .query_row(
+                "SELECT message FROM steers WHERE n = ? AND held = 1",
+                [id.n()],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten())
+    })
+}
+
+pub fn unhold(db: &HubDb, id: &SteerId) -> Result<(), StoreError> {
+    db.with(|conn| {
+        conn.execute("UPDATE steers SET held = 0 WHERE n = ?", [id.n()])?;
+        Ok(())
+    })
+}
+
+/// The steers that went out in `leader`'s run.
+pub fn riders(db: &HubDb, leader: &SteerId) -> Result<Vec<Steer>, StoreError> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare("SELECT data FROM steers WHERE rides_with = ? ORDER BY n")?;
+        let rows = stmt.query_map([leader.n()], |r| r.get::<_, String>(0))?;
+        rows.map(|r| decode(r?)).collect()
+    })
+}
+
+pub fn ride(db: &HubDb, rider: &Steer, leader: &SteerId) -> Result<(), StoreError> {
+    db.with(|conn| {
+        conn.execute(
+            "UPDATE steers SET held = 0, rides_with = ?, data = ? WHERE n = ?",
+            params![leader.n(), serde_json::to_string(rider)?, rider.id.n()],
+        )?;
+        Ok(())
+    })
+}
+
+/// The held steers of a task, oldest first: the order they were added to its pending message.
 pub fn held_for_task(db: &HubDb, task_id: &str) -> Result<Vec<Steer>, StoreError> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT data FROM steers WHERE task_id = ? AND held = 1 AND stage = 'queued' ORDER BY n DESC",
+            "SELECT data FROM steers WHERE task_id = ? AND held = 1 AND stage = 'queued' ORDER BY n",
         )?;
         let rows = stmt.query_map([task_id], |r| r.get::<_, String>(0))?;
         rows.map(|r| decode(r?)).collect()

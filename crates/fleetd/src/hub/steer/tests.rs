@@ -509,3 +509,81 @@ async fn a_steer_the_queue_is_sending_cannot_be_withdrawn_from_under_it() {
     assert!(!lab.hub.queue.withdraw_steer(&steer.id));
     assert!(lab.hub.queue.has_steer(&steer.id));
 }
+
+#[tokio::test]
+async fn held_steers_go_out_in_order_with_the_next_run_and_any_still_held_can_be_withdrawn() {
+    let lab = lab();
+    let mut task = running_task(&lab.hub, "p1");
+    task.state = TaskState::Idle;
+    lab.hub
+        .db
+        .with(|c| {
+            Ok(crate::hub::tasks::records::TaskRecords::put(
+                c,
+                &crate::hub::tasks::records::StoredTask {
+                    task: task.clone(),
+                    pending_message: None,
+                },
+            )?)
+        })
+        .unwrap();
+    let me = person("k1");
+    let mut sent = Vec::new();
+    for (i, text) in ["one", "two", "three"].iter().enumerate() {
+        let crid = format!("r{i}");
+        sent.push(
+            send(
+                &lab.hub,
+                By::Human(&me),
+                to_task(&task, text, SteerMode::Queue, &crid),
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let pending = || {
+        lab.hub
+            .db
+            .with(|c| {
+                Ok(crate::hub::tasks::records::TaskRecords::get(
+                    c,
+                    &task.task_id,
+                )?)
+            })
+            .unwrap()
+            .unwrap()
+            .pending_message
+            .unwrap_or_default()
+    };
+    assert!(
+        pending().contains("'one'") && pending().contains("'two'") && pending().contains("'three'")
+    );
+    // A held steer is withdrawn by taking its words back out of the task's next message.
+    let gone = withdraw(&lab.hub, &me, &sent[1].id).await.unwrap();
+    assert_eq!(gone.stage, SteerStage::Withdrawn);
+    assert!(
+        !pending().contains("'two'")
+            && pending().contains("'one'")
+            && pending().contains("'three'")
+    );
+    // The next run carries the rest, tagged with the newest; the older one rides with it.
+    let thread = task.thread_ref.clone().unwrap();
+    let leader = take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
+    assert_eq!(leader, sent[2].id);
+    let (bound, _) = store::get(&lab.hub.db, &leader).unwrap().unwrap();
+    let machine = MachineId::unchecked("lab-a");
+    on_receipt(&lab.hub, &machine, &receipt(&bound, SteerStage::Delivered));
+    on_receipt(
+        &lab.hub,
+        &machine,
+        &receipt(&bound, SteerStage::Acknowledged),
+    );
+    let stage = |s: &Steer| store::get(&lab.hub.db, &s.id).unwrap().unwrap().0;
+    assert_eq!(stage(&sent[2]).stage, SteerStage::Acknowledged);
+    let rider = stage(&sent[0]);
+    assert_eq!(rider.stage, SteerStage::Acknowledged);
+    assert!(rider.detail.unwrap().contains("together with S3"));
+    assert_eq!(stage(&sent[1]).stage, SteerStage::Withdrawn);
+    lab.clock.advance(RECEIPT_GRACE * 10);
+    assert_eq!(sweep(&lab.hub), 0);
+}
