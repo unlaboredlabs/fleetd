@@ -371,7 +371,11 @@ mod tests {
             "│  open:\n│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X"
         );
         assert_eq!(
-            wrap("│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X", 30, "│  "),
+            wrap(
+                "│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X",
+                30,
+                "│  "
+            ),
             "│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X"
         );
     }
