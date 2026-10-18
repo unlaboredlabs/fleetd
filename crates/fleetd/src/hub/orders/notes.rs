@@ -11,7 +11,7 @@ use fleetd_contracts::tasks::TaskState;
 use serde_json::json;
 
 use super::tools::unknown_order;
-use crate::hub::api::{Caller, Hub, ToolError, allows, require};
+use crate::hub::api::{Caller, Hub, ToolError, allows, is_human, require};
 use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::intake::attachments;
 use crate::hub::leads::records::{StoredWorkstream, is_closed};
@@ -26,6 +26,18 @@ fn one_line(text: &str, max: usize) -> String {
     } else {
         flat
     }
+}
+
+/// Notes and stops reach the lead as the human's words, so only a person's device (a human key) sends them.
+pub fn require_human(caller: &Caller, tool: &str) -> Result<(), ToolError> {
+    if is_human(caller) {
+        return Ok(());
+    }
+    Err(ToolError::new(
+        ErrorCode::Forbidden,
+        format!("{tool} speaks for the human, and this is an agent key."),
+    )
+    .with_fix("Send it from the desktop app (a human key from `fleetd pair`); an agent talks to a lead with thread_send."))
 }
 
 fn readable_order(hub: &Hub, caller: &Caller, id: &str) -> Result<StoredWorkstream, ToolError> {
@@ -130,6 +142,7 @@ pub async fn note(
     caller: &Caller,
     input: OrderNoteInput,
 ) -> Result<OrderNoteOutput, ToolError> {
+    require_human(caller, "order_note")?;
     let stored = readable_order(hub, caller, input.workstream_id.as_str())?;
     let w = stored.workstream;
     require(caller, Role::Operate, Some(&w.project_ref.machine_id))?;
@@ -229,6 +242,7 @@ pub async fn stop(
     caller: &Caller,
     input: OrderStopInput,
 ) -> Result<OrderStopOutput, ToolError> {
+    require_human(caller, "order_stop")?;
     let mut stored = readable_order(hub, caller, input.workstream_id.as_str())?;
     let r = stored.workstream.project_ref.clone();
     require(caller, Role::Operate, Some(&r.machine_id))?;
@@ -326,4 +340,29 @@ pub async fn stop(
         next: Some("To do it differently, give a new order with intake_submit.".into()),
         truncated: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use fleetd_contracts::auth::KeyKind;
+
+    use super::*;
+
+    fn caller(kind: Option<KeyKind>) -> Caller {
+        serde_json::from_value(serde_json::json!({
+            "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": "2026-10-18T10:00:00.000Z",
+            "grants": [{ "role": "operate", "machines": "*" }],
+        }))
+        .map(|c: Caller| Caller { kind, ..c })
+        .unwrap()
+    }
+
+    #[test]
+    fn only_a_person_s_device_speaks_for_the_human() {
+        assert!(require_human(&caller(Some(KeyKind::Human)), "order_stop").is_ok());
+        // An operate agent key on every machine is still not the human.
+        let refused = require_human(&caller(None), "order_note").unwrap_err();
+        assert_eq!(refused.code, ErrorCode::Forbidden);
+        assert!(require_human(&caller(Some(KeyKind::Agent)), "order_stop").is_err());
+    }
 }

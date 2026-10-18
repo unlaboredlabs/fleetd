@@ -65,6 +65,36 @@ const appSession = async (key: string) => {
   return { call, live, frames, close: () => ws.close() };
 };
 
+/**
+ * The node refuses to remove a project while one of its threads runs, and a late task result can wake the lead again,
+ * so: interrupt every running or waiting thread of the testbed project, try the removal, and repeat for up to 2 min.
+ */
+const quiesceAndRemove = async (lab: Lab) => {
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const listed = (await lab.callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>;
+    const project = listed.find((p) => p.workspaceRoot === TESTBED);
+    if (project === undefined) return;
+    const outcome = (await lab.callTool("project_get", { machineId: MACHINE, projectId: project.projectId })).body;
+    // project_get lists the lead's thread; task threads come from their tasks.
+    const tasks = (await lab.callTool("tasks_list", { projectRef: { machineId: MACHINE, projectId: project.projectId }, state: "running" })).body.tasks as Array<Body>;
+    const active = [
+      ...((outcome.threads ?? []) as Array<Body>).filter((t) => t.status === "running" || t.status === "waiting").map((t) => t.threadId as string),
+      ...tasks.flatMap((t) => (t.threadRef === undefined ? [] : [t.threadRef.threadId as string])),
+    ];
+    for (const threadId of active) {
+      await lab.callTool("thread_interrupt", { machineId: MACHINE, threadId, clientRequestId: `demo-stop-${threadId}-${Date.now()}` });
+    }
+    try {
+      await removeTestbedProject(lab);
+      return;
+    } catch (error) {
+      if (Date.now() > deadline) throw error;
+      await lab.callTool("events_wait", { cursor: await lab.cursor(), machineId: MACHINE, types: ENDED, timeoutSec: 5 });
+    }
+  }
+};
+
 export async function demoFanout(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
@@ -190,7 +220,7 @@ export async function demoFanout(lab: Lab) {
       if ((pr.headRefName as string).startsWith("fleetd/")) spawnSync("gh", ["pr", "close", String(pr.number), "-R", REPO, "--delete-branch"], { cwd: LAB, env: scrubbedEnv(), stdio: "ignore" });
     }
     cleanTestbed();
-    await removeTestbedProject(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
+    await quiesceAndRemove(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
     fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
   }
 }

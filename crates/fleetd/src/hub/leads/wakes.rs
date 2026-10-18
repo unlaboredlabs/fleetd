@@ -36,6 +36,8 @@ pub enum LineKind {
     ResearchVerdict,
     /// A person added to an order (`order_note`).
     Human,
+    /// The lead ended a turn with an order frozen and nothing under way (`orders::idle`).
+    Idle,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +93,7 @@ impl Trigger {
                 LineKind::Train => "train",
                 LineKind::ResearchVerdict => "research_verdict",
                 LineKind::Human => "human",
+                LineKind::Idle => "idle",
             },
         }
     }
@@ -244,6 +247,11 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
 }
 
 impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
+    /// Whether items for `key` wait for their window to close.
+    pub fn has_pending(&self, key: &K) -> bool {
+        self.pending.lock().unwrap().contains_key(key)
+    }
+
     /// Flushes `item` now, with whatever else is pending for `key`; that key's running timers then find nothing.
     pub fn push_now<F>(self: &Arc<Self>, key: K, item: T, flush: F)
     where
@@ -292,6 +300,11 @@ impl LeadWakes {
         self.debouncer.push(r.clone(), trigger, move |r, triggers| {
             Box::pin(async move { this.flush(r, triggers).await })
         });
+    }
+
+    /// Whether a wake for the project's lead is already on its way (triggers waiting out the debounce).
+    pub fn pending(&self, r: &ProjectRef) -> bool {
+        self.debouncer.has_pending(r)
     }
 
     /// Wakes the lead now with this trigger and any pending ones, skipping the debounce (a person steering).

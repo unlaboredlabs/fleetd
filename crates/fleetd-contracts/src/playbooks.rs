@@ -27,7 +27,8 @@ pub struct RequiredCheck {
 pub struct ReviewRule {
     pub reviewers: Int<0, 4>,
     pub verifier: bool,
-    /// The plan is reviewed before any code is written.
+    /// The plan is written into the brief before it is frozen, and the writers start from that frozen plan. Not a
+    /// separate review step: nothing waits on one.
     pub plan_first: bool,
 }
 

@@ -182,11 +182,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "order_note",
-        "Add to an order for its lead, with optional references (files, orders, PRs) and attachments from attachment_put. The lead reads it at its next wake; urgent wakes it now.",
+        "Add to an order for its lead, with optional references (files, orders, PRs) and attachments from attachment_put. The lead reads it at its next wake; urgent wakes it now. A person's device (a human key) only.",
     ),
     (
         "order_stop",
-        "Stop an order: cancels its queued and running tasks, withdraws its asks, sets it stopped and tells its lead. Merged PRs stay. Idempotent.",
+        "Stop an order: cancels its queued and running tasks, withdraws its asks, sets it stopped and tells its lead. Merged PRs stay. Idempotent. A person's device (a human key) only.",
     ),
     (
         "intake_preview",

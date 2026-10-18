@@ -1,0 +1,240 @@
+//! A safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
+//! no PR in the train, no open ask and no wake coming. Nothing would ever wake it again, so the hub wakes it once per
+//! order with a plain line. Bounded: a second idle turn on the same order gets no second nudge.
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
+use fleetd_contracts::tasks::TaskState;
+use fleetd_contracts::train::ChangeState;
+
+use crate::hub::api::Hub;
+use crate::hub::leads::records::WorkstreamFilter;
+use crate::hub::leads::wakes::{LineKind, Trigger};
+use crate::hub::store::WaitInput;
+use crate::hub::wakes::WakeFilter;
+
+/// One open order of the project, as the decision reads it.
+#[derive(Clone, Debug)]
+pub struct OrderFacts {
+    pub workstream_id: WorkstreamId,
+    pub title: String,
+    pub state: WorkstreamState,
+    pub brief_frozen: bool,
+    pub live_tasks: usize,
+    pub open_asks: usize,
+    pub open_changes: usize,
+}
+
+/// The orders to nudge after a lead turn ended: frozen and running with nothing under way, not nudged before. None
+/// while something will wake the lead anyway (a scheduled wake, or triggers waiting in the debounce).
+pub fn to_nudge(
+    orders: &[OrderFacts],
+    lead_will_wake: bool,
+    nudged: &HashSet<WorkstreamId>,
+) -> Vec<WorkstreamId> {
+    if lead_will_wake {
+        return Vec::new();
+    }
+    orders
+        .iter()
+        .filter(|o| {
+            o.state == WorkstreamState::Running
+                && o.brief_frozen
+                && o.live_tasks == 0
+                && o.open_asks == 0
+                && o.open_changes == 0
+                && !nudged.contains(&o.workstream_id)
+        })
+        .map(|o| o.workstream_id.clone())
+        .collect()
+}
+
+pub fn nudge_line(id: &WorkstreamId, title: &str) -> String {
+    format!(
+        "- You ended your turn without starting work or asking anything for {id} '{title}': nothing else will wake you for it. Continue it now (spawn its tasks), ask the human, or say why it waits with `fleetd status set --workstream {id}`."
+    )
+}
+
+fn facts(hub: &Hub, r: &ProjectRef) -> Vec<OrderFacts> {
+    let open = hub
+        .leads
+        .records
+        .workstreams_list(&WorkstreamFilter {
+            project_ref: Some(r.clone()),
+            open: true,
+            limit: 100,
+            ..Default::default()
+        })
+        .unwrap_or_default();
+    let asks = super::open_asks_by_order(hub);
+    let changes = super::project_changes(hub, r);
+    open.into_iter()
+        .map(|w| {
+            let id = w.workstream_id.clone();
+            OrderFacts {
+                live_tasks: super::order_tasks(hub, &id)
+                    .iter()
+                    .filter(|t| {
+                        matches!(
+                            t.state,
+                            TaskState::Queued | TaskState::Running | TaskState::Idle
+                        )
+                    })
+                    .count(),
+                open_asks: asks.get(&id).copied().unwrap_or(0),
+                open_changes: changes
+                    .iter()
+                    .filter(|c| c.workstream_id == id)
+                    .filter(|c| {
+                        !matches!(
+                            c.state,
+                            ChangeState::Merged | ChangeState::Refused | ChangeState::Abandoned
+                        )
+                    })
+                    .count(),
+                brief_frozen: w.brief.is_some(),
+                state: w.state,
+                title: w.title.to_string(),
+                workstream_id: id,
+            }
+        })
+        .collect()
+}
+
+/// Follows lead turns ending, from now on, and nudges idle orders once each.
+pub async fn run(hub: Arc<Hub>) {
+    let nudged: Mutex<HashSet<WorkstreamId>> = Mutex::default();
+    let mut cursor = hub.events.head();
+    loop {
+        let page = match hub
+            .events
+            .wait(WaitInput {
+                cursor: Some(cursor),
+                types: Some(vec![HubEventType::ThreadCompleted]),
+                machine_id: None,
+                timeout_sec: 3600,
+            })
+            .await
+        {
+            Ok(page) => page,
+            Err(error) => {
+                tracing::warn!(%error, "idle orders: event log read failed");
+                hub.clock.sleep(Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+        cursor = page.cursor;
+        for event in page.events {
+            let (Some(machine_id), Some(project_id), Some(thread_id)) =
+                (event.machine_id, event.project_id, event.thread_id)
+            else {
+                continue;
+            };
+            let r = ProjectRef {
+                machine_id,
+                project_id,
+            };
+            let Some(lead) = hub.leads.leads.get(&r).ok().flatten() else {
+                continue;
+            };
+            if lead.thread_id != thread_id {
+                continue;
+            }
+            let thread = ThreadRef {
+                machine_id: r.machine_id.clone(),
+                thread_id,
+            };
+            let scheduled = !hub
+                .wakes
+                .list(&WakeFilter {
+                    machine_id: Some(r.machine_id.clone()),
+                    thread_id: Some(thread.thread_id.clone()),
+                    state: Some(fleetd_contracts::wakes::WakeState::Active),
+                })
+                .is_empty();
+            let will_wake = scheduled || hub.leads.wakes.pending(&r);
+            let orders = facts(&hub, &r);
+            let ids = to_nudge(&orders, will_wake, &nudged.lock().unwrap());
+            for id in ids {
+                let title = orders
+                    .iter()
+                    .find(|o| o.workstream_id == id)
+                    .map_or("", |o| o.title.as_str());
+                tracing::info!(workstream = %id, "idle order: nudging its lead once");
+                hub.leads.wakes.trigger(
+                    &r,
+                    Trigger::Line {
+                        kind: LineKind::Idle,
+                        text: nudge_line(&id, title),
+                    },
+                );
+                nudged.lock().unwrap().insert(id);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order(id: &str) -> OrderFacts {
+        OrderFacts {
+            workstream_id: WorkstreamId::new(id).unwrap(),
+            title: "three pages".into(),
+            state: WorkstreamState::Running,
+            brief_frozen: true,
+            live_tasks: 0,
+            open_asks: 0,
+            open_changes: 0,
+        }
+    }
+
+    #[test]
+    fn a_frozen_order_with_nothing_under_way_is_nudged_once() {
+        let idle = order("W1");
+        let none = HashSet::new();
+        assert_eq!(
+            to_nudge(std::slice::from_ref(&idle), false, &none),
+            vec![idle.workstream_id.clone()]
+        );
+        // Once only.
+        let nudged = HashSet::from([idle.workstream_id.clone()]);
+        assert!(to_nudge(std::slice::from_ref(&idle), false, &nudged).is_empty());
+        // Something will wake the lead anyway.
+        assert!(to_nudge(std::slice::from_ref(&idle), true, &none).is_empty());
+    }
+
+    #[test]
+    fn work_under_way_or_a_question_is_not_idle() {
+        let none = HashSet::new();
+        let busy = [
+            OrderFacts {
+                live_tasks: 1,
+                ..order("W1")
+            },
+            OrderFacts {
+                open_asks: 1,
+                ..order("W2")
+            },
+            OrderFacts {
+                open_changes: 1,
+                ..order("W3")
+            },
+            OrderFacts {
+                brief_frozen: false,
+                state: WorkstreamState::Draft,
+                ..order("W4")
+            },
+            OrderFacts {
+                state: WorkstreamState::Verifying,
+                ..order("W5")
+            },
+        ];
+        assert!(to_nudge(&busy, false, &none).is_empty());
+    }
+}

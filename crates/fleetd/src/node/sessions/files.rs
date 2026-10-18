@@ -24,6 +24,11 @@ pub fn git_files(root: &Path) -> Result<Vec<String>, String> {
         .filter(|p| !p.is_empty())
         .take(MAX_FILES)
         .map(|p| String::from_utf8_lossy(p).into_owned())
+        // git never descends into a symlinked directory; a symlink itself is left out too, so a mention never names a
+        // path that leads out of the repo.
+        .filter(|p| {
+            std::fs::symlink_metadata(root.join(p)).is_ok_and(|m| !m.file_type().is_symlink())
+        })
         .collect())
 }
 
@@ -93,18 +98,73 @@ pub fn attachment_path_ok(rel_path: &str) -> bool {
         && path.components().count() >= 4
 }
 
-/// Writes the file, creating its directories, and keeps the attachments directory out of git.
+/// Writes the file, creating its directories, and keeps the attachments directory out of git. Every directory below
+/// the workspace root is opened relative to its parent without following symlinks, and the file is created fresh
+/// (never through a symlink) in the opened directory, then renamed into place there: a symlinked `.fleetd` or
+/// attachments directory in the repo cannot send it outside the workspace.
 pub fn put_file(root: &Path, rel_path: &str, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+
+    use nix::fcntl::{OFlag, openat, renameat};
+    use nix::sys::stat::{Mode, mkdirat};
+
     if !attachment_path_ok(rel_path) {
         return Err(format!("{rel_path} is not under {ATTACHMENTS_DIR}"));
     }
-    let path = root.join(rel_path);
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let path = Path::new(rel_path);
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("{rel_path} names no file"))?;
+    let refused = |what: &Path, e: nix::Error| match e {
+        nix::Error::ELOOP | nix::Error::ENOTDIR => format!(
+            "{} is a symlink or not a directory; refusing to write through it",
+            what.display()
+        ),
+        e => format!("{}: {e}", what.display()),
+    };
+    let mut dir: std::os::fd::OwnedFd = std::fs::File::open(root)
+        .map_err(|e| format!("{}: {e}", root.display()))?
+        .into();
+    let mut walked = std::path::PathBuf::new();
+    for part in path.parent().into_iter().flat_map(Path::components) {
+        let Component::Normal(part) = part else {
+            return Err(format!("{rel_path} is not a plain relative path"));
+        };
+        walked.push(part);
+        match mkdirat(&dir, part, Mode::from_bits_truncate(0o755)) {
+            Ok(()) | Err(nix::Error::EEXIST) => {}
+            Err(e) => return Err(refused(&walked, e)),
+        }
+        dir = openat(
+            &dir,
+            part,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|e| refused(&walked, e))?;
     }
-    let tmp = path.with_extension("fleetd-part");
-    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    let tmp = format!(
+        ".{}.fleetd-part-{}",
+        name.to_string_lossy(),
+        std::process::id()
+    );
+    let fd = openat(
+        &dir,
+        tmp.as_str(),
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::from_bits_truncate(0o644),
+    )
+    .map_err(|e| refused(&walked.join(&tmp), e))?;
+    let mut file = std::fs::File::from(fd);
+    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    drop(file);
+    let moved = written
+        .map_err(|e| e.to_string())
+        .and_then(|()| renameat(&dir, tmp.as_str(), &dir, name).map_err(|e| e.to_string()));
+    if let Err(e) = moved {
+        let _ = nix::unistd::unlinkat(&dir, tmp.as_str(), nix::unistd::UnlinkatFlags::NoRemoveDir);
+        return Err(e);
+    }
     exclude_attachments(root)
 }
 
@@ -170,8 +230,7 @@ mod tests {
         assert!(!attachment_path_ok(".fleetd/attachments/../../.bashrc"));
         assert!(!attachment_path_ok("src/main.rs"));
         assert!(!attachment_path_ok(".fleetd/attachments/W14"));
-        let dir = std::env::temp_dir().join(format!("fleetd-files-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = scratch("put");
         let git = |args: &[&str]| {
             Command::new("git")
                 .arg("-C")
@@ -194,5 +253,70 @@ mod tests {
             "attachments are not project files"
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("fleetd-files-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_symlinked_fleetd_or_attachments_dir_cannot_take_a_file_outside() {
+        use std::os::unix::fs::symlink;
+        let outside = scratch("outside");
+        // .fleetd itself is a symlink out of the repo.
+        let repo = scratch("repo-1");
+        symlink(&outside, repo.join(".fleetd")).unwrap();
+        let err = put_file(&repo, ".fleetd/attachments/W1/x.txt", b"x").unwrap_err();
+        assert!(err.contains("symlink"), "{err}");
+        // The attachments directory, or a W directory under it, is a symlink.
+        let repo2 = scratch("repo-2");
+        std::fs::create_dir_all(repo2.join(".fleetd")).unwrap();
+        symlink(&outside, repo2.join(".fleetd/attachments")).unwrap();
+        assert!(put_file(&repo2, ".fleetd/attachments/W1/x.txt", b"x").is_err());
+        let repo3 = scratch("repo-3");
+        std::fs::create_dir_all(repo3.join(".fleetd/attachments")).unwrap();
+        symlink(&outside, repo3.join(".fleetd/attachments/W1")).unwrap();
+        assert!(put_file(&repo3, ".fleetd/attachments/W1/x.txt", b"x").is_err());
+        assert_eq!(
+            std::fs::read_dir(&outside).unwrap().count(),
+            0,
+            "nothing landed outside"
+        );
+        // A symlink in the file's own place is replaced, never written through.
+        let repo4 = scratch("repo-4");
+        std::fs::create_dir_all(repo4.join(".fleetd/attachments/W1")).unwrap();
+        symlink(
+            outside.join("target"),
+            repo4.join(".fleetd/attachments/W1/x.txt"),
+        )
+        .unwrap();
+        put_file(&repo4, ".fleetd/attachments/W1/x.txt", b"x").unwrap();
+        assert!(!outside.join("target").exists());
+        for d in [outside, repo, repo2, repo3, repo4] {
+            std::fs::remove_dir_all(d).unwrap();
+        }
+    }
+
+    #[test]
+    fn the_file_list_never_reaches_through_symlinks() {
+        use std::os::unix::fs::symlink;
+        let outside = scratch("list-outside");
+        std::fs::write(outside.join("secret.txt"), "s").unwrap();
+        let repo = scratch("list-repo");
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["init", "-q"])
+            .output()
+            .unwrap();
+        std::fs::write(repo.join("a.rs"), "a").unwrap();
+        symlink(&outside, repo.join("linked")).unwrap();
+        symlink(outside.join("secret.txt"), repo.join("secret.txt")).unwrap();
+        assert_eq!(git_files(&repo).unwrap(), vec!["a.rs".to_owned()]);
+        std::fs::remove_dir_all(outside).unwrap();
+        std::fs::remove_dir_all(repo).unwrap();
     }
 }
