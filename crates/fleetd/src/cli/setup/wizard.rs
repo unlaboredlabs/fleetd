@@ -255,8 +255,10 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
         }
     };
 
+    let mut added = Vec::new();
     if hub_up {
-        let local = workers(opts, ui, &mut list, net.as_ref()).await?;
+        let (local, ids) = workers(opts, ui, &mut list, net.as_ref()).await?;
+        added = ids;
         first_project(opts, ui, &mut list, local.as_deref(), gh_ok).await?;
     } else {
         list.skipped(
@@ -266,6 +268,7 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
     }
     let paired = app(opts, ui, &mut list)?;
     if hub_up {
+        await_runner_checks(opts, &mut list, &added).await;
         doctor(opts, &mut list).await;
     }
     finish(&list, paired);
@@ -720,7 +723,7 @@ async fn workers(
     ui: &Ui,
     list: &mut Checklist,
     net: Option<&Tailnet>,
-) -> Result<Option<String>, Stopped> {
+) -> Result<(Option<String>, Vec<String>), Stopped> {
     let state = read_setup(&opts.home).ok().flatten();
     let recorded = state.map(|s| s.machines).unwrap_or_default();
     let local_id = recorded.iter().find(|(_, r)| r.local).map_or_else(
@@ -781,10 +784,11 @@ async fn workers(
             "workers",
             "none picked; add one later with fleetd machine add <ssh-host>, or fleetd pair --worker <name> for a machine this one can't SSH to",
         );
-        return Ok(None);
+        return Ok((None, Vec::new()));
     }
     let home = opts.home.to_string_lossy().into_owned();
     let mut local = None;
+    let mut ids = Vec::new();
     for index in chosen {
         let candidate = &candidates[index];
         let title = format!("worker {}", candidate.id);
@@ -810,6 +814,7 @@ async fn workers(
             Ok(Some(added)) => {
                 list.done(&title, "online");
                 worker_claude(ui, list, &added).await?;
+                ids.push(added.machine_id.clone());
                 if candidate.host.is_none() {
                     local = Some(added.machine_id);
                 }
@@ -822,7 +827,50 @@ async fn workers(
             ),
         }
     }
-    Ok(local)
+    Ok((local, ids))
+}
+
+/// A node that just linked is "degraded: checking …" until its first claude check answers, about a second later.
+/// The doctor runs after that answer, so it never reports the wait as a problem.
+async fn await_runner_checks(opts: &InitOptions, list: &mut Checklist, ids: &[String]) {
+    let Ok(hub) = open_hub(&opts.home) else {
+        return;
+    };
+    for id in ids {
+        let Ok(machine) = MachineId::new(id.clone()) else {
+            continue;
+        };
+        let title = format!("waiting for {id}'s claude check");
+        list.start(&title);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let answered = loop {
+            let checking = hub
+                .store
+                .machine_get(&machine)
+                .ok()
+                .flatten()
+                .is_some_and(|m| {
+                    m.degraded_reason
+                        .as_deref()
+                        .is_some_and(super::doctor::still_checking)
+                });
+            if !checking {
+                break true;
+            }
+            if std::time::Instant::now() > deadline {
+                break false;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        };
+        if answered {
+            list.done(&title, "answered");
+        } else {
+            list.skipped(
+                &title,
+                "still checking after 30 s; run fleetd doctor in a minute for its result",
+            );
+        }
+    }
 }
 
 /// fleetd's Claude on a worker keeps a login of its own (its own config dir, or a token in claude.env).
@@ -905,6 +953,13 @@ async fn first_project(
         list.skipped(title, "this machine runs no agents, so no project here yet");
         return Ok(());
     };
+    if !super::doctor::hub_has_tool(&opts.home, "project_add").await {
+        list.skipped(
+            title,
+            "this hub can't add projects yet; after fleetd update, run fleetd init again to pick one",
+        );
+        return Ok(());
+    }
     if !ui.interactive {
         list.skipped(
             title,

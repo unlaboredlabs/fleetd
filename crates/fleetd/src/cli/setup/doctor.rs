@@ -135,6 +135,28 @@ pub async fn add_project(home: &Path, machine_id: &str, path: &Path) -> Result<(
     Ok(())
 }
 
+/// What the hub says while a node's first claude check is still running (hub/link/server.rs).
+const CHECKING: &str = "checking the node's claude runner";
+
+/// A machine's degraded reason that only means its first claude check hasn't answered yet.
+pub fn still_checking(reason: &str) -> bool {
+    reason.contains(CHECKING)
+}
+
+/// The hub answers `name` (an unknown tool comes back as "not found"; any other answer means it exists).
+pub async fn hub_has_tool(home: &Path, name: &str) -> bool {
+    let Ok(mut client) = connect(home).await else {
+        return false;
+    };
+    match client
+        .call_tool(name, json!({}), Duration::from_secs(15))
+        .await
+    {
+        Ok(_) => true,
+        Err(error) => !error.message().contains("not found"),
+    }
+}
+
 /// One checklist line per check that isn't ok, except those in `shown`; how many passed.
 pub fn show(list: &mut Checklist, checks: &[DoctorCheck], shown: &[&str]) -> usize {
     for check in checks
@@ -158,6 +180,13 @@ pub fn show(list: &mut Checklist, checks: &[DoctorCheck], shown: &[&str]) -> usi
             (_, fix) => fix,
         };
         let title = check.machine_id.as_deref().unwrap_or("hub");
+        if still_checking(&check.message) {
+            list.skipped(
+                &format!("doctor {title}"),
+                "still checking its claude; run fleetd doctor in a minute for the result",
+            );
+            continue;
+        }
         list.finish(
             &format!("doctor {title}"),
             state,
