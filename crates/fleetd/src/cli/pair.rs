@@ -83,7 +83,13 @@ fn write_app_pair(file: &Path, hub: &str, code: &str, expires_at: &str) -> Resul
 /// The hub's listen address and URL from `setup.json`, or the defaults when `fleetd init` never ran.
 fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
     let setup = super::setup::state::read_setup(home)?;
-    let listen_text = setup.as_ref().map_or(DEFAULT_LISTEN, |s| s.listen.as_str());
+    // Without init's setup.json, the hub someone started by hand tells its address in its own command line.
+    let running = setup.is_none().then(|| running_listen(home)).flatten();
+    let listen_text = setup
+        .as_ref()
+        .map(|s| s.listen.as_str())
+        .or(running.as_deref())
+        .unwrap_or(DEFAULT_LISTEN);
     let (host, port) = parse_listen(listen_text)
         .ok_or_else(|| format!("the hub's listen address '{listen_text}' is not host:port"))?;
     let host_ip = host.parse::<IpAddr>().ok();
@@ -97,6 +103,34 @@ fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
         (None, None)
     };
     Ok(hub_urls(&host, port, configured.as_deref(), tailnet, lan))
+}
+
+/// `--listen` of the hub process that has this home's database open.
+fn running_listen(home: &Path) -> Option<String> {
+    super::setup::processes_holding(&home.join("hub.sqlite"))
+        .into_iter()
+        .find_map(|pid| {
+            let out = std::process::Command::new("ps")
+                .args(["-o", "args=", "-p", &pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .output()
+                .ok()?;
+            listen_from_args(&String::from_utf8_lossy(&out.stdout))
+        })
+}
+
+/// `--listen <addr>` or `--listen=<addr>` in a `fleetd hub start` command line.
+fn listen_from_args(args: &str) -> Option<String> {
+    let mut words = args.split_whitespace();
+    while let Some(word) = words.next() {
+        if word == "--listen" {
+            return words.next().map(str::to_owned);
+        }
+        if let Some(value) = word.strip_prefix("--listen=") {
+            return Some(value.to_owned());
+        }
+    }
+    None
 }
 
 /// Best first: tailnet, other names, LAN, loopback. A hub on every interface is offered at each address that
@@ -247,6 +281,18 @@ fn describe(minted: &Minted) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn reads_the_listen_address_of_a_running_hub() {
+        let line = "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796 --queue-ttl 60";
+        assert_eq!(listen_from_args(line).as_deref(), Some("127.0.0.1:4796"));
+        assert_eq!(
+            listen_from_args("fleetd hub start --listen=[::1]:4790").as_deref(),
+            Some("[::1]:4790")
+        );
+        assert_eq!(listen_from_args("fleetd hub start --home /h"), None);
+    }
+
     use super::*;
 
     #[test]

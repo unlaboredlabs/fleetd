@@ -22,20 +22,7 @@ use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen, say};
 use crate::cli::hub_key::open_hub;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
 
-// Until feat/pairing (#87) lands; then this line becomes `use crate::cli::pair;`.
-use pending_pair as pair;
-mod pending_pair {
-    pub struct Minted {
-        pub code: String,
-        pub urls: Vec<String>,
-        pub deep_link: String,
-        pub expires_at: String,
-        pub app_pair_file: std::path::PathBuf,
-    }
-    pub fn mint(_home: Option<&str>, _name: Option<&str>) -> Result<Minted, String> {
-        Err("this build has no pairing codes yet".into())
-    }
-}
+use crate::cli::pair;
 
 const PORT: u16 = 4790;
 
