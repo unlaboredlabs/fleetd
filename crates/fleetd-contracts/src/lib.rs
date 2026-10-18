@@ -21,6 +21,7 @@ pub mod playbooks;
 pub mod retro;
 pub mod schema;
 pub mod secrets;
+pub mod sessions;
 pub mod subscriptions;
 pub mod tasks;
 pub mod train;

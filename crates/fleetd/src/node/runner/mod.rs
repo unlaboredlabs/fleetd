@@ -1,0 +1,182 @@
+//! The native runner: `fleetd node` runs agent sessions itself by spawning the agent's own CLI. Claude only through
+//! the `claude` binary with stream-json on stdin and stdout; never an HTTP API.
+//!
+//! A [`Runner`] spawns one process per live session and hands back a [`SessionHandle`]: commands in, normalized
+//! [`RunnerEvent`]s out. The node session service owns everything durable (session rows, item log, worktrees,
+//! retries, the link); a runner owns only the process and its protocol. See docs/build/native-runner-spec.md in the
+//! plan repo.
+//!
+//! `fixtures/` holds stream-json transcripts recorded from real `claude` runs, one JSON object per line:
+//! `{"dir":"in"|"out"|"stderr"|"meta","ms":<since start>,"msg":{…}}` (`raw` instead of `msg` for non-JSON lines).
+//! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
+pub mod claude;
+pub mod failure;
+pub mod version;
+
+use std::future::Future;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::time::Duration;
+
+use fleetd_contracts::effort::Effort;
+use fleetd_contracts::model::RuntimeMode;
+use fleetd_contracts::sessions::{
+    PermissionDecision, RunFailure, RunUsage, RunnerInfo, RunnerKind, ThreadItem,
+};
+use tokio::sync::mpsc;
+
+pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Everything a runner needs to start (or resume) one session's process.
+#[derive(Clone, Debug)]
+pub struct SessionSpec {
+    /// The thread id; passed as `--session-id` on first start and `--resume` after.
+    pub session_id: String,
+    /// False on the first start, true whenever the session has run before (node restart, idle reap, retry).
+    pub resume: bool,
+    /// The project root or the session's worktree. A resume must use the same cwd: claude files sessions by cwd.
+    pub cwd: PathBuf,
+    /// `--add-dir`, e.g. the project root for a worktree session.
+    pub add_dirs: Vec<PathBuf>,
+    pub model: String,
+    pub effort: Effort,
+    pub runtime_mode: RuntimeMode,
+    /// `--allowedTools` rules from policy; anything else asks (ApprovalRequired) or runs (FullAccess).
+    pub allowed_tools: Vec<String>,
+    /// `--disallowedTools`, always including the tools fleetd keeps from agents.
+    pub disallowed_tools: Vec<String>,
+    /// Written by the node; passed with `--strict-mcp-config` so only fleetd's servers load.
+    pub mcp_config: Option<PathBuf>,
+    /// The whole child environment. Nothing is inherited: no CLAUDE* variable of the node's own parent leaks in.
+    pub env: Vec<(String, String)>,
+    /// Raw stdout and stderr lines are appended here for debugging and conformance.
+    pub transcript: Option<PathBuf>,
+}
+
+/// Commands to a live session's process.
+#[derive(Clone, Debug)]
+pub enum SessionCommand {
+    /// A user message that starts a run. `run_id` becomes the stream-json user-message uuid, which claude echoes on
+    /// `command_lifecycle` and on the run's `result`.
+    Send { run_id: String, text: String },
+    /// `control_request` interrupt. The session service escalates to [`SessionCommand::Shutdown`] if the run has
+    /// not ended within its grace period.
+    Interrupt,
+    /// The `control_response` for a `can_use_tool` request.
+    Answer {
+        request_id: String,
+        decision: PermissionDecision,
+    },
+    /// Close stdin, then SIGTERM after `grace`, then SIGKILL the process group and every descendant.
+    Shutdown { grace: Duration },
+}
+
+/// How a run ended, from claude's `result` message (or its absence).
+#[derive(Clone, Debug, PartialEq)]
+pub enum RunOutcome {
+    Completed {
+        text: String,
+    },
+    /// `error_during_execution` after an interrupt (`terminal_reason` aborted_tools / aborted_streaming).
+    Interrupted,
+    Failed(RunFailure),
+}
+
+/// The process's exit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExitInfo {
+    pub code: Option<i32>,
+    pub signal: Option<i32>,
+    /// The last 4000 characters of stderr, kept for a loud failure.
+    pub stderr_tail: String,
+}
+
+/// `rate_limit_event`: claude.ai subscription limits (absent behind API keys and gateways).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RateLimit {
+    /// allowed, allowed_warning or rejected.
+    pub status: String,
+    /// Epoch seconds.
+    pub resets_at: Option<i64>,
+    pub limit_type: Option<String>,
+    pub utilization: Option<f64>,
+}
+
+/// Normalized events from one session's process, in stream order.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RunnerEvent {
+    /// `system/init` (claude sends one per run): the version, model and cwd claude actually uses.
+    Init {
+        version: String,
+        model: String,
+        cwd: String,
+    },
+    /// `command_lifecycle` started.
+    RunStarted {
+        run_id: String,
+    },
+    /// Partial assistant text (`stream_event` text_delta), for live views only.
+    Delta {
+        message_id: String,
+        append: String,
+    },
+    /// A complete assistant text block.
+    AssistantText {
+        message_id: String,
+        text: String,
+    },
+    /// A tool call started or finished, or a compaction, retry or error item.
+    Item(ThreadItem),
+    /// `can_use_tool`. The session service answers from policy or waits for a person.
+    PermissionRequest {
+        request_id: String,
+        tool_use_id: String,
+        tool_name: String,
+        input: serde_json::Value,
+        summary: String,
+    },
+    /// `system/status` compacting / null.
+    Compacting(bool),
+    RateLimit(RateLimit),
+    /// The run's `result` (or the process ended without one).
+    RunEnded {
+        run_id: String,
+        outcome: RunOutcome,
+        usage: Option<RunUsage>,
+    },
+    /// The process ended. Always the last event.
+    Exited(ExitInfo),
+}
+
+/// A live session: send commands, read events until [`RunnerEvent::Exited`].
+pub struct SessionHandle {
+    pub pid: u32,
+    pub commands: mpsc::Sender<SessionCommand>,
+    pub events: mpsc::Receiver<RunnerEvent>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RunnerError {
+    #[error("{binary} was not found on PATH")]
+    Missing { binary: String },
+    #[error("{binary} {found} is outside the supported range {supported}")]
+    UnsupportedVersion {
+        binary: String,
+        found: String,
+        supported: String,
+    },
+    #[error("could not start {binary}: {message}")]
+    Spawn { binary: String, message: String },
+    /// claude refused before running (e.g. "Session ID … is already in use."), with its stderr.
+    #[error("{0}")]
+    Refused(String),
+}
+
+/// One agent runtime. Claude now; Codex later as its own adapter.
+pub trait Runner: Send + Sync + 'static {
+    fn kind(&self) -> RunnerKind;
+    /// Version, login and a zero-cost conformance check (an `initialize` control request, no model call).
+    fn probe(&self) -> BoxFut<'_, RunnerInfo>;
+    /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.
+    fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
+}

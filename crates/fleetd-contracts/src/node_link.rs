@@ -16,6 +16,7 @@ use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
 use crate::ledger::{AskId, DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
 use crate::prim::{AnyInt, Finite, Int, List, NonEmpty, Text};
 use crate::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink};
+use crate::sessions::{MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame};
 use crate::tasks::AbsolutePath;
 
 /// WebSocket close codes the hub ends a link with.
@@ -272,6 +273,9 @@ pub enum NodeToHub {
     SecretResult(SecretResult),
     GatedResult(GatedResult),
     NodeActionResult(NodeActionResult),
+    SessionReply(SessionReplyFrame),
+    MachineEvent(MachineEventFrame),
+    ThreadEvent(ThreadEventFrame),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -287,6 +291,7 @@ pub enum HubToNode {
     SecretDeliver(SecretDeliver),
     GatedRun(GatedRun),
     NodeAction(NodeAction),
+    SessionCall(SessionCallFrame),
 }
 
 #[cfg(test)]

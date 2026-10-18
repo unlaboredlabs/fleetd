@@ -670,6 +670,12 @@ impl NodeLinkServer {
                 | NodeToHub::SecretResult(_)
                 | NodeToHub::GatedResult(_)
                 | NodeToHub::NodeActionResult(_)) => self.deps.commands.resolve(&machine_id, reply),
+                // The native runner's session frames; the hub executor port consumes them.
+                NodeToHub::SessionReply(_)
+                | NodeToHub::MachineEvent(_)
+                | NodeToHub::ThreadEvent(_) => {
+                    tracing::debug!(machine_id = %machine_id, "node link: session frame ignored");
+                }
                 NodeToHub::Hello(_) => return refuse(close::BAD_FRAME, "hello after welcome"),
             }
         }

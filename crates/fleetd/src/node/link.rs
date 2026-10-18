@@ -23,6 +23,9 @@ use super::wire::{
     NodeToHub, PROTOCOL_VERSION, ProtocolVersion, T3RunState, Text, Timestamp, close,
     decode_hub_frame, to_json,
 };
+use fleetd_contracts::sessions::{
+    SessionError, SessionErrorCode, SessionReplyFrame, SessionResult,
+};
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(45);
@@ -298,6 +301,7 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::SecretDeliver(_) => "secret_deliver",
         HubToNode::GatedRun(_) => "gated_run",
         HubToNode::NodeAction(_) => "node_action",
+        HubToNode::SessionCall(_) => "session_call",
     }
 }
 
@@ -535,6 +539,15 @@ async fn run_link_once(
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
                 });
             }
+            // Until the node session service lands, every session call is refused, so the hub never waits on one.
+            HubToNode::SessionCall(call) => send(NodeToHub::SessionReply(SessionReplyFrame {
+                id: call.id,
+                result: SessionResult::Err(SessionError {
+                    code: SessionErrorCode::RunnerUnavailable,
+                    message: Text::unchecked("this node does not run sessions yet"),
+                    fix: Some("Update fleetd on this machine.".into()),
+                }),
+            })),
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }
     }
