@@ -1,0 +1,452 @@
+//! Pure: GitHub's answers about a repository into a `ProjectInspect`, the line on what the lead will need, the best
+//! worker for a clone, and a failed clone's message into a problem with its fix.
+use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::prim::{Int, Text};
+use fleetd_contracts::projects::{
+    CiInfo, MergeRules, ProjectInspect, ProjectProblem, ProjectProblemCode,
+};
+use fleetd_contracts::sessions::RepoFacts;
+use fleetd_contracts::train::GitHubRepo;
+use serde_json::Value;
+
+/// What GitHub said, one field per `gh api` read; `None` when that read failed (it becomes a note).
+#[derive(Default)]
+pub struct GitHubAnswers {
+    /// `repos/{repo}`.
+    pub repo: Option<Value>,
+    /// `repos/{repo}/branches/{default}`.
+    pub branch: Option<Value>,
+    /// `repos/{repo}/rules/branches/{default}`.
+    pub rules: Option<Value>,
+    /// `repos/{repo}/rulesets`.
+    pub rulesets: Option<Value>,
+    /// `repos/{repo}/actions/workflows`.
+    pub workflows: Option<Value>,
+}
+
+fn strs<'a>(v: Option<&'a Value>, key: &str) -> impl Iterator<Item = String> + 'a {
+    let key = key.to_owned();
+    v.and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(move |x| x.get(&key).and_then(Value::as_str).map(str::to_owned))
+}
+
+fn push_unique(list: &mut Vec<String>, item: String) {
+    if !list.contains(&item) {
+        list.push(item);
+    }
+}
+
+/// `local` is the checkout's own facts, when there is one: its workflow files stand in when GitHub can't be read.
+pub fn build(
+    repo: Option<&GitHubRepo>,
+    gh: &GitHubAnswers,
+    local: Option<&RepoFacts>,
+    mut notes: Vec<String>,
+    gh_ok: bool,
+) -> ProjectInspect {
+    let default_branch = gh
+        .repo
+        .as_ref()
+        .and_then(|r| r.get("default_branch"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| local.and_then(|l| l.default_branch.clone()));
+    let mut ci = CiInfo::default();
+    let mut merge = MergeRules {
+        squash_allowed: gh
+            .repo
+            .as_ref()
+            .and_then(|r| r.get("allow_squash_merge"))
+            .and_then(Value::as_bool),
+        ..MergeRules::default()
+    };
+    match gh.workflows.as_ref().and_then(|w| w.get("workflows")) {
+        Some(Value::Array(rows)) => {
+            for w in rows {
+                if w.get("state").and_then(Value::as_str) == Some("active")
+                    && let Some(name) = w.get("name").and_then(Value::as_str)
+                {
+                    push_unique(&mut ci.workflows, name.to_owned());
+                }
+            }
+        }
+        _ => {
+            if let Some(l) = local {
+                ci.workflows = l.workflow_files.clone();
+            }
+        }
+    }
+    if let Some(b) = &gh.branch {
+        merge.protected |= b.get("protected").and_then(Value::as_bool) == Some(true);
+        let checks = b.pointer("/protection/required_status_checks");
+        for c in checks
+            .and_then(|c| c.get("contexts"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c.as_str().map(str::to_owned))
+        {
+            push_unique(&mut ci.required_checks, c);
+        }
+    }
+    let names: Vec<(i64, String)> = gh
+        .rulesets
+        .as_ref()
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|r| Some((r.get("id")?.as_i64()?, r.get("name")?.as_str()?.to_owned())))
+        .collect();
+    for rule in gh
+        .rules
+        .as_ref()
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        merge.protected = true;
+        if let Some(id) = rule.get("ruleset_id").and_then(Value::as_i64) {
+            let name = names
+                .iter()
+                .find(|(i, _)| *i == id)
+                .map_or_else(|| format!("ruleset {id}"), |(_, n)| n.clone());
+            push_unique(&mut merge.rulesets, name);
+        }
+        let params = rule.get("parameters");
+        match rule.get("type").and_then(Value::as_str) {
+            Some("required_status_checks") => {
+                for c in strs(
+                    params.and_then(|p| p.get("required_status_checks")),
+                    "context",
+                ) {
+                    push_unique(&mut ci.required_checks, c);
+                }
+                if params
+                    .and_then(|p| p.get("strict_required_status_checks_policy"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+                {
+                    merge.strict = Some(true);
+                }
+            }
+            Some("pull_request") => {
+                let n = params
+                    .and_then(|p| p.get("required_approving_review_count"))
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0);
+                let prev = merge.required_reviews.as_ref().map_or(0, |r| r.get());
+                merge.required_reviews = Some(Int::unchecked(n.max(prev).clamp(0, 10)));
+            }
+            _ => {}
+        }
+    }
+    if repo.is_some() && gh_ok {
+        if gh.branch.is_none() || gh.rules.is_none() {
+            notes.push("branch protection and rules could not be read".into());
+        }
+        if gh.workflows.is_none() {
+            notes.push("workflows could not be read".into());
+        }
+        if gh.repo.is_some() && merge.squash_allowed.is_none() {
+            notes.push("merge settings need push access to read".into());
+        }
+    }
+    let mut inspect = ProjectInspect {
+        repo: repo.cloned(),
+        default_branch,
+        ci,
+        merge,
+        lead_needs: Text::unchecked("ready"),
+        notes,
+    };
+    inspect.lead_needs = Text::unchecked(lead_needs(&inspect, gh_ok));
+    inspect
+}
+
+/// One line for a person: the most important thing the lead and the merge train will need here.
+pub fn lead_needs(i: &ProjectInspect, gh_ok: bool) -> String {
+    let branch = i.default_branch.as_deref().unwrap_or("the default branch");
+    let Some(repo) = &i.repo else {
+        return "no GitHub remote: the lead can work here, but the merge train needs a GitHub repo to open and merge PRs".into();
+    };
+    if !gh_ok {
+        return "gh is not logged in on the hub: run `gh auth login` there so the merge train can open and merge PRs".into();
+    }
+    if i.merge.squash_allowed == Some(false) {
+        return format!(
+            "squash merges are off on {repo}: turn them on in its settings, the merge train squash-merges"
+        );
+    }
+    let reviews = i.merge.required_reviews.as_ref().map_or(0, |r| r.get());
+    if reviews > 0 {
+        let s = if reviews == 1 { "" } else { "s" };
+        return format!(
+            "{branch} needs {reviews} approving review{s}: the train's merges wait for a person to approve"
+        );
+    }
+    if i.ci.workflows.is_empty() && i.ci.required_checks.is_empty() {
+        return "no CI found: the merge train will only use local checks".into();
+    }
+    if i.ci.required_checks.is_empty() {
+        let n = i.ci.workflows.len();
+        let s = if n == 1 { "" } else { "s" };
+        return format!(
+            "CI runs ({n} workflow{s}) but {branch} requires no check: the train still waits for CI on each head"
+        );
+    }
+    format!(
+        "ready: {} gates {branch}, the train waits for it before each squash merge",
+        i.ci.required_checks.join(", ")
+    )
+}
+
+/// A machine a clone could go to.
+pub struct Worker {
+    pub machine_id: MachineId,
+    pub connected: bool,
+    /// The runner is usable (not degraded).
+    pub ready: bool,
+    pub running: usize,
+    /// load1 / cpus.
+    pub load: Option<f64>,
+}
+
+/// Connected first, then a usable runner, then the fewest running threads, then the lowest load, then the id.
+pub fn best_worker(workers: &[Worker]) -> Option<MachineId> {
+    workers
+        .iter()
+        .filter(|w| w.connected)
+        .min_by(|a, b| {
+            (!a.ready, a.running)
+                .cmp(&(!b.ready, b.running))
+                .then(
+                    a.load
+                        .unwrap_or(f64::MAX)
+                        .total_cmp(&b.load.unwrap_or(f64::MAX)),
+                )
+                .then(a.machine_id.as_str().cmp(b.machine_id.as_str()))
+        })
+        .map(|w| w.machine_id.clone())
+}
+
+/// A clone's failure, from git's own last line.
+pub fn clone_problem(
+    message: &str,
+    repo: &GitHubRepo,
+    machine: &MachineId,
+    dest: &str,
+) -> ProjectProblem {
+    let m = message.to_lowercase();
+    let (code, fix) = if (m.contains("repository") && m.contains("not found"))
+        || m.contains("could not read username")
+        || m.contains("authentication failed")
+        || m.contains("terminal prompts disabled")
+        || m.contains("permission denied")
+    {
+        (
+            ProjectProblemCode::GhNoAccess,
+            format!(
+                "On {machine}, run `gh auth login` with an account that can read {repo}, then add it again"
+            ),
+        )
+    } else if m.contains("already exists") {
+        (
+            ProjectProblemCode::DestExists,
+            format!(
+                "Add the existing checkout with `fleetd project add {dest} --machine {machine}`, or pick another --dest"
+            ),
+        )
+    } else if m.contains("no space left") {
+        (
+            ProjectProblemCode::CloneFailed,
+            format!("Free disk space on {machine}, then add it again"),
+        )
+    } else if m.contains("no answer within") || m.contains("link dropped") {
+        (
+            ProjectProblemCode::CloneFailed,
+            format!(
+                "The link to {machine} dropped mid-clone; add it again (a finished checkout is offered for reuse)"
+            ),
+        )
+    } else {
+        (
+            ProjectProblemCode::CloneFailed,
+            format!("Run `git clone https://github.com/{repo} {dest}` on {machine} to see why"),
+        )
+    };
+    ProjectProblem {
+        code,
+        message: format!("cloning {repo} on {machine} failed: {message}"),
+        fix: Some(fix),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn repo() -> GitHubRepo {
+        GitHubRepo::new("acme/storefront").unwrap()
+    }
+
+    #[test]
+    fn reads_ci_and_merge_rules_from_github() {
+        let gh = GitHubAnswers {
+            repo: Some(json!({ "default_branch": "main", "allow_squash_merge": true })),
+            branch: Some(
+                json!({ "protected": true, "protection": { "required_status_checks": { "contexts": ["build"] } } }),
+            ),
+            rules: Some(json!([
+                { "type": "required_status_checks", "ruleset_id": 7, "parameters": {
+                    "strict_required_status_checks_policy": true,
+                    "required_status_checks": [{ "context": "test" }, { "context": "build" }] } },
+                { "type": "pull_request", "ruleset_id": 7, "parameters": { "required_approving_review_count": 0 } },
+            ])),
+            rulesets: Some(json!([{ "id": 7, "name": "main gate" }])),
+            workflows: Some(json!({ "workflows": [
+                { "name": "CI", "state": "active" }, { "name": "Old", "state": "disabled_manually" } ] })),
+        };
+        let i = build(Some(&repo()), &gh, None, vec![], true);
+        assert_eq!(i.default_branch.as_deref(), Some("main"));
+        assert_eq!(i.ci.workflows, vec!["CI"]);
+        assert_eq!(i.ci.required_checks, vec!["build", "test"]);
+        assert!(i.merge.protected);
+        assert_eq!(i.merge.rulesets, vec!["main gate"]);
+        assert_eq!(i.merge.strict, Some(true));
+        assert_eq!(i.merge.squash_allowed, Some(true));
+        assert!(i.notes.is_empty(), "{:?}", i.notes);
+        assert_eq!(
+            i.lead_needs.as_str(),
+            "ready: build, test gates main, the train waits for it before each squash merge"
+        );
+    }
+
+    #[test]
+    fn says_what_the_lead_will_need() {
+        let bare = |gh: GitHubAnswers| build(Some(&repo()), &gh, None, vec![], true);
+        let none = GitHubAnswers {
+            repo: Some(json!({ "default_branch": "main", "allow_squash_merge": true })),
+            branch: Some(json!({ "protected": false })),
+            rules: Some(json!([])),
+            rulesets: Some(json!([])),
+            workflows: Some(json!({ "workflows": [] })),
+        };
+        assert_eq!(
+            bare(none).lead_needs.as_str(),
+            "no CI found: the merge train will only use local checks"
+        );
+
+        let no_squash = GitHubAnswers {
+            repo: Some(json!({ "default_branch": "main", "allow_squash_merge": false })),
+            ..GitHubAnswers::default()
+        };
+        assert!(
+            bare(no_squash)
+                .lead_needs
+                .starts_with("squash merges are off on acme/storefront")
+        );
+
+        let reviews = GitHubAnswers {
+            repo: Some(json!({ "default_branch": "trunk" })),
+            rules: Some(
+                json!([{ "type": "pull_request", "parameters": { "required_approving_review_count": 2 } }]),
+            ),
+            ..GitHubAnswers::default()
+        };
+        let i = bare(reviews);
+        assert!(
+            i.lead_needs.starts_with("trunk needs 2 approving reviews"),
+            "{}",
+            i.lead_needs
+        );
+        assert!(i.notes.iter().any(|n| n.contains("merge settings")));
+
+        let local = RepoFacts {
+            exists: true,
+            is_git: true,
+            default_branch: Some("main".into()),
+            workflow_files: vec!["ci.yml".into()],
+            ..RepoFacts::default()
+        };
+        let i = build(None, &GitHubAnswers::default(), Some(&local), vec![], true);
+        assert!(i.lead_needs.starts_with("no GitHub remote"));
+        assert_eq!(i.ci.workflows, vec!["ci.yml"]);
+
+        let i = build(
+            Some(&repo()),
+            &GitHubAnswers::default(),
+            None,
+            vec![],
+            false,
+        );
+        assert!(i.lead_needs.starts_with("gh is not logged in on the hub"));
+    }
+
+    #[test]
+    fn picks_the_least_busy_connected_worker() {
+        let w = |id: &str, connected, ready, running, load| Worker {
+            machine_id: MachineId::new(id).unwrap(),
+            connected,
+            ready,
+            running,
+            load,
+        };
+        let best = |ws: &[Worker]| best_worker(ws).map(|m| m.to_string());
+        assert_eq!(best(&[]), None);
+        assert_eq!(best(&[w("devbox", false, true, 0, None)]), None);
+        assert_eq!(
+            best(&[
+                w("devbox", true, true, 3, Some(0.1)),
+                w("buildbox", true, true, 1, Some(0.9))
+            ]),
+            Some("buildbox".into())
+        );
+        assert_eq!(
+            best(&[
+                w("devbox", true, false, 0, None),
+                w("buildbox", true, true, 4, None)
+            ]),
+            Some("buildbox".into())
+        );
+        assert_eq!(
+            best(&[
+                w("devbox", true, true, 1, Some(0.5)),
+                w("buildbox", true, true, 1, Some(0.2))
+            ]),
+            Some("buildbox".into())
+        );
+    }
+
+    #[test]
+    fn a_failed_clone_says_how_to_fix_it() {
+        let m = MachineId::new("devbox").unwrap();
+        let p = clone_problem(
+            "repository 'https://github.com/acme/storefront/' not found",
+            &repo(),
+            &m,
+            "/x",
+        );
+        assert_eq!(p.code, ProjectProblemCode::GhNoAccess);
+        assert!(p.fix.unwrap().contains("gh auth login"));
+        let p = clone_problem(
+            "could not read Username for 'https://github.com': terminal prompts disabled",
+            &repo(),
+            &m,
+            "/x",
+        );
+        assert_eq!(p.code, ProjectProblemCode::GhNoAccess);
+        let p = clone_problem(
+            "/home/me/src/storefront already exists",
+            &repo(),
+            &m,
+            "/home/me/src/storefront",
+        );
+        assert_eq!(p.code, ProjectProblemCode::DestExists);
+        let p = clone_problem("early EOF", &repo(), &m, "/x");
+        assert_eq!(p.code, ProjectProblemCode::CloneFailed);
+        assert!(p.fix.unwrap().contains("git clone"));
+    }
+}

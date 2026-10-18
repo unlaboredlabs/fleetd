@@ -1,24 +1,16 @@
-//! MCP tools over node sessions: thread_answer (the way out of `thread.waiting`),
-//! project_add and project_remove.
+//! MCP tools over node sessions: thread_answer, the way out of `thread.waiting`. Projects are in hub/projects.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::ids::{MachineId, ProjectId};
-use fleetd_contracts::mcp::{
-    PermissionAnswer, ProjectAddInput, ProjectRemoveInput, ThreadAnswerInput,
-};
-use serde_json::{Value, json};
+use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::mcp::{PermissionAnswer, ThreadAnswerInput};
+use serde_json::Value;
 
-use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, allows, is_human, offline, require, unknown_machine,
-};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, is_human};
 use crate::hub::approvals::{Caller as ApprovalCaller, ThreadAnswer};
-use crate::hub::executor::tools::from_executor;
 
 pub fn register(tools: &mut Registry) {
     tools.add("thread_answer", thread_answer);
-    tools.add("project_add", project_add);
-    tools.add("project_remove", project_remove);
 }
 
 async fn thread_answer(
@@ -47,107 +39,10 @@ async fn thread_answer(
         .map_err(crate::hub::approvals::tools::refusal)
 }
 
-fn connected(hub: &Hub, machine_id: &MachineId) -> Result<(), ToolError> {
-    if hub.store.machine_get(machine_id)?.is_none() {
-        return Err(unknown_machine(machine_id));
-    }
-    if !hub.executors.is_connected(machine_id) {
-        return Err(offline(machine_id));
-    }
-    Ok(())
-}
-
-/// The directory as the node stores it, and the title it gets when none is given: the directory's name.
-fn normalized(path: &str) -> (&str, &str) {
-    let path = path.strip_suffix('/').unwrap_or(path);
-    (path, path.rsplit('/').next().unwrap_or(path))
-}
-
-async fn project_add(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ProjectAddInput,
-) -> Result<Value, ToolError> {
-    let (Some(m), Some(path)) = (&input.machine_id, &input.path) else {
-        return Err(crate::hub::api::error(
-            fleetd_contracts::mcp::ErrorCode::Invalid,
-            "not built yet",
-            "give machineId and path",
-        ));
-    };
-    require(&caller, Role::Operate, Some(m))?;
-    connected(&hub, m)?;
-    let (path, name) = normalized(path.as_str());
-    let existing = hub.executors.project_at(m, path);
-    let created = existing.is_none();
-    let project_id =
-        existing.unwrap_or_else(|| ProjectId::unchecked(crate::hub::executor::new_uuid().as_str()));
-    // The same directory again is the same project; a title renames it.
-    if created || input.title.is_some() {
-        let title = input.title.as_deref().unwrap_or(name);
-        hub.executors
-            .project_upsert(m, &project_id, title, path)
-            .await
-            .map_err(from_executor)?;
-    }
-    Ok(json!({
-        "projectId": project_id,
-        "created": created,
-        "next": format!("Send it an order with intake_submit; its lead starts with the first one. Or launch a thread with thread_launch on {m}."),
-    }))
-}
-
-async fn project_remove(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ProjectRemoveInput,
-) -> Result<Value, ToolError> {
-    let m = &input.machine_id;
-    require(&caller, Role::Operate, Some(m))?;
-    connected(&hub, m)?;
-    hub.executors
-        .project_remove(m, &input.project_id)
-        .await
-        .map_err(from_executor)?;
-    Ok(json!({
-        "ok": true,
-        "next": "Its threads were stopped; its files, branches and worktrees stay on the machine. project_add brings it back.",
-    }))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::normalized;
-    use fleetd_contracts::mcp::{ProjectAddInput, ThreadAnswerInput};
+    use fleetd_contracts::mcp::ThreadAnswerInput;
     use serde_json::json;
-
-    #[test]
-    fn project_paths_are_absolute_directories_and_name_their_project() {
-        let add = |path: &str| {
-            serde_json::from_value::<ProjectAddInput>(json!({ "machineId": "forge", "path": path }))
-        };
-        for bad in [
-            "src/app",
-            "/",
-            "/home/../etc",
-            "/home/./me",
-            "/home//me",
-            "/a\nb",
-            "",
-        ] {
-            assert!(add(bad).is_err(), "{bad:?} refused");
-        }
-        let ok = add("/home/me/src/app/").unwrap();
-        assert_eq!(normalized(ok.path.as_str()), ("/home/me/src/app", "app"));
-        assert_eq!(normalized("/srv/x"), ("/srv/x", "x"));
-        assert!(
-            serde_json::from_value::<ProjectAddInput>(
-                json!({ "machineId": "forge", "path": "/srv/x", "title": "" })
-            )
-            .is_err(),
-            "an empty title is refused, not defaulted"
-        );
-    }
 
     #[test]
     fn thread_answer_takes_a_deny_message_only_with_deny() {
