@@ -28,7 +28,7 @@ chrono = { workspace = true }
 crypto_box = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-nix = { version = "0.30", features = ["fs", "process", "signal"] }
+nix = { version = "0.30", features = ["fs", "process", "signal", "time"] }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
@@ -60,6 +60,14 @@ console = "0.16"
 diffy = "0.5.2"
 # prompts edit: a private scratch file (0600, random name, created exclusively)
 tempfile = "3"
+
+# node power: macOS sleep assertions through IOKit, loaded at run time (the darwin build links no framework)
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+# node power: logind's sleep inhibitor and IdleAction over the system bus (pure Rust)
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

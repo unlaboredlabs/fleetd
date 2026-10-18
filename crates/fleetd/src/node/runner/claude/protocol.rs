@@ -34,6 +34,8 @@ pub struct System {
     pub model: Option<String>,
     pub cwd: Option<String>,
     pub capabilities: Option<Vec<String>>,
+    /// `{"auto": "<config dir>/projects/<cwd>/memory/"}` while claude's auto memory is on.
+    pub memory_paths: Option<Value>,
     // status
     pub status: Option<String>,
     pub compact_result: Option<String>,

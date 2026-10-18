@@ -15,6 +15,15 @@ judge), later messages into it (wakes, review findings, train news, nudges), or 
 with no tools (the router, the retro). Your own claude setup applies as usual underneath
 ([Config & files](config-and-files.md)). [Every prompt](#prompts) is listed at the end of this page.
 
+## Claude's auto memory is off {#auto-memory}
+
+Claude Code can keep its own notes per folder ("auto memory") and read them back in later sessions. fleetd turns that
+off in every claude it starts, whatever your `~/.claude/settings.json` says: what an agent knows comes from its brief,
+the decisions and your instructions, all of which you can read here, not from notes another agent left behind in a
+worktree. `fleetd doctor` shows "claude auto memory off" for each machine once a session has run there. A project
+turns it back on for its sessions with `claude: { autoMemory: true }` in its
+[policy file](config-and-files.md#policy).
+
 ## Safety rules: code or prompt {#safety}
 
 Most rules don't depend on the prompt. fleetd enforces them in code whatever the text says: secrets are sealed to a

@@ -67,6 +67,10 @@ pub struct SessionLaunch {
     /// `--disallowedTools` rules from the project's policy (`tools.deny`), on top of the tools fleetd always denies.
     #[serde(default)]
     pub disallowed_tools: Vec<String>,
+    /// The project's policy turns claude's auto memory back on (`claude.autoMemory: true`); otherwise fleetd keeps it
+    /// off in the session.
+    #[serde(default)]
+    pub auto_memory: bool,
 }
 
 /// A person's or policy's answer to a tool permission prompt.
@@ -273,6 +277,9 @@ pub struct RunnerInfo {
     pub proxy_source: Option<String>,
     /// The claude config dir sessions use: the user's own `~/.claude` unless the machine was given another.
     pub config_dir: Option<String>,
+    /// Whether claude's auto memory was on in the latest session fleetd keeps it off in, from that session's
+    /// `system/init` (`memory_paths`). Absent until such a session has started, and from older nodes.
+    pub auto_memory: Option<bool>,
 }
 
 #[skip_serializing_none]

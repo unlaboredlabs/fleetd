@@ -41,8 +41,12 @@ fn config(dir: &Path) -> SessionConfig {
 }
 
 async fn hub(dir: &Path, store: NodeStore, runner: FakeRunner) -> Hub {
+    hub_with(store, runner, config(dir)).await
+}
+
+async fn hub_with(store: NodeStore, runner: FakeRunner, config: SessionConfig) -> Hub {
     let runner = Arc::new(runner);
-    let service = SessionService::start(store, runner.clone(), config(dir))
+    let service = SessionService::start(store, runner.clone(), config)
         .await
         .unwrap();
     let (tx, rx) = mpsc::unbounded_channel();
@@ -71,6 +75,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         run_id: NonEmpty::unchecked("r1"),
         allowed_tools: vec!["Bash(npm test:*)".into()],
         disallowed_tools: vec!["WebFetch".into()],
+        auto_memory: false,
     })
 }
 
@@ -156,6 +161,54 @@ fn claude_env_lines_parse_like_a_shell_would_read_them() {
 }
 
 #[tokio::test]
+async fn a_project_that_opts_into_auto_memory_gets_neither_knob() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        dir.path().join("claude.env"),
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY=0\n",
+    )
+    .unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let SessionCall::Launch(mut opted_in) =
+        launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    opted_in.auto_memory = true;
+    hub.ok(SessionCall::Launch(opted_in)).await;
+    hub.settled("r1").await;
+    let spec = &hub.runner.spawned()[0];
+    let overlay: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
+            .unwrap();
+    assert_eq!(overlay.get("autoMemoryEnabled"), None);
+    assert_eq!(overlay["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), None);
+    // The user's own value passes through untouched.
+    let ours: Vec<_> = spec
+        .env
+        .iter()
+        .filter(|(k, _)| k == "CLAUDE_CODE_DISABLE_AUTO_MEMORY")
+        .collect();
+    assert_eq!(
+        ours,
+        [&("CLAUDE_CODE_DISABLE_AUTO_MEMORY".to_owned(), "0".to_owned())]
+    );
+    // Its memory dir is the project's choice, not a broken knob.
+    let SessionOutput::RunnerInfo(info) = hub.ok(SessionCall::RunnerInfo).await else {
+        panic!("no runner info")
+    };
+    assert_eq!(info.auto_memory, None);
+}
+
+#[tokio::test]
 async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("project");
@@ -234,6 +287,15 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     assert_eq!(last("FLEETD_PROJECT_ID"), Some("p1"));
     assert_eq!(last("DISABLE_AUTOUPDATER"), Some("1"));
     assert_eq!(last("CLAUDE_CODE_STARTUP_FAILURE_RESULTS"), Some("1"));
+    // Claude's auto memory is off by both knobs.
+    assert_eq!(overlay["autoMemoryEnabled"], false);
+    assert_eq!(overlay["env"]["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1");
+    assert_eq!(last("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), Some("1"));
+    // The fixture was recorded with auto memory on: its init names a memory dir, and runner_info says so.
+    let SessionOutput::RunnerInfo(info) = hub.ok(SessionCall::RunnerInfo).await else {
+        panic!("no runner info")
+    };
+    assert_eq!(info.auto_memory, Some(true));
 
     // A retried launch returns the same session without a second process.
     let again = hub
@@ -565,6 +627,116 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
             },
         }
     ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_interrupt_during_a_retry_wait_ends_the_run_for_good() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = SessionConfig {
+        retry_schedule_ms: vec![60_000],
+        ..config(dir.path())
+    };
+    let store = NodeStore::open_memory(10_000).unwrap();
+    let mut hub = hub_with(store, FakeRunner::fixture("overloaded-529"), config).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    // The 529 came back and the node waits a minute to retry; claude sits idle and ignores the interrupt.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    hub.ok(SessionCall::Interrupt {
+        session_id: ThreadId::unchecked("s1"),
+        run_id: None,
+        reason: Some("hub asked".into()),
+    })
+    .await;
+    let ended = hub.settled("r1").await;
+    assert_eq!(ended.latest_run.unwrap().status, RunStatus::Interrupted);
+    // Past the retry's time: nothing resumes it.
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    assert_eq!(hub.runner.spawned().len(), 1);
+    assert!(
+        !hub.runner
+            .received()
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+    );
+    let runs = hub.service.store().runs("s1").unwrap();
+    assert_eq!(runs[0].status, RunStatus::Interrupted);
+    assert_eq!(*hub.service.running().borrow(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
+    // The first turn's stream never comes back (its result is hours away); the retry's turn completes.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":7200000,"msg":{"type":"result","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":"done"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(lines);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.status == SessionStatus::Running).await;
+    assert_eq!(*hub.service.running().borrow(), 1);
+
+    // The machine slept a while after claude's last word.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    hub.service.woke();
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+    let retry = hub
+        .service
+        .store()
+        .item("s1", "node-retry-r1-1")
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        retry.kind,
+        ItemKind::NodeRetry {
+            reason: RunFailure {
+                class: FailureClass::Network,
+                ..
+            },
+            ..
+        }
+    ));
+    let received = hub.runner.received();
+    assert_eq!(
+        received
+            .iter()
+            .filter(|c| matches!(c, SessionCommand::Interrupt))
+            .count(),
+        1
+    );
+    assert!(
+        received
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+    );
+    // Honoured, so the process stayed: no stop, no respawn.
+    assert!(
+        !received
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Shutdown { .. }))
+    );
+    assert_eq!(hub.runner.spawned().len(), 1);
+    assert_eq!(*hub.service.running().borrow(), 0);
 }
 
 #[tokio::test(start_paused = true)]

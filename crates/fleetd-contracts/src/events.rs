@@ -15,6 +15,9 @@ pub enum HubEventType {
     MachineOffline,
     #[serde(rename = "machine.degraded")]
     MachineDegraded,
+    /// The machine's node woke from sleep; `data.fromMs`, `data.toMs` (epoch milliseconds).
+    #[serde(rename = "machine.slept")]
+    MachineSlept,
     /// The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
     #[serde(rename = "project.removed")]
     ProjectRemoved,
@@ -183,6 +186,7 @@ impl HubEventType {
             Self::MachineOnline => "machine.online",
             Self::MachineOffline => "machine.offline",
             Self::MachineDegraded => "machine.degraded",
+            Self::MachineSlept => "machine.slept",
             Self::ProjectRemoved => "project.removed",
             Self::ThreadStarted => "thread.started",
             Self::ThreadCompleted => "thread.completed",

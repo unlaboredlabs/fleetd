@@ -158,6 +158,8 @@ pub struct MachineLive {
     /// Agent turns running there now.
     pub running: Count,
     pub as_of: Timestamp,
+    /// Its latest sleep; show it while recent ([`crate::model::SleptSpan::recent_text`]).
+    pub slept: Option<crate::model::SleptSpan>,
 }
 
 /// Bounds of one live frame.

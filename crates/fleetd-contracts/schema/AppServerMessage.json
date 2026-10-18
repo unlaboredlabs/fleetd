@@ -424,6 +424,11 @@
           "type": "string"
         },
         {
+          "const": "machine.slept",
+          "description": "The machine's node woke from sleep; `data.fromMs`, `data.toMs` (epoch milliseconds).",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -795,6 +800,10 @@
         "lastSeenAt": {
           "$ref": "#/$defs/Timestamp"
         },
+        "lastSlept": {
+          "$ref": "#/$defs/SleptSpan",
+          "description": "The machine's latest sleep its node reported on waking."
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -851,6 +860,10 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "slept": {
+          "$ref": "#/$defs/SleptSpan",
+          "description": "Its latest sleep; show it while recent ([`crate::model::SleptSpan::recent_text`])."
         },
         "status": {
           "$ref": "#/$defs/MachineStatus"
@@ -955,6 +968,26 @@
         "workspaceRoot",
         "threads",
         "lastActivityAt"
+      ],
+      "type": "object"
+    },
+    "SleptSpan": {
+      "description": "A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.",
+      "properties": {
+        "fromMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fromMs",
+        "toMs"
       ],
       "type": "object"
     },

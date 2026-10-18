@@ -43,6 +43,14 @@ pub const ALWAYS_DISALLOWED: &[&str] = &[
     "ExitWorktree",
 ];
 
+/// Claude's auto memory is off in every claude fleetd starts, whatever the user's settings say: fleetd owns an
+/// agent's context (briefs, decisions, instructions), and a memory claude keeps per cwd would carry stale, unreviewed
+/// notes from one agent's worktree to the next. Both knobs, since either alone has been ignored by some claude
+/// versions. A project opts back in with `claude.autoMemory: true` in its policy file (sessions only).
+pub const AUTO_MEMORY_OFF_ENV: (&str, &str) = ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+/// The same as a `--settings` value, for the one-shot claude runs that take no overlay file.
+pub const AUTO_MEMORY_OFF_SETTINGS: &str = r#"{"autoMemoryEnabled":false}"#;
+
 /// Variables never passed on even if the caller's env has them: claude sets them for its own children and treats a
 /// process that has them as nested inside another session.
 const NESTING_VARS: &[&str] = &[

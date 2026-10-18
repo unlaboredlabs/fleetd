@@ -71,6 +71,9 @@ pub struct SessionLocal {
     pub allowed_tools: Vec<String>,
     #[serde(default)]
     pub disallowed_tools: Vec<String>,
+    /// The project opted back into claude's auto memory (policy `claude.autoMemory`); kept for every respawn too.
+    #[serde(default)]
+    pub auto_memory: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

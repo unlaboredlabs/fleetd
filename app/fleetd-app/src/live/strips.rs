@@ -29,8 +29,8 @@ pub enum Tone {
     Danger,
 }
 
-/// One machine's strip text as segments: "6 running", "load 3.1/32", "mem 41%", "claude 58% 5h · 41% wk"; an
-/// offline machine is a single "offline 12 m".
+/// One machine's strip text as segments: "6 running", "slept 10m46s" (for an hour after it woke), "load 3.1/32",
+/// "mem 41%", "claude 58% 5h · 41% wk"; an offline machine is a single "offline 12 m".
 pub fn machine_parts(m: &MachineLive, now_ms: i64) -> Vec<(String, Tone)> {
     if m.status == MachineStatus::Offline {
         let since = parse_ms(m.as_of.as_str()).map(|t| format!(" {}", fmt_ago(now_ms - t))).unwrap_or_default();
@@ -39,6 +39,9 @@ pub fn machine_parts(m: &MachineLive, now_ms: i64) -> Vec<(String, Tone)> {
     let mut out = vec![(format!("{} running", m.running), Tone::Quiet)];
     if m.status == MachineStatus::Degraded {
         out.insert(0, ("degraded".into(), Tone::Warning));
+    }
+    if let Some(slept) = m.slept.and_then(|s| s.recent_text(now_ms)) {
+        out.push((slept, Tone::Warning));
     }
     if let Some(load) = &m.load {
         out.push((format!("load {:.1}/{}", load.load1.get(), load.cpus.get()), Tone::Quiet));
@@ -374,6 +377,11 @@ mod tests {
         let bare =
             machine(serde_json::json!({"machineId": "lab-a", "name": "lab-a", "status": "online", "running": 0, "asOf": "2026-10-18T10:07:00Z"}));
         assert_eq!(texts(machine_parts(&bare, now)), ["0 running"]);
+        let woke = now - 2 * 60_000;
+        let napped = machine(serde_json::json!({"machineId": "lab-a", "name": "lab-a", "status": "online", "running": 2,
+            "asOf": "2026-10-18T10:07:00Z", "slept": {"fromMs": woke - 646_000, "toMs": woke}}));
+        assert_eq!(texts(machine_parts(&napped, now)), ["2 running", "slept 10m46s"]);
+        assert_eq!(texts(machine_parts(&napped, woke + 3_600_000)), ["2 running"]);
         let off =
             machine(serde_json::json!({"machineId": "lab-b", "name": "lab-b", "status": "offline", "running": 0, "asOf": "2026-10-18T09:55:00Z"}));
         assert_eq!(machine_parts(&off, now), vec![("offline 12 m".to_string(), Tone::Warning)]);

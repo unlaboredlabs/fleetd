@@ -379,6 +379,7 @@ pub fn machines(hub: &Hub, caller: &Caller) -> Vec<MachineLive> {
             name: Text::unchecked(crate::hub::executor::shell_mapper::js_take(&m.name, 200)),
             status: m.status,
             as_of: m.last_seen_at,
+            slept: m.last_slept,
             machine_id: m.machine_id,
         })
         .collect();

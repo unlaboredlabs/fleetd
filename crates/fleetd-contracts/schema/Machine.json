@@ -16,6 +16,10 @@
         "lastSeenAt": {
           "$ref": "#/$defs/Timestamp"
         },
+        "lastSlept": {
+          "$ref": "#/$defs/SleptSpan",
+          "description": "The machine's latest sleep its node reported on waking."
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -57,6 +61,26 @@
         "degraded"
       ],
       "type": "string"
+    },
+    "SleptSpan": {
+      "description": "A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.",
+      "properties": {
+        "fromMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fromMs",
+        "toMs"
+      ],
+      "type": "object"
     },
     "Timestamp": {
       "format": "date-time",

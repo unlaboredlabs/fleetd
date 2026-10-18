@@ -20,7 +20,7 @@ use super::protocol::{
     Assistant, Block, CommandLifecycle, ControlRequest, Input, InputMessage, Line, ResultLine,
     StreamEvent, System, User, UserContent,
 };
-use crate::node::runner::conformance::missing_init_capabilities;
+use crate::node::runner::conformance::{auto_memory_on, missing_init_capabilities};
 use crate::node::runner::failure::FailureEvidence;
 use crate::node::runner::{ExitInfo, RateLimit, RunOutcome, RunnerEvent};
 use crate::node::util::{head_utf16, tail_utf16};
@@ -307,6 +307,7 @@ impl StreamMapper {
                     );
                 }
                 events.push(RunnerEvent::Init {
+                    auto_memory: auto_memory_on(system.memory_paths.as_ref()),
                     version: system.claude_code_version.unwrap_or_default(),
                     model: system.model.unwrap_or_default(),
                     cwd: system.cwd.unwrap_or_default(),

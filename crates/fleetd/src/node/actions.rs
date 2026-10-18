@@ -1,12 +1,14 @@
-//! `node_action` frames from the hub's doctor: probe the commit identity and free disk space. Each always answers, in
+//! `node_action` frames from the hub's doctor: probe the commit identity, free disk space and idle sleep. Each always answers, in
 //! plain words.
 use std::time::Duration;
 
+use super::power;
 use super::util::{exec, head_utf16, home_dir};
 use super::wire::{
     GitEmailFrom, NodeAction, NodeActionKind, NodeActionResult, NodeProbe, head_text,
 };
-use fleetd_contracts::prim::Finite;
+use fleetd_contracts::node_link::IdleSleep;
+use fleetd_contracts::prim::{Count, Finite, List, Text};
 
 /// `git config --global user.email`, absent when unset or git is missing.
 async fn git_config_email() -> Option<String> {
@@ -57,6 +59,22 @@ pub async fn probe_host() -> NodeProbe {
         git_email_from,
         disk_free_bytes: Finite::unchecked(disk_free(&home)),
         disk_path: home.to_string_lossy().into_owned(),
+        idle_sleep: Some(List::unchecked(
+            power::settings::read()
+                .await
+                .into_iter()
+                .take(8)
+                .map(|s| IdleSleep {
+                    source: Text::unchecked(s.source),
+                    action: Text::unchecked(s.action),
+                    // An absurd timeout is dropped: past 2^53 the hub could not decode the probe.
+                    after_sec: s
+                        .after_sec
+                        .and_then(|n| Count::new(i64::try_from(n).ok()?).ok()),
+                    fix: Text::unchecked(head_utf16(&s.fix, 400)),
+                })
+                .collect(),
+        )),
     }
 }
 

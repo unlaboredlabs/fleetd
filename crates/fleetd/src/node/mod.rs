@@ -9,6 +9,7 @@ pub mod identity;
 pub mod lead;
 pub mod link;
 pub mod load;
+pub mod power;
 pub mod runner;
 pub mod secrets;
 pub mod sessions;
@@ -179,6 +180,11 @@ async fn run_node(
     let node_sessions = sessions::SessionService::start(store, runner, session_config)
         .await
         .map_err(|e| NodeError::Setup(format!("cannot settle the stored sessions: {e}")))?;
+    let wakes = Arc::new(power::Wakes::default());
+    let _power = util::AbortOnDrop(tokio::spawn(power::run(
+        node_sessions.clone(),
+        wakes.clone(),
+    )));
     let relay = lead::LeadRelay::new();
     let _socket = lead::serve_lead_socket(lead::lead_socket_path(home), relay.clone())
         .await
@@ -211,6 +217,7 @@ async fn run_node(
         enroll_token,
         on_enrolled,
         node_sessions: node_sessions.clone(),
+        wakes,
         lead_calls: relay,
         cmd_roots: config
             .cmd_roots

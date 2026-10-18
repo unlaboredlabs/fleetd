@@ -96,6 +96,6 @@ revoked laptop's node key; the hub refuses that node from now on.
 fleetd doctor
 ```
 
-It checks the hub and every machine (online, claude version and login, commit identity, disk, usage breaker) and
-prints the fix for each problem. The app's Machines screen shows the same checks. Every finding and its fix:
+It checks the hub and every machine (online, claude version and login, commit identity, disk, sleep when idle, usage
+breaker) and prints the fix for each problem. The app's Machines screen shows the same checks. Every finding and its fix:
 [Troubleshooting](troubleshooting.md).

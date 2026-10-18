@@ -1,6 +1,7 @@
 //! Settings → Instructions: the human's own text, appended to every lead's and task's first message (workers,
 //! reviewers and judges too) under "Custom instructions from the human": the hub-wide text, then the project's.
-//! Saved with `prompt_set` on the registry id `instructions`, pinned per session like every prompt.
+//! Saved with `prompt_set` on the registry id `instructions`, pinned per session like every prompt. Ends with the
+//! auto memory note (policy `claude.autoMemory`).
 
 use fleetd_contracts::prompts::PromptScope;
 use gpui::{AnyElement, Context, Entity, div, prelude::*, px};
@@ -136,6 +137,14 @@ impl Shell {
         if let Some(e) = self.state.prompts.instructions_echo.clone() {
             col = col.child(div().text_size(px(size::XS)).text_color(if e.ok { t.quiet } else { t.danger }).whitespace_normal().child(e.text));
         }
+        // Read-only: the switch lives in the project's repo, so it is changed by a commit, not from here.
+        col = col.child(ui::hairline(t)).child(label(
+            "Claude auto memory: off",
+            "fleetd turns claude's own auto memory off for every agent, so what an agent knows comes from its brief, the \
+             decisions and these instructions, never from notes another agent left in a worktree. A project turns it \
+             back on with `claude: { autoMemory: true }` in its .fleetd/policy.yaml."
+                .into(),
+        ));
         col.into_any_element()
     }
 }

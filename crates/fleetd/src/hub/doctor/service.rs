@@ -254,6 +254,12 @@ impl Doctor {
             id,
             probe.as_ref().map_err(String::as_str),
         ));
+        out.push(checks::idle_sleep(
+            id,
+            probe.as_ref().map_err(String::as_str),
+            machine.last_slept.as_ref(),
+            self.now_ms(),
+        ));
         out.push(checks::usage_breaker(id, &usage.breaker));
         out
     }

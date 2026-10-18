@@ -12,6 +12,8 @@ use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
 use crate::node::runner::claude_setup::ClaudeSetup;
 use crate::node::runner::failure::login_fix;
 use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
+use fleetd_contracts::model::{SleptSpan, duration_text};
+use fleetd_contracts::node_link::IdleSleep;
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -377,6 +379,8 @@ pub struct MachineView {
     pub last_seen_at: String,
     #[serde(default)]
     pub degraded_reason: Option<String>,
+    #[serde(default)]
+    pub last_slept: Option<SleptSpan>,
 }
 
 /// The one fix for a machine whose runner is unusable, from the cause its probe reports: claude missing, out of the
@@ -562,7 +566,42 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
             None,
         ),
     };
-    vec![version, login, conformance]
+    let mut out = vec![version, login, conformance];
+    out.extend(auto_memory_check(machine_id, info));
+    out
+}
+
+/// What the latest session's `system/init` showed of claude's auto memory, which fleetd keeps off. No line until a
+/// session has run there, nor from a node that predates the check.
+fn auto_memory_check(machine_id: &str, info: &RunnerInfo) -> Option<Entry> {
+    Some(match info.auto_memory? {
+        false => machine_entry(
+            machine_id,
+            "claude_auto_memory",
+            Pass,
+            "claude auto memory off.",
+            None,
+        ),
+        true => {
+            let dir = info.config_dir.as_deref().unwrap_or("~/.claude");
+            machine_entry(
+                machine_id,
+                "claude_auto_memory",
+                Warn,
+                &format!(
+                    "claude on {machine_id} kept its auto memory on despite CLAUDE_CODE_DISABLE_AUTO_MEMORY and \
+                     autoMemoryEnabled: its agents may carry notes from one worktree to the next."
+                ),
+                Some(manual(
+                    &format!(
+                        "On {machine_id}, set \"autoMemoryEnabled\": false in {dir}/settings.json, and run \
+                         fleetd update"
+                    ),
+                    None,
+                )),
+            )
+        }
+    })
 }
 
 /// The version verdict as a check: a warning outside the tested versions that still run (older, or newer within the
@@ -646,6 +685,79 @@ pub struct HostProbe {
     pub git_email_from: Option<String>,
     pub disk_path: String,
     pub disk_free_bytes: f64,
+    /// Absent from nodes older than the sleep check.
+    #[serde(default)]
+    pub idle_sleep: Option<Vec<IdleSleep>>,
+}
+
+fn minutes(sec: u64) -> String {
+    match sec {
+        0..60 => format!("{sec} s"),
+        60..7200 => format!("{} min", sec / 60),
+        _ => format!("{} h", sec / 3600),
+    }
+}
+
+/// Whether the machine puts itself to sleep when idle on AC, and its latest sleep while recent. The inhibitor keeps
+/// it awake while agents run; between orders it still sleeps, and asleep it is unreachable.
+pub fn idle_sleep(
+    machine_id: &str,
+    probe: Result<&HostProbe, &str>,
+    last_slept: Option<&SleptSpan>,
+    now_ms: i64,
+) -> Entry {
+    let entry =
+        |status, message: &str, fix| machine_entry(machine_id, "sleep", status, message, fix);
+    let probe = match probe {
+        Err(why) => return entry(Unknown, why, None),
+        Ok(p) => p,
+    };
+    let Some(found) = &probe.idle_sleep else {
+        return entry(
+            Unknown,
+            &format!("{machine_id}'s node is too old to read its sleep settings."),
+            Some(manual("Update fleetd", Some("fleetd update".into()))),
+        );
+    };
+    let recent = last_slept.and_then(|s| {
+        let text = s.recent_text(now_ms)?;
+        let ago = duration_text(now_ms - s.to_ms.get());
+        Some(format!("It {text} (woke {ago} ago)."))
+    });
+    // The status follows the settings only, so a sleep does not flap the check (and log doctor.changed) for an hour.
+    let Some(first) = found.first() else {
+        let how = recent
+            .map(|r| format!(" {r} A lid, its power button or a suspend command put it to sleep."))
+            .unwrap_or_default();
+        return entry(
+            Pass,
+            &format!("{machine_id} does not sleep when idle on AC power.{how}"),
+            None,
+        );
+    };
+    let after = first
+        .after_sec
+        .map(|s| format!(" after {} idle", minutes(s.get().max(0) as u64)))
+        .unwrap_or_else(|| " when idle".into());
+    let also: Vec<&str> = found[1..].iter().map(|s| s.source.as_str()).collect();
+    let also = if also.is_empty() {
+        String::new()
+    } else {
+        format!(" ({} too)", also.join(", "))
+    };
+    entry(
+        Warn,
+        &format!(
+            "{machine_id} {}{after} on AC power ({}){also}. fleetd keeps it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it.{}",
+            first.action,
+            first.source,
+            recent.map(|r| format!(" {r}")).unwrap_or_default()
+        ),
+        Some(manual(
+            &format!("Stop {machine_id} sleeping when idle on AC"),
+            Some(first.fix.to_string()),
+        )),
+    )
 }
 
 static NOREPLY: LazyLock<Regex> =
@@ -803,6 +915,68 @@ mod tests {
         }
     }
 
+    #[test]
+    fn warns_when_a_machine_sleeps_idle_on_ac() {
+        let probe = |idle_sleep: Option<serde_json::Value>| -> HostProbe {
+            serde_json::from_value(serde_json::json!({
+                "diskPath": "/home/u", "diskFreeBytes": 1e11, "idleSleep": idle_sleep,
+            }))
+            .unwrap()
+        };
+        let kde = serde_json::json!([
+            { "source": "KDE power management", "action": "sleeps", "afterSec": 900,
+              "fix": "System Settings > Power Management > On AC Power > When inactive: Do nothing" },
+            { "source": "logind IdleAction", "action": "sleeps", "afterSec": 1800, "fix": "edit logind.conf" },
+        ]);
+        let woke_at = 1_760_000_646_000;
+        let slept = SleptSpan::new(woke_at - 646_000, woke_at).unwrap();
+        let now = woke_at + 3 * 60_000;
+
+        let warn = idle_sleep("forge", Ok(&probe(Some(kde))), Some(&slept), now).check;
+        assert_eq!(warn.status, Warn);
+        assert_eq!(
+            warn.message,
+            "forge sleeps after 15 min idle on AC power (KDE power management) (logind IdleAction too). fleetd keeps \
+             it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work \
+             and wakes wait until someone wakes it. It slept 10m46s (woke 3m00s ago)."
+        );
+        assert_eq!(
+            warn.fix.and_then(|f| f.command).as_deref(),
+            Some("System Settings > Power Management > On AC Power > When inactive: Do nothing")
+        );
+
+        // No idle sleep: a pass whatever the last sleep was, so a sleep never flaps the check.
+        let quiet = idle_sleep(
+            "forge",
+            Ok(&probe(Some(serde_json::json!([])))),
+            Some(&slept),
+            now,
+        )
+        .check;
+        assert_eq!(quiet.status, Pass);
+        assert!(
+            quiet.message.contains("It slept 10m46s"),
+            "{}",
+            quiet.message
+        );
+        let long_ago = idle_sleep(
+            "forge",
+            Ok(&probe(Some(serde_json::json!([])))),
+            Some(&slept),
+            now + 3_600_000,
+        );
+        assert_eq!(
+            long_ago.check.message,
+            "forge does not sleep when idle on AC power."
+        );
+
+        let old_node = idle_sleep("forge", Ok(&probe(None)), None, now).check;
+        assert_eq!(
+            (old_node.status, old_node.fix.and_then(|f| f.command)),
+            (Unknown, Some("fleetd update".into()))
+        );
+    }
+
     /// A degraded machine's finding has exactly one fix, and it is the one for the cause.
     #[test]
     fn a_degraded_machine_gets_the_one_fix_for_its_cause() {
@@ -811,6 +985,7 @@ mod tests {
             status: "degraded".into(),
             last_seen_at: "now".into(),
             degraded_reason: Some("claude is not logged in. Fix: claude auth login".into()),
+            last_slept: None,
         };
         let runner = |version: Option<&str>, version_ok, login, proxy: Option<&str>| RunnerInfo {
             runner: fleetd_contracts::sessions::RunnerKind::Claude,
@@ -825,6 +1000,7 @@ mod tests {
             proxy: proxy.map(str::to_owned),
             proxy_source: None,
             config_dir: None,
+            auto_memory: None,
         };
         let fix = |info: Option<RunnerInfo>| {
             let entry = machine_online(&degraded, None, info.as_ref());
@@ -913,6 +1089,7 @@ mod tests {
             proxy: None,
             proxy_source: None,
             config_dir: None,
+            auto_memory: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)
@@ -931,6 +1108,31 @@ mod tests {
                 ("mac/claude_login".to_owned(), Pass),
                 ("mac/runner_conformance".to_owned(), Pass)
             ]
+        );
+        // Auto memory: a line once a session has shown it, a warning with the fix when claude kept it on.
+        let memory = |on| {
+            runner_checks(
+                "mac",
+                &RunnerInfo {
+                    auto_memory: Some(on),
+                    ..info(Some("2.1.302"), LoginStatus::LoggedIn, Some(true))
+                },
+            )
+            .pop()
+            .unwrap()
+            .check
+        };
+        assert_eq!(
+            (memory(false).status, memory(false).message.as_str()),
+            (Pass, "claude auto memory off.")
+        );
+        let kept = memory(true);
+        assert_eq!(kept.status, Warn);
+        assert!(
+            kept.fix
+                .unwrap()
+                .label
+                .contains("set \"autoMemoryEnabled\": false in ~/.claude/settings.json")
         );
         let bad = runner_checks(
             "mac",

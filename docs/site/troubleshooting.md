@@ -174,6 +174,25 @@ machine. Without a hub identity, set one on the machine:
 Each writer session gets its own git worktree, so a machine needs room. Free space under the path the finding
 names; `df -h <path>` shows what is left.
 
+## A machine sleeps when idle {#sleep}
+
+> laptop sleeps after 15 min idle on AC power (KDE power management). fleetd keeps it awake while agents run, but it
+> still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it.
+
+While any agent runs, the node keeps its machine awake (`systemd-inhibit --list` or `pmset -g assertions` shows
+"fleetd: 2 agents running"). Between orders nothing does, so a machine set to sleep when idle drops off until
+someone wakes it. Sleep on battery only is fine. The fix names the setting for that machine's desktop:
+
+| Where | Fix |
+|---|---|
+| KDE Plasma | System Settings > Power Management > On AC Power > When inactive: Do nothing |
+| GNOME | `gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'` |
+| logind `IdleAction` | `IdleAction=ignore` in `/etc/systemd/logind.conf.d/fleetd.conf`, then reboot |
+| macOS | `sudo pmset -c sleep 0` |
+
+When a machine wakes, its node links to the hub again at once, resumes any run whose claude went quiet during the
+sleep, and logs `machine.slept`. The app's machine strip shows "slept 10m46s" for an hour after.
+
 ## The usage breaker is open {#usage_breaker}
 
 > New turns on laptop are paused by the usage breaker.

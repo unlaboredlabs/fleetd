@@ -31,12 +31,14 @@ pub const LOGIN_ENV: [&str; 4] = [
 const BASE_ENV: [&str; 4] = ["HOME", "PATH", "USER", "LANG"];
 
 /// No tools, no MCP servers, no saved session, and none of the user's customizations; the login still applies.
-pub const ONE_SHOT_FLAGS: [&str; 5] = [
+pub const ONE_SHOT_FLAGS: [&str; 7] = [
     "--tools",
     "",
     "--strict-mcp-config",
     "--no-session-persistence",
     "--safe-mode",
+    "--settings",
+    crate::node::runner::claude::AUTO_MEMORY_OFF_SETTINGS,
 ];
 
 #[derive(Debug, Clone)]
@@ -110,8 +112,10 @@ fn json_str(s: &str) -> String {
 }
 
 /// The child's whole environment: an allowlist, so the hub's own `CLAUDE*` variables never reach it. Without
-/// `CLAUDE_CONFIG_DIR`, `claude` reads the user's login from `$HOME/.claude`, as it does in their own shell.
+/// `CLAUDE_CONFIG_DIR`, `claude` reads the user's login from `$HOME/.claude`, as it does in their own shell. Auto
+/// memory is always off (`AUTO_MEMORY_OFF_ENV`).
 pub fn router_env(source: &HashMap<String, String>) -> Vec<(String, String)> {
+    let (memory_key, memory_off) = crate::node::runner::claude::AUTO_MEMORY_OFF_ENV;
     BASE_ENV
         .iter()
         .chain(LOGIN_ENV.iter())
@@ -121,6 +125,7 @@ pub fn router_env(source: &HashMap<String, String>) -> Vec<(String, String)> {
                 .filter(|v| !v.is_empty())
                 .map(|v| (k.to_string(), v.clone()))
         })
+        .chain([(memory_key.to_owned(), memory_off.to_owned())])
         .collect()
 }
 
@@ -681,7 +686,9 @@ exit "$(cat "$dir/reply-$n.exit")"
                 "",
                 "--strict-mcp-config",
                 "--no-session-persistence",
-                "--safe-mode"
+                "--safe-mode",
+                "--settings",
+                r#"{"autoMemoryEnabled":false}"#
             ]
         );
         assert!(
@@ -689,7 +696,13 @@ exit "$(cat "$dir/reply-$n.exit")"
                 .any(|l| l == "ANTHROPIC_BASE_URL=http://proxy.invalid")
         );
         assert!(env.lines().any(|l| l == "ANTHROPIC_AUTH_TOKEN=test-token"));
-        assert!(!env.lines().any(|l| l.starts_with("CLAUDE")), "{env}");
+        // No session variable of the hub's own; only fleetd's auto memory switch.
+        assert!(
+            env.lines()
+                .filter(|l| l.starts_with("CLAUDE"))
+                .eq(["CLAUDE_CODE_DISABLE_AUTO_MEMORY=1"]),
+            "{env}"
+        );
         assert!(prompt.contains(TEXT) && prompt.contains(r#""title":"repo-b""#));
     }
 

@@ -30,6 +30,8 @@ struct AuthMark {
 pub struct Health {
     probed: Option<(RunnerInfo, Instant)>,
     auth_failed: Option<AuthMark>,
+    /// What the latest session that should have auto memory off showed in its `system/init`.
+    auto_memory: Option<bool>,
 }
 
 impl Health {
@@ -37,6 +39,7 @@ impl Health {
     pub fn info(&self) -> Option<RunnerInfo> {
         let (probed, _) = self.probed.as_ref()?;
         let mut info = probed.clone();
+        info.auto_memory = self.auto_memory;
         if let Some(mark) = &self.auth_failed {
             info.login = LoginStatus::LoggedOut;
             let fix = login_fix(info.proxy.is_some());
@@ -87,6 +90,11 @@ impl Health {
         });
     }
 
+    /// A session that should have auto memory off started; `on`: its `system/init` still named a memory dir.
+    pub fn auto_memory_seen(&mut self, on: bool) {
+        self.auto_memory = Some(on);
+    }
+
     /// A run completed, so the login works.
     pub fn run_completed(&mut self) {
         self.auth_failed = None;
@@ -116,6 +124,7 @@ mod tests {
             proxy: None,
             proxy_source: None,
             config_dir: None,
+            auto_memory: None,
         }
     }
 

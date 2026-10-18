@@ -113,6 +113,7 @@ impl Runner for FakeRunner {
                 proxy: None,
                 proxy_source: None,
                 config_dir: None,
+                auto_memory: None,
             }
         })
     }
@@ -292,6 +293,12 @@ fn map_line(
 ) -> Vec<RunnerEvent> {
     let s = |v: &Value| v.as_str().unwrap_or_default().to_owned();
     match msg["type"].as_str().unwrap_or_default() {
+        "system" if msg["subtype"] == "init" => vec![RunnerEvent::Init {
+            version: s(&msg["claude_code_version"]),
+            model: s(&msg["model"]),
+            cwd: s(&msg["cwd"]),
+            auto_memory: crate::node::runner::conformance::auto_memory_on(msg.get("memory_paths")),
+        }],
         "command_lifecycle" if msg["state"] == "started" => vec![RunnerEvent::RunStarted {
             run_id: run_id.to_owned(),
         }],
