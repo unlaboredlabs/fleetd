@@ -142,19 +142,6 @@ impl SessionConfig {
         ]);
         env
     }
-
-    /// Changes when the login can have: `claude.env`'s contents, or the credentials file `claude auth login`
-    /// writes. claude's other files in the config dir change on every run, so they are left out.
-    fn login_fingerprint(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        std::fs::read(&self.claude_env).ok().hash(&mut hasher);
-        std::fs::metadata(self.config_dir.join(".credentials.json"))
-            .ok()
-            .map(|m| (m.len(), m.modified().ok()))
-            .hash(&mut hasher);
-        hasher.finish()
-    }
 }
 
 /// `KEY=VALUE` lines; blank lines, `#` comments and an `export ` prefix are allowed, and one pair of matching quotes
@@ -1285,8 +1272,7 @@ impl SessionService {
         }
         match &outcome {
             RunOutcome::Failed(failure) if failure.class == FailureClass::Auth => {
-                let login = self.inner.config.login_fingerprint();
-                self.health_changed(|h| h.auth_failed(&failure.message, login, Instant::now()));
+                self.health_changed(|h| h.auth_failed(&failure.message, Instant::now()));
             }
             RunOutcome::Completed { .. } => self.health_changed(Health::run_completed),
             _ => {}
@@ -1626,11 +1612,11 @@ impl SessionService {
         if let Some(info) = cached {
             return info;
         }
-        let login = self.inner.config.login_fingerprint();
+        let started = Instant::now();
         let env = self.inner.config.runner_env();
         let info = self.inner.runner.probe(&env).await;
         let shown = info.clone();
-        self.health_changed(|h| h.probed(info, login, Instant::now()));
+        self.health_changed(|h| h.probed(info, started));
         self.health().info().unwrap_or(shown)
     }
 
