@@ -37,6 +37,8 @@ pub struct Checklist {
     sections: usize,
     section: usize,
     spinner: Option<Spinner>,
+    /// The last thing on screen ends with a bar (a prompt's footer, the intro): the next header needs no gap.
+    bar_above: bool,
 }
 
 const BAR: Emoji = Emoji("│", "|");
@@ -68,6 +70,7 @@ impl Checklist {
             sections: 0,
             section: 0,
             spinner: None,
+            bar_above: true,
         }
     }
 
@@ -81,8 +84,24 @@ impl Checklist {
         self.sections = n;
     }
 
-    fn out(&self, text: &str) {
+    fn out(&mut self, text: &str) {
+        self.bar_above = false;
+        let text = if self.rich {
+            let width = console::Term::stderr().size().1 as usize;
+            let bar = format!("{}  ", style(BAR).dim().for_stderr());
+            text.lines()
+                .map(|line| wrap(line, width, &bar))
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            text.to_owned()
+        };
         let _ = writeln!(std::io::stderr(), "{text}");
+    }
+
+    /// A prompt just finished; cliclack left a bar under it.
+    pub fn prompted(&mut self) {
+        self.bar_above = true;
     }
 
     /// A group header: `◆  Logins  2/6`.
@@ -95,8 +114,7 @@ impl Checklist {
             String::new()
         };
         if self.rich {
-            // The intro already leaves a bar under itself.
-            let gap = if self.section > 1 {
+            let gap = if !self.bar_above {
                 format!("{}\n", style(BAR).dim().for_stderr())
             } else {
                 String::new()
@@ -110,6 +128,13 @@ impl Checklist {
         } else {
             self.out(&format!("\n{name}{count}"));
         }
+    }
+
+    /// A boxed note (the summary); it ends with a bar.
+    pub fn boxed(&mut self, title: &str, text: &str) {
+        self.stop_spinner();
+        let _ = cliclack::note(title, text);
+        self.bar_above = true;
     }
 
     /// Text under the bar: a short explanation or a command to copy.
@@ -200,7 +225,8 @@ impl Checklist {
             detail: detail.to_owned(),
             fix: fix.map(str::to_owned),
         };
-        self.out(&self.line(&item));
+        let line = self.line(&item);
+        self.out(&line);
         self.items.push(item);
     }
 
@@ -266,11 +292,14 @@ impl Checklist {
         self.stop_spinner();
         if self.rich {
             if needs_you.is_empty() {
-                self.out(&style(BAR).dim().for_stderr().to_string());
+                if !self.bar_above {
+                    let bar = style(BAR).dim().for_stderr().to_string();
+                    self.out(&bar);
+                }
             } else {
-                let _ = cliclack::note(
-                    format!("{} step(s) need you", needs_you.len()),
-                    needs_you.join("\n"),
+                self.boxed(
+                    &format!("{} step(s) need you", needs_you.len()),
+                    &needs_you.join("\n"),
                 );
             }
             let _ = cliclack::outro(next);
@@ -286,6 +315,31 @@ impl Checklist {
     }
 }
 
+/// Word-wraps `line` to `width` columns, continuing under the bar; a word longer than a line (a URL) stays whole.
+fn wrap(line: &str, width: usize, bar: &str) -> String {
+    let measure = console::measure_text_width;
+    if width < 20 || measure(line) <= width {
+        return line.to_owned();
+    }
+    let indent = measure(bar);
+    let mut out = String::new();
+    let mut used = 0;
+    for word in line.split(' ') {
+        let w = measure(word);
+        if used > 0 && used + 1 + w > width {
+            out.push('\n');
+            out.push_str(bar);
+            used = indent;
+        } else if used > 0 {
+            out.push(' ');
+            used += 1;
+        }
+        out.push_str(word);
+        used += w;
+    }
+    out
+}
+
 impl Drop for Checklist {
     fn drop(&mut self) {
         self.stop_spinner();
@@ -295,6 +349,27 @@ impl Drop for Checklist {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_lines_wrap_under_the_bar_and_keep_long_words_whole() {
+        assert_eq!(
+            wrap(
+                "✓  project none picked; run fleetd init in a terminal",
+                30,
+                "│  "
+            ),
+            "✓  project none picked; run\n│  fleetd init in a terminal"
+        );
+        assert_eq!(wrap("short", 30, "│  "), "short");
+        assert_eq!(
+            wrap(
+                "│  open: fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X",
+                30,
+                "│  "
+            ),
+            "│  open:\n│  fleetd://pair?hub=http%3A%2F%2Fforge.example:4791&code=X"
+        );
+    }
 
     #[test]
     fn the_closing_list_names_each_problem_once_then_what_is_left_to_you() {

@@ -41,10 +41,12 @@ impl Ui {
             return Ok(default);
         }
         list.stop_spinner();
-        cliclack::confirm(prompt)
+        let answer = cliclack::confirm(prompt)
             .initial_value(default)
             .interact()
-            .map_err(stopped)
+            .map_err(stopped);
+        list.prompted();
+        answer
     }
 
     /// An input; Enter on an empty line takes `default`. `check` explains a bad answer inline.
@@ -66,10 +68,12 @@ impl Ui {
         } else if !placeholder.is_empty() {
             input = input.placeholder(placeholder);
         }
-        input
+        let answer = input
             .interact::<String>()
             .map(|s| s.trim().to_owned())
-            .map_err(stopped)
+            .map_err(stopped);
+        list.prompted();
+        answer
     }
 
     /// `(value, label, hint)`; the default is preselected.
@@ -84,11 +88,13 @@ impl Ui {
             return Ok(default);
         }
         list.stop_spinner();
-        cliclack::select(prompt)
+        let answer = cliclack::select(prompt)
             .items(items)
             .initial_value(default)
             .interact()
-            .map_err(stopped)
+            .map_err(stopped);
+        list.prompted();
+        answer
     }
 
     fn multi<T: Clone + Eq>(
@@ -102,12 +108,14 @@ impl Ui {
             return Ok(defaults);
         }
         list.stop_spinner();
-        cliclack::multiselect(prompt)
+        let answer = cliclack::multiselect(prompt)
             .items(items)
             .initial_values(defaults)
             .required(false)
             .interact()
-            .map_err(stopped)
+            .map_err(stopped);
+        list.prompted();
+        answer
     }
 }
 
@@ -228,11 +236,8 @@ pub async fn run(opts: InitOptions, interactive: bool) -> u8 {
         Ok(code) => code,
         Err(Stopped) => {
             list.stop_spinner();
-            if list.rich {
-                let _ = cliclack::outro_cancel(AGAIN);
-            } else {
-                eprintln!("{AGAIN}");
-            }
+            // cliclack has already closed the prompt with "Operation cancelled."
+            eprintln!("{}{AGAIN}", if list.rich { "   " } else { "" });
             130
         }
     }
@@ -1354,24 +1359,24 @@ fn finish(list: &mut Checklist, summary: &Summary, paired: bool) {
         lines.push("PATH      add: export PATH=\"$HOME/.local/bin:$PATH\"".into());
     }
     if list.rich {
-        list.stop_spinner();
-        let _ = cliclack::note("fleetd is ready", lines.join("\n"));
+        list.boxed("fleetd is ready", &lines.join("\n"));
     } else {
         eprintln!("\nfleetd is ready");
         for line in &lines {
             eprintln!("  {line}");
         }
     }
-    let (installed, open) = app_hint();
+    let (installed, _) = app_hint();
     let next = match (installed, paired) {
         (true, true) => {
             "Next: open the fleetd app; it connects by itself, then send your first order."
                 .to_owned()
         }
         (true, false) => "Next: run fleetd pair, then open the fleetd app.".to_owned(),
-        (false, _) => format!(
-            "Next: install the fleetd app on the computer you work from ({open}) and enter the pairing code."
-        ),
+        (false, _) => {
+            "Next: get the fleetd app (curl -fsSL https://fleetd.sh | sh) and enter the code."
+                .to_owned()
+        }
     };
     list.outro(&[], &next);
 }
