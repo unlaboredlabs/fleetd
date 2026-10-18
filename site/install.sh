@@ -1,11 +1,12 @@
 #!/bin/sh
 # fleetd installer: curl -fsSL https://fleetd.sh | sh
 #
-#   sh -s -- [--no-app] [--app] [--uninstall]
+#   sh -s -- [--no-app] [--app] [--no-init] [--uninstall]
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
 # ~/Applications/fleetd.app on macOS, or ~/.local/share/fleetd/app on Linux (only with a display, or --app).
 # Every download is checked against the release's SHA256SUMS. Safe to run again; it replaces what it installed.
+# With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
 #
 # FLEETD_CHANNEL=nightly|stable picks the release (default nightly). FLEETD_BASE_URL points at another directory
 # of release assets.
@@ -28,6 +29,7 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
 
   --no-app      install only the CLI
   --app         install the desktop app on Linux even without a display
+  --no-init     don't start the setup wizard (fleetd init) after installing
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
 Environment: FLEETD_CHANNEL=nightly|stable (default nightly), FLEETD_BASE_URL=<asset directory>
@@ -146,11 +148,13 @@ uninstall() {
 main() {
   want_app=auto
   do_uninstall=0
+  run_init=1
   for arg in "$@"; do
     case "$arg" in
       --no-app) want_app=no ;;
       --app) want_app=yes ;;
       --uninstall) do_uninstall=1 ;;
+      --no-init) run_init=0 ;;
       -h | --help)
         usage
         return 0
@@ -222,15 +226,20 @@ main() {
   fi
   [ "$installed" = 1 ] || die "nothing to install from $base"
 
-  if [ -x "$bin_dir/fleetd" ]; then
-    # One next command; `fleetd init` itself says how to put ~/.local/bin on PATH when it isn't.
-    # shellcheck disable=SC2088 # the tilde is printed for the user to type
-    case ":$PATH:" in
-      *":$HOME/.local/bin:"*) next="fleetd init" ;;
-      *) next="~/.local/bin/fleetd init" ;;
-    esac
-    printf '\nNext, run:\n  %s\n' "$next"
+  [ -x "$bin_dir/fleetd" ] || return 0
+  # `curl | sh` has the script on stdin, so the wizard reads the terminal itself. Without one (CI, a pipe), or with
+  # --no-init, only the next command is printed. The binary is in place either way; Ctrl-C in the wizard leaves it.
+  if [ "$run_init" = 1 ] && [ -t 2 ] && (: </dev/tty) 2>/dev/null; then
+    status=0
+    "$bin_dir/fleetd" init </dev/tty || status=$?
+    return "$status"
   fi
+  # shellcheck disable=SC2088 # the tilde is printed for the user to type
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) next="fleetd init" ;;
+    *) next="~/.local/bin/fleetd init" ;;
+  esac
+  printf '\nNext, run:\n  %s\n' "$next"
 }
 
 main "$@"

@@ -1,16 +1,12 @@
 [
   {
-    "command": "mkdir -p /home/wynn/.fleetd/node /home/wynn/.fleetd/claude /home/wynn/.fleetd/logs /home/wynn/.fleetd/bin && chmod 700 /home/wynn/.fleetd /home/wynn/.fleetd/claude",
+    "command": "mkdir -p /home/wynn/.fleetd/node /home/wynn/.fleetd/logs /home/wynn/.fleetd/bin && chmod 700 /home/wynn/.fleetd",
     "title": "create fleetd's directories"
   },
   {
     "command": "mkdir -p /home/wynn/.fleetd/bin && cat > /home/wynn/.fleetd/bin/fleetd.fleetd-tmp && chmod 755 /home/wynn/.fleetd/bin/fleetd.fleetd-tmp && mv /home/wynn/.fleetd/bin/fleetd.fleetd-tmp /home/wynn/.fleetd/bin/fleetd && rm -rf /home/wynn/.local/share/fleetd/bin /home/wynn/.local/share/fleetd/cli",
     "stdin": "binary",
     "title": "install fleetd 0.0.0"
-  },
-  {
-    "command": "[ -e /home/wynn/.fleetd/claude.env ] || (umask 077 && : > /home/wynn/.fleetd/claude.env)",
-    "title": "create fleetd's Claude login file (empty, 0600)"
   },
   {
     "command": "mkdir -p /home/wynn/.config/systemd/user && cat > /home/wynn/.config/systemd/user/fleetd-node.service.fleetd-tmp && chmod 644 /home/wynn/.config/systemd/user/fleetd-node.service.fleetd-tmp && mv /home/wynn/.config/systemd/user/fleetd-node.service.fleetd-tmp /home/wynn/.config/systemd/user/fleetd-node.service",
