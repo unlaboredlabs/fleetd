@@ -1,14 +1,16 @@
-//! The sidebar: Inbox and Machines, then every project, then the connection. A project that has an open ask
-//! is set in full-weight text with its count; one with news since you last looked has the accent dot; a
-//! stalled lead gets a warning dot; the rest are quiet. The open project lists its threads beneath it.
+//! The sidebar (spec 2.6): Board and Machines, then every project with its open orders beneath it, then the
+//! connection. The amber dot means something there needs you; the quiet number is the project's running agents.
+//! Holding ⌘ (Ctrl) shows jump numbers on the first nine orders, which ⌘1..9 open.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use fleetd_contracts::ledger::LeadState;
-use fleetd_contracts::model::{MachineStatus, ThreadStatus};
+use fleetd_contracts::live::{LaneStatus, OrderCard};
+use fleetd_contracts::model::MachineStatus;
 use gpui::{AnyElement, App, Div, Hsla, SharedString, Window, div, prelude::*, px};
 
+use crate::board::{on_board, sort_cards};
 use crate::state::{ProjectKey, State};
 use crate::theme::{STRONG, Theme, metric, size};
 use crate::ui;
@@ -16,10 +18,10 @@ use crate::ui;
 /// Where a click in the sidebar goes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pick {
-    Inbox,
-    Projects,
+    Board,
     Machines,
     Project(ProjectKey),
+    Order(String),
     Settings,
 }
 
@@ -29,10 +31,10 @@ pub type OnPick = Rc<dyn Fn(Pick, &mut Window, &mut App)>;
 /// Which entry is current.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Active {
-    Inbox,
-    Projects,
+    Board,
     Machines,
     Project(ProjectKey),
+    Order(String),
     Settings,
     None,
 }
@@ -44,6 +46,28 @@ pub fn needs_you(state: &State) -> HashMap<ProjectKey, usize> {
         if let Some(p) = &item.ask.project_ref {
             *out.entry((p.machine_id.to_string(), p.project_id.to_string())).or_insert(0) += 1;
         }
+    }
+    out
+}
+
+/// Orders with an open ask.
+pub fn orders_needing_you(state: &State) -> HashSet<String> {
+    state.inbox().iter().filter_map(|i| i.ask.workstream_id.as_ref().map(|w| w.to_string())).collect()
+}
+
+/// A project's agents that are running now.
+pub fn running(cards: &[OrderCard]) -> usize {
+    cards.iter().flat_map(|c| c.lanes.iter()).filter(|l| matches!(l.status, LaneStatus::Working | LaneStatus::Starting)).count()
+}
+
+/// The orders the sidebar lists, in its order (projects as listed, each project's orders as on the board).
+pub fn orders(state: &State, now_secs: i64) -> Vec<(ProjectKey, String)> {
+    let mut out = Vec::new();
+    for row in &state.projects {
+        let key = row.key();
+        let mut cards: Vec<&OrderCard> = state.live.orders(&key).iter().filter(|c| on_board(c, now_secs)).collect();
+        sort_cards(&mut cards);
+        out.extend(cards.into_iter().map(|c| (key.clone(), c.workstream_id.to_string())));
     }
     out
 }
@@ -83,43 +107,59 @@ pub struct Conn {
 }
 
 /// `notice` (the update notice) sits above the connection line.
-pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn, notice: Option<AnyElement>, on_pick: OnPick) -> Div {
-    let asks = state.inbox().len();
+#[allow(clippy::too_many_arguments)]
+pub fn render(
+    t: &Theme,
+    state: &State,
+    seen: &Seen,
+    active: &Active,
+    now_secs: i64,
+    jump_hints: bool,
+    conn: Conn,
+    notice: Option<AnyElement>,
+    on_pick: OnPick,
+) -> Div {
     let down = state.machines.iter().filter(|m| m.status != MachineStatus::Online).count();
     let needs = needs_you(state);
+    let order_needs = orders_needing_you(state);
     let entry = |id: &'static str, label: &'static str, pick: Pick, is_active: bool, trailing: AnyElement| {
         let on_pick = on_pick.clone();
         ui::row(t, id, is_active).child(div().flex_1().child(label)).child(trailing).on_click(move |_, window, cx| on_pick(pick.clone(), window, cx))
     };
-    let inbox_count = if asks > 0 { ui::count(t, asks, true).into_any_element() } else { div().into_any_element() };
     let machines_note = if down > 0 {
         div().text_size(px(size::XS)).text_color(t.warning).child(format!("{down} down")).into_any_element()
     } else {
         div().into_any_element()
     };
+    let board_keys = ui::kbd(t, ui::shortcut("0")).into_any_element();
 
     let mut projects = div().id("sidebar-projects").flex_1().min_h_0().overflow_y_scroll().px_2().pb_2().flex().flex_col();
     if state.projects.is_empty() {
         projects = projects.child(
             div()
-                .px_4()
+                .px_2()
                 .py_1()
                 .text_size(px(size::XS))
                 .text_color(t.quiet)
                 .whitespace_normal()
-                .child("No projects yet. Add one with fleetd init on the hub."),
+                .child("No projects yet. Add one with fleetd project add on a machine."),
         );
     }
+    let mut jump = 0;
     for row in &state.projects {
         let key = row.key();
-        let open = *active == Active::Project(key.clone());
+        let selected = *active == Active::Project(key.clone());
         let n = needs.get(&key).copied().unwrap_or(0);
-        let unread = !open && seen.unread(&key, row.summary.last_activity_at.as_str());
+        let unread = !selected && seen.unread(&key, row.summary.last_activity_at.as_str());
         let stalled = row.lead().is_some_and(|l| l.state == LeadState::Stalled);
-        let on_pick = on_pick.clone();
+        let all = state.live.orders(&key);
+        let mut cards: Vec<&OrderCard> = all.iter().filter(|c| on_board(c, now_secs)).collect();
+        sort_cards(&mut cards);
+        let agents = running(all);
+        let on_pick_p = on_pick.clone();
         let pick = Pick::Project(key.clone());
         projects = projects.child(
-            ui::row(t, SharedString::from(format!("p-{}-{}", key.0, key.1)), open)
+            ui::row(t, SharedString::from(format!("p-{}-{}", key.0, key.1)), selected)
                 .child(div().w(px(6.)).flex_none().when(unread, |d| d.child(ui::unread(t))))
                 .child(
                     div()
@@ -128,35 +168,44 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
                         .overflow_hidden()
                         .text_ellipsis()
                         .when(n > 0, |d| d.font_weight(STRONG))
-                        .when(n == 0 && !unread && !open, |d| d.text_color(t.quiet))
+                        .when(n == 0 && cards.is_empty() && !selected, |d| d.text_color(t.quiet))
                         .child(row.summary.title.clone()),
                 )
-                .when(stalled, |d| d.child(ui::dot(t.warning)))
-                .when(n > 0, |d| d.child(ui::count(t, n, true)))
-                .on_click(move |_, window, cx| on_pick(pick.clone(), window, cx)),
+                .when(n > 0, |d| d.child(ui::dot(t.warning)))
+                .when(stalled && n == 0, |d| d.child(div().text_size(px(size::XS)).text_color(t.warning).child("stalled")))
+                .when(agents > 0, |d| {
+                    d.child(div().font_family(t.mono_font.clone()).text_size(px(size::XS)).text_color(t.quiet).child(agents.to_string()))
+                })
+                .on_click(move |_, window, cx| on_pick_p(pick.clone(), window, cx)),
         );
-        if open {
-            for thread in row.outcome.iter().flat_map(|o| o.threads.iter()) {
-                let color = match thread.status {
-                    ThreadStatus::Running => t.success,
-                    ThreadStatus::Waiting => t.warning,
-                    ThreadStatus::Failed => t.danger,
-                    _ => t.faint,
-                };
-                projects = projects.child(
-                    div()
-                        .h(px(metric::ROW - 4.))
-                        .pl(px(26.))
-                        .pr_4()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .text_size(px(size::XS))
-                        .text_color(t.quiet)
-                        .child(ui::dot(color))
-                        .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(thread.title.clone())),
-                );
-            }
+        for card in cards {
+            let id = card.workstream_id.to_string();
+            let open = *active == Active::Order(id.clone());
+            let needs = order_needs.contains(&id);
+            jump += 1;
+            let hint = (jump_hints && jump <= 9).then(|| jump.to_string());
+            let on_pick_o = on_pick.clone();
+            let pick = Pick::Order(id.clone());
+            projects = projects.child(
+                ui::row(t, SharedString::from(format!("o-{id}")), open)
+                    .h(px(metric::ROW - 4.))
+                    .pl(px(22.))
+                    .text_size(px(size::XS))
+                    .child(div().w(px(30.)).flex_none().font_family(t.mono_font.clone()).text_color(t.quiet).child(id.clone()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .text_color(if needs || open { t.text } else { t.quiet })
+                            .when(needs, |d| d.font_weight(STRONG))
+                            .child(card.title.to_string()),
+                    )
+                    .when(needs, |d| d.child(ui::dot(t.warning)))
+                    .when_some(hint, |d, h| d.child(div().text_color(t.accent).child(h)))
+                    .on_click(move |_, window, cx| on_pick_o(pick.clone(), window, cx)),
+            );
         }
     }
 
@@ -174,28 +223,15 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
             div()
                 .pt_2()
                 .px_2()
+                .pb_2()
                 .flex()
                 .flex_col()
-                .child(entry("nav-inbox", "Inbox", Pick::Inbox, *active == Active::Inbox, inbox_count))
+                .border_b_1()
+                .border_color(t.hairline)
+                .child(entry("nav-board", "Board", Pick::Board, *active == Active::Board, board_keys))
                 .child(entry("nav-machines", "Machines", Pick::Machines, *active == Active::Machines, machines_note)),
         )
-        .child(
-            ui::clickable(t, div().id("nav-projects"))
-                .px_4()
-                .pt_4()
-                .pb_1()
-                .flex()
-                .items_center()
-                .text_size(px(size::XS))
-                .font_weight(STRONG)
-                .text_color(if *active == Active::Projects { t.text } else { t.quiet })
-                .hover(|s| s.opacity(0.8))
-                .on_click({
-                    let on_pick = on_pick.clone();
-                    move |_, window, cx| on_pick(Pick::Projects, window, cx)
-                })
-                .child("Projects"),
-        )
+        .child(div().h(px(8.)))
         .child(projects)
         .children(notice)
         .child(
@@ -222,12 +258,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn needs_you_counts_open_asks_per_project() {
+    fn needs_you_counts_open_asks_per_project_and_order() {
         let state = crate::fake::fixture_state();
         let needs = needs_you(&state);
-        // The fixture's three open asks are on its first three projects, one each.
-        assert_eq!(needs.values().sum::<usize>(), 3);
-        assert_eq!(needs.get(&("forge".to_string(), "fleetd".to_string())), Some(&1));
+        assert_eq!(needs.get(&("devbox".to_string(), "storefront".to_string())), Some(&1));
+        assert!(orders_needing_you(&state).contains("W14"));
+    }
+
+    #[test]
+    fn sidebar_orders_follow_the_project_list_and_board_order() {
+        let state = crate::fake::fixture_state();
+        let now = crate::notify::unix_secs("2026-10-18T10:07:12.000Z").unwrap();
+        let ids: Vec<String> = orders(&state, now).into_iter().map(|(_, w)| w).collect();
+        assert_eq!(&ids[..2], ["W14", "W12"], "storefront first, its needs-you order on top");
+        assert_eq!(running(state.live.orders(&("devbox".into(), "storefront".into()))), 2, "two lanes working in W14");
     }
 
     #[test]
@@ -238,12 +282,12 @@ mod tests {
         let key = state.projects[0].key();
         let at = state.projects[0].summary.last_activity_at.to_string();
         assert!(!seen.unread(&key, &at));
-        assert!(seen.unread(&key, "2026-10-17T10:05:00.000Z"));
-        seen.mark(&key, "2026-10-17T10:05:00.000Z");
-        assert!(!seen.unread(&key, "2026-10-17T10:05:00.000Z"));
+        assert!(seen.unread(&key, "2026-10-19T10:05:00.000Z"));
+        seen.mark(&key, "2026-10-19T10:05:00.000Z");
+        assert!(!seen.unread(&key, "2026-10-19T10:05:00.000Z"));
         // Priming again after a refresh doesn't overwrite what you have (not) seen.
-        state.projects[0].summary.last_activity_at = serde_json::from_value(serde_json::json!("2026-10-17T11:00:00.000Z")).unwrap();
+        state.projects[0].summary.last_activity_at = serde_json::from_value(serde_json::json!("2026-10-19T11:00:00.000Z")).unwrap();
         seen.prime(&state);
-        assert!(seen.unread(&key, "2026-10-17T11:00:00.000Z"));
+        assert!(seen.unread(&key, "2026-10-19T11:00:00.000Z"));
     }
 }

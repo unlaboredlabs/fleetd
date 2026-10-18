@@ -69,17 +69,6 @@ pub fn ring(color: Hsla) -> Div {
     mark(div().size(px(7.)).border_1().border_color(color))
 }
 
-/// A count after a row label. Loud counts (open asks: something needs you) are a filled pill in the text
-/// colour; quiet counts are grey numerals.
-pub fn count(t: &Theme, n: usize, loud: bool) -> Div {
-    let base = div().flex_none().text_size(px(size::XS)).child(n.to_string());
-    if loud {
-        base.min_w(px(18.)).h(px(16.)).px_1p5().flex().items_center().justify_center().rounded_full().bg(t.text).text_color(t.bg).font_weight(STRONG)
-    } else {
-        base.text_color(t.quiet)
-    }
-}
-
 /// The unread mark: a small accent dot before a row's label.
 pub fn unread(t: &Theme) -> Div {
     mark(div().size(px(6.)).bg(t.accent))
@@ -101,11 +90,6 @@ pub fn kbd(t: &Theme, keys: impl Into<SharedString>) -> Div {
 /// Shortcut text for this platform: `"K"` -> "⌘K" on macOS, "Ctrl+K" elsewhere.
 pub fn shortcut(key: &str) -> String {
     if cfg!(target_os = "macos") { format!("⌘{key}") } else { format!("Ctrl+{key}") }
-}
-
-/// A group label inside a list or a form: small, semibold, quiet. Sentence case, no tracking.
-pub fn section(t: &Theme, label: impl Into<SharedString>) -> Div {
-    div().pt_4().pb_1().text_size(px(size::XS)).font_weight(STRONG).text_color(t.quiet).child(label.into())
 }
 
 pub fn hairline(t: &Theme) -> Div {

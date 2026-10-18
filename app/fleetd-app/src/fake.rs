@@ -2,9 +2,16 @@
 
 use std::fmt::Write;
 
+use crate::state::ProjectKey;
+
 use serde_json::{Value, json};
 
 use crate::state::{Conn, Detail, Doctor, ProjectRow, State};
+
+/// The order the bench and screenshots open: the contracts' coherent fixture board (W14 in storefront).
+pub const FIXTURE_ORDER: &str = "W14";
+/// The fixture's hub clock: the live frame's `at`.
+pub const FIXTURE_NOW: &str = "2026-10-18T10:07:12.000Z";
 
 pub struct Rng(u64);
 
@@ -28,7 +35,7 @@ impl Rng {
 }
 
 const PROJECTS: &[&str] = &[
-    "fleetd",
+    "storefront",
     "ops-plan",
     "web-app",
     "mailer",
@@ -49,7 +56,7 @@ const PROJECTS: &[&str] = &[
     "design-system",
     "release-bot",
 ];
-const MACHINES: &[&str] = &["forge", "mac", "forge", "forge", "mac"];
+const MACHINES: &[&str] = &["devbox", "buildbox", "devbox", "devbox", "buildbox"];
 const VERBS: &[&str] = &["Fix", "Add", "Wire", "Speed up", "Remove", "Test", "Rename", "Split", "Harden", "Document"];
 const NOUNS: &[&str] = &[
     "merge train rebase",
@@ -77,59 +84,168 @@ pub fn fixture_state() -> State {
     let mut rng = Rng::new(7);
     let mut state = State::default();
     state.conn = Conn::Live;
-    state.machines = ["forge", "mac"]
+    state.machines = ["devbox", "buildbox"]
         .iter()
         .map(|m| {
-            from(json!({ "machineId": m, "name": m, "tags": [], "status": if *m == "mac" { "degraded" } else { "online" },
+            from(json!({ "machineId": m, "name": m, "tags": [], "status": if *m == "buildbox" { "degraded" } else { "online" },
                 "lastSeenAt": AT, "nodeVersion": "0.0.0",
-                "degradedReason": if *m == "mac" { Some("claude on mac exited 3 times in 10 min") } else { None } }))
+                "degradedReason": if *m == "buildbox" { Some("claude on buildbox exited 3 times in 10 min") } else { None } }))
         })
         .collect();
     for (i, name) in PROJECTS.iter().enumerate() {
         let machine = MACHINES[i % MACHINES.len()];
         let project = json!({ "machineId": machine, "projectId": name, "title": name, "workspaceRoot": format!("/w/{name}"),
             "threads": { "running": rng.below(4), "waiting": rng.below(2), "idle": 3, "failed": 0 }, "lastActivityAt": AT });
-        let workstreams: Vec<Value> = (0..1 + rng.below(4))
-            .map(|w| {
-                let title = format!("{} {}", rng.pick(VERBS), rng.pick(NOUNS));
-                json!({ "workstreamId": format!("W{}", i * 10 + w + 1), "projectRef": { "machineId": machine, "projectId": name },
+        let workstreams: Vec<Value> = if i == 0 {
+            fixture_workstreams()
+        } else {
+            (0..1 + rng.below(4))
+                .map(|w| {
+                    let title = format!("{} {}", rng.pick(VERBS), rng.pick(NOUNS));
+                    json!({ "workstreamId": format!("W{}", i * 10 + w + 1), "projectRef": { "machineId": machine, "projectId": name },
                     "title": title, "source": { "text": title, "channel": "app", "by": "human", "at": AT },
                     "brief": { "goal": title, "why": "Asked for.", "pointers": [], "constraints": [], "tier": "M",
-                        "doneWhen": [{ "type": "ci_green", "repo": format!("wynn-dev/{name}") }, { "type": "pr_merged", "repo": format!("wynn-dev/{name}") },
+                        "doneWhen": [{ "type": "ci_green", "repo": format!("acme/{name}") }, { "type": "pr_merged", "repo": format!("acme/{name}") },
                                      { "type": "http", "url": "http://127.0.0.1:4790/healthz", "status": 200 }] },
                     "state": (["running", "converging", "verifying"][rng.below(3)]), "headline": format!("{} in review", title),
                     "headlineAt": AT, "createdAt": AT, "updatedAt": AT })
-            })
-            .collect();
-        let outcome = json!({ "project": project, "threads": [], "stale": machine == "mac", "asOf": AT, "workstreams": workstreams,
+                })
+                .collect()
+        };
+        let outcome = json!({ "project": project, "threads": [], "stale": machine == "buildbox", "asOf": AT, "workstreams": workstreams,
             "lead": { "projectRef": { "machineId": machine, "projectId": name }, "threadId": format!("lead-{name}"),
                 "state": (["idle", "working", "working", "stalled"][rng.below(4)]), "startedAt": AT, "sessionGeneration": 0 } });
         state.projects.push(ProjectRow { summary: from(project), outcome: Some(from(outcome)), error: None });
     }
     let asks = [
-        ("A1", "product", "Which path should the health endpoint use?", Some(vec!["/healthz", "/health"]), "/healthz"),
+        ("A7", "product", "Which path should the health endpoint use?", Some(vec!["/healthz", "/health"]), "/healthz"),
         ("A2", "money", "Raise the hub's Claude slot cap from 40 to 48 for this week?", None, "Keep 40"),
         ("A3", "irreversible", "Delete the old infra staging bucket (412 GB)?", None, "Delete it"),
     ];
     for (n, (id, class, text, options, rec)) in asks.iter().enumerate() {
-        let ask = json!({ "askId": id, "projectRef": { "machineId": "forge", "projectId": PROJECTS[n] }, "kind": "decide",
+        let mut ask = json!({ "askId": id, "projectRef": { "machineId": "devbox", "projectId": PROJECTS[n] }, "kind": "decide",
             "key": format!("fixture.ask{n}"), "class": class, "text": text, "options": options, "recommendation": rec,
-            "blocks": "nothing", "proceededOnRec": n == 0, "state": "open", "batchId": "B1", "number": n + 1, "createdAt": AT });
+            "blocks": "nothing", "proceededOnRec": n == 1, "state": "open", "batchId": "B1", "number": n + 1, "createdAt": AT });
+        if n == 0 {
+            ask["workstreamId"] = json!(FIXTURE_ORDER);
+        }
         state.asks.insert(id.to_string(), from(ask));
     }
     state.batches = vec![from(json!({ "batchId": "B1", "createdAt": AT, "state": "open",
-        "items": [{ "number": 1, "askId": "A1" }, { "number": 2, "askId": "A2" }, { "number": 3, "askId": "A3" }] }))];
+        "items": [{ "number": 1, "askId": "A7" }, { "number": 2, "askId": "A2" }, { "number": 3, "askId": "A3" }] }))];
     let checks = json!([
         { "id": "hub/gh_auth", "scope": "hub", "status": "ok", "message": "gh is logged in as wynn-dev." },
-        { "id": "forge/disk", "scope": "machine", "machineId": "forge", "status": "warn", "message": "12 GB free on /home (under 20 GB)." },
-        { "id": "mac/node", "scope": "machine", "machineId": "mac", "status": "fail", "message": "claude on mac exited 3 times in 10 min.",
-          "fix": { "kind": "auto", "label": "Restart the node on mac" } },
-        { "id": "mac/claude_auth", "scope": "machine", "machineId": "mac", "status": "unknown", "message": "Couldn't ask: the machine is degraded.",
-          "fix": { "kind": "manual", "label": "Log in to Claude on mac", "command": "claude auth login" } },
+        { "id": "devbox/disk", "scope": "machine", "machineId": "devbox", "status": "warn", "message": "12 GB free on /home (under 20 GB)." },
+        { "id": "buildbox/node", "scope": "machine", "machineId": "buildbox", "status": "fail", "message": "claude on buildbox exited 3 times in 10 min.",
+          "fix": { "kind": "auto", "label": "Restart the node on buildbox" } },
+        { "id": "buildbox/claude_auth", "scope": "machine", "machineId": "buildbox", "status": "unknown", "message": "Couldn't ask: the machine is degraded.",
+          "fix": { "kind": "manual", "label": "Log in to Claude on buildbox", "command": "claude auth login" } },
     ]);
     state.doctor = Some(Doctor { checks: from(checks), checked_at: Some(AT.into()), error: None });
-    state.detail = Some(Detail { key: ("forge".into(), PROJECTS[0].into()), tail: Vec::new(), tail_error: None, version: 0 });
+    state.detail = Some(Detail { key: ("devbox".into(), PROJECTS[0].into()), tail: from(fixture_tail()), tail_error: None, version: 1 });
+    live_fixture(&mut state);
     state
+}
+
+/// The contracts' board (W14, W12 in storefront) plus a few cards elsewhere, W14's detail, the full live frame, and
+/// W14's recent events.
+fn live_fixture(state: &mut State) {
+    let fleetd: ProjectKey = ("devbox".into(), "storefront".into());
+    let board = crate::live::fixture::board_fixture();
+    let board_json = serde_json::to_value(&board).unwrap();
+    state.live.set_board(&fleetd, board);
+    // A planning order in web-app and a queued one in mailer, made from W12's card.
+    let w12 = board_json["orders"][1].clone();
+    for (project, id, title, phase, detail) in [
+        ("web-app", "W9", "Login flow cleanup", "working", Some("2 working")),
+        ("mailer", "W21", "Retry bounced digests", "queued", Some("queued: slots 40/40")),
+    ] {
+        let mut card = w12.clone();
+        let machine = MACHINES[PROJECTS.iter().position(|p| *p == project).unwrap() % MACHINES.len()];
+        card["workstreamId"] = json!(id);
+        card["projectRef"] = json!({ "machineId": machine, "projectId": project });
+        card["title"] = json!(title);
+        card["phase"] = json!(phase);
+        card["phaseDetail"] = json!(detail);
+        card["prs"] = json!([]);
+        card["next"] = json!(null);
+        card["settled"] = json!(0);
+        card["total"] = json!(0);
+        if id == "W9" {
+            // Two lanes of its own, so the board has more than one card with agents under it.
+            let lanes: Vec<Value> = board_json["orders"][0]["lanes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .take(2)
+                .enumerate()
+                .map(|(i, l)| {
+                    let mut l = l.clone();
+                    let task = format!("T{}", 41 + i);
+                    l["laneId"] = json!(task);
+                    l["taskId"] = json!(task);
+                    l["pr"] = json!(null);
+                    l["live"] = json!(null);
+                    l
+                })
+                .collect();
+            card["lanes"] = json!(lanes);
+            card["total"] = json!(2);
+        }
+        card["createdAt"] = json!("2026-10-18T10:05:00.000Z");
+        card["updatedAt"] = json!("2026-10-18T10:05:00.000Z");
+        let out = json!({ "orders": [card], "trains": [], "at": FIXTURE_NOW });
+        state.live.set_board(&(machine.into(), project.into()), from(out));
+    }
+    state.live.set_order(crate::live::fixture::order_fixture());
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+    state.live.apply(crate::live::fixture::frame_fixture(crate::live::fixture::FULL), now);
+    for (at, kind, data) in [
+        ("2026-10-18T10:03:10.000Z", "task.started", json!({ "workstreamId": FIXTURE_ORDER, "taskId": "T31" })),
+        ("2026-10-18T10:03:11.000Z", "task.started", json!({ "workstreamId": FIXTURE_ORDER, "taskId": "T33" })),
+        ("2026-10-18T10:03:40.000Z", "pr.merged", json!({ "workstreamId": FIXTURE_ORDER, "prNumber": 211 })),
+    ] {
+        state.push_order_event(from(
+            json!({ "seq": 1, "at": at, "type": kind, "summary": kind, "machineId": "devbox", "projectId": "storefront", "data": data }),
+        ));
+    }
+}
+
+/// W14 and W12 as the storefront project outcome lists them, with W14's brief.
+fn fixture_workstreams() -> Vec<Value> {
+    let brief = json!({ "goal": "Fix the cart total rounding for multi-currency orders", "why": "Asked for.", "pointers": [], "constraints": [], "tier": "M",
+        "doneWhen": [{ "type": "pr_merged", "repo": "acme/storefront" }, { "type": "http", "url": "http://127.0.0.1:4790/healthz", "status": 200 }] });
+    let w = |id: &str, title: &str, state: &str, brief: Option<&Value>| {
+        json!({ "workstreamId": id, "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "title": title,
+            "source": { "text": title, "channel": "app", "by": "human", "at": AT }, "brief": brief, "state": state,
+            "createdAt": AT, "updatedAt": AT })
+    };
+    vec![w("W14", "Fix cart total rounding", "running", Some(&brief)), w("W12", "Faster product search", "converging", None)]
+}
+
+/// The storefront lead's recent log: W14's thread with a finished turn, a run about W12, and the lead at work now.
+fn fixture_tail() -> Value {
+    let at = |m: &str| format!("2026-10-18T10:{m}.000Z");
+    let msg = |m: &str, role: &str, text: &str| json!({ "kind": "message", "at": at(m), "role": role, "text": text });
+    let act = |m: &str, kind: &str, summary: &str, failed: bool| json!({ "kind": "action", "at": at(m), "action": { "at": at(m), "kind": kind, "status": if failed { "failed" } else { "completed" }, "summary": summary, "failed": failed } });
+    json!([
+        msg("02:01", "user", "New order W14 from you: Fix the cart total rounding for multi-currency orders."),
+        act("02:04", "tool_call", "fleetd brief show W14", false),
+        act("02:18", "command", "rg -n roundTotal src/cart", false),
+        act("02:31", "command", "npm test -- cart", false),
+        act("02:49", "command", "fleetd brief freeze W14", false),
+        msg("02:50", "assistant", "Froze the brief for W14: 2 checks, tier M. Starting an implementer on src/cart/total.ts and a reviewer for #211."),
+        msg("03:20", "assistant", "W12's PR #208 is in CI; nothing to do until it lands."),
+        act("03:21", "command", "gh pr checks 208", false),
+        msg("03:30", "assistant", "W12 needs no action."),
+        msg(
+            "05:02",
+            "assistant",
+            "T31 is editing src/cart/total.ts for W14. I asked you which path the health endpoint should use; T31 continues with /healthz meanwhile."
+        ),
+        act("06:40", "command", "fleetd tasks list --workstream W14", false),
+        act("06:52", "tool_call", "fleetd review status #212", false),
+    ])
 }
 
 fn from<T: serde::de::DeserializeOwned>(v: Value) -> T {
@@ -143,10 +259,6 @@ pub enum LogKind {
     Thought,
     Ok,
     Error,
-    User,
-    /// Added and removed lines of a diff in an action's output.
-    DiffAdd,
-    DiffDel,
 }
 
 pub struct LogLine {

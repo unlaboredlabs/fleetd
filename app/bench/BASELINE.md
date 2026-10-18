@@ -194,6 +194,58 @@ Against the section above:
 - Decoding happens only when a hub frame arrives, which the bench screen doesn't do, so we read every difference as
   run-to-run noise.
 
+## Linux: live lanes, strips and motion, software-rendered
+
+Adds `app/fleetd-app/src/live/` (lanes, activity line, sparklines, strips, motion) and the `FLEETD_BENCH=live` rows.
+Same machine and method as above. "Before" is 5ef96e8 (main plus the empty live hooks), run right before this one:
+main has grown since the last section (29.1 MiB, 48 mapped files), so compare against that run, not the sections above.
+
+**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-18T15:10Z, fleetd 15b2f0b, gpui zed v1.24.2 (fb69067).
+| Metric | Value |
+|---|---|
+| Binary size (release, stripped) | 30.0 MiB |
+| Idle RSS, empty log, 10 s after first frame | 152.0 MiB |
+| Idle RSS, 20k-line log loaded, 10 s after first frame | 160.1 MiB |
+| RSS, 20k-line log + streaming 50 lines/s, after 10 s | 171.8 MiB |
+| Cold start, exec -> first frame presented, warm cache (10 runs) | median 104.7 ms, p90 106.5 ms, max 107.4 ms |
+|   of which: exec -> first frame draw starts | median 70.9 ms, p90 72.3 ms, max 72.7 ms |
+| Cold start, binary + 48 mapped files evicted from page cache (10 runs) | median 207.0 ms, p90 211.2 ms, max 213.7 ms |
+| Input latency in-app, key handler -> echo frame presented (200 keys, gpui dispatch) | median 10.8 ms, p90 16.4 ms, max 23.1 ms |
+| Input latency in-app, key handler -> echo frame presented (200 XTEST keys) | median 11.9 ms, p90 16.0 ms, max 29.7 ms |
+| Input latency external, XTEST send -> echo pixels readable from X (200 keys) | median 13.7 ms, p90 20.0 ms, max 38.6 ms |
+| Scroll 20k-line log for 5 s: presented frames/s | 61.8 |
+| Scroll 20k-line log for 5 s: worst frame interval | 28.9 ms |
+| Live board (50 orders, 200 lanes, virtualized), feed at 4 Hz for 5 s: presented frames/s | 10.2 |
+|   inside sparkline shifts (180 ms, every lane at once): presented frames/s, median | 63.7 |
+|   inside sparkline shifts: worst frame interval | 17.2 ms |
+|   frame draw, layout + paint (51 frames) | median 3.3 ms, p99 5.7 ms, max 5.7 ms |
+| Live board, before the feed starts: presented frames/s | 1.00 |
+| Live board, feed paused (after its holds and exits): presented frames/s | 1.00 |
+| Live board with reduce-motion, feed at 4 Hz: presented frames/s | 4.4 |
+|   frame draw, layout + paint | median 3.3 ms, p99 4.9 ms, max 4.9 ms |
+
+Against 5ef96e8, run back to back on the same host:
+- +0.9 MiB binary: the live components and the compiled-in fixture JSON (the hub's W14 board, about 30 KB).
+- Idle RSS: +0.1 / +0.6 / +0.6 MiB. Nothing in `live/` runs until a board or the live bench mounts it.
+- Cold start median: +1.3 ms (warm), +2.3 ms (evicted); input latency medians -1.1 / -0.1 / +0.1 ms; scroll 61.8 fps
+  against 61.2. All within run-to-run noise.
+
+The live rows:
+- **Board** is the bench board in `live/fixture.rs`: the hub's W14 card copied to 50 orders of 4 working lanes over 5
+  projects, rendered through a virtualized `gpui::list`, with the machine and train strips. The scripted feed sends
+  every lane's activity and tokens every 250 ms (the hub's focus rate; the board's real rate is 1 Hz), closes a
+  sparkline bucket for every lane every 2 s, finishes a lane and starts another every 3 s, and moves the train every 4 s.
+- **Frame draw** is the time inside `Window::draw` (layout, prepaint and paint into the scene; the GPU work is in the
+  present). Unvirtualized, with every card in one scrolling div, the same board took 23 ms per frame (5 orders: 3.1 ms):
+  gpui lays out and paints every glyph it is given, on screen or not, so a board must be a `list`.
+- **Inside sparkline shifts**: every lane's bars slide one slot over 180 ms at the same moment, the most motion the
+  board has. Frames from the first present after the bucket closed to 180 ms (plus one frame) later; Xvfb refreshes at
+  60 Hz, so 16.7 ms is one frame.
+- **Before the feed / paused**: presented frames/s with no events, 1 s after the last animation ended and after the 8 s
+  done holds ran out. 1.00 is the elapsed labels' 1 Hz tick and nothing else.
+- **Reduce-motion** (`FLEETD_MOTION=reduced`): every animation renders its end state, so frames follow the data only.
+- `app/bench/run.sh --only live` runs just these rows (about a minute).
+
 ## Linux: GPU (RADV)
 
 Pending: the bench user is not in the `render`/`video` groups yet (`getent group render` shows no members). Once

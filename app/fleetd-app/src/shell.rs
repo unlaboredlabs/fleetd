@@ -1,68 +1,78 @@
-use std::collections::HashMap;
+//! The window's content: connect, then the board (tasking first), an order's view, Machines and Settings, with
+//! the sidebar, the inbox panel, the machine and train strips, and the palette and floating composer on top.
+//! Screens live in `board.rs`, `order.rs` and `inbox.rs` as `impl Shell` blocks; this file holds the hub link,
+//! navigation, keys and the frame around them.
+
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::app::AppClientMessage;
 use fleetd_contracts::doctor::{DoctorFixKind, DoctorStatus};
-use fleetd_contracts::ledger::{Ask, AskClass, AskKind, AskState, BatchId, CheckSpec, LeadState, Workstream, WorkstreamState};
-use fleetd_contracts::mcp::{TailAction, TailItem, TailMessage, TailRole};
+use fleetd_contracts::ledger::{AskKind, AskState, BatchId, CheckSpec, WorkstreamId};
+use fleetd_contracts::live::OrderPhase;
 use fleetd_contracts::model::MachineStatus;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use gpui::{
-    AnyElement, App, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, Hsla, KeyBinding, KeyDownEvent, Keystroke, MouseButton,
-    ScrollDelta, ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, Subscription, SystemNotification, Task, UniformListScrollHandle, Window,
-    actions, div, point, prelude::*, px, uniform_list,
+    AnyElement, App, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, Hsla, KeyBinding, KeyDownEvent, Keystroke, ModifiersChangedEvent,
+    MouseButton, ScrollDelta, ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, Subscription, SystemNotification, Task,
+    UniformListScrollHandle, Window, actions, div, point, prelude::*, px, uniform_list,
 };
 
 use crate::actions;
 use crate::bench::{self, Mode, Probe};
 use crate::client;
-use crate::composer::{self, Composer, ComposerEvent};
-use crate::diffview;
+use crate::composer::{self, Composer, ComposerEvent, Placement};
 use crate::fake::{self, LogKind, LogStream};
 use crate::input::{InputEvent, TextInput};
 use crate::keychain::{self, Saved};
 use crate::links;
+use crate::live;
+use crate::live::lanes::{Density, FleetLanes, LaneEvent};
+use crate::live::strips::TrainStrip;
 use crate::notify::{Target, unix_secs};
 use crate::pair::{self, Failure};
 use crate::palette::{self, Command, Palette, PaletteEvent};
 use crate::seal;
 use crate::settings::{self, Settings, SettingsEvent};
 use crate::sidebar;
-use crate::state::{Conn, Echo, ProjectKey, ProjectRow, State};
-use crate::theme::{self, STRONG, Theme, metric, size, theme};
+use crate::state::{Conn, Echo, ProjectKey, SentOrder, State};
+use crate::theme::{STRONG, Theme, metric, size, theme};
 use crate::ui::{self, Variant};
 
 const LINES_PER_SEC: u64 = 50;
 const SCROLL_PX_PER_SEC: f32 = 2400.;
 const POLL_EVERY: Duration = Duration::from_secs(3);
+/// The board resorts this long after the pointer leaves it (spec rule 8: nothing jumps while you look).
+const RESORT_AFTER: Duration = Duration::from_secs(2);
 /// Width of a tail line's "10:04:05  " stamp, which the log shows in its own column.
 const STAMP_WIDTH: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Screen {
+pub enum Screen {
     /// Reading the keychain.
     Loading,
     Connect,
-    Inbox,
-    Projects,
-    Project,
+    Board,
+    Order,
     Machines,
     Settings,
 }
 
 actions!(shell, [FocusNext, FocusPrev]);
 
-/// The app's keys: the text field bindings, and Tab / Shift+Tab between fields, buttons and rows.
+/// The app's keys: the text field bindings, the palette's and composer's, and Tab / Shift+Tab between fields,
+/// buttons and rows.
 pub fn bind_keys(cx: &mut App) {
     crate::input::bind_keys(cx);
     palette::bind_keys(cx);
+    composer::bind_keys(cx);
     cx.bind_keys([KeyBinding::new("tab", FocusNext, None), KeyBinding::new("shift-tab", FocusPrev, None)]);
 }
 
 /// The first-run screen: a pairing code (primary) or, folded away, a key.
-struct ConnectForm {
+pub(crate) struct ConnectForm {
     hub: Entity<TextInput>,
     code: Entity<TextInput>,
     key: Entity<TextInput>,
@@ -74,8 +84,9 @@ struct ConnectForm {
     error: Option<Failure>,
 }
 
-/// One line of the lead log. A long log holds tens of thousands of these, so it keeps one string plus offsets.
-struct LogRow {
+/// One line of the bench's raw log. A long log holds tens of thousands of these, so it keeps one string plus
+/// offsets.
+pub(crate) struct LogRow {
     kind: LogKind,
     text: SharedString,
     /// `text[..stamp]` is the timestamp, `text[body..]` the line.
@@ -100,58 +111,95 @@ impl LogRow {
 }
 
 /// The live link to the hub. Dropping it stops the client.
-struct HubLink {
+pub(crate) struct HubLink {
     url: String,
     tx: UnboundedSender<AppClientMessage>,
     _tasks: [Task<()>; 3],
 }
 
 pub struct Shell {
-    state: State,
-    screen: Screen,
+    pub(crate) state: State,
+    pub(crate) screen: Screen,
+    /// The Machines list's keyboard row.
     selected: usize,
-    reply: Entity<TextInput>,
+    /// The inbox panel's terse reply field.
+    pub(crate) reply: Entity<TextInput>,
     form: ConnectForm,
     hub: Option<HubLink>,
     /// Shown above the screen, e.g. that the key could not be saved to the keychain.
     note: Option<String>,
     /// A masked field per open secret ask; the value lives only in the field's self-wiping buffer.
-    secrets: HashMap<String, (Entity<TextInput>, Subscription)>,
+    pub(crate) secrets: HashMap<String, (Entity<TextInput>, Subscription)>,
     /// The text last copied, so its button says so.
     copied: Option<String>,
-    /// Focus to move to on the next render (e.g. the reply box once connected).
-    pending_focus: Option<FocusHandle>,
+    /// Focus to move to on the next render (e.g. the composer once connected).
+    pub(crate) pending_focus: Option<FocusHandle>,
     _subscriptions: Vec<Subscription>,
     log: Vec<LogRow>,
-    log_version: u64,
     log_scroll: UniformListScrollHandle,
-    projects_scroll: UniformListScrollHandle,
-    follow: bool,
-    focus: FocusHandle,
-    bench: Option<(LogStream, Probe)>,
+    log_follow: bool,
+    pub(crate) focus: FocusHandle,
+    pub(crate) inbox_focus: FocusHandle,
+    pub(crate) bench: Option<(LogStream, Probe)>,
+    /// The bench's order view shows its raw 20k-line log (what the scroll bench scrolls) instead of the conversation.
+    pub(crate) bench_log: bool,
     update: Option<String>,
     palette: Option<Entity<Palette>>,
-    composer: Option<Entity<Composer>>,
+    /// New orders: docked on the board, or floating over the order view (⌘N there).
+    pub(crate) docked: Entity<Composer>,
+    floating: Option<Entity<Composer>>,
+    /// The order view's follow-up box.
+    pub(crate) follow: Entity<Composer>,
     settings: Entity<Settings>,
     /// Where Settings' Done goes back to.
     before_settings: Screen,
     sidebar_hidden: bool,
     seen: sidebar::Seen,
     /// The ask a notification or the palette pointed at, marked in the inbox.
-    focus_ask: Option<String>,
+    pub(crate) focus_ask: Option<String>,
     /// What the notification on screen opens when clicked.
     notified: Option<Target>,
+    pub(crate) inbox_open: bool,
+    /// The inbox panel's picked ask (1..9), by position.
+    pub(crate) inbox_pick: Option<usize>,
+    pub(crate) group_by_status: bool,
+    /// The board's keyboard selection (an order id).
+    pub(crate) selected_card: Option<String>,
+    /// The project picked on the board or sidebar: the composer's default target.
+    pub(crate) selected_project: Option<ProjectKey>,
+    /// The board's row order while the pointer is over it.
+    pub(crate) board_held: Option<Vec<String>>,
+    resort: Option<Task<()>>,
+    /// The board's virtualized list, its row ids and rows as last shown, and whether row heights may have changed.
+    pub(crate) board_list: gpui::ListState,
+    pub(crate) board_ids: Vec<String>,
+    pub(crate) board_now: Vec<crate::board::Row>,
+    pub(crate) board_remeasure: bool,
+    /// The order view's lead conversation, a cached view.
+    pub(crate) conv: Entity<crate::order::LeadConv>,
+    pub(crate) card_lanes: HashMap<String, Entity<FleetLanes>>,
+    pub(crate) order_lanes: Option<Entity<FleetLanes>>,
+    order_lanes_for: Option<String>,
+    train_strip: Entity<TrainStrip>,
+    pub(crate) stop_confirm: bool,
+    /// Narrow windows: the order view shows the lead conversation (true) or the fleet.
+    pub(crate) order_tab: bool,
+    /// ⌘/Ctrl is held: the sidebar shows jump numbers.
+    cmd_held: bool,
+    window_active: bool,
 }
 
 impl Shell {
     pub fn new(bench: Option<Mode>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        theme::init(window, cx);
+        crate::theme::init(window, cx);
+        live::motion::init(cx);
+        live::motion::set_pref(crate::prefs::load().motion, cx);
         let settings = cx.new(|_| Settings::default());
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let log_scroll = UniformListScrollHandle::new();
         log_scroll.scroll_to_bottom();
-        let reply = cx.new(|cx| TextInput::new(cx).placeholder("Reply to the inbox: 1 go 2 nvm 3 b").multi_line(6).borderless());
+        let reply = cx.new(|cx| TextInput::new(cx).placeholder("Reply by number: 1 go 2 nvm 3 b").multi_line(4).borderless());
         let hub = cx.new(|cx| {
             let mut input = TextInput::new(cx).placeholder(pair::LOCAL_HUB);
             input.set_text(pair::LOCAL_HUB, cx);
@@ -159,6 +207,9 @@ impl Shell {
         });
         let code = cx.new(|cx| TextInput::new(cx).placeholder("ABCD-2345"));
         let key = cx.new(|cx| TextInput::new(cx).placeholder("fld_…").masked(4096));
+        let docked = cx.new(|cx| Composer::new(Placement::Docked, cx));
+        let follow = cx.new(|cx| Composer::new(Placement::FollowUp, cx));
+        let train_strip = cx.new(|_| TrainStrip::new());
         let subscriptions = vec![
             cx.subscribe(&reply, Self::on_reply_event),
             cx.subscribe(&hub, |this, _, e: &InputEvent, cx| {
@@ -181,17 +232,19 @@ impl Shell {
                     SettingsEvent::Disconnect => this.disconnect(cx),
                     SettingsEvent::Close => {
                         this.screen = this.before_settings;
-                        this.pending_focus = Some(this.reply.focus_handle(cx));
+                        this.focus_composer(cx);
                     }
                 }
                 cx.notify();
             }),
+            cx.subscribe_in(&docked, window, Self::on_composer_event),
+            cx.subscribe_in(&follow, window, Self::on_composer_event),
         ];
         let mut shell = Self {
             state: State::default(),
             screen: Screen::Loading,
             selected: 0,
-            pending_focus: Some(reply.focus_handle(cx)),
+            pending_focus: Some(docked.focus_handle(cx)),
             reply,
             form: ConnectForm { hub, code, key, use_key: false, status: None, busy: false, error: None },
             hub: None,
@@ -200,22 +253,49 @@ impl Shell {
             copied: None,
             _subscriptions: subscriptions,
             log: Vec::new(),
-            log_version: 0,
             log_scroll,
-            projects_scroll: UniformListScrollHandle::new(),
-            follow: true,
+            log_follow: true,
             focus,
+            inbox_focus: cx.focus_handle(),
             bench: None,
+            bench_log: false,
             update: None,
             palette: None,
-            composer: None,
+            docked,
+            floating: None,
+            follow,
             settings,
-            before_settings: Screen::Inbox,
+            before_settings: Screen::Board,
             sidebar_hidden: false,
             seen: sidebar::Seen::default(),
             focus_ask: None,
             notified: None,
+            inbox_open: false,
+            inbox_pick: None,
+            group_by_status: false,
+            selected_card: None,
+            selected_project: None,
+            board_held: None,
+            resort: None,
+            board_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(400.)),
+            board_ids: Vec::new(),
+            board_now: Vec::new(),
+            board_remeasure: false,
+            conv: cx.new(|_| crate::order::LeadConv::new()),
+            card_lanes: HashMap::new(),
+            order_lanes: None,
+            order_lanes_for: None,
+            train_strip,
+            stop_confirm: false,
+            order_tab: false,
+            cmd_held: false,
+            window_active: true,
         };
+        cx.observe_window_activation(window, |this, window, cx| {
+            this.window_active = window.is_window_active();
+            this.update_live(true, cx);
+        })
+        .detach();
         match bench {
             Some(mode) => shell.start_bench(mode, window, cx),
             None => {
@@ -243,10 +323,10 @@ impl Shell {
                         match this.notified.take() {
                             Some(Target::Machines) => this.go(Screen::Machines),
                             Some(Target::Ask(id)) => {
-                                this.go(Screen::Inbox);
+                                this.toggle_inbox(true, cx);
                                 this.focus_ask = Some(id);
                             }
-                            Some(Target::Inbox) | None => this.go(Screen::Inbox),
+                            Some(Target::Inbox) | None => this.toggle_inbox(true, cx),
                         }
                         cx.notify();
                     })
@@ -317,8 +397,7 @@ impl Shell {
             loop {
                 cx.background_executor().timer(POLL_EVERY).await;
                 let ok = this.update(cx, |this, cx| {
-                    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
-                    let out = this.state.poll(now_ms);
+                    let out = this.state.poll(now_ms());
                     this.send(out);
                     this.notify_if_due(cx);
                 });
@@ -329,17 +408,9 @@ impl Shell {
         });
         self.hub = Some(HubLink { url: saved.url, tx: out_tx, _tasks: [run, pump, poll] });
         self.state = State::default();
-        self.screen = Screen::Inbox;
+        self.screen = Screen::Board;
         self.selected = 0;
-        self.pending_focus = Some(self.reply.focus_handle(cx));
-    }
-
-    fn send(&self, out: Vec<AppClientMessage>) {
-        if let Some(hub) = &self.hub {
-            for message in out {
-                hub.tx.unbounded_send(message).ok();
-            }
-        }
+        self.pending_focus = Some(self.docked.focus_handle(cx));
     }
 
     /// No saved hub: show the connect screen and try, in order, a `fleetd://pair` link that launched us (handled by
@@ -529,11 +600,16 @@ impl Shell {
         .detach();
     }
 
+    pub(crate) fn send(&self, out: Vec<AppClientMessage>) {
+        if let Some(hub) = &self.hub {
+            for message in out {
+                hub.tx.unbounded_send(message).ok();
+            }
+        }
+    }
+
     fn after_state_change(&mut self, cx: &mut Context<Self>) {
         self.seen.prime(&self.state);
-        if let Some(row) = self.state.detail.as_ref().and_then(|d| self.state.project(&d.key)) {
-            self.seen.mark(&row.key(), row.summary.last_activity_at.as_str());
-        }
         if let Conn::Refused(message) = &self.state.conn {
             self.form.error = Some(Failure {
                 code: String::new(),
@@ -568,19 +644,155 @@ impl Shell {
             });
             self.secrets.insert(id, (input, sub));
         }
-        let version = self.state.detail.as_ref().map_or(0, |d| d.version);
-        if version != self.log_version {
-            self.log_version = version;
-            self.log = self.state.detail.as_ref().map(|d| tail_rows(&d.tail)).unwrap_or_default();
-            if self.follow && !self.log.is_empty() {
-                self.log_scroll.scroll_to_item(self.log.len() - 1, ScrollStrategy::Bottom);
+        if let Some(pick) = self.inbox_pick {
+            let n = self.state.inbox().len();
+            self.inbox_pick = (n > 0).then(|| pick.min(n - 1));
+        }
+        self.sync_composers(cx);
+        self.sync_lanes(cx);
+        self.update_live(false, cx);
+        self.sync_conversation(cx);
+        self.board_remeasure = true;
+    }
+
+    pub(crate) fn now_secs(&self) -> i64 {
+        self.state.live.hub_now_ms(now_ms()) / 1000
+    }
+
+    /// What the composers need from the state: targets and their machines, the selection, the router's guess,
+    /// uploads, mention candidates, and whether Send can work.
+    pub(crate) fn sync_composers(&mut self, cx: &mut Context<Self>) {
+        let state = &self.state;
+        let targets: Vec<composer::Target> = state
+            .projects
+            .iter()
+            .map(|r| {
+                let m = state.machine(&r.summary.machine_id);
+                composer::Target {
+                    key: r.key(),
+                    title: r.summary.title.clone().into(),
+                    machine: m.map_or_else(|| r.summary.machine_id.to_string(), |m| m.name.clone()).into(),
+                    machine_offline: m.is_none_or(|m| m.status == MachineStatus::Offline),
+                }
+            })
+            .collect();
+        let offline = match (&state.conn, self.bench.is_some()) {
+            (_, true) | (Conn::Live, _) => None,
+            (Conn::Connecting { retry_in: Some(d), .. }, _) => Some(format!("Not connected; retrying in {} s", d.as_secs_f32().ceil() as u64)),
+            (Conn::Connecting { .. }, _) => Some("Connecting to the hub…".into()),
+            (Conn::Refused(_), _) => Some("The hub refused this key.".into()),
+        };
+        let mut orders = Vec::new();
+        let mut prs = Vec::new();
+        for row in &state.projects {
+            for card in state.live.orders(&row.key()) {
+                orders.push((card.workstream_id.to_string(), card.title.to_string()));
+                for pr in card.prs.iter() {
+                    prs.push((pr.number.get() as u64, pr.url.to_string(), card.title.to_string()));
+                }
             }
         }
+        let selected = match self.screen {
+            Screen::Order => state.order.as_ref().and_then(|o| o.key.clone()),
+            _ => self.selected_project.clone(),
+        };
+        let sync = composer::Sync {
+            targets,
+            selected,
+            last_used: state.last_project.clone(),
+            guess: state.guess.clone(),
+            guessing: state.guessing(),
+            offline,
+            uploads: state.uploads.clone(),
+            orders,
+            prs,
+            files: state.files.clone(),
+        };
+        for c in [Some(&self.docked), self.floating.as_ref(), Some(&self.follow)].into_iter().flatten() {
+            c.update(cx, |c, cx| c.set_sync(sync.clone(), cx));
+        }
+        if let Some(w) = state.order.as_ref().map(|o| o.workstream_id.clone()) {
+            self.follow.update(cx, |c, cx| c.set_order(&w, cx));
+        }
+    }
+
+    /// Keeps one lanes entity per order card on the board (and one for the open order), fed from the live state.
+    fn sync_lanes(&mut self, cx: &mut Context<Self>) {
+        let hub_now = self.state.live.hub_now_ms(now_ms());
+        let stale = self.state.live_stale() && self.bench.is_none();
+        let mut keep = HashSet::new();
+        for row in &self.state.projects {
+            for card in self.state.live.orders(&row.key()) {
+                let id = card.workstream_id.to_string();
+                keep.insert(id.clone());
+                let lanes = self.state.live.lanes(&card.workstream_id);
+                let entity = self.card_lanes.entry(id).or_insert_with(|| {
+                    let w = card.workstream_id.clone();
+                    let e = cx.new(|cx| FleetLanes::new(w, Density::Card, cx));
+                    cx.subscribe(&e, Self::on_lane_event).detach();
+                    e
+                });
+                entity.update(cx, |l, cx| l.set(lanes, hub_now, stale, cx));
+            }
+        }
+        self.card_lanes.retain(|id, _| keep.contains(id));
+        match self.state.order.as_ref().map(|o| o.workstream_id.clone()) {
+            Some(w) => {
+                if self.order_lanes_for.as_deref() != Some(w.as_str()) {
+                    let id = WorkstreamId::unchecked(&w);
+                    let e = cx.new(|cx| FleetLanes::new(id, Density::Full, cx));
+                    cx.subscribe(&e, Self::on_lane_event).detach();
+                    self.order_lanes = Some(e);
+                    self.order_lanes_for = Some(w.clone());
+                }
+                let lanes: Vec<_> = self
+                    .state
+                    .live
+                    .lanes(&WorkstreamId::unchecked(&w))
+                    .into_iter()
+                    .filter(|l| l.role != fleetd_contracts::live::AgentRole::Lead)
+                    .collect();
+                if let Some(e) = &self.order_lanes {
+                    e.update(cx, |l, cx| l.set(lanes, hub_now, stale, cx));
+                }
+            }
+            None => {
+                self.order_lanes = None;
+                self.order_lanes_for = None;
+            }
+        }
+        let trains = self.state.live.trains().to_vec();
+        self.train_strip.update(cx, |s, cx| s.set(trains, cx));
+    }
+
+    fn on_lane_event(&mut self, lanes: Entity<FleetLanes>, event: &LaneEvent, cx: &mut Context<Self>) {
+        match event {
+            LaneEvent::OpenPr(url) => cx.open_url(url.as_ref()),
+            LaneEvent::Open(_) if self.screen != Screen::Order => {
+                let w = lanes.read(cx).workstream().to_string();
+                self.open_order(&w, cx);
+            }
+            LaneEvent::Open(_) => {}
+        }
+    }
+
+    /// Subscribes to what's on screen: the board's lanes while it shows, the open order's in focus; nothing while
+    /// the window is in the background. `force` after the window comes back, for a fresh full frame.
+    fn update_live(&mut self, force: bool, cx: &mut Context<Self>) {
+        if self.bench.is_some() {
+            return;
+        }
+        let active = self.window_active;
+        let board = active && self.screen == Screen::Board;
+        let focus = if active && self.screen == Screen::Order { self.state.order.as_ref().map(|o| o.workstream_id.clone()) } else { None };
+        let out = self.state.subscribe_live(board, focus.as_deref(), force && active);
+        self.send(out);
+        cx.notify();
     }
 
     // ---- navigation and keys ---------------------------------------------------------------
 
-    fn go(&mut self, screen: Screen) {
+    pub(crate) fn go(&mut self, screen: Screen) {
         // Settings works before connecting too (appearance); everything else needs a hub.
         if !self.connected() && screen != Screen::Settings {
             return;
@@ -588,11 +800,10 @@ impl Shell {
         if screen == Screen::Settings && self.screen != Screen::Settings {
             self.before_settings = self.screen;
         }
-        if screen != Screen::Inbox {
-            self.focus_ask = None;
-        }
-        if screen != Screen::Project {
-            self.state.close_project();
+        if screen != Screen::Order && self.screen == Screen::Order {
+            self.state.close_order();
+            self.floating = None;
+            self.stop_confirm = false;
         }
         if screen == Screen::Machines && self.screen != Screen::Machines {
             let out = self.state.open_doctor();
@@ -602,24 +813,177 @@ impl Shell {
         self.selected = 0;
     }
 
-    fn open_project(&mut self, key: ProjectKey) {
-        if let Some(row) = self.state.project(&key) {
-            self.seen.mark(&key, row.summary.last_activity_at.as_str());
+    pub(crate) fn open_order(&mut self, workstream_id: &str, cx: &mut Context<Self>) {
+        if !self.connected() {
+            return;
         }
-        let out = self.state.open_project(key);
-        self.send(out);
-        self.log.clear();
-        self.log_version = 0;
-        self.follow = true;
-        self.screen = Screen::Project;
+        self.floating = None;
+        self.stop_confirm = false;
+        if self.bench.is_none() {
+            let out = self.state.open_order(workstream_id);
+            self.send(out);
+        } else {
+            self.state.open_order(workstream_id);
+        }
+        if let Some(key) = self.state.order.as_ref().and_then(|o| o.key.clone()) {
+            if let Some(row) = self.state.project(&key) {
+                self.seen.mark(&key, row.summary.last_activity_at.as_str());
+            }
+            self.selected_project = Some(key);
+        }
+        self.selected_card = Some(workstream_id.to_string());
+        self.screen = Screen::Order;
+        self.pending_focus = Some(self.follow.focus_handle(cx));
+        self.after_state_change(cx);
+        cx.notify();
     }
 
-    fn list_len(&self) -> usize {
-        match self.screen {
-            Screen::Projects => self.state.projects.len(),
-            Screen::Machines => self.state.machines.len(),
-            _ => 0,
+    /// ⌘L: the composer on screen.
+    pub(crate) fn focus_composer(&mut self, cx: &mut Context<Self>) {
+        self.pending_focus = Some(match (self.screen, &self.floating) {
+            (_, Some(f)) => f.focus_handle(cx),
+            (Screen::Order, None) => self.follow.focus_handle(cx),
+            (Screen::Board, None) => self.docked.focus_handle(cx),
+            _ => self.focus.clone(),
+        });
+        cx.notify();
+    }
+
+    /// ⌘N: the board's composer, or a floating one over the order view so you keep your place.
+    fn new_order(&mut self, target: Option<ProjectKey>, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.connected() {
+            return;
         }
+        self.palette = None;
+        if self.screen == Screen::Order {
+            let floating = cx.new(|cx| Composer::new(Placement::Floating, cx));
+            cx.subscribe_in(&floating, window, Self::on_composer_event).detach();
+            if let Some(key) = target {
+                floating.update(cx, |c, cx| c.choose(Some(key), cx));
+            }
+            self.pending_focus = Some(floating.focus_handle(cx));
+            self.floating = Some(floating);
+            self.sync_composers(cx);
+        } else {
+            self.go(Screen::Board);
+            if let Some(key) = target {
+                self.docked.update(cx, |c, cx| c.choose(Some(key), cx));
+            }
+            self.pending_focus = Some(self.docked.focus_handle(cx));
+        }
+        cx.notify();
+    }
+
+    fn on_composer_event(&mut self, composer: &Entity<Composer>, event: &ComposerEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event {
+            ComposerEvent::Send(draft) => {
+                let request_id = format!("app-{}", now_ms());
+                let order = SentOrder {
+                    request_id,
+                    to: draft.target.clone(),
+                    text: draft.text.clone(),
+                    template: draft.template,
+                    attachments: draft.attachments.clone(),
+                    refs: draft.refs.clone(),
+                    status: crate::state::Sent::Sending,
+                };
+                let out = self.state.submit_order(order);
+                self.send(out);
+                if self.floating.as_ref() == Some(composer) {
+                    self.floating = None;
+                    self.pending_focus = Some(self.follow.focus_handle(cx));
+                }
+            }
+            ComposerEvent::Note { draft, urgent } => {
+                let id = format!("note-{}", now_ms());
+                let out = self.state.note(&draft.text, *urgent, draft.attachments.clone(), draft.refs.clone(), &id);
+                self.send(out);
+            }
+            ComposerEvent::Dismiss => {
+                if self.floating.as_ref() == Some(composer) {
+                    self.floating = None;
+                    self.pending_focus = Some(self.follow.focus_handle(cx));
+                } else if self.screen == Screen::Order {
+                    self.go(Screen::Board);
+                    self.pending_focus = Some(self.docked.focus_handle(cx));
+                } else {
+                    window.focus(&self.focus, cx);
+                }
+            }
+            ComposerEvent::Preview(text) => {
+                let out = self.state.preview(text);
+                self.send(out);
+            }
+            ComposerEvent::Files { key, query } => {
+                let out = self.state.list_files(key, query);
+                self.send(out);
+            }
+            ComposerEvent::Upload { local, name, mime, data_b64 } => {
+                let out = self.state.attach(*local, name, mime, data_b64.clone());
+                self.send(out);
+            }
+        }
+        self.after_state_change(cx);
+        cx.notify();
+    }
+
+    /// The orders the sidebar lists, in its order: ⌘1..9 and ⌘[ / ⌘] walk these.
+    fn sidebar_orders(&self) -> Vec<String> {
+        sidebar::orders(&self.state, self.now_secs()).into_iter().map(|(_, id)| id).collect()
+    }
+
+    fn step_order(&mut self, by: isize, cx: &mut Context<Self>) {
+        let orders = self.sidebar_orders();
+        if orders.is_empty() {
+            return;
+        }
+        let current = self.state.order.as_ref().and_then(|o| orders.iter().position(|w| *w == o.workstream_id));
+        let next = match current {
+            Some(ix) => (ix as isize + by).rem_euclid(orders.len() as isize) as usize,
+            None => 0,
+        };
+        let w = orders[next].clone();
+        self.open_order(&w, cx);
+    }
+
+    fn move_card(&mut self, by: isize, cx: &mut Context<Self>) {
+        let cards = self.board_cards();
+        if cards.is_empty() {
+            return;
+        }
+        let ix = self.selected_card.as_ref().and_then(|s| cards.iter().position(|c| c == s));
+        let next = match ix {
+            Some(ix) => (ix as isize + by).clamp(0, cards.len() as isize - 1) as usize,
+            None => 0,
+        };
+        self.selected_card = Some(cards[next].clone());
+        if let Some(row) = self.board_now.iter().position(|r| matches!(r, crate::board::Row::Card(id) if *id == cards[next])) {
+            self.board_list.scroll_to_reveal_item(row + 1);
+        }
+        self.hold_board(true, cx);
+        self.hold_board(false, cx);
+        cx.notify();
+    }
+
+    /// Freezes the board's order while the pointer is on it (or a key just moved the selection); it resorts
+    /// [`RESORT_AFTER`] after the last interaction.
+    pub(crate) fn hold_board(&mut self, holding: bool, cx: &mut Context<Self>) {
+        if holding {
+            self.resort = None;
+            if self.board_held.is_none() {
+                let ids = self.board_rows().iter().map(crate::board::row_id).collect();
+                self.board_held = Some(ids);
+            }
+            return;
+        }
+        self.resort = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(RESORT_AFTER).await;
+            this.update(cx, |this, cx| {
+                this.board_held = None;
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     /// Accelerators only: everything here is also a click away. Text goes to whichever field has focus.
@@ -630,181 +994,121 @@ impl Shell {
         }
         let m = &ks.modifiers;
         if m.secondary() && !m.alt && !m.shift {
-            match ks.key.as_str() {
-                "1" => self.go(Screen::Inbox),
-                "2" => self.go(Screen::Projects),
-                "3" => self.go(Screen::Machines),
-                _ => return,
+            if let Some(n) = ks.key.parse::<usize>().ok().filter(|n| (1..=9).contains(n)) {
+                if let Some(w) = self.sidebar_orders().get(n - 1).cloned() {
+                    self.open_order(&w, cx);
+                }
+                cx.stop_propagation();
             }
-            cx.stop_propagation();
-            cx.notify();
             return;
         }
         if m.control || m.platform || m.alt {
             return;
         }
         let key = ks.key.as_str();
-        if matches!(key, "up" | "down") && self.list_len() > 0 {
-            self.selected = if key == "up" { self.selected.saturating_sub(1) } else { (self.selected + 1).min(self.list_len() - 1) };
-            if self.screen == Screen::Projects {
-                self.projects_scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest);
+        let field_focused = !self.focus.is_focused(window) && !self.inbox_focus.is_focused(window);
+        if key == "escape" {
+            // Esc: close a menu (the field does) → the panel → the order view back to the board.
+            if self.stop_confirm {
+                self.stop_confirm = false;
+            } else if self.inbox_open {
+                self.toggle_inbox(false, cx);
+            } else if self.screen == Screen::Order {
+                self.go(Screen::Board);
+                self.pending_focus = Some(self.docked.focus_handle(cx));
+            } else {
+                return;
             }
             cx.stop_propagation();
             cx.notify();
             return;
         }
-        // Typing with no field focused (after clicking the background) goes to the reply box.
-        if self.focus.is_focused(window)
-            && self.has_reply_bar()
-            && let Some(text) = printable(ks)
-        {
-            self.reply.update(cx, |r, cx| r.insert(text, cx));
-            self.pending_focus = Some(self.reply.focus_handle(cx));
-            cx.stop_propagation();
-            cx.notify();
+        if field_focused {
+            return;
         }
-    }
-
-    fn has_reply_bar(&self) -> bool {
-        self.connected() && !matches!(self.screen, Screen::Connect | Screen::Loading)
-    }
-
-    fn on_reply_event(&mut self, input: Entity<TextInput>, event: &InputEvent, cx: &mut Context<Self>) {
-        let raw = input.read(cx).text().to_string();
-        match event {
-            InputEvent::Submit if !raw.trim().is_empty() => {
-                input.update(cx, |i, cx| {
-                    i.remember(&raw);
-                    i.clear(cx);
-                });
-                if self.bench.is_some() {
-                    // No hub in the bench: echo locally, as typing a reply would.
-                    self.push_log(LogRow::new(LogKind::User, &format!("› you: {raw}")));
+        match (self.screen, key) {
+            (Screen::Board, "up" | "k") => self.move_card(-1, cx),
+            (Screen::Board, "down" | "j") => self.move_card(1, cx),
+            (Screen::Board, "enter") => {
+                if let Some(w) = self.selected_card.clone() {
+                    self.open_order(&w, cx);
+                }
+            }
+            (Screen::Machines, "up" | "down") if !self.state.machines.is_empty() => {
+                let len = self.state.machines.len();
+                self.selected = if key == "up" { self.selected.saturating_sub(1) } else { (self.selected + 1).min(len - 1) };
+            }
+            _ => {
+                // Typing with no field focused (after clicking the background) goes to the composer on screen.
+                if let Some(text) = printable(ks).filter(|_| matches!(self.screen, Screen::Board | Screen::Order) && !self.inbox_open) {
+                    let target = if self.screen == Screen::Order { self.follow.clone() } else { self.docked.clone() };
+                    let text = text.to_string();
+                    target.update(cx, |c, cx| c.type_text(&text, cx));
+                    self.pending_focus = Some(target.focus_handle(cx));
                 } else {
-                    let out = self.state.reply(&raw, None);
-                    self.send(out);
+                    return;
                 }
             }
-            // An empty reply box leaves Enter and Esc to the screen: open the selected project, or go back.
-            InputEvent::Submit if self.screen == Screen::Projects => {
-                if let Some(key) = self.state.projects.get(self.selected).map(ProjectRow::key) {
-                    self.open_project(key);
-                }
-            }
-            InputEvent::Cancel if !raw.is_empty() => input.update(cx, |i, cx| i.clear(cx)),
-            InputEvent::Cancel if self.screen == Screen::Project => self.go(Screen::Projects),
-            _ => return,
         }
+        cx.stop_propagation();
         cx.notify();
     }
 
-    fn send_reply(&mut self, cx: &mut Context<Self>) {
-        let reply = self.reply.clone();
-        self.on_reply_event(reply, &InputEvent::Submit, cx);
-    }
-
-    /// Seals the typed value to the sink machine's key and sends only the ciphertext, then wipes the field.
-    fn submit_secret(&mut self, ask_id: &str, cx: &mut Context<Self>) {
-        let Some((input, _)) = self.secrets.get(ask_id) else { return };
-        let input = input.clone();
-        let Some(ask) = self.state.asks.get(ask_id) else { return };
-        let value = input.read(cx).text();
-        if value.is_empty() {
-            return;
-        }
-        match self.state.secret_target(ask).and_then(|(machine, key)| Ok((machine, seal::seal(&key, value.as_bytes())?))) {
-            Ok((machine, sealed)) => {
-                let out = self.state.submit_secret(ask_id, &machine, sealed);
-                self.send(out);
-                input.update(cx, |i, cx| i.clear(cx));
-            }
-            Err(e) => self.state.echo = Some(Echo { text: e, ok: false }),
-        }
-        cx.notify();
-    }
-
-    fn copy(&mut self, text: String, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-        self.copied = Some(text);
-        cx.notify();
-    }
-
-    /// A small button that copies `text` and then says so.
-    fn copy_button(&self, id: impl Into<SharedString>, text: impl Into<String>, cx: &mut Context<Self>) -> Stateful<Div> {
-        let text = text.into();
-        let copied = self.copied.as_deref() == Some(text.as_str());
-        ui::copy_button(theme(cx), id.into(), copied).on_click(cx.listener(move |this, _, _, cx| this.copy(text.clone(), cx)))
-    }
-
-    /// An error and its fix, with a Copy button for both, so they can be pasted into an issue or a search.
-    fn error_line(&self, id: impl Into<SharedString>, message: impl Into<String>, fix: Option<String>, cx: &mut Context<Self>) -> Div {
-        let message = message.into();
-        let all = match &fix {
-            Some(fix) => format!("{message}\n{fix}"),
-            None => message.clone(),
-        };
-        let copy = self.copy_button(id, all, cx);
-        ui::error(theme(cx), message, fix.map(Into::into), copy)
-    }
-
-    /// A command to run elsewhere, in mono, with a Copy button.
-    fn command_line(&self, id: impl Into<SharedString>, command: impl Into<String>, cx: &mut Context<Self>) -> Div {
-        let command = command.into();
-        let copy = self.copy_button(id, command.clone(), cx);
-        ui::command(theme(cx), command, copy)
-    }
-
-    fn quick_reply(&mut self, batch_id: BatchId, raw: String, cx: &mut Context<Self>) {
-        let out = self.state.reply(&raw, Some(&batch_id));
-        self.send(out);
-        cx.notify();
-    }
-
-    fn push_log(&mut self, line: LogRow) {
-        self.log.push(line);
-        if self.follow {
-            self.log_scroll.scroll_to_item(self.log.len() - 1, ScrollStrategy::Bottom);
-        }
-    }
-
-    fn on_log_wheel(&mut self, event: &ScrollWheelEvent, _: &mut Window, _: &mut Context<Self>) {
-        let up = match event.delta {
-            ScrollDelta::Pixels(p) => p.y > px(0.),
-            ScrollDelta::Lines(l) => l.y > 0.,
-        };
-        if up {
-            self.follow = false;
+    fn on_modifiers(&mut self, event: &ModifiersChangedEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let held = event.modifiers.secondary() && !event.modifiers.shift && !event.modifiers.alt;
+        if held != self.cmd_held {
+            self.cmd_held = held;
+            cx.notify();
         }
     }
 
     // ---- overlays and commands ------------------------------------------------------------
 
-    fn pick(&mut self, pick: sidebar::Pick, cx: &mut Context<Self>) {
+    fn pick(&mut self, pick: sidebar::Pick, window: &mut Window, cx: &mut Context<Self>) {
         match pick {
-            sidebar::Pick::Inbox => self.go(Screen::Inbox),
-            sidebar::Pick::Projects => self.go(Screen::Projects),
+            sidebar::Pick::Board => {
+                self.go(Screen::Board);
+                self.pending_focus = Some(self.docked.focus_handle(cx));
+            }
             sidebar::Pick::Machines => self.go(Screen::Machines),
             sidebar::Pick::Settings => self.go(Screen::Settings),
-            sidebar::Pick::Project(key) => self.open_project(key),
+            sidebar::Pick::Project(key) => {
+                self.selected_project = if self.selected_project.as_ref() == Some(&key) && self.screen == Screen::Board { None } else { Some(key) };
+                self.go(Screen::Board);
+                self.pending_focus = Some(self.docked.focus_handle(cx));
+                self.sync_composers(cx);
+            }
+            sidebar::Pick::Order(w) => self.open_order(&w, cx),
         }
+        let _ = window;
         cx.notify();
     }
 
     /// Runs a palette command. Every one of these is also a click or a menu item away.
     fn run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         self.palette = None;
-        self.pending_focus = Some(self.reply.focus_handle(cx));
+        self.focus_composer(cx);
         match command {
-            Command::Inbox => self.go(Screen::Inbox),
-            Command::Projects => self.go(Screen::Projects),
+            Command::Board => {
+                self.go(Screen::Board);
+                self.focus_composer(cx);
+            }
+            Command::Inbox => self.toggle_inbox(true, cx),
             Command::Machines => self.go(Screen::Machines),
             Command::Settings => self.go(Screen::Settings),
-            Command::Project(key) => self.open_project(key),
+            Command::Project(key) => self.pick(sidebar::Pick::Project(key), window, cx),
+            Command::Order(w) => self.open_order(&w, cx),
             Command::Ask(id) => {
-                self.go(Screen::Inbox);
+                self.toggle_inbox(true, cx);
                 self.focus_ask = Some(id);
             }
-            Command::NewOrder(target) => self.open_composer(target, window, cx),
+            Command::NewOrder(target) => self.new_order(target, window, cx),
+            Command::NewOrderText(text) => {
+                self.new_order(None, window, cx);
+                let target = self.floating.clone().unwrap_or_else(|| self.docked.clone());
+                target.update(cx, |c, cx| c.set_text(&text, cx));
+            }
+            Command::ToggleGroup => self.group_by_status = !self.group_by_status,
             Command::Connect => self.disconnect(cx),
         }
         cx.notify();
@@ -812,10 +1116,10 @@ impl Shell {
 
     fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.palette.take().is_some() || !self.connected() {
-            self.pending_focus = Some(self.reply.focus_handle(cx));
+            self.focus_composer(cx);
             return cx.notify();
         }
-        self.composer = None;
+        self.floating = None;
         let items = palette::items(&self.state);
         let palette = cx.new(|cx| Palette::new(items, window, cx));
         cx.subscribe_in(&palette, window, |this, _, event: &PaletteEvent, window, cx| match event {
@@ -827,45 +1131,17 @@ impl Shell {
         cx.notify();
     }
 
-    /// The New order composer, aimed at `target`, else at the open project, else at whatever the hub picks.
-    fn open_composer(&mut self, target: Option<ProjectKey>, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.connected() {
-            return;
-        }
-        self.palette = None;
-        let target = target.or_else(|| self.state.detail.as_ref().map(|d| d.key.clone()));
-        let targets = self.state.projects.iter().map(|r| composer::Target { key: r.key(), title: r.summary.title.clone().into() }).collect();
-        let composer = cx.new(|cx| Composer::new(targets, target, window, cx));
-        cx.subscribe_in(&composer, window, |this, _, event: &ComposerEvent, _, cx| match event {
-            ComposerEvent::Send { target, text } => {
-                if this.bench.is_some() {
-                    this.state.echo = Some(Echo { text: format!("Order sent: {text}"), ok: true });
-                } else {
-                    let id = format!("app-{}", SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis()));
-                    let out = this.state.submit_order(target.as_ref(), text, &id);
-                    this.send(out);
-                }
-                this.close_overlays(cx);
-            }
-            ComposerEvent::Dismiss => this.close_overlays(cx),
-        })
-        .detach();
-        self.composer = Some(composer);
-        cx.notify();
-    }
-
     fn close_overlays(&mut self, cx: &mut Context<Self>) {
         self.palette = None;
-        self.composer = None;
-        self.pending_focus = Some(self.reply.focus_handle(cx));
-        cx.notify();
+        self.floating = None;
+        self.focus_composer(cx);
     }
 
     fn connected(&self) -> bool {
         self.hub.is_some() || self.bench.is_some()
     }
 
-    // ---- screens -------------------------------------------------------------------------
+    // ---- frame -------------------------------------------------------------------------------
 
     fn conn_line(&self, t: &Theme) -> sidebar::Conn {
         let host = self.hub.as_ref().map(|h| h.url.split("://").nth(1).unwrap_or(&h.url).trim_end_matches('/').to_string()).unwrap_or_default();
@@ -884,16 +1160,18 @@ impl Shell {
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = &theme(cx).clone();
         let active = match self.screen {
-            Screen::Inbox => sidebar::Active::Inbox,
-            Screen::Projects => sidebar::Active::Projects,
+            Screen::Board => match &self.selected_project {
+                Some(key) => sidebar::Active::Project(key.clone()),
+                None => sidebar::Active::Board,
+            },
             Screen::Machines => sidebar::Active::Machines,
             Screen::Settings => sidebar::Active::Settings,
-            Screen::Project => self.state.detail.as_ref().map_or(sidebar::Active::None, |d| sidebar::Active::Project(d.key.clone())),
+            Screen::Order => self.state.order.as_ref().map_or(sidebar::Active::None, |o| sidebar::Active::Order(o.workstream_id.clone())),
             Screen::Loading | Screen::Connect => sidebar::Active::None,
         };
         let this = cx.entity().downgrade();
-        let on_pick: sidebar::OnPick = Rc::new(move |pick, _, cx| {
-            this.update(cx, |this, cx| this.pick(pick, cx)).ok();
+        let on_pick: sidebar::OnPick = Rc::new(move |pick, window, cx| {
+            this.update(cx, |this, cx| this.pick(pick, window, cx)).ok();
         });
         let update = self.update.clone().map(|text| {
             div()
@@ -907,7 +1185,260 @@ impl Shell {
                 .child(self.command_line("copy-update", "fleetd update", cx))
                 .into_any_element()
         });
-        sidebar::render(t, &self.state, &self.seen, &active, self.conn_line(t), update, on_pick)
+        sidebar::render(t, &self.state, &self.seen, &active, self.now_secs(), self.cmd_held, self.conn_line(t), update, on_pick)
+    }
+
+    /// The bottom of the window: machines and slots, then the merge trains when one has a head or a queue.
+    fn strips(&self, cx: &mut Context<Self>) -> Div {
+        let t = &theme(cx).clone();
+        let trains = self.state.live.trains().iter().any(|tr| !tr.chips.is_empty() || tr.frozen);
+        let machines = live::strips::machine_strip(t, self.state.live.machines(), self.state.live.slots());
+        div()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .bg(t.sidebar)
+            .border_t_1()
+            .border_color(t.hairline)
+            .child(ui::clickable(t, div().id("machine-strip")).h(px(metric::ROW)).flex().items_center().child(machines).on_click(cx.listener(
+                |this, _, _, cx| {
+                    this.go(Screen::Machines);
+                    cx.notify();
+                },
+            )))
+            .when(trains, |d| {
+                d.child(div().h(px(metric::ROW)).px_4().flex().items_center().border_t_1().border_color(t.hairline).child(self.train_strip.clone()))
+            })
+    }
+
+    /// "2 need you ⌘I" and "⌘K" in the title bar.
+    fn title_items(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        if !self.connected() || matches!(self.screen, Screen::Connect | Screen::Loading) {
+            return Vec::new();
+        }
+        let t = &theme(cx).clone();
+        let n = self.state.inbox().len();
+        let palette = ui::clickable(t, div().id("title-palette"))
+            .px_1p5()
+            .text_size(px(size::XS))
+            .text_color(t.quiet)
+            .hover(|s| s.underline())
+            .child(ui::shortcut("K"))
+            .on_click(cx.listener(|this, _, window, cx| this.toggle_palette(window, cx)));
+        let badge = ui::clickable(t, div().id("title-inbox"))
+            .flex()
+            .items_center()
+            .gap_1p5()
+            .px_1p5()
+            .text_size(px(size::XS))
+            .text_color(if n > 0 { t.text } else { t.quiet })
+            .hover(|s| s.underline())
+            .when(n > 0, |d| d.child(ui::dot(t.warning)).font_weight(STRONG).child(format!("{n} need{} you", if n == 1 { "s" } else { "" })))
+            .when(n == 0, |d| d.child("Inbox"))
+            .child(div().font_weight(crate::theme::REGULAR).text_color(t.quiet).child(ui::shortcut("I")))
+            .on_click(cx.listener(|this, _, _, cx| {
+                let open = !this.inbox_open;
+                this.toggle_inbox(open, cx);
+            }));
+        vec![div().w(px(24.)).into_any_element(), palette.into_any_element(), badge.into_any_element()]
+    }
+}
+
+impl Render for Shell {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(focus) = self.pending_focus.take() {
+            window.focus(&focus, cx);
+        }
+        let screen = match self.screen {
+            Screen::Loading => div().flex_1().into_any_element(),
+            Screen::Connect => self.connect_screen(cx),
+            Screen::Board => self.board_screen(cx),
+            Screen::Order => self.order_screen(window, cx),
+            Screen::Machines => self.machines_screen(cx),
+            Screen::Settings => {
+                let hub = settings::Hub {
+                    url: self.hub.as_ref().map(|h| h.url.clone().into()),
+                    status: self.conn_line(theme(cx)).label,
+                    live: self.state.conn == Conn::Live && self.hub.is_some(),
+                };
+                self.settings.update(cx, |s, _| s.hub = hub);
+                self.settings.clone().into_any_element()
+            }
+        };
+        let t = theme(cx).clone();
+        let banner = self.note.clone().or_else(|| self.state.notice.clone());
+        let chrome = self.connected() && !matches!(self.screen, Screen::Connect | Screen::Loading);
+        let main = div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .when_some(banner, |d, text| {
+                d.child(div().px_4().py_2().border_b_1().border_color(t.hairline).child(self.error_line("copy-banner", text, None, cx)))
+            })
+            .child(div().flex_1().min_h_0().flex().child(screen))
+            .when(chrome, |d| d.children(self.echo_line(cx)));
+        let overlay = |child: AnyElement, cx: &mut Context<Self>| {
+            // A click outside the floating panel closes it; the panel itself stops clicks reaching what's under.
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .flex_col()
+                .items_center()
+                .pt(px(88.))
+                .occlude()
+                .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.close_overlays(cx)))
+                .child(div().occlude().child(child))
+        };
+        let panel = (chrome && self.inbox_open).then(|| {
+            let panel = self.inbox_panel(window, cx);
+            div().absolute().top(px(34.)).bottom_0().right_0().child(live::motion::slide_panel("inbox-panel-slide", panel, true))
+        });
+        let title_items = self.title_items(cx);
+        div()
+            .relative()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(t.bg)
+            .text_color(t.text)
+            .text_size(px(size::MD))
+            .font_family(t.ui_font.clone())
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
+            .on_modifiers_changed(cx.listener(Self::on_modifiers))
+            .on_action(cx.listener(|_, _: &FocusNext, window, cx| window.focus_next(cx)))
+            .on_action(cx.listener(|_, _: &FocusPrev, window, cx| window.focus_prev(cx)))
+            .on_action(cx.listener(|this, _: &actions::OpenSettings, _, cx| {
+                this.go(Screen::Settings);
+                cx.notify();
+            }))
+            .when(self.connected(), |d| {
+                d.on_action(cx.listener(|this, _: &actions::NewOrder, window, cx| this.new_order(None, window, cx)))
+                    .on_action(cx.listener(|this, _: &actions::FocusComposer, _, cx| this.focus_composer(cx)))
+                    .on_action(cx.listener(|this, _: &actions::ToggleCommandPalette, window, cx| this.toggle_palette(window, cx)))
+                    .on_action(cx.listener(|this, _: &actions::ToggleInbox, _, cx| {
+                        let open = !this.inbox_open;
+                        this.toggle_inbox(open, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &actions::GoToBoard, _, cx| {
+                        this.go(Screen::Board);
+                        this.focus_composer(cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &actions::ToggleGrouping, _, cx| {
+                        this.group_by_status = !this.group_by_status;
+                        cx.notify();
+                    }))
+                    .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
+                        this.sidebar_hidden = !this.sidebar_hidden;
+                        cx.notify();
+                    }))
+                    .when(self.screen == Screen::Order, |d| {
+                        d.on_action(cx.listener(|this, _: &actions::PreviousOrder, _, cx| this.step_order(-1, cx)))
+                            .on_action(cx.listener(|this, _: &actions::NextOrder, _, cx| this.step_order(1, cx)))
+                            .on_action(cx.listener(|this, _: &actions::StopOrder, _, cx| {
+                                let stoppable = this
+                                    .state
+                                    .order
+                                    .as_ref()
+                                    .and_then(|o| o.card.as_ref())
+                                    .is_none_or(|c| !matches!(c.phase, OrderPhase::Stopped | OrderPhase::Done | OrderPhase::Failed));
+                                this.stop_confirm = stoppable;
+                                cx.notify();
+                            }))
+                    })
+            })
+            .child(crate::titlebar::TitleBar::new().children(title_items))
+            .child(div().flex_1().min_h_0().flex().when(chrome && !self.sidebar_hidden, |d| d.child(self.sidebar(cx))).child(main))
+            .when(chrome, |d| d.child(self.strips(cx)))
+            .children(panel)
+            .when_some(self.palette.clone(), |d, p| d.child(overlay(p.into_any_element(), cx)))
+            .when_some(self.floating.clone(), |d, c| d.child(overlay(c.into_any_element(), cx)))
+    }
+}
+
+pub(crate) fn now_ms() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
+}
+
+impl Shell {
+    fn copy(&mut self, text: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        self.copied = Some(text);
+        cx.notify();
+    }
+
+    /// A small button that copies `text` and then says so.
+    pub(crate) fn copy_button(&self, id: impl Into<SharedString>, text: impl Into<String>, cx: &mut Context<Self>) -> Stateful<Div> {
+        let text = text.into();
+        let copied = self.copied.as_deref() == Some(text.as_str());
+        ui::copy_button(theme(cx), id.into(), copied).on_click(cx.listener(move |this, _, _, cx| this.copy(text.clone(), cx)))
+    }
+
+    /// An error and its fix, with a Copy button for both, so they can be pasted into an issue or a search.
+    pub(crate) fn error_line(&self, id: impl Into<SharedString>, message: impl Into<String>, fix: Option<String>, cx: &mut Context<Self>) -> Div {
+        let message = message.into();
+        let all = match &fix {
+            Some(fix) => format!("{message}\n{fix}"),
+            None => message.clone(),
+        };
+        let copy = self.copy_button(id, all, cx);
+        ui::error(theme(cx), message, fix.map(Into::into), copy)
+    }
+
+    /// A command to run elsewhere, in mono, with a Copy button.
+    pub(crate) fn command_line(&self, id: impl Into<SharedString>, command: impl Into<String>, cx: &mut Context<Self>) -> Div {
+        let command = command.into();
+        let copy = self.copy_button(id, command.clone(), cx);
+        ui::command(theme(cx), command, copy)
+    }
+
+    pub(crate) fn quick_reply(&mut self, batch_id: BatchId, raw: String, cx: &mut Context<Self>) {
+        let out = self.state.reply(&raw, Some(&batch_id));
+        self.send(out);
+        cx.notify();
+    }
+
+    fn push_log(&mut self, line: LogRow) {
+        self.log.push(line);
+        if self.log_follow {
+            self.log_scroll.scroll_to_item(self.log.len() - 1, ScrollStrategy::Bottom);
+        }
+    }
+
+    /// Seals the typed value to the sink machine's key and sends only the ciphertext, then wipes the field.
+    pub(crate) fn submit_secret(&mut self, ask_id: &str, cx: &mut Context<Self>) {
+        let Some((input, _)) = self.secrets.get(ask_id) else { return };
+        let input = input.clone();
+        let Some(ask) = self.state.asks.get(ask_id) else { return };
+        let value = input.read(cx).text();
+        if value.is_empty() {
+            return;
+        }
+        match self.state.secret_target(ask).and_then(|(machine, key)| Ok((machine, seal::seal(&key, value.as_bytes())?))) {
+            Ok((machine, sealed)) => {
+                let out = self.state.submit_secret(ask_id, &machine, sealed);
+                self.send(out);
+                input.update(cx, |i, cx| i.clear(cx));
+            }
+            Err(e) => self.state.echo = Some(Echo { text: e, ok: false }),
+        }
+        cx.notify();
+    }
+
+    /// Opens a clicked link; a path on another machine is copied instead, and the echo says so.
+    pub(crate) fn link_opener(&self, workspace: Option<String>, cx: &mut Context<Self>) -> links::OnOpen {
+        let this = cx.entity().downgrade();
+        Rc::new(move |link, _, cx| {
+            if let links::Opened::Copied(path) = links::open(link, workspace.as_deref(), cx) {
+                this.update(cx, |this, cx| {
+                    this.state.echo = Some(Echo { text: format!("{path} isn't on this computer; copied its path."), ok: true });
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
     }
 
     fn connect_screen(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -988,476 +1519,6 @@ impl Shell {
         col = col.child(div().text_size(px(size::XS)).text_color(t.quiet).child("The key is kept in the OS keychain, never in a file."));
         // Left-aligned at a third of the window, like a document, not a centred card.
         div().id("connect").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().pt(px(96.)).pb_8().pl(px(120.)).child(col).into_any_element()
-    }
-
-    fn inbox_screen(&self, cx: &mut Context<Self>) -> AnyElement {
-        let t = &theme(cx).clone();
-        let items = self.state.inbox();
-        let open = items.len();
-        let mut body = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().px_6().pb_6().flex().flex_col();
-        if let Some(e) = &self.state.asks_error {
-            body = body.child(div().pt_4().child(self.error_line("copy-asks-error", e.clone(), None, cx)));
-        }
-        if items.is_empty() && self.state.asks_error.is_none() {
-            body = body.child(match self.state.conn {
-                Conn::Live => ui::empty(
-                    t,
-                    "Nothing needs you.",
-                    "Leads decide everything that isn't a product, money, credential or irreversible call. When one comes up it lands here and as a notification.",
-                ),
-                _ => ui::loading(t, "Waiting for the hub…"),
-            });
-        }
-        let mut batch = "";
-        let (routed, unrouted): (Vec<_>, Vec<_>) = items.into_iter().partition(|item| item.ask.project_ref.is_some());
-        for item in routed {
-            if item.batch_id != batch {
-                batch = item.batch_id;
-                body = body.child(ui::section(t, format!("Batch {batch}")));
-            }
-            body = body.child(self.ask_block(item.batch_id, item.number, item.ask, cx));
-        }
-        // Intents the router could not place: answering one picks the project.
-        if !unrouted.is_empty() {
-            body = body.child(ui::section(t, "Not placed in a project yet"));
-            for item in unrouted {
-                body = body.child(self.ask_block(item.batch_id, item.number, item.ask, cx));
-            }
-        }
-        div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .child(ui::header(
-                t,
-                "Inbox",
-                if open > 0 { format!("{open} open · reply by number below, recommendations are fine") } else { String::new() },
-            ))
-            .child(body)
-            .into_any_element()
-    }
-
-    /// Opens a clicked link; a path on another machine is copied instead, and the echo says so.
-    fn link_opener(&self, workspace: Option<String>, cx: &mut Context<Self>) -> links::OnOpen {
-        let this = cx.entity().downgrade();
-        Rc::new(move |link, _, cx| {
-            if let links::Opened::Copied(path) = links::open(link, workspace.as_deref(), cx) {
-                this.update(cx, |this, cx| {
-                    this.state.echo = Some(Echo { text: format!("{path} isn't on this computer; copied its path."), ok: true });
-                    cx.notify();
-                })
-                .ok();
-            }
-        })
-    }
-
-    /// One ask, set loud: the question at full weight, its context quiet, the recommended answer as the one
-    /// filled button (outlined red when the call is irreversible).
-    fn ask_block(&self, batch_id: &BatchId, number: i64, ask: &Ask, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = &theme(cx).clone();
-        let project = match &ask.project_ref {
-            Some(p) => format!("{} on {}", p.project_id, p.machine_id),
-            None => format!("{batch_id} · no project yet"),
-        };
-        let class_color = match ask.class {
-            AskClass::Money | AskClass::Irreversible => t.danger,
-            AskClass::Credential => t.warning,
-            _ => t.quiet,
-        };
-        let reply = |label: String, raw: String, variant: Variant, cx: &mut Context<Self>| {
-            let batch_id = batch_id.clone();
-            ui::button(t, SharedString::from(format!("{}-{number}-{raw}", ask.ask_id)), label, variant, true)
-                .on_click(cx.listener(move |this, _, _, cx| this.quick_reply(batch_id.clone(), raw.clone(), cx)))
-        };
-        let mut buttons = div().flex().flex_wrap().items_center().gap_2().pt_2();
-        match ask.kind {
-            AskKind::Approve => {
-                buttons = buttons.child(reply("Approve".into(), format!("{number} go"), Variant::Primary, cx)).child(reply(
-                    "Reject".into(),
-                    format!("{number} no"),
-                    Variant::Secondary,
-                    cx,
-                ));
-            }
-            AskKind::Secret => buttons = buttons.child(reply("Decline".into(), format!("{number} no"), Variant::Ghost, cx)),
-            _ => {
-                if ask.kind == AskKind::Do {
-                    buttons = buttons.child(reply("Done".into(), format!("{number} done"), Variant::Primary, cx));
-                } else if let Some(rec) = &ask.recommendation {
-                    // An irreversible call is never the filled, easy button.
-                    let variant = if ask.class == AskClass::Irreversible { Variant::Danger } else { Variant::Primary };
-                    buttons = buttons
-                        .child(reply(clip(rec, 48), format!("{number} go"), variant, cx))
-                        .child(div().text_size(px(size::XS)).text_color(t.quiet).child("recommended"));
-                }
-                for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
-                    if ask.recommendation.as_deref() == Some(option.as_str()) {
-                        continue;
-                    }
-                    let letter = (b'a' + i as u8) as char;
-                    buttons = buttons.child(reply(clip(option, 48), format!("{number} {letter}"), Variant::Secondary, cx));
-                }
-                buttons = buttons.child(reply("No".into(), format!("{number} no"), Variant::Ghost, cx));
-            }
-        }
-        let marked = self.focus_ask.as_deref() == Some(ask.ask_id.as_str());
-        let workspace = ask
-            .project_ref
-            .as_ref()
-            .and_then(|p| self.state.project(&(p.machine_id.to_string(), p.project_id.to_string())))
-            .map(|r| r.summary.workspace_root.clone());
-        let on_open = self.link_opener(workspace, cx);
-        let mut block = div()
-            .max_w(px(metric::MEASURE))
-            .py_4()
-            .flex()
-            .flex_col()
-            .gap_1p5()
-            .border_b_1()
-            .border_color(t.hairline)
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .items_center()
-                    .text_size(px(size::XS))
-                    .text_color(t.quiet)
-                    .when(marked, |d| d.child(ui::unread(t)))
-                    .child(format!("{number}"))
-                    .child(div().text_color(class_color).child(label(&ask.class)))
-                    .child(project)
-                    .when(ask.proceeded_on_rec, |d| d.child("· went ahead on the recommendation"))
-                    .when(ask.blocks != "nothing", |d| d.child(div().text_color(t.warning).child(format!("· blocks {}", ask.blocks)))),
-            )
-            .child(div().font_weight(STRONG).whitespace_normal().child(links::text(
-                t,
-                format!("{}-text", ask.ask_id),
-                ask.text.to_string(),
-                true,
-                on_open.clone(),
-            )));
-        for (i, step) in ask.steps.iter().flatten().enumerate() {
-            block = block.child(
-                div()
-                    .pt_2()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(div().whitespace_normal().child(format!("{}. {}", i + 1, step.text)))
-                    .child(ui::quiet(t, format!("on {}", label(&step.r#where))))
-                    .when_some(step.command.as_ref(), |d, command| {
-                        d.child(self.command_line(format!("{}-copy-{i}", ask.ask_id), command.to_string(), cx))
-                    })
-                    .when_some(step.expect.as_ref(), |d, expect| d.child(ui::quiet(t, format!("Expect: {expect}")))),
-            );
-        }
-        if let Some(gated) = &ask.gated {
-            // The exact stored argv, as JSON so spaces and quotes stay visible.
-            let argv = serde_json::to_string(&gated.argv).unwrap_or_default();
-            block = block
-                .child(div().pt_2().child(self.command_line(format!("{}-copy-argv", ask.ask_id), argv, cx)))
-                .child(ui::quiet(t, format!("in {}", gated.cwd.as_deref().unwrap_or("the project workspace"))))
-                .child(ui::quiet(t, format!("{} · {} · up to {} min", label(&gated.class), gated.reason, (gated.timeout_sec.get() + 59) / 60)));
-            let env: Vec<String> = gated.secret_env.iter().flat_map(|e| e.0.iter()).map(|e| format!("{} ← {}", e.name, e.secret_key)).collect();
-            if !env.is_empty() {
-                block = block.child(ui::quiet(t, format!("Secret env: {}", env.join(", "))));
-            }
-        }
-        if ask.kind == AskKind::Secret {
-            block = block.child(self.secret_entry(ask, cx));
-        }
-        if let Some(evidence) = &ask.evidence {
-            block = block.child(div().text_color(t.quiet).whitespace_normal().child(links::text(
-                t,
-                format!("{}-evidence", ask.ask_id),
-                evidence.to_string(),
-                true,
-                on_open,
-            )));
-        }
-        block.child(buttons)
-    }
-
-    /// Masked entry: the value lives only in the field's self-wiping buffer, and is sealed to the sink machine's
-    /// key here before anything is sent.
-    fn secret_entry(&self, ask: &Ask, cx: &mut Context<Self>) -> Div {
-        let t = &theme(cx).clone();
-        let col = div().pt_2().flex().flex_col().gap_1().child(ui::quiet(t, format!("{} → {}", ask.key, ask.sink.as_deref().unwrap_or("?"))));
-        let machine = match self.state.secret_target(ask) {
-            Ok((machine, _)) => machine,
-            Err(reason) => return col.child(div().text_color(t.warning).whitespace_normal().child(reason)),
-        };
-        let Some((input, _)) = self.secrets.get(ask.ask_id.as_str()) else { return col };
-        let typed = !input.read(cx).is_empty();
-        let sending = self.state.secret_submitting(&ask.ask_id);
-        let id = ask.ask_id.to_string();
-        let send = ui::button(
-            t,
-            SharedString::from(format!("{}-seal", ask.ask_id)),
-            if sending { "Sending…" } else { "Seal and send" },
-            Variant::Primary,
-            !sending,
-        )
-        .on_click(cx.listener(move |this, _, _, cx| this.submit_secret(&id, cx)));
-        col.child(div().flex().gap_2().items_center().child(div().flex_1().child(input.clone())).when(typed, |d| d.child(send))).child(
-            div().text_size(px(size::XS)).text_color(t.quiet).child(format!("Encrypted here to {machine}'s key; the hub never sees the value.")),
-        )
-    }
-
-    fn projects_screen(&self, cx: &mut Context<Self>) -> AnyElement {
-        let t = &theme(cx).clone();
-        let body = if self.state.projects.is_empty() {
-            match self.state.conn {
-                Conn::Live => {
-                    ui::empty(t, "No projects yet.", "Add one on the hub with fleetd init, which also offers the repos it finds.").into_any_element()
-                }
-                _ => ui::loading(t, "Loading projects…").into_any_element(),
-            }
-        } else {
-            uniform_list(
-                "projects",
-                self.state.projects.len(),
-                cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                    let needs = sidebar::needs_you(&this.state);
-                    range.map(|ix| this.project_row(ix, &needs, cx)).collect::<Vec<_>>()
-                }),
-            )
-            .track_scroll(&self.projects_scroll)
-            .flex_1()
-            .p_2()
-            .into_any_element()
-        };
-        let new_order = ui::button(t, "projects-new-order", "New order", Variant::Secondary, true)
-            .on_click(cx.listener(|this, _, window, cx| this.open_composer(None, window, cx)));
-        div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .child(ui::header(t, "Projects", div().flex().items_center().gap_3().child(ui::kbd(t, ui::shortcut("N"))).child(new_order)))
-            .child(body)
-            .into_any_element()
-    }
-
-    fn project_row(&self, ix: usize, needs: &HashMap<ProjectKey, usize>, cx: &mut Context<Self>) -> Stateful<Div> {
-        let t = &theme(cx).clone();
-        let row = &self.state.projects[ix];
-        let (lead_color, lead_label) = lead_badge(t, row);
-        let open = row.workstreams().len();
-        let headline = row.error.clone().or_else(|| row.headline().map(str::to_string)).unwrap_or_default();
-        let key = row.key();
-        let needs = needs.get(&key).copied().unwrap_or(0);
-        let unread = self.seen.unread(&key, row.summary.last_activity_at.as_str());
-        ui::row(t, ix, ix == self.selected)
-            .h(px(metric::ROW + 4.))
-            .gap_3()
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.selected = ix;
-                this.open_project(key.clone());
-                cx.notify();
-            }))
-            .child(div().w(px(6.)).flex_none().when(unread, |d| d.child(ui::unread(t))))
-            .child(
-                div()
-                    .w(px(180.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div().min_w_0().overflow_hidden().text_ellipsis().when(needs > 0, |d| d.font_weight(STRONG)).child(row.summary.title.clone()),
-                    )
-                    .when(needs > 0, |d| d.child(ui::count(t, needs, true))),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .text_color(if row.error.is_some() { t.danger } else { t.quiet })
-                    .child(headline),
-            )
-            .child(div().w(px(64.)).flex_none().text_size(px(size::XS)).text_color(t.quiet).child(if open == 0 {
-                String::new()
-            } else {
-                format!("{open} open")
-            }))
-            .child(
-                div()
-                    .w(px(84.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap_1p5()
-                    .text_size(px(size::XS))
-                    .text_color(t.quiet)
-                    .child(ui::dot(lead_color))
-                    .child(lead_label),
-            )
-            .child(self.machine_label(t, &row.summary.machine_id, row.stale()))
-    }
-
-    /// The machine a project is on: quiet, with a word only when it changes how to read the row.
-    fn machine_label(&self, t: &Theme, machine_id: &str, stale: bool) -> Div {
-        // Degraded machines are explained on Machines.
-        let note = match (self.state.machine(machine_id).map(|m| m.status), stale) {
-            (Some(MachineStatus::Offline) | None, _) => Some(("offline", t.warning)),
-            (_, true) => Some(("stale", t.quiet)),
-            _ => None,
-        };
-        div()
-            .w(px(120.))
-            .flex_none()
-            .flex()
-            .gap_1()
-            .text_size(px(size::XS))
-            .text_color(t.quiet)
-            .child(machine_id.to_string())
-            .when_some(note, |d, (n, color)| d.child(div().text_color(color).child(n)))
-    }
-
-    fn project_screen(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let Some(key) = self.state.detail.as_ref().map(|d| d.key.clone()) else { return self.projects_screen(cx) };
-        let t = &theme(cx).clone();
-        let row = self.state.project(&key);
-        let title = row.map_or(key.1.clone(), |r| r.summary.title.clone());
-        let mut left = div().id("workstreams").flex_1().min_h_0().overflow_y_scroll().px_4().pb_4().flex().flex_col();
-        match row {
-            Some(row) if row.outcome.is_none() && row.error.is_none() => left = left.child(ui::loading(t, "Loading workstreams…")),
-            Some(row) => {
-                if let Some(e) = &row.error {
-                    left = left.child(div().pt_4().child(self.error_line("copy-project-error", e.clone(), None, cx)));
-                }
-                if row.workstreams().is_empty() && row.outcome.is_some() {
-                    left = left.child(ui::empty(t, "No open work.", "Send an order and the lead turns it into a workstream here."));
-                }
-                for w in row.workstreams() {
-                    left = left.child(workstream_block(t, w));
-                }
-            }
-            None => {}
-        }
-        let (lead_color, lead_label) = row.map_or((t.faint, "no lead"), |r| lead_badge(t, r));
-        let tail_error = self.state.detail.as_ref().and_then(|d| d.tail_error.clone());
-        let stale = row.is_some_and(ProjectRow::stale);
-        let workspace = row.map(|r| r.summary.workspace_root.clone());
-        let back = ui::button(t, "back", "‹ Projects", Variant::Ghost, true).on_click(cx.listener(|this, _, _, cx| {
-            this.go(Screen::Projects);
-            cx.notify();
-        }));
-        let new_order = {
-            let key = key.clone();
-            ui::button(t, "project-new-order", "New order", Variant::Secondary, true)
-                .on_click(cx.listener(move |this, _, window, cx| this.open_composer(Some(key.clone()), window, cx)))
-        };
-        div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .child(ui::header(
-                t,
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(back)
-                    .child(title)
-                    .child(div().font_weight(theme::REGULAR).text_color(t.quiet).child(format!("on {}", key.0)))
-                    .when(stale, |d| d.child(div().font_weight(theme::REGULAR).text_size(px(size::XS)).text_color(t.warning).child("stale"))),
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(div().flex().items_center().gap_1p5().child(ui::dot(lead_color)).child(format!("lead {lead_label}")))
-                    .child(ui::kbd(t, ui::shortcut("N")))
-                    .child(new_order),
-            ))
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .child(div().w(px(400.)).flex_none().flex().flex_col().border_r_1().border_color(t.hairline).child(left))
-                    .child(self.log_pane(t, tail_error, workspace, window, cx)),
-            )
-            .into_any_element()
-    }
-
-    fn log_pane(
-        &mut self,
-        t: &Theme,
-        error: Option<String>,
-        workspace: Option<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        self.drive_scroll_bench(window);
-        if !self.follow && self.scroll_bench_idle() && self.log_scroll.is_scrolled_to_end() == Some(true) {
-            self.follow = true;
-        }
-        let empty = self.log.is_empty();
-        let lead = self
-            .state
-            .detail
-            .as_ref()
-            .and_then(|d| self.state.project(&d.key))
-            .and_then(|r| r.lead())
-            .map(|l| (l.thread_id.to_string(), l.session_generation));
-        let jump = (!self.follow).then(|| {
-            ui::button(t, "jump-latest", "Jump to latest", Variant::Ghost, true).on_click(cx.listener(|this, _, _, cx| {
-                this.follow = true;
-                if !this.log.is_empty() {
-                    this.log_scroll.scroll_to_item(this.log.len() - 1, ScrollStrategy::Bottom);
-                }
-                cx.notify();
-            }))
-        });
-        let on_open = self.link_opener(workspace, cx);
-        div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .min_w_0()
-            .child(
-                div()
-                    .h(px(metric::BAR - 8.))
-                    .flex_none()
-                    .px_4()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .text_size(px(size::XS))
-                    .text_color(t.quiet)
-                    .child(lead.map_or("Lead log".to_string(), |(id, generation)| format!("Lead log · {id} · session {generation}")))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(format!("{} lines · {}", self.log.len(), if self.follow { "following" } else { "paused" }))
-                            .children(jump),
-                    ),
-            )
-            .when_some(error, |d, e| d.child(div().px_4().pb_2().child(self.error_line("copy-tail-error", e, None, cx))))
-            .when(empty, |d| d.child(div().px_4().text_color(t.quiet).child("The lead's latest messages and actions show here.")))
-            .child(
-                uniform_list(
-                    "log",
-                    self.log.len(),
-                    cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                        let t = theme(cx);
-                        range.map(|ix| log_row(t, ix, &this.log[ix], &on_open)).collect::<Vec<_>>()
-                    }),
-                )
-                .track_scroll(&self.log_scroll)
-                .on_scroll_wheel(cx.listener(Self::on_log_wheel))
-                .flex_1()
-                .font_family(t.mono_font.clone())
-                .text_size(px(size::SM)),
-            )
     }
 
     fn machines_screen(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1620,30 +1681,6 @@ impl Shell {
         section
     }
 
-    /// The reply field: terse inbox replies from any screen ("1 go 2 nvm").
-    fn reply_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = &theme(cx).clone();
-        let focused = self.reply.focus_handle(cx).is_focused(window);
-        let has_text = !self.reply.read(cx).is_empty();
-        div()
-            .flex_none()
-            .px_4()
-            .py_2()
-            .flex()
-            .items_end()
-            .gap_2()
-            .border_t_1()
-            .border_color(t.hairline)
-            .child(ui::field(t, focused).flex_1().min_w_0().px_1().child(self.reply.clone()))
-            .when(has_text, |d| {
-                d.child(
-                    ui::button(t, "send-reply", "Send", Variant::Primary, true)
-                        .mb(px(2.))
-                        .on_click(cx.listener(|this, _, _, cx| this.send_reply(cx))),
-                )
-            })
-    }
-
     /// What the last action did (sent, saved, refused), above the reply field on every screen.
     fn echo_line(&self, cx: &mut Context<Self>) -> Option<Div> {
         let t = &theme(cx).clone();
@@ -1665,6 +1702,50 @@ impl Shell {
         )
     }
 
+    /// The bench's raw lead log in the order view: 20k uniform rows, which the scroll run scrolls.
+    pub(crate) fn bench_log_pane(&mut self, t: &Theme, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.drive_scroll_bench(window);
+        if !self.log_follow && self.scroll_bench_idle() && self.log_scroll.is_scrolled_to_end() == Some(true) {
+            self.log_follow = true;
+        }
+        let on_open = self.link_opener(None, cx);
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .child(div().h(px(metric::BAR - 8.)).flex_none().px_4().flex().items_center().text_size(px(size::XS)).text_color(t.quiet).child(format!(
+                "Lead log · {} lines · {}",
+                self.log.len(),
+                if self.log_follow { "following" } else { "paused" }
+            )))
+            .child(
+                uniform_list(
+                    "log",
+                    self.log.len(),
+                    cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                        let t = theme(cx);
+                        range.map(|ix| log_row(t, ix, &this.log[ix], &on_open)).collect::<Vec<_>>()
+                    }),
+                )
+                .track_scroll(&self.log_scroll)
+                .on_scroll_wheel(cx.listener(Self::on_log_wheel))
+                .flex_1()
+                .font_family(t.mono_font.clone())
+                .text_size(px(size::SM)),
+            )
+    }
+
+    fn on_log_wheel(&mut self, event: &ScrollWheelEvent, _: &mut Window, _: &mut Context<Self>) {
+        let up = match event.delta {
+            ScrollDelta::Pixels(p) => p.y > px(0.),
+            ScrollDelta::Lines(l) => l.y > 0.,
+        };
+        if up {
+            self.log_follow = false;
+        }
+    }
+
     // ---- bench -----------------------------------------------------------------------------
 
     fn start_bench(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
@@ -1677,18 +1758,31 @@ impl Shell {
         for row in self.state.projects.iter().skip(3).step_by(4).take(2) {
             self.seen.mark(&row.key(), "2026-10-17T09:00:00.000Z");
         }
-        // FLEETD_SCREEN picks the screen the fixture opens on, for screenshots; the speed runs use the project.
-        self.screen = match std::env::var("FLEETD_SCREEN").as_deref() {
-            Ok("inbox") => Screen::Inbox,
-            Ok("projects") => Screen::Projects,
-            Ok("machines") => Screen::Machines,
-            Ok("settings") => Screen::Settings,
-            _ => Screen::Project,
-        };
-        if self.screen != Screen::Project {
-            self.state.close_project();
-        }
         self.bench = Some((stream, Probe::new()));
+        // The scroll run scrolls the order view's raw log; the other runs and screenshots show the conversation.
+        self.bench_log = mode == Mode::Scroll;
+        // FLEETD_SCREEN picks the screen the fixture opens on, for screenshots; the speed runs use the order view.
+        let screen = std::env::var("FLEETD_SCREEN").unwrap_or_default();
+        let (base, extra) = screen.split_once('+').unwrap_or((screen.as_str(), ""));
+        match base {
+            "board" => self.screen = Screen::Board,
+            "machines" => self.go(Screen::Machines),
+            "settings" => self.go(Screen::Settings),
+            _ => {
+                self.state.order = None;
+                self.open_order(fake::FIXTURE_ORDER, cx);
+                // Opening an order refetches its lead's log; the fixture has no hub, so put its log back.
+                self.state.detail = fake::fixture_state().detail;
+            }
+        }
+        match extra {
+            "inbox" => self.toggle_inbox(true, cx),
+            "status" => self.group_by_status = true,
+            "narrow" => {}
+            _ => {}
+        }
+        self.after_state_change(cx);
+        self.focus_composer(cx);
         if env_num("FLEETD_STREAM", 1) == 1 {
             cx.spawn(async move |this, cx| {
                 loop {
@@ -1718,7 +1812,7 @@ impl Shell {
 
     fn drive_scroll_bench(&mut self, window: &mut Window) {
         let Some(started) = self.bench.as_ref().and_then(|(_, p)| p.scroll_started) else { return };
-        self.follow = false;
+        self.log_follow = false;
         let state = self.log_scroll.0.borrow();
         let max = f32::from(state.base_handle.max_offset().y).max(1.);
         let y = (started.elapsed().as_secs_f32() * SCROLL_PX_PER_SEC) % max;
@@ -1727,183 +1821,8 @@ impl Shell {
     }
 }
 
-impl Render for Shell {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(focus) = self.pending_focus.take() {
-            window.focus(&focus, cx);
-        }
-        let screen = match self.screen {
-            Screen::Loading => div().flex_1().into_any_element(),
-            Screen::Connect => self.connect_screen(cx),
-            Screen::Inbox => self.inbox_screen(cx),
-            Screen::Projects => self.projects_screen(cx),
-            Screen::Project => self.project_screen(window, cx),
-            Screen::Machines => self.machines_screen(cx),
-            Screen::Settings => {
-                let hub = settings::Hub {
-                    url: self.hub.as_ref().map(|h| h.url.clone().into()),
-                    status: self.conn_line(theme(cx)).label,
-                    live: self.state.conn == Conn::Live && self.hub.is_some(),
-                };
-                self.settings.update(cx, |s, _| s.hub = hub);
-                self.settings.clone().into_any_element()
-            }
-        };
-        let t = theme(cx).clone();
-        let banner = self.note.clone().or_else(|| self.state.notice.clone());
-        let chrome = self.has_reply_bar();
-        let main = div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .when_some(banner, |d, text| {
-                d.child(div().px_4().py_2().border_b_1().border_color(t.hairline).child(self.error_line("copy-banner", text, None, cx)))
-            })
-            .child(div().flex_1().min_h_0().flex().child(screen))
-            .when(chrome, |d| d.children(self.echo_line(cx)));
-        let overlay = |child: AnyElement, cx: &mut Context<Self>| {
-            // A click outside the floating panel closes it; the panel itself stops clicks reaching what's under.
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .flex_col()
-                .items_center()
-                .pt(px(88.))
-                .occlude()
-                .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.close_overlays(cx)))
-                .child(div().occlude().child(child))
-        };
-        div()
-            .relative()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(t.bg)
-            .text_color(t.text)
-            .text_size(px(size::MD))
-            .font_family(t.ui_font.clone())
-            .track_focus(&self.focus)
-            .on_key_down(cx.listener(Self::on_key))
-            .on_action(cx.listener(|_, _: &FocusNext, window, cx| window.focus_next(cx)))
-            .on_action(cx.listener(|_, _: &FocusPrev, window, cx| window.focus_prev(cx)))
-            .on_action(cx.listener(|this, _: &actions::OpenSettings, _, cx| {
-                this.go(Screen::Settings);
-                cx.notify();
-            }))
-            .when(self.connected(), |d| {
-                d.on_action(cx.listener(|this, _: &actions::NewOrder, window, cx| this.open_composer(None, window, cx)))
-                    .on_action(cx.listener(|this, _: &actions::ToggleCommandPalette, window, cx| this.toggle_palette(window, cx)))
-                    .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
-                        this.sidebar_hidden = !this.sidebar_hidden;
-                        cx.notify();
-                    }))
-            })
-            .child(crate::titlebar::TitleBar::new())
-            .child(div().flex_1().min_h_0().flex().when(chrome && !self.sidebar_hidden, |d| d.child(self.sidebar(cx))).child(main))
-            .when(chrome, |d| d.child(self.reply_bar(window, cx)))
-            .when_some(self.palette.clone(), |d, p| d.child(overlay(p.into_any_element(), cx)))
-            .when_some(self.composer.clone(), |d, c| d.child(overlay(c.into_any_element(), cx)))
-    }
-}
-
-/// A workstream, quietly: its title, id and state on one line, the lead's status line, and what "done" means.
-fn workstream_block(t: &Theme, w: &Workstream) -> impl IntoElement {
-    let state_color = match w.state {
-        WorkstreamState::Done => t.success,
-        WorkstreamState::Failed | WorkstreamState::Stopped => t.danger,
-        _ => t.quiet,
-    };
-    let mut block = div()
-        .py_3()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .border_b_1()
-        .border_color(t.hairline)
-        .child(
-            div()
-                .flex()
-                .gap_2()
-                .items_baseline()
-                .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(w.title.to_string()))
-                .child(div().text_size(px(size::XS)).text_color(t.quiet).child(w.workstream_id.to_string()))
-                .child(div().text_size(px(size::XS)).text_color(state_color).child(label(&w.state))),
-        )
-        .when_some(w.headline.clone(), |d, h| d.child(div().text_color(t.quiet).whitespace_normal().child(h.to_string())));
-    match &w.brief {
-        // ✓ comes only from checks the hub ran (M6); until then every item is open.
-        Some(brief) => {
-            let mut list = div().pt_1().flex().flex_col().gap_0p5();
-            for check in &brief.done_when {
-                list = list.child(
-                    div()
-                        .flex()
-                        .items_start()
-                        .gap_2()
-                        .text_size(px(size::XS))
-                        .text_color(t.quiet)
-                        .child(ui::ring(t.faint))
-                        .child(div().whitespace_normal().child(describe(check))),
-                );
-            }
-            block = block.child(list);
-        }
-        None => block = block.child(div().text_size(px(size::XS)).text_color(t.quiet).child("Draft: the lead hasn't written the brief yet.")),
-    }
-    block
-}
-
-/// Quiet unless it needs a look: working is green, stalled amber, everything else grey.
-fn lead_badge(t: &Theme, row: &ProjectRow) -> (Hsla, &'static str) {
-    match row.lead().map(|l| l.state) {
-        None if row.outcome.is_none() => (t.faint, "…"),
-        None => (t.faint, "no lead"),
-        Some(LeadState::Working) => (t.success, "working"),
-        Some(LeadState::Idle) => (t.faint, "idle"),
-        Some(LeadState::Starting) => (t.faint, "starting"),
-        Some(LeadState::Stalled) => (t.warning, "stalled"),
-        Some(LeadState::Stopped) => (t.faint, "stopped"),
-    }
-}
-
-/// Log rows for a tail: one per line, a timestamp on the first line of each item.
-fn tail_rows(items: &[TailItem]) -> Vec<LogRow> {
-    let mut rows = Vec::new();
-    let mut push = |kind, text: String| rows.push(LogRow::new(kind, &text));
-    for item in items {
-        match item {
-            TailItem::Message(TailMessage { at, role, text }) => {
-                let kind = if *role == TailRole::User { LogKind::User } else { LogKind::Thought };
-                let role = label(role);
-                for (i, line) in text.lines().enumerate() {
-                    push(kind, if i == 0 { format!("{}  {role}: {line}", clock(at.as_str())) } else { format!("          {line}") });
-                }
-            }
-            TailItem::Action(TailAction { at, action }) => {
-                let kind = if action.failed { LogKind::Error } else { LogKind::Tool };
-                push(kind, format!("{}  ● {} [{}]", clock(at.as_str()), action.summary, label(&action.status)));
-                let output = action.output_tail.as_deref().unwrap_or_default();
-                // An edit's or `git diff`'s output reads as a diff: added and removed lines tinted.
-                let diff = diffview::looks_like_diff(output);
-                for line in output.lines() {
-                    let kind = match (action.failed, diff, line.as_bytes().first()) {
-                        (true, ..) => LogKind::Error,
-                        (false, true, Some(b'+')) if !line.starts_with("+++") => LogKind::DiffAdd,
-                        (false, true, Some(b'-')) if !line.starts_with("---") => LogKind::DiffDel,
-                        _ => LogKind::Output,
-                    };
-                    push(kind, format!("            {line}"));
-                }
-            }
-        }
-    }
-    rows
-}
-
 /// A contract enum's wire value, e.g. "irreversible".
-fn label<T: serde::Serialize>(value: &T) -> String {
+pub fn wire_label<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
         _ => "?".into(),
@@ -1911,7 +1830,7 @@ fn label<T: serde::Serialize>(value: &T) -> String {
 }
 
 /// One line for a done-when list.
-fn describe(check: &CheckSpec) -> String {
+pub fn describe(check: &CheckSpec) -> String {
     match check {
         CheckSpec::PrMerged { repo, pr } => match pr {
             Some(pr) => format!("PR #{pr} merged in {repo}"),
@@ -1929,12 +1848,12 @@ fn describe(check: &CheckSpec) -> String {
 }
 
 /// "2026-10-17T10:04:05.123Z" → "10:04:05".
-fn clock(iso: &str) -> &str {
+pub fn clock(iso: &str) -> &str {
     iso.get(11..19).unwrap_or(iso)
 }
 
 /// "4m ago"-style age; computed at render, which only happens on change, so it never ticks by itself.
-fn ago(iso: &str) -> String {
+pub fn ago(iso: &str) -> String {
     let Some(then) = unix_secs(iso) else { return iso.to_string() };
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
     let s = (now - then).max(0);
@@ -1946,11 +1865,21 @@ fn ago(iso: &str) -> String {
     }
 }
 
+/// "6m", "2h", "3d": an order's age on its card.
+pub fn ago_short(iso: &str, now_secs: i64) -> String {
+    let Some(then) = unix_secs(iso) else { return String::new() };
+    match (now_secs - then).max(0) {
+        s @ 0..3600 => format!("{}m", s / 60),
+        s @ 3600..86_400 => format!("{}h", s / 3600),
+        s => format!("{}d", s / 86_400),
+    }
+}
+
 fn printable(ks: &Keystroke) -> Option<&str> {
     ks.key_char.as_deref().filter(|ch| !ch.chars().any(char::is_control))
 }
 
-fn clip(text: &str, max: usize) -> String {
+pub fn clip(text: &str, max: usize) -> String {
     if text.chars().count() <= max { text.to_string() } else { format!("{}…", text.chars().take(max - 1).collect::<String>()) }
 }
 
@@ -1985,7 +1914,7 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
         };
         match mode {
             Mode::Cold => {}
-            Mode::Idle => return,
+            Mode::Idle | Mode::Live => return,
             Mode::KeysInternal => {
                 wait(cx, Duration::from_secs(1)).await;
                 for i in 0..bench::KEYSTROKES {
@@ -2006,7 +1935,16 @@ fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {
             }
             Mode::KeysExternal => {
                 wait(cx, Duration::from_secs(1)).await;
-                this.update(cx, |s, _| s.probe().emit(&format!("event=ready x11_window={}", x11_window.unwrap_or(0)))).ok();
+                this.update_in(cx, |s, window, cx| {
+                    // The focused composer's text field in window pixels: where the driver watches for each echo.
+                    let scale = window.scale_factor();
+                    let field = s.follow.read(cx).field_bounds(cx).map_or_else(String::new, |b| {
+                        let [x, y, w, h] = [b.origin.x, b.origin.y, b.size.width, b.size.height].map(|v| (f32::from(v) * scale).round() as i64);
+                        format!(" field={x},{y},{w},{h}")
+                    });
+                    s.probe().emit(&format!("event=ready x11_window={}{field}", x11_window.unwrap_or(0)))
+                })
+                .ok();
                 // The driver quits us after its last key; keep resolving latencies until then.
                 loop {
                     wait(cx, Duration::from_millis(20)).await;
@@ -2066,28 +2004,19 @@ fn text_row() -> Div {
 
 /// One log line: a grey timestamp column, then the line; links in it are clickable; diff lines are tinted.
 fn log_row(t: &Theme, ix: usize, line: &LogRow, on_open: &links::OnOpen) -> Div {
-    let bg = match line.kind {
-        LogKind::DiffAdd => Some(t.diff_add),
-        LogKind::DiffDel => Some(t.diff_del),
-        _ => None,
-    };
     let text = SharedString::from(line.body().to_string());
     let body = div().min_w_0().text_color(log_color(t, line.kind));
     // Checked per visible row as it's drawn, so a 20k-line log costs nothing up front.
     let body = if links::has_link(&text) { body.child(links::text(t, format!("log-{ix}"), text, false, on_open.clone())) } else { body.child(text) };
-    text_row()
-        .when_some(bg, |d, bg| d.bg(bg))
-        .child(div().w(px(96.)).flex_none().text_color(t.quiet).child(SharedString::from(line.stamp().to_string())))
-        .child(body)
+    text_row().child(div().w(px(96.)).flex_none().text_color(t.quiet).child(SharedString::from(line.stamp().to_string()))).child(body)
 }
 
 /// Quiet work, loud failures: output and passing checks are grey, errors red, your own words in the accent.
 fn log_color(t: &Theme, kind: LogKind) -> Hsla {
     match kind {
-        LogKind::Tool | LogKind::Thought | LogKind::DiffAdd | LogKind::DiffDel => t.text,
+        LogKind::Tool | LogKind::Thought => t.text,
         LogKind::Output | LogKind::Ok => t.quiet,
         LogKind::Error => t.danger,
-        LogKind::User => t.accent,
     }
 }
 
@@ -2108,32 +2037,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tail_rows_split_messages_and_show_action_output() {
-        let items: Vec<TailItem> = serde_json::from_value(serde_json::json!([
-            { "kind": "message", "at": "2026-10-17T10:04:05.000Z", "role": "assistant", "text": "Plan:\n1. read" },
-            { "kind": "action", "at": "2026-10-17T10:04:06.000Z", "action": { "at": "2026-10-17T10:04:06.000Z", "kind": "command",
-              "status": "failed", "summary": "pnpm test", "outputTail": "1 failed", "exitCode": 1, "failed": true } },
-        ]))
-        .unwrap();
-        let rows: Vec<(LogKind, String, String)> =
-            tail_rows(&items).into_iter().map(|r| (r.kind, r.stamp().to_string(), r.body().to_string())).collect();
-        assert_eq!(rows[0], (LogKind::Thought, "10:04:05".into(), "assistant: Plan:".into()));
-        assert_eq!((rows[1].1.as_str(), rows[1].2.as_str()), ("", "1. read"));
-        assert_eq!(rows[2], (LogKind::Error, "10:04:06".into(), "● pnpm test [failed]".into()));
-        assert_eq!((rows[3].0, rows[3].2.as_str()), (LogKind::Error, "  1 failed"));
-    }
-
-    #[test]
-    fn diff_output_is_tinted_and_paths_are_linked() {
-        let items: Vec<TailItem> = serde_json::from_value(serde_json::json!([
-            { "kind": "action", "at": "2026-10-17T10:04:06.000Z", "action": { "at": "2026-10-17T10:04:06.000Z", "kind": "file_change",
-              "status": "completed", "summary": "Edit src/a.rs", "outputTail": "--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-old\n+new", "failed": false } },
-        ]))
-        .unwrap();
-        let rows = tail_rows(&items);
-        let kinds: Vec<LogKind> = rows.iter().map(|r| r.kind).collect();
-        use LogKind::*;
-        assert_eq!(kinds, [Tool, Output, Output, Output, DiffDel, DiffAdd]);
-        assert!(links::has_link(rows[0].body()), "the edited file is a link");
+    fn card_ages_are_short() {
+        let at = unix_secs("2026-10-18T10:00:00.000Z").unwrap();
+        assert_eq!(ago_short("2026-10-18T10:00:00.000Z", at + 359), "5m");
+        assert_eq!(ago_short("2026-10-18T10:00:00.000Z", at + 7200), "2h");
+        assert_eq!(ago_short("2026-10-18T10:00:00.000Z", at - 10), "0m", "a clock behind the hub reads as now");
     }
 }

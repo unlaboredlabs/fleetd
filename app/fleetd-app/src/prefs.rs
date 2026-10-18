@@ -6,12 +6,14 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::live::motion::MotionPref;
 use crate::theme::Mode;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Prefs {
     pub theme: Mode,
+    pub motion: MotionPref,
 }
 
 pub fn load() -> Prefs {
@@ -36,6 +38,9 @@ fn parse(bytes: &[u8]) -> Prefs {
     if let Some(mode) = map.get("theme").and_then(|v| serde_json::from_value(v.clone()).ok()) {
         prefs.theme = mode;
     }
+    if let Some(motion) = map.get("motion").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+        prefs.motion = motion;
+    }
     prefs
 }
 
@@ -50,6 +55,8 @@ mod tests {
     #[test]
     fn reads_the_theme_and_tolerates_anything_else() {
         assert_eq!(parse(br#"{"theme":"dark"}"#).theme, Mode::Dark);
+        assert_eq!(parse(br#"{"theme":"dark","motion":"reduced"}"#).motion, MotionPref::Reduced);
+        assert_eq!(parse(br#"{"motion":"wobbly"}"#).motion, MotionPref::System, "an unknown value keeps the default");
         assert_eq!(parse(br#"{"theme":"sepia","later":1}"#), Prefs::default());
         assert_eq!(parse(b"not json"), Prefs::default());
         assert_eq!(parse(b"[]"), Prefs::default());
@@ -57,7 +64,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let prefs = Prefs { theme: Mode::Light };
+        let prefs = Prefs { theme: Mode::Light, motion: MotionPref::Full };
         assert_eq!(parse(&serde_json::to_vec(&prefs).unwrap()), prefs);
     }
 }
