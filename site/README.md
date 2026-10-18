@@ -110,6 +110,8 @@ $ fleetd doctor
   the block's first command is `fleetd init` itself), writes each command's output under it, keeps a nonzero exit as
   a final `[exit N]` line, and regenerates `site/docs`. It refuses to write a hostname, a real `/home` path, a
   non-loopback IP or a key.
+- Blocks named `init` and `machine-add` get exactly the landing page's transcripts (`fleetd init --listen …` and
+  `fleetd machine add builder-1 --dry-run` as the plan only, each ending in `[exit 0]`).
 - Output that needs a live hub, a node or claude can't be captured that way. A block named `digest` is filled from
   the full lab run (`FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts`, which also does everything `--docs` does).
   For anything else that needs a live fleet, paste real output from a lab run into an unmarked `console` block.

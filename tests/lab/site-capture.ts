@@ -616,14 +616,21 @@ async function main() {
   fs.writeFileSync(path.join(SITE, "fleetd.txt"), fillTwin(fs.readFileSync(path.join(SITE, "fleetd.txt"), "utf8"), txtBlocks));
   const stale = staleQuotes([...strings(tail), ...strings(answered), wake, digest, init.out, add.out].join("\n"));
   log(`wrote site/capture-inbox.png, site/capture-lead.png and the capture blocks in site/home.html and site/fleetd.txt`);
-  fillDocs(docsBlocks({ digest }));
+  fillDocs(docsBlocks({ ...landingTranscripts({ init, add }), digest }));
   if (stale.length > 0) log(`check by hand: the page says these, this run's output doesn't:\n${stale.map((s) => `  - ${s}`).join("\n")}`);
   log("callouts are placed by hand: if the app's layout moved, re-aim --x/--y in home.html (see the comment above Fig. 1)");
 }
 
+/** Docs blocks named `init` and `machine-add` show exactly the landing page's transcripts (the dry-run plan without
+ * the shell command under each step). */
+const landingTranscripts = ({ init, add }: ReturnType<typeof setupTranscripts>) => ({
+  init: `$ ${init.cmd}\n${init.out}`,
+  "machine-add": `$ ${add.cmd}\n${add.out}`,
+});
+
 async function docsOnly() {
   check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
-  fillDocs(docsBlocks({}));
+  fillDocs(docsBlocks(landingTranscripts(setupTranscripts())));
 }
 
 if (import.meta.main) (DOCS_ONLY ? docsOnly() : main())
