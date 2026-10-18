@@ -210,6 +210,7 @@ impl Status {
                 world.tz,
                 now,
             );
+            render::fit(&mut doc);
             let content = content_of(&doc);
             let mut st = self.state.lock().unwrap();
             let same = st.docs.get(&key).is_some_and(|c| c.content == content);

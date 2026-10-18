@@ -1587,9 +1587,62 @@ pub fn render(
     })
 }
 
+/// What a doc may weigh on the wire, with room for the caller's since-you-looked counts.
+pub const MAX_DOC_BYTES: usize = fleetd_contracts::live::LIVE_MAX_FRAME_BYTES - 512;
+
+fn pop<T: Clone, const MAX: usize>(list: &mut List<T, 0, MAX>, more: &mut Count) -> bool {
+    let mut v = std::mem::take(list).into_inner();
+    let popped = v.pop().is_some();
+    if popped {
+        *more = Count::unchecked(more.get() + 1);
+    }
+    *list = List::unchecked(v);
+    popped
+}
+
+/// Trims list tails, least important first, into `more` until the doc fits [`MAX_DOC_BYTES`].
+pub fn fit(doc: &mut StatusDoc) {
+    let size = |d: &StatusDoc| serde_json::to_vec(d).map_or(0, |v| v.len());
+    while size(doc) > MAX_DOC_BYTES {
+        let more = &mut doc.more;
+        let trimmed = pop(&mut doc.done, &mut more.done)
+            || pop(&mut doc.next, &mut more.next)
+            || (doc.in_progress.len() > 5 && pop(&mut doc.in_progress, &mut more.in_progress))
+            || pop(&mut doc.parts, &mut more.parts)
+            || (doc.stale.len() > 3 && pop(&mut doc.stale, &mut more.stale))
+            || {
+                let mut ci = std::mem::take(&mut doc.health.ci).into_inner();
+                let cut = ci
+                    .iter_mut()
+                    .rev()
+                    .find(|c| !c.failing.is_empty())
+                    .map(|c| {
+                        let mut f = std::mem::take(&mut c.failing).into_inner();
+                        f.pop();
+                        c.failing = List::unchecked(f);
+                    });
+                doc.health.ci = List::unchecked(ci);
+                cut.is_some()
+            }
+            || pop(&mut doc.in_progress, &mut more.in_progress)
+            || pop(&mut doc.risks, &mut more.risks)
+            || pop(&mut doc.stale, &mut more.stale)
+            || {
+                let mut m = std::mem::take(&mut doc.health.machines).into_inner();
+                let cut = m.pop().is_some();
+                doc.health.machines = List::unchecked(m);
+                cut
+            };
+        if !trimmed {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn clock_text_is_absolute_in_the_hub_zone() {
@@ -1600,5 +1653,43 @@ mod tests {
         assert_eq!(clock(now + 30 * DAY_MS, now, tz), "Nov 17 13:02");
         assert_eq!(duration(6 * 3_600_000), "+6h");
         assert_eq!(duration(-40 * 60_000), "−40m");
+    }
+
+    #[test]
+    fn a_doc_filled_to_the_contract_maxima_is_trimmed_to_the_frame_cap() {
+        let long = |n: usize| "x".repeat(n);
+        let stale = json!({ "since": "2026-10-18T10:00:00.000Z", "reason": long(200) });
+        let row = json!({ "itemId": "P1", "workstreamId": "W1", "title": long(120), "taskIds": ["T1", "T2"],
+            "changeIds": ["X1"], "gate": long(160), "eta": "2026-10-18T10:00:00.000Z", "stale": stale });
+        let progress = json!({ "pct": 50, "done": 1, "total": 2, "polishDone": 0, "polishTotal": 0, "asOf": "2026-10-18T10:00:00.000Z", "stale": stale });
+        let doc = json!({
+            "scope": { "kind": "fleet" }, "title": "Fleet", "version": 1, "seq": 1, "now": "2026-10-18T10:00:00.000Z",
+            "progress": progress, "markers": [], "eta": { "samples": 0, "basis": "none" }, "gates": [],
+            "headline": { "text": long(400), "source": "template", "at": "2026-10-18T10:00:00.000Z" },
+            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "asked": 0, "scopeItems": 0 },
+            "parts": vec![json!({ "title": long(120), "progress": progress }); 20],
+            "done": vec![json!({ "title": long(120), "doneAt": "2026-10-18T10:00:00.000Z", "evidence": long(200) }); 10],
+            "inProgress": vec![row; 20],
+            "next": vec![json!({ "itemId": "P2", "title": long(120), "after": [] }); 10],
+            "needsYou": { "count": 0, "askIds": [] },
+            "risks": vec![json!({ "rule": "no_plan", "level": "warning", "message": long(200) }); 5],
+            "health": {
+                "ci": vec![json!({ "repo": "acme/storefront", "state": "red", "failing": vec![long(120); 10], "stale": stale }); 10],
+                "machines": vec![json!({ "machineId": "devbox", "status": "offline", "dropsToday": 2, "stale": stale }); 20],
+                "usage": [], "slots": { "running": 0, "used": 0, "cap": 40, "queued": 0 },
+            },
+            "stale": vec![json!({ "source": "machine:devbox", "since": "2026-10-18T10:00:00.000Z", "reason": long(200) }); 10],
+            "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 },
+        });
+        let mut doc: StatusDoc = serde_json::from_value(doc).unwrap();
+        assert!(serde_json::to_vec(&doc).unwrap().len() > 40 * 1024);
+        fit(&mut doc);
+        assert!(serde_json::to_vec(&doc).unwrap().len() <= MAX_DOC_BYTES);
+        assert_eq!(
+            (doc.more.done.get(), doc.more.next.get()),
+            (10, 10),
+            "least important first"
+        );
+        assert_eq!(doc.in_progress.len() as i64 + doc.more.in_progress.get(), 20, "every trimmed row is counted");
     }
 }
