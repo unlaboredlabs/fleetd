@@ -35,6 +35,7 @@
 <ul>
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/steering">Steering</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
@@ -140,6 +141,12 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dd>keep 1-365 days of timelines (admin key); daily totals are kept 400 days</dd>
 <dt id="status"><a class="anchor" href="#status" aria-label="Link to fleetd status">#</a><pre class="syn"><code>fleetd status [&lt;order&gt;|&lt;project&gt;] [--watch] [--json] [--hub &lt;url&gt; --key-file &lt;path&gt;]</code></pre></dt>
 <dd>progress fleetd verified, the ETA from measured speed, what it waits on, what changed since you last looked, health and risks; for an order (W41), a project by id or title (&lt;machine&gt;/&lt;project&gt; when two machines have one), or the whole fleet. <code>--watch</code> prints each new version as the hub sends it; stale parts say so. On the hub machine it needs no <code>--hub</code> or <code>--key-file</code></dd>
+<dt id="steer"><a class="anchor" href="#steer" aria-label="Link to fleetd steer">#</a><pre class="syn"><code>fleetd steer &lt;W|T&gt; &quot;&lt;text&gt;&quot; [--now] [--wait] --key-file &lt;human key&gt; [--hub &lt;url&gt;]</code></pre></dt>
+<dd>steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the agent's next step, after the tool it is running returns. <code>--now</code> stops that step and delivers at once. <code>--wait</code> follows the receipt: exit 0 acknowledged, 1 not acknowledged, withdrawn or failed. Without <code>--hub</code> it uses the hub on this machine</dd>
+<dt id="steer-withdraw"><a class="anchor" href="#steer-withdraw" aria-label="Link to fleetd steer withdraw">#</a><pre class="syn"><code>fleetd steer withdraw S&lt;n&gt; --key-file &lt;human key&gt; [--hub &lt;url&gt;]</code></pre></dt>
+<dd>take back a steer the agent has not taken in yet</dd>
+<dt id="steers"><a class="anchor" href="#steers" aria-label="Link to fleetd steers">#</a><pre class="syn"><code>fleetd steers [W|T] --key-file &lt;human key&gt; [--hub &lt;url&gt;]</code></pre></dt>
+<dd>recent steers and their receipts</dd>
 </dl>
 <h2 id="lead-side-commands">Lead-side commands<a class="anchor" href="#lead-side-commands" aria-label="Link to this section">#</a></h2>
 <p class="lede">Run by a lead or task inside a project workspace.</p>
@@ -168,8 +175,8 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dd>delegate work to a subagent; writers need <code>--areas</code> and <code>--serves</code> and get their own branch; a review task needs <code>--pr</code>, and <code>--qa</code> marks it a QA run; <code>--item</code> links it to that plan item</dd>
 <dt id="task-list"><a class="anchor" href="#task-list" aria-label="Link to fleetd task list">#</a><pre class="syn"><code>fleetd task list [--state &lt;s&gt;] [--workstream &lt;W&gt;]</code></pre></dt>
 <dt id="task-status"><a class="anchor" href="#task-status" aria-label="Link to fleetd task status">#</a><pre class="syn"><code>fleetd task status &lt;T&gt;</code></pre></dt>
-<dt id="task-message"><a class="anchor" href="#task-message" aria-label="Link to fleetd task message">#</a><pre class="syn"><code>fleetd task message &lt;T&gt; &quot;&lt;text&gt;&quot;</code></pre></dt>
-<dd>steer a running task, answer a waiting one, or continue an ended one</dd>
+<dt id="task-message"><a class="anchor" href="#task-message" aria-label="Link to fleetd task message">#</a><pre class="syn"><code>fleetd task message &lt;T&gt; &quot;&lt;text&gt;&quot; [--now]</code></pre></dt>
+<dd>steer a running task (at its next step; <code>--now</code> stops its current step), answer a waiting one, or continue an ended one</dd>
 <dt id="task-cancel"><a class="anchor" href="#task-cancel" aria-label="Link to fleetd task cancel">#</a><pre class="syn"><code>fleetd task cancel &lt;T&gt; [--reason &lt;r&gt;]</code></pre></dt>
 <dt id="claim-done"><a class="anchor" href="#claim-done" aria-label="Link to fleetd claim done">#</a><pre class="syn"><code>fleetd claim done --workstream &lt;W&gt;</code></pre></dt>
 <dd>fleetd runs the workstream's done-when checks itself; only all of them passing makes it done (exit 1 when a check did not pass)</dd>
@@ -182,13 +189,13 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dt id="change-status"><a class="anchor" href="#change-status" aria-label="Link to fleetd change status">#</a><pre class="syn"><code>fleetd change status &lt;X&gt;</code></pre></dt>
 <dt id="plan-milestone"><a class="anchor" href="#plan-milestone" aria-label="Link to fleetd plan milestone">#</a><pre class="syn"><code>fleetd plan milestone &quot;&lt;title&gt;&quot; [--position &lt;n&gt;]</code></pre></dt>
 <dt id="plan-add"><a class="anchor" href="#plan-add" aria-label="Link to fleetd plan add">#</a><pre class="syn"><code>fleetd plan add &quot;&lt;title&gt;&quot; --milestone M&lt;n&gt; [--workstream &lt;W&gt;] [--must|--polish] [--size s|m|l]
-    [--after P1,P2] [--pr &lt;url&gt;] [--check &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;]</code></pre></dt>
+    [--after P1,P2] [--pr &lt;url&gt;] [--check &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;] [--steer S&lt;n&gt;]</code></pre></dt>
 <dt id="plan-edit"><a class="anchor" href="#plan-edit" aria-label="Link to fleetd plan edit">#</a><pre class="syn"><code>fleetd plan edit P&lt;n&gt; [--title &lt;t&gt;] [--size s|m|l] [--must|--polish] [--milestone M&lt;n&gt;]
     [--workstream &lt;W&gt;] [--after P1,P2] [--pr +&lt;url&gt;|--pr=-&lt;url&gt;] [--check +&lt;n&gt;|--check=-&lt;n&gt;]
-    [--position &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;]</code></pre></dt>
-<dt id="plan-drop"><a class="anchor" href="#plan-drop" aria-label="Link to fleetd plan drop">#</a><pre class="syn"><code>fleetd plan drop P&lt;n&gt; --why &quot;&lt;reason&gt;&quot;</code></pre></dt>
+    [--position &lt;n&gt;] [--why &quot;&lt;note&gt;&quot;] [--steer S&lt;n&gt;]</code></pre></dt>
+<dt id="plan-drop"><a class="anchor" href="#plan-drop" aria-label="Link to fleetd plan drop">#</a><pre class="syn"><code>fleetd plan drop P&lt;n&gt; (--why &quot;&lt;reason&gt;&quot; | --steer S&lt;n&gt;)</code></pre></dt>
 <dt id="plan-show"><a class="anchor" href="#plan-show" aria-label="Link to fleetd plan show">#</a><pre class="syn"><code>fleetd plan show [--workstream &lt;W&gt;]</code></pre></dt>
-<dd>keep the project's plan: milestones of must or polish items sized s, m or l. Link work with <code>--item</code>; only fleetd marks an item done, once its PRs merged through the train and its done-when checks passed. Changing scope after a milestone's first 10 minutes needs <code>--why</code>, and the status view shows it as a marker</dd>
+<dd>keep the project's plan: milestones of must or polish items sized s, m or l. Link work with <code>--item</code>; only fleetd marks an item done, once its PRs merged through the train and its done-when checks passed. Changing scope after a milestone's first 10 minutes needs <code>--why</code>, and the status view shows it as a marker. <code>--steer</code> S&lt;n&gt; says the human's steer asked for it: it stands in for <code>--why</code> and acknowledges the steer</dd>
 <dt id="inventory"><a class="anchor" href="#inventory" aria-label="Link to fleetd inventory">#</a><pre class="syn"><code>fleetd inventory</code></pre></dt>
 <dd>the project's open work ranked: failing checks, open issues (gh), open asks and TODO/FIXME markers; with nothing left that has a value source and no open child, the project's finish-all workstream goes idle</dd>
 <dt id="workstream-spawn"><a class="anchor" href="#workstream-spawn" aria-label="Link to fleetd workstream spawn">#</a><pre class="syn"><code>fleetd workstream spawn --text &quot;&lt;intent&gt;&quot; --serves issue:&lt;#n|url&gt;|defect:&lt;text&gt;|done:&lt;n&gt;

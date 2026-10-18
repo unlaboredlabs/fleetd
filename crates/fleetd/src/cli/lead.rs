@@ -46,8 +46,9 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              that plan item
   task list [--state <s>] [--workstream <W>]
   task status <T>
-  task message <T> "<text>"
-             steer a running task, answer a waiting one, or continue an ended one
+  task message <T> "<text>" [--now]
+             steer a running task (at its next step; --now stops its current step), answer a
+             waiting one, or continue an ended one
   task cancel <T> [--reason <r>]
   claim done --workstream <W>
              fleetd runs the workstream's done-when checks itself; only all of them passing makes
@@ -64,16 +65,17 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   change status <X>
   plan milestone "<title>" [--position <n>]
   plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
-      [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"]
+      [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"] [--steer S<n>]
   plan edit P<n> [--title <t>] [--size s|m|l] [--must|--polish] [--milestone M<n>]
       [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--check +<n>|--check=-<n>]
-      [--position <n>] [--why "<note>"]
-  plan drop P<n> --why "<reason>"
+      [--position <n>] [--why "<note>"] [--steer S<n>]
+  plan drop P<n> (--why "<reason>" | --steer S<n>)
   plan show [--workstream <W>]
              keep the project's plan: milestones of must or polish items sized s, m or l. Link
              work with --item; only fleetd marks an item done, once its PRs merged through the
              train and its done-when checks passed. Changing scope after a milestone's first 10
-             minutes needs --why, and the status view shows it as a marker
+             minutes needs --why, and the status view shows it as a marker. --steer S<n> says the
+             human's steer asked for it: it stands in for --why and acknowledges the steer
   inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
@@ -141,6 +143,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("serves", Kind::Str),
     ("pr", Kind::Str),
     ("qa", Kind::Bool),
+    ("now", Kind::Bool),
     ("state", Kind::Str),
     ("reason", Kind::Str),
     ("task", Kind::Str),
@@ -166,7 +169,15 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("after", Kind::Str),
     ("check", Kind::Str),
     ("position", Kind::Str),
+    ("steer", Kind::Str),
 ];
+
+/// `S` and a positive number, as `SteerId`.
+fn is_steer_id(id: &str) -> bool {
+    id.strip_prefix('S').is_some_and(|n| {
+        !n.is_empty() && !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit())
+    })
+}
 
 fn parse_json(flag: &str, text: &str) -> Result<Value, String> {
     serde_json::from_str(text).map_err(|error| format!("{flag} is not valid JSON ({error})"))
@@ -495,11 +506,16 @@ pub fn parse_lead_args(
                 json!({ "op": "task_status", "taskId": rest[0] })
             }
             Some("message") => {
-                only(&[])?;
+                only(&["now"])?;
                 if rest.len() < 2 {
-                    return Err(r#"expected fleetd task message <T> "<text>""#.into());
+                    return Err(r#"expected fleetd task message <T> "<text>" [--now]"#.into());
                 }
-                json!({ "op": "task_message", "taskId": rest[0], "message": rest[1..].join(" ") })
+                defined(vec![
+                    ("op", s(Some("task_message"))),
+                    ("taskId", s(Some(rest[0]))),
+                    ("message", Some(Value::String(rest[1..].join(" ")))),
+                    ("now", v.flag("now").then_some(Value::Bool(true))),
+                ])
             }
             Some("cancel") => {
                 only(&["reason"])?;
@@ -702,6 +718,12 @@ pub fn parse_lead_args(
             };
             let after = v.str("after").map(|a| Value::Array(split_list(a)));
             let title = rest.join(" ");
+            // `--steer S12`: the change answers that steer, which also acknowledges it, and stands in for --why.
+            let steer = match v.str("steer") {
+                None => None,
+                Some(id) if is_steer_id(id) => s(Some(id)),
+                Some(id) => return Err(format!("--steer is a steer id like S12, got '{id}'")),
+            };
             match sub {
                 Some("milestone") => {
                     only(&["position"])?;
@@ -725,6 +747,7 @@ pub fn parse_lead_args(
                         "pr",
                         "check",
                         "why",
+                        "steer",
                     ])?;
                     if title.is_empty() {
                         return Err(r#"expected fleetd plan add "<title>" --milestone M<n>"#.into());
@@ -741,6 +764,7 @@ pub fn parse_lead_args(
                         ("pr", s(v.str("pr"))),
                         ("check", whole("check")?),
                         ("why", s(v.str("why"))),
+                        ("steer", steer),
                     ])
                 }
                 Some("edit") => {
@@ -756,6 +780,7 @@ pub fn parse_lead_args(
                         "check",
                         "position",
                         "why",
+                        "steer",
                     ])?;
                     let [item] = rest.as_slice() else {
                         return Err("expected fleetd plan edit P<n> [--title <t>] …".into());
@@ -801,15 +826,23 @@ pub fn parse_lead_args(
                         ),
                         ("position", whole("position")?),
                         ("why", s(v.str("why"))),
+                        ("steer", steer),
                     ])
                 }
                 Some("drop") => {
-                    only(&["why"])?;
+                    only(&["why", "steer"])?;
                     let [item] = rest.as_slice() else {
                         return Err(r#"expected fleetd plan drop P<n> --why "<reason>""#.into());
                     };
-                    required(&["why"])?;
-                    json!({ "op": "plan_drop", "itemId": item, "why": v.str("why") })
+                    if steer.is_none() {
+                        required(&["why"])?;
+                    }
+                    defined(vec![
+                        ("op", s(Some("plan_drop"))),
+                        ("itemId", s(Some(item))),
+                        ("why", s(v.str("why"))),
+                        ("steer", steer),
+                    ])
                 }
                 Some("show") => {
                     only(&["workstream"])?;
@@ -1295,16 +1328,22 @@ pub fn format_result(result: &Value) -> String {
         "task_message" => {
             let task = &result["task"];
             let queued = st(task, "state") == "queued";
+            // The steer this message was sent as; its receipt reaches the lead's digest.
+            let steer = ["steerId", "steer_id"]
+                .iter()
+                .find_map(|k| result.get(*k).and_then(Value::as_str))
+                .map(|id| format!(" as steer {id}"))
+                .unwrap_or_default();
             lines.push(if queued {
                 format!(
-                    "Message for {} held until it starts ({}).",
+                    "Message for {}{steer} held until it starts ({}).",
                     st(task, "taskId"),
                     opt(task, "queuedReason")
                         .and_then(Value::as_str)
                         .unwrap_or("queued")
                 )
             } else {
-                format!("Message sent to {}.", st(task, "taskId"))
+                format!("Message sent to {}{steer}.", st(task, "taskId"))
             });
             lines.push(task_line(task));
             next = if queued {
@@ -1572,6 +1611,52 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Value, String> {
         parse_lead_args(&argv(args), &|_| Err(std::io::Error::other("no such file")))
+    }
+
+    #[test]
+    fn task_message_now_is_a_steer_that_stops_the_step() {
+        assert_eq!(
+            parse(&["task", "message", "T88", "skip", "the", "docs"]).unwrap(),
+            json!({ "op": "task_message", "taskId": "T88", "message": "skip the docs", "now": false })
+        );
+        assert_eq!(
+            parse(&["task", "message", "T88", "stop that", "--now"]).unwrap(),
+            json!({ "op": "task_message", "taskId": "T88", "message": "stop that", "now": true })
+        );
+    }
+
+    #[test]
+    fn plan_steer_takes_a_steer_id_and_stands_in_for_why() {
+        assert!(
+            parse(&["plan", "drop", "P3"])
+                .unwrap_err()
+                .contains("--why is required")
+        );
+        assert!(
+            parse(&["plan", "drop", "P3", "--steer", "12"])
+                .unwrap_err()
+                .contains("like S12")
+        );
+        assert!(
+            parse(&["plan", "drop", "P3", "--steer", "S0"])
+                .unwrap_err()
+                .contains("like S12")
+        );
+        // The steer's own words become the note, on the hub.
+        let dropped = parse(&["plan", "drop", "P3", "--steer", "S12"]).unwrap();
+        assert_eq!(dropped.get("why"), None);
+        assert_eq!(dropped["steer"], json!("S12"));
+        let added = parse(&[
+            "plan",
+            "add",
+            "API first",
+            "--milestone",
+            "M1",
+            "--steer",
+            "S12",
+        ])
+        .unwrap();
+        assert_eq!(added["steer"], json!("S12"));
     }
 
     fn decision() -> Value {

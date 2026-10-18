@@ -15,6 +15,7 @@ pub mod prompts;
 pub mod retro;
 pub mod setup;
 pub mod status;
+pub mod steer;
 pub mod time;
 pub mod update;
 
@@ -65,7 +66,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -83,6 +84,7 @@ lead-side commands (run by a lead or task inside a project workspace):
         prompts::PROMPTS_USAGE,
         time::TIME_USAGE,
         status::STATUS_USAGE,
+        steer::STEER_USAGE,
         lead::LEAD_USAGE
     )
 }
@@ -126,6 +128,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "time" => time::TIME_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
         "status" if !lead::is_lead_command(argv) => status::STATUS_USAGE.to_owned(),
+        "steer" | "steers" => steer::STEER_USAGE.to_owned(),
         _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
         _ => return None,
     };
@@ -172,13 +175,13 @@ pub fn run(argv: &[String]) -> CliResult {
     }
 }
 
-/// Commands that keep running (`node …`, `listen`, `status --watch`) or wait on other processes or the hub (setup,
-/// `retro run`, `update`, `status`, `hub github-webhook`). `status set` is a lead call.
+/// Commands that keep running (`node …`, `listen`, `status --watch`, `steer --wait`) or wait on other processes or
+/// the hub (setup, `retro run`, `update`, `status`, `steer`, `hub github-webhook`). `status set` is a lead call.
 fn is_long_running(argv: &[String]) -> bool {
     match argv.first().map(String::as_str) {
         Some(
             "init" | "doctor" | "uninstall" | "machine" | "project" | "projects" | "node"
-            | "listen" | "retro" | "time" | "update",
+            | "listen" | "retro" | "time" | "update" | "steer" | "steers",
         ) => true,
         Some("status") => !lead::is_lead_command(argv),
         Some("hub") => argv.get(1).map(String::as_str) == Some("github-webhook"),
@@ -198,6 +201,8 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "time" => time::time_command(rest).await,
         "status" => status::status_command(rest).await,
         "hub" => status::github_webhook_command(&rest[1..]).await,
+        "steer" => steer::steer_command(rest, false).await,
+        "steers" => steer::steer_command(rest, true).await,
         _ => update_command(rest).await,
     }
 }

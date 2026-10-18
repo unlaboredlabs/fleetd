@@ -35,6 +35,7 @@
 <ul>
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders" aria-current="page">Projects &amp; orders</a></li>
+<li><a href="/docs/steering">Steering</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
@@ -115,7 +116,9 @@ orders and PRs; the lead gets them with the order.</p>
 board shows every order's phase and live agents; open one for its PRs, checks and the lead's conversation
 (<a href="/docs/desktop-app#order">Follow an order</a>).</p>
 <h2 id="add-to-it-steer-it-stop-it">Add to it, steer it, stop it<a class="anchor" href="#add-to-it-steer-it-stop-it" aria-label="Link to this section">#</a></h2>
-<p>In the order, Enter adds a note the lead reads at its next wake; ⌘Enter (Ctrl+Enter) or "Steer now" wakes it now.
+<p>In the order, Enter adds your words to the lead's queue: it takes them in at its next step, after the tool it is
+running. ⌘Enter (Ctrl+Enter) interrupts and redirects: its current step stops and it reads you at once. Each steer
+gets a receipt, and any agent in the order can be steered the same way: see <a href="/docs/steering">Steering</a>.
 Stop cancels the order's running and queued agents and withdraws its asks; merged PRs stay. A stopped order stays
 stopped: send it again as a new order.</p>
 <h2 id="answer-its-questions">Answer its questions<a class="anchor" href="#answer-its-questions" aria-label="Link to this section">#</a></h2>
@@ -144,7 +147,7 @@ rebasing, checking or merging is left to land.</p>
 <p><code>events_wait</code> long-polls for changes instead of polling. A human key is a person's paired device, not an agent key.</p>
 <nav class="pn" aria-label="Previous and next">
 <a class="prev" href="/docs/machines"><span>Previous</span>Machines</a>
-<a class="next" href="/docs/approvals-and-secrets"><span>Next</span>Approvals &amp; secrets</a>
+<a class="next" href="/docs/steering"><span>Next</span>Steering</a>
 </nav>
 <p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/projects-and-orders.md">Edit this page</a></p>
 </main>
