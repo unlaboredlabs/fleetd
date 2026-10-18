@@ -6,6 +6,7 @@ mod crash;
 #[allow(dead_code)]
 mod diff;
 mod fake;
+mod input;
 mod keychain;
 mod menus;
 mod notify;
