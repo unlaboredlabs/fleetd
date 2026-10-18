@@ -2231,7 +2231,6 @@
     "IntakeChannel": {
       "enum": [
         "app",
-        "phone",
         "mcp",
         "lead"
       ],
@@ -3848,8 +3847,7 @@
     },
     "StepPlace": {
       "enum": [
-        "browser",
-        "phone"
+        "browser"
       ],
       "type": "string"
     },
@@ -3862,7 +3860,7 @@
           "$ref": "#/$defs/MachineId"
         }
       ],
-      "description": "A machineId, \"browser\" or \"phone\"."
+      "description": "A machineId or \"browser\"."
     },
     "Subscription": {
       "description": "A webhook push target. Its signing secret is shown once by subscription_set and never returned again.",

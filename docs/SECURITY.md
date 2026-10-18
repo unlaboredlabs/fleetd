@@ -12,9 +12,9 @@ fleetd is built for one person or a small team running their own fleet. This is 
 - **A person's device holds a human key.** `fleetd hub key create --human --name <device>` prints it once; the
   desktop app keeps it in the OS keychain, never in a file, and `fleetd hub key revoke` ends it at its next call.
   Only human keys answer secret, approve and checklist asks.
-- **Secrets never reach the hub in plain text.** The desktop app seals each value to the target node's key (libsodium's
-  sealed box) and wipes what was typed; the hub relays the ciphertext without storing it and keeps only the
-  fingerprint the node reports. An approved command runs exactly as stored, after a person approves it.
+- **Secrets never reach the hub in plain text.** The desktop app seals each value to the target node's key (a
+  libsodium-compatible sealed box) and wipes what was typed; the hub relays the ciphertext without storing it and
+  keeps only the fingerprint the node reports. An approved command runs exactly as stored, after a person approves it.
   Notifications carry an event's one-line summary, never a secret.
 - **Webhooks are signed.** Every POST carries a Standard Webhooks signature made with the subscription's secret,
   which is shown once and stored encrypted.
@@ -22,6 +22,9 @@ fleetd is built for one person or a small team running their own fleet. This is 
   `~/.fleetd/node/node.sock` (mode 0600). The hub attributes each call to the project whose workspace contains the
   caller's working directory, and refuses calls from outside every project. Any process running as the node's user
   can therefore act as the lead of any project on that machine. Run agents you do not trust as a different user.
+- **Installs are checksummed.** The installer and `fleetd update` download release assets from GitHub Releases and
+  refuse any file whose SHA-256 does not match the release's `SHA256SUMS`. `fleetd machine add` copies the hub's own
+  binary to a worker over SSH.
 - **Models are reached only through the `claude` CLI** running inside T3. fleetd itself never calls a model or
   usage API.
 

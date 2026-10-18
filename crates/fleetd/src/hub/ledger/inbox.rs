@@ -62,7 +62,7 @@ pub fn followed_up(answer: &Answer) -> bool {
 fn human_only(kind: AskKind) -> bool {
     matches!(kind, AskKind::Secret | AskKind::Approve | AskKind::Do)
 }
-const HUMAN_ONLY_FIX: &str = "Answer it from a paired device (the fleetd phone or desktop app) or with a --human key; agent keys cannot enter secrets, approve commands or tick checklists.";
+const HUMAN_ONLY_FIX: &str = "Answer it from the fleetd desktop app or another client with a --human key; agent keys cannot enter secrets, approve commands or tick checklists.";
 
 /// The caller's grants: whether it may write in a project, or globally when the project is absent ("pref:" and
 /// "forget"). A reply touching anything it may not write changes nothing.

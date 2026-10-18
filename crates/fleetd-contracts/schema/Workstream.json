@@ -308,7 +308,6 @@
     "IntakeChannel": {
       "enum": [
         "app",
-        "phone",
         "mcp",
         "lead"
       ],

@@ -17,27 +17,6 @@ permissions:
 # macOS stays on GitHub-hosted macos-latest, which is free for public repos.
 
 jobs:
-  ts:
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm test
-      - run: pnpm build
-      - name: Built CLI runs
-        # The hub reads the lead prompt from beside the bundle.
-        run: node apps/cli/dist/bin.js --version && test -s apps/cli/dist/prompt-v2.md
-      - name: Lead prompt ships beside the CLI bundle
-        run: test -s apps/cli/dist/prompt-v4.md
-
   rust-crates:
     # The root Cargo workspace minus the GPUI app and its bench, which `rust` below builds on Linux and macOS.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
@@ -89,13 +68,13 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      # The seal interop test opens what Rust seals with the node's libsodium (apps/node's libsodium-wrappers).
-      - uses: pnpm/action-setup@v6
+      # The seal interop test opens what Rust seals with libsodium (tests/lab's libsodium-wrappers).
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter @fleetd/node
+          cache: npm
+          cache-dependency-path: tests/lab/package-lock.json
+      - run: npm ci --prefix tests/lab --no-audit --no-fund
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

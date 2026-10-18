@@ -1,4 +1,4 @@
-//! Replays the recorded T3 streams (apps/hub/test/fixtures, wire JSON from a lab T3) through t3-wire's decoders.
+//! Replays the recorded T3 streams (crates/t3-wire/fixtures, wire JSON from a lab T3) through t3-wire's decoders.
 use std::path::Path;
 
 use anyhow::Context;
@@ -146,7 +146,7 @@ pub fn replay(dir: &Path) -> anyhow::Result<Replayed> {
 mod tests {
     #[test]
     fn recorded_streams_decode() {
-        let dir = crate::repo_root().join("apps/hub/test/fixtures");
+        let dir = crate::repo_root().join("crates/t3-wire/fixtures");
         let replayed = super::replay(&dir).unwrap();
         assert!(replayed.problems.is_empty(), "{:#?}", replayed.problems);
         assert!(replayed.items > 0);

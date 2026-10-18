@@ -1,4 +1,4 @@
-//! JSON Schema (draft 2020-12) for the app-facing types, in the same file layout as `packages/contracts/schema/`:
+//! JSON Schema (draft 2020-12) for the app-facing types, one file per type in `crates/fleetd-contracts/schema/`:
 //! `{ "$schema", "$ref": "#/$defs/<Name>", "$defs" }`.
 
 use std::collections::BTreeMap;

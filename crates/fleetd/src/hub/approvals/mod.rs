@@ -836,7 +836,7 @@ mod tests {
         let nowhere = |_: &str| false;
         let ungranted = Caller {
             human: true,
-            name: "phone",
+            name: "desk",
             allows_operate: &nowhere,
         };
         assert_eq!(
@@ -850,7 +850,7 @@ mod tests {
 
         let human = Caller {
             human: true,
-            name: "phone",
+            name: "desk",
             allows_operate: &everywhere,
         };
         let out = approvals.submit_secret(&human, "A1", SEALED).await.unwrap();
@@ -870,7 +870,7 @@ mod tests {
                 &json!("fingerprint ab12cd34")
             )
         );
-        assert_eq!(ask["answer"]["by"], "human:phone");
+        assert_eq!(ask["answer"]["by"], "human:desk");
         assert!(
             !ask.to_string().contains(SEALED),
             "the ciphertext is never stored"
