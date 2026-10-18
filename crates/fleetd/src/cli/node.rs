@@ -74,8 +74,6 @@ pub async fn node_command(argv: &[String]) -> u8 {
                 ("hub", v.string("hub")),
                 ("token", token.clone()),
                 ("machine", v.string("machine")),
-                ("t3-home", v.string("t3-home")),
-                ("t3-url", v.string("t3-url")),
             ];
             if let Some((missing, _)) = fields
                 .iter()
@@ -83,14 +81,13 @@ pub async fn node_command(argv: &[String]) -> u8 {
             {
                 return usage(&format!("--{missing} is required"));
             }
-            let [hub, token, machine, t3_home, t3_url] =
-                fields.map(|(_, value)| value.unwrap_or_default());
+            let [hub, token, machine] = fields.map(|(_, value)| value.unwrap_or_default());
             let join = crate::node::JoinArgs {
                 hub,
                 token,
                 machine,
-                t3_home,
-                t3_url,
+                t3_home: v.string("t3-home").unwrap_or_default(),
+                t3_url: v.string("t3-url").unwrap_or_default(),
                 t3_cmd: v.string("t3-cmd"),
                 t3_restart_cmd: v.string("t3-restart-cmd"),
                 tags: v.str("tags").map(crate::node::parse_tags),

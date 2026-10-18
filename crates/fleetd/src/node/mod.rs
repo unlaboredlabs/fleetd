@@ -1,5 +1,5 @@
-//! The per-machine node: hub link, T3 supervision and sessions, the lead socket, cmd checks, sealed secrets,
-//! gated runs and node actions.
+//! The per-machine node: hub link, T3 supervision, the session service that runs claude itself, the lead socket,
+//! cmd checks, sealed secrets, gated runs and node actions.
 //!
 //! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run` / `node serve`. Both run until
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
@@ -12,9 +12,11 @@ pub mod link;
 pub mod runner;
 pub mod secrets;
 pub mod sessions;
+pub mod store;
 pub mod supervisor;
 pub mod util;
 pub mod wire;
+pub mod worktree;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -25,8 +27,8 @@ use zeroize::Zeroizing;
 use config::{NodeConfig, default_node_home, read_config, write_config};
 
 /// `fleetd node …` usage.
-pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> --t3-home <dir>
-            --t3-url <url> [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>]
+pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> [--t3-home <dir>]
+            [--t3-url <url>] [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>]
             [--home <dir>] [--enroll-only]
              enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
              --t3-restart-cmd (e.g. \"t3 service restart\") runs when T3 fails 3 health checks, else T3 is
@@ -42,6 +44,7 @@ pub struct JoinArgs {
     pub hub: String,
     pub token: String,
     pub machine: String,
+    /// Empty without T3: sessions run on the node's own runner.
     pub t3_home: String,
     pub t3_url: String,
     /// `--t3-cmd`: the command that runs T3's CLI, split on whitespace. Default `t3`.
@@ -183,6 +186,13 @@ async fn run_node(
         NodeError::Setup(format!("cannot read or create the node box key in {shown}"))
     })?;
     tracing::info!(machine_id = %config.machine_id, hub = %config.hub, t3_url = %config.t3_url, "fleetd node starting");
+    let store = store::NodeStore::open(&home.join("sessions.sqlite"))
+        .map_err(|e| NodeError::Setup(format!("cannot open the session store in {shown}: {e}")))?;
+    let runner = Arc::new(runner::claude::ClaudeRunner::new(claude_binary()));
+    let node_sessions =
+        sessions::SessionService::start(store, runner, sessions::SessionConfig::for_node(home))
+            .await
+            .map_err(|e| NodeError::Setup(format!("cannot settle the stored sessions: {e}")))?;
     let relay = lead::LeadRelay::new();
     let _socket = lead::serve_lead_socket(lead::lead_socket_path(home), relay.clone())
         .await
@@ -227,6 +237,7 @@ async fn run_node(
             t3_cmd: config.t3_cmd.clone(),
             t3_home: config.t3_home.clone(),
         }),
+        node_sessions: node_sessions.clone(),
         lead_calls: relay,
         cmd_roots: config
             .cmd_roots
@@ -245,6 +256,27 @@ async fn run_node(
     tokio::select! {
         fatal = link::run_node(options) => Err(NodeError::Refused(fatal)),
         () = enrolled => Ok(()),
-        () = shutdown_signal() => Ok(()),
+        () = shutdown_signal() => {
+            node_sessions.shutdown().await;
+            Ok(())
+        }
     }
+}
+
+/// `claude` from PATH, else the native installer's `~/.local/bin/claude` (a service's PATH often lacks it). A
+/// missing binary is the runner's probe to report, not a reason to stop the node.
+fn claude_binary() -> PathBuf {
+    let on_path = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("claude"))
+            .find(|bin| bin.is_file())
+    });
+    on_path.unwrap_or_else(|| {
+        let local = util::home_dir().join(".local/bin/claude");
+        if local.is_file() {
+            local
+        } else {
+            PathBuf::from("claude")
+        }
+    })
 }

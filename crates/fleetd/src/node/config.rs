@@ -16,9 +16,13 @@ pub struct NodeConfig {
     pub machine_id: String,
     pub name: String,
     pub tags: Vec<String>,
+    /// Empty for a node joined without T3 (its sessions run on the node's own runner).
+    #[serde(default)]
     pub t3_home: String,
+    #[serde(default)]
     pub t3_url: String,
     /// argv prefix that runs T3's CLI, e.g. ["t3"] or ["node", "<t3-src>/apps/server/src/bin.ts"].
+    #[serde(default)]
     pub t3_cmd: Vec<String>,
     /// argv that restarts T3 after it fails its health checks. Absent: the node reports T3 down but never restarts it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
