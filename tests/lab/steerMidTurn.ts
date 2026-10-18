@@ -34,7 +34,8 @@ class Tail {
   private readonly file: string;
   constructor(file: string) {
     this.file = file;
-    this.timer = setInterval(() => this.read(), 10);
+    // unref: a failed check must not leave the lab run hanging on this timer.
+    this.timer = setInterval(() => this.read(), 10).unref();
   }
   read() {
     if (!fs.existsSync(this.file)) return;
