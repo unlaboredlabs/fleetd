@@ -45,6 +45,8 @@ pub enum Command {
     /// Opens the composer with this text in it.
     NewOrderText(String),
     ToggleGroup,
+    /// The time inspector: an order's timeline, or the fleet's breakdown.
+    Time(Option<String>),
     Settings,
     /// Back to the connect screen, to pair with another hub.
     Connect,
@@ -117,9 +119,14 @@ pub fn items(state: &State) -> Vec<Item> {
         item(Group::Action, "Inbox", "What needs you", Some(ui::shortcut("I")), Command::Inbox),
         item(Group::Action, "Group by project or status", "Regroup the board", Some(ui::shortcut("⇧G")), Command::ToggleGroup),
         item(Group::Action, "Machines", "Machines and setup checks", None, Command::Machines),
+        item(Group::Action, "Time", "Where the fleet's agent time went", None, Command::Time(None)),
         item(Group::Action, "Settings", "Appearance, motion and hub connection", Some(ui::shortcut(",")), Command::Settings),
         item(Group::Action, "Connect to a hub…", "Pair this app with a fleetd hub", None, Command::Connect),
     ]);
+    if let Some(order) = &state.order {
+        let w = order.workstream_id.clone();
+        out.push(item(Group::Action, format!("Time for {w}"), "Its timeline: what each agent did and waited on", None, Command::Time(Some(w))));
+    }
     for row in &state.projects {
         let key = row.key();
         out.push(item(Group::Project, row.summary.title.clone(), row.summary.machine_id.to_string(), None, Command::Project(key.clone())));

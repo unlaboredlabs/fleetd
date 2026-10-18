@@ -14,6 +14,8 @@ use crate::theme::Mode;
 pub struct Prefs {
     pub theme: Mode,
     pub motion: MotionPref,
+    /// The time inspector's filters.
+    pub time: crate::time::filters::Filters,
 }
 
 pub fn load() -> Prefs {
@@ -41,6 +43,9 @@ fn parse(bytes: &[u8]) -> Prefs {
     if let Some(motion) = map.get("motion").and_then(|v| serde_json::from_value(v.clone()).ok()) {
         prefs.motion = motion;
     }
+    if let Some(time) = map.get("time").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+        prefs.time = time;
+    }
     prefs
 }
 
@@ -64,7 +69,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let prefs = Prefs { theme: Mode::Light, motion: MotionPref::Full };
+        let prefs = Prefs { theme: Mode::Light, motion: MotionPref::Full, time: Default::default() };
         assert_eq!(parse(&serde_json::to_vec(&prefs).unwrap()), prefs);
     }
 }
