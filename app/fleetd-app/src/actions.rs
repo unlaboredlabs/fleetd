@@ -12,6 +12,7 @@ actions!(
         OpenSettings,
         CheckForUpdates,
         NewOrder,
+        AddProject,
         FocusComposer,
         ToggleInbox,
         GoToBoard,

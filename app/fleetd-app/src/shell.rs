@@ -73,6 +73,7 @@ pub fn bind_keys(cx: &mut App) {
     crate::input::bind_keys(cx);
     palette::bind_keys(cx);
     composer::bind_keys(cx);
+    crate::project_add::sheet::bind_keys(cx);
     cx.bind_keys([KeyBinding::new("tab", FocusNext, None), KeyBinding::new("shift-tab", FocusPrev, None)]);
 }
 
@@ -195,6 +196,7 @@ pub struct Shell {
     /// ⌘/Ctrl is held: the sidebar shows jump numbers.
     cmd_held: bool,
     window_active: bool,
+    pub(crate) add: crate::project_add::open::AddUi,
 }
 
 impl Shell {
@@ -307,6 +309,7 @@ impl Shell {
             order_tab: false,
             cmd_held: false,
             window_active: true,
+            add: Default::default(),
         };
         cx.observe_window_activation(window, |this, window, cx| {
             this.window_active = window.is_window_active();
@@ -453,7 +456,11 @@ impl Shell {
             }
         });
         self.hub = Some(HubLink { url: saved.url, tx: out_tx, _tasks: [run, pump, poll] });
+        // An add in flight outlives re-pairing: the new connection's snapshot looks it up again.
+        let mut add = std::mem::take(&mut self.state.add);
+        add.lost |= add.active();
         self.state = State::default();
+        self.state.add = add;
         self.screen = Screen::Board;
         self.selected = 0;
         self.pending_focus = Some(self.docked.focus_handle(cx));
@@ -694,6 +701,7 @@ impl Shell {
             let n = self.state.inbox().len();
             self.inbox_pick = (n > 0).then(|| pick.min(n - 1));
         }
+        self.drain_add(cx);
         self.sync_composers(cx);
         self.sync_lanes(cx);
         self.update_live(false, cx);
@@ -970,6 +978,10 @@ impl Shell {
 
     /// ⌘L: the composer on screen.
     pub(crate) fn focus_composer(&mut self, cx: &mut Context<Self>) {
+        if let Some(sheet) = self.add.sheet.as_ref().filter(|_| self.add.open) {
+            self.pending_focus = Some(sheet.focus_handle(cx));
+            return cx.notify();
+        }
         self.pending_focus = Some(match (self.screen, &self.floating) {
             (_, Some(f)) => f.focus_handle(cx),
             (Screen::Order, None) => self.follow.focus_handle(cx),
@@ -1053,6 +1065,12 @@ impl Shell {
                 let out = self.state.attach(*local, name, mime, data_b64.clone());
                 self.send(out);
             }
+            ComposerEvent::AddProject(dropped) => match dropped {
+                Some(path) => self.on_window_drop(&gpui::ExternalPaths(vec![path.clone()].into()), window, cx),
+                None => {
+                    self.open_add(window, cx);
+                }
+            },
         }
         self.after_state_change(cx);
         cx.notify();
@@ -1199,7 +1217,7 @@ impl Shell {
 
     // ---- overlays and commands ------------------------------------------------------------
 
-    fn pick(&mut self, pick: sidebar::Pick, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn pick(&mut self, pick: sidebar::Pick, window: &mut Window, cx: &mut Context<Self>) {
         match pick {
             sidebar::Pick::Board => {
                 self.go(Screen::Board);
@@ -1215,8 +1233,10 @@ impl Shell {
                 self.sync_composers(cx);
             }
             sidebar::Pick::Order(w) => self.open_order(&w, cx),
+            sidebar::Pick::AddProject => {
+                self.open_add(window, cx);
+            }
         }
-        let _ = window;
         cx.notify();
     }
 
@@ -1247,6 +1267,9 @@ impl Shell {
             }
             Command::ToggleGroup => self.group_by_status = !self.group_by_status,
             Command::Connect => self.disconnect(cx),
+            Command::AddProject => {
+                self.open_add(window, cx);
+            }
         }
         cx.notify();
     }
@@ -1273,6 +1296,7 @@ impl Shell {
         self.floating = None;
         self.state.prompts.told = None;
         self.focus_composer(cx);
+        self.hide_add(cx);
     }
 
     pub(crate) fn close_settings(&mut self, cx: &mut Context<Self>) {
@@ -1469,6 +1493,11 @@ impl Render for Shell {
             .when(self.connected(), |d| {
                 d.on_action(cx.listener(|this, _: &actions::NewOrder, window, cx| this.new_order(None, window, cx)))
                     .on_action(cx.listener(|this, _: &actions::FocusComposer, _, cx| this.focus_composer(cx)))
+                    .on_action(cx.listener(|this, _: &actions::AddProject, window, cx| {
+                        this.open_add(window, cx);
+                    }))
+                    // A folder or a link file dropped anywhere the composer doesn't take it adds a project.
+                    .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| this.on_window_drop(paths, window, cx)))
                     .on_action(cx.listener(|this, _: &actions::ToggleCommandPalette, window, cx| this.toggle_palette(window, cx)))
                     .on_action(cx.listener(|this, _: &actions::ToggleInbox, _, cx| {
                         let open = !this.inbox_open;
@@ -1508,6 +1537,10 @@ impl Render for Shell {
             .when_some(self.palette.clone(), |d, p| d.child(overlay(p.into_any_element(), cx)))
             .when_some(self.floating.clone(), |d, c| d.child(overlay(c.into_any_element(), cx)))
             .when_some(told, |d, sheet| d.child(overlay(sheet, cx)))
+            .when_some(self.add_overlay(cx), |d, sheet| {
+                let dropped = cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| this.on_window_drop(paths, window, cx));
+                d.child(overlay(sheet, cx).on_drop(dropped))
+            })
     }
 }
 
@@ -1950,6 +1983,7 @@ impl Shell {
             "told" | "told-task" => self.bench_told(extra == "told-task", cx),
             "inbox" => self.toggle_inbox(true, cx),
             "status" => self.group_by_status = true,
+            e if e.starts_with("add") => self.bench_add(e, window, cx),
             "narrow" => {}
             _ => {}
         }
