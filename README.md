@@ -87,6 +87,7 @@ work, and its questions show up in the inbox.
   `fleetd init --listen <host:port> --url <url>`.
 - **Other agents:** the MCP endpoint is `<hub url>/mcp`. Give an outside agent a key with
   `fleetd hub key create --name <agent> --role operate --machines '*'`.
+- **Your first order:** adding projects, sending orders and answering asks: [docs/FIRST-USE.md](docs/FIRST-USE.md).
 - **Health:** `fleetd doctor` checks every machine and prints the fix for anything wrong. The app shows the same
   checks.
 - **Update and undo:** `fleetd update` installs the latest build. `fleetd machine remove <id>` and

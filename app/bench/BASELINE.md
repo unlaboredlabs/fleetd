@@ -3,12 +3,12 @@
 Produced by `app/bench/run.sh`. Re-run it at each milestone and add a section; don't overwrite old
 sections. The method notes below say what each number means.
 
-## Linux (forge): software-rendered (lavapipe, no GPU)
+## Linux: software-rendered (lavapipe, no GPU)
 
 **Software-rendered (lavapipe, no GPU).** These numbers record the scaffold and measure the harness. Don't judge
 GPUI or the app by them: every frame is rasterized on the CPU by Mesa lavapipe into a headless Xvfb.
 
-**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T10:28Z, fleetd 2683b58, gpui zed v1.24.2 (fb69067).
+Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T10:28Z, fleetd 2683b58, gpui zed v1.24.2 (fb69067).
 
 | Metric | Value |
 |---|---|
@@ -35,13 +35,13 @@ What shapes these numbers, besides the app:
   Xvfb), so a key waits on average half a frame (about 8 ms) before its frame starts. Scroll holds 60 fps
   under lavapipe.
 
-## Linux (forge): A1, the app as a hub client, software-rendered
+## Linux: A1, the app as a hub client, software-rendered
 
 Since A1 the bench runs the real app on fixture data, with no hub and no keychain: the project
 detail screen (workstreams, plus the 20k-line log as the lead's tail), the sidebar and the reply bar.
 The scaffold's three panes are gone. Same machine and method as above.
 
-**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T12:42Z, fleetd 3c22727, gpui zed v1.24.2 (fb69067).
+Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T12:42Z, fleetd 3c22727, gpui zed v1.24.2 (fb69067).
 
 | Metric | Value |
 |---|---|
@@ -75,11 +75,11 @@ release build, Xvfb, a seeded lab hub with 6 projects and 4 open asks, VmRSS 12 
 
 Reading the keychain happens off the UI thread after the first frame, so it doesn't delay cold start.
 
-## Linux (forge): TLS for https/wss hubs, software-rendered
+## Linux: TLS for https/wss hubs, software-rendered
 
 Adds rustls on ring with the OS certificate verifier. Same bench as the A1 section above.
 
-**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T12:55Z, fleetd 5be24df plus the TLS change, gpui zed v1.24.2 (fb69067).
+Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T12:55Z, fleetd 5be24df plus the TLS change, gpui zed v1.24.2 (fb69067).
 
 | Metric | Value |
 |---|---|
@@ -104,12 +104,12 @@ Against the A1 section above:
 - Connected idle RSS, measured by hand in the lab (same hub, 3 runs each): 137.5 MiB over
   wss:// through a TLS terminator, against 136.1 MiB over ws://.
 
-## Linux (forge): M8 inbox kinds, software-rendered
+## Linux: M8 inbox kinds, software-rendered
 
 Approve asks show their stored argv with Approve/Reject, secret asks point to the desktop app, checklists get a
 "✓ done" tick, and the approve ask's command is a typed struct. Same bench as the TLS section above.
 
-**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T16:11Z, fleetd 39f94e5 plus the M8b change, gpui zed v1.24.2 (fb69067).
+Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T16:11Z, fleetd 39f94e5 plus the M8b change, gpui zed v1.24.2 (fb69067).
 
 | Metric | Value |
 |---|---|
@@ -133,12 +133,12 @@ Against the TLS section above:
   62.0 fps, worst frame 26.2 ms. The bench screen (project detail) doesn't draw the inbox, and earlier sections'
   warm medians already span 68.9-73.2 ms, so we read the cold-start change as run-to-run noise.
 
-## Linux (forge): every human action in the app, software-rendered
+## Linux: every human action in the app, software-rendered
 
 Secret asks are entered masked and sealed in the app (crypto_box), checklist commands get Copy buttons, and the app
 posts native "needs you" notifications from the hub's `attention` field. Same bench as the M8 section above.
 
-**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T21:09Z, fleetd f730744, gpui zed v1.24.2 (fb69067).
+Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T21:09Z, fleetd f730744, gpui zed v1.24.2 (fb69067).
 
 | Metric | Value |
 |---|---|
@@ -162,12 +162,12 @@ Against the M8 section above:
   62.2 fps, worst frame 28.3 ms (earlier sections: 23.5-27.1 ms). The bench screen doesn't draw the inbox, and the
   notification check runs once per hub frame and every 3 s, so we read all of it as run-to-run noise.
 
-## Linux (forge): the app on fleetd-contracts, software-rendered
+## Linux: the app on fleetd-contracts, software-rendered
 
 The app builds in the root Cargo workspace and reads the hub's frames through the `fleetd-contracts` types, instead of
 its own copy of them. Same bench as the section above.
 
-**forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T21:48Z, fleetd 807b5c2, gpui zed v1.24.2 (fb69067).
+Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T21:48Z, fleetd 807b5c2, gpui zed v1.24.2 (fb69067).
 
 | Metric | Value |
 |---|---|
@@ -194,9 +194,9 @@ Against the section above:
 - Decoding happens only when a hub frame arrives, which the bench screen doesn't do, so we read every difference as
   run-to-run noise.
 
-## Linux (forge): GPU (RADV)
+## Linux: GPU (RADV)
 
-Pending: `wynn` is not in the `render`/`video` groups yet (`getent group render` shows no members). Once
+Pending: the bench user is not in the `render`/`video` groups yet (`getent group render` shows no members). Once
 it is, run with the GPU's Vulkan driver from the sysroot:
 
 ```sh

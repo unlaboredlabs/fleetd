@@ -163,12 +163,12 @@ app/bench/run.sh --precompiled-shaders | tee /tmp/fleetd-mac-baseline-precompile
 ### Report
 
 Put each table under "macOS" in `app/bench/BASELINE.md`, replacing the "pending" line, on a branch
-`bench/mac-baseline`, and open a PR (or send the tables to Wynn). Record the Mac model, display
+`bench/mac-baseline`, and open a PR (or send the tables to a maintainer). Record the Mac model, display
 (Retina or not) and whether it was on battery.
 
 ## What differs from the Linux run
 
-- **Rendering**: Metal on the real GPU, at the display's refresh rate (60 or 120 Hz). Linux on forge is
+- **Rendering**: Metal on the real GPU, at the display's refresh rate (60 or 120 Hz). The Linux run is
   software-rendered for now, so don't compare the two directly.
 - **Input latency**: on the Mac only the in-app number is measured. Keystrokes go through gpui's own
   dispatch, and the clock stops when the frame showing the echo is presented. The external measurement
