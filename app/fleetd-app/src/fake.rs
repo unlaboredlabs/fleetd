@@ -209,7 +209,23 @@ fn live_fixture(state: &mut State) {
     state.live.set_board(&fleetd, from(storefront));
     state.live.set_order(crate::live::fixture::order_fixture());
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
-    state.live.apply(crate::live::fixture::frame_fixture(crate::live::fixture::FULL), now);
+    let mut frame = crate::live::fixture::frame_fixture(crate::live::fixture::FULL);
+    // The machine strip ages a report against the local clock: move each machine's report to the same distance
+    // before now as before the fixture's own now, so buildbox reads "offline 12 m" here as it does in Status.
+    let fixture_now = crate::live::state::parse_ms(FIXTURE_NOW).unwrap_or(now);
+    if let Some(machines) = frame.machines.take() {
+        let moved = machines
+            .into_inner()
+            .into_iter()
+            .map(|mut m| {
+                let at = crate::live::state::parse_ms(m.as_of.as_str()).unwrap_or(fixture_now);
+                m.as_of = crate::live::state::fmt_iso(now - (fixture_now - at)).into();
+                m
+            })
+            .collect();
+        frame.machines = Some(fleetd_contracts::prim::List::unchecked(moved));
+    }
+    state.live.apply(frame, now);
     for (at, kind, data) in [
         ("2026-10-18T10:03:10.000Z", "task.started", json!({ "workstreamId": FIXTURE_ORDER, "taskId": "T31" })),
         ("2026-10-18T10:03:11.000Z", "task.started", json!({ "workstreamId": FIXTURE_ORDER, "taskId": "T33" })),

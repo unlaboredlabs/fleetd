@@ -26,7 +26,7 @@ $ fleetd doctor
 
 ```console capture=doctor-no-hub
 $ fleetd doctor
-✗ doctor: the hub does not answer at 127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)
+✗  doctor the hub does not answer at http://127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)
 [exit 4]
 ```
 

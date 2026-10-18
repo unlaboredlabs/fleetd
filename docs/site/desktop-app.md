@@ -14,9 +14,9 @@ On the hub machine the app pairs by itself. On another computer, print a code on
 
 ```console capture=pair
 $ fleetd pair
-Pairing code: ZYZ6-5Q97  (single use, valid until 2026-10-18T13:48:01.677Z)
+Pairing code: 38X0-57P8  (single use, valid until 2026-10-18T22:43:43.690Z)
 Hub address:  http://127.0.0.1:4778
-Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&code=ZYZ6-5Q97
+Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&code=38X0-57P8
 
 The fleetd app on this machine pairs by itself when it opens. On another device, open the
 app and enter the code and hub address above, or open the link there.
@@ -29,12 +29,21 @@ hub it is paired with and disconnects it; "Connect to a hub…" in the palette p
 ## The board
 
 The app opens on the board with the composer focused: type what the fleet should do and press Enter. Under it, what
-needs you, then every open order grouped by project (⌘⇧G groups by status). Each card shows its phase, up to four
-live agents (role, what each is doing now), its PRs and the lead's next step. Cards don't move under the pointer or
-the selection; they resort 2 s after you leave. Machine load and the merge train sit in strips at the bottom.
+needs you, then every open order grouped by project (⌘⇧G groups by status). Each card shows its phase, every live
+agent (role, what each is doing now), its PRs and how far along the train each is. Cards don't move under the pointer
+or the selection; they resort 2 s after you leave. Machine load and the merge train sit in strips at the bottom.
 
-The sidebar lists Board, Machines, and each project with its orders; an amber dot means an order needs you. Hold ⌘ to
-see the ⌘1-⌘9 jump keys.
+When only one order is open it takes the board: the writers still writing, then each PR with its reviewers and
+verifier under it and how many of its checks are in, and once every PR has merged, what landed.
+
+![The board with one order on it: three PRs, each with the agent that wrote it and two reviewers and a verifier at work under it.](/docs/img/board.png)
+
+The sidebar lists Status, Board, Machines, Time, and each project with its orders; an amber dot means an order needs
+you. Hold ⌘ to see the ⌘1-⌘9 jump keys. "+ Add" next to Projects adds a project: paste a GitHub URL or `owner/repo`,
+or drop a folder or a link on the app. The sheet shows the clone, then what fleetd found and the project's lead
+([Add a project](projects-and-orders.md#add-a-project)).
+
+![The Add project sheet cloning acme/checkout-v2: the clone at 42%, then inspect and register still to come.](/docs/img/add-project.png)
 
 ## Give work {#composer}
 
@@ -66,6 +75,8 @@ The box under the conversation talks to the lead:
 
 Each steer shows its receipt under it: queued, delivered, acknowledged or not acknowledged
 ([Receipts](steering.md#receipts)); a queued one has "withdraw". Click an agent's lane to steer that agent instead.
+
+![An order with steers in its conversation: one acknowledged with the lead's reply, one not acknowledged, one still queued with Withdraw, and the steer box under them.](/docs/img/steering.png)
 A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order, Esc back to the board.
 
 ## Status {#status}
@@ -80,6 +91,8 @@ It updates as things happen, without a refresh. A part whose source has gone qui
 "stale 4m" and the reason, and keeps its last value. While the app is reconnecting the whole view greys out with
 "Not live: reconnecting", and after it reconnects it shows empty bars until the fresh numbers arrive. What the number
 means and how the ETA is measured: [Status](status.md).
+
+![Status for the fleet: 72% verified, the ETA and what it waits on, two stale sources outlined, health, projects and what needs you.](/docs/img/status.png)
 
 ## Inbox and replies {#reply}
 
@@ -121,6 +134,8 @@ transcript at that step. Breakdown adds up agent time by group, with the slowest
 lists the findings, each with "show spans" to see the bars behind it. The filter bar picks the range, project,
 order, machine and role, and compares two periods. How to read it, and what is not exact:
 [Where time went](time-inspector.md).
+
+![Where an order's time went: a lane per agent, PR, CI check and ask, the critical path underlined, and the legend.](/docs/img/time.png)
 
 ## Shortcuts
 

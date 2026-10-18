@@ -58,8 +58,9 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 // The app, as it is laid out today. A redesign changes these and nothing else in this file.
 /** The app's default window, in logical pixels; the captures are this times GPUI_X11_SCALE_FACTOR. */
 const APP_WINDOW = { width: 1400, height: 900 };
-/** Screen pixels at the page's scale: the project in the sidebar, and an empty spot to park the pointer on. */
-const CLICK = { project: [119, 301], park: [900, 1316] } as const;
+/** Screen pixels at the page's scale: the needs-you strip's "+N more" (opens the inbox panel), and the panel's
+ * terse reply field. */
+const CLICK = { inbox: [2204, 433], reply: [2443, 1746] } as const;
 const REPLY = "1 go 2 nvm 3 b";
 
 /** What the lead is told to run: the asks are arranged, the filing, batching and answering are real. */
@@ -255,6 +256,9 @@ const sanitizeSetup = (text: string) => {
   if (TAILNET?.name) out = out.replaceAll(TAILNET.name, "hub.your-tailnet.ts.net");
   for (const ip of TAILNET?.ips ?? []) out = out.replaceAll(ip, "<tailnet-ip>");
   out = out.replace(/\b(?!127\.0\.0\.1\b)\d{1,3}(?:\.\d{1,3}){3}\b/gu, "<lan-ip>");
+  // How this machine's claude logs in (a token, a gateway, a proxy and where it is set) is the capturing machine's
+  // own setup, not something a reader has: the page says only that claude is logged in.
+  out = out.replace(/(claude [\d.]+, logged in)[^\n]*/gu, "$1");
   return GH_USER === undefined ? out : out.replaceAll(GH_USER, "demo");
 };
 
@@ -605,12 +609,16 @@ async function main() {
   await waitEvent("batch.ready", 120_000, { cursor: from, types: ["batch.ready"] });
   const open = ok(await callTool("asks_list", { state: "open" }), "asks_list");
   check(open.asks.length === 3, `the lead filed 3 asks, found ${open.asks.length}`);
-  await screen.settled(empty);
+  const board = await screen.settled(empty);
+  // The inbox panel holds the whole batch and the reply field; the board's strip shows only the first two asks.
+  screen.click(CLICK.inbox);
+  await screen.settled(board);
   screen.png(path.join(shots, "capture-inbox.png"));
   log("captured the inbox");
 
-  // The reply, typed into the app; Enter sends it as the human. Turn 3: the hub wakes the lead with the answers.
+  // The reply, typed into the inbox panel's reply field; Enter sends it as the human. Turn 3: the hub wakes the lead with the answers.
   from = await cursor();
+  screen.click(CLICK.reply);
   screen.type(REPLY);
   const typed = await screen.settled();
   screen.type("\n");
@@ -619,13 +627,6 @@ async function main() {
   log("captured the inbox after the reply");
   const woken = await waitEvent("the lead woken with the answers", 120_000, { cursor: from, types: ["lead.woken"], match: (e) => e.threadId === lead });
   await turn("the lead's wake", woken.cursor, lead);
-  const sidebar = screen.hash();
-  screen.click(CLICK.project);
-  await screen.settled(sidebar);
-  screen.click(CLICK.park);
-  await screen.settled();
-  screen.png(path.join(shots, "capture-lead.png"));
-  log("captured the lead's view");
 
   const tail = ok(await callTool("thread_tail", { machineId: MACHINE, threadId: lead, n: 50 }), "thread_tail");
   const messages = (tail.items as Array<Body>).filter((i) => i.kind === "message");

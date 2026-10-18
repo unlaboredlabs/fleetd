@@ -19,26 +19,32 @@ Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
 
 
-FIG. 1  THE INBOX, BATCH B1
+ONE ORDER, ITS FLEET
+A lab run against the public fleetd-testbed repo: three writers opened a PR
+each, and every PR now has two reviewers and a verifier on it. Each row is an
+agent at work, grouped under the PR it checks. Image: fleet-board.png
+
+
+FIG. 1  THE INBOX
 The fleetd desktop app on a live hub. The lead filed three asks for the
 storefront project: two product, one money. Image: capture-inbox.png
 
-  Inbox                       3 open · reply by number below, recommendations are fine
-  Batch B1
-  1  product  8628b2a4-8600-4ae8-5d02-eab1babb870b on builder-1
+  Needs you 3                                                       Ctrl+I
+  1  product  <project id>
      Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?
      [Pay for machines, not seats] recommended  No
-  2  product  8628b2a4-8600-4ae8-5d02-eab1babb870b on builder-1
+  2  product  <project id>
      Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?
      [drop moment] recommended  No
-  3  money    8628b2a4-8600-4ae8-5d02-eab1babb870b on builder-1 · blocks the Team plan launch
+  3  money    <project id> · blocks the Team plan launch
      Free trial length for the Team plan?
      [7 days] recommended  [14 days]  [30 days]  No
-  > Reply to the inbox: 1 go 2 nvm 3 b
+  > Reply by number: 1 go 2 nvm 3 b
 
-  10  The header says how to answer: by number, and the recommendations are fine.
-  12  Ask 1, filed by the lead with `fleetd ask --class product`: its class, the
-      project and the machine it came from.
+  10  The inbox panel (Ctrl+I): every ask that needs you, numbered, wherever you
+      are in the app.
+  12  Ask 1, filed by the lead with `fleetd ask --class product`: its class and
+      the project it came from.
   14  A money ask says what it holds up, here the Team plan launch.
   16  Each ask leads with the lead's recommendation, 7 days, then the other
       options it offered, and No.
@@ -50,10 +56,8 @@ FIG. 2  ENTER. EACH ANSWER BECOMES A DECISION.
 The same inbox right after the reply "1 go 2 nvm 3 b" went in.
 Image: capture-reply.png
 
-  Inbox
+  Needs you 0
   Nothing needs you.
-  Leads decide everything that isn't a product, money, credential or
-  irreversible call. When one comes up it lands here and as a notification.
   ● Logged: 1 → Pay for machines, not seats (D1), 2 → dropped, 3 → 14 days (D2)
 
   20  Nothing needs you: leads decide everything that isn't a product, money,
@@ -62,19 +66,7 @@ Image: capture-reply.png
       D1 and D2, and ask 2 was dropped.
 
 
-FIG. 3  THE LEAD'S SIDE, AFTER THE REPLY
-Project storefront on builder-1. The lead's log: the hub's wake carrying D1 and
-D2, and the lead's answer. Image: capture-lead.png
-
-  24  The lead runs as Claude Code sessions on builder-1, listed under its project.
-  26  Your reply reaches the lead as a wake from the hub:
-      "A1 site.pricing.headline → Pay for machines, not seats (D1)"
-  28  The decision log, with who decided:
-      "D2 billing.team.trial = 14 days (project, human)"
-  30  And why it was woken: "The human settled 3 of your asks"
-  32  The lead keeps your override: "14 days is recorded as D2. This is not my
-      recommendation (7 days)"
-
+YOUR REPLY REACHES THE LEAD AS A WAKE FROM THE HUB
 The wake, verbatim:
 
   ## Answers since your last wake
@@ -106,31 +98,29 @@ WHAT THE LEAD DOES WITHOUT ASKING YOU
     have decided itself.
 
 What you get at 09:00 and 18:00 when that's all there is:
-  fleetd digest · Sun 18 Oct, 13:51
+  fleetd digest · Sun 18 Oct, 22:28
   Nothing needs you · 0 running · 0 done
 
 
 "DONE" IS CHECKED BY FLEETD
 Merge-train events from a lab run against the public fleetd-testbed repo
 (https://github.com/unlaboredlabs/fleetd-testbed), 18 Oct 2026, UTC. The hub's
-own summaries (one log link shortened), with the commit status the train posts
-before each merge.
+own summaries, with the commit status the train posts before each merge.
 
-12:31:26  change.refused       Refused https://github.com/unlaboredlabs/fleetd-testbed/pull/84: The PR body has no 'Source:' line.
-12:31:44  change.queued        X1 queued: unlaboredlabs/fleetd-testbed#86 (tier M, done:0)
-12:31:46  train.frozen         Train for unlaboredlabs/fleetd-testbed frozen: M7 lab: hold until every PR is ready
-12:31:46  change.queued        X2 queued: unlaboredlabs/fleetd-testbed#85 (tier M, done:1)
-12:31:53  review.verdict       T9 review verdict at 707084cfaec8: 0 blocking, 0 non-blocking
-12:31:53  change.ready         X1 ready for the train: unlaboredlabs/fleetd-testbed#86
-12:31:57  review.verdict       T12 review verdict at 3f9e002dd0ca: 0 blocking, 0 non-blocking
-12:31:57  change.ready         X2 ready for the train: unlaboredlabs/fleetd-testbed#85
-12:32:28  train.resumed        Train for unlaboredlabs/fleetd-testbed resumed
-12:32:29  fleetd/train         X1: rebased onto main, CI green   [commit status on 707084c]
-12:32:33  pr.merged            X1 merged: unlaboredlabs/fleetd-testbed#86 as 45ec6e3ca074
-12:32:52  fleetd/train         X2: rebased onto main, CI green   [commit status on 504120d]
-12:32:55  pr.merged            X2 merged: unlaboredlabs/fleetd-testbed#85 as 717a583c4df3
-12:33:14  change.ci_failed     X3 CI failed on 47adf415978b: ci (failure) (log: …)
-12:33:16  change.needs_rebase  X4 needs a rebase: conflicts with origin/main in lab/20261018122034/alpha.md
+22:21:22  change.queued   X1 queued: unlaboredlabs/fleetd-testbed#124 (tier L, done:1)
+22:21:25  change.queued   X2 queued: unlaboredlabs/fleetd-testbed#125 (tier L, done:2)
+22:21:33  review.verdict  T4 review verdict at ad899ecd4930: 0 blocking, 1 non-blocking
+22:21:35  review.verdict  T5 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking
+22:21:37  review.verdict  T8 review verdict at bbd67b733334: 0 blocking, 0 non-blocking
+22:21:38  review.verdict  T9 review verdict at bbd67b733334: 0 blocking, 0 non-blocking
+22:21:38  review.verdict  T6 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking
+22:21:40  change.ready    X1 ready for the train: unlaboredlabs/fleetd-testbed#124
+22:21:43  fleetd/train    X1: rebased onto main, CI green   [commit status on ad899ec]
+22:21:44  review.verdict  T7 review verdict at bbd67b733334: 0 blocking, 1 non-blocking
+22:21:44  change.ready    X2 ready for the train: unlaboredlabs/fleetd-testbed#125
+22:21:47  pr.merged       X1 merged: unlaboredlabs/fleetd-testbed#124 as a3dbc17d67bf
+22:22:07  fleetd/train    X2: rebased onto main, CI green   [commit status on 7d4a144]
+22:22:11  pr.merged       X2 merged: unlaboredlabs/fleetd-testbed#125 as bf102d28ae7d
 
 
 SETUP IS A HUB AND YOUR MACHINES
@@ -144,20 +134,33 @@ The hub, on the machine you installed on. --yes takes every default;
 workers, a first project and `fleetd doctor` wait for you:
 
 $ fleetd init --yes --no-service --git-identity "Demo <demo@users.noreply.github.com>"
-fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
-✓ reachability: the hub will answer at http://hub.your-tailnet.ts.net:4790
-✓ claude: 2.1.302, logged in (token) as fleetd's services run it
-✓ gh: logged in as demo
-✓ commit author: Demo <demo@users.noreply.github.com>
-… hub
-– hub: not started; run it yourself with: fleetd hub start --home ~/.fleetd/hub --listen <tailnet-ip>:4790 (home ~/.fleetd/hub)
-– workers, first project and doctor: they need the hub running
-✓ pairing code: W5PG-GWHX for http://hub.your-tailnet.ts.net:4790 (one use, until 2026-10-18T14:06:31.740Z)
-    The app on this machine pairs by itself (~/.config/fleetd/app-pair.json).
-    On another computer: open the app, enter http://hub.your-tailnet.ts.net:4790 and the code, or open fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4790&code=W5PG-GWHX
 
-fleetd is set up.
-Next: install the desktop app on the computer you work from (curl -fsSL https://fleetd.sh | sh -s -- --app), open it and enter the pairing code; then type your first order in it.
+This machine  1/6
+✓  reachable at http://hub.your-tailnet.ts.net:4791
+
+Logins  2/6
+✓  claude 2.1.302, logged in
+✓  gh logged in as demo
+✓  commit author Demo <demo@users.noreply.github.com>
+
+Hub  3/6
+–  hub not started (--no-service)
+
+Workers  4/6
+–  workers need the hub running
+
+Project  5/6
+–  project needs the hub running
+
+App & check  6/6
+✓  pairing code 8VF5-GD48 · one use, 15 min
+  In the fleetd app, enter http://hub.your-tailnet.ts.net:4791 and the code, or open:
+  fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4791&code=8VF5-GD48
+
+1 step(s) need you:
+  start the hub, then run fleetd init again: fleetd hub start --home ~/.fleetd/hub --listen <tailnet-ip>:4791
+
+Then run fleetd init again; it keeps what's done.
 [exit 0]
 
 A worker. --dry-run prints the plan and runs nothing; the shell command under
@@ -166,12 +169,11 @@ each step is left out here:
 $ fleetd machine add builder-1 --dry-run
 dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
 [probe] read the machine's state (read-only)
-[1/6] create fleetd's directories
-[2/6] install fleetd 0.0.0
-[3/6] create fleetd's Claude login file (empty, 0600)
-[4/6] write the node service
-[5/6] enroll the node with a one-time token (sent on stdin)
-[6/6] (re)start the node
+[1/5] create fleetd's directories
+[2/5] install fleetd 0.0.0
+[3/5] write the node service
+[4/5] enroll the node with a one-time token (sent on stdin)
+[5/5] (re)start the node
 [hub] wait until builder-1 is online
 [exit 0]
 
