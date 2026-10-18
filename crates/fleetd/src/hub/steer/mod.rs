@@ -259,6 +259,7 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
             task_id: task_id.as_deref(),
             by: by.stored(),
             queued_ms: now,
+            request: crid.clone(),
         },
     )?;
     if !created {
@@ -443,12 +444,21 @@ pub fn acknowledged_by_plan(
                 .to_owned()
         },
     );
-    if out.change.is_some() {
+    // The change this call wrote, not the project's newest: same project, time and deltas.
+    if let Some(change) = &out.change {
         let pk = crate::hub::plan::store::pkey(r);
+        let change_at = crate::hub::plan::parse_ms(change.at.as_str());
         let tagged = hub.db.with(|c| {
             c.execute(
-                "UPDATE plan_changes SET steer_id = ? WHERE n = (SELECT MAX(n) FROM plan_changes WHERE project_ref = ?)",
-                rusqlite::params![steer.id.as_str(), pk],
+                "UPDATE plan_changes SET steer_id = ? WHERE n = (SELECT MAX(n) FROM plan_changes
+                 WHERE project_ref = ? AND at_ms = ? AND delta_items = ? AND delta_size = ?)",
+                rusqlite::params![
+                    steer.id.as_str(),
+                    pk,
+                    change_at,
+                    change.delta_items.get(),
+                    change.delta_size.get()
+                ],
             )?;
             Ok(())
         });
