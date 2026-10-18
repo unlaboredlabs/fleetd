@@ -2183,6 +2183,7 @@ dependencies = [
  "crypto_box",
  "diffy",
  "fleetd-contracts",
+ "fleetd-record",
  "futures",
  "futures-rustls",
  "gpui",
@@ -2217,6 +2218,16 @@ dependencies = [
  "serde_json",
  "serde_with",
  "url",
+]
+
+[[package]]
+name = "fleetd-record"
+version = "0.0.0"
+dependencies = [
+ "block2 0.6.2",
+ "libc",
+ "objc2 0.6.5",
+ "raw-window-handle",
 ]
 
 [[package]]

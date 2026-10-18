@@ -1,0 +1,75 @@
+name: record-mac
+
+# The app's own-window recording (FLEETD_RECORD, app/record) on a real Mac: the live fixture board for 25 s, then the
+# MP4, its PNGs and frames ffmpeg cut from the MP4 as an artifact. Run by hand on a branch:
+#   gh workflow run record-mac.yml --ref <branch>
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: How long to record
+        default: "25"
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+      # Debug: objc2 then checks every Objective-C message's argument and return types against the runtime.
+      - run: cargo build --locked -p fleetd-app
+      - name: Record the live fixture board
+        env:
+          SECONDS_TO_RECORD: ${{ inputs.seconds || '25' }}
+        run: |
+          out="$RUNNER_TEMP/rec"
+          FLEETD_BENCH=live FLEETD_LIVE=demo FLEETD_BENCH_TIMEOUT_MS=0 FLEETD_RECORD="$out,30" \
+            target/debug/fleetd-app >"$RUNNER_TEMP/app.log" 2>&1 &
+          pid=$!
+          sleep "$SECONDS_TO_RECORD"
+          # SIGTERM is how scripts/demo-mac.sh stops the app: the recorder finishes the file, then exits.
+          kill -TERM "$pid"
+          for _ in $(seq 150); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+          if kill -0 "$pid" 2>/dev/null; then echo "::error::the app did not exit after SIGTERM"; kill -9 "$pid"; fi
+          wait "$pid" || echo "exit status $?"
+          cat "$RUNNER_TEMP/app.log"
+          grep -q 'FLEETD_RECORD done' "$RUNNER_TEMP/app.log" || { echo "::error::no finished recording"; exit 1; }
+          ls -la "$out" "$out/frames"
+      - name: Check the MP4
+        run: |
+          brew install --quiet ffmpeg
+          out="$RUNNER_TEMP/rec"
+          ffprobe -v error -show_entries stream=codec_name,pix_fmt,width,height,avg_frame_rate,nb_frames:format=duration \
+            -of default=nw=1 "$out/fleetd.mp4" | tee "$out/ffprobe.txt"
+          grep -qx 'codec_name=h264' "$out/ffprobe.txt"
+          grep -qx 'pix_fmt=yuv420p' "$out/ffprobe.txt"
+          # Moov before mdat: plays before it has fully downloaded.
+          python3 - "$out/fleetd.mp4" <<'EOF'
+          import struct, sys
+          f = open(sys.argv[1], "rb"); order = []
+          while True:
+              head = f.read(8)
+              if len(head) < 8: break
+              size, kind = struct.unpack(">I4s", head)
+              order.append(kind.decode())
+              if size == 1: size = struct.unpack(">Q", f.read(8))[0]; f.seek(size - 16, 1)
+              else: f.seek(size - 8, 1)
+          print("atoms:", order)
+          assert order.index("moov") < order.index("mdat"), "moov after mdat"
+          EOF
+          mkdir -p "$out/from-mp4"
+          for t in 2 8 14 20; do ffmpeg -v error -ss "$t" -i "$out/fleetd.mp4" -frames:v 1 "$out/from-mp4/at-${t}s.png"; done
+          cp "$RUNNER_TEMP/app.log" "$out/"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: record-mac
+          path: ${{ runner.temp }}/rec
+          if-no-files-found: error
