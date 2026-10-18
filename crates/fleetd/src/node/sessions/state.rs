@@ -221,6 +221,7 @@ mod tests {
             id: NonEmpty::unchecked(id),
             status,
             ordinal,
+            queued_at: None,
             started_at: None,
             ended_at: None,
             failure: None,

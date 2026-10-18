@@ -335,6 +335,7 @@ pub struct Executors {
     tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
+    time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
 }
 
 fn thread_ref(machine_id: &MachineId, thread_id: &str) -> ThreadRef {
@@ -459,6 +460,7 @@ impl Executors {
             ready: Mutex::default(),
             tool_policy: Mutex::default(),
             hooks: tools::ToolHooks::default(),
+            time: std::sync::OnceLock::new(),
         })
     }
 
@@ -842,7 +844,10 @@ impl Executors {
                 .call(
                     &machine_id,
                     NodeOperation::Read,
-                    SessionCall::Subscribe { after },
+                    SessionCall::Subscribe {
+                        after,
+                        spans_after: self.time.get().map(|t| t.node_cursor(machine_id.as_str())),
+                    },
                     READ_TIMEOUT,
                 )
                 .await
@@ -1367,15 +1372,66 @@ impl Executors {
         r: &ThreadRef,
         request_id: &str,
         decision: PermissionDecision,
+        by: Option<fleetd_contracts::time::DecidedBy>,
     ) -> Result<(), ExecutorError> {
         let op = NodeOperation::Answer;
         let call = SessionCall::Answer {
             session_id: r.thread_id.clone(),
             request_id: non_empty(&r.machine_id, op, "request id", request_id)?,
             decision,
+            by,
         };
         self.call(&r.machine_id, op, call, READ_TIMEOUT).await?;
         Ok(())
+    }
+
+    /// The items and messages around `item_id`, oldest first, read from the node's own log, and the index of the
+    /// item among them.
+    pub async fn window(
+        &self,
+        r: &ThreadRef,
+        item_id: &str,
+        before: u64,
+        after: u64,
+    ) -> Result<(Vec<TailRow>, Option<u64>), ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::Window {
+            session_id: r.thread_id.clone(),
+            item_id: non_empty(&r.machine_id, op, "item id", item_id)?,
+            before: fleetd_contracts::prim::Int::try_from(before.min(25) as i64)
+                .unwrap_or_default(),
+            after: fleetd_contracts::prim::Int::try_from(after.min(25) as i64).unwrap_or_default(),
+        };
+        let SessionOutput::Window { entries, focus } =
+            self.call(&r.machine_id, op, call, READ_TIMEOUT).await?
+        else {
+            return Ok((Vec::new(), None));
+        };
+        let rows = entries
+            .into_iter()
+            .filter_map(|e| match e {
+                fleetd_contracts::sessions::WindowEntry::Item(item) => {
+                    thread_view::to_action(&item).map(|action| TailRow::Action {
+                        at: item.started_at.to_string(),
+                        action,
+                    })
+                }
+                fleetd_contracts::sessions::WindowEntry::Message(m) => Some(TailRow::Message {
+                    at: m.created_at.to_string(),
+                    role: serde_json::to_value(m.role)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                        .unwrap_or_else(|| "assistant".into()),
+                    text: crate::hub::api::clip(&m.text, 2000),
+                }),
+            })
+            .collect();
+        Ok((rows, focus))
+    }
+
+    /// Wires the time area: subscribes ask nodes for their span outbox from the hub's cursor.
+    pub fn set_time(&self, time: Arc<crate::hub::time::Time>) {
+        let _ = self.time.set(time);
     }
 
     /// Newest first. `kinds` are "message" and "action"; none means both.

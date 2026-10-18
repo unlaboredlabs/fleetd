@@ -266,6 +266,25 @@ pub struct NodeActionResult {
     pub probe: Option<NodeProbe>,
 }
 
+/// Node -> hub: time spans from the node's outbox rows `fromRid..=toRid`, oldest first. A resend after a
+/// reconnect repeats rows; the hub stores each span once by its key.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SpansFrame {
+    pub from_rid: u64,
+    pub to_rid: u64,
+    pub spans: List<crate::time::SpanWire, 0, 256>,
+}
+
+/// Hub -> node: every outbox row up to `upto` is stored on the hub; the node may delete them. With `rewind`, the
+/// hub did not store a frame (its writer was full, or a frame before it was lost): the node sends again from `upto`.
+#[skip_serializing_none]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SpansAck {
+    pub upto: u64,
+    pub rewind: Option<bool>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
@@ -283,6 +302,7 @@ pub enum NodeToHub {
     ThreadEvent(ThreadEventFrame),
     /// After the machine woke: how long it slept, once per sleep.
     Slept(SleptSpan),
+    Spans(SpansFrame),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -299,6 +319,7 @@ pub enum HubToNode {
     GatedRun(GatedRun),
     NodeAction(NodeAction),
     SessionCall(SessionCallFrame),
+    SpansAck(SpansAck),
 }
 
 #[cfg(test)]

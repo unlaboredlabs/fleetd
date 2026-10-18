@@ -279,6 +279,37 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
     }
 }
 
+/// The orders a wake serves: an intent's, an answered ask's, and any `W<n>` a line names or whose task `T<n>` it
+/// names. The time inspector splits the lead's turn equally over them.
+fn trigger_workstreams(
+    triggers: &[Trigger],
+    task_order: impl Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    static ID: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = ID.get_or_init(|| regex::Regex::new(r"\b[WT][1-9][0-9]*\b").expect("pattern"));
+    let mut out: Vec<String> = Vec::new();
+    for t in triggers {
+        let found: Vec<String> = match t {
+            Trigger::Intent { workstream_id, .. } => vec![workstream_id.to_string()],
+            Trigger::Answer(a) => a.ask.workstream_id.iter().map(|w| w.to_string()).collect(),
+            Trigger::Decision(_) => Vec::new(),
+            Trigger::Line { text, .. } => re
+                .find_iter(text)
+                .filter_map(|m| match m.as_str() {
+                    t if t.starts_with('T') => task_order(t),
+                    w => Some(w.to_owned()),
+                })
+                .collect(),
+        };
+        for w in found {
+            if !out.contains(&w) {
+                out.push(w);
+            }
+        }
+    }
+    out
+}
+
 fn key_of(r: &ProjectRef) -> String {
     format!("{}/{}", r.machine_id, r.project_id)
 }
@@ -289,6 +320,9 @@ pub struct LeadWakes {
     playbooks: Arc<Playbooks>,
     debouncer: Arc<Debouncer<ProjectRef, Trigger>>,
     flushing: tokio::sync::Mutex<()>,
+    /// When the pending wake's first trigger came, per project: `lead.woken.firstTriggerAt`, so the time inspector
+    /// sees the debounce. Kept through a usage hold, which re-triggers.
+    first: std::sync::Mutex<HashMap<ProjectRef, String>>,
 }
 
 impl LeadWakes {
@@ -300,12 +334,14 @@ impl LeadWakes {
             playbooks,
             debouncer,
             flushing: tokio::sync::Mutex::new(()),
+            first: std::sync::Mutex::new(HashMap::new()),
         })
     }
 
     /// Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE, or WAKE_MAX_WAIT after
     /// the first.
     pub fn trigger(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
+        self.first_trigger(r);
         let this = Arc::clone(self);
         self.debouncer.push(r.clone(), trigger, move |r, triggers| {
             Box::pin(async move { this.flush(r, triggers).await })
@@ -319,6 +355,7 @@ impl LeadWakes {
 
     /// Wakes the lead now with this trigger and any pending ones, skipping the debounce (a person steering).
     pub fn trigger_now(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
+        self.first_trigger(r);
         let this = Arc::clone(self);
         self.debouncer
             .push_now(r.clone(), trigger, move |r, triggers| {
@@ -421,6 +458,14 @@ impl LeadWakes {
         facts
     }
 
+    fn first_trigger(&self, r: &ProjectRef) {
+        self.first
+            .lock()
+            .unwrap()
+            .entry(r.clone())
+            .or_insert_with(|| now_iso(&self.ctx));
+    }
+
     async fn flush(self: Arc<Self>, r: ProjectRef, triggers: Vec<Trigger>) {
         let _guard = self.flushing.lock().await;
         if let Err(error) = self.flush_inner(&r, triggers).await {
@@ -503,7 +548,30 @@ impl LeadWakes {
             last_wake_at: Some(at.clone().into()),
             ..lead.clone()
         })?;
-        let mut data = serde_json::json!({ "triggers": triggers.iter().map(Trigger::kind).collect::<Vec<_>>() });
+        let first = self
+            .first
+            .lock()
+            .unwrap()
+            .remove(r)
+            .unwrap_or_else(|| at.clone());
+        let mut data = serde_json::json!({
+            "triggers": triggers.iter().map(Trigger::kind).collect::<Vec<_>>(),
+            "firstTriggerAt": first,
+            "workstreamIds": trigger_workstreams(&triggers, |t| {
+                let n = t[1..].parse::<i64>().ok()?;
+                self.ctx
+                    .db
+                    .with(|c| {
+                        Ok(rusqlite::OptionalExtension::optional(c.query_row(
+                            "SELECT workstream_id FROM tasks WHERE n = ?1",
+                            [n],
+                            |r| r.get::<_, String>(0),
+                        ))?)
+                    })
+                    .ok()
+                    .flatten()
+            }),
+        });
         if queued {
             data["queued"] = serde_json::Value::Bool(true);
         }

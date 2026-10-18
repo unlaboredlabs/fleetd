@@ -11,14 +11,21 @@ use super::*;
 const AT: &str = "2026-10-18T10:00:00.000Z";
 
 fn now() -> Now {
+    now_at(0)
+}
+
+/// The recorded line's time: fixtures carry ms since the process started.
+fn now_at(ms: u64) -> Now {
     Now {
         at: Timestamp::from(AT),
-        ms: 1_792_000_000_000,
+        ms: 1_792_000_000_000 + ms,
     }
 }
 
 struct Replay {
+    /// Everything but the time spans, which are in `spans`.
     events: Vec<RunnerEvent>,
+    spans: Vec<fleetd_contracts::time::SpanWire>,
     evidence: Vec<FailureEvidence>,
     /// (recorded stdin line, the line the mapper wrote for it)
     inputs: Vec<(Value, Value)>,
@@ -75,10 +82,12 @@ fn replay_with(name: &str, before_exit: impl FnOnce(&mut StreamMapper)) -> Repla
         inputs: Vec::new(),
         replies: Vec::new(),
         sent: Vec::new(),
+        spans: Vec::new(),
     };
     for raw in std::fs::read_to_string(&path).unwrap().lines() {
         let rec: Value = serde_json::from_str(raw).unwrap();
         let msg = &rec["msg"];
+        let ms = rec["ms"].as_u64().unwrap_or(0);
         match rec["dir"].as_str().unwrap() {
             "in" => {
                 let ours = match msg["type"].as_str().unwrap() {
@@ -104,7 +113,7 @@ fn replay_with(name: &str, before_exit: impl FnOnce(&mut StreamMapper)) -> Repla
                         };
                         let request_id = msg["response"]["request_id"].as_str().unwrap();
                         mapper
-                            .answer(request_id, &decision)
+                            .answer(request_id, &decision, Some(DecidedBy::Human), &now_at(ms))
                             .expect("claude waits for this answer")
                     }
                     other => panic!("{file}: unexpected stdin line {other}"),
@@ -113,7 +122,7 @@ fn replay_with(name: &str, before_exit: impl FnOnce(&mut StreamMapper)) -> Repla
                     .push((msg.clone(), serde_json::to_value(ours).unwrap()));
             }
             "out" => {
-                let mapped = mapper.feed(serde_json::from_value(msg.clone()).unwrap(), &now());
+                let mapped = mapper.feed(serde_json::from_value(msg.clone()).unwrap(), &now_at(ms));
                 out.events.extend(mapped.events);
                 out.replies.extend(mapped.replies);
             }
@@ -130,12 +139,19 @@ fn replay_with(name: &str, before_exit: impl FnOnce(&mut StreamMapper)) -> Repla
                     signal,
                     stderr_tail: mapper.stderr_tail(),
                 };
-                out.events.extend(mapper.exited(exit, &now()));
+                out.events.extend(mapper.exited(exit, &now_at(ms)));
             }
             _ => {}
         }
     }
     out.evidence = evidence.lock().unwrap().clone();
+    let events = std::mem::take(&mut out.events);
+    for e in events {
+        match e {
+            RunnerEvent::Spans(s) => out.spans.extend(s),
+            other => out.events.push(other),
+        }
+    }
     out
 }
 
@@ -601,6 +617,7 @@ fn retries_and_compaction_become_items() {
                 max_retries,
                 error_status,
                 error,
+                ..
             } => Some((
                 *attempt,
                 *max_retries,
@@ -718,7 +735,7 @@ fn a_prompt_claude_withdraws_is_cancelled_and_can_no_longer_be_answered() {
     let allow = PermissionDecision::Allow {
         updated_input: None,
     };
-    assert!(mapper.answer("p1", &allow).is_none());
+    assert!(mapper.answer("p1", &allow, None, &now()).is_none());
 }
 
 #[test]
@@ -835,5 +852,103 @@ fn streamed_usage_adds_up_over_the_run_s_messages() {
             (r(), 120, 31, 40),
             (r(), 120, 37, 40)
         ]
+    );
+}
+
+fn spans_of(replay: &Replay) -> Vec<&fleetd_contracts::time::SpanWire> {
+    replay.spans.iter().collect()
+}
+
+/// Every recorded run tiles exactly: its spans' exclusive times add up to the run's wall time in ms, and each tool
+/// call's span carries the item's exit code and the full output's size.
+#[test]
+fn every_run_s_spans_tile_its_wall_time_and_match_its_tool_items() {
+    use fleetd_contracts::time::SpanKind;
+    for name in fixtures() {
+        if name.contains("initialize-probe") {
+            continue;
+        }
+        let replay = replay(&name);
+        let spans = spans_of(&replay);
+        let runs: Vec<_> = spans.iter().filter(|s| s.kind == SpanKind::Run).collect();
+        for run in &runs {
+            let of_run: Vec<_> = spans.iter().filter(|s| s.run_id == run.run_id).collect();
+            let excl: i64 = of_run
+                .iter()
+                .map(|s| s.excl_ms.map_or(0, |e| e.get()))
+                .sum();
+            assert_eq!(
+                excl,
+                run.end_ms.get() - run.start_ms.get(),
+                "{name}: {:?}",
+                run.run_id
+            );
+        }
+        for item in items(&replay.events) {
+            let (exit, output) = match &item.kind {
+                ItemKind::Command {
+                    exit_code,
+                    output: Some(o),
+                    ..
+                } => (*exit_code, o.len()),
+                ItemKind::Tool {
+                    output: Some(o),
+                    tool_name,
+                    ..
+                } if tool_name != "Thinking" => (None, o.len()),
+                _ => continue,
+            };
+            let key = format!("s/{}", item.id);
+            let span = spans
+                .iter()
+                .find(|s| s.key.as_str() == key)
+                .unwrap_or_else(|| panic!("{name}: no span for {key}"));
+            assert_eq!(span.exit_code.map(i64::from), exit, "{name}: {key}");
+            assert_eq!(
+                span.out_bytes.map(|b| b.get()),
+                Some(output as i64),
+                "{name}: {key}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_tool_s_permission_wait_is_its_own_span_and_the_model_has_phases() {
+    use fleetd_contracts::time::{DecidedBy, SpanKind};
+    let replay = replay("permission-allow");
+    let spans = spans_of(&replay);
+    let wait = spans
+        .iter()
+        .find(|s| s.kind == SpanKind::WaitPermission)
+        .unwrap();
+    assert_eq!(
+        wait.extra.as_ref().unwrap().decided_by,
+        Some(DecidedBy::Human)
+    );
+    let bash = spans.iter().find(|s| s.kind == SpanKind::ToolBash).unwrap();
+    assert_eq!(wait.parent.as_deref(), Some(bash.key.as_str()));
+    assert!(wait.start_ms.get() >= bash.start_ms.get() && wait.end_ms.get() <= bash.end_ms.get());
+    // The first message: started 1330 ms in, the lifecycle at 174 ms; it stopped at 1559.
+    let first = spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::ModelFirstToken)
+        .min_by_key(|s| s.start_ms.get())
+        .unwrap();
+    assert_eq!(first.end_ms.get() - first.start_ms.get(), 1330 - 174);
+    let message = spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::ModelMessage)
+        .min_by_key(|s| s.start_ms.get())
+        .unwrap();
+    assert_eq!(message.end_ms.get() - message.start_ms.get(), 1559 - 174);
+    assert_eq!(
+        message.extra.as_ref().unwrap().stop_reason.as_deref(),
+        Some("tool_use")
+    );
+    let run = spans.iter().find(|s| s.kind == SpanKind::Run).unwrap();
+    assert_eq!(
+        run.extra.as_ref().unwrap().duration_api_ms.map(|d| d.get()),
+        Some(2308)
     );
 }

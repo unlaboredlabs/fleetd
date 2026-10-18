@@ -79,6 +79,9 @@ pub struct Slots {
     lead_of: LeadOf,
     /// The event log's head when the board was loaded; `run` follows from here.
     cursor: i64,
+    time: std::sync::OnceLock<crate::hub::time::TimeSink>,
+    /// While every slot is held: since when, and the most tasks queued meanwhile.
+    full: Mutex<Option<(i64, i64)>>,
 }
 
 fn project_ref(m: String, p: String) -> ProjectRef {
@@ -218,6 +221,8 @@ impl Slots {
             listeners: Mutex::new(Vec::new()),
             lead_of,
             cursor: head,
+            time: std::sync::OnceLock::new(),
+            full: Mutex::new(None),
         });
         for t in store.threads_running()? {
             if slots
@@ -279,12 +284,49 @@ impl Slots {
                 board.evaluate();
             }
             persist(&self.db, board.take_ops())?;
+            self.saturation(&board.state());
             (result, freed)
         };
         if freed {
             self.notify();
         }
         Ok(result)
+    }
+
+    pub fn set_time(&self, sink: crate::hub::time::TimeSink) {
+        let _ = self.time.set(sink);
+    }
+
+    /// A `slots.full` span on the fleet lane for each spell with every slot held, with the peak queue.
+    fn saturation(&self, s: &BoardState) {
+        let Some(time) = self.time.get() else { return };
+        let mut full = self.full.lock().unwrap();
+        let now = crate::hub::time::wall_ms();
+        let span = |start: i64, end: Option<i64>, peak: i64| crate::hub::time::NewSpan {
+            src_key: format!("slots/{start}"),
+            kind: fleetd_contracts::time::SpanKind::SlotsFull,
+            start_ms: start,
+            end_ms: end,
+            lane: "fleet".into(),
+            extra: Some(fleetd_contracts::time::SpanExtra {
+                peak_queued: fleetd_contracts::prim::Count::try_from(peak).ok(),
+                cap: fleetd_contracts::prim::Count::try_from(s.cap).ok(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        match (*full, s.used >= s.cap) {
+            (None, true) => {
+                *full = Some((now, s.queued));
+                time.span(span(now, None, s.queued));
+            }
+            (Some((start, peak)), true) => *full = Some((start, peak.max(s.queued))),
+            (Some((start, peak)), false) => {
+                *full = None;
+                time.span(span(start, Some(now), peak));
+            }
+            (None, false) => {}
+        }
     }
 
     fn notify(&self) {

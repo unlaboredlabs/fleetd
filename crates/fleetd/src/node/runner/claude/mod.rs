@@ -7,6 +7,7 @@
 pub mod mapper;
 pub mod protocol;
 mod session;
+pub mod spans;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

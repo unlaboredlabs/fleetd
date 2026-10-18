@@ -132,10 +132,16 @@ pub enum SessionCall {
         session_id: ThreadId,
         request_id: NonEmpty,
         decision: PermissionDecision,
+        /// Who decided, for the time inspector; an older hub sends none.
+        by: Option<crate::time::DecidedBy>,
     },
-    /// Start (or restart) the machine stream after `after`; none means from a fresh snapshot.
+    /// Start (or restart) the machine stream after `after`; none means from a fresh snapshot. `spansAfter` asks for
+    /// the node's time spans after that outbox row; a node sends spans only when it is present.
+    #[serde(rename_all = "camelCase")]
     Subscribe {
         after: Option<u64>,
+        #[serde(default)]
+        spans_after: Option<u64>,
     },
     /// Start the thread stream for one session: a bounded snapshot, then live events.
     #[serde(rename_all = "camelCase")]
@@ -145,6 +151,14 @@ pub enum SessionCall {
     #[serde(rename_all = "camelCase")]
     Release {
         session_id: ThreadId,
+    },
+    /// The items and messages around one item, oldest first, from the node's own log (for "click to transcript").
+    #[serde(rename_all = "camelCase")]
+    Window {
+        session_id: ThreadId,
+        item_id: NonEmpty,
+        before: Int<0, 25>,
+        after: Int<0, 25>,
     },
     /// The full output of one item whose snapshot copy was cut (`outputOmitted`).
     #[serde(rename_all = "camelCase")]
@@ -304,11 +318,24 @@ pub enum SessionOutput {
     },
     Changes(SessionChanges),
     RunnerInfo(RunnerInfo),
+    /// Answer to `window`: items and messages in log order; `focus` is the index of the asked item, absent when the
+    /// node no longer has it.
+    Window {
+        entries: Vec<WindowEntry>,
+        focus: Option<u64>,
+    },
     /// Answer to `list_files`: repo-relative paths.
     Files {
         paths: Vec<String>,
         truncated: bool,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WindowEntry {
+    Item(ThreadItem),
+    Message(ThreadMessage),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -405,6 +432,8 @@ pub struct RunInfo {
     pub status: RunStatus,
     /// 1-based position in the session.
     pub ordinal: u64,
+    /// When the send reached the node; absent on runs an older node recorded.
+    pub queued_at: Option<Timestamp>,
     pub started_at: Option<Timestamp>,
     pub ended_at: Option<Timestamp>,
     pub failure: Option<RunFailure>,
@@ -577,6 +606,8 @@ pub enum ItemKind {
         max_retries: u32,
         error_status: Option<u16>,
         error: String,
+        /// The wait claude announced before retrying.
+        retry_delay_ms: Option<u64>,
     },
     /// The node continuing a run itself after claude's own retries gave up (Overloaded, Network): `attempt` of
     /// `of`, sent after `delay_ms`, because of `reason`.

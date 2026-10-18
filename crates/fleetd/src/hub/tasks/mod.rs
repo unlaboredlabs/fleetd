@@ -323,7 +323,8 @@ impl Tasks {
         self.d.ports.workstream(id)
     }
 
-    fn queue(&self, stored: &StoredTask, reason: &str) -> Result<Task, StoreError> {
+    /// `kind` says what it waits for (`lease`, `offline`, `usage`, `slot`) for the time inspector's queue spans.
+    fn queue(&self, stored: &StoredTask, kind: &str, reason: &str) -> Result<Task, StoreError> {
         let task = &stored.task;
         if task.state == TaskState::Queued
             && task.queued_reason.as_ref().map(|r| r.as_str()) == Some(reason)
@@ -339,6 +340,7 @@ impl Tasks {
         })?;
         let mut extra = Map::new();
         extra.insert("queuedReason".into(), json!(reason));
+        extra.insert("queuedKind".into(), json!(kind));
         self.emit(
             &next,
             HubEventType::TaskQueued,
@@ -553,17 +555,17 @@ impl Tasks {
             && let crate::hub::slots::Grant::Queued(reason) =
                 self.d.leases.acquire(r, &task.task_id, &task.areas)?
         {
-            return self.queue(stored, &reason);
+            return self.queue(stored, "lease", &reason);
         }
         // Checked before the slot: taking and releasing one would run the queue again at once.
         let offline = format!("machine {} is offline", r.machine_id.as_str());
         if !self.d.ports.is_connected(&r.machine_id) {
             self.retry_when_live(&r.machine_id);
-            return self.queue(stored, &offline);
+            return self.queue(stored, "offline", &offline);
         }
         // M4 usage: a paused login takes no new turns; usage.resumed runs the queue again.
         if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(&r.machine_id)) {
-            return self.queue(stored, &paused);
+            return self.queue(stored, "usage", &paused);
         }
         let slot = self.d.slots.acquire(SlotRequest {
             holder: task.task_id.as_str(),
@@ -571,7 +573,7 @@ impl Tasks {
             priority: priority_of(task.kind),
         })?;
         if let crate::hub::slots::Grant::Queued(reason) = slot {
-            return self.queue(stored, &reason);
+            return self.queue(stored, "slot", &reason);
         }
 
         let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
@@ -596,7 +598,7 @@ impl Tasks {
             Err(StartError::Offline) => {
                 self.d.slots.release(task.task_id.as_str())?;
                 self.retry_when_live(&r.machine_id);
-                return self.queue(stored, &offline);
+                return self.queue(stored, "offline", &offline);
             }
             Err(StartError::Other(message)) => {
                 return self.fail_to_start(stored, &message, from_queue);

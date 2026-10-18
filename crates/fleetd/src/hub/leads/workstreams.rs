@@ -149,7 +149,7 @@ impl Workstreams {
                 &workstream,
                 HubEventType::WorkstreamCreated,
                 format!("New intent {id}: {}", workstream.title),
-                None,
+                Some(serde_json::json!({ "workstreamId": id })),
             )?;
             self.wakes.trigger(
                 &input.project_ref,

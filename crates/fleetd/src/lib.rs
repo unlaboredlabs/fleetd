@@ -4,3 +4,4 @@ pub mod cli;
 pub mod clock;
 pub mod hub;
 pub mod node;
+pub mod tiles;

@@ -170,6 +170,7 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::GatedRun(_) => "gated_run",
         HubToNode::NodeAction(_) => "node_action",
         HubToNode::SessionCall(_) => "session_call",
+        HubToNode::SpansAck(_) => "spans_ack",
     }
 }
 
@@ -376,6 +377,9 @@ async fn run_link_once(
                     let _ = tx.send(to_json(&NodeToHub::SessionReply(reply)));
                 });
             }
+            HubToNode::SpansAck(ack) => shared
+                .node_sessions
+                .spans_acked(ack.upto, ack.rewind == Some(true)),
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }
     }

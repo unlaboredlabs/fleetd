@@ -57,7 +57,11 @@ async fn hub_with(store: NodeStore, runner: FakeRunner, config: SessionConfig) -
         rx,
         _attached: attached,
     };
-    hub.ok(SessionCall::Subscribe { after: None }).await;
+    hub.ok(SessionCall::Subscribe {
+        after: None,
+        spans_after: None,
+    })
+    .await;
     hub
 }
 
@@ -403,6 +407,7 @@ async fn a_prompt_waits_for_the_hub_unless_policy_answers_it() {
     let answer = |request_id: &str| SessionCall::Answer {
         session_id: ThreadId::unchecked("s1"),
         request_id: NonEmpty::unchecked(request_id),
+        by: None,
         decision: PermissionDecision::Allow {
             updated_input: None,
         },

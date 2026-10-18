@@ -78,15 +78,53 @@ impl TrainGit<'_> {
     ) -> Result<CmdOut, GitError> {
         let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
         let head = argv.iter().take(3).cloned().collect::<Vec<_>>().join(" ");
-        self.host
+        let time = self.host.time();
+        let started = crate::hub::time::wall_ms();
+        let out = self
+            .host
             .run_command(
                 &self.machine_id,
                 cwd.unwrap_or(&self.worktree),
                 argv,
                 timeout_sec,
             )
-            .await
-            .map_err(|e| GitError(format!("{head} on {}: {e}", self.machine_id)))
+            .await;
+        if let Some(time) = time {
+            let lane = format!(
+                "train:{}",
+                std::path::Path::new(&self.worktree)
+                    .file_name()
+                    .map_or_else(
+                        || self.worktree.clone(),
+                        |n| n.to_string_lossy().into_owned()
+                    )
+            );
+            let exit = out.as_ref().ok().and_then(|o| o.exit_code).map(i64::from);
+            time.span(crate::hub::time::NewSpan {
+                src_key: format!(
+                    "git/{}/{started}/{}",
+                    self.machine_id,
+                    rand::random::<u32>()
+                ),
+                kind: fleetd_contracts::time::SpanKind::Git,
+                start_ms: started,
+                end_ms: Some(crate::hub::time::wall_ms().max(started)),
+                ids: crate::hub::time::Ids {
+                    machine_id: Some(self.machine_id.to_string()),
+                    ..Default::default()
+                },
+                lane,
+                label: Some(head.clone()),
+                exit_code: exit,
+                status: if exit == Some(0) {
+                    fleetd_contracts::time::SpanStatus::Ok
+                } else {
+                    fleetd_contracts::time::SpanStatus::Failed
+                },
+                ..Default::default()
+            });
+        }
+        out.map_err(|e| GitError(format!("{head} on {}: {e}", self.machine_id)))
     }
 
     /// Fails unless it exits 0; returns the output.

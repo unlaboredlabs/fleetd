@@ -9,6 +9,7 @@
 pub mod files;
 mod health;
 mod proc;
+mod spans;
 pub mod state;
 
 #[cfg(test)]
@@ -353,6 +354,11 @@ struct State {
     retries: HashMap<String, u32>,
     /// Sessions with an active run, for the sleep inhibitor.
     active: HashSet<String>,
+    outbox: spans::Outbox,
+    /// Runs whose send had to start claude's process, until they start: their wait is `run.startup`.
+    spawned: HashSet<String>,
+    /// Runs the node is retrying: when the retry was scheduled (ms), its attempt and delay.
+    node_retry: HashMap<String, (u64, u32, u64)>,
 }
 
 impl State {
@@ -400,6 +406,8 @@ struct Inner {
     files: Mutex<HashMap<String, Listed>>,
     /// How many sessions have an active run.
     running: watch::Sender<usize>,
+    /// Wakes the span flusher.
+    span_wake: Arc<tokio::sync::Notify>,
 }
 
 /// A project's file list and when it was read.
@@ -504,6 +512,7 @@ impl Drop for Attached {
             st.outlet = None;
             st.subscribed = false;
             st.followed.clear();
+            st.outbox.enabled = false;
         }
     }
 }
@@ -530,6 +539,7 @@ impl SessionService {
                 limits: Mutex::default(),
                 files: Mutex::default(),
                 running: watch::Sender::new(0),
+                span_wake: Arc::new(tokio::sync::Notify::new()),
             }),
         };
         for row in service.inner.store.sessions()? {
@@ -554,6 +564,7 @@ impl SessionService {
         }
         service.spawn_reaper();
         service.spawn_prober();
+        service.spawn_span_flusher(service.inner.span_wake.clone());
         Ok(service)
     }
 
@@ -620,8 +631,41 @@ impl SessionService {
                 session_id,
                 request_id,
                 decision,
-            } => self.answer(&session_id, &request_id, decision).await,
-            SessionCall::Subscribe { after } => self.subscribe(after),
+                by,
+            } => self.answer(&session_id, &request_id, decision, by).await,
+            SessionCall::Subscribe { after, spans_after } => {
+                let reply = self.subscribe(after);
+                if let Some(cursor) = spans_after {
+                    // A cursor past every row this outbox ever had is from a reset database: send all of it.
+                    let cursor = if cursor > self.store().spans_head()? {
+                        0
+                    } else {
+                        cursor
+                    };
+                    let mut st = self.st();
+                    st.outbox.enabled = true;
+                    st.outbox.sent = cursor;
+                    st.outbox.acked = cursor;
+                    st.outbox.urgent = true;
+                    drop(st);
+                    self.inner.span_wake.notify_one();
+                }
+                reply
+            }
+            SessionCall::Window {
+                session_id,
+                item_id,
+                before,
+                after,
+            } => {
+                let (entries, focus) = self.store().window(
+                    &session_id,
+                    &item_id,
+                    before.get() as usize,
+                    after.get() as usize,
+                )?;
+                Ok(SessionOutput::Window { entries, focus })
+            }
             SessionCall::Follow { session_id } => {
                 let mut st = self.st();
                 let snapshot = self.snapshot(&session_id)?;
@@ -1021,6 +1065,7 @@ impl SessionService {
                     RunStatus::Starting
                 },
                 ordinal,
+                queued_at: Some(c.at.clone()),
                 started_at: None,
                 ended_at: None,
                 failure: None,
@@ -1039,6 +1084,12 @@ impl SessionService {
             Ok(queued) => queued,
             Err(was_queued) => return Ok(was_queued),
         };
+        {
+            let mut st = self.st();
+            if !queued && !st.live.contains_key(id) {
+                st.spawned.insert(run_id.to_string());
+            }
+        }
         let command = SessionCommand::Send {
             run_id: run_id.to_string(),
             text: text.to_owned(),
@@ -1328,15 +1379,37 @@ impl SessionService {
                 RunnerEvent::RunStarted { run_id: started } => {
                     let started = self.resolve(&id, &started);
                     run_id = Some(started.clone());
-                    self.log(self.update(&id, |c| {
+                    let before = self.update(&id, |c| {
                         let at = c.at.clone();
+                        let prev_end = c
+                            .runs
+                            .iter()
+                            .filter(|r| r.id.as_str() != started)
+                            .filter_map(|r| r.ended_at.clone())
+                            .max_by(|a, b| a.as_str().cmp(b.as_str()));
+                        let mut pre = None;
                         if let Some(run) = c.run_mut(&started)
                             && matches!(run.status, RunStatus::Queued | RunStatus::Starting)
                         {
+                            pre = Some((run.status, run.queued_at.clone(), prev_end));
                             run.status = RunStatus::Running;
                             run.started_at.get_or_insert(at);
                         }
-                    }));
+                        pre
+                    });
+                    match before {
+                        Ok(pre) => self.run_began(&id, &started, pre),
+                        Err(e) => tracing::warn!(error = %e.message, "session event not applied"),
+                    }
+                }
+                RunnerEvent::Spans(mut spans) => {
+                    for span in &mut spans {
+                        if let Some(r) = &span.run_id {
+                            let resolved = self.resolve(&id, r.as_str());
+                            span.run_id = Text::new(resolved).ok();
+                        }
+                    }
+                    self.put_spans(&spans, true);
                 }
                 RunnerEvent::AssistantText { message_id, text } => {
                     if delta.as_ref().is_some_and(|(m, _)| *m == message_id) {
@@ -1520,6 +1593,7 @@ impl SessionService {
                 .send(SessionCommand::Answer {
                     request_id,
                     decision,
+                    by: Some(fleetd_contracts::time::DecidedBy::Policy),
                 })
                 .await;
         }
@@ -1620,6 +1694,10 @@ impl SessionService {
         failure: &RunFailure,
     ) {
         let max = self.inner.config.retry_schedule_ms.len() as u32;
+        let now_ms = crate::node::runner::claude::mapper::Now::system().ms;
+        self.st()
+            .node_retry
+            .insert(run_id.to_owned(), (now_ms, attempt, delay));
         self.log(self.update(id, |c| {
             let at = c.at.clone();
             c.put_item(ThreadItem {
@@ -1854,7 +1932,13 @@ impl SessionService {
         Ok(SessionOutput::Done)
     }
 
-    async fn answer(&self, id: &str, request_id: &str, decision: PermissionDecision) -> Reply {
+    async fn answer(
+        &self,
+        id: &str,
+        request_id: &str,
+        decision: PermissionDecision,
+        by: Option<fleetd_contracts::time::DecidedBy>,
+    ) -> Reply {
         let row = self.session(id)?;
         if row
             .summary
@@ -1872,6 +1956,7 @@ impl SessionService {
             .send(SessionCommand::Answer {
                 request_id: request_id.to_owned(),
                 decision: decision.clone(),
+                by,
             })
             .await
             .map_err(|_| not_found("the run that asked has ended"))?;

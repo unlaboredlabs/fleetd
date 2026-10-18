@@ -152,6 +152,8 @@ pub struct Train {
     recovered: Mutex<HashSet<String>>,
     last_bypass_check: Mutex<HashMap<String, i64>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
+    /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
+    pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
@@ -190,6 +192,7 @@ impl Train {
             recovered: Mutex::default(),
             last_bypass_check: Mutex::default(),
             merge_refusals: Mutex::default(),
+            pushed: Mutex::default(),
             tasks: Mutex::default(),
         })
     }
@@ -289,10 +292,53 @@ impl Train {
         if from.is_some_and(|from| !from.contains(&current.state)) {
             return None;
         }
+        let before = current.state;
         let mut changed = next(current);
         changed.updated_at = self.now_iso();
         self.records.put(&changed);
+        if changed.state != before {
+            self.state_span(Some(before), &changed);
+        }
         Some(changed)
+    }
+
+    /// The time inspector's change lane: the span of the state the change left closes, and the new state's opens.
+    fn state_span(&self, left: Option<ChangeState>, change: &Change) {
+        use fleetd_contracts::time::{SpanExtra, SpanKind};
+        let Some(time) = self.host.time() else { return };
+        let now = self.now_ms();
+        let prefix = format!("change/{}/", change.change_id);
+        if left.is_some() {
+            time.close(prefix.clone(), now);
+        }
+        let (kind, reason) = match change.state {
+            ChangeState::Queued | ChangeState::Reviewing => (SpanKind::ChangeReview, None),
+            ChangeState::Ready => (SpanKind::ChangeQueue, None),
+            ChangeState::Rebasing => (SpanKind::ChangeRebase, None),
+            ChangeState::Ci => (SpanKind::ChangeCi, None),
+            ChangeState::Merging => (SpanKind::ChangeMerge, None),
+            ChangeState::NeedsRebase => (SpanKind::ChangeBlocked, Some("needs_rebase")),
+            ChangeState::CiFailed => (SpanKind::ChangeBlocked, Some("ci_failed")),
+            ChangeState::Merged | ChangeState::Refused | ChangeState::Abandoned => return,
+        };
+        let state = serde_json::to_value(change.state)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        time.span(crate::hub::time::NewSpan {
+            src_key: format!("{prefix}{state}/{now}"),
+            kind,
+            start_ms: now,
+            end_ms: None,
+            ids: change_ids(change),
+            lane: change_lane(change),
+            label: Some(format!("{}#{}", change.repo, change.pr_number)),
+            extra: reason.map(|r| SpanExtra {
+                reason: fleetd_contracts::prim::Text::new(r).ok(),
+                ..SpanExtra::default()
+            }),
+            ..Default::default()
+        });
     }
 
     fn positioned(&self, changes: Vec<Change>) -> Vec<Change> {
@@ -647,8 +693,9 @@ impl Train {
     }
 
     /// Polls the head's check runs until all are done, one is red, or the timeout passes.
-    async fn wait_ci(&self, repo: &str, sha: &str) -> CiOutcome {
+    async fn wait_ci(&self, change: &Change, repo: &str, sha: &str) -> CiOutcome {
         let start = self.now_ms();
+        let mut last: Vec<CheckRun> = Vec::new();
         loop {
             let runs = match self.github.check_runs(repo, sha).await {
                 Ok(runs) => runs,
@@ -657,17 +704,84 @@ impl Train {
                     Vec::new()
                 }
             };
+            if !runs.is_empty() {
+                last = runs.clone();
+            }
             let red: Vec<CheckRun> = runs.iter().filter(|r| is_red(r)).cloned().collect();
             if !red.is_empty() {
+                self.check_spans(change, sha, &runs);
                 return CiOutcome::Red(red);
             }
             if !runs.is_empty() && runs.iter().all(|r| r.status == "completed") {
+                self.check_spans(change, sha, &runs);
                 return CiOutcome::Green;
             }
             if self.now_ms() - start >= self.options.ci_timeout.as_millis() as i64 {
+                self.check_spans(change, sha, &last);
                 return CiOutcome::Timeout;
             }
             self.clock.sleep(self.options.poll_interval).await;
+        }
+    }
+
+    /// One `ci.check` span per check run of the deciding poll, from GitHub's own stamps; a check still running when
+    /// the train decided ends at the decision, `incomplete`. With the train's own push time, `ci.queue` spans run
+    /// from the push to each check's start.
+    fn check_spans(&self, change: &Change, sha: &str, runs: &[CheckRun]) {
+        use fleetd_contracts::time::{SpanExtra, SpanKind, SpanStatus};
+        let Some(time) = self.host.time() else { return };
+        let now = self.now_ms();
+        let pushed = lock(&self.pushed)
+            .remove(&change.change_id)
+            .filter(|(s, _)| s == sha)
+            .map(|(_, at)| at);
+        for r in runs {
+            let Some(start) = r.started_at.as_deref().and_then(crate::hub::time::parse_ms) else {
+                continue;
+            };
+            let end = r
+                .completed_at
+                .as_deref()
+                .and_then(crate::hub::time::parse_ms);
+            let status = match (end, r.conclusion.as_deref()) {
+                (None, _) => SpanStatus::Incomplete,
+                (Some(_), Some("success" | "neutral" | "skipped")) => SpanStatus::Ok,
+                (Some(_), Some("cancelled")) => SpanStatus::Cancelled,
+                (Some(_), _) => SpanStatus::Failed,
+            };
+            let extra = SpanExtra {
+                check: fleetd_contracts::prim::Text::new(crate::hub::api::clip(&r.name, 200)).ok(),
+                url: r.html_url.as_deref().and_then(|u| {
+                    fleetd_contracts::prim::Text::new(crate::hub::api::clip(u, 500)).ok()
+                }),
+                ..SpanExtra::default()
+            };
+            let lane = format!("{}/ci", change_lane(change));
+            time.span(crate::hub::time::NewSpan {
+                src_key: format!("check/{}/{sha}/{}", change.change_id, r.name),
+                kind: SpanKind::CiCheck,
+                start_ms: start,
+                end_ms: Some(end.unwrap_or(now).max(start)),
+                ids: change_ids(change),
+                lane: lane.clone(),
+                label: Some(r.name.clone()),
+                status,
+                extra: Some(extra.clone()),
+                ..Default::default()
+            });
+            if let Some(push) = pushed.filter(|p| *p <= start) {
+                time.span(crate::hub::time::NewSpan {
+                    src_key: format!("ciqueue/{}/{sha}/{}", change.change_id, r.name),
+                    kind: SpanKind::CiQueue,
+                    start_ms: push,
+                    end_ms: Some(start),
+                    ids: change_ids(change),
+                    lane,
+                    label: Some(r.name.clone()),
+                    extra: Some(extra),
+                    ..Default::default()
+                });
+            }
         }
     }
 
@@ -762,7 +876,14 @@ impl Train {
                     head_sha,
                     patch_id,
                 } if head_sha.as_str() != remote_head => {
-                    match git.push(&change.branch, &remote_head).await? {
+                    let pushed = git.push(&change.branch, &remote_head).await?;
+                    if pushed.is_ok() {
+                        lock(&self.pushed).insert(
+                            change.change_id.clone(),
+                            (head_sha.to_string(), self.now_ms()),
+                        );
+                    }
+                    match pushed {
                         Ok(()) => Outcome::Rebase(Rebase::Rebased {
                             remote_head,
                             head_sha,
@@ -822,7 +943,7 @@ impl Train {
         ) else {
             return Ok(());
         };
-        match self.wait_ci(repo, &head_sha).await {
+        match self.wait_ci(&in_ci, repo, &head_sha).await {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
                 self.ci_failed(&in_ci, &failing, false).await;
@@ -1290,6 +1411,7 @@ impl Train {
             updated_at: at,
             ..row
         });
+        self.state_span(None, &change);
         self.emit(
             project_ref,
             "change.queued",
@@ -1444,4 +1566,18 @@ pub fn leftovers<'a>(changes: &'a [Change], workstream_id: &WorkstreamId) -> Vec
             )
         })
         .collect()
+}
+
+fn change_lane(change: &Change) -> String {
+    format!("change:{}#{}", change.repo, change.pr_number)
+}
+
+fn change_ids(change: &Change) -> crate::hub::time::Ids {
+    crate::hub::time::Ids {
+        machine_id: Some(change.project_ref.machine_id.to_string()),
+        project_id: Some(change.project_ref.project_id.to_string()),
+        workstream_id: Some(change.workstream_id.to_string()),
+        task_id: change.task_id.as_ref().map(|t| t.to_string()),
+        ..Default::default()
+    }
 }

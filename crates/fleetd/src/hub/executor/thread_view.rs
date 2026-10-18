@@ -173,6 +173,7 @@ pub fn to_action(item: &ThreadItem) -> Option<Action> {
             max_retries,
             error_status,
             error,
+            ..
         } => {
             let status = error_status.map(|s| format!(" {s}")).unwrap_or_default();
             base(

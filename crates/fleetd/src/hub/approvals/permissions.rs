@@ -327,6 +327,16 @@ fn refused_by_node(e: NodeCommandError, machine_id: &str) -> ApprovalRefused {
     }
 }
 
+/// Who decided, for the time inspector: `human:<name>` is a person, anyone else the lead agent.
+fn decided_by(by: &str) -> Option<fleetd_contracts::time::DecidedBy> {
+    use fleetd_contracts::time::DecidedBy;
+    Some(if by.starts_with("human") {
+        DecidedBy::Human
+    } else {
+        DecidedBy::Lead
+    })
+}
+
 fn answered_by(caller: &Caller<'_>) -> String {
     let kind = if caller.human { "human" } else { "agent" };
     format!("{kind}:{}", caller.name)
@@ -456,6 +466,7 @@ impl Approvals {
                     thread_id,
                     prompt.request_id.as_str(),
                     decision,
+                    Some(fleetd_contracts::time::DecidedBy::HubRule),
                 )
                 .await
             {
@@ -701,6 +712,7 @@ impl Approvals {
                 PermissionDecision::Deny {
                     message: fleetd_contracts::prim::Text::unchecked(message),
                 },
+                decided_by(by),
             )
             .await;
         let evidence = match sent {
@@ -773,7 +785,13 @@ impl Approvals {
         let sent = self
             .deps
             .nodes
-            .answer_permission(machine, &open.thread_id, &open.request_id, decision)
+            .answer_permission(
+                machine,
+                &open.thread_id,
+                &open.request_id,
+                decision,
+                decided_by(by),
+            )
             .await;
         let verb = if allow { "allowed" } else { "denied" };
         let evidence = match sent {
@@ -884,7 +902,7 @@ impl Approvals {
         let request_id = pending.request_id.as_str().to_string();
         self.deps
             .nodes
-            .answer_permission(m, t, &request_id, decision)
+            .answer_permission(m, t, &request_id, decision, decided_by(&by))
             .await
             .map_err(|e| refused_by_node(e, m))?;
         self.prompts.forget(m, t, &request_id);

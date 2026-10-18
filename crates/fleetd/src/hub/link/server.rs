@@ -46,6 +46,7 @@ pub struct LinkDeps {
     pub commands: Arc<NodeCommands>,
     pub lead_calls: Arc<LeadCalls>,
     pub clock: Arc<dyn Clock>,
+    pub time: Arc<crate::hub::time::Time>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -667,6 +668,9 @@ impl NodeLinkServer {
             self.touch(&machine_id);
             match frame {
                 NodeToHub::Heartbeat(beat) => {
+                    self.deps
+                        .time
+                        .heartbeat(machine_id.as_str(), beat.at.as_str());
                     let status = {
                         let mut state = self.state.lock().unwrap();
                         match beat.load {
@@ -707,6 +711,22 @@ impl NodeLinkServer {
                     self.deps.executors.handle_frame(&machine_id, frame)
                 }
                 NodeToHub::Slept(span) => self.slept(&machine_id, span),
+                NodeToHub::Spans(frame) => {
+                    let tx = tx.clone();
+                    self.deps.time.node_spans(crate::hub::time::NodeBatch {
+                        machine_id: machine_id.to_string(),
+                        frame,
+                        ack: Box::new(move |ack: crate::hub::time::Ack| {
+                            send(
+                                &tx,
+                                HubToNode::SpansAck(fleetd_contracts::node_link::SpansAck {
+                                    upto: ack.upto,
+                                    rewind: ack.rewind.then_some(true),
+                                }),
+                            )
+                        }),
+                    });
+                }
                 NodeToHub::Hello(_) => return refuse(close::BAD_FRAME, "hello after welcome"),
             }
         }

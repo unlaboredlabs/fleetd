@@ -399,6 +399,7 @@ fn retry_of(item: &ThreadItem) -> Option<Activity> {
             max_retries,
             error_status,
             error,
+            ..
         } => Activity::Retrying {
             attempt: *attempt,
             of: *max_retries,
