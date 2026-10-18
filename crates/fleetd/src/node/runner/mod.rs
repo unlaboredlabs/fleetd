@@ -71,6 +71,8 @@ pub enum SessionCommand {
     Answer {
         request_id: String,
         decision: PermissionDecision,
+        /// Who decided; `None` from an older hub.
+        by: Option<fleetd_contracts::time::DecidedBy>,
     },
     /// Close stdin, then SIGTERM after `grace`, then SIGKILL the process group and every descendant.
     Shutdown { grace: Duration },
@@ -150,6 +152,8 @@ pub enum RunnerEvent {
         run_id: String,
         usage: RunUsage,
     },
+    /// Every time span of a run, with exclusive times, just before its [`RunnerEvent::RunEnded`].
+    Spans(Vec<fleetd_contracts::time::SpanWire>),
     /// The run's `result` (or the process ended without one).
     RunEnded {
         run_id: String,

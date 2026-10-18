@@ -31,6 +31,10 @@ use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
+use crate::time::{
+    CategoryTotal, CiCheckStat, CommandStat, Coverage, CriticalPath, HumanWait, Insight,
+    InsightRule, Period, PeriodBreakdown, RepeatStat, Span, SpanKind, TimeFilters, TimeScope,
+};
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo, TrainState};
 use crate::usage::UsageStatus;
 use crate::verification::{Claim, ClaimOutcome, Eta, Incident, IncidentClass};
@@ -458,6 +462,81 @@ output!(OrderStopOutput {
     state: WorkstreamState,
     /// Tasks this call cancelled (0 when it was already stopped).
     cancelled: Count,
+});
+
+// time_spans: stored spans of a scope, oldest first, paged by id. `rule` lists the spans a finding links to.
+input!(TimeSpansInput {
+    scope: TimeScope,
+    since: Timestamp,
+    until: Option<Timestamp>,
+    kinds: Option<List<SpanKind, 1, 64>>,
+    rule: Option<InsightRule>,
+    after_id: Option<Count>,
+    #[serde(default)]
+    limit: IntOr<1, 500, 200>,
+});
+output!(TimeSpansOutput {
+    spans: List<Span, 0, 500>,
+    /// Absent when there are no more.
+    next_after_id: Option<Count>,
+    coverage: Coverage,
+});
+
+// time_breakdown: where a scope's time went. Agent time is exclusive and adds up across parallel lanes; wall time
+// is the scope's span.
+input!(TimeBreakdownInput {
+    scope: TimeScope,
+    since: Timestamp,
+    until: Option<Timestamp>,
+    compare: Option<Period>,
+    #[serde(default)]
+    filters: TimeFilters,
+});
+output!(TimeBreakdownOutput {
+    wall_ms: Count,
+    agent_ms: Count,
+    by_category: List<CategoryTotal, 0, 8>,
+    top_commands: List<CommandStat, 0, 20>,
+    repeated: List<RepeatStat, 0, 10>,
+    ci_checks: List<CiCheckStat, 0, 20>,
+    human_wait: HumanWait,
+    /// Order scope only.
+    critical_path: Option<CriticalPath>,
+    retention_days: Int<1, 365>,
+    /// The hub's span tables on disk.
+    stored_bytes: Count,
+    coverage: Coverage,
+    compare: Option<PeriodBreakdown>,
+});
+
+// time_insights: the deterministic rules over a scope, strongest first.
+input!(TimeInsightsInput {
+    scope: TimeScope,
+    since: Timestamp,
+    until: Option<Timestamp>,
+    compare: Option<Period>,
+});
+output!(TimeInsightsOutput { insights: List<Insight, 0, 30> });
+
+// time_retention_set: how many days the hub keeps spans. Roll-ups and critical paths stay 400 days.
+input!(TimeRetentionSetInput { retention_days: Int<1, 365> });
+output!(TimeRetentionSetOutput { retention_days: Int<1, 365> });
+
+// thread_window: the items and messages around one item of a session, oldest first (for "click to transcript").
+input!(ThreadWindowInput {
+    machine_id: MachineId,
+    thread_id: ThreadId,
+    /// A span's `itemId`.
+    item_id: NonEmpty,
+    #[serde(default)]
+    before: IntOr<0, 25, 10>,
+    #[serde(default)]
+    after: IntOr<0, 25, 10>,
+});
+output!(ThreadWindowOutput {
+    items: List<TailItem, 0, 51>,
+    /// The index of `itemId` in `items`; absent when the node no longer has it.
+    focus: Option<Count>,
 });
 
 // workstream_list
@@ -1000,6 +1079,11 @@ tools! {
     prompt_set => PromptSet, Operate, PromptSetInput, PromptSetOutput;
     prompt_reset => PromptReset, Operate, PromptResetInput, PromptResetOutput;
     session_prompt_get => SessionPromptGet, Read, SessionPromptGetInput, SessionPromptGetOutput;
+    time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
+    time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
+    time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;
+    time_retention_set => TimeRetentionSet, Admin, TimeRetentionSetInput, TimeRetentionSetOutput;
+    thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1131,7 +1215,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 58);
+        assert_eq!(McpToolName::ALL.len(), 63);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());

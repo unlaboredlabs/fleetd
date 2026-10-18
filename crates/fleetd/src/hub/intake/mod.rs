@@ -10,7 +10,7 @@ pub mod router;
 #[cfg(test)]
 pub(crate) mod auto_start_tests;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef};
@@ -148,6 +148,7 @@ pub struct Intake {
     router: Arc<IntakeRouter>,
     /// intake_preview answers by text and the caller's projects, for 10 minutes.
     previews: preview::PreviewCache,
+    time: OnceLock<crate::hub::time::TimeSink>,
 }
 
 /// The intent being placed and who submitted it.
@@ -179,6 +180,7 @@ impl Intake {
     ) -> Arc<Self> {
         Arc::new(Self {
             previews: preview::PreviewCache::default(),
+            time: OnceLock::new(),
             ctx,
             workstreams,
             leads,
@@ -360,7 +362,39 @@ impl Intake {
             .map_err(|e| LeadError::bare(fleetd_contracts::mcp::ErrorCode::Invalid, format!("The intake echo is invalid: {e}")))
     }
 
+    pub fn set_time(&self, sink: crate::hub::time::TimeSink) {
+        let _ = self.time.set(sink);
+    }
+
+    /// Places an intent; the time from here to placed (the router's `claude -p` included) is the order's
+    /// `intake.route` span, so its wall time starts at submit.
     pub async fn submit(&self, input: SubmitInput) -> Result<SubmitResult, LeadError> {
+        let started = crate::hub::store::now_ms(self.ctx.clock.as_ref());
+        let crid = input.client_request_id.clone();
+        let result = self.submit_inner(input).await;
+        if let (Some(time), Ok(placed)) = (self.time.get(), &result) {
+            let workstream = match placed {
+                SubmitResult::Placed { workstream_id, .. } => Some(workstream_id.to_string()),
+                SubmitResult::Asked { .. } => None,
+            };
+            let end = crate::hub::store::now_ms(self.ctx.clock.as_ref());
+            time.span(crate::hub::time::NewSpan {
+                src_key: format!("intake/{crid}"),
+                kind: fleetd_contracts::time::SpanKind::IntakeRoute,
+                start_ms: started,
+                end_ms: Some(end.max(started)),
+                ids: crate::hub::time::Ids {
+                    workstream_id: workstream.clone(),
+                    ..Default::default()
+                },
+                lane: workstream.map_or_else(|| "intake".into(), |w| format!("intake:{w}")),
+                ..Default::default()
+            });
+        }
+        result
+    }
+
+    async fn submit_inner(&self, input: SubmitInput) -> Result<SubmitResult, LeadError> {
         let parsed = parse_intent(&input.text);
         let fixed = input.template.or(parsed.template);
         let template_why = match (&input.template, &parsed.prefix) {

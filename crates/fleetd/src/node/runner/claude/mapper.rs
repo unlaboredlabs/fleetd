@@ -14,12 +14,14 @@ use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, PermissionDecision, RunFailure, RunUsage, ThreadItem,
 };
+use fleetd_contracts::time::{DecidedBy, SpanStatus};
 use serde_json::{Value, json};
 
 use super::protocol::{
     Assistant, Block, CommandLifecycle, ControlRequest, Input, InputMessage, Line, ResultLine,
     StreamEvent, System, User, UserContent,
 };
+use super::spans::SpanBuilder;
 use crate::node::runner::conformance::{auto_memory_on, missing_init_capabilities};
 use crate::node::runner::failure::FailureEvidence;
 use crate::node::runner::{ExitInfo, RateLimit, RunOutcome, RunnerEvent};
@@ -111,12 +113,15 @@ pub struct StreamMapper {
     run_stderr: String,
     minted: u64,
     warned_capabilities: bool,
+    spans: SpanBuilder,
 }
 
 impl StreamMapper {
     pub fn new(session_id: impl Into<String>, classify: Classify) -> Self {
+        let session_id: String = session_id.into();
+        let session_id_for_spans = session_id.clone();
         Self {
-            session_id: session_id.into(),
+            session_id,
             classify,
             open_runs: Vec::new(),
             active_run: None,
@@ -138,6 +143,7 @@ impl StreamMapper {
             run_stderr: String::new(),
             minted: 0,
             warned_capabilities: false,
+            spans: SpanBuilder::new(session_id_for_spans.clone()),
         }
     }
 
@@ -167,8 +173,15 @@ impl StreamMapper {
 
     /// The answer to a pending `can_use_tool`; `None` when claude no longer waits for it. An allow without an edited
     /// input sends the original one: claude requires `updatedInput` on every allow.
-    pub fn answer(&mut self, request_id: &str, decision: &PermissionDecision) -> Option<Input> {
+    pub fn answer(
+        &mut self,
+        request_id: &str,
+        decision: &PermissionDecision,
+        by: Option<DecidedBy>,
+        now: &Now,
+    ) -> Option<Input> {
         let pending = self.permissions.remove(request_id)?;
+        self.spans.answered(request_id, by, now.ms);
         let response = match decision {
             PermissionDecision::Allow { updated_input } => json!({
                 "behavior": "allow",
@@ -214,9 +227,9 @@ impl StreamMapper {
             Line::System(system) => self.system(system, now, &mut out.events),
             Line::Assistant(assistant) => self.assistant(assistant, now, &mut out.events),
             Line::User(user) => self.user(user, now, &mut out.events),
-            Line::StreamEvent(event) => self.stream_event(event, &mut out.events),
+            Line::StreamEvent(event) => self.stream_event(event, now, &mut out.events),
             Line::Result(result) => self.result(result, now, &mut out.events),
-            Line::ControlRequest(request) => self.control_request(request, &mut out),
+            Line::ControlRequest(request) => self.control_request(request, now, &mut out),
             Line::ControlResponse(response) => {
                 let body = response.response;
                 if body.subtype != "success" {
@@ -235,6 +248,7 @@ impl StreamMapper {
             }
             Line::ControlCancelRequest(cancel) => {
                 if let Some(p) = self.permissions.remove(&cancel.request_id) {
+                    self.spans.withdrawn(&cancel.request_id, now.ms);
                     let item = self.item(
                         cancel.request_id.clone(),
                         ItemStatus::Cancelled,
@@ -289,7 +303,7 @@ impl StreamMapper {
                     now_ms: now.ms,
                 }))
             };
-            self.end_run(run_id, outcome, None, now, &mut events);
+            self.end_run(run_id, outcome, None, (None, None), now, &mut events);
         }
         events.push(RunnerEvent::Exited(exit));
         events
@@ -317,10 +331,12 @@ impl StreamMapper {
                 let compacting = system.status.as_deref() == Some("compacting");
                 if compacting != self.compacting {
                     self.compacting = compacting;
+                    self.spans.compacting(compacting, now.ms);
                     events.push(RunnerEvent::Compacting(compacting));
                 }
             }
             "compact_boundary" => {
+                self.spans.compacting(false, now.ms);
                 let meta = system.compact_metadata;
                 let id = system.uuid.unwrap_or_else(|| self.mint("compact"));
                 let trigger = meta.as_ref().map_or("auto".into(), |m| m.trigger.clone());
@@ -343,6 +359,8 @@ impl StreamMapper {
                 let attempt = system.attempt.unwrap_or(0);
                 let max_retries = system.max_retries.unwrap_or(0);
                 let error = system.error.unwrap_or_default();
+                self.spans
+                    .api_retry(attempt, system.retry_delay_ms, system.error_status, now.ms);
                 let status = system
                     .error_status
                     .map_or(String::new(), |s| format!(" ({s})"));
@@ -357,6 +375,7 @@ impl StreamMapper {
                         max_retries,
                         error_status: system.error_status,
                         error,
+                        retry_delay_ms: system.retry_delay_ms,
                     },
                 );
                 events.push(RunnerEvent::Item(item));
@@ -377,6 +396,7 @@ impl StreamMapper {
                 self.assistant_error = None;
                 self.usage_done = RunUsage::default();
                 self.usage_now = RunUsage::default();
+                self.spans.run_started(&run_id, now.ms);
                 events.push(RunnerEvent::RunStarted { run_id });
             }
             // After a `result` these are bookkeeping; without one the message never ran to a result.
@@ -388,17 +408,18 @@ impl StreamMapper {
                         text: String::new(),
                     }
                 };
-                self.end_run(run_id, outcome, None, now, events);
+                self.end_run(run_id, outcome, None, (None, None), now, events);
             }
             _ => {}
         }
     }
 
-    fn stream_event(&mut self, event: StreamEvent, events: &mut Vec<RunnerEvent>) {
+    fn stream_event(&mut self, event: StreamEvent, now: &Now, events: &mut Vec<RunnerEvent>) {
         if event.parent_tool_use_id.is_some() {
             return;
         }
         let ev = &event.event;
+        self.spans.stream(ev, now.ms);
         match ev["type"].as_str().unwrap_or_default() {
             "message_start" => {
                 self.streaming = ev["message"]["id"]
@@ -505,6 +526,7 @@ impl StreamMapper {
                     });
                 }
                 Block::ToolUse { id, name, input } => {
+                    self.spans.tool_use(&id, &name, &input, now.ms);
                     let (kind, title) = tool_kind(&name, input);
                     let tool = OpenTool {
                         run_id: self.active_run.clone(),
@@ -554,6 +576,7 @@ impl StreamMapper {
         let UserContent::Blocks(blocks) = user.message.content else {
             return;
         };
+        let tool_use_result = user.tool_use_result;
         for block in blocks {
             let Block::ToolResult {
                 tool_use_id,
@@ -572,6 +595,24 @@ impl StreamMapper {
                 (true, true) => ItemStatus::Cancelled,
                 (true, false) => ItemStatus::Failed,
             };
+            let span_status = match status {
+                ItemStatus::Completed => SpanStatus::Ok,
+                ItemStatus::Cancelled => SpanStatus::Cancelled,
+                _ => SpanStatus::Failed,
+            };
+            let span_exit = match (&tool.kind, status) {
+                (ItemKind::Command { .. }, ItemStatus::Completed) => Some(0),
+                (ItemKind::Command { .. }, _) => exit_code(&output),
+                _ => None,
+            };
+            self.spans.tool_result(
+                &tool_use_id,
+                &output,
+                span_status,
+                span_exit,
+                tool_use_result.as_ref(),
+                now.ms,
+            );
             let kind = match tool.kind {
                 ItemKind::Command {
                     command,
@@ -610,7 +651,7 @@ impl StreamMapper {
         }
     }
 
-    fn control_request(&mut self, request: ControlRequest, out: &mut Mapped) {
+    fn control_request(&mut self, request: ControlRequest, now: &Now, out: &mut Mapped) {
         let body = request.request;
         if body.subtype != "can_use_tool" {
             // Anything else claude asks would wait forever for an answer nobody sends.
@@ -630,6 +671,12 @@ impl StreamMapper {
             &input,
             body.description.as_deref(),
             body.blocked_path.as_deref(),
+        );
+        self.spans.permission(
+            &request.request_id,
+            body.tool_use_id.as_deref().unwrap_or_default(),
+            &tool_name,
+            now.ms,
         );
         self.permissions.insert(
             request.request_id.clone(),
@@ -702,7 +749,8 @@ impl StreamMapper {
                 }),
             )
         };
-        self.end_run(run_id, outcome, usage, now, events);
+        let durations = (result.duration_ms, result.duration_api_ms);
+        self.end_run(run_id, outcome, usage, durations, now, events);
     }
 
     fn end_run(
@@ -710,6 +758,7 @@ impl StreamMapper {
         run_id: String,
         outcome: RunOutcome,
         usage: Option<RunUsage>,
+        durations: (Option<u64>, Option<u64>),
         now: &Now,
         events: &mut Vec<RunnerEvent>,
     ) {
@@ -758,6 +807,17 @@ impl StreamMapper {
             );
             item.run_id = NonEmpty::new(run_id.clone()).ok();
             events.push(RunnerEvent::Item(item));
+        }
+        let span_status = match &outcome {
+            RunOutcome::Completed { .. } => SpanStatus::Ok,
+            RunOutcome::Interrupted => SpanStatus::Cancelled,
+            RunOutcome::Failed(_) => SpanStatus::Failed,
+        };
+        let spans = self
+            .spans
+            .run_ended(&run_id, span_status, durations, now.ms);
+        if !spans.is_empty() {
+            events.push(RunnerEvent::Spans(spans));
         }
         self.open_runs.retain(|r| *r != run_id);
         if self.active_run.as_deref() == Some(run_id.as_str()) {

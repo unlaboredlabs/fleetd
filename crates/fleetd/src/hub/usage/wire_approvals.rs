@@ -270,6 +270,7 @@ impl ApprovalNodes for OpsPorts {
         t: &str,
         request_id: &str,
         decision: PermissionDecision,
+        by: Option<fleetd_contracts::time::DecidedBy>,
     ) -> BoxFut<'_, Result<(), NodeCommandError>> {
         let (r, request_id) = (thread_ref(m, t), request_id.to_owned());
         Box::pin(async move {
@@ -280,7 +281,7 @@ impl ApprovalNodes for OpsPorts {
             })?;
             self.hub()
                 .executors
-                .answer(&r, &request_id, decision)
+                .answer(&r, &request_id, decision, by)
                 .await
                 .map_err(executor_error)
         })

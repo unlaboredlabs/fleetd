@@ -881,6 +881,96 @@
       ],
       "type": "object"
     },
+    "Category": {
+      "description": "Which color a span gets in every view, and which breakdown row it adds to.",
+      "oneOf": [
+        {
+          "enum": [
+            "model",
+            "tools",
+            "queue"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "machine",
+          "description": "Waiting on the machine or the provider: retries, startup, compaction, claude-local time.",
+          "type": "string"
+        },
+        {
+          "const": "human",
+          "description": "Waiting on a person.",
+          "type": "string"
+        },
+        {
+          "const": "pipeline",
+          "description": "CI, review and the merge train.",
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "A session alive with no run and nobody waiting on it. Never on a critical path.",
+          "type": "string"
+        }
+      ]
+    },
+    "CategoryMs": {
+      "properties": {
+        "cat": {
+          "$ref": "#/$defs/Category"
+        },
+        "kinds": {
+          "description": "The same total by kind, e.g. `change.ci`, `change.review` and `change.queue` within pipeline.",
+          "items": {
+            "$ref": "#/$defs/KindTotal"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cat",
+        "ms"
+      ],
+      "type": "object"
+    },
+    "CategoryTotal": {
+      "properties": {
+        "cat": {
+          "$ref": "#/$defs/Category"
+        },
+        "kinds": {
+          "items": {
+            "$ref": "#/$defs/KindTotal"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "ms": {
+          "description": "Exclusive agent time.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cat",
+        "ms",
+        "n",
+        "kinds"
+      ],
+      "type": "object"
+    },
     "Change": {
       "properties": {
         "branch": {
@@ -1294,6 +1384,50 @@
         }
       ]
     },
+    "CiCheckStat": {
+      "properties": {
+        "criticalExcessMs": {
+          "description": "Time this check added on critical paths past the second-latest check.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "p50Ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "n",
+        "totalMs",
+        "p50Ms",
+        "maxMs",
+        "criticalExcessMs"
+      ],
+      "type": "object"
+    },
     "Claim": {
       "properties": {
         "at": {
@@ -1385,10 +1519,162 @@
       ],
       "type": "object"
     },
+    "CommandStat": {
+      "properties": {
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "family": {
+          "maxLength": 120,
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "maxMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "p50Ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalMs": {
+          "description": "Per call: each call's own interval, which may overlap others.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "family",
+        "n",
+        "totalMs",
+        "p50Ms",
+        "maxMs",
+        "failed"
+      ],
+      "type": "object"
+    },
     "CommitSha": {
       "description": "Full lowercase hex commit SHA, 40 or 64 characters",
       "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
+    },
+    "Coverage": {
+      "properties": {
+        "capped": {
+          "description": "The read hit its span cap and kept the newest spans.",
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "detailSince": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Spans are kept only from here (retention): span lists, commands, CI checks and insights start here, while\ncategory totals before it come from the daily roll-ups."
+        },
+        "gaps": {
+          "items": {
+            "$ref": "#/$defs/Gap"
+          },
+          "maxItems": 50,
+          "type": "array"
+        }
+      },
+      "required": [
+        "complete",
+        "gaps"
+      ],
+      "type": "object"
+    },
+    "CriticalPath": {
+      "properties": {
+        "endMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nothingRunningMs": {
+          "description": "Time with nothing running, which points at missing data.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "offPathMs": {
+          "description": "Agent time minus the path.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "segments": {
+          "description": "Oldest first; they add up to `end_ms - start_ms`.",
+          "items": {
+            "$ref": "#/$defs/PathSegment"
+          },
+          "maxItems": 400,
+          "type": "array"
+        },
+        "segmentsTruncated": {
+          "description": "True when the order had more segments than fit; the totals still cover them all.",
+          "type": "boolean"
+        },
+        "startMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totals": {
+          "items": {
+            "$ref": "#/$defs/CategoryMs"
+          },
+          "maxItems": 8,
+          "type": "array"
+        }
+      },
+      "required": [
+        "startMs",
+        "endMs",
+        "segments",
+        "segmentsTruncated",
+        "totals",
+        "nothingRunningMs",
+        "offPathMs"
+      ],
+      "type": "object"
+    },
+    "DecidedBy": {
+      "description": "Who answered a permission prompt.",
+      "oneOf": [
+        {
+          "enum": [
+            "lead",
+            "human"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "policy",
+          "description": "The node's own policy, at once.",
+          "type": "string"
+        },
+        {
+          "const": "hub_rule",
+          "description": "A project tool rule on the hub.",
+          "type": "string"
+        }
+      ]
     },
     "Decision": {
       "properties": {
@@ -1961,6 +2247,14 @@
       ],
       "type": "object"
     },
+    "FiredIn": {
+      "enum": [
+        "current",
+        "compare",
+        "both"
+      ],
+      "type": "string"
+    },
     "FleetdStatusInput": {
       "type": "object"
     },
@@ -2008,6 +2302,71 @@
         "cursor"
       ],
       "type": "object"
+    },
+    "Gap": {
+      "properties": {
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fromMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lane": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "toMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "why": {
+          "$ref": "#/$defs/GapWhy"
+        }
+      },
+      "required": [
+        "why",
+        "fromMs",
+        "toMs"
+      ],
+      "type": "object"
+    },
+    "GapWhy": {
+      "oneOf": [
+        {
+          "const": "node_older",
+          "description": "The node runs a fleetd without the span outbox.",
+          "type": "string"
+        },
+        {
+          "const": "node_dropped",
+          "description": "The node's outbox passed its 7-day or 500k-row bound and dropped its oldest spans.",
+          "type": "string"
+        },
+        {
+          "const": "hub_dropped",
+          "description": "The hub's span writer was full.",
+          "type": "string"
+        },
+        {
+          "const": "no_node_spans",
+          "description": "A session lane with no node spans.",
+          "type": "string"
+        },
+        {
+          "const": "nothing_running",
+          "description": "The critical path found time with nothing running.",
+          "type": "string"
+        }
+      ]
     },
     "GatedClass": {
       "enum": [
@@ -2347,6 +2706,28 @@
         }
       ]
     },
+    "HumanWait": {
+      "properties": {
+        "longest": {
+          "$ref": "#/$defs/LongestWait"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "totalMs",
+        "n"
+      ],
+      "type": "object"
+    },
     "InboxReplyApplied": {
       "properties": {
         "askId": {
@@ -2584,6 +2965,99 @@
       ],
       "type": "object"
     },
+    "Insight": {
+      "properties": {
+        "compare": {
+          "description": "The same numbers for the compare period. Present on every insight when a compare period was asked for,\nalso when the rule fired in only one of the two.",
+          "items": {
+            "$ref": "#/$defs/InsightNumber"
+          },
+          "maxItems": 12,
+          "type": "array"
+        },
+        "firedIn": {
+          "$ref": "#/$defs/FiredIn",
+          "description": "Which periods the rule fired in, with a compare period."
+        },
+        "message": {
+          "maxLength": 600,
+          "minLength": 1,
+          "type": "string"
+        },
+        "numbers": {
+          "description": "The numbers the message was built from (durations in ms).",
+          "items": {
+            "$ref": "#/$defs/InsightNumber"
+          },
+          "maxItems": 12,
+          "type": "array"
+        },
+        "rule": {
+          "$ref": "#/$defs/InsightRule"
+        },
+        "spanIds": {
+          "description": "At most 200; `time_spans { rule }` lists them all.",
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 200,
+          "type": "array"
+        }
+      },
+      "required": [
+        "rule",
+        "message",
+        "numbers",
+        "spanIds"
+      ],
+      "type": "object"
+    },
+    "InsightNumber": {
+      "properties": {
+        "name": {
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "InsightRule": {
+      "enum": [
+        "full_suite_repeat",
+        "repeat_no_change",
+        "failing_repeat",
+        "slow_commands",
+        "ci_check_critical",
+        "ci_reaction",
+        "slots_full",
+        "human_wait",
+        "batching_delay",
+        "approval_rule",
+        "usage_parks",
+        "retries",
+        "review_share",
+        "train_line",
+        "rebase_loops",
+        "first_token",
+        "startup",
+        "offline",
+        "coverage"
+      ],
+      "type": "string"
+    },
     "IntakeChannel": {
       "enum": [
         "app",
@@ -2815,6 +3289,29 @@
       ],
       "type": "object"
     },
+    "KindTotal": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SpanKind"
+        },
+        "ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "ms",
+        "n"
+      ],
+      "type": "object"
+    },
     "LaneStatus": {
       "oneOf": [
         {
@@ -2995,6 +3492,30 @@
         "unknown"
       ],
       "type": "string"
+    },
+    "LongestWait": {
+      "properties": {
+        "label": {
+          "description": "The ask's key, or the tool for a permission prompt.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spanId": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "spanId",
+        "ms"
+      ],
+      "type": "object"
     },
     "Machine": {
       "properties": {
@@ -3345,6 +3866,36 @@
         "thread_tail.output": {
           "$ref": "#/$defs/ThreadTailOutput"
         },
+        "thread_window.input": {
+          "$ref": "#/$defs/ThreadWindowInput"
+        },
+        "thread_window.output": {
+          "$ref": "#/$defs/ThreadWindowOutput"
+        },
+        "time_breakdown.input": {
+          "$ref": "#/$defs/TimeBreakdownInput"
+        },
+        "time_breakdown.output": {
+          "$ref": "#/$defs/TimeBreakdownOutput"
+        },
+        "time_insights.input": {
+          "$ref": "#/$defs/TimeInsightsInput"
+        },
+        "time_insights.output": {
+          "$ref": "#/$defs/TimeInsightsOutput"
+        },
+        "time_retention_set.input": {
+          "$ref": "#/$defs/TimeRetentionSetInput"
+        },
+        "time_retention_set.output": {
+          "$ref": "#/$defs/TimeRetentionSetOutput"
+        },
+        "time_spans.input": {
+          "$ref": "#/$defs/TimeSpansInput"
+        },
+        "time_spans.output": {
+          "$ref": "#/$defs/TimeSpansOutput"
+        },
         "train_freeze.input": {
           "$ref": "#/$defs/TrainFreezeInput"
         },
@@ -3503,6 +4054,16 @@
         "thread_send.output",
         "thread_tail.input",
         "thread_tail.output",
+        "thread_window.input",
+        "thread_window.output",
+        "time_breakdown.input",
+        "time_breakdown.output",
+        "time_insights.input",
+        "time_insights.output",
+        "time_retention_set.input",
+        "time_retention_set.output",
+        "time_spans.input",
+        "time_spans.output",
         "train_freeze.input",
         "train_freeze.output",
         "train_get.input",
@@ -3959,6 +4520,100 @@
       "description": "Full lowercase hex patch id, 40 or 64 characters",
       "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
+    },
+    "PathSegment": {
+      "properties": {
+        "cat": {
+          "$ref": "#/$defs/Category"
+        },
+        "endMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/SpanKind"
+        },
+        "label": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "lane": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "spanId": {
+          "description": "Absent on a \"nothing running\" gap.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "startMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lane",
+        "kind",
+        "cat",
+        "startMs",
+        "endMs"
+      ],
+      "type": "object"
+    },
+    "Period": {
+      "properties": {
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "since",
+        "until"
+      ],
+      "type": "object"
+    },
+    "PeriodBreakdown": {
+      "description": "The numbers of one period, for a comparison.",
+      "properties": {
+        "agentMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "byCategory": {
+          "items": {
+            "$ref": "#/$defs/CategoryTotal"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "wallMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "since",
+        "until",
+        "wallMs",
+        "agentMs",
+        "byCategory"
+      ],
+      "type": "object"
     },
     "PermissionAnswer": {
       "enum": [
@@ -4840,6 +5495,38 @@
       ],
       "type": "object"
     },
+    "RepeatStat": {
+      "properties": {
+        "label": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "n": {
+          "description": "Runs in a row with no edit between them.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "totalMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "threadId",
+        "n",
+        "totalMs"
+      ],
+      "type": "object"
+    },
     "ResearchOutcome": {
       "description": "STOP is a success: the question was answered.",
       "enum": [
@@ -5542,6 +6229,388 @@
         "used"
       ],
       "type": "object"
+    },
+    "Span": {
+      "description": "A stored span, as the tools return it.",
+      "properties": {
+        "cat": {
+          "$ref": "#/$defs/Category"
+        },
+        "endMs": {
+          "description": "Absent while open.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exclMs": {
+          "description": "Exclusive time: the part no child covers. Absent while open and on envelopes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exitCode": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "extra": {
+          "$ref": "#/$defs/SpanExtra"
+        },
+        "family": {
+          "description": "The program, e.g. \"cargo test\", \"git push\", \"Read\", \"mcp__x__y\".",
+          "maxLength": 120,
+          "type": "string"
+        },
+        "id": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "itemId": {
+          "description": "The item id in the thread (claude's tool_use or message id), for `thread_window`.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/SpanKind"
+        },
+        "label": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "lane": {
+          "description": "`thread:<machine>/<thread>`, `change:<id>`, `asks:<order>`, `train:<repo>`, `fleet`, `order:<id>`.",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "outBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parent": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "runId": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "startMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/SpanStatus"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "cat",
+        "lane",
+        "startMs",
+        "status"
+      ],
+      "type": "object"
+    },
+    "SpanExtra": {
+      "description": "Small per-kind facts. Every field is optional and bounded.",
+      "properties": {
+        "answeredBy": {
+          "description": "Who answered, e.g. a key's label. Never a secret.",
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cap": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "check": {
+          "description": "`ci.check`: the check name and its page.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "claudeMs": {
+          "description": "`tool.*`: claude's own figure for the call, when the result carries one.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "count": {
+          "description": "`gap`: how many spans were lost.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decidedBy": {
+          "$ref": "#/$defs/DecidedBy"
+        },
+        "durationApiMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "durationMs": {
+          "description": "`run`: the result line's `duration_ms` and `duration_api_ms`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "httpStatus": {
+          "description": "`wait.retry.api`: the HTTP status claude retried on.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "description": "`wait.ask`: the ask's decision key.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "nodeStartMs": {
+          "description": "The node's own start stamp, kept when the clock offset was above 100 ms.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outputTokens": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "peakQueued": {
+          "description": "`slots.full`: the peak count of tasks queued for a slot, and the cap.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Free text from the source, e.g. a queue reason or a stop reason.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "requestId": {
+          "description": "`wait.permission`: the node's request id, joined to the hub ask.",
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "statedDelayMs": {
+          "description": "`wait.retry.*`: the delay claude or the node announced. The span is the real wait.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stopReason": {
+          "description": "`model.message`.",
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "thinkingTokens": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tool": {
+          "description": "The tool's name, for tool and permission spans.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "SpanKind": {
+      "description": "What a span measures. Each kind belongs to exactly one [`Category`]. The code is the stored integer and\nnever changes; new kinds take new codes.",
+      "oneOf": [
+        {
+          "enum": [
+            "model.thinking",
+            "model.output",
+            "tool.bash",
+            "tool.web",
+            "tool.mcp",
+            "tool.other",
+            "check.claim",
+            "wait.retry.api",
+            "wait.retry.node",
+            "run.startup",
+            "compaction",
+            "queue.slot",
+            "queue.lease",
+            "queue.usage",
+            "queue.offline",
+            "wake.debounce",
+            "park.usage",
+            "change.review",
+            "change.rebase",
+            "change.ci",
+            "change.merge",
+            "idle"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "run",
+          "description": "A run's envelope, lifecycle started to its end. Its leaves tile it; it has no exclusive time of its own.",
+          "type": "string"
+        },
+        {
+          "const": "model.message",
+          "description": "One assistant message, from the previous visible stream event to `message_stop`.",
+          "type": "string"
+        },
+        {
+          "const": "model.first_token",
+          "description": "Previous visible stream event to `message_start`: claude-local work, network, API queueing and prefill.",
+          "type": "string"
+        },
+        {
+          "const": "tool.read",
+          "description": "Read, Grep, Glob, LS.",
+          "type": "string"
+        },
+        {
+          "const": "tool.edit",
+          "description": "Edit, MultiEdit, Write, NotebookEdit.",
+          "type": "string"
+        },
+        {
+          "const": "tools.parallel",
+          "description": "Overlapping tool calls from one message; the calls are its children.",
+          "type": "string"
+        },
+        {
+          "const": "git",
+          "description": "Train git, and agent Bash whose program is `git` or `gh`.",
+          "type": "string"
+        },
+        {
+          "const": "claude.other",
+          "description": "Time inside a run that no other span covers: claude-local work between stream events.",
+          "type": "string"
+        },
+        {
+          "const": "wait.offline",
+          "description": "A write waiting in the hub's queue for an offline machine.",
+          "type": "string"
+        },
+        {
+          "const": "run.queued",
+          "description": "A send waiting behind the session's active run.",
+          "type": "string"
+        },
+        {
+          "const": "slots.full",
+          "description": "The fleet's slots were all held. On the fleet lane.",
+          "type": "string"
+        },
+        {
+          "const": "wait.permission",
+          "description": "A permission prompt, inside its tool span; `extra.decidedBy` says who answered.",
+          "type": "string"
+        },
+        {
+          "const": "wait.ask",
+          "description": "A blocking ask, published to answered.",
+          "type": "string"
+        },
+        {
+          "const": "ask.batching",
+          "description": "An ask filed to its batch being published.",
+          "type": "string"
+        },
+        {
+          "const": "ask.info",
+          "description": "An ask that blocked nothing. On the asks lane only, never on a critical path.",
+          "type": "string"
+        },
+        {
+          "const": "change.queue",
+          "description": "Waiting in the train's line.",
+          "type": "string"
+        },
+        {
+          "const": "ci.check",
+          "description": "One check run, GitHub's own `started_at` to `completed_at`.",
+          "type": "string"
+        },
+        {
+          "const": "ci.queue",
+          "description": "The train's push to the check's start.",
+          "type": "string"
+        },
+        {
+          "const": "change.blocked",
+          "description": "needs_rebase or ci_failed until the next head.",
+          "type": "string"
+        },
+        {
+          "const": "intake.route",
+          "description": "The intake router, from submit to routed.",
+          "type": "string"
+        },
+        {
+          "const": "gap",
+          "description": "Lost data: spans the node dropped or the hub could not take. `extra.count` says how many.",
+          "type": "string"
+        }
+      ]
+    },
+    "SpanStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "ok",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "incomplete",
+          "description": "Still open when it was cut, e.g. a check still running when a red one decided.",
+          "type": "string"
+        }
+      ]
     },
     "Spark": {
       "description": "Work per 2 s bucket, oldest first, ending with the bucket that ends at `end_at`. A sample is\n`min(255, 16 × items started + streamed chars / 32)`; a bucket with no frames is 0.",
@@ -6605,6 +7674,66 @@
       ],
       "type": "object"
     },
+    "ThreadWindowInput": {
+      "properties": {
+        "after": {
+          "default": 10,
+          "maximum": 25,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "before": {
+          "default": 10,
+          "maximum": 25,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "itemId": {
+          "description": "A span's `itemId`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "itemId"
+      ],
+      "type": "object"
+    },
+    "ThreadWindowOutput": {
+      "properties": {
+        "focus": {
+          "description": "The index of `itemId` in `items`; absent when the node no longer has it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TailItem"
+          },
+          "maxItems": 51,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
     "Tier": {
       "enum": [
         "S",
@@ -6612,6 +7741,394 @@
         "L"
       ],
       "type": "string"
+    },
+    "TimeBreakdownInput": {
+      "properties": {
+        "compare": {
+          "$ref": "#/$defs/Period"
+        },
+        "filters": {
+          "$ref": "#/$defs/TimeFilters",
+          "default": {}
+        },
+        "scope": {
+          "$ref": "#/$defs/TimeScope"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "scope",
+        "since"
+      ],
+      "type": "object"
+    },
+    "TimeBreakdownOutput": {
+      "properties": {
+        "agentMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "byCategory": {
+          "items": {
+            "$ref": "#/$defs/CategoryTotal"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "ciChecks": {
+          "items": {
+            "$ref": "#/$defs/CiCheckStat"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "compare": {
+          "$ref": "#/$defs/PeriodBreakdown"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "criticalPath": {
+          "$ref": "#/$defs/CriticalPath",
+          "description": "Order scope only."
+        },
+        "humanWait": {
+          "$ref": "#/$defs/HumanWait"
+        },
+        "next": {
+          "type": "string"
+        },
+        "repeated": {
+          "items": {
+            "$ref": "#/$defs/RepeatStat"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "retentionDays": {
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "storedBytes": {
+          "description": "The hub's span tables on disk.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "topCommands": {
+          "items": {
+            "$ref": "#/$defs/CommandStat"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "wallMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "wallMs",
+        "agentMs",
+        "byCategory",
+        "topCommands",
+        "repeated",
+        "ciChecks",
+        "humanWait",
+        "retentionDays",
+        "storedBytes",
+        "coverage"
+      ],
+      "type": "object"
+    },
+    "TimeFilters": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        }
+      },
+      "type": "object"
+    },
+    "TimeInsightsInput": {
+      "properties": {
+        "compare": {
+          "$ref": "#/$defs/Period"
+        },
+        "scope": {
+          "$ref": "#/$defs/TimeScope"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "scope",
+        "since"
+      ],
+      "type": "object"
+    },
+    "TimeInsightsOutput": {
+      "properties": {
+        "insights": {
+          "items": {
+            "$ref": "#/$defs/Insight"
+          },
+          "maxItems": 30,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "insights"
+      ],
+      "type": "object"
+    },
+    "TimeRetentionSetInput": {
+      "properties": {
+        "retentionDays": {
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "retentionDays"
+      ],
+      "type": "object"
+    },
+    "TimeRetentionSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "retentionDays": {
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "retentionDays"
+      ],
+      "type": "object"
+    },
+    "TimeScope": {
+      "description": "What the numbers cover.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "fleet",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "machine",
+              "type": "string"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            }
+          },
+          "required": [
+            "kind",
+            "machineId"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "project",
+              "type": "string"
+            },
+            "projectRef": {
+              "$ref": "#/$defs/ProjectRef"
+            }
+          },
+          "required": [
+            "kind",
+            "projectRef"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The project's lead sessions, split across orders by the workstreams each wake served.",
+          "properties": {
+            "kind": {
+              "const": "lead",
+              "type": "string"
+            },
+            "projectRef": {
+              "$ref": "#/$defs/ProjectRef"
+            }
+          },
+          "required": [
+            "kind",
+            "projectRef"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "order",
+              "type": "string"
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Includes the task's subagents (tasks it spawned).",
+          "properties": {
+            "kind": {
+              "const": "task",
+              "type": "string"
+            },
+            "taskId": {
+              "$ref": "#/$defs/TaskId"
+            }
+          },
+          "required": [
+            "kind",
+            "taskId"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "thread",
+              "type": "string"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "threadId": {
+              "$ref": "#/$defs/ThreadId"
+            }
+          },
+          "required": [
+            "kind",
+            "machineId",
+            "threadId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TimeSpansInput": {
+      "properties": {
+        "afterId": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kinds": {
+          "items": {
+            "$ref": "#/$defs/SpanKind"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "limit": {
+          "default": 200,
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "rule": {
+          "$ref": "#/$defs/InsightRule"
+        },
+        "scope": {
+          "$ref": "#/$defs/TimeScope"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "scope",
+        "since"
+      ],
+      "type": "object"
+    },
+    "TimeSpansOutput": {
+      "properties": {
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "next": {
+          "type": "string"
+        },
+        "nextAfterId": {
+          "description": "Absent when there are no more.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spans": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "spans",
+        "coverage"
+      ],
+      "type": "object"
     },
     "TimeZone": {
       "type": "string"

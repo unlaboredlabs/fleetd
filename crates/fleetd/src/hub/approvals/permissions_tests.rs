@@ -233,6 +233,7 @@ impl ApprovalNodes for Fake {
         t: &str,
         request_id: &str,
         decision: PermissionDecision,
+        _by: Option<fleetd_contracts::time::DecidedBy>,
     ) -> BoxFut<'_, Result<(), NodeCommandError>> {
         let result = match self.answer_fails.lock().unwrap().clone() {
             Some(e) => Err(e),

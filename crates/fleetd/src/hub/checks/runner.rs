@@ -162,6 +162,7 @@ pub struct CheckRunner {
     events: Arc<EventLog>,
     clock: Arc<dyn Clock>,
     http: reqwest::Client,
+    time: std::sync::OnceLock<crate::hub::time::TimeSink>,
 }
 
 impl CheckRunner {
@@ -179,7 +180,12 @@ impl CheckRunner {
             events,
             clock,
             http: reqwest::Client::new(),
+            time: std::sync::OnceLock::new(),
         }
+    }
+
+    pub fn set_time(&self, sink: crate::hub::time::TimeSink) {
+        let _ = self.time.set(sink);
     }
 
     async fn api<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, GhError> {
@@ -216,11 +222,40 @@ impl CheckRunner {
             );
         };
         let shown = format!("`{}`", argv.join(" "));
-        let out = match self
+        let started = crate::hub::store::now_ms(self.clock.as_ref());
+        let ran = self
             .ports
             .run_command(machine_id, root.clone(), argv.to_vec())
-            .await
-        {
+            .await;
+        if let Some(time) = self.time.get() {
+            let exit = ran.as_ref().ok().and_then(|o| o.exit_code);
+            let end = crate::hub::store::now_ms(self.clock.as_ref());
+            time.span(crate::hub::time::NewSpan {
+                src_key: format!("claim/{}/{started}/{}", machine_id, rand::random::<u32>()),
+                kind: fleetd_contracts::time::SpanKind::CheckClaim,
+                start_ms: started,
+                end_ms: Some(end.max(started)),
+                ids: crate::hub::time::Ids {
+                    machine_id: Some(machine_id.to_string()),
+                    project_id: Some(scope.project_ref.project_id.to_string()),
+                    workstream_id: scope.workstream_id.as_ref().map(|w| w.to_string()),
+                    ..Default::default()
+                },
+                lane: match &scope.workstream_id {
+                    Some(w) => format!("checks:{w}"),
+                    None => format!("checks:{}/{}", machine_id, scope.project_ref.project_id),
+                },
+                label: Some(argv.join(" ")),
+                exit_code: exit,
+                status: if exit == Some(expect_exit) {
+                    fleetd_contracts::time::SpanStatus::Ok
+                } else {
+                    fleetd_contracts::time::SpanStatus::Failed
+                },
+                ..Default::default()
+            });
+        }
+        let out = match ran {
             Ok(out) => out,
             Err(message) => {
                 return verdict(

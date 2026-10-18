@@ -26,6 +26,7 @@ pub mod secrets;
 pub mod sessions;
 pub mod subscriptions;
 pub mod tasks;
+pub mod time;
 pub mod train;
 pub mod usage;
 pub mod verification;

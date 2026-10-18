@@ -220,4 +220,24 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "session_prompt_get",
         "Exactly what one session fleetd started (a lead, task, reviewer or judge) was told: its first message byte for byte, its SHA, the ref and scope of every prompt it is pinned to, and the tools it never gets.",
     ),
+    (
+        "time_spans",
+        "Time spans of a scope (fleet, machine, project, lead, order, task or thread) since a time, oldest id first: each one interval of one lane (model message, tool call, wait, CI check, train stage) with its exclusive time, label, exit code and output size. Filter by kinds, or rule to list the spans an insight links to; page with afterId (limit defaults to 200, max 500). coverage says what is missing.",
+    ),
+    (
+        "time_breakdown",
+        "Where a scope's time went since a time: wall time, agent time (exclusive, adds up over parallel agents), totals per category and kind, slowest commands, repeated runs, CI checks, waits on a person and, for an order, its critical path. compare gives a second period; filters narrow by project, machine or role. Also the retention and stored size.",
+    ),
+    (
+        "time_insights",
+        "Deterministic findings over a scope's time since a time (no model): repeated full test suites, failing repeats, slow commands, CI checks on the critical path, full slots, waits on your answers, approval prompts a rule would answer, usage parks, retries, review share, train line, rebase loops, slow first tokens and starts, offline waits, missing data. Each carries its numbers and span ids; compare gives both periods.",
+    ),
+    (
+        "time_retention_set",
+        "How many days the hub keeps time spans (1 to 365, default 30). Pruned hourly; daily roll-ups and critical paths stay 400 days. Admin.",
+    ),
+    (
+        "thread_window",
+        "The items and messages around one item of a thread (before and after default 10, max 25), oldest first, from the node's own log: opens a time span's transcript by its itemId.",
+    ),
 ];

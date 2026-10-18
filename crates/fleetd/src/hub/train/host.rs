@@ -190,4 +190,8 @@ pub trait TrainHost: Send + Sync + 'static {
         head_sha: &str,
         verdicts: &[PrVerdict],
     ) -> Option<ReviewRefusal>;
+    /// Where the train's state, CI and git spans go; none in tests.
+    fn time(&self) -> Option<crate::hub::time::TimeSink> {
+        None
+    }
 }

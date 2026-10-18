@@ -272,7 +272,11 @@ impl Session {
             SessionCommand::Answer {
                 request_id,
                 decision,
-            } => match self.mapper.answer(&request_id, &decision) {
+                by,
+            } => match self
+                .mapper
+                .answer(&request_id, &decision, by, &Now::system())
+            {
                 Some(input) => {
                     self.write(input);
                 }

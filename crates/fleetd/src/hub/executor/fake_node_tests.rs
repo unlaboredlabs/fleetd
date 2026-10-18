@@ -99,7 +99,13 @@ impl Node {
     /// Answers the subscription with a snapshot of one project and `sessions`, and a runner that is logged in.
     async fn subscribe(&mut self, sessions: Value) {
         let (id, call) = self.call().await;
-        assert_eq!(call, SessionCall::Subscribe { after: None });
+        assert_eq!(
+            call,
+            SessionCall::Subscribe {
+                after: None,
+                spans_after: None
+            }
+        );
         self.push(json!({ "type": "snapshot", "projects": [project()], "sessions": sessions }));
         self.push(runner_event("logged_in", None));
         self.reply(&id, json!({ "ok": { "kind": "done" } }));
@@ -337,6 +343,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
                 PermissionDecision::Deny {
                     message: Text::unchecked("not in this repo"),
                 },
+                None,
             )
             .await
     });
@@ -349,6 +356,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
             decision: PermissionDecision::Deny {
                 message: Text::unchecked("not in this repo")
             },
+            by: None,
         }
     );
     // The prompt is gone by the time the answer arrives: the node's words reach the caller, not "unknown thread".

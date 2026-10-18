@@ -105,6 +105,11 @@ pub struct CheckRun {
     pub status: String,
     pub conclusion: Option<String>,
     pub html_url: Option<String>,
+    /// GitHub's own stamps, whole seconds; kept for the time inspector's per-check spans.
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub completed_at: Option<String>,
 }
 
 #[derive(Deserialize)]

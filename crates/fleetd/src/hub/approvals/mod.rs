@@ -203,6 +203,7 @@ pub trait ApprovalNodes: Send + Sync {
         thread_id: &str,
         request_id: &str,
         decision: PermissionDecision,
+        by: Option<fleetd_contracts::time::DecidedBy>,
     ) -> BoxFut<'_, Result<(), NodeCommandError>>;
     /// The machine's node is linked and its session stream subscribed.
     fn is_linked(&self, machine_id: &str) -> BoxFut<'_, bool>;
@@ -819,6 +820,7 @@ mod tests {
             _: &str,
             _: &str,
             _: PermissionDecision,
+            _: Option<fleetd_contracts::time::DecidedBy>,
         ) -> BoxFut<'_, Result<(), NodeCommandError>> {
             unreachable!()
         }

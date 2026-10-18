@@ -144,6 +144,9 @@ pub struct ResultLine {
     pub usage: Option<Usage>,
     pub total_cost_usd: Option<f64>,
     pub user_message_uuid: Option<String>,
+    /// The run's wall time and API time by claude's own count.
+    pub duration_ms: Option<u64>,
+    pub duration_api_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Deserialize)]

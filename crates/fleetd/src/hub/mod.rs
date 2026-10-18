@@ -31,6 +31,7 @@ pub mod slots;
 pub mod store;
 pub mod sweep;
 pub mod tasks;
+pub mod time;
 pub mod train;
 pub mod usage;
 pub mod valuebar;

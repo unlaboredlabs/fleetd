@@ -7,8 +7,9 @@ use std::sync::{Mutex, MutexGuard};
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::sessions::{
     MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, RunnerInfo, SessionSummary, ThreadItem,
-    ThreadMessage,
+    ThreadMessage, WindowEntry,
 };
+use fleetd_contracts::time::SpanWire;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
@@ -44,8 +45,17 @@ CREATE TABLE IF NOT EXISTS items (
   UNIQUE (session_id, id));
 CREATE TABLE IF NOT EXISTS machine_events (
   seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, json TEXT NOT NULL);
-PRAGMA user_version = 1;
+CREATE TABLE IF NOT EXISTS spans (
+  rid INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, at_ms INTEGER NOT NULL, json TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS spans_by_at ON spans (at_ms);
+PRAGMA user_version = 2;
 ";
+
+/// The span outbox keeps at most this many rows, and none older than [`SPANS_KEPT_MS`], while the hub is away.
+/// Past either bound the oldest rows go and one `gap` span says how many, so the loss shows in coverage.
+pub const SPANS_KEPT: i64 = 500_000;
+pub const SPANS_KEPT_MS: i64 = 7 * 24 * 3600 * 1000;
+const SPANS_DROP_BATCH: i64 = 5_000;
 
 /// What the node keeps about a session beyond its summary: everything a respawn needs to resume it in place.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -347,6 +357,210 @@ impl NodeStore {
         limit: usize,
     ) -> StoreResult<(Vec<ThreadItem>, bool)> {
         self.newest("items", session_id, limit)
+    }
+
+    /// Appends spans to the outbox in one transaction, then holds the outbox to its bounds.
+    pub fn put_spans(&self, spans: &[SpanWire], now_ms: i64) -> StoreResult<()> {
+        if spans.is_empty() {
+            return Ok(());
+        }
+        self.tx(|conn| {
+            let mut stmt =
+                conn.prepare("INSERT INTO spans (session_id, at_ms, json) VALUES (?1, ?2, ?3)")?;
+            for span in spans {
+                stmt.execute(params![
+                    span.session_id.as_str(),
+                    span.end_ms.get(),
+                    serde_json::to_string(span)?
+                ])?;
+            }
+            drop(stmt);
+            self.bound_spans(conn, now_ms)
+        })
+    }
+
+    /// Rows go only from the oldest end (acks and drops), so the row count is `max - min + 1`.
+    fn bound_spans(&self, conn: &Connection, now_ms: i64) -> StoreResult<()> {
+        loop {
+            let (min, max): (Option<i64>, Option<i64>) =
+                conn.query_row("SELECT MIN(rid), MAX(rid) FROM spans", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })?;
+            let (Some(min), Some(max)) = (min, max) else {
+                return Ok(());
+            };
+            let cutoff = now_ms - SPANS_KEPT_MS;
+            let first_young: Option<i64> = conn.query_row(
+                "SELECT MIN(rid) FROM spans WHERE at_ms >= ?1",
+                [cutoff],
+                |r| r.get(0),
+            )?;
+            let by_age = first_young.map_or(max, |r| r - 1);
+            let by_count = max - SPANS_KEPT;
+            let upto = by_age.max(by_count).min(min + SPANS_DROP_BATCH - 1);
+            if upto < min {
+                return Ok(());
+            }
+            let (n, first, last, session): (i64, i64, i64, String) = conn.query_row(
+                "SELECT COUNT(*), MIN(at_ms), MAX(at_ms), MIN(session_id) FROM spans WHERE rid <= ?1",
+                [upto],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )?;
+            conn.execute("DELETE FROM spans WHERE rid <= ?1", [upto])?;
+            let gap = serde_json::json!({
+                "key": format!("node/gap/{upto}"),
+                "kind": "gap",
+                "sessionId": session,
+                "startMs": first.max(0),
+                "endMs": last.max(first).max(0),
+                "status": "incomplete",
+                "extra": { "count": n, "reason": "the node's span outbox was full while the hub was away" },
+            });
+            conn.execute(
+                "INSERT INTO spans (session_id, at_ms, json) VALUES (?1, ?2, ?3)",
+                params![session, now_ms, gap.to_string()],
+            )?;
+            tracing::warn!(dropped = n, "span outbox full: dropped the oldest spans");
+        }
+    }
+
+    /// Up to `limit` outbox rows after `after`, oldest first.
+    pub fn spans_after(&self, after: u64, limit: usize) -> StoreResult<Vec<(u64, SpanWire)>> {
+        let conn = self.lock();
+        let mut stmt =
+            conn.prepare("SELECT rid, json FROM spans WHERE rid > ?1 ORDER BY rid LIMIT ?2")?;
+        let rows = stmt.query_map(params![after as i64, limit as i64], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (rid, json) = row?;
+            match serde_json::from_str(&json) {
+                Ok(span) => out.push((rid as u64, span)),
+                Err(e) => tracing::warn!(rid, error = %e, "skipping a span that does not decode"),
+            }
+        }
+        Ok(out)
+    }
+
+    /// The newest outbox row ever written (0 when none): a hub cursor past it is from another database.
+    pub fn spans_head(&self) -> StoreResult<u64> {
+        let seq: Option<i64> = self
+            .lock()
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'spans'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(seq.unwrap_or(0).max(0) as u64)
+    }
+
+    /// The hub stored every row up to `upto`.
+    pub fn spans_acked(&self, upto: u64) -> StoreResult<()> {
+        self.lock()
+            .execute("DELETE FROM spans WHERE rid <= ?1", [upto as i64])?;
+        Ok(())
+    }
+
+    /// The items around `item_id` (`before` older, `after` newer) and the messages between them, in time order;
+    /// with the index of the item. Empty when the session has no such item.
+    pub fn window(
+        &self,
+        session_id: &str,
+        item_id: &str,
+        before: usize,
+        after: usize,
+    ) -> StoreResult<(Vec<WindowEntry>, Option<u64>)> {
+        let conn = self.lock();
+        let rid: Option<i64> = conn
+            .query_row(
+                "SELECT rid FROM items WHERE session_id = ?1 AND id = ?2",
+                [session_id, item_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(rid) = rid else {
+            // A message id (a span of a model message) opens at that message instead.
+            let message: Option<String> = conn
+                .query_row(
+                    "SELECT json FROM messages WHERE session_id = ?1 AND id = ?2",
+                    [session_id, item_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            return Ok(match message {
+                Some(json) => (
+                    vec![WindowEntry::Message(serde_json::from_str(&json)?)],
+                    Some(0),
+                ),
+                None => (Vec::new(), None),
+            });
+        };
+        let read = |sql: &str, limit: usize| -> StoreResult<Vec<ThreadItem>> {
+            let mut stmt = conn.prepare(sql)?;
+            let rows = stmt.query_map(params![session_id, rid, limit as i64], |r| {
+                r.get::<_, String>(0)
+            })?;
+            rows.map(|j| Ok(serde_json::from_str(&j?)?)).collect()
+        };
+        let mut older = read(
+            "SELECT json FROM items WHERE session_id = ?1 AND rid < ?2 ORDER BY rid DESC LIMIT ?3",
+            before,
+        )?;
+        older.reverse();
+        let newer = read(
+            "SELECT json FROM items WHERE session_id = ?1 AND rid > ?2 ORDER BY rid LIMIT ?3",
+            after,
+        )?;
+        let focus: ThreadItem = serde_json::from_str(&conn.query_row(
+            "SELECT json FROM items WHERE rid = ?1",
+            [rid],
+            |r| r.get::<_, String>(0),
+        )?)?;
+        let first = older
+            .first()
+            .unwrap_or(&focus)
+            .started_at
+            .as_str()
+            .to_owned();
+        let last = newer
+            .last()
+            .unwrap_or(&focus)
+            .updated_at
+            .as_str()
+            .to_owned();
+        let mut stmt = conn.prepare(
+            "SELECT json FROM messages WHERE session_id = ?1 ORDER BY rid DESC LIMIT 500",
+        )?;
+        let messages: Vec<ThreadMessage> = stmt
+            .query_map([session_id], |r| r.get::<_, String>(0))?
+            .filter_map(|j| j.ok().and_then(|j| serde_json::from_str(&j).ok()))
+            .filter(|m: &ThreadMessage| {
+                m.created_at.as_str() >= first.as_str() && m.created_at.as_str() <= last.as_str()
+            })
+            .take(before + after + 1)
+            .collect();
+        let focus_id = focus.id.to_string();
+        let mut entries: Vec<(String, WindowEntry)> = older
+            .into_iter()
+            .chain(std::iter::once(focus))
+            .chain(newer)
+            .map(|i| (i.started_at.as_str().to_owned(), WindowEntry::Item(i)))
+            .chain(
+                messages
+                    .into_iter()
+                    .map(|m| (m.created_at.as_str().to_owned(), WindowEntry::Message(m))),
+            )
+            .collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let at = entries
+            .iter()
+            .position(|(_, e)| matches!(e, WindowEntry::Item(i) if i.id.as_str() == focus_id));
+        Ok((
+            entries.into_iter().map(|(_, e)| e).collect(),
+            at.map(|i| i as u64),
+        ))
     }
 
     /// The seq of the newest machine event ever appended (0 when none).

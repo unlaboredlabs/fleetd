@@ -232,6 +232,7 @@ pub fn build_on(
         events.clone(),
         clock.clone(),
     ));
+    let time = crate::hub::time::Time::new(db.clone(), clock.clone());
     let executors =
         crate::hub::executor::Executors::new(store.clone(), events.clone(), clock.clone());
     let node_commands = Arc::new(crate::hub::link::NodeCommands::default());
@@ -245,7 +246,9 @@ pub fn build_on(
         commands: node_commands.clone(),
         lead_calls: lead_calls.clone(),
         clock: clock.clone(),
+        time: time.clone(),
     });
+    executors.set_time(time.clone());
     let watchdog = crate::hub::watchdog::Watchdog::new(
         crate::hub::watchdog::config_from_env(|k| std::env::var(k).ok()),
         executors.clone(),
@@ -377,9 +380,13 @@ pub fn build_on(
         policies,
         tasks,
         leads,
+        time,
     });
     checks.ports.bind(&hub);
     train_host.bind(&hub);
+    hub.checks.set_time(hub.time.sink());
+    hub.slots.set_time(hub.time.sink());
+    hub.leads.intake.set_time(hub.time.sink());
     crate::hub::train::calls::register_lead_calls(&hub);
     crate::hub::checks::hub_ports::wire_misfiled(&hub);
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
@@ -426,6 +433,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     ));
     loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
     loops.extend(hub.leads.run());
+    loops.extend(hub.time.start(hub));
     loops
 }
 

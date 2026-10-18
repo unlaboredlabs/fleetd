@@ -90,6 +90,10 @@ fn task_view(task: Task) -> TaskView {
 }
 
 impl TrainHost for HubHost {
+    fn time(&self) -> Option<crate::hub::time::TimeSink> {
+        self.hub().map(|h| h.time.sink())
+    }
+
     fn task(&self, task_id: &TaskId) -> Option<TaskView> {
         match self.hub()?.tasks.get(task_id) {
             Ok(task) => task.map(task_view),
