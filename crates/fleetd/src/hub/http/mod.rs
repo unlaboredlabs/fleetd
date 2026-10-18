@@ -1,16 +1,17 @@
-//! The hub's HTTP server: /healthz, /mcp, /app and /node/link on one port,
+//! The hub's HTTP server: /healthz, /mcp, /app, /pair and /node/link on one port,
 //! loopback by default.
 use crate::hub::api::{Hub, Registry};
-use crate::hub::{app_ws, mcp};
+use crate::hub::{app_ws, mcp, pair};
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::State;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, get};
+use axum::routing::{any, get, post};
 use fleetd_contracts::hello::PROTOCOL_VERSION;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -24,6 +25,7 @@ struct Server {
     hub: Arc<Hub>,
     tools: Arc<Registry>,
     mcp: Arc<mcp::McpEndpoint>,
+    pair_limiter: Arc<pair::Limiter>,
 }
 
 pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
@@ -32,8 +34,14 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
         .route("/healthz", get(healthz))
         .route("/mcp", any(mcp_route))
         .route("/app", get(app_route))
+        .route("/pair", post(pair_route))
         .route("/node/link", get(node_link_route))
-        .with_state(Server { hub, tools, mcp })
+        .with_state(Server {
+            hub,
+            tools,
+            mcp,
+            pair_limiter: Arc::default(),
+        })
 }
 
 async fn healthz() -> Response {
@@ -56,6 +64,23 @@ async fn mcp_route(
         body,
     )
     .await
+}
+
+async fn pair_route(State(server): State<Server>, request: Request) -> Response {
+    let (parts, body) = request.into_parts();
+    let remote = parts
+        .extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip());
+    let host = parts
+        .headers
+        .get(axum::http::header::HOST)
+        .and_then(|h| h.to_str().ok());
+    let Ok(body) = axum::body::to_bytes(body, 16 * 1024).await else {
+        return (StatusCode::PAYLOAD_TOO_LARGE, "pairing request too large").into_response();
+    };
+    let (status, json) = pair::handle(&server.hub, &server.pair_limiter, remote, host, &body);
+    (status, axum::Json(json)).into_response()
 }
 
 fn expect_upgrade() -> Response {
@@ -92,9 +117,12 @@ pub async fn serve(
     let app = router(hub, tools);
     let stop = shutdown.clone();
     let mut server = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async move { stop.wait().await })
-            .await
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move { stop.wait().await })
+        .await
     });
     let joined = |r: Result<std::io::Result<()>, tokio::task::JoinError>| {
         r.unwrap_or_else(|e| Err(std::io::Error::other(e)))

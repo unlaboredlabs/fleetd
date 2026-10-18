@@ -159,6 +159,9 @@ pub enum HubEventType {
     /// M12: a wording change met its metric; `data.proposalId`, `data.measured`.
     #[serde(rename = "playbook.kept")]
     PlaybookKept,
+    /// A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.
+    #[serde(rename = "key.paired")]
+    KeyPaired,
 }
 
 impl HubEventType {
@@ -222,6 +225,7 @@ impl HubEventType {
             Self::PlaybookChanged => "playbook.changed",
             Self::PlaybookReverted => "playbook.reverted",
             Self::PlaybookKept => "playbook.kept",
+            Self::KeyPaired => "key.paired",
         }
     }
 }

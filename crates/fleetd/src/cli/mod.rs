@@ -8,6 +8,7 @@ pub mod lead;
 pub mod listen;
 pub mod mcp_client;
 pub mod node;
+pub mod pair;
 pub mod pending;
 pub mod retro;
 pub mod setup;
@@ -58,13 +59,14 @@ commands:
              replace this fleetd with the latest release
 
 setting up (on the hub machine):
-{}{}
+{}{}{}
 running by hand:
 {}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
 {}",
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
+        pair::PAIR_USAGE,
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
         hub_key::HUB_TOKEN_USAGE,
@@ -93,6 +95,7 @@ pub fn run(argv: &[String]) -> CliResult {
             stdout: usage_text(),
             stderr: String::new(),
         },
+        Some("pair") => pair::pair_command(&argv[1..]),
         Some("hub") => match argv.get(1).map(String::as_str) {
             Some("key") => hub_key::hub_key(&argv[2..]),
             Some("token") => hub_key::hub_token(&argv[2..]),

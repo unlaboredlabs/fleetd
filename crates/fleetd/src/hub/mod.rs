@@ -17,6 +17,7 @@ pub mod leases;
 pub mod ledger;
 pub mod link;
 pub mod mcp;
+pub mod pair;
 pub mod playbooks;
 pub mod queue;
 pub mod receipts;
