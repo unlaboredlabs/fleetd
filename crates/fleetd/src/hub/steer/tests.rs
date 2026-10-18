@@ -720,3 +720,126 @@ async fn a_plan_change_naming_a_delivered_steer_acknowledges_it() {
     .unwrap_err();
     assert!(unknown.message.contains("not a delivered steer"));
 }
+
+#[tokio::test]
+async fn a_resent_request_finds_its_steer_after_it_was_bound_to_a_tasks_run() {
+    let lab = lab();
+    let mut task = running_task(&lab.hub, "p1");
+    task.state = TaskState::Idle;
+    lab.hub
+        .db
+        .with(|c| {
+            Ok(crate::hub::tasks::records::TaskRecords::put(
+                c,
+                &crate::hub::tasks::records::StoredTask {
+                    task: task.clone(),
+                    pending_message: None,
+                },
+            )?)
+        })
+        .unwrap();
+    let me = person("k1");
+    let first = send(
+        &lab.hub,
+        By::Human(&me),
+        to_task(&task, "one", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    // Bound to the task's next run: its run id is that run's now.
+    let thread = task.thread_ref.clone().unwrap();
+    take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
+    let again = send(
+        &lab.hub,
+        By::Human(&me),
+        to_task(&task, "one", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(again.id, first.id);
+    let (bound, _) = store::get(&lab.hub.db, &first.id).unwrap().unwrap();
+    on_receipt(
+        &lab.hub,
+        &MachineId::unchecked("lab-a"),
+        &receipt(&bound, SteerStage::Delivered),
+    );
+    let later = send(
+        &lab.hub,
+        By::Human(&me),
+        to_task(&task, "one", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(later.id, first.id);
+    assert_eq!(later.stage, SteerStage::Delivered);
+    let rows: i64 = lab
+        .hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM steers", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(rows, 1);
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerQueued), 1);
+}
+
+#[tokio::test]
+async fn the_plan_change_a_steer_made_is_the_one_tagged_with_it() {
+    let lab = lab();
+    let steer = send(
+        &lab.hub,
+        By::Human(&person("k1")),
+        to_lead("skip the docs page", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    on_receipt(
+        &lab.hub,
+        &MachineId::unchecked("lab-a"),
+        &receipt(&steer, SteerStage::Delivered),
+    );
+    plan_call(&lab, json!({ "op": "plan_milestone", "title": "API" })).unwrap();
+    plan_call(
+        &lab,
+        json!({ "op": "plan_add", "title": "docs page", "milestoneId": "M1" }),
+    )
+    .unwrap();
+    plan_call(
+        &lab,
+        json!({ "op": "plan_add", "title": "api page", "milestoneId": "M1" }),
+    )
+    .unwrap();
+    // Past the planning window, a scope change writes a marker.
+    lab.clock.advance(Duration::from_secs(3 * 24 * 3600));
+    let fleetd_contracts::lead_calls::LeadCallResult::PlanDrop(out) = plan_call(
+        &lab,
+        json!({ "op": "plan_drop", "itemId": "P1", "steer": "S1" }),
+    )
+    .unwrap() else {
+        panic!("not a drop")
+    };
+    let change = out.change.expect("a marker");
+    plan_call(
+        &lab,
+        json!({ "op": "plan_drop", "itemId": "P2", "why": "not needed" }),
+    )
+    .unwrap();
+    let tagged: Vec<(String, Option<String>)> = lab
+        .hub
+        .db
+        .with(|c| {
+            let mut stmt = c.prepare("SELECT note, steer_id FROM plan_changes ORDER BY n")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .unwrap();
+    let with_steer: Vec<_> = tagged
+        .iter()
+        .filter(|(_, s)| s.as_deref() == Some("S1"))
+        .collect();
+    assert_eq!(with_steer.len(), 1, "{tagged:?}");
+    assert!(
+        change
+            .note
+            .as_str()
+            .starts_with(&with_steer[0].0[..20.min(with_steer[0].0.len())])
+    );
+}

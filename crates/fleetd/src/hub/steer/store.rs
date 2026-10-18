@@ -10,6 +10,8 @@ pub struct NewSteer<'a> {
     pub task_id: Option<&'a str>,
     /// `key:<id>` for a person, `lead` for a lead.
     pub by: String,
+    /// `steer:<by>:<clientRequestId>`: a resent request returns this steer, whatever its stage.
+    pub request: String,
     pub queued_ms: i64,
 }
 
@@ -24,16 +26,29 @@ fn mode_name(steer: &Steer) -> &'static str {
     }
 }
 
-/// Stores a new steer, or returns the one already stored for its run (a retried request): `(steer, created)`.
+/// Stores a new steer, or returns the one already stored for its request (a retried request, at any stage):
+/// `(steer, created)`.
 pub fn insert(db: &HubDb, new: NewSteer) -> Result<(Steer, bool), StoreError> {
     db.with(|conn| {
-        if let Some(existing) = by_run(conn, &new.steer.run_id)? {
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT data FROM steers WHERE request = ?",
+                [&new.request],
+                |r| r.get(0),
+            )
+            .optional()?;
+        // Rows stored before requests were: their run id is still the one the request derives.
+        let existing = match existing {
+            Some(data) => Some(decode(data)?),
+            None => by_run(conn, &new.steer.run_id)?,
+        };
+        if let Some(existing) = existing {
             return Ok((existing, false));
         }
         let s = &new.steer;
         conn.execute(
-            "INSERT INTO steers (workstream_id, task_id, machine_id, thread_id, run_id, by, mode, stage, queued_ms, data)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')",
+            "INSERT INTO steers (workstream_id, task_id, machine_id, thread_id, run_id, by, mode, stage, queued_ms,
+             request, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')",
             params![
                 s.workstream_id.as_str(),
                 new.task_id,
@@ -44,6 +59,7 @@ pub fn insert(db: &HubDb, new: NewSteer) -> Result<(Steer, bool), StoreError> {
                 mode_name(s),
                 s.stage.as_str(),
                 new.queued_ms,
+                new.request,
             ],
         )?;
         let n = conn.last_insert_rowid();
