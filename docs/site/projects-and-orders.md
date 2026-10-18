@@ -11,7 +11,7 @@ Run `fleetd init` again and pick a repo: a checkout it finds on a worker, or a G
 of your setup stays as it is.
 
 From an MCP client, `project_add {machineId, path, title}` adds one and `project_remove {machineId, projectId}`
-forgets it (its files, branches and worktrees stay).
+stops its threads and forgets it (its files, branches and worktrees stay).
 
 ## Its lead
 

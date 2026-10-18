@@ -55,7 +55,7 @@
 <p>Run <code>fleetd init</code> again and pick a repo: a checkout it finds on a worker, or a GitHub URL, which it clones. The rest
 of your setup stays as it is.</p>
 <p>From an MCP client, <code>project_add {machineId, path, title}</code> adds one and <code>project_remove {machineId, projectId}</code>
-forgets it (its files, branches and worktrees stay).</p>
+stops its threads and forgets it (its files, branches and worktrees stay).</p>
 <h2 id="its-lead">Its lead<a class="anchor" href="#its-lead" aria-label="Link to this section">#</a></h2>
 <p>Each project has one lead, and the project's first order starts it: there is nothing to start by hand. The lead's
 first message lists the order, and the app shows the lead starting.</p>

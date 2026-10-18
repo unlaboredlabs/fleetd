@@ -831,7 +831,7 @@ output!(ProjectAddOutput {
     created: bool,
 });
 
-// project_remove: forgets a project on its machine. Its files, branches and worktrees stay.
+// project_remove: stops the project's claude processes and forgets it. Its files, branches and worktrees stay.
 input!(ProjectRemoveInput {
     machine_id: MachineId,
     project_id: ProjectId

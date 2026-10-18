@@ -64,6 +64,9 @@ const STOP_GRACE: Duration = Duration::from_secs(5);
 /// An idle process gets stdin closed, and SIGTERM after this if it is still there.
 const REAP_GRACE: Duration = Duration::from_secs(10);
 const EXIT_WAIT: Duration = Duration::from_secs(20);
+/// `project_remove`: how long the project's stopped processes get to exit (SIGTERM comes at [`STOP_GRACE`]). The
+/// hub's own wait for the reply is longer.
+const REMOVE_WAIT: Duration = Duration::from_secs(12);
 /// Node shutdown: how long interrupted runs get to end before every process is closed.
 const SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
 
@@ -579,34 +582,7 @@ impl SessionService {
                 title,
                 workspace_root,
             } => self.project_upsert(project_id, title.to_string(), workspace_root.to_string()),
-            SessionCall::ProjectRemove { project_id } => {
-                let st = self.st();
-                // An idle process the hub sees as not running still has the project as its cwd.
-                let mut live: Vec<&str> = st
-                    .live
-                    .keys()
-                    .filter(|id| {
-                        self.store()
-                            .session(id)
-                            .is_ok_and(|r| r.is_some_and(|r| r.summary.project_id == project_id))
-                    })
-                    .map(String::as_str)
-                    .collect();
-                if !live.is_empty() {
-                    live.sort_unstable();
-                    return Err(invalid(format!(
-                        "project {project_id} still has a live claude process in session(s) {}: wait for the idle \
-                         reap or stop them, then remove the project",
-                        live.join(", ")
-                    )));
-                }
-                let frame = self
-                    .store()
-                    .remove_project(&project_id)?
-                    .ok_or_else(|| not_found(format!("no project {project_id} on this machine")))?;
-                st.machine(frame);
-                Ok(SessionOutput::Done)
-            }
+            SessionCall::ProjectRemove { project_id } => self.project_remove(&project_id).await,
             SessionCall::Launch(launch) => self.launch(launch).await,
             SessionCall::Send {
                 session_id,
@@ -1661,6 +1637,65 @@ impl SessionService {
                 }
             })?;
         }
+        Ok(SessionOutput::Done)
+    }
+
+    /// Sessions in the project with a claude process, idle ones included: each has the project as its cwd.
+    fn live_in(&self, st: &State, project_id: &ProjectId) -> Vec<String> {
+        let mut live: Vec<String> = st
+            .live
+            .keys()
+            .filter(|id| {
+                self.store()
+                    .session(id)
+                    .is_ok_and(|r| r.is_some_and(|r| &r.summary.project_id == project_id))
+            })
+            .cloned()
+            .collect();
+        live.sort_unstable();
+        live
+    }
+
+    /// Stops the project's claude processes (their active runs close as interrupted), waits up to [`REMOVE_WAIT`]
+    /// for them to exit, then forgets the project.
+    async fn project_remove(&self, project_id: &ProjectId) -> Reply {
+        let stopping: Vec<_> = {
+            let mut st = self.st();
+            let ids = self.live_in(&st, project_id);
+            let mut stopping = Vec::new();
+            for id in &ids {
+                let Some(live) = st.live.get_mut(id) else {
+                    continue;
+                };
+                live.ending
+                    .get_or_insert_with(|| "its project was removed".into());
+                live.closing = true;
+                let (commands, mut exited) = (live.commands.clone(), live.exited.clone());
+                stopping.push(async move {
+                    let _ = commands
+                        .send(SessionCommand::Shutdown { grace: STOP_GRACE })
+                        .await;
+                    let _ = exited.wait_for(|e| *e).await;
+                });
+            }
+            stopping
+        };
+        let _ = tokio::time::timeout(REMOVE_WAIT, futures_util::future::join_all(stopping)).await;
+        let st = self.st();
+        let live = self.live_in(&st, project_id);
+        if !live.is_empty() {
+            return Err(invalid(format!(
+                "project {project_id}: claude in session(s) {} was stopped but has not exited after {}s; run \
+                 project_remove again",
+                live.join(", "),
+                REMOVE_WAIT.as_secs()
+            )));
+        }
+        let frame = self
+            .store()
+            .remove_project(project_id)?
+            .ok_or_else(|| not_found(format!("no project {project_id} on this machine")))?;
+        st.machine(frame);
         Ok(SessionOutput::Done)
     }
 
