@@ -1,6 +1,6 @@
 //! The sidebar: Inbox and Machines, then every project, then the connection. A project that has an open ask
-//! is set in full-weight text with its count; one with news since you last looked has the accent dot; the
-//! rest are quiet. The open project lists its threads beneath it.
+//! is set in full-weight text with its count; one with news since you last looked has the accent dot; a
+//! stalled lead gets a warning dot; the rest are quiet. The open project lists its threads beneath it.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -86,13 +86,9 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
     let asks = state.inbox().len();
     let down = state.machines.iter().filter(|m| m.status != MachineStatus::Online).count();
     let needs = needs_you(state);
-    let entry = |id: &'static str, label: &'static str, keys: &'static str, pick: Pick, is_active: bool, trailing: AnyElement| {
+    let entry = |id: &'static str, label: &'static str, pick: Pick, is_active: bool, trailing: AnyElement| {
         let on_pick = on_pick.clone();
-        ui::row(t, id, is_active)
-            .child(div().flex_1().child(label))
-            .child(trailing)
-            .child(div().w(px(40.)).flex().justify_end().child(ui::kbd(t, ui::shortcut(keys))))
-            .on_click(move |_, window, cx| on_pick(pick.clone(), window, cx))
+        ui::row(t, id, is_active).child(div().flex_1().child(label)).child(trailing).on_click(move |_, window, cx| on_pick(pick.clone(), window, cx))
     };
     let inbox_count = if asks > 0 { ui::count(t, asks, true).into_any_element() } else { div().into_any_element() };
     let machines_note = if down > 0 {
@@ -101,7 +97,7 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
         div().into_any_element()
     };
 
-    let mut projects = div().id("sidebar-projects").flex_1().min_h_0().overflow_y_scroll().pb_2().flex().flex_col();
+    let mut projects = div().id("sidebar-projects").flex_1().min_h_0().overflow_y_scroll().px_2().pb_2().flex().flex_col();
     if state.projects.is_empty() {
         projects = projects.child(
             div()
@@ -134,7 +130,7 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
                         .when(n == 0 && !unread && !open, |d| d.text_color(t.quiet))
                         .child(row.summary.title.clone()),
                 )
-                .when(stalled, |d| d.child(div().text_size(px(size::XS)).text_color(t.warning).child("stalled")))
+                .when(stalled, |d| d.child(ui::dot(t.warning)))
                 .when(n > 0, |d| d.child(ui::count(t, n, true)))
                 .on_click(move |_, window, cx| on_pick(pick.clone(), window, cx)),
         );
@@ -149,7 +145,7 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
                 projects = projects.child(
                     div()
                         .h(px(metric::ROW - 4.))
-                        .pl(px(34.))
+                        .pl(px(26.))
                         .pr_4()
                         .flex()
                         .items_center()
@@ -174,14 +170,13 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
         .text_size(px(size::MD))
         .text_color(t.text)
         .child(
-            div().pt_2().flex().flex_col().child(entry("nav-inbox", "Inbox", "1", Pick::Inbox, *active == Active::Inbox, inbox_count)).child(entry(
-                "nav-machines",
-                "Machines",
-                "3",
-                Pick::Machines,
-                *active == Active::Machines,
-                machines_note,
-            )),
+            div()
+                .pt_2()
+                .px_2()
+                .flex()
+                .flex_col()
+                .child(entry("nav-inbox", "Inbox", Pick::Inbox, *active == Active::Inbox, inbox_count))
+                .child(entry("nav-machines", "Machines", Pick::Machines, *active == Active::Machines, machines_note)),
         )
         .child(
             div()
@@ -200,8 +195,7 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
                     let on_pick = on_pick.clone();
                     move |_, window, cx| on_pick(Pick::Projects, window, cx)
                 })
-                .child(div().flex_1().child("Projects"))
-                .child(ui::kbd(t, ui::shortcut("2"))),
+                .child("Projects"),
         )
         .child(projects)
         .child(

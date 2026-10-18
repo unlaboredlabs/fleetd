@@ -193,14 +193,15 @@ pub fn field(t: &Theme, focused: bool) -> Div {
         .when(focused, |d| d.shadow(t.focus_ring()))
 }
 
-/// A clickable list row: fixed height, hover overlay, selected overlay.
+/// A clickable list row: full width, fixed height, hover and selected overlays. Inset it by giving its list
+/// horizontal padding.
 pub fn row(t: &Theme, id: impl Into<ElementId>, selected: bool) -> Stateful<Div> {
     let hover = t.hover;
     div()
         .id(id)
+        .w_full()
         .h(px(metric::ROW))
         .px_2()
-        .mx_2()
         .flex()
         .items_center()
         .gap_2()

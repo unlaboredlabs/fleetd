@@ -115,11 +115,12 @@ impl Render for Settings {
                     .flex_col()
                     .gap_6()
                     .max_w(px(metric::MEASURE))
-                    .child(div().flex().gap_6().child(setting("Appearance", "Match system follows the OS as it changes.")).child(modes))
+                    .child(div().flex().items_start().gap_6().child(setting("Appearance", "Match system follows the OS as it changes.")).child(modes))
                     .child(ui::hairline(t))
                     .child(
                         div()
                             .flex()
+                            .items_start()
                             .gap_6()
                             .child(setting("Hub", "This app acts as you on this hub, with a key kept in the OS keychain."))
                             .child(connection),
@@ -128,6 +129,7 @@ impl Render for Settings {
                     .child(
                         div()
                             .flex()
+                            .items_start()
                             .gap_6()
                             .child(setting("Version", "Run fleetd update to update the CLI and this app together."))
                             .child(ui::mono(t, format!("fleetd-app {}", crate::update::VERSION))),

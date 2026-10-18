@@ -125,13 +125,15 @@ pub fn rank(query: &str, items: &[Item]) -> Vec<usize> {
         all.sort_by_key(|&i| items[i].group);
         return all;
     }
+    // Letters scattered mid-word ("dn" in "New order in fleetd") are noise, not a match.
+    let floor = 2 * query.chars().filter(|c| !c.is_whitespace()).count() as i32;
     let mut scored: Vec<(i32, usize)> = items
         .iter()
         .enumerate()
         .filter_map(|(i, it)| {
             let title = score(query, &it.title);
             let detail = score(query, &it.detail).map(|s| s / 2);
-            title.max(detail).map(|s| (s, i))
+            title.max(detail).filter(|&s| s >= floor).map(|s| (s, i))
         })
         .collect();
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(items[a.1].group.cmp(&items[b.1].group)).then(a.1.cmp(&b.1)));
@@ -265,7 +267,7 @@ impl Render for Palette {
             )
             .track_scroll(&self.scroll)
             .h(px(list_h))
-            .py_1()
+            .p_1()
             .into_any_element()
         };
         ui::floating(t)
@@ -334,5 +336,7 @@ mod tests {
         assert_eq!(ranked[0], 2, "the exact project name wins");
         assert!(ranked.contains(&1));
         assert!(!ranked.contains(&0));
+        // Scattered mid-word letters don't count as a match.
+        assert!(rank("dn", &items).is_empty());
     }
 }
