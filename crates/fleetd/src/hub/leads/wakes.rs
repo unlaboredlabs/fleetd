@@ -375,10 +375,27 @@ impl LeadWakes {
         triggers: Vec<Trigger>,
     ) -> Result<(), LeadError> {
         let Some(lead) = self.records.lead_get(r)? else {
-            // No lead yet: lead_start's first message carries the digest, which shows the same state.
+            // No lead yet: its first message carries the digest, which shows the same state.
             tracing::info!(project = %key_of(r), triggers = triggers.len(), "lead wake dropped: project has no lead");
             return Ok(());
         };
+        // The lead's first message carried a digest listing every intent made before it started; a wake would say it
+        // twice. Strictly earlier: one made in the same millisecond may have missed the digest.
+        let triggers: Vec<Trigger> = triggers
+            .into_iter()
+            .filter(|t| match t {
+                Trigger::Intent { workstream_id, .. } => self
+                    .records
+                    .workstream_get(workstream_id)
+                    .ok()
+                    .flatten()
+                    .is_none_or(|w| w.workstream.created_at.as_str() >= lead.started_at.as_str()),
+                _ => true,
+            })
+            .collect();
+        if triggers.is_empty() {
+            return Ok(());
+        }
         let thread = ThreadRef {
             machine_id: r.machine_id.clone(),
             thread_id: lead.thread_id.clone(),

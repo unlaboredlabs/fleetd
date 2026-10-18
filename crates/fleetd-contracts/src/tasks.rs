@@ -239,6 +239,14 @@ pub struct PolicyFileFinishAll {
     pub max_children: Int<1, 50>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyFileLead {
+    /// false: an order for the project waits as a draft until someone calls lead_start, instead of starting the
+    /// lead itself.
+    pub auto_start: bool,
+}
+
 /// Tool permission rules in claude's own syntax (`Bash(npm test:*)`, `Read`, `mcp__github`). They become the
 /// session's `--allowedTools` / `--disallowedTools`, and the hub answers a prompt that one of them matches itself.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -260,6 +268,7 @@ pub struct PolicyFile {
     pub defaults: Option<PolicyFileDefaults>,
     pub finish_all: Option<PolicyFileFinishAll>,
     pub tools: Option<PolicyFileTools>,
+    pub lead: Option<PolicyFileLead>,
 }
 checked!(PolicyFile, |policy| {
     match policy
@@ -284,6 +293,7 @@ pub fn default_policy() -> PolicyFile {
         defaults: None,
         finish_all: None,
         tools: None,
+        lead: None,
     }
 }
 

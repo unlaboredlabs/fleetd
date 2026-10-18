@@ -304,6 +304,8 @@ output!(
         ask_id: Option<AskId>,
         /// Present with workstreamId.
         echo: Option<IntakeEcho>,
+        /// Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.
+        lead_waiting: Option<String>,
     }
 );
 checked!(IntakeSubmitOutput, |output| {

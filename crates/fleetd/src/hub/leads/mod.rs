@@ -154,6 +154,7 @@ impl Area {
         let intake = Intake::new(
             Arc::clone(&ctx),
             Arc::clone(&workstreams),
+            Arc::clone(&leads),
             IntakeRouter::new(Arc::clone(&one_shot)),
         );
         let removals = removals::ProjectRemovals::new(Arc::clone(&ctx), Arc::clone(&records));
@@ -177,13 +178,15 @@ impl Area {
         self.wakes.on_answered(project_ref, answers);
     }
 
-    /// The area's loops: decision wakes, project removals (with their catch-up), and routing answers. They run until
+    /// The area's loops: decision wakes, project removals (with their catch-up), routing answers, and the leads of
+    /// orders that wait for their machine. They run until
     /// aborted; `hub/serve` keeps the handles.
     pub fn run(self: &Arc<Self>) -> Vec<tokio::task::JoinHandle<()>> {
         vec![
             tokio::spawn(Arc::clone(&self.wakes).run_decision_wakes()),
             tokio::spawn(Arc::clone(&self.removals).run()),
             tokio::spawn(Arc::clone(&self.intake).run_answers()),
+            tokio::spawn(Arc::clone(&self.leads).run_waiting()),
         ]
     }
 }

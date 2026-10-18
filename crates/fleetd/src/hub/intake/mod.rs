@@ -5,6 +5,9 @@
 pub mod prefix;
 pub mod router;
 
+#[cfg(test)]
+mod auto_start_tests;
+
 use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
@@ -23,6 +26,7 @@ use self::router::{IntakeRouter, RouterProject, RouterRun};
 use crate::hub::leads::brief::sha256_hex;
 use crate::hub::leads::digest::clip_utf16;
 use crate::hub::leads::error::LeadError;
+use crate::hub::leads::lead::{AutoStart, Leads};
 use crate::hub::leads::ports::RouteAsk;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::leads::workstreams::{IntakeInput, Workstreams};
@@ -55,6 +59,8 @@ pub enum SubmitResult {
         workstream_id: WorkstreamId,
         echo: IntakeEcho,
         next: Option<String>,
+        /// Why no lead has the order yet, with the fix.
+        lead_waiting: Option<String>,
     },
     Asked {
         ask_id: AskId,
@@ -136,6 +142,7 @@ fn options_of(projects: &[ProjectSummary]) -> Vec<RouteOption> {
 pub struct Intake {
     ctx: Arc<Ctx>,
     workstreams: Arc<Workstreams>,
+    leads: Arc<Leads>,
     router: Arc<IntakeRouter>,
 }
 
@@ -156,17 +163,20 @@ struct Routed {
     summary: String,
     runs: Vec<RouterRun>,
     error: Option<String>,
+    lead_waiting: Option<String>,
 }
 
 impl Intake {
     pub fn new(
         ctx: Arc<Ctx>,
         workstreams: Arc<Workstreams>,
+        leads: Arc<Leads>,
         router: Arc<IntakeRouter>,
     ) -> Arc<Self> {
         Arc::new(Self {
             ctx,
             workstreams,
+            leads,
             router,
         })
     }
@@ -228,6 +238,9 @@ impl Intake {
         if let Some(e) = &input.error {
             data.insert("error".into(), e.clone().into());
         }
+        if let Some(w) = &input.lead_waiting {
+            data.insert("leadWaiting".into(), w.clone().into());
+        }
         // Each router run is orchestrator usage: what routing costs, apart from any project's work.
         if !input.runs.is_empty() {
             data.insert("usage".into(), serde_json::to_value(&input.runs)?);
@@ -251,8 +264,9 @@ impl Intake {
         Ok(())
     }
 
-    /// Creates the workstream in the chosen project and reports where it went.
-    fn place(
+    /// Creates the workstream in the chosen project, starts the project's lead if it has none, and reports where the
+    /// order went.
+    async fn place(
         &self,
         intent: &Intent<'_>,
         echo: IntakeEcho,
@@ -268,32 +282,67 @@ impl Intake {
             template: Some(echo.template),
             parent: None,
         })?;
+        let id = &created.workstream_id;
+        let (next, lead_waiting) = match self.leads.auto_start(&echo.project_ref).await {
+            AutoStart::Running(_) => (created.next, None),
+            AutoStart::Started(lead) => (
+                format!(
+                    "{id} is a draft. The project's lead (thread {}) is starting and picks it up; watch it with workstream_get.",
+                    lead.thread_id
+                ),
+                None,
+            ),
+            AutoStart::Off => {
+                let why = "the project's .fleetd/policy.yaml sets lead.autoStart: false, so its lead starts only with lead_start";
+                (
+                    format!("{id} is a draft, waiting for its lead: {why}."),
+                    Some(why.to_string()),
+                )
+            }
+            AutoStart::Held(e) => {
+                let why = match &e.fix {
+                    Some(fix) => format!("{} {fix}", e.message),
+                    None => e.message.clone(),
+                };
+                (
+                    format!(
+                        "{id} is a draft, waiting for its lead, which could not start: {why} fleetd starts it each time the machine comes online; lead_start starts it now."
+                    ),
+                    Some(why),
+                )
+            }
+        };
         let project = self
             .ctx
             .store
             .project_get(&echo.project_ref)?
             .map_or_else(|| echo.project_ref.project_id.to_string(), |p| p.title);
+        let waiting = lead_waiting
+            .as_ref()
+            .map(|w| format!("; waiting for its lead: {w}"))
+            .unwrap_or_default();
         self.routed(Routed {
             summary: clip(
                 &format!(
-                    "{} → {project} ({}): {}",
-                    created.workstream_id,
+                    "{id} → {project} ({}): {}{waiting}",
                     echo.template.as_str(),
                     echo.reason
                 ),
                 200,
             ),
             echo: Some(echo.clone()),
-            workstream_id: Some(created.workstream_id.clone()),
+            workstream_id: Some(id.clone()),
             playbook: created.playbook,
             ask_id,
             runs,
             error: None,
+            lead_waiting: lead_waiting.clone(),
         })?;
         Ok(SubmitResult::Placed {
             workstream_id: created.workstream_id,
             echo,
-            next: Some(created.next),
+            next: Some(next),
+            lead_waiting,
         })
     }
 
@@ -324,13 +373,14 @@ impl Intake {
             by: &input.by,
         };
         let place = |echo: IntakeEcho, runs: Vec<RouterRun>| self.place(&intent, echo, runs, None);
+
         if let Some(r) = &input.project_ref {
             let echo = Self::echo(
                 r.clone(),
                 fixed.unwrap_or(DEFAULT_TEMPLATE),
                 format!("project given by the caller; {template_why}"),
             )?;
-            return place(echo, Vec::new());
+            return place(echo, Vec::new()).await;
         }
         let allowed: Vec<ProjectSummary> = self
             .ctx
@@ -370,7 +420,7 @@ impl Intake {
                         fixed.unwrap_or(DEFAULT_TEMPLATE),
                         format!("@{name} names {}; {template_why}", project.title),
                     )?;
-                    place(echo, Vec::new())
+                    place(echo, Vec::new()).await
                 }
             };
         }
@@ -382,6 +432,7 @@ impl Intake {
                     workstream_id,
                     echo,
                     next: None,
+                    lead_waiting: None,
                 });
             }
             if let Some(ask_id) = ask_id {
@@ -435,7 +486,7 @@ impl Intake {
                 fixed.unwrap_or(result.template),
                 reason,
             )?;
-            let placed = place(echo.clone(), outcome.runs)?;
+            let placed = place(echo.clone(), outcome.runs).await?;
             if let SubmitResult::Placed { workstream_id, .. } = &placed {
                 self.put_route(
                     &input.client_request_id,
@@ -529,7 +580,7 @@ impl Intake {
         )
     }
 
-    fn on_answer(&self, decision: &Decision) -> Result<(), LeadError> {
+    async fn on_answer(&self, decision: &Decision) -> Result<(), LeadError> {
         let Some(ask_id) = &decision.ask_id else {
             return Ok(());
         };
@@ -568,7 +619,10 @@ impl Intake {
             channel: route.channel,
             by: &route.by,
         };
-        match self.place(&intent, echo.clone(), Vec::new(), Some(ask_id.clone())) {
+        match self
+            .place(&intent, echo.clone(), Vec::new(), Some(ask_id.clone()))
+            .await
+        {
             Err(e) => self.routed(Routed {
                 ask_id: Some(ask_id.clone()),
                 summary: clip(
@@ -630,7 +684,7 @@ impl Intake {
                 };
                 match self.ctx.ports().decision(id) {
                     Ok(Some(decision)) => {
-                        if let Err(error) = self.on_answer(&decision) {
+                        if let Err(error) = self.on_answer(&decision).await {
                             tracing::warn!(%error, "intake: routing answer not applied");
                         }
                     }
