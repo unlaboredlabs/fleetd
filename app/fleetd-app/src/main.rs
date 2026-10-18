@@ -10,6 +10,7 @@ mod input;
 mod keychain;
 mod menus;
 mod notify;
+mod pair;
 mod seal;
 mod shell;
 mod state;
@@ -33,15 +34,18 @@ fn main() {
             std::process::exit(2);
         }
     };
-    // On macOS this closure runs inside applicationDidFinishLaunching, which can't unwind.
-    gpui_platform::application()
+    let app = gpui_platform::application()
         .with_assets(titlebar::Icons)
         // One window: closing it quits, on macOS too, rather than leaving a windowless app in the Dock.
-        .with_quit_mode(QuitMode::LastWindowClosed)
-        .run(move |cx: &mut App| crash::guard("startup", || launch(bench, cx)));
+        .with_quit_mode(QuitMode::LastWindowClosed);
+    let links = pair::listen(&app);
+    // On macOS this closure runs inside applicationDidFinishLaunching, which can't unwind.
+    app.run(move |cx: &mut App| crash::guard("startup", || launch(bench, links, cx)));
 }
 
-fn launch(bench: Option<bench::Mode>, cx: &mut App) {
+fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
+    cx.set_global(links);
+    shell::bind_keys(cx);
     // Bundled so text renders the same everywhere, including hosts with no system fonts.
     cx.text_system()
         .add_fonts(vec![

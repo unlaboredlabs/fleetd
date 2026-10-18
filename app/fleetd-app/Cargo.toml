@@ -50,6 +50,8 @@ base64.workspace = true
 keyring = "4.2"
 # Grapheme boundaries for caret movement and deletion in text fields (emoji, combining marks).
 unicode-segmentation = "1"
+# Query strings of fleetd://pair links.
+url.workspace = true
 
 [dev-dependencies]
 # Headless window and simulated keystrokes/clicks for the text field tests.

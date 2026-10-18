@@ -239,7 +239,7 @@ impl Focusable for TextInput {
 impl TextInput {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
-            focus: cx.focus_handle(),
+            focus: cx.focus_handle().tab_stop(true),
             text: Zeroizing::new(String::new()),
             placeholder: SharedString::default(),
             selected: 0..0,
@@ -333,10 +333,6 @@ impl TextInput {
             self.history.remove(0);
         }
         self.history_ix = None;
-    }
-
-    pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        window.focus(&self.focus, cx);
     }
 
     // ---- editing ----------------------------------------------------------------------------
@@ -470,7 +466,7 @@ impl TextInput {
         if self.masked { self.text[..offset].chars().count() * BULLET.len_utf8() } else { offset }
     }
 
-    fn from_display(&self, offset: usize) -> usize {
+    fn text_offset(&self, offset: usize) -> usize {
         if self.masked {
             let n = offset / BULLET.len_utf8();
             self.text.char_indices().nth(n).map_or(self.text.len(), |(i, _)| i)
@@ -494,7 +490,7 @@ impl TextInput {
     fn offset_in_row(&self, layout: &Layout, ix: usize, x: Pixels) -> usize {
         let row = layout.rows[ix];
         let at = closest_index(&layout.lines[row.line].unwrapped_layout, x + row.x0) + row.line_start;
-        self.from_display(at.clamp(row.start, row.end))
+        self.text_offset(at.clamp(row.start, row.end))
     }
 
     fn offset_for_point(&self, position: Point<Pixels>) -> usize {
@@ -524,8 +520,8 @@ impl TextInput {
             Some(layout) => {
                 let (ix, _) = self.locate(layout, self.to_display(cursor));
                 let row = layout.rows[ix];
-                let start = self.from_display(row.start);
-                let mut end = self.from_display(row.end);
+                let start = self.text_offset(row.start);
+                let mut end = self.text_offset(row.end);
                 // A soft-wrapped row ends where the next begins; stop before its trailing space instead.
                 if layout.rows.get(ix + 1).is_some_and(|next| next.line == row.line) {
                     end = prev_grapheme(&self.text, end).max(start);
@@ -586,6 +582,10 @@ impl TextInput {
         if (self.text.is_empty() || self.history_ix.is_some()) && self.recall(true, cx) {
             return;
         }
+        // An empty field leaves the arrows to whatever contains it (e.g. a list).
+        if self.text.is_empty() {
+            return cx.propagate();
+        }
         match (self.max_rows, self.vertical(false)) {
             (_, Some(offset)) => {
                 let goal = self.goal_x;
@@ -601,6 +601,9 @@ impl TextInput {
     fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
         if self.history_ix.is_some() && self.recall(false, cx) {
             return;
+        }
+        if self.text.is_empty() {
+            return cx.propagate();
         }
         match (self.max_rows, self.vertical(true)) {
             (_, Some(offset)) => {

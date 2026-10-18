@@ -315,6 +315,16 @@ fn masked_field_shows_bullets_and_never_copies(cx: &mut TestAppContext) {
     assert_eq!(text(&input, cx), "");
 }
 
+#[gpui::test]
+fn masked_buffer_never_reallocates(cx: &mut TestAppContext) {
+    let (input, cx) = field(cx, |i| i.masked(64));
+    let start = input.read_with(cx, |i, _| i.text.as_ptr());
+    cx.simulate_input("pä");
+    cx.write_to_clipboard(ClipboardItem::new_string("x".repeat(61)));
+    keys(cx, &format!("{PRIMARY}-v backspace backspace"));
+    assert_eq!(input.read_with(cx, |i, _| (i.text.as_ptr(), i.text.len())), (start, 62));
+}
+
 #[test]
 fn word_boundaries() {
     let t = "fleetd://pair?hub=x";
