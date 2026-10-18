@@ -17,7 +17,9 @@ use crate::ledger::{AskId, DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeo
 use crate::model::SleptSpan;
 use crate::prim::{AnyInt, Count, Finite, Int, List, NonEmpty, NonNegative, Text};
 use crate::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink};
-use crate::sessions::{MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame};
+use crate::sessions::{
+    CloneProgressFrame, MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame,
+};
 use crate::tasks::AbsolutePath;
 
 /// WebSocket close codes the hub ends a link with.
@@ -61,7 +63,14 @@ pub struct NodeHello {
     pub enroll_token: Option<NonEmpty>,
     /// M8: the X25519 key the desktop app seals this machine's secrets to. Absent on nodes from before M8.
     pub box_pub_key: Option<BoxPublicKey>,
+    /// Calls this node understands beyond the protocol's base set, e.g. [`CAP_REPOS`]. A node drops its link on a
+    /// frame it can't decode, so the hub sends newer calls only to nodes that list them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
 }
+
+/// `repo_scan`, `repo_inspect`, `repo_clone` and `gh_repo_list` (adding a project).
+pub const CAP_REPOS: &str = "repos";
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -303,6 +312,7 @@ pub enum NodeToHub {
     /// After the machine woke: how long it slept, once per sleep.
     Slept(SleptSpan),
     Spans(SpansFrame),
+    CloneProgress(CloneProgressFrame),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

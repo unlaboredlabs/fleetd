@@ -10,6 +10,7 @@ pub mod mcp_client;
 pub mod node;
 pub mod pair;
 pub mod pending;
+pub mod project;
 pub mod prompts;
 pub mod retro;
 pub mod setup;
@@ -60,6 +61,8 @@ commands:
 {}
 setting up (on the hub machine):
 {}{}{}
+projects:
+{}
 running by hand:
 {}{}{}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
@@ -68,6 +71,7 @@ lead-side commands (run by a lead or task inside a project workspace):
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
         pair::PAIR_USAGE,
+        project::PROJECT_USAGE,
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
         hub_key::HUB_TOKEN_USAGE,
@@ -98,6 +102,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "init" | "doctor" | "uninstall" => setup::SETUP_USAGE.to_owned(),
         "machine" => setup::machine::machine_usage(),
         "pair" => pair::PAIR_USAGE.to_owned(),
+        "project" | "projects" => project::PROJECT_USAGE.to_owned(),
         "hub" => match rest.first().map(String::as_str) {
             Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
             Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
@@ -170,6 +175,8 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "doctor"
                 | "uninstall"
                 | "machine"
+                | "project"
+                | "projects"
                 | "node"
                 | "listen"
                 | "retro"
@@ -184,6 +191,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
     match argv[0].as_str() {
         "init" | "doctor" | "uninstall" => setup::setup_command(&argv[0], rest).await,
         "machine" => setup::machine::machine_command(rest).await,
+        "project" | "projects" => project::project_command(rest).await,
         "node" => node::node_command(rest).await,
         "listen" => listen::listen_command(rest).await,
         "retro" => retro::retro_command(rest).await,

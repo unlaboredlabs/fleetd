@@ -23,6 +23,7 @@ use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
 };
+use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
     PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
     SessionPrompt,
@@ -897,17 +898,91 @@ fn is_workspace_path(s: &str) -> bool {
             .all(|seg| !seg.is_empty() && seg != "." && seg != "..")
 }
 
-// project_add: registers a directory on a machine as a project; the same directory again returns its project.
-input!(ProjectAddInput {
-    machine_id: MachineId,
-    path: WorkspacePath,
+// project_discover: repos to add: git checkouts on each worker, and `gh repo list` for the user and their orgs.
+input!(ProjectDiscoverInput {
+    /// Scan only this machine; absent: every machine.
+    machine_id: Option<MachineId>,
+    /// Include `gh repo list` (default true).
+    github: Option<bool>,
+});
+output!(ProjectDiscoverOutput {
+    machines: Vec<MachineRepos>,
+    github: GitHubRepos,
+    /// The machine a clone goes to by default: online, runner ready, fewest running threads. Absent: none is.
+    best: Option<MachineId>,
+});
+
+// project_inspect: a repository's default branch, CI and merge rules, and what the lead will need. Either `url` (a
+// GitHub repository, before cloning; with `machineId`, also where the clone would go) or `machineId` and `path` (a
+// checkout on that machine).
+input!(
+    #[serde(remote = "Self")]
+    ProjectInspectInput {
+    machine_id: Option<MachineId>,
+    path: Option<WorkspacePath>,
+    /// A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.
+    url: Option<Text<1, 300>>,
+});
+checked!(
+    ProjectInspectInput,
+    |input| match (&input.url, &input.path, &input.machine_id) {
+        (Some(_), None, _) | (None, Some(_), Some(_)) => Ok(()),
+        (Some(_), Some(_), _) => Err("give url or path, not both".into()),
+        _ => Err("give url, or machineId and path".into()),
+    }
+);
+output!(ProjectInspectOutput {
+    #[serde(flatten)]
+    inspect: ProjectInspect,
+    /// With `url` and a machine (given, or the best one): where `project_add` would clone it.
+    clone: Option<CloneTarget>,
+});
+
+// project_add: adds a project from a directory on a machine (`path`), or by cloning a GitHub repository onto one
+// (`url`). A path is added at once; a clone answers with `addId` and streams `project.clone_progress`, then
+// `project.added` or `project.add_failed`. The same directory again returns its project.
+input!(
+    #[serde(remote = "Self")]
+    ProjectAddInput {
+    /// Absent: the best worker (see `project_discover.best`).
+    machine_id: Option<MachineId>,
+    path: Option<WorkspacePath>,
+    /// A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.
+    url: Option<Text<1, 300>>,
+    /// With `url`: clone here instead of `<cloneRoot>/<name>`.
+    dest: Option<WorkspacePath>,
+    /// With `url`: when the destination is already a checkout of the same repository, add it instead of failing.
+    use_existing: Option<bool>,
     /// Absent means the directory's name.
     title: Option<Text<1, 200>>,
 });
+checked!(ProjectAddInput, |input| {
+    match (&input.path, &input.url) {
+        (Some(_), Some(_)) => return Err("give path or url, not both".into()),
+        (None, None) => {
+            return Err(
+                "give path (a directory on the machine) or url (a GitHub repository)".into(),
+            );
+        }
+        (Some(_), None) if input.dest.is_some() || input.use_existing.is_some() => {
+            return Err("dest and useExisting go with url only".into());
+        }
+        _ => {}
+    }
+    Ok(())
+});
 output!(ProjectAddOutput {
-    project_id: ProjectId,
+    machine_id: MachineId,
+    /// The project's directory (the clone's destination for a url).
+    path: String,
+    /// Absent while a clone runs: `project.added` carries it.
+    project_id: Option<ProjectId>,
     /// False when the directory was already a project (it is renamed when a title is given).
     created: bool,
+    /// A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it.
+    add_id: Option<AddId>,
+    /// For a path, at once; for a clone, on `project.added`.
+    inspect: Option<ProjectInspect>,
 });
 
 // project_remove: stops the project's claude processes and forgets it. Its files, branches and worktrees stay.
@@ -1027,6 +1102,8 @@ tools! {
     thread_send => ThreadSend, Operate, ThreadSendInput, ThreadSendOutput;
     thread_interrupt => ThreadInterrupt, Operate, ThreadInterruptInput, ThreadInterruptOutput;
     thread_answer => ThreadAnswer, Operate, ThreadAnswerInput, ThreadAnswerOutput;
+    project_discover => ProjectDiscover, Read, ProjectDiscoverInput, ProjectDiscoverOutput;
+    project_inspect => ProjectInspect, Read, ProjectInspectInput, ProjectInspectOutput;
     project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
     project_remove => ProjectRemove, Operate, ProjectRemoveInput, ProjectRemoveOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
@@ -1215,7 +1292,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 63);
+        assert_eq!(McpToolName::ALL.len(), 65);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());

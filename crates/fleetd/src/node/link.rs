@@ -277,6 +277,7 @@ async fn run_link_once(
             .secrets
             .as_ref()
             .map(|s| fleetd_contracts::secrets::BoxPublicKey::unchecked(s.box_key.public_key())),
+        capabilities: vec![fleetd_contracts::node_link::CAP_REPOS.to_owned()],
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {

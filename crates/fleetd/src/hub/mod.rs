@@ -20,6 +20,7 @@ pub mod mcp;
 pub mod orders;
 pub mod pair;
 pub mod playbooks;
+pub mod projects;
 pub mod prompts;
 pub mod queue;
 pub mod receipts;

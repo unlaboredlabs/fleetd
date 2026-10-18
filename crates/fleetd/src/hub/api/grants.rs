@@ -75,7 +75,7 @@ pub fn is_human(caller: &Caller) -> bool {
     caller.kind == Some(KeyKind::Human)
 }
 
-fn error(code: ErrorCode, message: impl Into<String>, fix: impl Into<String>) -> ToolError {
+pub fn error(code: ErrorCode, message: impl Into<String>, fix: impl Into<String>) -> ToolError {
     ToolError::new(code, message).with_fix(fix)
 }
 

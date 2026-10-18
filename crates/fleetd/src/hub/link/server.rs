@@ -73,12 +73,24 @@ struct State {
     next_link_id: u64,
     /// The latest load each node reported with its heartbeat; dropped when the machine goes offline.
     loads: HashMap<MachineId, NodeLoad>,
+    /// What each live link's node said it understands in its hello.
+    capabilities: HashMap<MachineId, Vec<String>>,
 }
 
 impl NodeLinkServer {
     /// The load the machine's node last reported; None from older nodes, offline machines or a failed read.
     pub fn load(&self, machine_id: &MachineId) -> Option<NodeLoad> {
         self.state.lock().unwrap().loads.get(machine_id).cloned()
+    }
+
+    /// Whether the machine's live node listed `capability` in its hello.
+    pub fn node_can(&self, machine_id: &MachineId, capability: &str) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .get(machine_id)
+            .is_some_and(|caps| caps.iter().any(|c| c == capability))
     }
 }
 
@@ -546,6 +558,9 @@ impl NodeLinkServer {
             let mut state = self.state.lock().unwrap();
             state.next_link_id += 1;
             let id = state.next_link_id;
+            state
+                .capabilities
+                .insert(machine_id.clone(), hello.capabilities.clone());
             (id, state.links.insert(machine_id.clone(), (id, tx.clone())))
         };
         if let Some((_, previous)) = previous {
@@ -707,7 +722,8 @@ impl NodeLinkServer {
                 | NodeToHub::NodeActionResult(_)) => self.deps.commands.resolve(&machine_id, reply),
                 frame @ (NodeToHub::SessionReply(_)
                 | NodeToHub::MachineEvent(_)
-                | NodeToHub::ThreadEvent(_)) => {
+                | NodeToHub::ThreadEvent(_)
+                | NodeToHub::CloneProgress(_)) => {
                     self.deps.executors.handle_frame(&machine_id, frame)
                 }
                 NodeToHub::Slept(span) => self.slept(&machine_id, span),
@@ -798,6 +814,7 @@ impl Drop for Unlink {
         let mut state = self.server.state.lock().unwrap();
         if state.links.get(&self.machine_id).map(|l| l.0) == Some(self.id) {
             state.links.remove(&self.machine_id);
+            state.capabilities.remove(&self.machine_id);
         }
     }
 }

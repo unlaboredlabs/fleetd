@@ -25,10 +25,10 @@ use std::time::Duration;
 use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame, MessageRole,
-    PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo, RunStatus, RunUsage,
-    RunnerInfo, SendAccepted, SessionCall, SessionCallFrame, SessionChanges, SessionError,
-    SessionErrorCode, SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult,
+    CloneProgressFrame, FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame,
+    MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo,
+    RunStatus, RunUsage, RunnerInfo, SendAccepted, SessionCall, SessionCallFrame, SessionChanges,
+    SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult,
     SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
     ThreadMessage, ThreadSnapshot,
 };
@@ -562,6 +562,11 @@ impl SessionService {
                 }
             }
         }
+        let home = crate::node::util::home_dir();
+        let removed = blocking(move || super::repos::remove_partials(&home)).await;
+        if removed > 0 {
+            tracing::info!(removed, "removed clones a previous node left half done");
+        }
         service.spawn_reaper();
         service.spawn_prober();
         service.spawn_span_flusher(service.inner.span_wake.clone());
@@ -687,6 +692,23 @@ impl SessionService {
                 Ok(SessionOutput::Item { item })
             }
             SessionCall::ReadFile { project_id, path } => self.read_file(&project_id, &path),
+            SessionCall::RepoScan => {
+                let home = crate::node::util::home_dir();
+                let (clone_root, repos) = blocking(move || super::repos::scan(&home)).await;
+                Ok(SessionOutput::Repos { clone_root, repos })
+            }
+            SessionCall::RepoInspect { path } => {
+                let path = PathBuf::from(path.as_str());
+                Ok(SessionOutput::RepoFacts(
+                    blocking(move || super::repos::inspect(&path)).await,
+                ))
+            }
+            SessionCall::RepoClone { add_id, url, dest } => {
+                self.repo_clone(add_id, &url, &dest).await
+            }
+            SessionCall::GhRepoList => {
+                Ok(SessionOutput::GhRepos(super::repos::gh_repo_list().await))
+            }
             SessionCall::DefaultBranch { project_id } => {
                 let root = self.project_root(&project_id)?;
                 let branch = blocking(move || worktree::default_branch(&root)).await;
@@ -1891,6 +1913,40 @@ impl SessionService {
 
     /// Stops the project's claude processes (their active runs close as interrupted), waits up to [`REMOVE_WAIT`]
     /// for them to exit, then forgets the project.
+    async fn repo_clone(&self, add_id: NonEmpty, url: &str, dest: &str) -> Reply {
+        let dest = PathBuf::from(dest);
+        if !dest.is_absolute() {
+            return Err(invalid(format!(
+                "{} is not an absolute path",
+                dest.display()
+            )));
+        }
+        let service = self.clone();
+        let id = add_id.to_string();
+        super::repos::clone(url, &dest, &id, move |p| {
+            let percent = p
+                .percent
+                .map(|n| fleetd_contracts::prim::Int::unchecked(i64::from(n)));
+            service
+                .st()
+                .send(NodeToHub::CloneProgress(CloneProgressFrame {
+                    add_id: add_id.clone(),
+                    phase: p.phase,
+                    percent,
+                    detail: p.detail,
+                }));
+        })
+        .await
+        .map_err(|message| SessionError {
+            code: SessionErrorCode::Git,
+            message: Text::unchecked(tail_utf16(&message, 2000)),
+            fix: None,
+        })?;
+        Ok(SessionOutput::RepoFacts(
+            blocking(move || super::repos::inspect(&dest)).await,
+        ))
+    }
+
     async fn project_remove(&self, project_id: &ProjectId) -> Reply {
         let stopping: Vec<_> = {
             let mut st = self.st();

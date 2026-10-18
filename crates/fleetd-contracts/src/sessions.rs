@@ -191,6 +191,23 @@ pub enum SessionCall {
         query: Text<0, 200>,
         limit: Int<1, 50>,
     },
+    /// Git checkouts under the home directory's usual source dirs, at most two levels down, and where a clone goes.
+    RepoScan,
+    /// What is at `path`: whether it exists and is a checkout, its remote, default branch and workflow files.
+    #[serde(rename_all = "camelCase")]
+    RepoInspect {
+        path: NonEmpty,
+    },
+    /// Clone `url` into `dest` (which must not exist), through gh when it is logged in here, else git. The node
+    /// sends `clone_progress` frames for `addId` meanwhile and answers when the clone ends.
+    #[serde(rename_all = "camelCase")]
+    RepoClone {
+        add_id: NonEmpty,
+        url: NonEmpty,
+        dest: NonEmpty,
+    },
+    /// `gh repo list` for the logged-in user and their orgs, run on this machine.
+    GhRepoList,
     /// Write a file under the project's workspace root, creating its directories. `rel_path` must stay inside
     /// `.fleetd/attachments/`, which the node keeps out of git through `.git/info/exclude`.
     #[serde(rename_all = "camelCase")]
@@ -329,6 +346,73 @@ pub enum SessionOutput {
         paths: Vec<String>,
         truncated: bool,
     },
+    /// Answer to `repo_scan`.
+    #[serde(rename_all = "camelCase")]
+    Repos {
+        clone_root: String,
+        repos: Vec<ScannedRepo>,
+    },
+    /// Answer to `repo_inspect`, and to `repo_clone` for the new checkout.
+    RepoFacts(RepoFacts),
+    /// Answer to `gh_repo_list`.
+    GhRepos(GhRepos),
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannedRepo {
+    pub path: String,
+    /// The origin URL as configured (else the first remote's).
+    pub remote: Option<String>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoFacts {
+    pub exists: bool,
+    pub is_git: bool,
+    pub remote: Option<String>,
+    /// `origin/HEAD`, else the current branch.
+    pub default_branch: Option<String>,
+    /// File names under `.github/workflows`.
+    #[serde(default)]
+    pub workflow_files: Vec<String>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GhRepos {
+    pub owners: Vec<String>,
+    pub repos: Vec<GhRepo>,
+    /// Set when gh is missing or logged out here.
+    pub problem: Option<String>,
+}
+
+/// One `gh repo list --json` row.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GhRepo {
+    pub name_with_owner: String,
+    pub url: String,
+    #[serde(default)]
+    pub is_private: bool,
+    pub description: Option<String>,
+    pub pushed_at: Option<String>,
+}
+
+/// Node -> hub while a `repo_clone` runs: git's progress for one clone, at most one frame per 250 ms.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CloneProgressFrame {
+    pub add_id: NonEmpty,
+    pub phase: crate::projects::ClonePhase,
+    pub percent: Option<Int<0, 100>>,
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

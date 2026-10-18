@@ -13,6 +13,22 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "One project's outcome in one call: its summary, up to 20 threads (newest activity first) with status, headline and latest message, its lead and open workstreams, task counts with the 20 newest tasks (task threads are not in the thread list), and the merge trains of its repos. Marked stale when the machine is offline.",
     ),
     (
+        "project_discover",
+        "Repos to add as projects: git checkouts on each machine (under ~/src, ~/code, ~/projects, ~/dev and similar, two levels down; already-added ones carry projectId), each machine's clone root, and `gh repo list` for the user and their orgs (ghOn says where gh ran: the hub, else a worker). best is the machine a clone goes to by default.",
+    ),
+    (
+        "project_inspect",
+        "A repo's default branch, CI (active workflows, required checks) and merge rules (protection, rulesets, squash allowed, required reviews), with leadNeeds: one line on what the lead and merge train will need. Give url (a GitHub repo, before cloning; also returns where the clone would go and whether that directory already holds it) or machineId and path (a checkout).",
+    ),
+    (
+        "project_add",
+        "Add a project. path: a git checkout on the machine, added at once with its inspect. url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. The same directory again returns its project; title renames it.",
+    ),
+    (
+        "project_remove",
+        "Stop the project's claude processes and forget it. Its files, branches and worktrees stay on the machine; project_add brings it back.",
+    ),
+    (
         "thread_tail",
         "A thread's newest messages and actions, newest first (n defaults to 10, max 50; kinds filters to message or action), plus its summary.",
     ),
