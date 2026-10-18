@@ -265,6 +265,9 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
         return Ok(steer);
     }
     emit(hub, &steer, HubEventType::SteerQueued, None);
+    if let (By::Human(_), Some(task)) = (&by, &to.task) {
+        tell_lead(hub, &steer, task);
+    }
     let text = message(hub, &steer, &to, &by, &req);
     // A task that is not running gets it the way `task message` gives it: with its prompt, or as its continuation.
     if let Some(task) = to.task.as_ref().filter(|t| t.state != TaskState::Running) {
@@ -318,6 +321,50 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
             Err(ToolError::new(ErrorCode::Failed, e.to_string()))
         }
     }
+}
+
+/// A person steered a task directly: its lead hears it at its next wake (debounced, never an interrupt), so its plan
+/// and its own messages to the task don't fork from it.
+fn tell_lead(hub: &Hub, steer: &Steer, task: &Task) {
+    let r = &task.project_ref;
+    let line = hub.db.prompts().for_lead(r).render(
+        "wake.agent_steer",
+        &[
+            ("id", &steer.id),
+            ("taskId", &task.task_id),
+            ("kind", &kind_name(task)),
+            ("text", &one_line(&steer.text, 600)),
+        ],
+    );
+    hub.leads.wakes.trigger(
+        r,
+        crate::hub::leads::wakes::Trigger::Line {
+            kind: crate::hub::leads::wakes::LineKind::Human,
+            text: line,
+        },
+    );
+}
+
+/// The lead digest's line under an order: the human's latest direct steers to its tasks, and how each landed.
+pub fn digest_line(db: &crate::hub::store::HubDb, workstream_id: &WorkstreamId) -> Option<String> {
+    let steers = store::list(db, Some(workstream_id.as_str()), None, 0, 20).ok()?;
+    let parts: Vec<String> = steers
+        .iter()
+        .filter(|s| matches!(s.by, SteerBy::Human { .. }))
+        .filter_map(|s| match &s.target {
+            SteerTarget::Task { task_id } => Some((s, task_id)),
+            SteerTarget::Lead { .. } => None,
+        })
+        .take(3)
+        .map(|(s, task_id)| {
+            let stage = match s.stage {
+                SteerStage::Unacknowledged => "not acknowledged",
+                other => other.as_str(),
+            };
+            format!("{} → {task_id} {stage}", s.id)
+        })
+        .collect();
+    (!parts.is_empty()).then(|| parts.join(", "))
 }
 
 fn fail(hub: &Hub, steer: &mut Steer, why: &str) -> Result<(), ToolError> {
@@ -592,8 +639,67 @@ impl crate::hub::executor::SteerSink for Sink {
     }
 }
 
-/// Receipts from the node and expiries from the offline queue reach the steers.
+/// `fleetd task message T88 "<text>" [--now]`: the lead steers its own task, with the same modes and receipts.
+struct TaskMessage(Weak<Hub>);
+
+impl crate::hub::link::lead_calls::LeadCallHandler for TaskMessage {
+    fn handle(
+        &self,
+        caller: crate::hub::link::lead_calls::LeadCaller,
+        call: fleetd_contracts::lead_calls::LeadCall,
+    ) -> crate::hub::link::lead_calls::LeadCallFuture {
+        let hub = self.0.clone();
+        Box::pin(async move {
+            let hub = hub
+                .upgrade()
+                .ok_or_else(|| ToolError::new(ErrorCode::Failed, "the hub is stopping"))?;
+            let fleetd_contracts::lead_calls::LeadCall::TaskMessage(c) = call else {
+                return Err(invalid("Not a task message."));
+            };
+            let crid = format!("{:032x}", rand::random::<u128>());
+            let steer = send(
+                &hub,
+                By::Lead(&caller.project_ref),
+                SteerRequest {
+                    target: SteerTarget::Task {
+                        task_id: c.task_id.clone(),
+                    },
+                    text: c.message.as_str(),
+                    mode: if c.now {
+                        SteerMode::Now
+                    } else {
+                        SteerMode::Queue
+                    },
+                    refs: vec![],
+                    attached: vec![],
+                    client_request_id: &crid,
+                },
+            )
+            .await?;
+            let task = hub
+                .tasks
+                .get(&c.task_id)?
+                .ok_or_else(|| not_found(&format!("task {}", c.task_id)))?;
+            Ok(fleetd_contracts::lead_calls::LeadCallResult::TaskMessage(
+                fleetd_contracts::lead_calls::TaskResultFrame {
+                    task,
+                    next: Some(format!(
+                        "{} {}: its reply names it when taken in.",
+                        steer.id,
+                        steer.detail.as_deref().unwrap_or("sent")
+                    )),
+                    steer_id: Some(steer.id),
+                },
+            ))
+        })
+    }
+}
+
+/// Receipts from the node and expiries from the offline queue reach the steers; the lead's `task message` goes
+/// through them.
 pub fn wire(hub: &Arc<Hub>) {
+    hub.lead_calls
+        .register("task_message", Arc::new(TaskMessage(Arc::downgrade(hub))));
     hub.executors
         .set_steer_sink(Arc::new(Sink(Arc::downgrade(hub))));
     let weak = Arc::downgrade(hub);

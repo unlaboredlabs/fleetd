@@ -184,6 +184,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <tr><td><code>wake.train.gave_up</code></td><td>per PR GitHub refused to merge too often</td><td></td></tr>
 <tr><td><code>wake.train.refused</code></td><td>per task PR the train would not take</td><td></td></tr>
 <tr><td><code>steer.message</code></td><td>per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now</td><td>asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only)</td></tr>
+<tr><td><code>wake.agent_steer</code></td><td>per steer_send to a task, at the lead's next wake (debounced, never an interrupt)</td><td></td></tr>
 <tr><td><code>wake.order_refs</code></td><td>per new order with references or attachments</td><td></td></tr>
 <tr><td><code>wake.order_stopped</code></td><td>per order_stop</td><td>does no more work on a stopped order (prompt only)</td></tr>
 <tr><td><code>wake.order_idle</code></td><td>when the lead ends a turn with a frozen order and nothing under way</td><td></td></tr>

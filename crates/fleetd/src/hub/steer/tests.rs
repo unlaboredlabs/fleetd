@@ -320,3 +320,107 @@ async fn steers_a_restarted_node_forgot_are_closed_after_the_grace() {
     assert_eq!(stage(&waiting).stage, SteerStage::Queued);
     assert_eq!(sweep(&lab.hub), 0, "a closed steer stays closed");
 }
+
+fn running_task(hub: &Hub, project: &str) -> Task {
+    let task: Task = serde_json::from_value(json!({
+        "taskId": "T1", "projectRef": { "machineId": "lab-a", "projectId": project }, "workstreamId": "W1",
+        "title": "write the API", "kind": "write", "prompt": "do it", "areas": ["api"],
+        "model": "claude-haiku-5-5", "effort": "low", "state": "running", "attempt": 1, "createdAt": AT,
+        "startedAt": AT, "threadRef": { "machineId": "lab-a", "threadId": "task-thread" },
+    }))
+    .unwrap();
+    hub.db
+        .with(|c| Ok(crate::hub::tasks::records::TaskRecords::create(c, task)?))
+        .unwrap()
+}
+
+fn to_task<'a>(task: &Task, text: &'a str, mode: SteerMode, crid: &'a str) -> SteerRequest<'a> {
+    SteerRequest {
+        target: SteerTarget::Task {
+            task_id: task.task_id.clone(),
+        },
+        text,
+        mode,
+        refs: vec![],
+        attached: vec![],
+        client_request_id: crid,
+    }
+}
+
+#[tokio::test]
+async fn a_persons_steer_to_a_task_tells_its_lead_and_shows_in_the_digest() {
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    let r = task.project_ref.clone();
+    assert!(!lab.hub.leads.wakes.pending(&r));
+    let steer = send(
+        &lab.hub,
+        By::Human(&person("k1")),
+        to_task(&task, "skip the docs page", SteerMode::Now, "r1"),
+    )
+    .await
+    .unwrap();
+    // The lead hears it at its next (debounced) wake, not as an interrupt.
+    assert!(lab.hub.leads.wakes.pending(&r));
+    let message: String = lab
+        .hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT message FROM queued_writes", [], |r| r.get(0))?))
+        .unwrap();
+    assert!(
+        message.starts_with("S1 · the human steers you (T1 (write) for W1)"),
+        "{message}"
+    );
+    assert_eq!(
+        digest_line(&lab.hub.db, &steer.workstream_id).as_deref(),
+        Some("S1 → T1 queued")
+    );
+    let machine = MachineId::unchecked("lab-a");
+    on_receipt(&lab.hub, &machine, &receipt(&steer, SteerStage::Delivered));
+    on_receipt(
+        &lab.hub,
+        &machine,
+        &receipt(&steer, SteerStage::Unacknowledged),
+    );
+    assert_eq!(
+        digest_line(&lab.hub.db, &steer.workstream_id).as_deref(),
+        Some("S1 → T1 not acknowledged")
+    );
+}
+
+#[tokio::test]
+async fn a_lead_steers_only_its_own_projects_tasks_and_its_lead_is_not_told_of_itself() {
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    let own = task.project_ref.clone();
+    let steer = send(
+        &lab.hub,
+        By::Lead(&own),
+        to_task(&task, "use the v2 endpoint", SteerMode::Queue, "c1"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(steer.by, SteerBy::Lead);
+    assert!(!lab.hub.leads.wakes.pending(&own));
+    let message: String = lab
+        .hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT message FROM queued_writes", [], |r| r.get(0))?))
+        .unwrap();
+    assert!(
+        message.starts_with("S1 · your lead steers you"),
+        "{message}"
+    );
+    let other = ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p2"),
+    };
+    let refused = send(
+        &lab.hub,
+        By::Lead(&other),
+        to_task(&task, "x", SteerMode::Queue, "c2"),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::NotFound);
+}

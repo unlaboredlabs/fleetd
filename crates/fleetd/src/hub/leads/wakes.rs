@@ -453,6 +453,7 @@ impl LeadWakes {
                 .estimates
                 .get()
                 .and_then(|e| e.eta(w).map(|eta| e.eta_text(&eta)));
+            let steers = crate::hub::steer::digest_line(&self.ctx.db, &w.workstream_id);
             let plan = self
                 .ctx
                 .db
@@ -470,7 +471,12 @@ impl LeadWakes {
                 });
             facts.insert(
                 w.workstream_id.clone(),
-                WorkstreamFacts { passed, eta, plan },
+                WorkstreamFacts {
+                    passed,
+                    eta,
+                    plan,
+                    steers,
+                },
             );
         }
         facts

@@ -551,6 +551,16 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
+        "wake.agent_steer",
+        Wake,
+        WakesAndMessages,
+        Lead,
+        "Wake: the human steered one of your tasks directly",
+        "per steer_send to a task, at the lead's next wake (debounced, never an interrupt)",
+        "id!=the steer, S<n>; taskId!=T<n>; kind!=write, read or review; text!=the human's words",
+        &[]
+    ),
+    entry!(
         "wake.order_refs",
         Wake,
         WakesAndMessages,
