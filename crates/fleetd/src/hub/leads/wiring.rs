@@ -36,7 +36,7 @@ impl From<LedgerError> for LeadError {
             LedgerCode::NotFound => fleetd_contracts::mcp::ErrorCode::NotFound,
             LedgerCode::Invalid => fleetd_contracts::mcp::ErrorCode::Invalid,
             LedgerCode::Forbidden => fleetd_contracts::mcp::ErrorCode::Forbidden,
-            LedgerCode::Internal => fleetd_contracts::mcp::ErrorCode::T3Error,
+            LedgerCode::Internal => fleetd_contracts::mcp::ErrorCode::Failed,
         };
         LeadError {
             code,
@@ -51,7 +51,7 @@ fn from_executor(error: ExecutorError) -> LeadError {
         ExecutorError::MachineNotConnected { machine_id } => {
             LeadError::machine_offline(&machine_id)
         }
-        other => LeadError::t3_error(other.to_string()),
+        other => LeadError::failed(other.to_string()),
     }
 }
 
@@ -115,9 +115,9 @@ impl LeadPorts for HubPorts {
                         ..
                     } => LeadError {
                         fix: Some(fix.clone()),
-                        ..LeadError::t3_error(error.to_string())
+                        ..LeadError::failed(error.to_string())
                     },
-                    other => LeadError::t3_error(other.to_string()),
+                    other => LeadError::failed(other.to_string()),
                 })
         })
     }

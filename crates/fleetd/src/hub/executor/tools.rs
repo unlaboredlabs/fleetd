@@ -110,7 +110,7 @@ pub fn from_executor(error: ExecutorError) -> ToolError {
                 _ => "Retry; if it keeps failing, check the machine with fleetd_status.".to_owned(),
             };
             tracing::warn!(error = %e, "executor: node request failed");
-            ToolError::new(ErrorCode::T3Error, e.to_string()).with_fix(fix)
+            ToolError::new(ErrorCode::Failed, e.to_string()).with_fix(fix)
         }
     }
 }

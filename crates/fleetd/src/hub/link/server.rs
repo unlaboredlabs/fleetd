@@ -336,11 +336,8 @@ impl NodeLinkServer {
                 .store
                 .projects_list(Some(machine_id), None)
                 .map_err(|_| {
-                    McpToolError::new(
-                        ErrorCode::T3Error,
-                        "the hub failed while handling this call",
-                    )
-                    .with_fix("try again shortly")
+                    McpToolError::new(ErrorCode::Failed, "the hub failed while handling this call")
+                        .with_fix("try again shortly")
                 })?;
             let cwd = frame.cwd.as_str();
             let Some(project) = project_for_cwd(&projects, cwd) else {
@@ -495,8 +492,11 @@ impl NodeLinkServer {
             None => {
                 self.write_status(machine_id, &at, MachineStatus::Online, None);
                 self.announce(machine_id, &at, Announced::Online, None);
+                // After machine.online is logged, so no queued write reaches the machine before it.
+                self.deps.executors.set_runner_ready(machine_id, true);
             }
             Some(reason) => {
+                self.deps.executors.set_runner_ready(machine_id, false);
                 let status = MachineStatus::Degraded;
                 self.write_status(machine_id, &at, status, Some(&reason));
                 self.announce(machine_id, &at, Announced::Degraded, Some(&reason));

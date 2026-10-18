@@ -298,6 +298,9 @@ pub struct Executors {
     /// Per machine: true while live. `await_live` waits on it.
     live: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
     offline_writer: Mutex<Option<Arc<dyn OfflineWriter>>>,
+    /// Per machine: true once the link server announced the machine online by its runner's verdict, false while
+    /// degraded or unlinked. Queued writes go out only while it is true.
+    ready: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
     /// Per machine: the runner as the node last reported it, by a `runner_info` answer or a pushed event.
     runners: Mutex<HashMap<MachineId, watch::Sender<Option<RunnerInfo>>>>,
     tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
@@ -424,6 +427,7 @@ impl Executors {
             live: Mutex::default(),
             offline_writer: Mutex::default(),
             runners: Mutex::default(),
+            ready: Mutex::default(),
             tool_policy: Mutex::default(),
             hooks: tools::ToolHooks::default(),
         })
@@ -499,6 +503,7 @@ impl Executors {
 
     /// Drops the link. The machine's shell state is kept, so a later attach resumes from its cursor.
     pub async fn detach(&self, machine_id: &MachineId) {
+        self.set_runner_ready(machine_id, false);
         let task = self
             .machines
             .lock()
@@ -550,6 +555,48 @@ impl Executors {
             .or_insert_with(|| watch::channel(false).0)
             .subscribe();
         let _ = rx.wait_for(|live| *live).await;
+    }
+
+    fn ready_slot(&self, machine_id: &MachineId) -> watch::Sender<bool> {
+        self.ready
+            .lock()
+            .unwrap()
+            .entry(machine_id.clone())
+            .or_insert_with(|| watch::channel(false).0)
+            .clone()
+    }
+
+    /// The link server sets this after it announced the machine online, and clears it when the runner turns
+    /// unusable or the link drops.
+    pub fn set_runner_ready(&self, machine_id: &MachineId, ready: bool) {
+        self.ready_slot(machine_id).send_if_modified(|r| {
+            let changed = *r != ready;
+            *r = ready;
+            changed
+        });
+    }
+
+    /// Live, and announced online: what the offline queue waits for before it delivers anything.
+    pub fn is_ready(&self, machine_id: &MachineId) -> bool {
+        self.is_connected(machine_id) && *self.ready_slot(machine_id).borrow()
+    }
+
+    /// Returns once `is_ready`, at once if it is now.
+    pub async fn await_ready(&self, machine_id: &MachineId) {
+        let mut ready = self.ready_slot(machine_id).subscribe();
+        let mut live = self
+            .live
+            .lock()
+            .unwrap()
+            .entry(machine_id.clone())
+            .or_insert_with(|| watch::channel(false).0)
+            .subscribe();
+        while !self.is_ready(machine_id) {
+            tokio::select! {
+                _ = ready.changed() => {}
+                _ = live.changed() => {}
+            }
+        }
     }
 
     fn runner_slot(&self, machine_id: &MachineId) -> watch::Sender<Option<RunnerInfo>> {

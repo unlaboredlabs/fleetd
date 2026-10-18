@@ -80,7 +80,7 @@ impl ExecutorError {
 /// executor: `Executors::{is_connected, await_live, send}`.
 pub trait ThreadWriter: Send + Sync {
     fn is_connected(&self, machine_id: &MachineId) -> bool;
-    /// Returns once the machine's node link is live, at once if it is now.
+    /// Returns once the machine takes writes (its link is live and it is online), at once if it does now.
     fn await_live(&self, machine_id: &MachineId) -> BoxFuture<'_, ()>;
     fn send(
         &self,
@@ -150,13 +150,15 @@ impl From<ExecutorError> for executor::ExecutorError {
     }
 }
 
+/// The queue writes only to a machine announced online by its runner's verdict: never to a degraded one, and only
+/// after `machine.online` is in the log.
 impl ThreadWriter for executor::Executors {
     fn is_connected(&self, machine_id: &MachineId) -> bool {
-        executor::Executors::is_connected(self, machine_id)
+        executor::Executors::is_ready(self, machine_id)
     }
     fn await_live(&self, machine_id: &MachineId) -> BoxFuture<'_, ()> {
         let machine_id = machine_id.clone();
-        Box::pin(async move { executor::Executors::await_live(self, &machine_id).await })
+        Box::pin(async move { executor::Executors::await_ready(self, &machine_id).await })
     }
     fn send(
         &self,

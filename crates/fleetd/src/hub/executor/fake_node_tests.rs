@@ -493,3 +493,53 @@ async fn a_logged_out_runner_refuses_launches_until_it_logs_back_in() {
     );
     launched.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn queued_writes_wait_for_the_online_verdict_not_just_the_link() {
+    use crate::hub::queue::ports::ThreadWriter;
+    let mut node = Node::start(None).await;
+    node.subscribe(json!([])).await;
+    // Linked and subscribed, but the link server has not announced it online yet: the queue holds its writes.
+    assert!(node.executors.is_connected(&node.machine));
+    assert!(!ThreadWriter::is_connected(
+        node.executors.as_ref(),
+        &node.machine
+    ));
+    let executors = node.executors.clone();
+    let machine = node.machine.clone();
+    let waiting =
+        tokio::spawn(async move { ThreadWriter::await_live(executors.as_ref(), &machine).await });
+    // What the link server does right after logging machine.online.
+    node.executors.set_runner_ready(&node.machine, true);
+    waiting.await.unwrap();
+    assert!(ThreadWriter::is_connected(
+        node.executors.as_ref(),
+        &node.machine
+    ));
+    // Degraded again (a login that expired): no more deliveries.
+    node.executors.set_runner_ready(&node.machine, false);
+    assert!(!ThreadWriter::is_connected(
+        node.executors.as_ref(),
+        &node.machine
+    ));
+    node.executors.set_runner_ready(&node.machine, true);
+    // A dropped link clears it, so a relink waits for its own verdict.
+    node.executors.detach_link(&node.machine, 1).await;
+    assert!(!ThreadWriter::is_connected(
+        node.executors.as_ref(),
+        &node.machine
+    ));
+    node.executors
+        .attach(
+            &node.machine,
+            NodeSessions {
+                link_id: 2,
+                send: mpsc::unbounded_channel().0,
+            },
+        )
+        .await;
+    assert!(!ThreadWriter::is_connected(
+        node.executors.as_ref(),
+        &node.machine
+    ));
+}

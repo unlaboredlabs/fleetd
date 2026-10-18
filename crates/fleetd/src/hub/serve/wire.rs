@@ -41,7 +41,7 @@ impl LeadCallHandler for LedgerCalls {
         Box::pin(async move {
             let hub = hub.ok_or_else(|| {
                 McpToolError::new(
-                    fleetd_contracts::mcp::ErrorCode::T3Error,
+                    fleetd_contracts::mcp::ErrorCode::Failed,
                     "the hub is stopping",
                 )
             })?;
@@ -53,7 +53,7 @@ impl LeadCallHandler for LedgerCalls {
 
 fn stopping() -> McpToolError {
     McpToolError::new(
-        fleetd_contracts::mcp::ErrorCode::T3Error,
+        fleetd_contracts::mcp::ErrorCode::Failed,
         "the hub is stopping",
     )
 }
