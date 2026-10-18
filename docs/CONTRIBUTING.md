@@ -58,7 +58,10 @@ cargo build --release -p fleetd && npm ci --prefix tests/lab
 FLEETD_LAB_SLOT=7 npm --prefix tests/lab run lab -- m1   # name scenarios, or none for the full suite
 ```
 
-`FLEETD_LAB_SLOT` (0-9) gives each run its own directory and ports, so parallel runs don't collide. `FLEETD_BIN`
+`FLEETD_LAB_SLOT` (0-9) gives each run its own directory and ports, so parallel runs don't collide. Each slot has its
+own testbed repository too (`unlaboredlabs/fleetd-testbed-N`; slots 0 and 9 share `unlaboredlabs/fleetd-testbed`;
+`FLEETD_TESTBED` overrides), so merge-train scenarios run in parallel as well. Create one, with its clone, using
+`node tests/lab/testbed.ts --repo unlaboredlabs/fleetd-testbed-N --clone ~/src/fleetd-lab/slot-N/testbed`. `FLEETD_BIN`
 picks another binary. The lab stops only the processes it started, so it is safe to run next to a fleetd you use day
 to day.
 
