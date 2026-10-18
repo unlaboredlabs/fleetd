@@ -110,16 +110,18 @@ impl SessionConfig {
                     .collect::<Option<Vec<u64>>>()
             })
             .unwrap_or_else(|| vec![60_000, 240_000, 900_000]);
+        // fleetd's old default, which a node unit written by an older `machine add` still sets in the environment:
+        // sessions are back on the user's own setup.
+        let from_env = std::env::var("CLAUDE_CONFIG_DIR")
+            .ok()
+            .filter(|d| expand_home(d) != fleetd.join("claude"));
         let config_dir = super::config::read_config(home)
             .ok()
             .flatten()
             .and_then(|c| c.claude_config_dir)
-            .or_else(|| std::env::var("CLAUDE_CONFIG_DIR").ok())
+            .or(from_env)
             .filter(|d| !d.trim().is_empty())
-            .map(|d| expand_home(&d))
-            // fleetd's old default, which a node unit written by an older `machine add` still sets: sessions are back
-            // on the user's own setup.
-            .filter(|d| *d != fleetd.join("claude"));
+            .map(|d| expand_home(&d));
         Self {
             home: home.to_path_buf(),
             config_dir,

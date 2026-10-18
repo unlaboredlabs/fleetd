@@ -769,3 +769,17 @@ fn sessions_get_a_config_dir_only_when_the_machine_has_a_dedicated_one() {
         dir.path().join("profile")
     );
 }
+
+#[test]
+fn a_machine_given_a_config_dir_keeps_it_in_its_node_config() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("node.json"),
+        r#"{"hub":"h","machineId":"m","name":"m","tags":[],"enrolled":true,"claudeConfigDir":"/srv/claude-profile"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        SessionConfig::for_node(dir.path()).config_dir,
+        Some(PathBuf::from("/srv/claude-profile"))
+    );
+}

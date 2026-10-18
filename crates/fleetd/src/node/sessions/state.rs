@@ -130,8 +130,8 @@ pub fn start_mode(
     {
         return Err(format!(
             "session {session_id} was started with the claude config dir {} and cannot resume under {}: claude \
-             keeps the conversation there. Give the machine that config dir again (fleetd node join \
-             --claude-config-dir {}), or start a new session",
+             keeps the conversation there. Point the machine back at it (\"claudeConfigDir\": \"{}\" in the node's \
+             node.json, then restart the node), or start a new session",
             local.config_dir.display(),
             config_dir.display(),
             local.config_dir.display()
