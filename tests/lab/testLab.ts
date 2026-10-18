@@ -19,6 +19,7 @@ import {
   HUB_PORT,
   HUB_URL,
   joinNode,
+  LAB,
   type Lab,
   launchTiny,
   log,
@@ -31,6 +32,7 @@ import {
   QUEUE_TTL_SEC,
   RUN,
   seedRepo,
+  setCmdRoots,
   startCli,
   stopAll,
   stopCli,
@@ -205,10 +207,20 @@ async function main() {
       },
     } satisfies Omit<Lab, "dir">;
 
-    // Each machine's test repo is its project, registered the way a user would.
+    // Each machine's test repo is its project, registered the way a user would. The node runs `cmd` checks only under
+    // its roots, so once enrolled it gets the lab dir (repos, testbed) as its root and restarts. The hub may still show
+    // it online from before, so project_add is retried until the relinked node takes it.
     for (const m of MACHINES) {
       await online(m.id);
-      const projectId = await addProject(m.id, m.repo, path.basename(m.repo));
+      await stopCli(`node-${m.id}`);
+      setCmdRoots(m.id, [LAB]);
+      base.startNode(m.id);
+      const projectId = await until(`project_add on ${m.id}`, 60_000, async () => {
+        const added = await callTool("project_add", { machineId: m.id, path: m.repo, title: path.basename(m.repo) });
+        if (!added.isError) return added.body.projectId as string;
+        await callTool("events_wait", { cursor: await cursor(), timeoutSec: 2 });
+        return undefined;
+      });
       ok(`project_add ${m.id} ${m.repo} -> ${projectId}`);
     }
     for (const m of MACHINES) await waitLive(m.id);

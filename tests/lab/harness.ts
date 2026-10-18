@@ -386,6 +386,16 @@ export const joinNode = (hubUrl: string, hubHome: string, id: string, opts: Node
   return startCli(`node-${id}`, ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)], {}, nodeEnv(id, opts));
 };
 
+/**
+ * Lets the node run the hub's `cmd` checks under `roots`. A node defaults to its HOME, which in the lab is the
+ * machine's own home under the run dir, not where the test repos live. Takes effect at the node's next start.
+ */
+export const setCmdRoots = (id: string, roots: ReadonlyArray<string>) => {
+  const file = path.join(nodeHome(id), "node.json");
+  const config = JSON.parse(fs.readFileSync(file, "utf8")) as Body;
+  fs.writeFileSync(file, `${JSON.stringify({ ...config, cmdRoots: roots }, null, 2)}\n`);
+};
+
 /** Everything a scenario gets. It also satisfies the narrower contexts the scenario files declare. */
 export interface Lab {
   readonly hubUrl: string;
