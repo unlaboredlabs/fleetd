@@ -50,12 +50,9 @@
 <main class="doc" id="main">
 <p class="kicker">Get started</p>
 <h1>Install</h1>
-<pre class="code console" data-copy><code><span class="c">$ curl -fsSL https://fleetd.sh | sh</span>
-<span class="o">fleetd: installed the CLI: ~/.fleetd/bin/fleetd
-
-Next, run:
-  fleetd init</span></code></pre>
-<p>Then set it up: <a href="/docs/quick-start">Quick start</a>.</p>
+<pre class="code sh" data-copy><code><span class="l">curl -fsSL https://fleetd.sh | sh</span></code></pre>
+<p>In a terminal it then starts the setup wizard, <code>fleetd init</code>: see <a href="/docs/quick-start">Quick start</a>. Without a terminal,
+or with <code>--no-init</code>, it only installs and prints the next command.</p>
 <h2 id="platforms">Platforms<a class="anchor" href="#platforms" aria-label="Link to this section">#</a></h2>
 <div class="table"><table><thead><tr><th></th><th>CLI (hub and workers)</th><th>Desktop app</th></tr></thead><tbody>
 <tr><td>Linux x64</td><td>yes</td><td>yes</td></tr>
@@ -70,12 +67,14 @@ Next, run:
 <li>The desktop app, on macOS and on Linux with a display: <code>~/Applications/fleetd.app</code>, or <code>~/.local/share/fleetd/app</code>
 with a menu entry.</li>
 </ul>
-<p>Every download is checked against the release's <code>SHA256SUMS</code>. The installer needs no sudo and starts no services:
-<code>fleetd init</code> does that. Running it again replaces what it installed. To read it first, open
+<p>Every download is checked against the release's <code>SHA256SUMS</code>. The installer needs no sudo, and only <code>fleetd init</code>
+sets up services. Running it again replaces what it installed. To read it first, open
 <a href="https://fleetd.sh/install.sh">fleetd.sh/install.sh</a>.</p>
 <h2 id="options">Options<a class="anchor" href="#options" aria-label="Link to this section">#</a></h2>
 <pre class="code sh" data-copy><code><span class="l">curl -fsSL https://fleetd.sh | sh -s -- --app       # the app too, on Linux without a display</span>
-<span class="l">curl -fsSL https://fleetd.sh | sh -s -- --no-app    # the CLI only</span></code></pre>
+<span class="l">curl -fsSL https://fleetd.sh | sh -s -- --no-app    # the CLI only</span>
+<span class="l">curl -fsSL https://fleetd.sh | sh -s -- --no-init   # install, don't start the wizard</span></code></pre>
+<p>Without a terminal (here, a script):</p>
 <pre class="code console" data-copy><code><span class="c">$ curl -fsSL https://fleetd.sh | sh -s -- --app</span>
 <span class="o">fleetd: installed the CLI: ~/.fleetd/bin/fleetd
 fleetd: installed the app: ~/.local/share/fleetd/app (menu entry: ~/.local/share/applications/fleetd.desktop)

@@ -11,8 +11,9 @@ fleetd's merge train: reviewed, rebased onto main, merged only on green CI.
 Install
   curl -fsSL https://fleetd.sh | sh
   Installs and sets up fleetd: about a minute later the hub runs, the app is
-  paired, and you type your first order. You need macOS or Linux x64, git,
-  the claude CLI logged in, and gh. MIT.
+  paired, and you type your first order. You need macOS or Linux x64, the
+  claude CLI logged in (your own claude setup, proxy included), git and gh.
+  MIT.
 
 Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd

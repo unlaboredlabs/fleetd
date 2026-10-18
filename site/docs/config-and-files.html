@@ -70,9 +70,9 @@
   logs/node.log          the node service's log</code></pre>
 <p><code>fleetd uninstall</code> keeps all of it; see <a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a>.</p>
 <h2 id="claude">The Claude login<a class="anchor" href="#claude" aria-label="Link to this section">#</a></h2>
-<p>Sessions run <code>claude</code> with your own setup on that machine: <code>~/.claude</code> (or the <code>CLAUDE_CONFIG_DIR</code> the node's
-service has), so your login, the <code>env</code> in <code>~/.claude/settings.json</code> (a proxy's <code>ANTHROPIC_BASE_URL</code>, say), an
-<code>apiKeyHelper</code> and your MCP servers work as they do in your shell. If <code>claude</code> works for you on the worker, it works
+<p>Sessions run <code>claude</code> with your own setup on that machine (<code>~/.claude</code>), so your login, the <code>env</code> in
+<code>~/.claude/settings.json</code> (a proxy's <code>ANTHROPIC_BASE_URL</code>, say), an <code>apiKeyHelper</code> and your MCP servers work as they
+do in your shell. If <code>claude</code> works for you on the worker, it works
 for fleetd. Otherwise log in as you normally do: <code>claude auth login</code>, or through your proxy.</p>
 <p><code>fleetd doctor</code> shows what each worker uses, e.g. <code>claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317 from ~/.claude/settings.json</code>.</p>
 <p>fleetd adds its own settings per session on top of yours, never in their place: an <code>--mcp-config</code> for its servers and
@@ -96,7 +96,6 @@ ANTHROPIC_AUTH_TOKEN=&lt;token&gt;</code></pre>
 <li><strong>The hub</strong> service loads the file when it starts, so restart it after a change. Its own <code>claude</code> gets only
 <code>ANTHROPIC_BASE_URL</code>, <code>ANTHROPIC_AUTH_TOKEN</code>, <code>ANTHROPIC_API_KEY</code> and <code>CLAUDE_CODE_OAUTH_TOKEN</code> from it.</li>
 </ul>
-<p><code>fleetd init</code> offers to copy these from your shell when it finds them there.</p>
 <h2 id="policy">.fleetd/policy.yaml<a class="anchor" href="#policy" aria-label="Link to this section">#</a></h2>
 <p>An optional file in a project's repo; commit it to the default branch. Changes apply within a minute. Without it,
 writers may touch the whole repo.</p>

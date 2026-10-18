@@ -10,8 +10,9 @@ requests it has checked, and asks you only about real decisions.
 curl -fsSL https://fleetd.sh | sh
 ```
 
-**You need:** macOS or Linux x64, `git`, the `claude` CLI logged in, and `gh` for pull requests. About a minute later the
-hub runs on this machine, the app is paired, and you type your first order.
+**You need:** macOS or Linux x64, the `claude` CLI logged in (fleetd uses your own claude setup, including any proxy
+in `~/.claude/settings.json`), `git`, and `gh` for pull requests. About a minute later the hub runs on this machine,
+the app is paired, and you type your first order.
 
 Docs: [fleetd.sh/docs](https://fleetd.sh/docs)<br>
 Contributing: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)<br>
