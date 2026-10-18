@@ -1,7 +1,7 @@
 // `node tests/lab/m8Secrets.ts` (after `cargo build --release -p fleetd`, or with FLEETD_BIN set): one sealed secret
 // and one approved command that uses it, through a real `fleetd hub` and a real `fleetd node` over their real
-// interfaces. No T3 and no claude turns: the node links as degraded, and the project the asks belong to is seeded
-// straight into the hub's SQLite before it starts. The value is sealed with libsodium as the desktop app does and
+// interfaces. No claude turns: the node runs under its own HOME with nobody logged in to claude, and the project the
+// asks belong to is seeded straight into the hub's SQLite before it starts. The value is sealed with libsodium as the desktop app does and
 // submitted with a --human key over MCP; the approved command gets it as an env var from the node's own sink, and its
 // output comes back with the value scrubbed. Then the hub's home, its log, every event and the node's home and log are
 // searched for the value and its ciphertext. The secret-env path is covered nowhere else (m8 runs a command without
@@ -45,7 +45,7 @@ const check = (cond: unknown, what: string) => {
 
 const keyOf = (out: string) => /fld_[a-z2-7]{20,}/u.exec(out)?.[0];
 
-/** The project row the hub would have cached from T3, which this lab has none of. */
+/** The project row `project_add` would have cached, seeded directly since this lab adds none. */
 const seedProject = () => {
   const db = new DatabaseSync(path.join(HUB_HOME, "hub.sqlite"));
   try {
@@ -106,11 +106,10 @@ async function main() {
     "--hub", URL_,
     "--token", token,
     "--machine", MACHINE,
-    "--t3-home", path.join(DIR, "t3-home"),
-    // Nothing listens here: the node links as degraded, which secrets and approved commands do not mind.
-    "--t3-url", `http://127.0.0.1:${PORT + 1}`,
     "--home", NODE_HOME,
-  ]);
+    // Its own HOME, so its ~/.fleetd/claude is not the user's; nobody is logged in there, which secrets and approved
+    // commands do not mind.
+  ], { HOME: path.join(DIR, "home") });
 
   const human = await mcp(humanKey!);
   const agent = await mcp(agentKey!);

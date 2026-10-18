@@ -3,9 +3,7 @@
 // delivered to the lead inline, the same key is then answered from the log, and a naming question is refused.
 // Five lead turns, each tiny: start, the intent wake, one ask, the answer wake, the re-ask plus refusal.
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { type Body, LAB, type Lab, LEAD_PROMPT_VERSION, MODEL } from "./harness.ts";
+import { type Body, type Lab, LEAD_PROMPT_VERSION, MODEL } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // The v1 prompt has the lead delegate at once; m5 decides when tasks run, so this lead registers the brief only.
@@ -13,20 +11,9 @@ const INTENT = "add a /health endpoint (lab run: register the brief, then stop; 
 const ASK = `fleetd ask --key api.health.path --class product --text "Path?" --rec "/healthz" --proceeded`;
 const TURN_MS = 240_000;
 
-/** The lab T3 must have been started with the lead env (lab.mjs sets it); an older instance lacks it. */
-const checkLeadEnv = (lab: Pick<Lab, "check">) => {
-  const pid = Number(fs.readFileSync(path.join(LAB, "pids", `${MACHINE}.pid`), "utf8").trim());
-  const environ = fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0");
-  lab.check(
-    environ.includes(`FLEETD_NODE_SOCK=${path.join(LAB, "sock", `${MACHINE}.sock`)}`),
-    `${MACHINE}'s T3 (pid ${pid}) runs with FLEETD_NODE_SOCK; if not, stop it (node tests/lab/lab.mjs down ${MACHINE}) and rerun`,
-  );
-};
-
 export async function m3Loop(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
-  checkLeadEnv(lab);
   const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE)?.projectId as string;
   check(projectId, `${MACHINE} has a project`);
   const ref = { machineId: MACHINE, projectId };

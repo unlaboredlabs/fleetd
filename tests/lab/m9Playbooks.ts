@@ -7,8 +7,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { type Body, FINISH_ALL_IDLE, fleetdCommand, LAB, type Lab, MODEL, scrubbedEnv } from "./harness.ts";
-import { removeTestbedProject, t3, TESTBED } from "./m7Train.ts";
+import { type Body, FINISH_ALL_IDLE, fleetdCommand, LAB, type Lab, MODEL, nodeSock, scrubbedEnv } from "./harness.ts";
+import { removeTestbedProject, TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TESTBED_REPO = "unlaboredlabs/fleetd-testbed";
@@ -17,7 +17,7 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const QUIET = "Lab run: the harness does the work for this intent; reply to each wake with one short line and run no commands.";
 
 const shell = (cwd: string) => {
-  const env = { ...scrubbedEnv(), PWD: cwd, FLEETD_NODE_SOCK: path.join(LAB, "sock", `${MACHINE}.sock`) };
+  const env = { ...scrubbedEnv(), PWD: cwd, FLEETD_NODE_SOCK: nodeSock(MACHINE) };
   const run = (...args: Array<string>) => {
     const out = spawnSync(...fleetdCommand(args), { cwd, encoding: "utf8", env });
     return { code: out.status, stdout: out.stdout, stderr: out.stderr };
@@ -124,17 +124,7 @@ export async function m9Playbooks(lab: Lab) {
   let wf: string | undefined;
   let tbRef: { machineId: string; projectId: string } | undefined;
   try {
-    // The hub keeps m7's deleted testbed project in its list, so this run's is the one with the new id.
-    const testbedIds = async () =>
-      ((await callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>).filter((p) => p.workspaceRoot === TESTBED).map((p) => p.projectId as string);
-    const earlier = new Set(await testbedIds());
-    const tbId = randomUUID();
-    await t3(lab, "POST", "/api/projects/mutate", { type: "project.create", commandId: randomUUID(), projectId: tbId, title: "fleetd-testbed", workspaceRoot: TESTBED });
-    const tb = await lab.until("the hub sees the new testbed project", 60_000, async () => {
-      const found = (await testbedIds()).find((id) => !earlier.has(id));
-      if (found === undefined) await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 3 });
-      return found;
-    });
+    const tb = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
     tbRef = { machineId: MACHINE, projectId: tb };
     const f = await callTool("intake_submit", { ...tbRef, text: "finish: everything still open", clientRequestId: randomUUID() });
     check(!f.isError && f.body.echo?.template === "finish-all" && f.body.echo.projectRef.projectId === tb, `finish-all intake: ${JSON.stringify(f.body)}`);

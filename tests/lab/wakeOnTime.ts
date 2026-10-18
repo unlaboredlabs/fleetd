@@ -33,7 +33,7 @@ export async function wakeOnTime(lab: Lab) {
   });
   const firedLag = Date.parse(fired.at) - dueMs;
   check(firedLag >= 0 && firedLag <= SLACK_MS, `wake.fired within ${SLACK_MS} ms of ${due}: lag ${firedLag} ms`);
-  check(fired.data.queued === false, `fired straight to T3, not queued: ${JSON.stringify(fired.data)}`);
+  check(fired.data.queued === false, `fired straight to the node, not queued: ${JSON.stringify(fired.data)}`);
   ok(`wake.fired seq=${fired.seq} ${firedLag} ms after the due time: "${fired.summary}"`);
 
   const { event: done } = await lab.waitEvent("the woken thread's run to end", 240_000, {
@@ -46,7 +46,7 @@ export async function wakeOnTime(lab: Lab) {
   const received = (tail.items as Array<Body>).find((i) => i.role === "user" && i.text.includes(text));
   check(received, `thread_tail shows the wake's message: ${JSON.stringify(tail.items)}`);
   const receivedLag = Date.parse(received!.at) - dueMs;
-  check(receivedLag <= SLACK_MS, `T3 recorded the message within ${SLACK_MS} ms of ${due}: lag ${receivedLag} ms`);
+  check(receivedLag <= SLACK_MS, `the node recorded the message within ${SLACK_MS} ms of ${due}: lag ${receivedLag} ms`);
   ok(`thread received the message ${receivedLag} ms after the due time; run ${done.type}: "${done.summary}"`);
 
   const after = (await callTool("wake_list", { threadId, state: "done" })).body.wakes as Array<Body>;

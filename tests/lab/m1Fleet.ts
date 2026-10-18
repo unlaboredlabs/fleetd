@@ -1,5 +1,5 @@
 // M1 "done when": launch on lab-b through MCP, wait for completion with events_wait, read the reply back.
-// One tiny haiku turn. Also: the doctor holds both lab T3s (from source at the pin) to the pinned version.
+// One tiny haiku turn. Also: the doctor holds both lab machines' claude to the supported version range.
 import { type Body, type Lab, launchTiny, MODEL } from "./harness.ts";
 
 export async function m1Fleet(lab: Lab) {
@@ -11,9 +11,9 @@ export async function m1Fleet(lab: Lab) {
 
   const doctor = (await callTool("doctor_list", { rerun: true })).body;
   for (const machineId of ["lab-a", "lab-b"]) {
-    const entry = doctor.checks.find((c: Body) => c.id === `${machineId}/t3_version`);
-    check(entry?.status === "ok", `doctor ${machineId}/t3_version is ok: ${JSON.stringify(entry)}`);
-    ok(`doctor ${machineId}/t3_version: ${entry.message}`);
+    const entry = doctor.checks.find((c: Body) => c.id === `${machineId}/claude_version`);
+    check(entry?.status === "ok", `doctor ${machineId}/claude_version is ok: ${JSON.stringify(entry)}`);
+    ok(`doctor ${machineId}/claude_version: ${entry.message}`);
   }
 
   const threadId = await launchTiny(lab, "lab-b", projectB.projectId, "fleetd test:lab");

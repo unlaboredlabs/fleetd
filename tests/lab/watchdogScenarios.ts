@@ -1,38 +1,19 @@
 // M2 lab scenarios 2 (stall, nudge, fail) and 6 (missed completion while the hub is down), against the
-// disposable lab only. Each scenario takes a LabContext so the lab harness (testLab.ts) can run it; run
-// this file directly to run both on their own (`node tests/lab/watchdogScenarios.ts [stall|missed]`).
+// disposable lab only. Run by the lab harness (`npm run lab -- stall missed`).
 // Costs: scenario 2 two or three tiny claude-haiku-5-5 turns, scenario 6 one.
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { fleetdCommand, LAB, LAB_SCRIPT, labEnv, NUDGE, slotPort, T3_SRC } from "./harness.ts";
-import { waitShell } from "./t3Shell.ts";
+import { NUDGE, sessionText, sleep } from "./harness.ts";
 
 type Body = Record<string, any>;
 
-export interface LabMachine {
-  readonly id: string;
-  readonly t3Home: string;
-  readonly t3Url: string;
-}
-
 /** What a scenario needs from the harness. */
 export interface LabContext {
-  readonly machines: ReadonlyArray<LabMachine>;
   /** Calls a tool on the hub's MCP endpoint with the harness's operate key. */
   readonly callTool: (name: string, args?: Record<string, unknown>) => Promise<{ readonly isError: boolean; readonly body: Body }>;
-  /** Stops the hub by its PID, leaving nodes and T3 running. */
+  /** Stops the hub by its PID, leaving the nodes and their sessions running. */
   readonly stopHub: () => Promise<void>;
   /** (Re)starts the hub on the same home with `env` added, waits for /healthz and reconnects the MCP client. */
   readonly startHub: (env?: Readonly<Record<string, string>>) => Promise<void>;
-  /** A short-lived bearer for the lab T3 itself, to watch it while the hub is down. */
-  readonly mintT3Bearer: (machine: LabMachine) => string;
   readonly log: (line: string) => void;
 }
 
@@ -139,18 +120,17 @@ export async function stallNudgeFail(ctx: LabContext, machineId = "lab-a") {
   ctx.log(`ok  thread_tail: one "continue" nudge`);
 }
 
-const isDone = (threadId: string) => (t: Body) => t.id === threadId && t.activeRunId === null && t.status === "completed";
-
-/** Watches the lab T3 directly (no hub) until the thread's run has completed. */
-const waitT3Completed = async (ctx: LabContext, machine: LabMachine, threadId: string, ms: number) => {
-  const done = isDone(threadId);
-  const hit = await waitShell(
-    machine.t3Url,
-    ctx.mintT3Bearer(machine),
-    (i) => (i.kind === "snapshot" ? (i.snapshot.threads as Array<Body>).some(done) : i.kind === "thread.updated" ? done(i.thread) : false),
-    ms,
-  );
-  check(hit, "T3 reported the run completed");
+/**
+ * Watches the machine itself (no hub) until the thread's run has ended: the node's transcript of claude's stdout gets
+ * the run's `result` line, and claude's own session file the reply.
+ */
+const waitRunEnded = async (machineId: string, threadId: string, ms: number) => {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (/"type":\s*"result"/u.test(sessionText(machineId, threadId))) return;
+    await sleep(500);
+  }
+  throw new Error(`timed out after ${ms / 1000}s: ${machineId} ended the run of ${threadId}`);
 };
 
 /**
@@ -172,131 +152,12 @@ export async function missedCompletion(ctx: LabContext, machineId = "lab-a") {
   ctx.log(`ok  thread.started seq=${started.seq}; stopping the hub mid-run`);
   await ctx.stopHub();
 
-  const machine = ctx.machines.find((m) => m.id === machineId)!;
-  await waitT3Completed(ctx, machine, threadId, 180_000);
-  ctx.log("ok  T3 completed the run while the hub was down");
+  await waitRunEnded(machineId, threadId, 180_000);
+  ctx.log(`ok  ${machineId} ended the run while the hub was down`);
 
   await ctx.startHub();
   const late = await events.next("late terminal event", 180_000, (e) => e.threadId === threadId && e.type !== "thread.started");
   check(late.type === "thread.completed", `the missed run is reported as completed: ${JSON.stringify(late)}`);
   check(late.data?.late === true && typeof late.data?.runId === "string", `marked late with its run: ${JSON.stringify(late.data)}`);
   ctx.log(`ok  thread.completed seq=${late.seq} late=${late.data.late} "${late.summary}"`);
-}
-
-// ---------------------------------------------------------------------------------------------------
-// Standalone runner: the same lab setup testLab.ts uses, with its own hub port and run dir.
-
-
-/** Children get HOME, PATH, USER and LANG only (never this session's CLAUDE* variables), plus `extra`. */
-const scrubbedEnv = (extra: Readonly<Record<string, string>> = {}) => ({
-  ...Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]]))),
-  ...extra,
-});
-
-async function standalone() {
-  if (path.resolve(LAB).startsWith(path.join(os.homedir(), ".t3"))) throw new Error("refusing: lab dir is inside ~/.t3");
-  const hubPort = Number(process.env.FLEETD_LAB_HUB_PORT ?? slotPort(4796));
-  const hubUrl = `http://127.0.0.1:${hubPort}`;
-  const run = path.join(LAB, "e2e-watchdog");
-  const hubHome = path.join(run, "hub");
-  const machines: Array<LabMachine> = [{ id: "lab-a", t3Home: path.join(LAB, "home-a"), t3Url: `http://127.0.0.1:${slotPort(4711)}` }];
-  const t0 = Date.now();
-  const log = (line: string) => process.stdout.write(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s] ${line}\n`);
-  const children = new Map<string, ChildProcess>();
-  const cli = (...args: Array<string>) => execFileSync(...fleetdCommand(args), { env: scrubbedEnv(), encoding: "utf8" });
-  const start = (name: string, args: Array<string>, env: Readonly<Record<string, string>> = {}) => {
-    fs.mkdirSync(path.join(run, "logs"), { recursive: true });
-    const out = fs.openSync(path.join(run, "logs", `${name}.log`), "a");
-    const child = spawn(...fleetdCommand(args), { env: scrubbedEnv(env), stdio: ["ignore", out, out] });
-    children.set(name, child);
-    log(`started ${name} pid=${child.pid}`);
-  };
-  const stop = async (name: string) => {
-    const child = children.get(name);
-    if (!child || child.exitCode !== null || child.signalCode !== null) return;
-    const exited = new Promise((r) => child.once("exit", r));
-    child.kill("SIGTERM");
-    const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-    await exited;
-    clearTimeout(timer);
-    log(`stopped ${name} pid=${child.pid}`);
-  };
-  const lab = (command: "up" | "down", id: string) =>
-    execFileSync(process.execPath, [LAB_SCRIPT, command, id], { env: scrubbedEnv(labEnv()), encoding: "utf8" });
-
-  let client: Client | undefined;
-  let key = "";
-  const ctx: LabContext = {
-    machines,
-    log,
-    callTool: async (name, args = {}) => {
-      const result = await client!.callTool({ name, arguments: args }, undefined, { timeout: 70_000 });
-      const text = (result.content as Array<{ text: string }>)[0]!.text;
-      return { isError: result.isError === true, body: JSON.parse(text) as Body };
-    },
-    stopHub: async () => {
-      await client?.close().catch(() => undefined);
-      client = undefined;
-      await stop("hub");
-    },
-    startHub: async (env = {}) => {
-      await ctx.stopHub();
-      start("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${hubPort}`], env);
-      await until("hub /healthz", 30_000, async () => {
-        try {
-          return (await fetch(`${hubUrl}/healthz`)).ok ? true : undefined;
-        } catch {
-          await new Promise((r) => setTimeout(r, 250));
-          return undefined;
-        }
-      });
-      if (key === "") {
-        key = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--name", "lab", "--role", "operate", "--machines", "*"))![0];
-      }
-      client = new Client({ name: "fleetd-watchdog-lab", version: "0" });
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(`${hubUrl}/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }) as Transport,
-      );
-      log(`hub up on ${hubUrl}${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
-    },
-    mintT3Bearer: (m) =>
-      execFileSync(
-        process.execPath,
-        [path.join(T3_SRC, "apps/server/src/bin.ts"), "auth", "session", "issue", "--base-dir", m.t3Home, "--ttl", "1h", "--label", "fleetd-lab", "--token-only"],
-        { env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-      )
-        .trim()
-        .split("\n")
-        .at(-1)!
-        .trim(),
-  };
-
-  const labStarted: Array<string> = [];
-  for (const m of machines) if (!/already running/u.test(lab("up", m.id))) labStarted.push(m.id);
-  try {
-    fs.rmSync(run, { recursive: true, force: true });
-    await ctx.startHub();
-    for (const m of machines) {
-      const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", m.id))![0];
-      start(`node-${m.id}`, [
-        "node", "join", "--hub", hubUrl, "--token", token, "--machine", m.id, "--t3-home", m.t3Home, "--t3-url", m.t3Url,
-        "--t3-cmd", `${process.execPath} ${path.join(T3_SRC, "apps/server/src/bin.ts")}`, "--home", path.join(run, `node-${m.id}`),
-      ]);
-    }
-    const only = process.argv[2];
-    if (only === undefined || only === "stall") await stallNudgeFail(ctx);
-    if (only === undefined || only === "missed") await missedCompletion(ctx);
-    log("PASS");
-  } finally {
-    await ctx.stopHub();
-    for (const name of [...children.keys()].reverse()) await stop(name);
-    for (const id of labStarted) log(lab("down", id).trim());
-  }
-}
-
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  standalone().catch((error: unknown) => {
-    process.stdout.write(`FAIL ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
 }
