@@ -221,6 +221,7 @@ pub(crate) fn ask_input_of(input: &Value) -> Result<AskInput, String> {
         sink: field(input, "sink")?,
         env_name: field(input, "envName")?,
         gated: field(input, "gated")?,
+        permission: field(input, "permission")?,
         blocks: required(input, "blocks")?,
         proceeded_on_rec: field(input, "proceededOnRec")?.unwrap_or(false),
     })

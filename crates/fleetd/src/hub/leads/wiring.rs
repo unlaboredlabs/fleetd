@@ -188,6 +188,7 @@ impl LeadPorts for HubPorts {
                 sink: None,
                 env_name: None,
                 gated: None,
+                permission: None,
                 blocks: wire(input.blocks)?,
                 proceeded_on_rec: false,
             },

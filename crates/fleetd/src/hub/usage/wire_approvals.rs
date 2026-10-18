@@ -5,11 +5,14 @@ use super::ports::{self, BoxFut};
 use super::wire::{OpsPorts, convert};
 use crate::hub::approvals::{
     ApprovalAsks, ApprovalHub, ApprovalNodes, ApprovalRefused, GatedOutcome, NodeCommandError,
-    SecretOutcome,
+    SecretOutcome, ToolRules,
 };
+use crate::hub::executor::ExecutorError;
 use crate::hub::ledger::{AskFilter, LedgerError};
 use crate::hub::link::commands::NodeCommandErrorReason;
+use fleetd_contracts::ids::ThreadRef;
 use fleetd_contracts::ledger::{Ask, AskState, CheckSpec};
+use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
@@ -108,6 +111,77 @@ impl ApprovalAsks for OpsPorts {
             Ok(ask_json(&ask))
         })
     }
+
+    fn list_open(&self) -> BoxFut<'_, Vec<Value>> {
+        Box::pin(async move {
+            self.hub()
+                .asks
+                .list(&AskFilter {
+                    state: Some(AskState::Open),
+                    limit: Some(i64::MAX),
+                    ..Default::default()
+                })
+                .map(|asks| {
+                    asks.iter()
+                        .filter(|a| a.permission.is_some())
+                        .map(ask_json)
+                        .collect()
+                })
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "approvals: open asks not listed");
+                    Vec::new()
+                })
+        })
+    }
+
+    fn list_closed_permissions(&self) -> BoxFut<'_, Vec<Value>> {
+        Box::pin(async move {
+            let mut out = Vec::new();
+            for state in [AskState::Answered, AskState::Withdrawn] {
+                let asks = self.hub().asks.list(&AskFilter {
+                    state: Some(state),
+                    limit: Some(i64::MAX),
+                    ..Default::default()
+                });
+                match asks {
+                    Ok(asks) => {
+                        out.extend(asks.iter().filter(|a| a.permission.is_some()).map(ask_json))
+                    }
+                    Err(error) => tracing::warn!(%error, "approvals: closed asks not listed"),
+                }
+            }
+            out
+        })
+    }
+
+    fn withdraw(&self, ask_id: &str, reason: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
+        let (ask_id, reason) = (ask_id.to_owned(), reason.to_owned());
+        Box::pin(async move {
+            let ask = self
+                .hub()
+                .asks
+                .withdraw(&ask_id, None, None, Some(&reason))
+                .map_err(refused)?;
+            Ok(ask_json(&ask))
+        })
+    }
+}
+
+fn thread_ref(m: &str, t: &str) -> Option<ThreadRef> {
+    convert(&serde_json::json!({ "machineId": m, "threadId": t }))
+}
+
+fn executor_error(e: ExecutorError) -> NodeCommandError {
+    let (reason, fix) = match &e {
+        ExecutorError::MachineNotConnected { .. } => ("offline", None),
+        ExecutorError::ThreadNotFound { .. } => ("not_found", None),
+        ExecutorError::NodeRequestFailed { fix, .. } => ("failed", fix.clone()),
+    };
+    NodeCommandError {
+        reason: reason.into(),
+        message: e.to_string(),
+        fix,
+    }
 }
 
 fn node_error(e: crate::hub::link::commands::NodeCommandError) -> NodeCommandError {
@@ -120,6 +194,7 @@ fn node_error(e: crate::hub::link::commands::NodeCommandError) -> NodeCommandErr
         }
         .into(),
         message: e.message,
+        fix: None,
     }
 }
 
@@ -129,6 +204,7 @@ fn frame<T: DeserializeOwned>(mut input: Value) -> Result<T, NodeCommandError> {
     serde_json::from_value(input).map_err(|e| NodeCommandError {
         reason: "invalid".into(),
         message: e.to_string(),
+        fix: None,
     })
 }
 
@@ -136,6 +212,7 @@ fn machine_id(m: &str) -> Result<fleetd_contracts::ids::MachineId, NodeCommandEr
     convert(&m).ok_or_else(|| NodeCommandError {
         reason: "invalid".into(),
         message: format!("{m} is not a machine id"),
+        fix: None,
     })
 }
 
@@ -185,6 +262,38 @@ impl ApprovalNodes for OpsPorts {
                 error: result.error.map(|e| e.to_string()),
             })
         })
+    }
+
+    fn answer_permission(
+        &self,
+        m: &str,
+        t: &str,
+        request_id: &str,
+        decision: PermissionDecision,
+    ) -> BoxFut<'_, Result<(), NodeCommandError>> {
+        let (r, request_id) = (thread_ref(m, t), request_id.to_owned());
+        Box::pin(async move {
+            let r = r.ok_or_else(|| NodeCommandError {
+                reason: "invalid".into(),
+                message: "not a machine and thread id".into(),
+                fix: None,
+            })?;
+            self.hub()
+                .executors
+                .answer(&r, &request_id, decision)
+                .await
+                .map_err(executor_error)
+        })
+    }
+
+    fn is_linked(&self, m: &str) -> BoxFut<'_, bool> {
+        let m: Option<fleetd_contracts::ids::MachineId> = convert(&m);
+        Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
+    }
+
+    fn pending_permission(&self, m: &str, t: &str) -> BoxFut<'_, Option<PendingPermission>> {
+        let r = thread_ref(m, t);
+        Box::pin(async move { self.hub().executors.pending_permission(&r?) })
     }
 }
 
@@ -252,6 +361,42 @@ impl ApprovalHub for OpsPorts {
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_else(|| "error".into());
             (result, evidence)
+        })
+    }
+
+    fn tool_rules(&self, project: &ports::ProjectRef) -> BoxFut<'_, Result<ToolRules, String>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let r = r.ok_or("not a project ref")?;
+            let policy = self.hub().policies.get(&r).await.map_err(|e| e.message)?;
+            let tools = policy.tools.unwrap_or_default();
+            let strings = |rules: &[fleetd_contracts::prim::Text<1, 200>]| {
+                rules.iter().map(|r| r.to_string()).collect()
+            };
+            Ok(ToolRules {
+                allow: strings(&tools.allow),
+                deny: strings(&tools.deny),
+            })
+        })
+    }
+
+    fn lead_thread(&self, project: &ports::ProjectRef) -> BoxFut<'_, Option<String>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        Box::pin(async move {
+            let lead = self.hub().leads.records.lead_get(&r?).ok()??;
+            Some(lead.thread_id.to_string())
+        })
+    }
+
+    fn thread_project(&self, m: &str, t: &str) -> BoxFut<'_, Option<ports::ProjectRef>> {
+        let r = thread_ref(m, t);
+        Box::pin(async move {
+            let r = r?;
+            let stored = self.hub().store.thread_get(&r).ok()??;
+            Some(ports::ProjectRef {
+                machine_id: r.machine_id.to_string(),
+                project_id: stored.thread.project_id.to_string(),
+            })
         })
     }
 }

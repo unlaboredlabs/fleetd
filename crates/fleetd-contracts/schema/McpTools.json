@@ -170,6 +170,10 @@
           "maxItems": 6,
           "type": "array"
         },
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "approve: the session prompt it answers, instead of `gated`."
+        },
         "proceededOnRec": {
           "description": "The lead carried on with the recommendation; the answer confirms or overrides it.",
           "type": "boolean"
@@ -2685,11 +2689,23 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "project_add.input": {
+          "$ref": "#/$defs/ProjectAddInput"
+        },
+        "project_add.output": {
+          "$ref": "#/$defs/ProjectAddOutput"
+        },
         "project_get.input": {
           "$ref": "#/$defs/ProjectGetInput"
         },
         "project_get.output": {
           "$ref": "#/$defs/ProjectOutcome"
+        },
+        "project_remove.input": {
+          "$ref": "#/$defs/ProjectRemoveInput"
+        },
+        "project_remove.output": {
+          "$ref": "#/$defs/ProjectRemoveOutput"
         },
         "projects_list.input": {
           "$ref": "#/$defs/ProjectsListInput"
@@ -2744,6 +2760,12 @@
         },
         "tasks_list.output": {
           "$ref": "#/$defs/TasksListOutput"
+        },
+        "thread_answer.input": {
+          "$ref": "#/$defs/ThreadAnswerInput"
+        },
+        "thread_answer.output": {
+          "$ref": "#/$defs/ThreadAnswerOutput"
         },
         "thread_interrupt.input": {
           "$ref": "#/$defs/ThreadInterruptInput"
@@ -2869,8 +2891,12 @@
         "lead_restart.output",
         "lead_start.input",
         "lead_start.output",
+        "project_add.input",
+        "project_add.output",
         "project_get.input",
         "project_get.output",
+        "project_remove.input",
+        "project_remove.output",
         "projects_list.input",
         "projects_list.output",
         "retro_proposals.input",
@@ -2889,6 +2915,8 @@
         "task_get.output",
         "tasks_list.input",
         "tasks_list.output",
+        "thread_answer.input",
+        "thread_answer.output",
         "thread_interrupt.input",
         "thread_interrupt.output",
         "thread_launch.input",
@@ -3005,6 +3033,13 @@
       "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
+    "PermissionAnswer": {
+      "enum": [
+        "allow",
+        "deny"
+      ],
+      "type": "string"
+    },
     "PlaybookChangeKind": {
       "enum": [
         "wording",
@@ -3049,6 +3084,50 @@
       },
       "required": [
         "observable"
+      ],
+      "type": "object"
+    },
+    "ProjectAddInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "path": {
+          "pattern": "^/.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Absent means the directory's name.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "path"
+      ],
+      "type": "object"
+    },
+    "ProjectAddOutput": {
+      "properties": {
+        "created": {
+          "description": "False when the directory was already a project (it is renamed when a title is given).",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectId",
+        "created"
       ],
       "type": "object"
     },
@@ -3151,6 +3230,41 @@
       "required": [
         "machineId",
         "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectRemoveInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
       ],
       "type": "object"
     },
@@ -4427,6 +4541,62 @@
       ],
       "type": "object"
     },
+    "ThreadAnswerInput": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/PermissionAnswer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "message": {
+          "description": "Deny only: what claude is told instead of running the tool.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "description": "The prompt answered, from the thread.waiting event; absent means the one open now.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "ThreadAnswerOutput": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId",
+          "description": "The tool_permission ask this answer closed, if one was open."
+        },
+        "decision": {
+          "$ref": "#/$defs/PermissionAnswer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestId",
+        "decision"
+      ],
+      "type": "object"
+    },
     "ThreadCounts": {
       "properties": {
         "failed": {
@@ -4781,6 +4951,34 @@
     "Timestamp": {
       "format": "date-time",
       "type": "string"
+    },
+    "ToolPermission": {
+      "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
+      "properties": {
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "summary": {
+          "description": "The command, the path, or the tool's own description.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "toolName": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "requestId",
+        "toolName",
+        "summary"
+      ],
+      "type": "object"
     },
     "TrainFreezeInput": {
       "properties": {

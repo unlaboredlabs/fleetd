@@ -10,7 +10,7 @@ use serde_with::skip_serializing_none;
 
 use crate::ids::{MachineId, ProjectRef, ThreadId, Timestamp};
 use crate::prim::{
-    Count, Finite, Int, Line, List, NonNegative, Positive, PositiveNumber, Text, js_len,
+    Count, Finite, Int, Line, List, NonEmpty, NonNegative, Positive, PositiveNumber, Text, js_len,
 };
 use crate::secrets::{SecretFingerprint, SecretSink};
 use crate::subscriptions::is_http_url;
@@ -770,8 +770,22 @@ pub struct GatedRunSpec {
     pub timeout_sec: GatedTimeoutSec,
 }
 
+/// An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering
+/// it answers the prompt on the project's node. Its machine is the ask's project's.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolPermission {
+    pub thread_id: ThreadId,
+    pub request_id: NonEmpty,
+    pub tool_name: NonEmpty,
+    /// The command, the path, or the tool's own description.
+    pub summary: Text<0, 2000>,
+}
+
 /// Each kind's required field, and no field of another kind: decide needs a recommendation, do at least one step,
-/// secret a sink, approve its gated run with the ask's class. The bools say whether that field is present.
+/// secret a sink, approve its gated run with the ask's class (or a tool permission prompt instead). The bools say
+/// whether that field is present.
 #[allow(clippy::too_many_arguments)]
 pub fn ask_kind_rule(
     kind: AskKind,
@@ -782,6 +796,7 @@ pub fn ask_kind_rule(
     env_name: bool,
     fingerprint: bool,
     gated: Option<&GatedRunSpec>,
+    permission: bool,
     verify: bool,
 ) -> Result<(), String> {
     if kind == AskKind::Decide && !recommendation {
@@ -793,14 +808,17 @@ pub fn ask_kind_rule(
     if kind == AskKind::Secret && sink.is_none() {
         return Err("a secret ask needs a sink".into());
     }
-    if kind == AskKind::Approve && gated.is_none() {
-        return Err("an approve ask needs its gated run".into());
+    if kind == AskKind::Approve && gated.is_none() == !permission {
+        return Err(
+            "an approve ask needs its gated run or a tool permission prompt, not both".into(),
+        );
     }
     let only = [
         ("sink", sink.is_some(), AskKind::Secret),
         ("envName", env_name, AskKind::Secret),
         ("fingerprint", fingerprint, AskKind::Secret),
         ("gated", gated.is_some(), AskKind::Approve),
+        ("permission", permission, AskKind::Approve),
         ("verify", verify, AskKind::Do),
     ];
     for (field, present, only_kind) in only {
@@ -877,6 +895,8 @@ pub struct Ask {
     pub fingerprint: Option<SecretFingerprint>,
     /// Required for approve; immutable once the ask exists.
     pub gated: Option<GatedRunSpec>,
+    /// approve: the session prompt it answers, instead of `gated`.
+    pub permission: Option<ToolPermission>,
     /// What closed or reopened it: "fingerprint ab12cd34", a gated run's exit code and output tail, a failed verify.
     pub evidence: Option<Text<0, 2000>>,
     pub blocks: AskBlocks,
@@ -900,6 +920,7 @@ checked!(Ask, |ask| {
         ask.env_name.is_some(),
         ask.fingerprint.is_some(),
         ask.gated.as_ref(),
+        ask.permission.is_some(),
         ask.verify.is_some(),
     )?;
     ask_project_rule(ask.project_ref.as_ref(), ask.key.as_str())

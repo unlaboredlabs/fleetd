@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::auth::Role;
-use crate::checked;
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::effort::Effort;
 use crate::events::{HubEvent, HubEventType};
@@ -29,6 +28,7 @@ use crate::train::{Change, ChangeState, GitHubRepo, TrainState};
 use crate::usage::UsageStatus;
 use crate::verification::{Claim, ClaimOutcome, Eta, Incident, IncidentClass};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
+use crate::{brand, checked};
 
 pub type RequestId = NonEmpty;
 
@@ -618,6 +618,79 @@ output!(AttentionPolicyOutput {
     quiet: List<QuietWindow, 0, 2>,
 });
 
+// thread_answer: answers the tool permission prompt a thread's run waits on. Human keys answer any thread on a machine
+// they may operate; agent keys every thread there except a lead's own (a lead never approves itself).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionAnswer {
+    Allow,
+    Deny,
+}
+
+input!(
+    #[serde(remote = "Self")]
+    ThreadAnswerInput {
+        machine_id: MachineId,
+        thread_id: ThreadId,
+        /// The prompt answered, from the thread.waiting event; absent means the one open now.
+        request_id: Option<NonEmpty>,
+        decision: PermissionAnswer,
+        /// Deny only: what claude is told instead of running the tool.
+        message: Option<Text<1, 2000>>,
+    }
+);
+checked!(ThreadAnswerInput, |input| {
+    if input.message.is_some() && input.decision == PermissionAnswer::Allow {
+        return Err("message goes with decision deny only".into());
+    }
+    Ok(())
+});
+output!(ThreadAnswerOutput {
+    request_id: NonEmpty,
+    decision: PermissionAnswer,
+    /// The tool_permission ask this answer closed, if one was open.
+    ask_id: Option<AskId>,
+});
+
+brand!(
+    /// An absolute directory on the machine, without `.`, `..` or empty segments (one trailing `/` is allowed).
+    WorkspacePath,
+    check = is_workspace_path,
+    expected = "an absolute directory such as /home/me/src/app, without . or .. segments",
+    pattern = r"^/."
+);
+
+fn is_workspace_path(s: &str) -> bool {
+    let trimmed = s.strip_suffix('/').unwrap_or(s);
+    s.starts_with('/')
+        && crate::prim::js_len(s) <= 1000
+        && !s.chars().any(char::is_control)
+        && trimmed.len() > 1
+        && trimmed[1..]
+            .split('/')
+            .all(|seg| !seg.is_empty() && seg != "." && seg != "..")
+}
+
+// project_add: registers a directory on a machine as a project; the same directory again returns its project.
+input!(ProjectAddInput {
+    machine_id: MachineId,
+    path: WorkspacePath,
+    /// Absent means the directory's name.
+    title: Option<Text<1, 200>>,
+});
+output!(ProjectAddOutput {
+    project_id: ProjectId,
+    /// False when the directory was already a project (it is renamed when a title is given).
+    created: bool,
+});
+
+// project_remove: forgets a project on its machine. Its files, branches and worktrees stay.
+input!(ProjectRemoveInput {
+    machine_id: MachineId,
+    project_id: ProjectId
+});
+output!(ProjectRemoveOutput { ok: True });
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -686,6 +759,9 @@ tools! {
     thread_launch => ThreadLaunch, Operate, ThreadLaunchInput, ThreadLaunchOutput;
     thread_send => ThreadSend, Operate, ThreadSendInput, ThreadSendOutput;
     thread_interrupt => ThreadInterrupt, Operate, ThreadInterruptInput, ThreadInterruptOutput;
+    thread_answer => ThreadAnswer, Operate, ThreadAnswerInput, ThreadAnswerOutput;
+    project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
+    project_remove => ProjectRemove, Operate, ProjectRemoveInput, ProjectRemoveOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;
@@ -853,7 +929,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 43);
+        assert_eq!(McpToolName::ALL.len(), 46);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
