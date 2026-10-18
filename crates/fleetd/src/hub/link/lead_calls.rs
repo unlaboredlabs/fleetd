@@ -1,6 +1,5 @@
 //! Lead-side calls (node `lead_call` frames): which project a call comes from, decided from the node's machine and the
-//! caller's cwd, and the registry areas register their handlers into, keyed by the call's `op`. TS spec:
-//! apps/hub/src/link/LeadCalls.ts and the dispatch in apps/hub/src/leads/LeadCallHandler.ts.
+//! caller's cwd, and the registry areas register their handlers into, keyed by the call's `op`.
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;

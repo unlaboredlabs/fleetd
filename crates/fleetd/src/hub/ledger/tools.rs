@@ -1,6 +1,5 @@
 //! The ledger's MCP tools (asks_list, inbox_reply, decisions_search, decisions_record, digest_get)
-//! and lead calls (ask, ask_withdraw, decide, decisions_search). TS: the matching handlers in api/FleetApi.ts and
-//! leads/LeadCallHandler.ts.
+//! and lead calls (ask, ask_withdraw, decide, decisions_search).
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -261,7 +260,7 @@ pub fn register(tools: &mut Registry) {
 }
 
 /// The ledger's lead-side calls (`ask`, `ask_withdraw`, `decide`, `decisions_search`) for a caller already attributed
-/// to `project_ref` by its cwd, with `by` = `lead:<machineId>/<projectId>`. TS `LeadCallHandler.ts`; the link area's
+/// to `project_ref` by its cwd, with `by` = `lead:<machineId>/<projectId>`. The link area's
 /// `LeadCalls` registry routes those four ops here and maps a refusal onto `LeadCallRefused` (`code.as_str()`,
 /// `message`, `fix`).
 pub fn lead_call(

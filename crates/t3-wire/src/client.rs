@@ -22,7 +22,7 @@ use crate::types::*;
 
 const TICKET_TIMEOUT: Duration = Duration::from_secs(10);
 const OPEN_TIMEOUT: Duration = Duration::from_secs(15);
-/// Effect's defaults as fleetd's TS client sets them: ping every 5 s, give up 15 s after the last frame.
+/// Keepalive: ping every 5 s, give up 15 s after the last frame.
 const PING_INTERVAL: Duration = Duration::from_secs(5);
 const PING_TIMEOUT: Duration = Duration::from_secs(15);
 pub const ORCHESTRATION_PROTOCOL_QUERY_PARAM: &str = "orchestrationProtocol";

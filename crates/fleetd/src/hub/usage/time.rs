@@ -1,4 +1,4 @@
-//! ISO timestamps as the TS hub writes them (`Date#toISOString`: millisecond precision, `Z`).
+//! ISO timestamps as older hubs wrote them (`Date#toISOString`: millisecond precision, `Z`).
 use chrono::{DateTime, SecondsFormat, Utc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,7 +23,7 @@ pub fn system_ms(t: SystemTime) -> i64 {
     }
 }
 
-/// Text cut to `max` characters with an ellipsis, as the TS `clip` helpers do (UTF-16 lengths there; chars here).
+/// Text cut to `max` characters with an ellipsis (chars, not UTF-16 units).
 pub fn clip(text: &str, max: usize) -> String {
     if text.chars().count() > max {
         let mut out: String = text.chars().take(max.saturating_sub(1)).collect();

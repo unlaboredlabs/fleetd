@@ -1,6 +1,6 @@
 //! What usage_status reads from a machine's T3: the fleetd Claude instance's login kind and where T3 writes its trace.
 //! Both come from T3's `server.getConfig`; credentials and env var values are never read, only the names.
-//! TS: apps/hub/src/usage/UsageSource.ts. The executor implements [`UsageSource`] over its T3 sessions.
+//! The executor implements [`UsageSource`] over its T3 sessions.
 use super::ports::BoxFut;
 use serde::{Deserialize, Serialize};
 

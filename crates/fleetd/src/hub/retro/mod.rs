@@ -1,4 +1,4 @@
-//! The retro (M12): self-improving playbooks, advise-only until `policy.retro.apply`. TS spec: apps/hub/src/retro.
+//! The retro (M12): self-improving playbooks, advise-only until `policy.retro.apply`.
 pub mod diff;
 pub mod digest;
 pub mod metrics;

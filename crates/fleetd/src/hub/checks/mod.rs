@@ -1,5 +1,5 @@
 //! Checks runner and claims: `fleetd claim done` runs a workstream's frozen done-when checks, and only all of them
-//! passing makes it done. TS spec: apps/hub/src/checks/**.
+//! passing makes it done.
 //!
 //! The hub holds `GitHub` (the `gh` CLI), `JudgeVerdicts` (completed by the value bar), `CheckRunner` (also approvals'
 //! `verify`) and `Claims`. `cmd` checks run through the link area's `NodeCommands`.

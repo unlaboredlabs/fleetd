@@ -1,7 +1,6 @@
 //! Estimates vs actuals. When a workstream with a raw estimate starts running, its tier's ratio is saved as
 //! `ratioAtStart`; when it is done, the wall-clock minutes since then are its actual. A tier's ratio is the median
 //! actual/raw of its latest done workstreams (calibration.rs), and an actual over twice the raw is an incident.
-//! TS spec: apps/hub/src/estimates/Estimates.ts.
 pub mod calibration;
 
 use crate::clock::Clock;
@@ -95,7 +94,7 @@ impl Estimates {
             let rows = stmt.query_map(rusqlite::params![tier_name(tier), WINDOW as i64], |r| r.get::<_, Option<f64>>(0))?;
             let mut out = Vec::new();
             for r in rows {
-                // A NULL ratio is Number(null) = 0 in TS, which calibrate drops.
+                // A NULL ratio counts as 0, which calibrate drops.
                 out.push(r?.unwrap_or(0.0));
             }
             Ok(out)

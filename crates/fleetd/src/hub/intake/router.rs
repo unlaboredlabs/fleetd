@@ -84,7 +84,7 @@ pub fn render_router_prompt(template: &str, text: &str, projects: &[RouterProjec
     let lines: Vec<String> = projects
         .iter()
         .map(|p| {
-            // Key order as the TS hub wrote it: machineId, projectId, title, folder, recentIntents.
+            // Key order as older hubs wrote it: machineId, projectId, title, folder, recentIntents.
             format!(
                 "{{\"machineId\":{},\"projectId\":{},\"title\":{},\"folder\":{},\"recentIntents\":{}}}",
                 json_str(p.project_ref.machine_id.as_str()),

@@ -1,7 +1,7 @@
 //! The value bar at spawn time (rules.rs), plus review verdicts: `fleetd review verdict` records one per review task,
 //! keyed by its PR and head SHA, which is what later review spawns on that PR are checked against. A judge of a
 //! research workstream reports the metric too, and its numbers become the workstream's computed verdict.
-//! TS spec: apps/hub/src/valuebar/ValueBar.ts. The tasks area calls `check_spawn` before every spawn.
+//! The tasks area calls `check_spawn` before every spawn.
 pub mod pr_heads;
 pub mod rules;
 

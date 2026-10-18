@@ -1,5 +1,4 @@
 //! The claim flow on a real in-memory database and event log, with a fake node and fake other areas.
-//! TS spec: apps/hub/src/checks/Claims.test.ts.
 use super::ports::{
     BoxFuture, ClaimWake, CommandRun, HumanAsk, HumanAskFiled, JudgeSpawn, PlaybookLimits, Ports,
     Refusal,

@@ -1,4 +1,4 @@
-//! FleetApi's grant checks, standard refusals and output limits, shared by every area's tool handlers.
+//! The grant checks, standard refusals and output limits, shared by every area's tool handlers.
 use super::registry::{Caller, ToolError};
 use crate::hub::auth;
 use fleetd_contracts::auth::{GrantMachines, KeyKind, Role};
@@ -6,7 +6,7 @@ use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::mcp::ErrorCode;
 
-/// FleetApi's `LIMITS`: how much one tool result may carry.
+/// How much one tool result may carry.
 pub mod limits {
     pub const PROJECTS: usize = 50;
     pub const ATTENTION: usize = 10;
@@ -151,8 +151,8 @@ pub fn role_name(role: Role) -> &'static str {
     }
 }
 
-/// A list trimmed to its limit; `truncated` is `Some(true)` only when something was dropped, so it serializes like
-/// TS's `withTruncated` (absent otherwise).
+/// A list trimmed to its limit; `truncated` is `Some(true)` only when something was dropped, so the field is on
+/// the wire only then.
 pub struct Capped<T> {
     pub items: Vec<T>,
     pub truncated: Option<bool>,

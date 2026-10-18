@@ -1,7 +1,6 @@
 //! The offline write queue. Additive writes (thread_send, wake firings) to a machine without a live T3 connection
 //! wait here, in order, and go out when it comes back; each ends as one write.delivered or write.expired event.
 //! Interrupts and launches are not additive, so they never come through here and still fail when offline.
-//! TS spec: apps/hub/src/queue/WriteQueue.ts.
 pub mod ports;
 
 use std::collections::{HashMap, HashSet};
@@ -459,7 +458,7 @@ impl WriteQueue {
 
 /// Starts the queue, wakes and webhooks loops and stops them when the hub shuts down.
 pub fn start_loops(hub: &Arc<Hub>) -> JoinHandle<()> {
-    // TS order: the sweep's built-in webhooks check right after its own, then main.ts's overdue wakes.
+    // Sweep order: its own built-in checks, then webhooks', then overdue wakes.
     let webhooks = hub.webhooks.clone();
     hub.sweep.register(SweepCheck {
         name: "webhooks".into(),

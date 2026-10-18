@@ -1011,7 +1011,7 @@ impl Train {
                 let Some(train) = me.upgrade() else { return };
                 let pass = {
                     let (train, repo) = (train.clone(), repo.clone());
-                    // Its own task, so a panic in one pass is logged and the loop goes on, as TS caught every defect.
+                    // Its own task, so a panic in one pass is logged and the loop goes on.
                     tokio::spawn(async move { train.step(&repo).await }).await
                 };
                 let took = pass.unwrap_or_else(|e| {

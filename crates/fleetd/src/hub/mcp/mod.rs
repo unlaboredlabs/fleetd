@@ -1,7 +1,7 @@
 //! The MCP endpoint at /mcp: Streamable HTTP with JSON responses only (POST; no GET stream, no DELETE), a static
-//! tool list, and the caller's bearer checked on every request (TS: apps/hub/src/mcp/McpEndpoint.ts, served there by
-//! Effect's `McpServer.layerHttp`, whose wire behaviour this matches: sessions from `initialize`, protocol
-//! negotiation, 202 for notifications, and the same JSON-RPC errors).
+//! tool list, and the caller's bearer checked on every request, with the wire behaviour older hubs had
+//! (Effect's `McpServer.layerHttp`): sessions from `initialize`, protocol negotiation, 202 for notifications, and the
+//! same JSON-RPC errors.
 mod descriptions;
 
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError, clip};
@@ -23,7 +23,7 @@ const PROTOCOL_HEADER: &str = "mcp-protocol-version";
 /// The tools/list result, built once from the registry, and the sessions `initialize` opened.
 pub struct McpEndpoint {
     tools_list: Value,
-    /// Session id → negotiated protocol. Sessions live as long as the hub (there is no DELETE), as in TS.
+    /// Session id → negotiated protocol. Sessions live as long as the hub (there is no DELETE).
     sessions: Mutex<HashMap<String, &'static str>>,
 }
 
@@ -61,7 +61,7 @@ impl McpEndpoint {
 }
 
 /// A tool's input schema for tools/list. MCP requires an object root, so a non-object input becomes the empty
-/// object schema, and the definitions it references (transitively) go to `$defs`, as TS's `inputJsonSchema`.
+/// object schema, and the definitions it references (transitively) go to `$defs`.
 fn input_schema(doc: &Value, name: &str) -> Value {
     let defs = &doc["$defs"];
     let mut input = &defs["McpTools"]["properties"][format!("{name}.input")];
@@ -381,7 +381,7 @@ fn call_result(name: &str, outcome: Result<Value, CallError>) -> Value {
     json!({ "content": [{ "type": "text", "text": value.to_string() }], "structuredContent": value, "isError": is_error })
 }
 
-/// The `invalid` result for input that failed to decode; `fix` differs between /mcp and /app, as in TS.
+/// The `invalid` result for input that failed to decode; `fix` differs between /mcp and /app.
 pub fn invalid_input(tool: &str, detail: &str, fix: &str) -> ToolError {
     ToolError::new(
         ErrorCode::Invalid,

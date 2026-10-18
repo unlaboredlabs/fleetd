@@ -1,4 +1,4 @@
-//! The app WebSocket at /app (TS: apps/hub/src/api/AppSocket.ts): `auth` with a key, then `snapshot` for the
+//! The app WebSocket at /app: `auth` with a key, then `snapshot` for the
 //! fleetd_status data, `events` to stream HubEvents after a cursor as they happen, and `call` to run any MCP tool
 //! with the session's key, through the same registry, grants and limits as /mcp.
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};

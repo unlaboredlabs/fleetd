@@ -1,4 +1,4 @@
-//! usage_status and usage_resume. TS: their handlers in api/FleetApi.ts.
+//! usage_status and usage_resume.
 use super::source::UsageSource;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, readable, require, unknown_machine};
 use fleetd_contracts::auth::Role;

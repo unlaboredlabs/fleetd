@@ -1,6 +1,6 @@
 //! Usage-limit classification from what T3 reports about a failed thread: its failure class and reset time, plus the
 //! error text the `claude` CLI or a proxy in front of it produced. Pure; the executor uses it to tell a limit from a
-//! failure, and the usage layer to park and pace. fleetd never asks a usage API. TS: apps/hub/src/usage/classify.ts.
+//! failure, and the usage layer to park and pace. fleetd never asks a usage API.
 //! The classifier itself is `executor::limit`'s; this module adds what the usage layer reads off the event log.
 use super::ports::HubEvent;
 use super::time::{iso, parse_ms};

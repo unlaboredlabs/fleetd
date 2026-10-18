@@ -1,4 +1,4 @@
-//! wake_set, wake_list and wake_cancel. TS spec: apps/hub/src/api/FleetApi.ts.
+//! wake_set, wake_list and wake_cancel.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;

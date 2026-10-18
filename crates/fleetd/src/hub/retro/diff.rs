@@ -1,6 +1,6 @@
 //! Applying a model-written unified diff to one file's text. Hunks are placed by their context and removed lines,
 //! not their line numbers, which models get wrong; whitespace at line ends is ignored when nothing matches exactly.
-//! Pure. TS: apps/hub/src/retro/diff.ts.
+//! Pure.
 use regex::Regex;
 use std::sync::LazyLock;
 

@@ -1,10 +1,9 @@
-//! The claim lines a lead reads in its wake. Pure. TS spec: apps/hub/src/checks/render.ts.
+//! The claim lines a lead reads in its wake. Pure.
 use super::{units, utf16_prefix};
 use fleetd_contracts::ledger::{CheckSpec, WorkstreamId};
 use fleetd_contracts::verification::{CheckOutcome, CheckResult, ClaimId};
 
-/// One line per done-when check, as digests and wakes show it. Same text as `leads/digest.ts` describeCheck; switch to
-/// the leads area's copy once it lands.
+/// One line per done-when check, as digests and wakes show it. Same text as `leads::digest::describe_check`.
 pub fn describe_check(check: &CheckSpec) -> String {
     match check {
         CheckSpec::PrMerged { repo, pr } => format!(

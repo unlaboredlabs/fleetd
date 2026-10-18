@@ -1,4 +1,4 @@
-//! The hub's HTTP server (TS: apps/hub/src/api/HttpApp.ts): /healthz, /mcp, /app and /node/link on one port,
+//! The hub's HTTP server: /healthz, /mcp, /app and /node/link on one port,
 //! loopback by default.
 use crate::hub::api::{Hub, Registry};
 use crate::hub::{app_ws, mcp};

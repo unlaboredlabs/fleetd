@@ -46,7 +46,6 @@ impl From<LedgerError> for LeadError {
     }
 }
 
-/// TS `fromExecutor`.
 fn from_executor(error: ExecutorError) -> LeadError {
     match error {
         ExecutorError::MachineNotConnected { machine_id } => {
@@ -56,7 +55,7 @@ fn from_executor(error: ExecutorError) -> LeadError {
     }
 }
 
-/// A checked contract value from plain JSON, as the TS hub's schema decode did.
+/// A checked contract value from plain JSON.
 fn wire<T: serde::de::DeserializeOwned>(value: impl serde::Serialize) -> Result<T, LeadError> {
     Ok(serde_json::from_value(serde_json::to_value(value)?)?)
 }
@@ -322,7 +321,7 @@ const OUTCOME_WORKSTREAMS: usize = 20;
 
 /// Called once in `serve::build_on`, after the areas below leads are built.
 pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
-    // project_get shows the project's lead and its open workstreams, as FleetApi did.
+    // project_get shows the project's lead and its open workstreams.
     let outcome = Arc::clone(area);
     links
         .executors

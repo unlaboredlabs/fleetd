@@ -1,6 +1,6 @@
 //! What needs the human now, and when a client may interrupt them. The hub stamps `attention` on the events it emits;
 //! clients (the desktop app's notifications) follow the field and the attention_policy tool rather than repeating
-//! these rules. Pure, apart from reading the hub's time zone. TS spec: apps/hub/src/attention/{rules,policy}.ts.
+//! these rules. Pure, apart from reading the hub's time zone.
 use chrono::{TimeZone, Timelike};
 use chrono_tz::Tz;
 use fleetd_contracts::events::Attention;
@@ -117,7 +117,7 @@ pub fn quiet_windows(now_ms: i64, tz: Tz, quiet: Option<QuietHours>) -> Vec<Quie
     windows
 }
 
-/// `attention_policy` (TS FleetApi): the coalesce window and the quiet windows from now, as absolute times.
+/// `attention_policy`: the coalesce window and the quiet windows from now, as absolute times.
 pub fn register(tools: &mut crate::hub::api::Registry) {
     tools.add(
         "attention_policy",
@@ -147,12 +147,12 @@ pub fn register(tools: &mut crate::hub::api::Registry) {
     );
 }
 
-/// An IANA zone name fleetd can use (TS `isZone`).
+/// An IANA zone name fleetd can use.
 pub fn zone(name: &str) -> Option<Tz> {
     name.parse().ok()
 }
 
-/// The hub machine's zone (TS `hubZone`): `TZ`, else `/etc/localtime`'s target, else UTC.
+/// The hub machine's zone: `TZ`, else `/etc/localtime`'s target, else UTC.
 pub fn hub_zone() -> Tz {
     if let Some(tz) = std::env::var("TZ")
         .ok()
@@ -170,7 +170,7 @@ pub fn hub_zone() -> Tz {
 }
 
 /// The quiet hours the global `policy.quiet_hours` decision sets, in `policy.tz` (else the hub's zone).
-/// `global_value` reads a global decision's trimmed value. TS: attention/policy.ts.
+/// `global_value` reads a global decision's trimmed value.
 pub fn quiet_policy(global_value: impl Fn(&str) -> Option<String>) -> (Tz, Option<QuietHours>) {
     let tz = global_value(POLICY_TZ_KEY)
         .and_then(|t| zone(&t))

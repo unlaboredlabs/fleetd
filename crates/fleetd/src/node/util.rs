@@ -1,5 +1,5 @@
 //! Small helpers shared by the node's modules: the scrubbed child environment, errno names as Node prints them,
-//! UTF-16 length rules the TS contracts check, and ISO timestamps.
+//! UTF-16 length rules the contracts check, and ISO timestamps.
 use std::path::PathBuf;
 
 /// Children get only these variables, so the `CLAUDE*` ones of whatever started the node never leak into T3.

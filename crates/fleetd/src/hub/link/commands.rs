@@ -1,6 +1,6 @@
 //! Commands the hub runs on a machine through its node: a request frame out, the matching reply back by id.
 //! `cmd` checks and the merge train's git steps (timeouts up to 30 min), sealed secrets, approved (gated) commands and
-//! the doctor's node actions. TS spec: apps/hub/src/checks/NodeCommands.ts.
+//! the doctor's node actions.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -89,7 +89,7 @@ pub struct NodeCommands {
     state: Arc<Mutex<State>>,
 }
 
-/// The doctor's node actions, over the same links (TS NodeActions).
+/// The doctor's node actions, over the same links.
 pub type NodeActions = NodeCommands;
 
 /// Held by the link server while a link is welcomed. Dropping it detaches the link; commands in flight on it fail as

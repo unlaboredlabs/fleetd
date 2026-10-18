@@ -1,4 +1,4 @@
-//! The merge train (TS: apps/hub/src/train). Only fleetd merges: one serial train per repo rebases each ready Change
+//! The merge train. Only fleetd merges: one serial train per repo rebases each ready Change
 //! onto its base, waits for CI on that head, posts `fleetd/train` and squash-merges pinned to it.
 pub mod calls;
 pub mod contract;

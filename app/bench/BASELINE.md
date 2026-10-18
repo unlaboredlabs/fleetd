@@ -106,7 +106,7 @@ Against the A1 section above:
 
 ## Linux (forge): M8 inbox kinds, software-rendered
 
-Approve asks show their stored argv with Approve/Reject, secret asks point to the phone or web app, checklists get a
+Approve asks show their stored argv with Approve/Reject, secret asks point to the desktop app, checklists get a
 "✓ done" tick, and the approve ask's command is a typed struct. Same bench as the TLS section above.
 
 **forge**, Linux 7.0.0-38-generic, AMD Ryzen 9 9955HX 16-Core Processor, Xvfb 1600x1000, software-rendered (lavapipe, no GPU). 2026-10-17T16:11Z, fleetd 39f94e5 plus the M8b change, gpui zed v1.24.2 (fb69067).

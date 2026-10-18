@@ -70,7 +70,7 @@ pub struct CommandRun {
     pub timed_out: bool,
 }
 
-/// A refusal at the wire (TS LeadError and ToolError): `{code, message, fix?}` with the TS texts.
+/// A refusal at the wire: `{code, message, fix?}`, with the texts older hubs sent.
 pub type Refusal = McpToolError;
 
 pub fn invalid(message: impl Into<String>, fix: Option<&str>) -> Refusal {

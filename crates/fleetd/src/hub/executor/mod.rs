@@ -1,9 +1,9 @@
 //! Per-machine T3 clients. Each attached machine gets one supervised connection that follows T3's shell stream into
 //! the store (thread/project caches) and the event log (derived events, on transitions only). Thread transcripts are
-//! read on demand (tail, actions, headlines) and dropped after 60 s unused. TS spec: apps/hub/src/executor/**.
+//! read on demand (tail, actions, headlines) and dropped after 60 s unused.
 //!
-//! One `Executors` serves what TS split into Executors, ThreadWatch, WorkspaceFiles, ThreadWorkspace, ProviderList,
-//! UsageSource and T3Settings.
+//! One `Executors` serves thread watching, workspace files and changes, the provider list, the usage source and T3
+//! settings.
 pub mod limit;
 pub mod providers;
 pub mod shell_mapper;
@@ -150,7 +150,7 @@ pub trait OfflineWriter: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = Result<WriteOutcome, ExecutorError>> + Send + 'a>>;
 }
 
-/// What the watchdog needs (TS ThreadWatch).
+/// What the watchdog needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunningThread {
     pub thread_ref: ThreadRef,
@@ -179,7 +179,7 @@ pub struct Progress {
     pub tool: Option<OpenTool>,
 }
 
-/// What a finished task thread changed (TS ThreadWorkspace.changes).
+/// What a finished task thread changed.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ThreadChanges {
     pub branch: Option<String>,

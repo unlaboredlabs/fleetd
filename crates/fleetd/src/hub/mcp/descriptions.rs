@@ -1,4 +1,4 @@
-/// Tool descriptions in tools/list, word for word from the TS hub (apps/hub/src/mcp/McpEndpoint.ts).
+/// Tool descriptions in tools/list, word for word as older hubs listed them.
 pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "fleetd_status",

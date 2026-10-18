@@ -1,4 +1,4 @@
-//! The `Hub` context every area reads, and the MCP tool registry every area plugs into (TS: apps/hub/src/api/FleetApi.ts).
+//! The `Hub` context every area reads, and the MCP tool registry every area plugs into.
 //!
 //! # Adding an area
 //!
@@ -8,9 +8,9 @@
 //!    below. Each tool is one [`Registry::add`]: the tool name from the contracts table, an input type that decodes
 //!    with the contract's defaults and checks, and an async handler. The registry checks the tool's role from the
 //!    contracts table before the handler runs; the handler checks the per-machine grant itself with [`require`] and
-//!    filters fleet-wide results with [`readable`] / [`can_read`], exactly as FleetApi does, and trims lists with
+//!    filters fleet-wide results with [`readable`] / [`can_read`], and trims lists with
 //!    [`cap`] and texts with [`clip`] to [`limits`]. Every refusal is a [`ToolError`] with a `fix`; every result
-//!    carries a `next` hint where TS gives one. Store failures can be returned with `?` (they become the
+//!    carries a `next` hint where there is a next step. Store failures can be returned with `?` (they become the
 //!    `t3_error` "The hub failed to answer that request." result and are logged), and a panic in a handler is
 //!    turned into the same result, so one failed request never takes a connection down.
 //! 4. Registering a tool that is already registered replaces it, so an area can take over one of the
@@ -53,7 +53,7 @@ impl Default for Listen {
 }
 
 impl std::fmt::Display for Listen {
-    /// `host:port` as the TS hub logs it (IPv6 hosts unbracketed, as there).
+    /// `host:port` as the hub logs it (IPv6 hosts unbracketed).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.host, self.port)
     }

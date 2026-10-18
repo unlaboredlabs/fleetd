@@ -1,4 +1,4 @@
-//! Model and effort for a spawn. TS spec: apps/hub/src/tasks/resolve.ts.
+//! Model and effort for a spawn.
 use fleetd_contracts::effort::Effort;
 
 pub const DEFAULT_TASK_MODEL: &str = "claude-opus-5-5";

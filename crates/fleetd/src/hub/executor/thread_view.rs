@@ -1,6 +1,5 @@
 //! Pure view of one thread for thread_tail / actions_list, built from T3's bounded thread snapshot (the newest window
-//! of the thread) plus the live events after it. Never pages oldest-first. TS spec: apps/hub/src/executor/ThreadView.ts
-//! and ThreadWatch.ts (`open_tool`).
+//! of the thread) plus the live events after it. Never pages oldest-first.
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
@@ -266,7 +265,7 @@ pub fn actions_of(view: &ThreadView, limit: usize, failed_only: bool) -> Vec<(St
                 .map(|a| (item.id.clone(), a))
         })
         .collect();
-    // HashMap order is arbitrary where TS kept insertion order; order equal timestamps by id so output is stable.
+    // HashMap order is arbitrary; order equal timestamps by id so output is stable.
     out.sort_by(|a, b| a.0.cmp(&b.0));
     newest_first(&mut out, |(_, a)| &a.at);
     out.truncate(limit);

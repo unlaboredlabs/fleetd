@@ -7,7 +7,7 @@ use crate::ids::{EventSeq, MachineId, Timestamp};
 use crate::prim::NonEmpty;
 use crate::{brand, literal};
 
-/// WHATWG URL parsing, like `new URL(url)` in TS.
+/// WHATWG URL parsing.
 pub fn is_http_url(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|parsed| matches!(parsed.scheme(), "http" | "https"))
 }

@@ -1,4 +1,4 @@
-//! Decisions, asks, batches and the reply grammar (TS spec: apps/hub/src/ledger/**).
+//! Decisions, asks, batches and the reply grammar.
 //!
 //! Three services over one set of tables, each an `Arc` field on `Hub`:
 //! - [`Decisions`]: the keyed decision log, resolved workstream → project → global, with FTS5 search.
@@ -6,7 +6,7 @@
 //! - [`Inbox`]: `inbox_reply`, the terse reply grammar applied in one transaction, then [`AnswerSink`] per project.
 //!
 //! Every write runs in one `BEGIN IMMEDIATE` transaction that a [`LedgerError`] rolls back; events are appended after
-//! the commit, as in TS.
+//! the commit.
 mod asks;
 mod decisions;
 pub mod digest_text;

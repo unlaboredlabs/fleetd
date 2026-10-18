@@ -1,6 +1,5 @@
 //! What the ops areas (usage, doctor, retro, approvals) take from other hub areas, as narrow traits. The wiring in
-//! `hub/serve` implements them over the real services; tests implement them with fakes. The shapes mirror the TS
-//! services they replace (store/EventLog.ts, queue/WriteQueue.ts, tasks/TaskRecords.ts, leads/LeadRecords.ts).
+//! `hub/serve` implements them over the real services; tests implement them with fakes.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
@@ -25,7 +24,7 @@ pub struct HubEvent {
     pub summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
-    /// "loud" or "urgent": the human is notified (attention/rules.ts).
+    /// "loud" or "urgent": the human is notified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attention: Option<String>,
 }
@@ -58,7 +57,7 @@ pub struct WaitPage {
     pub more: bool,
 }
 
-/// The hub-global, append-only event log (store/EventLog.ts).
+/// The hub-global, append-only event log.
 pub trait EventLog: Send + Sync {
     /// Trims `summary` to 200 characters and drops a `data` over 2 KB of JSON.
     fn append(&self, event: NewEvent) -> BoxFut<'_, HubEvent>;

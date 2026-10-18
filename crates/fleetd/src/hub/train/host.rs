@@ -111,7 +111,7 @@ pub use crate::hub::executor::providers::ProviderInstance as ProviderView;
 /// One entry of a PR's verdict history, newest first, as the value bar's review rules read it.
 pub use crate::hub::valuebar::rules::PrVerdict;
 
-/// The value bar's review refusal (valuebar/rules.ts `reviewRefusal`), for a hub-spawned review round.
+/// The value bar's review refusal (`valuebar::rules::review_refusal`), for a hub-spawned review round.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReviewRefusal {
     pub message: String,

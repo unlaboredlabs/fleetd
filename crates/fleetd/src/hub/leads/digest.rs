@@ -20,7 +20,7 @@ pub fn estimate_tokens(text: &str) -> usize {
     utf16_len(text).div_ceil(3)
 }
 
-/// JS string length, which the TS hub measured in.
+/// JS string length, which older hubs measured in.
 pub fn utf16_len(text: &str) -> usize {
     text.chars().map(char::len_utf16).sum()
 }
@@ -67,7 +67,7 @@ pub fn one_line(text: &str, max: usize) -> String {
     clip_utf16(&flat, max)
 }
 
-/// `flat.length > max ? flat.slice(0, max - 1) + "…" : flat`, in UTF-16 units as the TS hub counted.
+/// `flat.length > max ? flat.slice(0, max - 1) + "…" : flat`, in UTF-16 units as older hubs counted.
 pub fn clip_utf16(flat: &str, max: usize) -> String {
     if utf16_len(flat) <= max {
         return flat.to_string();

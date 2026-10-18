@@ -1,4 +1,4 @@
-//! The keyed decision log, scoped workstream → project → global (TS `Decisions.ts`).
+//! The keyed decision log, scoped workstream → project → global.
 use std::sync::{Arc, RwLock};
 
 use fleetd_contracts::events::HubEventType;

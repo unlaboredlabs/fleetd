@@ -1,6 +1,5 @@
 //! `judge` checks: the hub spawns a review task that sees only the frozen criteria and the artifacts' refs, never the
 //! lead's narrative. The task's `fleetd review verdict` is the result; the value bar hands it over here.
-//! TS spec: apps/hub/src/checks/Judges.ts.
 use super::ports::{JudgeSpawn, Ports, Refusal};
 use super::utf16_prefix;
 use crate::hub::store::{EventLog, WaitInput};

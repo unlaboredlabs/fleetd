@@ -1,4 +1,4 @@
-//! Which project a lead-side call's cwd belongs to. Pure. TS spec: apps/hub/src/link/LeadCalls.ts.
+//! Which project a lead-side call's cwd belongs to. Pure.
 
 /// Lexical normal form without a trailing slash (`path.posix.normalize`). The hub cannot see the node's filesystem,
 /// so symlinks stay as given.
@@ -48,7 +48,7 @@ pub fn project_index_for_cwd<'a>(
         if !root.starts_with('/') || !contains(&root, &target) {
             continue;
         }
-        // UTF-16 length, as TS compares `root.length`.
+        // UTF-16 length, as older hubs compared it.
         let depth = root.encode_utf16().count();
         if best.is_none_or(|(_, d)| depth > d) {
             best = Some((i, depth));

@@ -1,4 +1,4 @@
-//! doctor_list and doctor_fix. TS: their handlers in api/FleetApi.ts.
+//! doctor_list and doctor_fix.
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, is_human, readable, require};
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::MachineId;

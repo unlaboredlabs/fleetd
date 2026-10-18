@@ -32,7 +32,7 @@ pub fn wire(hub: &Arc<Hub>) {
         ))));
 }
 
-/// TS LeadCallHandler's ledger cases: `ask`, `ask_withdraw`, `decide`, `decisions_search`.
+/// The ledger's lead calls: `ask`, `ask_withdraw`, `decide`, `decisions_search`.
 struct LedgerCalls(Weak<Hub>);
 
 impl LeadCallHandler for LedgerCalls {
@@ -58,7 +58,7 @@ fn stopping() -> McpToolError {
     )
 }
 
-/// TS LeadCallHandler's `claim_done` and `review_verdict`, answered by checks and the value bar.
+/// The lead calls `claim_done` and `review_verdict`, answered by checks and the value bar.
 struct CheckCalls(Weak<Hub>);
 
 impl LeadCallHandler for CheckCalls {
@@ -105,7 +105,7 @@ fn register_ledger_calls(hub: &Arc<Hub>) {
     }
 }
 
-/// TS HumanDigests: `humanTrainLines(trainFacts(shown), sinceMs)` and `suggestedLines` of the visible proposals.
+/// The human digest's train lines and the suggested lines of the visible proposals.
 fn feed_digests(hub: &Arc<Hub>) {
     let (train, retro) = (Arc::downgrade(&hub.train), Arc::downgrade(&hub.retro));
     hub.digests.feed(move |f| {
@@ -161,7 +161,7 @@ impl UsageHook for UsageForLeads {
     }
 }
 
-/// TS LeadWakes: the section is left out when the project has no train and no Change.
+/// Lead wakes: the section is left out when the project has no train and no Change.
 struct TrainForLeads(Weak<Hub>);
 
 impl TrainHook for TrainForLeads {
@@ -198,7 +198,7 @@ impl GitHubHook for GitHubForLeads {
     }
 }
 
-/// TS FleetApi: fleetd_status carries the slot board (rows on machines the caller reads), and project_get the
+/// fleetd_status carries the slot board (rows on machines the caller reads), and project_get the
 /// project's tasks (their threads leave the thread list) and its trains.
 fn extend_tools(hub: &Arc<Hub>) {
     use crate::hub::api::{ToolError, limits};

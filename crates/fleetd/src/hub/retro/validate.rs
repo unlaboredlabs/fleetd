@@ -1,5 +1,5 @@
 //! Checking the retro's answer. The model says whether a change is wording or a gate; the hub decides by the fields
-//! the diff actually changes, so a gate change cannot pass as wording. Pure. TS: apps/hub/src/retro/validate.ts.
+//! the diff actually changes, so a gate change cannot pass as wording. Pure.
 use super::diff::apply_unified_diff;
 use super::types::{METRIC_CLASSES, PLAYBOOK_NAMES, PlaybookChange};
 use regex::Regex;
@@ -13,7 +13,7 @@ pub const WORDING_FIELDS: [&str; 2] = ["leadInstructions", "estimatePrior"];
 /// At most this many changes are read from one answer.
 pub const MAX_CHANGES: usize = 10;
 
-/// The playbooks area's `parse_playbook` (playbooks/load.ts): the file's frontmatter fields, or its error text.
+/// The playbooks area's `parse_playbook`: the file's frontmatter fields, or its error text.
 pub trait PlaybookParser: Send + Sync {
     fn parse(
         &self,

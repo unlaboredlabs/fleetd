@@ -3,7 +3,7 @@
 //! the fields it touches. Wording changes apply as a new override file and are measured over their window against
 //! the window before: kept when their metric went down and no guarded metric went up, reverted otherwise. Gate
 //! changes go to a person as one batch of asks each Monday. Nothing applies until the global Decision
-//! `policy.retro.apply` is true; until then every proposal is only "suggested". TS: apps/hub/src/retro/Retro.ts.
+//! `policy.retro.apply` is true; until then every proposal is only "suggested".
 use super::diff::apply_unified_diff;
 use super::metrics::{DAY_MS, RetroWork, judge, snapshot};
 use super::records::{HOLDING, RetroRecords, SqlRunner, StoredProposal};
@@ -51,7 +51,7 @@ pub trait RetroRunner: Send + Sync {
     fn ask(&self, prompt: String) -> BoxFut<'_, (Option<String>, OrchestratorRun)>;
 }
 
-/// The bundled playbooks with their overrides (playbooks/Playbooks.ts).
+/// The bundled playbooks with their overrides.
 pub trait RetroPlaybooks: Send + Sync {
     /// The current text and ref (`name@sha`) of `name`.
     fn current(&self, name: &str) -> (String, String);

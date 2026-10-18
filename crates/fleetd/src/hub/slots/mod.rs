@@ -1,7 +1,6 @@
 //! The slot board: a global cap on running turns, per-project shares, and a FIFO queue within priority.
 //! A slot is held while a lead's or task's T3 thread is running, read from the executor's thread events, and
 //! from a grant until that thread first runs. Threads that belong to no lead or task are not counted.
-//! TS spec: apps/hub/src/slots/Slots.ts.
 pub mod board;
 
 use std::sync::{Arc, Mutex};

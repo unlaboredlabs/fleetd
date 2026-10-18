@@ -1,6 +1,5 @@
 //! Incidents: what went wrong, recorded by the hub from what it observed (a false claim, an estimate miss, a polish
 //! loop, ...), never by an agent. Each one is stored and announced as `incident.recorded`.
-//! TS spec: apps/hub/src/incidents/Incidents.ts.
 use crate::clock::Clock;
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
 use fleetd_contracts::events::HubEventType;
@@ -267,7 +266,7 @@ impl Incidents {
                 None => tally.push((i.class, 1)),
             }
         }
-        // TS sorts by count, then class name (localeCompare; the names are lowercase ASCII).
+        // By count, then class name (the names are lowercase ASCII).
         tally.sort_by(|a, b| {
             b.1.cmp(&a.1)
                 .then_with(|| class_name(a.0).cmp(&class_name(b.0)))

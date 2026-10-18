@@ -13,7 +13,7 @@ use crate::hub::store::HubDb;
 
 pub type Db = Arc<HubDb>;
 
-/// Runs `f` on the hub's connection. The hub treats its own database as infallible, as the TS hub did.
+/// Runs `f` on the hub's connection. The hub treats its own database as infallible.
 pub fn sql<R>(db: &HubDb, f: impl FnOnce(&Connection) -> R) -> R {
     let mut out = None;
     db.with(|conn| {

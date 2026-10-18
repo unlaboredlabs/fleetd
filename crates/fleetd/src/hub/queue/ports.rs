@@ -14,7 +14,7 @@ pub use crate::hub::store::now_ms;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// `HubDb::with` for these areas' own queries. A failed query is a defect here, as in the TS hub.
+/// `HubDb::with` for these areas' own queries. A failed query is a defect here.
 pub trait DbRun {
     fn run<R>(&self, f: impl FnOnce(&Connection) -> R) -> R;
 }
@@ -56,7 +56,7 @@ pub enum ExecutorError {
 }
 
 impl ExecutorError {
-    /// The TS error tag, as event data carries it.
+    /// The error tag, as event data carries it.
     pub fn tag(&self) -> &'static str {
         match self {
             Self::MachineNotConnected { .. } => "MachineNotConnected",
@@ -159,7 +159,7 @@ impl ThreadWriter for executor::Executors {
     }
 }
 
-/// `thread_send` goes through the queue, as TS FleetApi's `writes.send`.
+/// `thread_send` goes through the queue.
 pub struct QueueWriter(pub std::sync::Arc<super::WriteQueue>);
 
 impl executor::OfflineWriter for QueueWriter {
@@ -183,7 +183,7 @@ impl executor::OfflineWriter for QueueWriter {
     }
 }
 
-/// usage: the hold a paused login or parked thread puts on new turns (TS Usage.hold/whenClear).
+/// usage: the hold a paused login or parked thread puts on new turns.
 pub trait UsageHold: Send + Sync {
     fn hold(&self, target: &ThreadRef) -> BoxFuture<'_, Option<String>>;
     /// Returns once `hold` is clear for the thread.

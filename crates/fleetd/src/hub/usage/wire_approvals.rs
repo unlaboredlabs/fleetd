@@ -1,6 +1,6 @@
 //! The approvals area's ports over the real hub: the ledger's asks, the node link's secret and gated-run commands,
-//! the leads' answer wakes and the check runner (TS Approvals.ts's layer over Asks, NodeCommands, LeadWakes and
-//! CheckRunner). Asks cross as their wire JSON, as the approvals area reads them.
+//! the leads' answer wakes and the check runner.
+//! Asks cross as their wire JSON, as the approvals area reads them.
 use super::ports::{self, BoxFut};
 use super::wire::{OpsPorts, convert};
 use crate::hub::approvals::{

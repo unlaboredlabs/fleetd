@@ -1,6 +1,4 @@
-//! Usage's owners and the retro's runner, playbooks, ledger and work over the real hub (TS Usage.ts over
-//! TaskRecords/LeadRecords; Retro.ts over the router's runner, Playbooks, Decisions, Asks, Incidents, LeadRecords and
-//! Tasks).
+//! Usage's owners and the retro's runner, playbooks, ledger and work over the real hub.
 use super::ports::{BoxFut, ThreadRef};
 use super::service::UsageOwners;
 use super::state::{Owner, ParkedKind, ParkedThread};
@@ -26,7 +24,7 @@ fn logged<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) -> Option<T
 }
 
 impl OpsPorts {
-    /// TS `leads.leads.list().some(...)`: the thread is a lead's current one.
+    /// The thread is a lead's current one.
     fn is_lead_thread(&self, machine_id: &str, thread_id: &str) -> bool {
         logged(self.hub().leads.records.leads_list(), "listing leads")
             .unwrap_or_default()
@@ -78,7 +76,7 @@ impl UsageOwners for OpsPorts {
 }
 
 impl OpsPorts {
-    /// TS `Retro.layerRunner`: the router's runner (login, environment allowlist, model) with RUN_TIMEOUT_MS.
+    /// The router's runner (login, environment allowlist, model) with RUN_TIMEOUT_MS.
     fn retro_runner(&self) -> Result<&OneShot, String> {
         if let Some(runner) = self.retro_runner.get() {
             return Ok(runner);
@@ -135,7 +133,7 @@ impl RetroRunner for OpsPorts {
     }
 }
 
-/// The playbooks area's parser: the decoded playbook as plain JSON (TS `parsePlaybook(...).playbook`).
+/// The playbooks area's parser: the decoded playbook as plain JSON.
 struct AreaParser;
 
 impl PlaybookParser for AreaParser {
@@ -207,7 +205,7 @@ fn required<T: serde::de::DeserializeOwned>(input: &Value, key: &str) -> Result<
     field(input, key)?.ok_or_else(|| format!("{key} is required"))
 }
 
-/// An `Asks.create` input from its wire JSON, as the TS hub's schema decode took it.
+/// An `Asks.create` input from its wire JSON.
 pub(crate) fn ask_input_of(input: &Value) -> Result<AskInput, String> {
     Ok(AskInput {
         project_ref: field(input, "projectRef")?,

@@ -1,4 +1,4 @@
-//! What this area calls in the executor, the write queue, the node link and the ledger, one method per TS call.
+//! What this area calls in the executor, the write queue, the node link and the ledger, one method per call.
 //! `wiring::HubPorts` implements it over those areas; `Unwired` answers until `Ctx::set_ports` runs, so the area's
 //! logic builds and tests without them.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};

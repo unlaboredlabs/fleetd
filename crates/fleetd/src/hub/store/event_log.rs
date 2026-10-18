@@ -31,7 +31,7 @@ pub struct NewEvent {
     pub summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
-    /// Set by the emitter (TS apps/hub/src/attention); stored and returned as given.
+    /// Set by the emitter (see the attention area); stored and returned as given.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attention: Option<Attention>,
 }
@@ -70,8 +70,8 @@ pub struct WaitResult {
     pub more: bool,
 }
 
-/// Trims `summary` to 200 UTF-16 units (199 plus "…", as TS slices) and replaces a `data` over 2 KB of JSON with
-/// `{"truncated": true}`.
+/// Trims `summary` to 200 UTF-16 units (199 plus "…", as older hubs cut it) and replaces a `data` over 2 KB of
+/// JSON with `{"truncated": true}`.
 fn trim(mut event: NewEvent) -> NewEvent {
     if event.summary.encode_utf16().count() > MAX_SUMMARY {
         let mut units = 0;

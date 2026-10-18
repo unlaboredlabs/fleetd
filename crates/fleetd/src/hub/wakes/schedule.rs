@@ -1,7 +1,6 @@
 //! Pure wake-schedule math: IANA time-zone conversion, a 5-field cron parser, and "next run after".
 //! Local times that don't exist (the hour skipped when DST starts) move forward by the gap; local times that
 //! happen twice (the hour repeated when DST ends) take the first occurrence. This is Temporal's "compatible".
-//! TS spec: apps/hub/src/wakes/schedule.ts.
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 

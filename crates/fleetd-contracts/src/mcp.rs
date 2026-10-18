@@ -1,5 +1,5 @@
 //! The MCP surface: the static tool table with every tool's input and output, the fleet status view and the tool
-//! error shape. Inputs apply the TS decode defaults (`intDefault`, `withDecodingDefaultKey`) on deserialize.
+//! error shape. Inputs apply their decode defaults on deserialize.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -629,7 +629,7 @@ macro_rules! tools {
         }
 
         impl McpToolName {
-            /// In the TS table's order, which is the order `tools/list` returns.
+            /// In table order, which is the order `tools/list` returns.
             pub const ALL: &'static [McpToolName] = &[$(McpToolName::$variant,)*];
 
             pub fn as_str(self) -> &'static str {
@@ -664,8 +664,8 @@ macro_rules! tools {
                 }
             }
 
-            /// Decodes `input` as this tool's input, defaults applied, and re-encodes it: what the TS decoder
-            /// hands its handler. Handlers decode their typed input with `serde_json::from_value` instead.
+            /// Decodes `input` as this tool's input, defaults applied, and re-encodes it: the input as its
+            /// handler sees it. Handlers decode their typed input with `serde_json::from_value` instead.
             pub fn decode_input(self, input: serde_json::Value) -> Result<serde_json::Value, serde_json::Error> {
                 match self {
                     $(McpToolName::$variant => serde_json::to_value(serde_json::from_value::<$input>(input)?),)*

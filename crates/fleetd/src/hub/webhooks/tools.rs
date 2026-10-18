@@ -1,4 +1,4 @@
-//! subscription_set, subscription_list and subscription_delete. TS spec: apps/hub/src/api/FleetApi.ts.
+//! subscription_set, subscription_list and subscription_delete.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;

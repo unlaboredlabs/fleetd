@@ -1,4 +1,4 @@
-//! The ask path, batches and their quiet window (TS `Asks.ts`).
+//! The ask path, batches and their quiet window.
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -253,7 +253,7 @@ enum Created {
 
 pub struct Asks {
     ctx: Ctx,
-    /// The one pending quiet-window timer: a new schedule replaces it (TS `FiberHandle.run`).
+    /// The one pending quiet-window timer: a new schedule replaces it.
     timer: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 

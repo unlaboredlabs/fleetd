@@ -1,5 +1,5 @@
 //! GitHub's REST API through the `gh` CLI on the hub machine, so the hub holds no GitHub token of its own.
-//! TS spec: apps/hub/src/checks/GitHub.ts. The train, reviews, finish-all and the doctor reuse this.
+//! The train, reviews, finish-all and the doctor reuse this.
 use super::ports::BoxFuture;
 use regex::Regex;
 use std::sync::{Arc, LazyLock};
@@ -125,7 +125,7 @@ impl GitHub {
             });
         }
         if out.exit_code != 0 {
-            // As TS: the last stderr line, empty when there is none (its `exit N` fallback never applies).
+            // The last stderr line, empty when there is none.
             let why = out.stderr.trim().rsplit('\n').next().unwrap_or_default();
             return Err(GhError {
                 kind: GhErrorKind::Failed,

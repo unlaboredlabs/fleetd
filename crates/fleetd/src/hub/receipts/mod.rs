@@ -1,5 +1,4 @@
 //! Receipts for a task, read from its thread's turn items through the executor.
-//! TS spec: apps/hub/src/receipts/Receipts.ts.
 pub mod count;
 
 use crate::hub::checks::ports::Ports;

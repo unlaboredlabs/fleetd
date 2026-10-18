@@ -1,4 +1,4 @@
-//! The lead's `fleetd change enqueue|status` (leads/LeadCallHandler.ts `change_enqueue`, `change_status`). The
+//! The lead's `fleetd change enqueue|status` (`change_enqueue`, `change_status`). The
 //! caller is already attributed to a project by its cwd; both act only within that project.
 //! Both are registered in link's `LeadCalls` by [`register_lead_calls`].
 use super::contract::{Change, ChangeEnqueueCall, ChangeId, ChangeState, ProjectRef};

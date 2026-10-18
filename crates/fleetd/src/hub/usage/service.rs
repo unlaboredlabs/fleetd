@@ -2,7 +2,7 @@
 //! reset, leads first, then reviews, then writers. When one machine's login fails the same way on two threads within
 //! 10 minutes (or its proxy has no account at all), a breaker pauses new turns there with one plain usage.breaker
 //! event, until the reset or usage_resume. The state is rebuilt from the event log at start, so a hub restart keeps
-//! it. TS: apps/hub/src/usage/Usage.ts.
+//! it.
 use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, HubEvent, NewEvent, ThreadRef, WaitInput};
 use super::probes::{ProbeCounter, count_probes, user_home};
@@ -24,7 +24,7 @@ const REPLAYED: &[&str] = &[
 ];
 const FOLLOWED: &[&str] = &["thread.usage_limited", "thread.started"];
 
-/// Who owns a thread, and whether a park still stands (tasks/TaskRecords.ts and leads/LeadRecords.ts).
+/// Who owns a thread, and whether a park still stands.
 pub trait UsageOwners: Send + Sync {
     /// A task's thread (with its kind and id) or a lead's current thread; `None` for any other thread.
     fn owner_of(&self, thread: &ThreadRef) -> BoxFut<'_, Option<Owner>>;
@@ -32,7 +32,7 @@ pub trait UsageOwners: Send + Sync {
     fn still_parked(&self, parked: &ParkedThread) -> BoxFut<'_, bool>;
 }
 
-/// queue/WriteQueue.ts `send`: delivered once per `client_message_id`.
+/// The write queue's `send`: delivered once per `client_message_id`.
 pub trait UsageQueue: Send + Sync {
     fn send(
         &self,
@@ -77,7 +77,7 @@ pub struct UsageDeps {
 struct Inner {
     deps: UsageDeps,
     state: Mutex<UsageState>,
-    /// Serialises the follower, `drain`, resets and `resume`, as the TS semaphore does. `gate` and `hold` only read.
+    /// Serialises the follower, `drain`, resets and `resume`. `gate` and `hold` only read.
     op: tokio::sync::Mutex<u64>,
 }
 

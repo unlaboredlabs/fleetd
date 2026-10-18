@@ -1,7 +1,7 @@
 //! Incident detectors that read the event log: stalls, writes outside a task's areas, and the two ledger smells, a
 //! human asked about a key that was already decided (re_ask) and a human replacing a lead's decision (override). The
 //! other classes are recorded where the hub sees them happen (claims, estimates, the value bar, the train, the inbox).
-//! Events from the hub's start on; nothing here reads a model. TS spec: apps/hub/src/incidents/Detectors.ts.
+//! Events from the hub's start on; nothing here reads a model.
 use super::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, StoreError, WaitInput};
 use fleetd_contracts::events::{HubEvent, HubEventType};
@@ -138,7 +138,7 @@ impl Detectors {
         r: &ProjectRef,
         supersedes: Option<&DecisionId>,
     ) -> Vec<Decision> {
-        // In first-seen order, like the TS Map: the superseded one, then the active ones.
+        // In first-seen order: the superseded one, then the active ones.
         let mut found: Vec<Decision> = Vec::new();
         let candidates = supersedes
             .and_then(|id| self.ports.decision(id))

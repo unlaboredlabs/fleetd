@@ -1,4 +1,4 @@
-//! The retro's wire types (contracts/retro.ts), with the same JSON. Swapped for `fleetd_contracts`' once it has them.
+//! The retro's wire types, with the JSON older hubs used. Swapped for `fleetd_contracts`' once it has them.
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,7 +20,7 @@ pub const METRIC_CLASSES: [&str; 10] = [
     "agent_minutes_per_done",
 ];
 
-/// `playbook.` (contracts/ledger.ts `PLAYBOOK_ASK_PREFIX`): hub-wide asks about playbooks.
+/// `playbook.`: hub-wide asks about playbooks.
 pub const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

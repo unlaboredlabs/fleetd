@@ -291,7 +291,7 @@ impl DetectorPorts for HubPorts {
     }
 }
 
-/// The ledger's misfiled sink (TS Inbox.reply): a product ask the lead filed and the human dropped is a
+/// The ledger's misfiled sink (inbox_reply): a product ask the lead filed and the human dropped is a
 /// `misfiled_ask` incident.
 struct RecordMisfiled(Arc<Incidents>);
 

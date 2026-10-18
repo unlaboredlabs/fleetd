@@ -1,6 +1,5 @@
 //! Text the hub writes for tasks: the branch name, the task's first message, its line in the lead digest, and the
-//! result the lead receives inline in its wake. Pure. Lengths count UTF-16 units, as the TS hub's did.
-//! TS spec: apps/hub/src/tasks/render.ts.
+//! result the lead receives inline in its wake. Pure. Lengths count UTF-16 units, as older hubs' did.
 use std::sync::LazyLock;
 
 use fleetd_contracts::ledger::Brief;
@@ -247,7 +246,7 @@ fn quoted(text: &str) -> Vec<String> {
 }
 
 /// The "why you are woken" entry for a finished task: its whole result tail, inline.
-/// `receipts` is the receipts area's line for this result (TS receiptsLine).
+/// `receipts` is the receipts area's line for this result.
 pub fn task_result_lines(
     task_id: &str,
     title: &str,

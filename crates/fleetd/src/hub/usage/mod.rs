@@ -1,4 +1,4 @@
-//! Usage classification, parking and the breaker (M4). TS spec: apps/hub/src/usage.
+//! Usage classification, parking and the breaker (M4).
 pub mod classify;
 pub mod ports;
 pub mod probes;

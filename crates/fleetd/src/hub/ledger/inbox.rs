@@ -1,4 +1,4 @@
-//! `inbox_reply`: a terse human reply applied to a batch in one transaction (TS `Inbox.ts`).
+//! `inbox_reply`: a terse human reply applied to a batch in one transaction.
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

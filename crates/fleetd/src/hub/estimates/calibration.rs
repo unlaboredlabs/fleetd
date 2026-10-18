@@ -1,5 +1,4 @@
 //! Estimate calibration: a tier's measured actual/raw ratio and the ETA it gives a raw estimate. Pure.
-//! TS spec: apps/hub/src/estimates/calibration.ts.
 use fleetd_contracts::prim::{Count, NonNegative, PositiveNumber};
 use fleetd_contracts::verification::Eta;
 
