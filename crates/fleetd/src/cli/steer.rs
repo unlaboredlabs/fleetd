@@ -538,6 +538,17 @@ mod tests {
             "queuedAt": "2026-10-18T14:02:07.120Z", "deliveredAt": "2026-10-18T14:02:07.143Z",
             "ackedAt": "2026-10-18T14:02:08.910Z", "ackExcerpt": "S12: dropping the docs page",
         });
+        // The names read here are the contract's: a real Steer round-trips through them.
+        let mut full = steer.clone();
+        full.as_object_mut().unwrap().extend(
+            json!({ "target": { "workstreamId": "W41" }, "workstreamId": "W41", "thread": { "machineId": "lab-a", "threadId": "t1" },
+                "runId": "r1", "by": { "kind": "human", "keyName": "me" }, "mode": "now", "text": "skip the docs" })
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        let typed: fleetd_contracts::steer::Steer = serde_json::from_value(full.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), full);
         let mut printed = vec!["queued".to_owned()];
         let lines = new_lines(&steer, &mut printed);
         assert_eq!(lines.len(), 2);
