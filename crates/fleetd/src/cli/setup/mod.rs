@@ -1,7 +1,6 @@
 //! Setup: `fleetd init` and `fleetd uninstall` on the hub machine, `fleetd machine add|remove` for workers.
 
 mod checklist;
-pub mod claude_check;
 pub mod detect;
 pub mod doctor;
 pub mod machine;
@@ -46,7 +45,8 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
   doctor [--home <dir>]
              run every setup check on the hub now and print each problem with its fix
   uninstall [--home <dir>] [--purge]
-             stop and remove the hub's service; its data stays unless --purge
+             stop and remove the hub's service; its data stays unless --purge, which also removes
+             what an older fleetd installed for T3 Code
 "#;
 
 static SAID: AtomicUsize = AtomicUsize::new(0);
@@ -781,6 +781,21 @@ async fn uninstall_command(argv: &[String]) -> u8 {
         return fail(&format!("cannot delete {home_text}: {error}"));
     }
     say(&format!("deleted {home_text}"));
+    if let Some(platform) = local_platform() {
+        let dirs = local_dirs();
+        let suffix = state.map(|s| s.unit_suffix).unwrap_or_default();
+        let step = machine_plan::old_t3_removal(
+            platform,
+            &dirs.home,
+            &dirs.config_home,
+            local_uid(),
+            &suffix,
+        );
+        let out = run_local("/bin/sh", &["-c".to_owned(), step.command], None).await;
+        if !out.stdout.trim().is_empty() {
+            say(out.stdout.trim());
+        }
+    }
     0
 }
 

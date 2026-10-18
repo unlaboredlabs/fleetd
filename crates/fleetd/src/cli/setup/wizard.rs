@@ -446,12 +446,14 @@ async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, 
                     CmdOutcome::Ran { stdout, .. } => stdout.trim().to_owned(),
                     CmdOutcome::SpawnError(_) => String::new(),
                 };
-                let v = super::claude_check::verdict(&printed);
-                if !v.runs {
+                let v = crate::node::runner::version::check(&printed);
+                if !v.runs() {
                     list.failed(
                         name,
-                        &v.problem.unwrap_or_default(),
-                        &v.fix.unwrap_or_default(),
+                        v.problem(&printed)
+                            .unwrap_or_default()
+                            .trim_end_matches('.'),
+                        &v.fix().unwrap_or_default(),
                     );
                     return Ok(false);
                 }

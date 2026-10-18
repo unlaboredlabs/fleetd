@@ -19,7 +19,7 @@ impl Platform {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     Hub,
-    /// Only to find and remove the T3 service older releases installed.
+    /// Only for `--purge` where an older fleetd installed T3 Code.
     T3,
     Node,
 }
@@ -350,26 +350,6 @@ impl ServiceManager {
                 systemd_name(role, &self.suffix)
             ),
             Platform::Darwin => self.bootout(role),
-        }
-    }
-
-    /// argv (no shell) the node runs to restart T3 when it stops answering.
-    pub fn restart_argv(&self, role: Role) -> Vec<String> {
-        match self.platform {
-            Platform::Linux => vec![
-                "/usr/bin/env".into(),
-                format!("XDG_RUNTIME_DIR=/run/user/{}", self.uid),
-                "systemctl".into(),
-                "--user".into(),
-                "restart".into(),
-                systemd_name(role, &self.suffix),
-            ],
-            Platform::Darwin => vec![
-                "launchctl".into(),
-                "kickstart".into(),
-                "-k".into(),
-                self.target(role),
-            ],
         }
     }
 }

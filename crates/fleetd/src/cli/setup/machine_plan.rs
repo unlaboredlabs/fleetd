@@ -7,10 +7,13 @@ use std::collections::HashMap;
 use base64::Engine;
 use serde_json::{Value, json};
 
-use super::claude_check::{INSTALL, verdict};
 use super::ordered_json::{Json, Object};
 use super::state::{GitIdentity, git_identity_env};
 use super::units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, q, render_unit, unit_path};
+use crate::node::runner::version::{self, VersionVerdict};
+
+/// Claude Code's own installer, user-space; fleetd never installs claude itself.
+pub const CLAUDE_INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
 
 /// The node.json fields `machine add` sets; the rest (cmdRoots, …) are the user's or the node's and are kept.
 const NODE_CONFIG_OWNED: [&str; 4] = ["hub", "machineId", "name", "tags"];
@@ -29,9 +32,7 @@ pub struct MachineLayout {
     pub bin_dir: String,
     /// The fleetd binary: the node service runs it, and the installer puts the CLI at the same path.
     pub bin: String,
-    /// What older releases left: the login file under its T3-era name, T3's home, and the old binary places.
-    pub legacy_env_file: String,
-    pub legacy_t3_home: String,
+    /// Where older releases put the fleetd binary.
     pub legacy_share: Vec<String>,
 }
 
@@ -47,11 +48,7 @@ pub fn machine_layout(home: &str) -> MachineLayout {
         logs: format!("{fleetd}/logs"),
         bin_dir: format!("{fleetd}/bin"),
         bin: format!("{fleetd}/bin/fleetd"),
-        legacy_env_file: format!("{fleetd}/t3.env"),
-        legacy_t3_home: format!("{fleetd}/t3"),
-        legacy_share: ["bin", "cli", "npm"]
-            .map(|d| format!("{share}/{d}"))
-            .to_vec(),
+        legacy_share: ["bin", "cli"].map(|d| format!("{share}/{d}")).to_vec(),
         fleetd,
     }
 }
@@ -94,10 +91,8 @@ pub fn probe_command(suffix: &str) -> String {
         config_home: "$C",
     };
     let mut reads = vec![l.node_config.clone()];
-    for role in [Role::Node, Role::T3] {
-        reads.push(unit_path(Platform::Linux, &dirs, role, suffix));
-        reads.push(unit_path(Platform::Darwin, &dirs, role, suffix));
-    }
+    reads.push(unit_path(Platform::Linux, &dirs, Role::Node, suffix));
+    reads.push(unit_path(Platform::Darwin, &dirs, Role::Node, suffix));
     let quoted = |paths: &[String]| {
         paths
             .iter()
@@ -112,7 +107,7 @@ pub fn probe_command(suffix: &str) -> String {
         r#"if [ -n "$CL" ]; then echo "claude $CL"; echo "claude_version $("$CL" --version 2>/dev/null | head -n 1)"; fi"#.into(),
         r#"L=unknown; if command -v loginctl >/dev/null 2>&1; then L=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true); fi; echo "linger ${L:-unknown}""#.into(),
         format!(r#"for f in {}; do if [ -f "$f" ]; then printf 'file %s ' "$f"; base64 < "$f" | tr -d '\n'; echo; fi; done"#, quoted(&reads)),
-        format!(r#"for f in {}; do if [ -e "$f" ]; then echo "size $f $(wc -c < "$f" | tr -d ' ')"; fi; done"#, quoted(&[l.env_file.clone(), l.legacy_env_file.clone()])),
+        format!(r#"for f in {}; do if [ -e "$f" ]; then echo "size $f $(wc -c < "$f" | tr -d ' ')"; fi; done"#, quoted(std::slice::from_ref(&l.env_file))),
         format!(r#"for f in {}; do if [ -f "$f" ]; then echo "digest $f $( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d ' ' -f 1)"; fi; done"#, quoted(std::slice::from_ref(&l.bin))),
     ]
     .join("\n")
@@ -312,15 +307,16 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     }
     let Some(claude) = &facts.claude else {
         return Err(format!(
-            "claude is not installed on the machine; fleetd runs its agents through it. Fix: on the machine, run {INSTALL}"
+            "claude is not installed on the machine; fleetd runs its agents through it. Fix: on the machine, run {CLAUDE_INSTALL}"
         ));
     };
-    let claude_verdict = verdict(facts.claude_version.as_deref().unwrap_or(""));
-    if !claude_verdict.runs {
+    let printed = facts.claude_version.as_deref().unwrap_or("");
+    let claude_verdict = version::check(printed);
+    if !claude_verdict.runs() {
         return Err(format!(
-            "{}. Fix: on the machine, run {}",
-            claude_verdict.problem.unwrap_or_default(),
-            claude_verdict.fix.unwrap_or_default()
+            "{} Fix: on the machine, run {}",
+            claude_verdict.problem(printed).unwrap_or_default(),
+            claude_verdict.fix().unwrap_or_default()
         ));
     }
 
@@ -396,30 +392,10 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         });
     }
 
-    let size = |file: &str| facts.sizes.get(file).copied().flatten();
-    if size(&l.env_file).is_none() {
-        steps.push(if size(&l.legacy_env_file).is_some() {
-            step(
-                "keep fleetd's Claude login under its new name, claude.env",
-                format!("mv {} {}", q(&l.legacy_env_file), q(&l.env_file)),
-            )
-        } else {
-            step(
-                "create fleetd's Claude login file (empty, 0600)",
-                format!("[ -e {f} ] || (umask 077 && : > {f})", f = q(&l.env_file)),
-            )
-        });
-    }
-
-    // T3 is gone: its service from an older release only holds a port and memory. Its data stays (`--purge`).
-    if facts.file(&unit_file(Role::T3)).is_some() {
+    if facts.sizes.get(&l.env_file).copied().flatten().is_none() {
         steps.push(step(
-            "stop and remove the T3 service an older fleetd installed",
-            format!(
-                "{}; rm -f {}",
-                services.remove(Role::T3),
-                q(&unit_file(Role::T3))
-            ),
+            "create fleetd's Claude login file (empty, 0600)",
+            format!("[ -e {f} ] || (umask 077 && : > {f})", f = q(&l.env_file)),
         ));
     }
 
@@ -525,11 +501,11 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         )
     });
 
-    if claude_verdict.untested {
+    if claude_verdict == VersionVerdict::UntestedNewer {
         notes.push(format!(
-            "{}. If sessions misbehave, run on the machine: {}",
-            claude_verdict.problem.unwrap_or_default(),
-            claude_verdict.fix.unwrap_or_default()
+            "{} If sessions misbehave, run on the machine: {}",
+            claude_verdict.problem(printed).unwrap_or_default(),
+            claude_verdict.fix().unwrap_or_default()
         ));
     }
     if platform == Platform::Linux && facts.linger != "yes" {
@@ -588,15 +564,47 @@ pub fn fresh_facts(user: &str, arch: &str) -> Facts {
         arch: arch.into(),
         path: "/usr/local/bin:/usr/bin:/bin".into(),
         claude: Some(format!("/home/{user}/.local/bin/claude")),
-        claude_version: Some(format!("{} (Claude Code)", super::claude_check::TESTED)),
+        claude_version: Some(format!("{} (Claude Code)", version::TESTED)),
         linger: "yes".into(),
         ..Facts::default()
     }
 }
 
-/// Commands that undo `machine add`: the node's service always (and a T3 service an older release left); with
-/// `purge` also the node's key and settings, fleetd's Claude login and config, logs, and what older releases left.
-/// The fleetd binary stays: it may be the CLI the installer put there.
+/// What an older fleetd installed for T3 Code on a machine: its service and its files. Only `--purge` removes them,
+/// and prints the line only where there is something to remove.
+pub fn old_t3_removal(
+    platform: Platform,
+    home: &str,
+    config_home: &str,
+    uid: u32,
+    suffix: &str,
+) -> Step {
+    let home = home.trim_end_matches('/');
+    let dirs = Dirs { home, config_home };
+    let unit = unit_path(platform, &dirs, Role::T3, suffix);
+    let services = ServiceManager::new(platform, uid, suffix, |role| {
+        unit_path(platform, &dirs, role, suffix)
+    });
+    let files = [
+        format!("{home}/.fleetd/t3"),
+        format!("{home}/.fleetd/t3.env"),
+        format!("{home}/.local/share/fleetd/npm"),
+    ];
+    let quoted = files.iter().map(|f| q(f)).collect::<Vec<_>>().join(" ");
+    step(
+        "remove T3 Code, if an older fleetd installed it",
+        format!(
+            "if [ -e {unit} ] || [ -e {first} ]; then echo 'older fleetd installed T3 Code; removing it'; {remove}; rm -rf {unit} {quoted}; fi",
+            unit = q(&unit),
+            first = q(&files[0]),
+            remove = services.remove(Role::T3),
+        ),
+    )
+}
+
+/// Commands that undo `machine add`: the node's service always; with `purge` also the node's key and settings,
+/// fleetd's Claude login and config, its logs, and what an older fleetd left. The fleetd binary stays: it may be
+/// the CLI the installer put there.
 pub fn plan_machine_remove(
     platform: Platform,
     home: &str,
@@ -612,22 +620,13 @@ pub fn plan_machine_remove(
     let mut steps = vec![step(
         "stop and remove the node service",
         format!(
-            "{}; {}; rm -f {} {}",
+            "{}; rm -f {}",
             services.remove(Role::Node),
-            services.remove(Role::T3),
-            q(&unit_file(Role::Node)),
-            q(&unit_file(Role::T3))
+            q(&unit_file(Role::Node))
         ),
     )];
     if purge {
-        let mut paths = vec![
-            &l.node_home,
-            &l.claude_dir,
-            &l.env_file,
-            &l.logs,
-            &l.legacy_env_file,
-            &l.legacy_t3_home,
-        ];
+        let mut paths = vec![&l.node_home, &l.claude_dir, &l.env_file, &l.logs];
         paths.extend(l.legacy_share.iter());
         steps.push(step(
             "delete the node's key and settings, fleetd's Claude login and config, and its logs",
@@ -636,6 +635,7 @@ pub fn plan_machine_remove(
                 paths.iter().map(|p| q(p)).collect::<Vec<_>>().join(" ")
             ),
         ));
+        steps.push(old_t3_removal(platform, home, config_home, uid, suffix));
     }
     if platform == Platform::Linux {
         steps.push(step(
@@ -721,9 +721,9 @@ mod tests {
         assert!(text.contains("KillMode=mixed\n"));
     }
 
-    /// A second run on a set-up machine only makes sure the node runs; an older release's machine moves over.
+    /// A second run on a set-up machine only makes sure the node runs.
     #[test]
-    fn rerun_is_idempotent_and_an_old_machine_moves_over() {
+    fn rerun_is_idempotent_and_keeps_the_users_node_settings() {
         let first = plan_machine_add(&fresh_facts("wynn", "x64"), &input()).unwrap();
         let mut facts = fresh_facts("wynn", "x64");
         let l = machine_layout(&facts.home);
@@ -733,7 +733,7 @@ mod tests {
             }
         }
         let node = json!({ "hub": "https://forge.example.ts.net", "machineId": "mac-mini", "name": "mac-mini",
-            "tags": ["macos", "xcode"], "t3Home": l.legacy_t3_home, "cmdRoots": ["/srv"], "enrolled": true });
+            "tags": ["macos", "xcode"], "cmdRoots": ["/srv"], "enrolled": true });
         facts
             .files
             .insert(l.node_config.clone(), Some(node.to_string()));
@@ -771,32 +771,6 @@ mod tests {
         let written: Value = serde_json::from_str(text).unwrap();
         assert_eq!(written["tags"], json!(["gpu"]));
         assert_eq!(written["cmdRoots"], json!(["/srv"]));
-
-        // A machine an older release set up: login file renamed, T3 service removed, data kept.
-        let mut old = facts.clone();
-        old.sizes.remove(&l.env_file);
-        old.sizes.insert(l.legacy_env_file.clone(), Some(80));
-        old.files.insert(
-            "/home/wynn/.config/systemd/user/fleetd-t3.service".into(),
-            Some("[Unit]\n".into()),
-        );
-        let moved = plan_machine_add(
-            &old,
-            &MachineAddInput {
-                hub_has_node_key: true,
-                ..input()
-            },
-        )
-        .unwrap();
-        assert_eq!(
-            titles(moved),
-            [
-                "create fleetd's directories",
-                "keep fleetd's Claude login under its new name, claude.env",
-                "stop and remove the T3 service an older fleetd installed",
-                "make sure the node runs"
-            ]
-        );
     }
 
     #[test]

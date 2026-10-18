@@ -4,7 +4,7 @@
     "title": "create fleetd's directories"
   },
   {
-    "command": "mkdir -p /home/wynn/.fleetd/bin && cat > /home/wynn/.fleetd/bin/fleetd.fleetd-tmp && chmod 755 /home/wynn/.fleetd/bin/fleetd.fleetd-tmp && mv /home/wynn/.fleetd/bin/fleetd.fleetd-tmp /home/wynn/.fleetd/bin/fleetd && rm -rf /home/wynn/.local/share/fleetd/bin /home/wynn/.local/share/fleetd/cli /home/wynn/.local/share/fleetd/npm",
+    "command": "mkdir -p /home/wynn/.fleetd/bin && cat > /home/wynn/.fleetd/bin/fleetd.fleetd-tmp && chmod 755 /home/wynn/.fleetd/bin/fleetd.fleetd-tmp && mv /home/wynn/.fleetd/bin/fleetd.fleetd-tmp /home/wynn/.fleetd/bin/fleetd && rm -rf /home/wynn/.local/share/fleetd/bin /home/wynn/.local/share/fleetd/cli",
     "stdin": "binary",
     "title": "install fleetd 0.0.0"
   },

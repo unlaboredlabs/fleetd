@@ -37,7 +37,7 @@ pub struct SetupState {
     /// Where devices and nodes reach the hub.
     pub url: String,
     pub unit_suffix: String,
-    /// Commit identity for every T3 and node fleetd sets up (public repos want the GitHub noreply address).
+    /// Commit identity for every node fleetd sets up (public repos want the GitHub noreply address).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub git_identity: Option<GitIdentity>,
     pub machines: BTreeMap<String, MachineRecord>,

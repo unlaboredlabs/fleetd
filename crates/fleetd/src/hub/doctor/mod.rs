@@ -4,4 +4,4 @@ pub mod config;
 pub mod service;
 pub mod tools;
 
-pub use service::{Doctor, DoctorDeps, DoctorFleet, DoctorRefused, DoctorResults, T3Settings};
+pub use service::{Doctor, DoctorDeps, DoctorFleet, DoctorRefused, DoctorResults};

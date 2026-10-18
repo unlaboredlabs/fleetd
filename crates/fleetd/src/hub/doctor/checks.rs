@@ -8,14 +8,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::LazyLock;
 
-use crate::cli::setup::claude_check::{INSTALL as CLAUDE_INSTALL, TESTED as CLAUDE_TESTED};
+use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
+use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
 /// The login a person runs on a worker: fleetd's Claude keeps its own config dir there.
 pub const MACHINE_LOGIN_FIX: &str = "CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login";
-
-/// The fleetd provider instance in T3's settings.
-pub const FLEETD_INSTANCE: &str = "fleetd";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -361,14 +359,8 @@ pub struct MachineView {
     /// "online", "degraded" or "offline".
     pub status: String,
     pub last_seen_at: String,
-    pub t3: Option<T3Info>,
     #[serde(default)]
     pub degraded_reason: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct T3Info {
-    pub version: String,
 }
 
 /// The node's link to the hub; what it runs is checked by the claude checks.
@@ -496,25 +488,19 @@ fn version_entry(
     found: &str,
     entry: impl Fn(DoctorStatus, &str, Option<DoctorFix>) -> Entry,
 ) -> Entry {
-    let v = crate::cli::setup::claude_check::verdict(found);
+    let v = version::check(found);
     let fix = v
-        .fix
+        .fix()
         .map(|command| manual("Change the installed claude", Some(command)));
-    match (v.runs, v.untested) {
-        (true, false) => entry(
+    let problem = v.problem(found).unwrap_or_default();
+    match v {
+        VersionVerdict::Ok => entry(
             Pass,
             &format!("claude {} is supported.", found.trim()),
             None,
         ),
-        (true, true) => entry(Warn, &format!("{}.", v.problem.unwrap_or_default()), fix),
-        _ => entry(
-            Fail,
-            &format!(
-                "{}; sessions there are refused.",
-                v.problem.unwrap_or_default()
-            ),
-            fix,
-        ),
+        VersionVerdict::UntestedNewer => entry(Warn, &problem, fix),
+        _ => entry(Fail, &problem, fix),
     }
 }
 
@@ -572,7 +558,7 @@ pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
 pub struct HostProbe {
     #[serde(default)]
     pub git_email: Option<String>,
-    /// "env": the node's service environment (GIT_AUTHOR_EMAIL), which setup gives T3 too; else git's global config.
+    /// "env": the node's service environment (GIT_AUTHOR_EMAIL), which setup writes; else git's global config.
     #[serde(default)]
     pub git_email_from: Option<String>,
     pub disk_path: String,
@@ -592,7 +578,7 @@ pub fn commit_identity(
         Ok(p) => p,
     };
     let want = config.git_identity.as_ref().map(|g| g.email.as_str());
-    // Setup writes the identity into the T3 and node units; by hand, git's global config is the place.
+    // Setup writes the identity into the node's unit; by hand, git's global config is the place.
     let set = || match want {
         None => manual(
             &format!("Set the commit identity on {machine_id}"),

@@ -40,26 +40,9 @@ pub struct ActionOutcome {
     pub probe: Option<HostProbe>,
 }
 
-/// A machine's T3 server settings over T3's own RPC (`server.getSettings` / `server.updateSettings`) with the hub's
-/// node-minted session. T3 redacts secret values when it reads them out and keeps the stored value when a redacted
-/// one is written back, so re-applying an instance read this way never loses its credentials.
-pub trait T3Settings: Send + Sync {
-    fn read(&self, machine_id: &str) -> BoxFut<'_, Result<Value, String>>;
-    /// `patch` is a `ServerSettingsPatch`; `provider_instance_mutation` a `ProviderInstanceMutation`.
-    fn update(
-        &self,
-        machine_id: &str,
-        patch: Value,
-        provider_instance_mutation: Option<Value>,
-    ) -> BoxFut<'_, Result<Value, String>>;
-}
-
-/// The hub services the checks read and the fixes act through.
+/// The hub services the checks read.
 pub trait DoctorFleet: Send + Sync {
     fn machines(&self) -> BoxFut<'_, Vec<MachineView>>;
-    /// The executor holds a live T3 connection to the machine.
-    fn connected(&self, machine_id: &str) -> BoxFut<'_, bool>;
-    fn await_live(&self, machine_id: &str) -> BoxFut<'_, ()>;
     /// Usage::status with the machine's UsageSource reading.
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus>;
     /// NodeActions::run: `probe`; `Err` is the link's message.
@@ -82,7 +65,6 @@ pub struct DoctorDeps {
     /// `<hub home>`, whose setup.json is read at each run.
     pub home: std::path::PathBuf,
     pub fleet: Arc<dyn DoctorFleet>,
-    pub settings: Arc<dyn T3Settings>,
     pub events: Arc<dyn EventLog>,
     pub clock: Arc<dyn Clock>,
 }
@@ -211,7 +193,7 @@ impl Doctor {
             self.health(&own),
             run_cmd("gh", &["auth", "status"], None),
             run_cmd("claude", &["auth", "status", "--json"], Some(router_env())),
-            crate::cli::setup::claude_check::probe(std::path::Path::new("claude"), &env),
+            crate::node::runner::conformance::probe(std::path::Path::new("claude"), &env),
             async {
                 match &public {
                     Some(u) => Some(self.health(u.trim_end_matches('/')).await),

@@ -19,7 +19,7 @@ use super::units::unit_suffix;
 use super::{Probe, current_exe, parse_listen, probe_listen, say};
 
 pub fn machine_usage() -> String {
-    use super::claude_check::SUPPORTED;
+    use crate::node::runner::version::SUPPORTED;
     format!(
         "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run]
             [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]
@@ -29,7 +29,8 @@ pub fn machine_usage() -> String {
              first, --dry-run only prints (for a fresh machine, without connecting); safe to run again
   machine remove <id> [--purge] [--home <hub home>]
              stop and remove the node's service on the machine and revoke its key on the hub; --purge
-             also deletes ~/.fleetd/node, ~/.fleetd/claude and ~/.fleetd/claude.env there
+             also deletes ~/.fleetd/node, ~/.fleetd/claude and ~/.fleetd/claude.env there, and
+             what an older fleetd installed for T3 Code
 "
     )
 }
