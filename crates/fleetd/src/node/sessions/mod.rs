@@ -1221,7 +1221,7 @@ impl SessionService {
         }));
     }
 
-    /// The run stays active while the node waits, with an `ApiRetry` item saying why it is slow; then
+    /// The run stays active while the node waits, with a `NodeRetry` item saying why it is slow; then
     /// [`CONTINUE_PROMPT`] goes to the same session under a fresh uuid that maps back to the run.
     fn schedule_retry(
         &self,
@@ -1232,11 +1232,6 @@ impl SessionService {
         failure: &RunFailure,
     ) {
         let max = self.inner.config.retry_schedule_ms.len() as u32;
-        let error = format!(
-            "node retry {attempt} of {max} in {} s: {}",
-            delay.div_ceil(1000),
-            failure.message
-        );
         self.log(self.update(id, |c| {
             let at = c.at.clone();
             c.put_item(ThreadItem {
@@ -1247,11 +1242,11 @@ impl SessionService {
                 started_at: at.clone(),
                 completed_at: Some(at.clone()),
                 updated_at: at,
-                kind: ItemKind::ApiRetry {
+                kind: ItemKind::NodeRetry {
                     attempt,
-                    max_retries: max,
-                    error_status: failure.api_status,
-                    error,
+                    of: max,
+                    delay_ms: delay,
+                    reason: failure.clone(),
                 },
             });
         }));
