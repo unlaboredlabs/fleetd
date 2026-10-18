@@ -329,6 +329,9 @@ impl Shell {
                 shell.listen_for_links(cx);
                 shell.load_saved(cx);
                 crate::update::watch(cx, |shell, text| shell.update = Some(text));
+                if let Some(text) = std::env::var("FLEETD_DEMO_TYPE").ok().filter(|t| !t.is_empty()) {
+                    demo_type(text, window, cx);
+                }
             }
         }
         shell
@@ -2167,6 +2170,55 @@ fn printable(ks: &Keystroke) -> Option<&str> {
 
 pub fn clip(text: &str, max: usize) -> String {
     if text.chars().count() <= max { text.to_string() } else { format!("{}…", text.chars().take(max - 1).collect::<String>()) }
+}
+
+/// `FLEETD_DEMO_TYPE=<order>` (scripts/demo-mac.sh): once the hub has sent the projects the order names (`@name ...`),
+/// starts the recording's clip, then types the order into the board's composer at a person's pace and sends it.
+fn demo_type(text: String, window: &mut Window, cx: &mut Context<Shell>) {
+    let project = text.strip_prefix('@').and_then(|t| t.split_whitespace().next()).map(str::to_owned);
+    cx.spawn_in(window, async move |this, cx| {
+        let wait = async |cx: &mut gpui::AsyncWindowContext, ms: u64| cx.background_executor().timer(Duration::from_millis(ms)).await;
+        loop {
+            let ready = this.update(cx, |s, cx| s.screen == Screen::Board && project.as_deref().is_none_or(|p| s.docked.read(cx).knows_project(p)));
+            match ready {
+                Ok(true) => break,
+                Ok(false) => wait(cx, 100).await,
+                Err(_) => return,
+            }
+        }
+        // The board settles first; the clip opens on it half a second before the first key.
+        wait(cx, 1000).await;
+        crate::record::clip_start();
+        wait(cx, 500).await;
+        eprintln!("FLEETD_DEMO typing chars={}", text.chars().count());
+        for (i, ch) in text.chars().enumerate() {
+            let typed = this.update_in(cx, |s, window, cx| {
+                window.focus(&s.docked.focus_handle(cx), cx);
+                s.docked.update(cx, |c, cx| c.type_text(&ch.to_string(), cx));
+            });
+            if typed.is_err() {
+                return;
+            }
+            // About 50 ms a key with an uneven rhythm, and a beat after a word or a sentence.
+            let jitter = (i as u64 * 7919) % 40;
+            wait(
+                cx,
+                30 + jitter
+                    + if ch == ' ' {
+                        40
+                    } else if ch == '.' || ch == ',' {
+                        180
+                    } else {
+                        0
+                    },
+            )
+            .await;
+        }
+        wait(cx, 700).await;
+        this.update(cx, |s, cx| s.docked.update(cx, |c, cx| c.submit(cx))).ok();
+        eprintln!("FLEETD_DEMO sent");
+    })
+    .detach();
 }
 
 fn spawn_bench(mode: Mode, window: &mut Window, cx: &mut Context<Shell>) {

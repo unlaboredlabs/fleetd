@@ -273,11 +273,12 @@ lab_pid=$!
 status=0
 wait "$lab_pid" || status=$?
 lab_pid=""
-mp4="$rec/fleetd.mp4"
+mp4="$rec/clip.mp4"
 [ -f "$run/demo/timeline.jsonl" ] && cp "$run/demo/timeline.jsonl" "$rec/"
 if [ -s "$mp4" ]; then
   say "Recording: $mp4"
-  echo "Milestones (wall clock, for the cut): $rec/timeline.jsonl; stills every 2 s: $rec/frames/"
+  echo "From just before the order is typed to 3 s after the last merge. The whole capture: $rec/fleetd.mp4;"
+  echo "milestones (wall clock): $rec/timeline.jsonl; stills every 2 s: $rec/frames/"
 fi
 [ "$status" -eq 0 ] || die "the demo run failed (exit $status); its logs are in $run/logs"
 [ -s "$mp4" ] || die "no recording at $mp4; see $run/demo/app.log"

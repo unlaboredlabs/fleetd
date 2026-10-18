@@ -1,6 +1,6 @@
 //! The macOS half of `FLEETD_RECORD` (app/fleetd-app/src/record.rs): the app records its own window, native titlebar
 //! and traffic lights included, to `<dir>/fleetd.mp4` (H.264, 4:2:0, moov atom first) and keeps a PNG of it every
-//! 2 s in `<dir>/frames/`. A crate of its own because it is all FFI and the workspace forbids unsafe code.
+//! 2 s in `<dir>/frames/`; between `clip_start` and SIGUSR1 it also writes `<dir>/clip.mp4`. A crate of its own because it is all FFI and the workspace forbids unsafe code.
 //!
 //! The window server hands an app images of its own windows without the Screen Recording permission, so
 //! `CGWindowListCreateImage` on our window number needs no prompt; the start line says whether the process holds
@@ -29,6 +29,15 @@ static QUITTING: AtomicBool = AtomicBool::new(false);
 /// Set once the file is finished (or recording failed), so `finish` knows when the app may go on quitting.
 static DONE: AtomicBool = AtomicBool::new(false);
 const PNG_EVERY: Duration = Duration::from_secs(2);
+/// The clip (`clip.mp4`): the part of the recording worth showing, beside the full one. `clip_start` begins it;
+/// SIGUSR1 ends it.
+static CLIP_START: AtomicBool = AtomicBool::new(false);
+static CLIP_END: AtomicBool = AtomicBool::new(false);
+
+/// Begins the clip with the next frame. For a scripted demo, just before it starts typing.
+pub fn clip_start() {
+    CLIP_START.store(true, Ordering::SeqCst);
+}
 
 /// The CGWindowID of an AppKit window handle. Call on the main thread.
 pub fn window_number(handle: WindowHandle<'_>) -> Option<u32> {
@@ -53,6 +62,7 @@ pub fn start(window: u32, dir: PathBuf, fps: u32) -> std::io::Result<()> {
     unsafe {
         libc::signal(libc::SIGTERM, on_signal as *const () as libc::sighandler_t);
         libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGUSR1, on_clip_end as *const () as libc::sighandler_t);
     }
     std::thread::Builder::new().name("fleetd-record".into()).spawn(move || {
         // A frame is due every few tens of ms; don't let the scheduler treat this thread as background work.
@@ -103,6 +113,10 @@ pub fn finish(timeout: Duration) {
     }
 }
 
+extern "C" fn on_clip_end(_: libc::c_int) {
+    CLIP_END.store(true, Ordering::SeqCst);
+}
+
 extern "C" fn on_signal(_: libc::c_int) {
     STOP.store(true, Ordering::SeqCst);
 }
@@ -117,6 +131,9 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
     let interval = Duration::from_secs_f64(1.0 / f64::from(fps));
     let started = Instant::now();
     let mut writer: Option<Writer> = None;
+    let clip_mp4 = dir.join("clip.mp4");
+    // The clip's writer and the time its first frame was captured.
+    let mut clip: Option<(Writer, Duration)> = None;
     let mut failed = false;
     let (mut frames, mut skipped, mut pngs) = (0u64, 0u64, 0u32);
     // Time spent in the window server's capture and in drawing + appending, to tell which one limits the rate.
@@ -158,6 +175,22 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
                     skipped += 1;
                 }
             }
+            if clip.is_none() && CLIP_START.swap(false, Ordering::SeqCst) {
+                let _ = std::fs::remove_file(&clip_mp4);
+                match av().and_then(|av| Writer::new(av, &clip_mp4, image.width(), image.height(), fps)) {
+                    Ok(w) => {
+                        eprintln!("FLEETD_RECORD clip_start at={:.3}s", at.as_secs_f64());
+                        clip = Some((w, at));
+                    }
+                    Err(e) => eprintln!("FLEETD_RECORD clip_error={e}"),
+                }
+            }
+            if let Some((w, from)) = &clip {
+                w.append(&image, at - *from);
+            }
+            if CLIP_END.swap(false, Ordering::SeqCst) {
+                finish_clip(clip.take(), at, &clip_mp4);
+            }
         });
         ticks += 1;
         busy += body.elapsed();
@@ -177,6 +210,7 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
     }
     let signalled = STOP.load(Ordering::SeqCst) && !QUITTING.load(Ordering::SeqCst);
     let seconds = started.elapsed().as_secs_f64();
+    finish_clip(clip.take(), started.elapsed(), &clip_mp4);
     match writer.map(Writer::finish) {
         Some(Ok(())) => {
             remove_writer_temporaries(dir);
@@ -197,10 +231,21 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
     signalled
 }
 
-/// AVAssetWriter's faststart pass leaves its pre-pass copy (`fleetd.mp4.sb-*`) beside the finished file.
+fn finish_clip(clip: Option<(Writer, Duration)>, at: Duration, path: &Path) {
+    let Some((w, from)) = clip else { return };
+    match w.finish() {
+        Ok(()) => eprintln!("FLEETD_RECORD clip_done mp4={} seconds={:.1}", path.display(), (at - from).as_secs_f64()),
+        Err(e) => eprintln!("FLEETD_RECORD clip_error={e}"),
+    }
+    if let Some(dir) = path.parent() {
+        remove_writer_temporaries(dir);
+    }
+}
+
+/// AVAssetWriter's faststart pass leaves its pre-pass copy (`<name>.mp4.sb-*`) beside the finished file.
 fn remove_writer_temporaries(dir: &Path) {
     for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        if entry.file_name().to_string_lossy().starts_with("fleetd.mp4.sb-") {
+        if entry.file_name().to_string_lossy().contains(".mp4.sb-") {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -375,6 +420,7 @@ unsafe impl RefEncode for Pool {
 
 /// AVFoundation's constants, looked up once the first frame is in. Linking AVFoundation would load it on every
 /// launch, recording or not; nothing else in the app uses it.
+#[derive(Clone, Copy)]
 struct Av {
     file_type_mp4: *const AnyObject,
     media_video: *const AnyObject,
