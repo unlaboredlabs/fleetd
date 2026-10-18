@@ -218,6 +218,7 @@ impl Ports for HubPorts {
                 sink: None,
                 env_name: None,
                 gated: None,
+                permission: None,
                 blocks: wire(ask.blocks)?,
                 proceeded_on_rec: false,
             };

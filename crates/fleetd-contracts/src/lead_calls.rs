@@ -98,6 +98,7 @@ checked!(AskCall, |call| ask_kind_rule(
     call.env_name.is_some(),
     false,
     None,
+    false,
     call.verify.is_some(),
 ));
 
