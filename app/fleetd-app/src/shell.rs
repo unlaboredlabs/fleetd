@@ -156,8 +156,10 @@ pub struct Shell {
     /// New orders: docked on the board, or floating over the order view (⌘N there).
     pub(crate) docked: Entity<Composer>,
     pub(crate) floating: Option<Entity<Composer>>,
-    /// The order view's follow-up box.
+    /// The order view's steer box, aimed at its lead.
     pub(crate) follow: Entity<Composer>,
+    /// One agent's steer box, opened from its lane.
+    pub(crate) steer_sheet: Option<crate::steer::sheet::SteerSheet>,
     pub(crate) settings: Entity<Settings>,
     pub(crate) settings_section: settings::Section,
     time: Entity<TimeView>,
@@ -284,6 +286,7 @@ impl Shell {
             docked,
             floating: None,
             follow,
+            steer_sheet: None,
             settings,
             settings_section: settings::Section::General,
             time,
@@ -786,7 +789,8 @@ impl Shell {
             prs,
             files: state.files.clone(),
         };
-        for c in [Some(&self.docked), self.floating.as_ref(), Some(&self.follow)].into_iter().flatten() {
+        let sheet = self.steer_sheet.as_ref().map(|s| s.composer.clone());
+        for c in [Some(&self.docked), self.floating.as_ref(), Some(&self.follow), sheet.as_ref()].into_iter().flatten() {
             c.update(cx, |c, cx| c.set_sync(sync.clone(), cx));
         }
         if let Some(w) = state.order.as_ref().map(|o| o.workstream_id.clone()) {
@@ -850,7 +854,11 @@ impl Shell {
                 let w = lanes.read(cx).workstream().to_string();
                 self.open_order(&w, cx);
             }
-            LaneEvent::Open(_) => {}
+            // In the order view a lane opens that agent's steer box.
+            LaneEvent::Open(lane) => {
+                let lane = lane.to_string();
+                self.open_lane_sheet(&lane, cx);
+            }
             LaneEvent::Told(thread, who) => self.open_told(thread.clone(), who.clone(), cx),
         }
     }
@@ -892,6 +900,7 @@ impl Shell {
             self.state.close_order();
             self.floating = None;
             self.stop_confirm = false;
+            self.steer_sheet = None;
         }
         if screen == Screen::Machines && self.screen != Screen::Machines {
             let out = self.state.open_doctor();
@@ -1040,7 +1049,10 @@ impl Shell {
         }
         self.pending_focus = Some(match (self.screen, &self.floating) {
             (_, Some(f)) => f.focus_handle(cx),
-            (Screen::Order, None) => self.follow.focus_handle(cx),
+            (Screen::Order, None) => match &self.steer_sheet {
+                Some(s) => s.composer.focus_handle(cx),
+                None => self.follow.focus_handle(cx),
+            },
             (Screen::Board, None) => self.docked.focus_handle(cx),
             (Screen::Time, None) => self.time.focus_handle(cx),
             _ => self.focus.clone(),
@@ -1093,13 +1105,17 @@ impl Shell {
                     self.pending_focus = Some(self.follow.focus_handle(cx));
                 }
             }
-            ComposerEvent::Note { draft, urgent } => {
-                let id = format!("note-{}", now_ms());
-                let out = self.state.note(&draft.text, *urgent, draft.attachments.clone(), draft.refs.clone(), &id);
-                self.send(out);
+            ComposerEvent::Steer { draft, mode } => {
+                let sheet = self.steer_sheet.as_ref().filter(|s| &s.composer == composer).map(|s| s.agent.target.clone());
+                let Some(target) = sheet.or_else(|| self.lead_agent().map(|a| a.target)) else { return };
+                let id = format!("steer-{}", now_ms());
+                let out = self.state.steer(target, &draft.text, *mode, draft.attachments.clone(), draft.refs.clone(), &id);
+                self.send_steer(out, cx);
             }
             ComposerEvent::Dismiss => {
-                if self.floating.as_ref() == Some(composer) {
+                if self.steer_sheet.as_ref().is_some_and(|s| &s.composer == composer) {
+                    self.close_steer_sheet(cx);
+                } else if self.floating.as_ref() == Some(composer) {
                     self.floating = None;
                     self.pending_focus = Some(self.follow.focus_handle(cx));
                 } else if self.screen == Screen::Order {
@@ -1214,7 +1230,9 @@ impl Shell {
         let field_focused = !self.focus.is_focused(window) && !self.inbox_focus.is_focused(window);
         if key == "escape" {
             // Esc: close a menu (the field does) → the panel → the order view back to the board.
-            if self.state.prompts.told.is_some() {
+            if self.steer_sheet.is_some() {
+                self.close_steer_sheet(cx);
+            } else if self.state.prompts.told.is_some() {
                 self.state.prompts.told = None;
             } else if self.prompts_ui.picker.is_some() {
                 self.prompts_ui.picker = None;
@@ -1331,11 +1349,24 @@ impl Shell {
             Command::AddProject => {
                 self.open_add(window, cx);
             }
+            Command::SteerLead => self.pending_focus = Some(self.follow.focus_handle(cx)),
+            Command::SteerAgent(Some(lane)) => self.open_lane_sheet(&lane, cx),
+            Command::SteerAgent(None) => {
+                self.toggle_palette(window, cx);
+                if let Some(p) = &self.palette {
+                    p.update(cx, |p, cx| p.set_query("Steer ", cx));
+                }
+            }
+            Command::Withdraw(id) => {
+                let out = self.state.withdraw_steer(&id);
+                self.send_steer(out, cx);
+                self.sync_conversation(cx);
+            }
         }
         cx.notify();
     }
 
-    fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.palette.take().is_some() || !self.connected() {
             self.focus_composer(cx);
             return cx.notify();
@@ -1356,6 +1387,8 @@ impl Shell {
         self.palette = None;
         self.floating = None;
         self.state.prompts.told = None;
+        self.steer_sheet = None;
+        self.state.agent_tail = None;
         self.focus_composer(cx);
         self.hide_add(cx);
     }
@@ -1535,6 +1568,7 @@ impl Render for Shell {
         });
         let title_items = self.title_items(cx);
         let told = self.told_sheet(window, cx);
+        let steer_sheet = self.steer_sheet_view(window, cx);
         div()
             .relative()
             .size_full()
@@ -1605,6 +1639,7 @@ impl Render for Shell {
                 let dropped = cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| this.on_window_drop(paths, window, cx));
                 d.child(overlay(sheet, cx).on_drop(dropped))
             })
+            .when_some(steer_sheet, |d, sheet| d.child(overlay(sheet, cx)))
     }
 }
 
@@ -2061,6 +2096,7 @@ impl Shell {
         }
         match extra {
             "told" | "told-task" => self.bench_told(extra == "told-task", cx),
+            "steer" | "steer-more" | "sheet" | "sheet-lead" | "palette-steer" => self.bench_steer(extra, window, cx),
             "inbox" => self.toggle_inbox(true, cx),
             "status" => self.group_by_status = true,
             e if e.starts_with("add") => self.bench_add(e, window, cx),
