@@ -365,11 +365,22 @@ impl TasksHook for TasksForLeads {
 struct PolicyFromLeases(Arc<crate::hub::leases::Policies>);
 
 impl PolicyHook for PolicyFromLeases {
-    fn max_children(&self, project_ref: &ProjectRef) -> BoxFuture<Option<u32>> {
+    fn max_children(
+        &self,
+        project_ref: &ProjectRef,
+    ) -> BoxFuture<Result<Option<u32>, crate::hub::leads::error::LeadError>> {
         let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
         Box::pin(async move {
-            let policy = policies.get(&r).await.ok()?;
-            policy.finish_all.map(|f| f.max_children.get() as u32)
+            let policy =
+                policies
+                    .get(&r)
+                    .await
+                    .map_err(|e| crate::hub::leads::error::LeadError {
+                        code: e.code,
+                        message: e.message,
+                        fix: e.fix,
+                    })?;
+            Ok(policy.finish_all.map(|f| f.max_children.get() as u32))
         })
     }
 }

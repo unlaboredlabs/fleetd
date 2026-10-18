@@ -66,7 +66,11 @@ pub trait TrainHook: Send + Sync {
 
 /// Policies (TS Policies.get(ref).finishAll.maxChildren).
 pub trait PolicyHook: Send + Sync {
-    fn max_children(&self, project_ref: &ProjectRef) -> BoxFuture<Option<u32>>;
+    /// `Err` when the policy file cannot be read: finish-all fails the call, as TS `Policies.get` did.
+    fn max_children(
+        &self,
+        project_ref: &ProjectRef,
+    ) -> BoxFuture<Result<Option<u32>, super::error::LeadError>>;
 }
 
 /// GitHub through `gh api` (TS checks/GitHub.ts).

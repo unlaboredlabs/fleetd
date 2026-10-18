@@ -84,11 +84,14 @@ impl FinishAll {
         })?)
     }
 
-    async fn max_children(&self, r: &ProjectRef) -> u32 {
-        match self.ctx.hooks.policy.get() {
-            Some(policy) => policy.max_children(r).await.unwrap_or(DEFAULT_MAX_CHILDREN),
+    async fn max_children(&self, r: &ProjectRef) -> Result<u32, LeadError> {
+        Ok(match self.ctx.hooks.policy.get() {
+            Some(policy) => policy
+                .max_children(r)
+                .await?
+                .unwrap_or(DEFAULT_MAX_CHILDREN),
             None => DEFAULT_MAX_CHILDREN,
-        }
+        })
     }
 
     fn set_state(
@@ -166,7 +169,7 @@ impl FinishAll {
                     .is_some_and(|p| p.workstream_id == parent.workstream_id)
             })
             .collect();
-        if let Some(refusal) = spawn_refusal(serves, parent, &children, self.max_children(r).await)
+        if let Some(refusal) = spawn_refusal(serves, parent, &children, self.max_children(r).await?)
         {
             return Err(LeadError::invalid(refusal.message, refusal.fix));
         }
@@ -438,7 +441,7 @@ impl FinishAll {
                 Some(p) => Some(InventoryParent {
                     workstream_id: p.workstream_id.clone(),
                     open_children: children.len(),
-                    max_children: self.max_children(r).await,
+                    max_children: self.max_children(r).await?,
                 }),
                 None => None,
             },
