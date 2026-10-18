@@ -325,12 +325,50 @@ impl WriteQueue {
         })
     }
 
-    /// Drops a steer still waiting here for its machine; true when this call did.
+    /// Drops a steer still waiting here for its machine; true when this call did. One the flusher is sending right
+    /// now is not dropped: the in-flight lock makes the two exclusive, and the flusher re-checks its row under it.
     pub fn withdraw_steer(&self, steer: &SteerId) -> bool {
+        let in_flight = self.in_flight.lock().expect("lock");
         self.db.run(|db| {
-            db.execute(
-                "DELETE FROM queued_writes WHERE steer_id = ?",
+            let row: Option<i64> = db
+                .query_row(
+                    "SELECT write_id FROM queued_writes WHERE steer_id = ?",
+                    [steer.as_str()],
+                    |r| r.get(0),
+                )
+                .optional()
+                .expect("sql");
+            match row {
+                Some(write_id) if !in_flight.contains(&write_id) => {
+                    db.execute("DELETE FROM queued_writes WHERE write_id = ?", [write_id])
+                        .unwrap_or(0)
+                        > 0
+                }
+                _ => false,
+            }
+        })
+    }
+
+    /// As the flusher does while it sends a steer's write.
+    #[cfg(test)]
+    pub(crate) fn mark_sending(&self, steer: &SteerId) {
+        let write_id: i64 = self.db.run(|db| {
+            db.query_row(
+                "SELECT write_id FROM queued_writes WHERE steer_id = ?",
                 [steer.as_str()],
+                |r| r.get(0),
+            )
+            .expect("sql")
+        });
+        self.in_flight.lock().expect("lock").insert(write_id);
+    }
+
+    fn still_queued(&self, write_id: i64) -> bool {
+        self.db.run(|db| {
+            db.query_row(
+                "SELECT COUNT(*) FROM queued_writes WHERE write_id = ?",
+                [write_id],
+                |r| r.get::<_, i64>(0),
             )
             .unwrap_or(0)
                 > 0
@@ -480,7 +518,14 @@ impl WriteQueue {
                 self.writer.await_live(&machine_id).await;
                 continue;
             }
-            self.in_flight.lock().expect("lock").insert(row.write_id);
+            {
+                let mut in_flight = self.in_flight.lock().expect("lock");
+                // Withdrawn between the read and now: nothing to send.
+                if !self.still_queued(row.write_id) {
+                    continue;
+                }
+                in_flight.insert(row.write_id);
+            }
             let result = tokio::time::timeout(
                 SEND_TIMEOUT,
                 self.writer

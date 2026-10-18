@@ -98,6 +98,16 @@ pub trait TaskPorts: Send + Sync {
         message: &'a str,
         client_request_id: &'a str,
     ) -> BoxFut<'a, Result<(), PortError>>;
+    /// Executors.send as a steer's run: `mode` and its tag. Plain ports send it plainly.
+    fn send_steer<'a>(
+        &'a self,
+        thread: &'a ThreadRef,
+        message: &'a str,
+        client_request_id: &'a str,
+        _steer: fleetd_contracts::steer::SteerId,
+    ) -> BoxFut<'a, Result<(), PortError>> {
+        self.send(thread, message, client_request_id)
+    }
     /// Executors.interrupt.
     fn interrupt<'a>(
         &'a self,

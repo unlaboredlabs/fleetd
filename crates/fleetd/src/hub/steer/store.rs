@@ -132,7 +132,7 @@ pub fn list(
 pub fn open(db: &HubDb) -> Result<Vec<(Steer, i64)>, StoreError> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT data, COALESCE(delivered_ms, queued_ms) FROM steers WHERE stage IN ('queued', 'delivered')",
+            "SELECT data, COALESCE(delivered_ms, queued_ms) FROM steers WHERE stage IN ('queued', 'delivered') AND held = 0",
         )?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         rows.map(|r| {
@@ -140,5 +140,38 @@ pub fn open(db: &HubDb) -> Result<Vec<(Steer, i64)>, StoreError> {
             Ok((decode(data)?, at))
         })
         .collect()
+    })
+}
+
+pub fn hold(db: &HubDb, id: &SteerId) -> Result<(), StoreError> {
+    db.with(|conn| {
+        conn.execute("UPDATE steers SET held = 1 WHERE n = ?", [id.n()])?;
+        Ok(())
+    })
+}
+
+/// The held steers of a task, newest first.
+pub fn held_for_task(db: &HubDb, task_id: &str) -> Result<Vec<Steer>, StoreError> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT data FROM steers WHERE task_id = ? AND held = 1 AND stage = 'queued' ORDER BY n DESC",
+        )?;
+        let rows = stmt.query_map([task_id], |r| r.get::<_, String>(0))?;
+        rows.map(|r| decode(r?)).collect()
+    })
+}
+
+/// A held steer went out with its task's next run: it is that run's now, and no longer held.
+pub fn bind(db: &HubDb, steer: &Steer) -> Result<(), StoreError> {
+    db.with(|conn| {
+        conn.execute(
+            "UPDATE steers SET run_id = ?, held = 0, data = ? WHERE n = ?",
+            params![
+                steer.run_id.as_str(),
+                serde_json::to_string(steer)?,
+                steer.id.n()
+            ],
+        )?;
+        Ok(())
     })
 }

@@ -610,7 +610,14 @@ impl StreamMapper {
                     cancelled: true,
                     by_stop,
                 });
-                self.end_run(run_id, RunOutcome::Interrupted, None, now, &mut out.events);
+                self.end_run(
+                    run_id,
+                    RunOutcome::Interrupted,
+                    None,
+                    (None, None),
+                    now,
+                    &mut out.events,
+                );
             }
             // After a `result` these are bookkeeping; without one the message never ran to a result.
             state @ ("cancelled" | "completed") if self.open_runs.contains(&run_id) => {

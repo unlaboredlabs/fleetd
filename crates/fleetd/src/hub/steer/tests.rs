@@ -424,3 +424,88 @@ async fn a_lead_steers_only_its_own_projects_tasks_and_its_lead_is_not_told_of_i
     .unwrap_err();
     assert_eq!(refused.code, ErrorCode::NotFound);
 }
+
+#[tokio::test]
+async fn a_withdrawn_or_failed_steer_never_reads_as_delivered() {
+    let lab = lab();
+    let me = person("k1");
+    let steer = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("skip the docs page", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    on_receipt(
+        &lab.hub,
+        &MachineId::unchecked("lab-a"),
+        &receipt(&steer, SteerStage::Withdrawn),
+    );
+    let (now, _) = store::get(&lab.hub.db, &steer.id).unwrap().unwrap();
+    assert_eq!(now.stage, SteerStage::Withdrawn);
+    assert_eq!(now.delivered_at, None);
+}
+
+#[tokio::test]
+async fn a_steer_to_a_task_that_is_not_running_waits_for_its_next_run_and_is_never_swept() {
+    let lab = lab();
+    let mut task = running_task(&lab.hub, "p1");
+    task.state = TaskState::Idle;
+    lab.hub
+        .db
+        .with(|c| {
+            Ok(crate::hub::tasks::records::TaskRecords::put(
+                c,
+                &crate::hub::tasks::records::StoredTask {
+                    task: task.clone(),
+                    pending_message: None,
+                },
+            )?)
+        })
+        .unwrap();
+    let steer = send(
+        &lab.hub,
+        By::Human(&person("k1")),
+        to_task(&task, "skip the docs page", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(steer.stage, SteerStage::Queued);
+    assert_eq!(
+        steer.detail.as_deref(),
+        Some("queued until T1 starts; it gets this with its next run")
+    );
+    // The machine is away, so the continuation did not go out: the steer stays held for the next run.
+    lab.clock.advance(RECEIPT_GRACE * 10);
+    assert_eq!(sweep(&lab.hub), 0);
+    assert_eq!(
+        store::get(&lab.hub.db, &steer.id).unwrap().unwrap().0.stage,
+        SteerStage::Queued
+    );
+    // When the run goes out, the steer is that run's.
+    let thread = task.thread_ref.clone().unwrap();
+    let id = take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
+    assert_eq!(id, steer.id);
+    let (bound, _) = store::get(&lab.hub.db, &id).unwrap().unwrap();
+    assert_eq!(
+        bound.run_id.as_str(),
+        Executors::send_run_id(&thread, "next-run")
+    );
+    assert!(store::held_for_task(&lab.hub.db, "T1").unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_steer_the_queue_is_sending_cannot_be_withdrawn_from_under_it() {
+    let lab = lab();
+    let me = person("k1");
+    let steer = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("skip the docs page", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    lab.hub.queue.mark_sending(&steer.id);
+    assert!(!lab.hub.queue.withdraw_steer(&steer.id));
+    assert!(lab.hub.queue.has_steer(&steer.id));
+}

@@ -269,25 +269,21 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
         tell_lead(hub, &steer, task);
     }
     let text = message(hub, &steer, &to, &by, &req);
-    // A task that is not running gets it the way `task message` gives it: with its prompt, or as its continuation.
+    // A task that is not running gets it with its next run (a queued task when it starts, an ended one as its
+    // continuation): held until then, and sent tagged with that run, so its receipts are the run's.
     if let Some(task) = to.task.as_ref().filter(|t| t.state != TaskState::Running) {
         let caller = TaskCaller {
             project_ref: task.project_ref.clone(),
             by: by.stored(),
         };
-        let detail = match task.state {
-            TaskState::Queued => format!(
-                "{} has not started; it gets this with its prompt",
-                task.task_id
-            ),
-            _ => format!("{} had ended; it continues with this", task.task_id),
-        };
+        steer.detail = Some(Text::unchecked(format!(
+            "queued until {} starts; it gets this with its next run",
+            task.task_id
+        )));
+        store::put(&hub.db, &steer, None, None)?;
+        store::hold(&hub.db, &steer.id)?;
         return match hub.tasks.message(&caller, &task.task_id, &text).await {
-            Ok(_) => {
-                steer.detail = Some(Text::unchecked(detail));
-                store::put(&hub.db, &steer, None, None)?;
-                Ok(steer)
-            }
+            Ok(_) => Ok(store::get(&hub.db, &steer.id)?.map_or(steer, |(s, _)| s)),
             Err(e) => {
                 fail(hub, &mut steer, &e.message)?;
                 Err(e)
@@ -367,6 +363,49 @@ pub fn digest_line(db: &crate::hub::store::HubDb, workstream_id: &WorkstreamId) 
     (!parts.is_empty()).then(|| parts.join(", "))
 }
 
+/// The tasks area is about to send a task's next run (a start from the queue or a continuation): the newest held
+/// steer rides on it as its tag. The run id is the one that send gets, so the node's receipts find it.
+pub fn take_held(
+    db: &crate::hub::store::HubDb,
+    task_id: &str,
+    thread: &ThreadRef,
+    client_request_id: &str,
+) -> Option<SteerId> {
+    let mut held = store::held_for_task(db, task_id).ok()?;
+    if held.is_empty() {
+        return None;
+    }
+    let mut steer = held.remove(0);
+    steer.run_id = NonEmpty::unchecked(Executors::send_run_id(thread, client_request_id));
+    steer.thread = thread.clone();
+    steer.detail = None;
+    // Older ones went into the same message; the newest one's receipt speaks for the run.
+    for older in held {
+        let mut older = older;
+        older.detail = Some(Text::unchecked(format!(
+            "sent with {}'s next run, together with {}",
+            task_id, steer.id
+        )));
+        let _ = store::put(db, &older, None, None);
+    }
+    store::bind(db, &steer).ok()?;
+    Some(steer.id)
+}
+
+/// The run it was bound to never went out (the machine was away): held again for the next one.
+pub fn rehold(db: &crate::hub::store::HubDb, id: &SteerId) {
+    if let Ok(Some((mut steer, _))) = store::get(db, id) {
+        let task = match &steer.target {
+            SteerTarget::Task { task_id } => task_id.to_string(),
+            SteerTarget::Lead { .. } => return,
+        };
+        steer.detail = Some(Text::unchecked(format!(
+            "queued until {task} starts; it gets this with its next run"
+        )));
+        let _ = store::put(db, &steer, None, None).and_then(|()| store::hold(db, id));
+    }
+}
+
 fn fail(hub: &Hub, steer: &mut Steer, why: &str) -> Result<(), ToolError> {
     steer.stage = SteerStage::Failed;
     steer.detail = Text::new(js_take(why, 400)).ok();
@@ -419,8 +458,14 @@ pub fn on_receipt(hub: &Hub, machine_id: &MachineId, r: &SteerReceipt) {
         }
         SteerStage::Withdrawn | SteerStage::Queued => {}
     }
-    // An acknowledgement that skipped `delivered` (it came first in a replay) still says when.
-    if steer.delivered_at.is_none() && r.stage != SteerStage::Failed {
+    // An acknowledgement that skipped `delivered` (it came first in a replay) still says when. A steer withdrawn,
+    // failed or expired was never delivered.
+    if steer.delivered_at.is_none()
+        && matches!(
+            r.stage,
+            SteerStage::Acknowledged | SteerStage::Unacknowledged
+        )
+    {
         steer.delivered_at = Some(r.at.clone());
     }
     if let Err(error) = store::put(&hub.db, &steer, delivered, acked) {

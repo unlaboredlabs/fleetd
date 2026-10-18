@@ -584,11 +584,21 @@ impl Tasks {
                 .as_deref()
                 .expect("continuing has a message");
             let id = request_id(task, &[&task.attempt.get().to_string()]);
-            self.d
-                .ports
-                .send(thread, message, &id)
-                .await
-                .map(|_| (thread.clone(), None))
+            let steer =
+                crate::hub::steer::take_held(&self.d.db, task.task_id.as_str(), thread, &id);
+            let sent = match &steer {
+                Some(steer) => {
+                    self.d
+                        .ports
+                        .send_steer(thread, message, &id, steer.clone())
+                        .await
+                }
+                None => self.d.ports.send(thread, message, &id).await,
+            };
+            if let (Err(_), Some(steer)) = (&sent, &steer) {
+                crate::hub::steer::rehold(&self.d.db, steer);
+            }
+            sent.map(|_| (thread.clone(), None))
                 .map_err(StartError::from)
         } else {
             self.launch(task).await
