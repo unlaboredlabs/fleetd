@@ -598,18 +598,23 @@ pub fn commit_identity(
             &format!("Set the commit identity on {machine_id}"),
             Some("git config --global user.email '<id>+<user>@users.noreply.github.com'".into()),
         ),
-        Some(_) => {
-            let host = config.machines.get(machine_id).map_or_else(
-                || format!("<ssh host of {machine_id}>"),
-                |m| m.ssh_host.clone(),
-            );
-            manual(
+        Some(_) => match config.machines.get(machine_id) {
+            Some(m) => manual(
                 &format!(
-                    "Run machine setup again from the hub to write the hub's identity into {machine_id}'s services"
+                    "Run machine setup again from the hub to write the hub's identity into {machine_id}'s service"
                 ),
-                Some(format!("fleetd machine add {host}")),
-            )
-        }
+                Some(format!("fleetd machine add {}", m.ssh_host)),
+            ),
+            // Joined by itself (fleetd pair --worker): the join command carries the identity.
+            None => manual(
+                &format!(
+                    "Join {machine_id} again; the command the hub prints carries the identity"
+                ),
+                Some(format!(
+                    "fleetd pair --worker {machine_id}, then run what it prints on {machine_id}"
+                )),
+            ),
+        },
     };
     let Some(email) = &probe.git_email else {
         return machine_entry(

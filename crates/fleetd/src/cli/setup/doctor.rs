@@ -111,8 +111,13 @@ pub async fn add_project(home: &Path, machine_id: &str, path: &Path) -> Result<(
         )
         .await
         .map_err(|error| Failure {
+            fix: if error.message().contains("not found") {
+                "this hub's fleetd predates project_add: fleetd update, then run fleetd init again"
+                    .into()
+            } else {
+                fix.clone()
+            },
             message: format!("project_add failed: {}", error.message()),
-            fix: fix.clone(),
         })?;
     if result.is_error {
         let text = |key: &str| {

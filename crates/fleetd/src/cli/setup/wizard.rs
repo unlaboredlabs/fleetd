@@ -287,6 +287,7 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         code.trim(),
         Some(machine_id),
         opts.identity.clone(),
+        &opts.suffix,
     )
     .await
     {
@@ -437,7 +438,8 @@ async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, 
                 .split(';')
                 .next()
                 .unwrap_or("")
-                .trim_end_matches('.');
+                .trim_end_matches('.')
+                .trim_start_matches(&format!("{name} is "));
             if let Tool::Claude = tool {
                 let out = hub_env_run("claude", &["--version"]).await;
                 let printed = match &out {

@@ -685,6 +685,7 @@ pub async fn join(
     token: &str,
     machine_id: Option<String>,
     identity: Option<GitIdentity>,
+    unit_suffix: &str,
 ) -> Result<Added, u8> {
     add(AddArgs {
         host: None,
@@ -694,7 +695,7 @@ pub async fn join(
         hub_url: Some(hub_url.to_owned()),
         ssh_config: None,
         home: None,
-        unit_suffix: None,
+        unit_suffix: Some(unit_suffix.to_owned()),
         enroll: Enroll::Token(token.to_owned()),
         git_identity: identity,
     })
