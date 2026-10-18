@@ -6613,7 +6613,7 @@
       ]
     },
     "Spark": {
-      "description": "Work per 2 s bucket, oldest first, ending with the bucket that ends at `end_at`. A sample is\n`min(255, 16 × items started + streamed chars / 32)`; a bucket with no frames is 0.",
+      "description": "Work per 2 s bucket, oldest first, ending with the bucket that ends at `end_at`. A sample is\n`min(255, 16 × items started + streamed chars / 32 + output tokens not streamed as text / 8)`; a bucket with\nno frames is 0.",
       "properties": {
         "endAt": {
           "$ref": "#/$defs/Timestamp"

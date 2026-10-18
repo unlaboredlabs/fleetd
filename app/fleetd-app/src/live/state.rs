@@ -6,6 +6,10 @@
 //! carry only lanes that changed. A lane's live values win over its snapshot, except that a snapshot saying the
 //! lane ended is final: the hub stops sending a lane once it leaves the live scope, so a stale "working" would
 //! otherwise stick.
+//!
+//! A board card lists only active lanes, so a lane that finishes simply leaves its card. The board feed keeps a
+//! finished lane for a few seconds with its final status; a lane that left its card and that the feed says
+//! settled stays in the order's lanes, so the board can show how it ended before letting it go.
 
 use std::collections::HashMap;
 
@@ -32,7 +36,14 @@ pub struct LiveState {
     /// frame is late by its trip, so the largest is the closest to the true offset, and elapsed never runs back.
     skew_ms: Option<i64>,
     stale: bool,
+    /// Lanes that left their board card, per order: the lane, the hub time it left, and its place on the card.
+    left: HashMap<WorkstreamId, Vec<(AgentLane, i64, usize)>>,
+    /// When the feed first said each lane settled (the frame's hub time).
+    ended: HashMap<String, fleetd_contracts::ids::Timestamp>,
 }
+
+/// How long a lane that left its card is remembered: past the board's hold and the feed's grace.
+const LEFT_KEEP_MS: i64 = 60_000;
 
 impl LiveState {
     pub fn apply(&mut self, frame: LiveFrame, local_now_ms: i64) {
@@ -50,6 +61,9 @@ impl LiveState {
         self.stale = false;
         for mut lane in frame.lanes.into_inner() {
             let key = lane.lane_id.to_string();
+            if is_final(lane.status) {
+                self.ended.entry(key.clone()).or_insert_with(|| frame.at.clone());
+            }
             if lane.spark.is_none() {
                 lane.spark = self.lanes.get(&key).and_then(|old| old.spark.clone());
             }
@@ -72,12 +86,36 @@ impl LiveState {
     }
 
     pub fn set_board(&mut self, project: &ProjectKey, out: OrdersBoardOutput) {
+        let at = parse_ms(out.at.as_str()).unwrap_or(0);
+        if let Some(old) = self.boards.get(project) {
+            for card in old.orders.iter() {
+                let now = out.orders.iter().find(|c| c.workstream_id == card.workstream_id);
+                let gone = card
+                    .lanes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, l)| !is_final(l.status) && !now.is_some_and(|c| c.lanes.iter().any(|n| n.lane_id == l.lane_id)));
+                let left = self.left.entry(card.workstream_id.clone()).or_default();
+                left.extend(gone.map(|(ix, l)| (l.clone(), at, ix)));
+            }
+        }
+        for left in self.left.values_mut() {
+            left.retain(|(_, when, _)| at - when < LEFT_KEEP_MS);
+        }
+        self.left.retain(|_, v| !v.is_empty());
+        let live: std::collections::HashSet<&String> = self.lanes.keys().collect();
+        self.ended.retain(|id, _| live.contains(id));
         self.boards.insert(project.clone(), out);
         self.rebuild_trains();
     }
 
     pub fn set_order(&mut self, out: OrderGetOutput) {
         self.orders.insert(out.order.workstream_id.clone(), out);
+    }
+
+    /// The hub answered this project's board, even if it has no orders.
+    pub fn has_board(&self, project: &ProjectKey) -> bool {
+        self.boards.contains_key(project)
     }
 
     pub fn orders(&self, project: &ProjectKey) -> &[OrderCard] {
@@ -89,21 +127,36 @@ impl LiveState {
     pub fn lanes(&self, w: &WorkstreamId) -> Vec<AgentLane> {
         let snapshot: Vec<&AgentLane> = match self.orders.get(w) {
             Some(o) => o.order.lanes.iter().chain(o.done_lanes.iter().filter(|d| !o.order.lanes.iter().any(|l| l.lane_id == d.lane_id))).collect(),
-            None => self
-                .boards
-                .values()
-                .flat_map(|b| b.orders.iter())
-                .find(|o| &o.workstream_id == w)
-                .map(|o| o.lanes.iter().collect())
-                .unwrap_or_default(),
+            None => {
+                let mut lanes: Vec<&AgentLane> = self
+                    .boards
+                    .values()
+                    .flat_map(|b| b.orders.iter())
+                    .find(|o| &o.workstream_id == w)
+                    .map(|o| o.lanes.iter().collect())
+                    .unwrap_or_default();
+                // Lanes that left the card and that the feed says settled, back at their place, so nothing jumps.
+                for (l, _, ix) in self.left.get(w).into_iter().flatten() {
+                    if !lanes.iter().any(|c| c.lane_id == l.lane_id) && self.lanes.get(l.lane_id.as_str()).is_some_and(|v| is_final(v.status)) {
+                        lanes.insert((*ix).min(lanes.len()), l);
+                    }
+                }
+                lanes
+            }
         };
-        snapshot.into_iter().map(|l| merge(l, self.lanes.get(l.lane_id.as_str()))).collect()
+        snapshot.into_iter().map(|l| merge(l, self.lanes.get(l.lane_id.as_str()), self.ended.get(l.lane_id.as_str()))).collect()
     }
 
     /// The order's project lead with live values, once the order's detail is loaded.
     pub fn lead(&self, w: &WorkstreamId) -> Option<AgentLane> {
         let lead = self.orders.get(w)?.lead.as_ref()?;
-        Some(merge(lead, self.lanes.get(lead.lane_id.as_str())))
+        Some(merge(lead, self.lanes.get(lead.lane_id.as_str()), None))
+    }
+
+    /// A lane's latest live values as the feed sent them, e.g. a project lead's (`lead_lane_id`), which the board
+    /// feed carries though no order card lists it.
+    pub fn live_lane(&self, lane_id: &str) -> Option<&LiveLane> {
+        self.lanes.get(lane_id)
     }
 
     pub fn machines(&self) -> &[MachineLive] {
@@ -156,7 +209,8 @@ impl LiveState {
     }
 }
 
-fn merge(snapshot: &AgentLane, live: Option<&LiveLane>) -> AgentLane {
+/// `ended`: when the feed first said the lane settled; it stops the lane's clock until the snapshot says when.
+fn merge(snapshot: &AgentLane, live: Option<&LiveLane>, ended: Option<&fleetd_contracts::ids::Timestamp>) -> AgentLane {
     let mut lane = snapshot.clone();
     let Some(live) = live else { return lane };
     if is_final(snapshot.status) {
@@ -164,6 +218,9 @@ fn merge(snapshot: &AgentLane, live: Option<&LiveLane>) -> AgentLane {
     }
     let spark = live.spark.clone().or_else(|| snapshot.live.as_ref().and_then(|l| l.spark.clone()));
     lane.status = live.status;
+    if is_final(live.status) && lane.ended_at.is_none() {
+        lane.ended_at = ended.cloned();
+    }
     lane.live = Some(LiveLane { spark, ..live.clone() });
     lane
 }
@@ -205,6 +262,36 @@ pub fn fleet_summary(lanes: &[AgentLane]) -> String {
         return if done == 1 { "done".into() } else { format!("all {done} done") };
     }
     parts.iter().filter(|(c, _)| *c > 0).map(|(c, w)| format!("{c} {w}")).collect::<Vec<_>>().join(" · ")
+}
+
+/// What the fleet is doing, from its lanes: "3 writing · 2 reviewing · 1 verifying", each running agent counted
+/// by what its role does, the ones that need you or failed first. Empty when no lane is at work. This is what an
+/// order's phase line says while agents run, so it moves with their events instead of the lead's last note.
+pub fn fleet_activity(lanes: &[AgentLane]) -> String {
+    use fleetd_contracts::live::AgentRole::*;
+    let running = |l: &&AgentLane| matches!(l.status, LaneStatus::Starting | LaneStatus::Working);
+    let n = |pred: &dyn Fn(&AgentLane) -> bool| lanes.iter().filter(|l| pred(l)).count();
+    let by_role = |roles: &[fleetd_contracts::live::AgentRole]| lanes.iter().filter(running).filter(|l| roles.contains(&l.role)).count();
+    let parts = [
+        (n(&|l| l.status == LaneStatus::Waiting), "need you"),
+        (n(&|l| l.status == LaneStatus::Failed), "failed"),
+        (by_role(&[Implementer]), "writing"),
+        (by_role(&[Reader]), "reading"),
+        (by_role(&[Reviewer]), "reviewing"),
+        (by_role(&[Verifier, Qa]), "verifying"),
+        (by_role(&[Lead]), "planning"),
+        (n(&|l| l.status == LaneStatus::Stalled), "stalled"),
+        (n(&|l| l.status == LaneStatus::Parked), "parked"),
+        (n(&|l| l.status == LaneStatus::Queued), "queued"),
+    ];
+    let mut out: Vec<String> = parts.iter().filter(|(c, _)| *c > 0).map(|(c, w)| format!("{c} {w}")).collect();
+    // One agent waiting on you reads "1 needs you".
+    if let Some(first) = out.first_mut()
+        && first == "1 need you"
+    {
+        *first = "1 needs you".into();
+    }
+    out.join(" · ")
 }
 
 /// `m:ss` under an hour, then `1h 05m`.
@@ -387,6 +474,52 @@ mod tests {
         assert_eq!(s.slots().unwrap().cap.get(), 40);
         assert_eq!(s.trains()[0].chips.len(), 3);
         assert!(s.text(fleetd_contracts::live::lead_lane_id(&project).as_str()).unwrap().1.contains("T31"));
+    }
+
+    #[test]
+    fn the_fleet_line_counts_running_agents_by_what_their_role_does() {
+        use fleetd_contracts::live::AgentRole;
+        let with = |role, status| AgentLane { role, ..lane("x", status) };
+        let lanes = vec![
+            with(AgentRole::Implementer, LaneStatus::Working),
+            with(AgentRole::Implementer, LaneStatus::Starting),
+            with(AgentRole::Implementer, LaneStatus::Done),
+            with(AgentRole::Reviewer, LaneStatus::Working),
+            with(AgentRole::Reviewer, LaneStatus::Working),
+            with(AgentRole::Verifier, LaneStatus::Working),
+            with(AgentRole::Verifier, LaneStatus::Queued),
+        ];
+        assert_eq!(fleet_activity(&lanes), "2 writing · 2 reviewing · 1 verifying · 1 queued");
+        let waiting = vec![with(AgentRole::Reviewer, LaneStatus::Waiting), with(AgentRole::Implementer, LaneStatus::Working)];
+        assert_eq!(fleet_activity(&waiting), "1 needs you · 1 writing");
+        assert_eq!(fleet_activity(&[with(AgentRole::Implementer, LaneStatus::Done)]), "");
+    }
+
+    #[test]
+    fn a_lane_that_leaves_its_card_stays_while_the_feed_says_how_it_ended() {
+        let mut s = LiveState::default();
+        let at = |t: &str| Timestamp::from(format!("2026-10-18T10:00:{t}Z"));
+        s.set_board(
+            &key(),
+            OrdersBoardOutput { at: at("00"), ..board("W1", vec![lane("T1", LaneStatus::Working), lane("T2", LaneStatus::Working)]) },
+        );
+        s.apply(frame("2026-10-18T10:00:01Z", true, vec![live("T1", LaneStatus::Working, None), live("T2", LaneStatus::Working, None)]), 0);
+        // T1 finishes: the feed says so first, then the board refetch drops it from the card.
+        s.apply(frame("2026-10-18T10:00:05Z", false, vec![live("T1", LaneStatus::Done, None)]), 0);
+        s.set_board(&key(), OrdersBoardOutput { at: at("06"), ..board("W1", vec![lane("T2", LaneStatus::Working)]) });
+        let lanes = s.lanes(&w("W1"));
+        assert_eq!(
+            lanes.iter().map(|l| (l.lane_id.as_str(), l.status)).collect::<Vec<_>>(),
+            [("T1", LaneStatus::Done), ("T2", LaneStatus::Working)],
+            "where it was"
+        );
+        assert_eq!(lanes[0].ended_at.as_ref().map(|t| t.as_str()), Some("2026-10-18T10:00:05Z"), "its clock stops when it settled");
+        // T2 leaves the card with no word from the feed (an older hub): it just goes.
+        s.set_board(&key(), OrdersBoardOutput { at: at("07"), ..board("W1", vec![]) });
+        assert_eq!(s.lanes(&w("W1")).iter().map(|l| l.lane_id.as_str()).collect::<Vec<_>>(), ["T1"]);
+        // A minute on, it is forgotten.
+        s.set_board(&key(), OrdersBoardOutput { at: Timestamp::from("2026-10-18T10:01:10Z"), ..board("W1", vec![]) });
+        assert!(s.lanes(&w("W1")).is_empty());
     }
 
     #[test]

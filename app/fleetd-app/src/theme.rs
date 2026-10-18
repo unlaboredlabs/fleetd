@@ -17,7 +17,7 @@ use std::borrow::Cow;
 use gpui::{App, BoxShadow, FontWeight, Global, Hsla, SharedString, Window, WindowAppearance, point, px, rgb, rgba};
 use serde::{Deserialize, Serialize};
 
-/// Type scale (px). Four steps; most text is `MD`, titles are `MD` semibold (hierarchy from weight, not size),
+/// Type scale (px). Five steps; most text is `MD`, titles are `MD` semibold (hierarchy from weight, not size),
 /// metadata is `XS`, machine text is `SM` in mono.
 pub mod size {
     /// Metadata: counts, timestamps, machine chips, field labels.
@@ -26,6 +26,8 @@ pub mod size {
     pub const SM: f32 = 12.;
     /// Body, controls and titles; the macOS default control size.
     pub const MD: f32 = 13.;
+    /// An order's title when it has the board to itself (the stage).
+    pub const LG: f32 = 18.;
     /// The one headline on the connect screen and empty states.
     pub const XL: f32 = 20.;
 }
@@ -127,6 +129,12 @@ pub struct Palette {
     pub diff_del: u32,
     /// Floating-surface shadow (RGBA).
     pub shadow: u32,
+    /// One restrained tint per agent role, carried by its tag, its lane's edge and its activity bars. Readable as
+    /// text on every surface, and kept clear of the accent and the status colours.
+    pub role_implementer: u32,
+    pub role_reviewer: u32,
+    pub role_verifier: u32,
+    pub role_lead: u32,
 }
 
 pub const LIGHT: Palette = Palette {
@@ -150,6 +158,10 @@ pub const LIGHT: Palette = Palette {
     diff_add: 0xe7f4ea,
     diff_del: 0xfbebea,
     shadow: 0x0000001f,
+    role_implementer: 0x126c64,
+    role_reviewer: 0x6244bd,
+    role_verifier: 0x9b2f78,
+    role_lead: 0x6e5a27,
 };
 
 pub const DARK: Palette = Palette {
@@ -173,6 +185,10 @@ pub const DARK: Palette = Palette {
     diff_add: 0x1f3326,
     diff_del: 0x3b2422,
     shadow: 0x00000066,
+    role_implementer: 0x6ccbc0,
+    role_reviewer: 0xbba8f5,
+    role_verifier: 0xe79bcd,
+    role_lead: 0xd2bd95,
 };
 
 /// Resolved colours for the current appearance, plus the fonts. Read it with [`theme`].
@@ -199,6 +215,10 @@ pub struct Theme {
     pub diff_add: Hsla,
     pub diff_del: Hsla,
     shadow: Hsla,
+    pub role_implementer: Hsla,
+    pub role_reviewer: Hsla,
+    pub role_verifier: Hsla,
+    pub role_lead: Hsla,
     /// The human voice.
     pub ui_font: SharedString,
     /// The machine voice.
@@ -234,6 +254,10 @@ impl Theme {
             diff_add: c(p.diff_add),
             diff_del: c(p.diff_del),
             shadow: a(p.shadow),
+            role_implementer: c(p.role_implementer),
+            role_reviewer: c(p.role_reviewer),
+            role_verifier: c(p.role_verifier),
+            role_lead: c(p.role_lead),
             ui_font,
             mono_font,
         }
@@ -355,9 +379,18 @@ mod tests {
             for (surface, bg) in surfaces(&p) {
                 // All readable text, down to 11 px metadata: WCAG AA for normal text. `faint` is not a text
                 // colour and is deliberately absent.
-                for (token, fg) in
-                    [("text", p.text), ("quiet", p.quiet), ("accent", p.accent), ("danger", p.danger), ("success", p.success), ("warning", p.warning)]
-                {
+                for (token, fg) in [
+                    ("text", p.text),
+                    ("quiet", p.quiet),
+                    ("accent", p.accent),
+                    ("danger", p.danger),
+                    ("success", p.success),
+                    ("warning", p.warning),
+                    ("role_implementer", p.role_implementer),
+                    ("role_reviewer", p.role_reviewer),
+                    ("role_verifier", p.role_verifier),
+                    ("role_lead", p.role_lead),
+                ] {
                     let r = contrast(fg, bg);
                     assert!(r >= 4.5, "{name}: {token} on {surface} is {r:.2}:1, under 4.5");
                 }

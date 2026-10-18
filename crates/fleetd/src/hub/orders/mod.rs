@@ -249,7 +249,12 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
         role,
         task_id: Some(task.task_id.clone()),
         thread_ref: task.thread_ref.clone(),
-        title: text(&task.title),
+        title: text(&lane_title(
+            task,
+            role,
+            pr.as_ref().map(|p| p.number.get()),
+            pr_url,
+        )),
         model: model(&task.model),
         effort: Some(task.effort),
         status,
@@ -262,6 +267,30 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
         live: parts
             .as_ref()
             .map(|p| live_lane(task.task_id.as_str(), status, Some(p))),
+    }
+}
+
+/// A checker's lane names what it checks, "review #113", "verify #114", "QA #114", so a column of checkers
+/// reads apart; the lead's own titles for them ("Review owner/repo#113 for X3") are long and alike. Other lanes keep
+/// their task's title.
+fn lane_title(task: &Task, role: AgentRole, number: Option<i64>, pr_url: Option<&str>) -> String {
+    let verb = match role {
+        AgentRole::Reviewer => "review",
+        AgentRole::Verifier => "verify",
+        AgentRole::Qa => "QA",
+        _ => return task.title.to_string(),
+    };
+    let number = number.or_else(|| {
+        pr_url?
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()?
+            .parse()
+            .ok()
+    });
+    match number {
+        Some(n) => format!("{verb} #{n}"),
+        None => task.title.to_string(),
     }
 }
 

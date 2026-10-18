@@ -37,6 +37,11 @@ const MACHINES_EVERY: u64 = 20;
 pub const MAX_BYTES_PER_SEC: usize = 32 * 1024;
 /// A focused order's lanes stay in scope this long after they end, so the app sees them settle.
 const ENDED_GRACE_MS: i64 = 60_000;
+/// A board's lanes stay in scope this long after they end: a few board ticks, so the app sees how each one settled
+/// (done, failed or cancelled) and can say so before the lane leaves the card.
+const BOARD_ENDED_GRACE_MS: i64 = 15_000;
+/// The newest finished tasks per state the board looks through for ones that ended within the grace.
+const BOARD_ENDED_SCAN: usize = 50;
 
 /// One frame waiting for the socket. Latest wins: the pump offers a frame only when the slot is empty.
 #[derive(Default)]
@@ -316,7 +321,8 @@ pub fn focus_lanes(hub: &Hub, caller: &Caller, id: &WorkstreamId) -> Vec<LaneNow
     lanes
 }
 
-/// Every live task of the open orders the key may read, and those projects' leads.
+/// Every live task of the open orders the key may read, those that ended in the last few seconds, and those
+/// projects' leads.
 pub fn board_lanes(hub: &Hub, caller: &Caller) -> Vec<LaneNow> {
     let mut projects = HashSet::new();
     let open = hub
@@ -351,6 +357,27 @@ pub fn board_lanes(hub: &Hub, caller: &Caller) -> Vec<LaneNow> {
             tasks
                 .iter()
                 .filter(|t| open.contains(&t.workstream_id))
+                .map(|t| task_lane(hub, t, false)),
+        );
+    }
+    let cutoff = iso_ms(now_ms(hub.clock.as_ref()) - BOARD_ENDED_GRACE_MS);
+    for state in [TaskState::Done, TaskState::Failed, TaskState::Cancelled] {
+        let tasks = hub
+            .tasks
+            .list(&TaskFilter {
+                project_ref: None,
+                state: Some(state),
+                workstream_id: None,
+                limit: BOARD_ENDED_SCAN,
+            })
+            .unwrap_or_default();
+        lanes.extend(
+            tasks
+                .iter()
+                .filter(|t| {
+                    open.contains(&t.workstream_id)
+                        && t.ended_at.as_ref().is_some_and(|e| e.0 >= cutoff)
+                })
                 .map(|t| task_lane(hub, t, false)),
         );
     }
