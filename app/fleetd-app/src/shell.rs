@@ -51,7 +51,7 @@ const STAMP_WIDTH: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
-    /// Reading the keychain.
+    /// Reading the saved hub key.
     Loading,
     Connect,
     Board,
@@ -355,15 +355,21 @@ impl Shell {
     fn load_saved(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let loaded = match keychain::from_env() {
-                Some(saved) => Ok(Some(saved)),
+                Some(saved) => Ok(keychain::Loaded { saved: Some(saved), note: None }),
                 None => cx.background_executor().spawn(async { keychain::load() }).await,
             };
             this.update(cx, |this, cx| {
                 match loaded {
-                    Ok(Some(saved)) => this.connect(saved, cx),
-                    Ok(None) => this.first_run(cx),
+                    Ok(keychain::Loaded { saved: Some(saved), note }) => {
+                        this.note = note;
+                        this.connect(saved, cx);
+                    }
+                    Ok(keychain::Loaded { saved: None, note }) => {
+                        this.form.status = note;
+                        this.first_run(cx);
+                    }
                     Err(e) => {
-                        let fix = "You can still connect; without a keychain the key lasts until the app quits.";
+                        let fix = "You can still connect; the key then lasts until the app quits.";
                         this.form.error = Some(Failure { code: String::new(), message: e, fix: Some(fix.into()) });
                         this.first_run(cx);
                     }
@@ -1531,7 +1537,7 @@ impl Shell {
                         .child(self.command_line("copy-key-create", "fleetd hub key create --human --name <device>", cx)),
                 );
         }
-        col = col.child(div().text_size(px(size::XS)).text_color(t.quiet).child("The key is kept in the OS keychain, never in a file."));
+        col = col.child(div().text_size(px(size::XS)).text_color(t.quiet).child(format!("The key is kept {}.", keychain::where_kept())));
         // Left-aligned at a third of the window, like a document, not a centred card.
         div().id("connect").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().pt(px(96.)).pb_8().pl(px(120.)).child(col).into_any_element()
     }

@@ -2192,6 +2192,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "raw-window-handle",
  "rustls-platform-verifier",
+ "security-framework",
  "serde",
  "serde_json",
  "unicode-segmentation",

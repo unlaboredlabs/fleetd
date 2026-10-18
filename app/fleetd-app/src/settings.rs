@@ -1,6 +1,6 @@
 //! Settings (⌘, / Ctrl+,, or the app menu): General (appearance, motion, the hub this app is paired with, the
 //! version), Prompts (`prompts.rs`) and Instructions (`instructions.rs`). Appearance and motion apply at once and
-//! are saved; the connection is in the OS keychain, never in a file.
+//! are saved; the connection is wherever `keychain.rs` keeps it.
 
 use gpui::{AnyElement, Context, EventEmitter, SharedString, Window, div, prelude::*, px};
 
@@ -121,7 +121,7 @@ impl Render for Settings {
                 })
                 .detach();
         });
-        let setting = |label: &'static str, help: &'static str| {
+        let setting = |label: &'static str, help: SharedString| {
             div()
                 .w(px(200.))
                 .flex_none()
@@ -168,13 +168,15 @@ impl Render for Settings {
                 .flex_col()
                 .gap_6()
                 .max_w(px(metric::MEASURE))
-                .child(div().flex().items_start().gap_6().child(setting("Appearance", "Match system follows the OS as it changes.")).child(modes))
+                .child(
+                    div().flex().items_start().gap_6().child(setting("Appearance", "Match system follows the OS as it changes.".into())).child(modes),
+                )
                 .child(
                     div()
                         .flex()
                         .items_start()
                         .gap_6()
-                        .child(setting("Motion", "Cards, lanes and the inbox panel move briefly when they change. Reduced turns that off."))
+                        .child(setting("Motion", "Cards, lanes and the inbox panel move briefly when they change. Reduced turns that off.".into()))
                         .child(motion),
                 )
                 .child(ui::hairline(t))
@@ -183,7 +185,7 @@ impl Render for Settings {
                         .flex()
                         .items_start()
                         .gap_6()
-                        .child(setting("Hub", "This app acts as you on this hub, with a key kept in the OS keychain."))
+                        .child(setting("Hub", format!("This app acts as you on this hub, with a key kept {}.", crate::keychain::where_kept()).into()))
                         .child(connection),
                 )
                 .child(ui::hairline(t))
@@ -192,7 +194,7 @@ impl Render for Settings {
                         .flex()
                         .items_start()
                         .gap_6()
-                        .child(setting("Version", "Run fleetd update to update the CLI and this app together."))
+                        .child(setting("Version", "Run fleetd update to update the CLI and this app together.".into()))
                         .child(ui::mono(t, format!("fleetd-app {}", crate::update::VERSION))),
                 ),
         )
