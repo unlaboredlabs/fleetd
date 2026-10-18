@@ -41,15 +41,15 @@ pub fn emit(events: &EventLog, event: NewEvent) {
 /// executor: `ExecutorError`.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ExecutorError {
-    #[error("machine {machine_id} has no live T3 connection")]
+    #[error("machine {machine_id} has no live node link")]
     MachineNotConnected { machine_id: MachineId },
     #[error("thread {thread_id} is not known on machine {machine_id}")]
     ThreadNotFound {
         machine_id: MachineId,
         thread_id: ThreadId,
     },
-    #[error("T3 on {machine_id} refused or failed the {operation} request")]
-    T3RequestFailed {
+    #[error("the node on {machine_id} refused or failed the {operation} request")]
+    NodeRequestFailed {
         machine_id: MachineId,
         operation: &'static str,
     },
@@ -61,7 +61,7 @@ impl ExecutorError {
         match self {
             Self::MachineNotConnected { .. } => "MachineNotConnected",
             Self::ThreadNotFound { .. } => "ThreadNotFound",
-            Self::T3RequestFailed { .. } => "T3RequestFailed",
+            Self::NodeRequestFailed { .. } => "NodeRequestFailed",
         }
     }
 }
@@ -69,9 +69,9 @@ impl ExecutorError {
 /// executor: `Executors::{is_connected, await_live, send}`.
 pub trait ThreadWriter: Send + Sync {
     fn is_connected(&self, machine_id: &MachineId) -> bool;
-    /// Returns once the machine has a live T3 connection, at once if it has one now.
+    /// Returns once the machine's node link is live, at once if it is now.
     fn await_live(&self, machine_id: &MachineId) -> BoxFuture<'_, ()>;
-    /// Ok carries T3's run id, when it reported one.
+    /// Ok carries the node's run id, when it reported one.
     fn send(
         &self,
         target: &ThreadRef,
@@ -93,13 +93,14 @@ impl From<executor::ExecutorError> for ExecutorError {
                 machine_id,
                 thread_id,
             },
-            executor::ExecutorError::T3RequestFailed {
+            executor::ExecutorError::NodeRequestFailed {
                 machine_id,
                 operation,
-                cause,
+                message,
+                ..
             } => {
-                tracing::warn!(machine_id = %machine_id, cause = %cause, "T3 {} request failed", operation.as_str());
-                Self::T3RequestFailed {
+                tracing::warn!(machine_id = %machine_id, message = %message, "node {} request failed", operation.as_str());
+                Self::NodeRequestFailed {
                     machine_id,
                     operation: operation.as_str(),
                 }
@@ -122,10 +123,11 @@ impl From<ExecutorError> for executor::ExecutorError {
                 thread_id,
             },
             // The queue only sends, so the operation is always a send.
-            ExecutorError::T3RequestFailed { machine_id, .. } => Self::T3RequestFailed {
+            ExecutorError::NodeRequestFailed { machine_id, .. } => Self::NodeRequestFailed {
                 machine_id,
-                operation: executor::T3Operation::Send,
-                cause: String::new(),
+                operation: executor::NodeOperation::Send,
+                message: "the node refused the send".into(),
+                fix: None,
             },
         }
     }

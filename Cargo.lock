@@ -2105,7 +2105,6 @@ dependencies = [
  "serde_yaml_ng",
  "sha1 0.10.7",
  "sha2 0.10.9",
- "t3-wire",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

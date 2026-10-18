@@ -128,38 +128,16 @@ impl UsageSource for OpsPorts {
         let m = machine(machine_id);
         Box::pin(async move {
             let m = m.ok_or("not a machine id")?;
-            let hub = self.hub();
-            let config = hub
+            let info = self
+                .hub()
                 .executors
-                .server_config(&m)
+                .runner_info(&m)
                 .await
                 .map_err(|e| e.to_string())?;
-            let fleetd_instance = crate::hub::doctor::checks::FLEETD_INSTANCE;
-            let fleetd = config
-                .providers
-                .iter()
-                .find(|p| p.instance_id == fleetd_instance);
-            let env: Vec<String> = config
-                .settings
-                .provider_instances
-                .as_ref()
-                .and_then(|i| i.get(fleetd_instance))
-                .and_then(|i| i.environment.clone())
-                .unwrap_or_default()
-                .into_iter()
-                .map(|v| v.name)
-                .collect();
-            let names: Vec<&str> = env.iter().map(String::as_str).collect();
             Ok(UsageReading {
-                login: super::source::login_kind_of(
-                    fleetd.and_then(|p| p.auth.kind.as_deref()),
-                    fleetd.map(|p| p.auth.status.as_str()),
-                    &names,
-                ),
-                logs_dir: Some(config.observability.logs_directory_path.clone()),
-                local: super::source::is_loopback_url(
-                    &hub.executors.t3_url(&m).unwrap_or_default(),
-                ),
+                login: super::source::login_kind_of(info.login_kind.as_deref()),
+                logs_dir: None,
+                local: false,
             })
         })
     }
@@ -230,60 +208,21 @@ impl DoctorFleet for OpsPorts {
     }
 }
 
-fn settings_json(s: &t3_wire::types::ServerSettings) -> Value {
-    serde_json::json!({
-        "providerInstances": s.provider_instances.clone().unwrap_or_default(),
-        "autoResumeLimitedThreads": s.auto_resume_limited_threads.unwrap_or(false),
-    })
-}
+/// The native runner has no T3 settings: reads and writes fail with why, until the doctor stops asking (S1).
+const NO_T3_SETTINGS: &str =
+    "fleetd no longer runs T3 on its nodes, so there are no T3 settings to read or change";
 
 impl T3Settings for OpsPorts {
-    fn read(&self, machine_id: &str) -> BoxFut<'_, Result<Value, String>> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            let s = self
-                .hub()
-                .executors
-                .settings_read(&m.ok_or("not a machine id")?)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(settings_json(&s))
-        })
+    fn read(&self, _machine_id: &str) -> BoxFut<'_, Result<Value, String>> {
+        Box::pin(async { Err(NO_T3_SETTINGS.to_owned()) })
     }
     fn update(
         &self,
-        machine_id: &str,
-        patch: Value,
-        mutation: Option<Value>,
+        _machine_id: &str,
+        _patch: Value,
+        _mutation: Option<Value>,
     ) -> BoxFut<'_, Result<Value, String>> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            use t3_wire::types::{
-                ProviderInstanceMutation, ProviderInstanceUpsert, SettingsPatch,
-                UpdateSettingsInput,
-            };
-            let provider_instance_mutation = match mutation {
-                None => None,
-                Some(v) => Some(ProviderInstanceMutation::Upsert(ProviderInstanceUpsert {
-                    instance_id: v["instanceId"].as_str().unwrap_or_default().to_string(),
-                    instance: serde_json::from_value(v["instance"].clone())
-                        .map_err(|e| e.to_string())?,
-                })),
-            };
-            let input = UpdateSettingsInput {
-                patch: SettingsPatch {
-                    auto_resume_limited_threads: patch["autoResumeLimitedThreads"].as_bool(),
-                },
-                provider_instance_mutation,
-            };
-            let s = self
-                .hub()
-                .executors
-                .settings_update(&m.ok_or("not a machine id")?, &input)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(settings_json(&s))
-        })
+        Box::pin(async { Err(NO_T3_SETTINGS.to_owned()) })
     }
 }
 

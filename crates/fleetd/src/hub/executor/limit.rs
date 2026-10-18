@@ -1,7 +1,8 @@
-//! Usage-limit classification from what T3 reports about a failed thread: its failure class and reset time, plus the
-//! error text the `claude` CLI or a proxy in front of it produced. Pure; the executor uses it to tell a limit from a
-//! failure, and the usage area to park and pace. fleetd never asks a usage API.
-//! It lives here because the executor needs it; usage imports it.
+//! Usage-limit classification from what the node reports about a failed run: its failure class and reset time, plus
+//! the error text the `claude` CLI or a proxy in front of it produced. Pure; the executor uses it to tell a limit from
+//! a failure, and the usage area to park and pace. fleetd never asks a usage API.
+//! It lives here because the executor needs it; usage imports it. The node's own classifier (node/runner/failure.rs)
+//! replaces the text rules once it lands; until then they also catch what a node classes as `other`.
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -29,10 +30,10 @@ impl UsageClass {
 
 #[derive(Debug, Clone, Default)]
 pub struct LimitInput<'a> {
-    /// T3's failure class (`usage_limit`, `provider_error`, ...).
+    /// The node's failure class (`usage_limit`, `rate_limit`, `pool_exhausted`, `other`, ...).
     pub error_class: Option<&'a str>,
     pub message: &'a str,
-    /// T3's `usageLimitResetAt`.
+    /// The node's reset time for the limit.
     pub reset_at: Option<&'a str>,
     /// When the thread failed; fallback resets count from here.
     pub at: &'a str,
@@ -80,7 +81,7 @@ static PIPE_EPOCH: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)limit reached\|(\
 static RESET_AFTER: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?"));
 
-/// Epoch ms of an ISO timestamp, as `Date.parse` reads the ones T3 and fleetd write.
+/// Epoch ms of an ISO timestamp, as `Date.parse` reads the ones the node and fleetd write.
 pub fn parse_ms(iso: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(iso)
         .ok()
@@ -94,7 +95,7 @@ pub fn iso_of_ms(ms: i64) -> String {
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
-/// T3's DateTimeUtc as fleetd formats it (`DateTime.formatIso`): UTC with milliseconds.
+/// A timestamp as fleetd formats it (`DateTime.formatIso`): UTC with milliseconds.
 pub fn normalize_iso(iso: &str) -> String {
     parse_ms(iso)
         .map(iso_of_ms)
@@ -138,6 +139,24 @@ pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
             resume_at: None,
             model: Some(c[1].to_owned()),
         });
+    }
+    // The node's structured class wins over the text.
+    match input.error_class {
+        Some("pool_exhausted") => {
+            return Some(Limit {
+                class: UsageClass::PoolExhausted,
+                resume_at: None,
+                model,
+            });
+        }
+        Some("rate_limit") => {
+            return Some(Limit {
+                class: UsageClass::RateLimit,
+                resume_at: Some(reset_of(input, UsageClass::RateLimit)),
+                model,
+            });
+        }
+        _ => {}
     }
     if NO_ACCOUNT.is_match(text) {
         return Some(Limit {

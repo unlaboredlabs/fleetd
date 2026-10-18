@@ -1,15 +1,16 @@
-//! Pure mapping from T3 shell stream items to the hub's thread/project caches and derived events. The executor feeds
-//! every item through `apply_shell_item`; nothing here does I/O.
+//! Pure mapping from the node's machine stream (`fleetd_contracts::sessions::MachineEvent`) to the hub's
+//! thread/project caches and derived events. The executor feeds every event through `apply_machine_event`; nothing
+//! here does I/O.
 use std::collections::{HashMap, HashSet};
 
+use fleetd_contracts::sessions::{
+    FailureClass, MachineEvent, PendingPermission, ProjectInfo, RunStatus, SessionStatus,
+    SessionSummary,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::limit::{limit_data, limit_of_summary, normalize_iso};
-use t3_wire::types::{
-    ProjectRemovedItem, ProjectUpdatedItem, ShellSnapshotItem, ShellStreamItem, ThreadRemovedItem,
-    ThreadShell, ThreadUpdatedItem,
-};
 
 /// The first `max` UTF-16 code units of `s`, as JS `slice(0, max)` (never splitting a character).
 pub fn js_take(s: &str, max: usize) -> &str {
@@ -81,7 +82,7 @@ pub struct Summary {
 pub struct StoredThread {
     pub summary: Summary,
     pub last_sequence: Option<u64>,
-    /// T3's latest run id when this row was written.
+    /// The session's latest run id when this row was written.
     pub last_run_id: Option<String>,
     /// That run's phase: a ThreadStatus, or "usage_limited".
     pub last_run_status: Option<String>,
@@ -110,12 +111,14 @@ pub struct ProjectRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackedThread {
     pub summary: Summary,
-    /// T3's latest run; a new one in the same phase is still a transition. Unknown (None) after a hub restart;
-    /// `Some(None)` is T3 saying the thread has no run.
+    /// The session's latest run; a new one in the same phase is still a transition. Unknown (None) after a hub
+    /// restart; `Some(None)` is the node saying the session has no run.
     pub run_id: Option<Option<String>>,
     pub active_run_id: Option<String>,
-    /// The active run is still being prepared or started, so a message sent now is queued behind it.
+    /// The active run is still queued or starting, so a message sent now is queued behind it.
     pub active_run_starting: bool,
+    /// The permission prompt the run waits on.
+    pub pending: Option<PendingPermission>,
 }
 
 impl TrackedThread {
@@ -131,7 +134,7 @@ pub struct ProjectMeta {
     pub updated_at: String,
 }
 
-/// One machine's view of T3's shell. Holds shell rows only, never transcripts.
+/// One machine's view of the node's sessions. Holds summary rows only, never transcripts.
 #[derive(Debug, Clone, Default)]
 pub struct ShellState {
     pub cursor: Option<u64>,
@@ -195,8 +198,10 @@ pub struct Applied {
     /// Projects whose metadata or thread counts changed, to upsert.
     pub projects: Vec<ProjectRow>,
     pub transitions: Vec<Transition>,
-    /// Set when the item moved the shell cursor.
+    /// Set when the event moved the machine stream's cursor.
     pub cursor: Option<u64>,
+    /// After a full snapshot: every session the node has. Stored rows of this machine outside it are stale.
+    pub present: Option<HashSet<String>>,
 }
 
 pub struct ApplyContext<'a> {
@@ -226,27 +231,43 @@ pub struct EventDraft {
     pub data: Option<Value>,
 }
 
-/// T3 reports "waiting" for more than approvals, so only a pending runtime request counts as waiting on a human.
-pub fn thread_status(shell: &ThreadShell) -> String {
-    match shell.status.as_str() {
-        "preparing" | "queued" | "starting" | "running" | "waiting" => {
-            if shell.pending_runtime_request.is_some() {
-                "waiting"
-            } else {
-                "running"
-            }
-            .to_owned()
-        }
-        "rolled_back" => "cancelled".to_owned(),
-        other => other.to_owned(),
+/// A session's row as the hub's ThreadStatus: an active run is running, or waiting while a permission prompt is open;
+/// otherwise the latest run's outcome.
+pub fn thread_status(s: &SessionSummary) -> &'static str {
+    let active = s.active_run_id.is_some()
+        || matches!(s.status, SessionStatus::Running | SessionStatus::Waiting);
+    if active {
+        return if s.pending_permission.is_some() {
+            "waiting"
+        } else {
+            "running"
+        };
     }
+    match s.latest_run.as_ref().map(|r| r.status) {
+        Some(RunStatus::Completed) => "completed",
+        Some(RunStatus::Failed) => "failed",
+        Some(RunStatus::Interrupted) => "interrupted",
+        _ => match s.status {
+            SessionStatus::Failed => "failed",
+            SessionStatus::Interrupted => "interrupted",
+            _ => "idle",
+        },
+    }
+}
+
+/// The failure class as the hub's events and usage area name it.
+pub fn failure_class(class: FailureClass) -> String {
+    serde_json::to_value(class)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "other".into())
 }
 
 fn first_line(text: &str) -> String {
     js_take(text.trim().split('\n').next().unwrap_or(""), 280).to_owned()
 }
 
-/// Applies the latest visible assistant text (T3's shell rows carry none, so it comes from a thread read).
+/// Applies the latest visible assistant text.
 pub fn with_assistant_text(summary: &Summary, text: Option<&str>) -> Summary {
     match text {
         Some(text) if !text.trim().is_empty() => Summary {
@@ -260,58 +281,43 @@ pub fn with_assistant_text(summary: &Summary, text: Option<&str>) -> Summary {
 
 pub fn to_thread_summary(
     machine_id: &str,
-    shell: &ThreadShell,
+    s: &SessionSummary,
     prev: Option<&Summary>,
     now: &str,
 ) -> Summary {
-    let effort = shell
-        .model_selection
-        .options
-        .as_ref()
-        .and_then(|o| o.iter().find(|o| o.id == "effort"))
-        .and_then(|o| o.value.as_str().map(str::to_owned));
-    let reset_at = if shell.last_error_class.as_deref() == Some("usage_limit") {
-        shell.usage_limit_reset_at.clone().filter(|r| !r.is_empty())
-    } else {
-        None
-    };
+    let failure = s.latest_run.as_ref().and_then(|r| r.failure.as_ref());
+    let reset_at = failure
+        .filter(|f| matches!(f.class, FailureClass::UsageLimit | FailureClass::RateLimit))
+        .and_then(|f| f.reset_at.as_ref())
+        .map(|r| normalize_iso(r.as_str()));
+    let effort = serde_json::to_value(s.effort)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned));
     let base = Summary {
         machine_id: machine_id.to_owned(),
-        thread_id: shell.id.clone(),
-        project_id: shell.project_id.clone(),
-        title: shell.title.clone(),
-        status: thread_status(shell),
+        thread_id: s.session_id.to_string(),
+        project_id: s.project_id.to_string(),
+        title: s.title.clone(),
+        status: thread_status(s).to_owned(),
         headline: prev.map(|p| p.headline.clone()).unwrap_or_default(),
         latest_message_tail: prev
             .map(|p| p.latest_message_tail.clone())
             .unwrap_or_default(),
-        last_error: shell
-            .last_error
-            .as_ref()
-            .filter(|e| !e.is_empty())
-            .map(|e| LastError {
-                class: shell
-                    .last_error_class
-                    .clone()
-                    .unwrap_or_else(|| "unknown".into()),
-                message: js_take(e, 2000).to_owned(),
-            }),
+        last_error: failure.map(|f| LastError {
+            class: failure_class(f.class),
+            message: js_take(f.message.as_str(), 2000).to_owned(),
+        }),
         usage_limit_reset_at: reset_at,
-        last_progress_at: normalize_iso(&shell.updated_at),
-        model: Some(shell.model_selection.model.clone()),
+        last_progress_at: normalize_iso(s.updated_at.as_str()),
+        model: Some(s.model.clone()),
         effort,
         stale: false,
         as_of: now.to_owned(),
     };
-    match &shell.latest_visible_message {
-        Some(latest) if latest.role == "assistant" => {
-            with_assistant_text(&base, Some(&latest.text))
-        }
-        _ => base,
-    }
+    with_assistant_text(&base, s.latest_assistant_tail.as_deref())
 }
 
-/// M4: a failure T3 calls usage_limit, or whose text is a 429, a usage limit or an exhausted proxy, is a usage limit.
+/// M4: a failure the node classed as a usage, rate or pool limit (or whose text says so) is a usage limit.
 pub fn phase(s: &Summary) -> String {
     if limit_of_summary(s).is_some() {
         "usage_limited".to_owned()
@@ -424,14 +430,15 @@ impl Applier<'_, '_> {
     /// `restart`: the first snapshot in this hub process, diffed against what an earlier one stored.
     fn upsert_thread(
         &mut self,
-        shell: &ThreadShell,
+        session: &SessionSummary,
         sequence: Option<u64>,
         quiet_if_new: bool,
         restart: bool,
     ) {
-        let known = self.state.threads.get(&shell.id).cloned();
+        let id = session.session_id.to_string();
+        let known = self.state.threads.get(&id).cloned();
         let stored = if known.is_none() {
-            self.ctx.stored.get(&shell.id)
+            self.ctx.stored.get(&id)
         } else {
             None
         };
@@ -443,21 +450,24 @@ impl Applier<'_, '_> {
         };
         let summary = to_thread_summary(
             self.ctx.machine_id,
-            shell,
+            session,
             prev.as_ref().map(|p| &p.0),
             self.ctx.now,
         );
-        let starting = shell
-            .activity_run_status
-            .as_deref()
-            .unwrap_or(&shell.status);
+        let latest_run = session.latest_run.as_ref().map(|r| r.id.to_string());
+        let active_run_id = session.active_run_id.as_ref().map(|r| r.to_string());
+        let starting = session.latest_run.as_ref().is_some_and(|r| {
+            Some(r.id.as_str()) == active_run_id.as_deref()
+                && matches!(r.status, RunStatus::Queued | RunStatus::Starting)
+        });
         let next = TrackedThread {
             summary: summary.clone(),
-            run_id: Some(shell.latest_run_id.clone()),
-            active_run_id: shell.active_run_id.clone(),
-            active_run_starting: matches!(starting, "preparing" | "queued" | "starting"),
+            run_id: Some(latest_run.clone()),
+            active_run_id,
+            active_run_starting: starting,
+            pending: session.pending_permission.clone(),
         };
-        self.state.threads.insert(shell.id.clone(), next.clone());
+        self.state.threads.insert(id.clone(), next.clone());
         if let Some(k) = &known
             && k.summary.project_id != summary.project_id
         {
@@ -465,7 +475,7 @@ impl Applier<'_, '_> {
         }
         self.touch(&summary.project_id);
         let run_status = phase(&summary);
-        let next_run = shell.latest_run_id.as_deref();
+        let next_run = latest_run.as_deref();
         let run_changed = stored.is_some_and(|s| {
             s.last_run_id.as_deref() != next_run
                 || s.last_run_status.as_deref() != Some(run_status.as_str())
@@ -483,7 +493,7 @@ impl Applier<'_, '_> {
             self.threads.push(StoredThread {
                 summary: summary.clone(),
                 last_sequence: sequence,
-                last_run_id: shell.latest_run_id.clone(),
+                last_run_id: latest_run.clone(),
                 last_run_status: Some(run_status),
             });
         }
@@ -495,6 +505,17 @@ impl Applier<'_, '_> {
                     .map(|(s, r)| (s, r.as_ref().and_then(|r| r.as_deref()))),
                 (&summary, next_run),
             )
+            .or_else(|| {
+                // A second prompt in the same run, raised before the hub saw it run again, is a new wait.
+                let asked = |t: Option<&TrackedThread>| {
+                    t.and_then(|t| t.pending.as_ref())
+                        .map(|p| p.request_id.to_string())
+                };
+                (summary.status == "waiting"
+                    && known.is_some()
+                    && asked(Some(&next)) != asked(known.as_ref()))
+                .then_some(EventType::Waiting)
+            })
         };
         if let Some(kind) = kind {
             // Anything a restart snapshot reveals happened while the hub was down.
@@ -514,10 +535,20 @@ impl Applier<'_, '_> {
     }
 }
 
-/// Mutates `state` with one shell stream item and reports what changed.
-pub fn apply_shell_item(
+fn project_meta(p: &ProjectInfo) -> ProjectMeta {
+    ProjectMeta {
+        title: p.title.clone(),
+        workspace_root: p.workspace_root.clone(),
+        updated_at: normalize_iso(p.updated_at.as_str()),
+    }
+}
+
+/// Mutates `state` with one machine stream event and reports what changed. `seq` is the frame's; none for a change
+/// the hub applies itself before the stream confirms it.
+pub fn apply_machine_event(
     state: &mut ShellState,
-    item: &ShellStreamItem,
+    seq: Option<u64>,
+    event: &MachineEvent,
     ctx: &ApplyContext,
 ) -> Applied {
     let mut a = Applier {
@@ -528,89 +559,48 @@ pub fn apply_shell_item(
         touched: vec![],
         cursor: None,
     };
-    match item {
-        ShellStreamItem::Synchronized | ShellStreamItem::Other => {}
-        ShellStreamItem::Snapshot(ShellSnapshotItem {
-            snapshot,
-            resolved_repository_identity_roots,
-        }) => {
-            for p in &snapshot.projects {
-                a.state.projects.insert(
-                    p.id.clone(),
-                    ProjectMeta {
-                        title: p.title.clone(),
-                        workspace_root: p.workspace_root.clone(),
-                        updated_at: p.updated_at.clone(),
-                    },
-                );
-                a.touch(&p.id);
+    let mut present = None;
+    match event {
+        MachineEvent::Snapshot { projects, sessions } => {
+            let baseline = ctx.baseline && !a.state.complete;
+            let restart = !ctx.baseline && !a.state.complete;
+            let ids: HashSet<String> = sessions.iter().map(|s| s.session_id.to_string()).collect();
+            let gone: Vec<String> = a
+                .state
+                .threads
+                .keys()
+                .filter(|id| !ids.contains(id.as_str()))
+                .cloned()
+                .collect();
+            for id in gone {
+                a.drop_thread(&id);
             }
-            // A snapshot that names resolved repository roots is only a project metadata refresh: it lists some
-            // projects and no threads, and its sequence can be ahead of a replay that follows it.
-            if resolved_repository_identity_roots.is_none() {
-                let baseline = ctx.baseline && !a.state.complete;
-                let restart = !ctx.baseline && !a.state.complete;
-                let present: HashSet<&str> =
-                    snapshot.threads.iter().map(|t| t.id.as_str()).collect();
-                let gone: Vec<String> = a
-                    .state
-                    .threads
-                    .keys()
-                    .filter(|id| !present.contains(id.as_str()))
-                    .cloned()
-                    .collect();
-                for id in gone {
-                    a.drop_thread(&id);
-                }
+            a.state.projects.clear();
+            for p in projects {
                 a.state
                     .projects
-                    .retain(|id, _| snapshot.projects.iter().any(|p| &p.id == id));
-                for shell in &snapshot.threads {
-                    a.upsert_thread(shell, None, baseline, restart);
-                }
-                a.state.complete = true;
-                a.advance(snapshot.snapshot_sequence);
+                    .insert(p.project_id.to_string(), project_meta(p));
+                a.touch(p.project_id.as_str());
             }
-        }
-        ShellStreamItem::ProjectUpdated(ProjectUpdatedItem { sequence, project }) => {
-            a.state.projects.insert(
-                project.id.clone(),
-                ProjectMeta {
-                    title: project.title.clone(),
-                    workspace_root: project.workspace_root.clone(),
-                    updated_at: project.updated_at.clone(),
-                },
-            );
-            a.touch(&project.id);
-            a.advance(*sequence);
-        }
-        ShellStreamItem::ProjectRemoved(ProjectRemovedItem {
-            sequence,
-            project_id,
-        }) => {
-            a.state.projects.remove(project_id);
-            a.advance(*sequence);
-        }
-        ShellStreamItem::ThreadUpdated(ThreadUpdatedItem {
-            sequence,
-            location,
-            thread,
-        }) => {
-            if location == "archive" || thread.deleted_at.is_some() {
-                a.drop_thread(&thread.id);
-            } else {
-                a.upsert_thread(thread, Some(*sequence), false, false);
+            for s in sessions {
+                a.upsert_thread(s, None, baseline, restart);
             }
-            a.advance(*sequence);
+            a.state.complete = true;
+            present = Some(ids);
         }
-        ShellStreamItem::ThreadRemoved(ThreadRemovedItem {
-            sequence,
-            thread_id,
-            ..
-        }) => {
-            a.drop_thread(thread_id);
-            a.advance(*sequence);
+        MachineEvent::ProjectUpserted(p) => {
+            a.state
+                .projects
+                .insert(p.project_id.to_string(), project_meta(p));
+            a.touch(p.project_id.as_str());
         }
+        MachineEvent::ProjectRemoved { project_id } => {
+            a.state.projects.remove(project_id.as_str());
+        }
+        MachineEvent::SessionUpdated(s) => a.upsert_thread(s, seq, false, false),
+    }
+    if let Some(seq) = seq {
+        a.advance(seq);
     }
     let projects = a
         .touched
@@ -622,27 +612,25 @@ pub fn apply_shell_item(
         projects,
         transitions: a.transitions,
         cursor: a.cursor,
+        present,
     }
 }
 
-/// Cached projects T3 no longer has, given the state after `item` was applied: the one a `project.removed` names, or
-/// after a full snapshot every cached one it left out. The cache is read from the store, not memory, so a project
-/// deleted while the hub was down is found by the first snapshot after its restart.
+/// Cached projects the node no longer has, given the state after `event` was applied: the one a `project_removed`
+/// names, or after a snapshot every cached one it left out. The cache is read from the store, not memory, so a
+/// project removed while the hub was down is found by the first snapshot after its restart.
 pub fn removed_projects(
     state: &ShellState,
-    item: &ShellStreamItem,
+    event: &MachineEvent,
     cached: &[String],
 ) -> Vec<String> {
-    match item {
-        ShellStreamItem::ProjectRemoved(ProjectRemovedItem { project_id, .. }) => cached
+    match event {
+        MachineEvent::ProjectRemoved { project_id } => cached
             .iter()
-            .filter(|id| *id == project_id)
+            .filter(|id| id.as_str() == project_id.as_str())
             .cloned()
             .collect(),
-        ShellStreamItem::Snapshot(ShellSnapshotItem {
-            resolved_repository_identity_roots: None,
-            ..
-        }) => cached
+        MachineEvent::Snapshot { .. } => cached
             .iter()
             .filter(|id| !state.projects.contains_key(*id))
             .cloned()
@@ -699,6 +687,13 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
     }
     if let Some(r) = &s.usage_limit_reset_at {
         data.insert("usageLimitResetAt".into(), json!(r));
+    }
+    // What the approvals area files an approve ask from.
+    if let (EventType::Waiting, Some(p)) = (t.kind, &thread.pending) {
+        data.insert(
+            "permission".into(),
+            json!({ "requestId": p.request_id, "toolName": p.tool_name, "summary": p.summary }),
+        );
     }
     if let Some(limit) = &limit {
         data.extend(limit_data(limit));

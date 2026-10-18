@@ -8,9 +8,10 @@ use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef, Timestam
 use fleetd_contracts::lead_calls::LeadCall;
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::model::RuntimeMode;
+use fleetd_contracts::prim::NonEmpty;
+use fleetd_contracts::sessions::SessionWorkspace;
 use fleetd_contracts::tasks::{TaskId, TaskResult};
 use fleetd_contracts::usage::UsageParked;
-use t3_wire::types::{NewWorktree, WorkspaceStrategy};
 
 use super::hooks::{ResultReceipts, SpawnCheck, UsageGate};
 use super::ports::{
@@ -83,15 +84,16 @@ impl TaskPorts for HubTaskPorts {
                 title: Some(request.title),
                 client_request_id: request.client_request_id,
             };
-            let options = LaunchOptions {
-                workspace: request.worktree.map(|w| {
-                    WorkspaceStrategy::Worktree(NewWorktree {
-                        base_ref: w.base_ref,
-                        branch: Some(w.branch),
-                        start_from_origin: None,
-                    })
+            let workspace = match request.worktree {
+                None => None,
+                Some(w) => Some(SessionWorkspace::Worktree {
+                    base_ref: NonEmpty::new(w.base_ref)
+                        .map_err(|_| PortError::Failed("a worktree needs a base ref".into()))?,
+                    branch: NonEmpty::new(w.branch)
+                        .map_err(|_| PortError::Failed("a worktree needs a branch".into()))?,
                 }),
             };
+            let options = LaunchOptions { workspace };
             self.executors
                 .launch(machine_id, &input, options)
                 .await

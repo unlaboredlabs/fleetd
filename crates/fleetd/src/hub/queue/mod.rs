@@ -177,7 +177,7 @@ impl WriteQueue {
 
     /// Sends now when the machine is connected and nothing is queued for it; otherwise queues the message until it
     /// is. `client_request_id` is the T3 command id, so a retried or re-queued send is delivered once. The error is
-    /// ThreadNotFound or T3RequestFailed, never MachineNotConnected.
+    /// ThreadNotFound or NodeRequestFailed, never MachineNotConnected.
     pub async fn send(
         self: &Arc<Self>,
         target: &ThreadRef,

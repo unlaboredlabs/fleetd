@@ -242,12 +242,12 @@ impl HubStore {
         })
     }
 
-    /// Threads whose last known status is "running", on every machine.
+    /// Threads whose last known status is "running", on every machine; stale rows never run again.
     pub fn threads_running(&self) -> Result<Vec<ThreadSummary>, StoreError> {
         self.db.with(|conn| {
             decode_all(
                 conn,
-                "SELECT data FROM threads WHERE json_extract(data, '$.status') = 'running'",
+                "SELECT data FROM threads WHERE json_extract(data, '$.status') = 'running' AND COALESCE(json_extract(data, '$.stale'), 0) = 0",
                 [],
             )
         })
@@ -268,7 +268,34 @@ impl HubStore {
         })
     }
 
-    /// T3 shell `afterSequence` per machine.
+    /// Marks the machine's rows outside `present` stale, as of `as_of`; returns how many it marked. A thread its node
+    /// has no session for never resumes (risk 7 of the native runner: T3 threads from before it).
+    pub fn threads_mark_stale(
+        &self,
+        machine_id: &MachineId,
+        present: &std::collections::HashSet<String>,
+        as_of: &str,
+    ) -> Result<usize, StoreError> {
+        self.db.with(|conn| {
+            let ids: Vec<String> = conn
+                .prepare_cached(
+                    "SELECT thread_id FROM threads WHERE machine_id = ? AND COALESCE(json_extract(data, '$.stale'), 0) = 0",
+                )?
+                .query_map([machine_id.as_str()], |row| row.get(0))?
+                .collect::<Result<_, _>>()?;
+            let mut marked = 0;
+            for id in ids.iter().filter(|id| !present.contains(*id)) {
+                marked += conn
+                    .prepare_cached(
+                        "UPDATE threads SET data = json_set(data, '$.stale', json('true'), '$.asOf', ?) WHERE machine_id = ? AND thread_id = ?",
+                    )?
+                    .execute(params![as_of, machine_id.as_str(), id])?;
+            }
+            Ok(marked)
+        })
+    }
+
+    /// The machine stream's cursor per machine.
     pub fn cursor_get(&self, machine_id: &MachineId) -> Result<Option<i64>, StoreError> {
         self.db.with(|conn| {
             Ok(conn

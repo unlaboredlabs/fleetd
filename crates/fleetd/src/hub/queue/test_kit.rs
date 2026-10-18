@@ -128,7 +128,7 @@ impl ThreadWriter for FakeWriter {
                 machine_id: target.machine_id.clone(),
             })
         } else if self.refused.lock().unwrap().contains(client_request_id) {
-            Err(ExecutorError::T3RequestFailed {
+            Err(ExecutorError::NodeRequestFailed {
                 machine_id: target.machine_id.clone(),
                 operation: "send",
             })
