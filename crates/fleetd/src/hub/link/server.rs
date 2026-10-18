@@ -707,7 +707,8 @@ impl NodeLinkServer {
                 | NodeToHub::NodeActionResult(_)) => self.deps.commands.resolve(&machine_id, reply),
                 frame @ (NodeToHub::SessionReply(_)
                 | NodeToHub::MachineEvent(_)
-                | NodeToHub::ThreadEvent(_)) => {
+                | NodeToHub::ThreadEvent(_)
+                | NodeToHub::CloneProgress(_)) => {
                     self.deps.executors.handle_frame(&machine_id, frame)
                 }
                 NodeToHub::Slept(span) => self.slept(&machine_id, span),

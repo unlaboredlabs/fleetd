@@ -68,10 +68,16 @@ async fn project_add(
     caller: Caller,
     input: ProjectAddInput,
 ) -> Result<Value, ToolError> {
-    let m = &input.machine_id;
+    let (Some(m), Some(path)) = (&input.machine_id, &input.path) else {
+        return Err(crate::hub::api::error(
+            fleetd_contracts::mcp::ErrorCode::Invalid,
+            "not built yet",
+            "give machineId and path",
+        ));
+    };
     require(&caller, Role::Operate, Some(m))?;
     connected(&hub, m)?;
-    let (path, name) = normalized(input.path.as_str());
+    let (path, name) = normalized(path.as_str());
     let existing = hub.executors.project_at(m, path);
     let created = existing.is_none();
     let project_id =

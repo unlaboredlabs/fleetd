@@ -17,7 +17,9 @@ use crate::ledger::{AskId, DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeo
 use crate::model::SleptSpan;
 use crate::prim::{AnyInt, Count, Finite, Int, List, NonEmpty, NonNegative, Text};
 use crate::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink};
-use crate::sessions::{MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame};
+use crate::sessions::{
+    CloneProgressFrame, MachineEventFrame, SessionCallFrame, SessionReplyFrame, ThreadEventFrame,
+};
 use crate::tasks::AbsolutePath;
 
 /// WebSocket close codes the hub ends a link with.
@@ -303,6 +305,7 @@ pub enum NodeToHub {
     /// After the machine woke: how long it slept, once per sleep.
     Slept(SleptSpan),
     Spans(SpansFrame),
+    CloneProgress(CloneProgressFrame),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

@@ -687,6 +687,10 @@ impl SessionService {
                 Ok(SessionOutput::Item { item })
             }
             SessionCall::ReadFile { project_id, path } => self.read_file(&project_id, &path),
+            SessionCall::RepoScan
+            | SessionCall::RepoInspect { .. }
+            | SessionCall::RepoClone { .. }
+            | SessionCall::GhRepoList => Err(invalid("not built yet")),
             SessionCall::DefaultBranch { project_id } => {
                 let root = self.project_root(&project_id)?;
                 let branch = blocking(move || worktree::default_branch(&root)).await;

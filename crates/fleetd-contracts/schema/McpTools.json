@@ -1384,6 +1384,24 @@
         }
       ]
     },
+    "Checkout": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "path": {
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "path"
+      ],
+      "type": "object"
+    },
     "CiCheckStat": {
       "properties": {
         "criticalExcessMs": {
@@ -1425,6 +1443,30 @@
         "p50Ms",
         "maxMs",
         "criticalExcessMs"
+      ],
+      "type": "object"
+    },
+    "CiInfo": {
+      "description": "CI the repository runs.",
+      "properties": {
+        "requiredChecks": {
+          "description": "Status checks the default branch requires, from branch protection and rulesets.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workflows": {
+          "description": "Active GitHub Actions workflows by name (from `.github/workflows` on a checkout without GitHub access).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "workflows",
+        "requiredChecks"
       ],
       "type": "object"
     },
@@ -1516,6 +1558,36 @@
       },
       "required": [
         "claims"
+      ],
+      "type": "object"
+    },
+    "CloneTarget": {
+      "description": "Where a clone would go on a machine, and what is there now.",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "path": {
+          "description": "Absolute.",
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId",
+          "description": "The existing directory is already this project."
+        },
+        "sameRemote": {
+          "description": "The existing directory is a checkout of the same repository: `project_add` with `useExisting` adds it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "path",
+        "exists",
+        "sameRemote"
       ],
       "type": "object"
     },
@@ -2303,6 +2375,36 @@
       ],
       "type": "object"
     },
+    "FoundRepo": {
+      "description": "A git checkout found on a machine (under ~/src, ~/code, ~/projects, ~/dev and similar, at most two levels down).",
+      "properties": {
+        "name": {
+          "description": "The directory's name.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute.",
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId",
+          "description": "Set when the checkout is already a project."
+        },
+        "remote": {
+          "description": "The origin remote, shortened: \"github.com/acme/storefront\".",
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo",
+          "description": "When the remote is on GitHub."
+        }
+      },
+      "required": [
+        "path",
+        "name"
+      ],
+      "type": "object"
+    },
     "Gap": {
       "properties": {
         "count": {
@@ -2420,6 +2522,41 @@
       ],
       "type": "object"
     },
+    "GitHubCandidate": {
+      "description": "A repository `gh repo list` returned, for the user or one of their orgs.",
+      "properties": {
+        "checkouts": {
+          "description": "Machines that already have a checkout of it.",
+          "items": {
+            "$ref": "#/$defs/Checkout"
+          },
+          "type": "array"
+        },
+        "description": {
+          "maxLength": 300,
+          "type": "string"
+        },
+        "private": {
+          "type": "boolean"
+        },
+        "pushedAt": {
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "url",
+        "private",
+        "checkouts"
+      ],
+      "type": "object"
+    },
     "GitHubPrUrl": {
       "description": "https://github.com/<owner>/<name>/pull/<n>",
       "pattern": "^https://github\\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})/pull/([1-9][0-9]*)$",
@@ -2429,6 +2566,36 @@
       "description": "GitHub repository as owner/name",
       "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})$",
       "type": "string"
+    },
+    "GitHubRepos": {
+      "description": "The `gh repo list` part of `project_discover`.",
+      "properties": {
+        "ghOn": {
+          "description": "Where gh ran: \"hub\" (the hub machine) or a machine id. Absent when gh is logged in nowhere.",
+          "type": "string"
+        },
+        "owners": {
+          "description": "The login and the orgs listed, in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "problem": {
+          "$ref": "#/$defs/ProjectProblem"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/GitHubCandidate"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "owners",
+        "repos"
+      ],
+      "type": "object"
     },
     "HubEvent": {
       "properties": {
@@ -2507,6 +2674,21 @@
         {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
+          "type": "string"
+        },
+        {
+          "const": "project.added",
+          "description": "A project was added from a path or a finished clone: `data` is `ProjectAddedData` (the inspect line included).",
+          "type": "string"
+        },
+        {
+          "const": "project.clone_progress",
+          "description": "A clone `project_add` accepted is running: `data` is `CloneProgressData`. Throttled; never stored past the\nevent log's own retention.",
+          "type": "string"
+        },
+        {
+          "const": "project.add_failed",
+          "description": "A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.",
           "type": "string"
         },
         {
@@ -3573,6 +3755,37 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "MachineRepos": {
+      "description": "One machine's part of `project_discover`.",
+      "properties": {
+        "cloneRoot": {
+          "description": "Where a clone onto this machine goes by default: the first of ~/src, ~/code, ~/projects that exists, else\n~/src. Absolute.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "problem": {
+          "$ref": "#/$defs/ProjectProblem",
+          "description": "Why this machine could not be scanned (offline, an older node), with its fix."
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/FoundRepo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "machineId",
+        "online",
+        "repos"
+      ],
+      "type": "object"
+    },
     "MachineStatus": {
       "enum": [
         "online",
@@ -3739,6 +3952,12 @@
         "project_add.output": {
           "$ref": "#/$defs/ProjectAddOutput"
         },
+        "project_discover.input": {
+          "$ref": "#/$defs/ProjectDiscoverInput"
+        },
+        "project_discover.output": {
+          "$ref": "#/$defs/ProjectDiscoverOutput"
+        },
         "project_files.input": {
           "$ref": "#/$defs/ProjectFilesInput"
         },
@@ -3750,6 +3969,12 @@
         },
         "project_get.output": {
           "$ref": "#/$defs/ProjectOutcome"
+        },
+        "project_inspect.input": {
+          "$ref": "#/$defs/ProjectInspectInput"
+        },
+        "project_inspect.output": {
+          "$ref": "#/$defs/ProjectInspectOutput"
         },
         "project_remove.input": {
           "$ref": "#/$defs/ProjectRemoveInput"
@@ -4015,10 +4240,14 @@
         "orders_board.output",
         "project_add.input",
         "project_add.output",
+        "project_discover.input",
+        "project_discover.output",
         "project_files.input",
         "project_files.output",
         "project_get.input",
         "project_get.output",
+        "project_inspect.input",
+        "project_inspect.output",
         "project_remove.input",
         "project_remove.output",
         "projects_list.input",
@@ -4089,6 +4318,41 @@
         "workstream_list.output",
         "workstream_spawn.input",
         "workstream_spawn.output"
+      ],
+      "type": "object"
+    },
+    "MergeRules": {
+      "description": "How the default branch may be merged into.",
+      "properties": {
+        "protected": {
+          "description": "Branch protection or an active ruleset applies to the default branch.",
+          "type": "boolean"
+        },
+        "requiredReviews": {
+          "description": "Approving reviews a pull request needs.",
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rulesets": {
+          "description": "Active rulesets that apply to the default branch, by name.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "squashAllowed": {
+          "description": "Absent when gh could not read the repository settings.",
+          "type": "boolean"
+        },
+        "strict": {
+          "description": "Pull requests must be up to date with the base before merging.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "protected",
+        "rulesets"
       ],
       "type": "object"
     },
@@ -4757,8 +5021,14 @@
     },
     "ProjectAddInput": {
       "properties": {
+        "dest": {
+          "description": "With `url`: clone here instead of `<cloneRoot>/<name>`.",
+          "pattern": "^/.",
+          "type": "string"
+        },
         "machineId": {
-          "$ref": "#/$defs/MachineId"
+          "$ref": "#/$defs/MachineId",
+          "description": "Absent: the best worker (see `project_discover.best`)."
         },
         "path": {
           "pattern": "^/.",
@@ -4769,33 +5039,99 @@
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
+        },
+        "url": {
+          "description": "A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "useExisting": {
+          "description": "With `url`: when the destination is already a checkout of the same repository, add it instead of failing.",
+          "type": "boolean"
         }
       },
-      "required": [
-        "machineId",
-        "path"
-      ],
       "type": "object"
     },
     "ProjectAddOutput": {
       "properties": {
+        "addId": {
+          "description": "A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
         "created": {
           "description": "False when the directory was already a project (it is renamed when a title is given).",
           "type": "boolean"
         },
+        "inspect": {
+          "$ref": "#/$defs/ProjectInspect",
+          "description": "For a path, at once; for a clone, on `project.added`."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
         "next": {
           "type": "string"
         },
+        "path": {
+          "description": "The project's directory (the clone's destination for a url).",
+          "type": "string"
+        },
         "projectId": {
-          "$ref": "#/$defs/ProjectId"
+          "$ref": "#/$defs/ProjectId",
+          "description": "Absent while a clone runs: `project.added` carries it."
         },
         "truncated": {
           "type": "boolean"
         }
       },
       "required": [
-        "projectId",
+        "machineId",
+        "path",
         "created"
+      ],
+      "type": "object"
+    },
+    "ProjectDiscoverInput": {
+      "properties": {
+        "github": {
+          "description": "Include `gh repo list` (default true).",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Scan only this machine; absent: every machine."
+        }
+      },
+      "type": "object"
+    },
+    "ProjectDiscoverOutput": {
+      "properties": {
+        "best": {
+          "$ref": "#/$defs/MachineId",
+          "description": "The machine a clone goes to by default: online, runner ready, fewest running threads. Absent: none is."
+        },
+        "github": {
+          "$ref": "#/$defs/GitHubRepos"
+        },
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/MachineRepos"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machines",
+        "github"
       ],
       "type": "object"
     },
@@ -4867,6 +5203,110 @@
     "ProjectId": {
       "type": "string"
     },
+    "ProjectInspect": {
+      "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
+      "properties": {
+        "ci": {
+          "$ref": "#/$defs/CiInfo"
+        },
+        "defaultBranch": {
+          "type": "string"
+        },
+        "leadNeeds": {
+          "description": "One line for a person, e.g. \"no CI found: the merge train will only use local checks\".",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "merge": {
+          "$ref": "#/$defs/MergeRules"
+        },
+        "notes": {
+          "description": "What could not be read, e.g. \"branch rules need admin access on acme/storefront\".",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo",
+          "description": "Absent for a checkout without a GitHub remote."
+        }
+      },
+      "required": [
+        "ci",
+        "merge",
+        "leadNeeds",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "ProjectInspectInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "path": {
+          "pattern": "^/.",
+          "type": "string"
+        },
+        "url": {
+          "description": "A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ProjectInspectOutput": {
+      "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
+      "properties": {
+        "ci": {
+          "$ref": "#/$defs/CiInfo"
+        },
+        "clone": {
+          "$ref": "#/$defs/CloneTarget",
+          "description": "With `url` and a machine (given, or the best one): where `project_add` would clone it."
+        },
+        "defaultBranch": {
+          "type": "string"
+        },
+        "leadNeeds": {
+          "description": "One line for a person, e.g. \"no CI found: the merge train will only use local checks\".",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "merge": {
+          "$ref": "#/$defs/MergeRules"
+        },
+        "next": {
+          "type": "string"
+        },
+        "notes": {
+          "description": "What could not be read, e.g. \"branch rules need admin access on acme/storefront\".",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo",
+          "description": "Absent for a checkout without a GitHub remote."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ci",
+        "merge",
+        "leadNeeds",
+        "notes"
+      ],
+      "type": "object"
+    },
     "ProjectOutcome": {
       "description": "The one-call project outcome, returned as-is by project_get.",
       "properties": {
@@ -4935,6 +5375,80 @@
         "asOf"
       ],
       "type": "object"
+    },
+    "ProjectProblem": {
+      "description": "Why something could not be done, and the one step that fixes it.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ProjectProblemCode"
+        },
+        "fix": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ProjectProblemCode": {
+      "oneOf": [
+        {
+          "enum": [
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "machine_offline",
+          "description": "The machine's node is not connected.",
+          "type": "string"
+        },
+        {
+          "const": "no_worker",
+          "description": "No connected machine runs agents.",
+          "type": "string"
+        },
+        {
+          "const": "gh_unavailable",
+          "description": "gh is missing or logged out where it ran.",
+          "type": "string"
+        },
+        {
+          "const": "gh_no_access",
+          "description": "gh is logged in but cannot see the repository (private, renamed, or a typo).",
+          "type": "string"
+        },
+        {
+          "const": "path_missing",
+          "description": "The path does not exist on the machine.",
+          "type": "string"
+        },
+        {
+          "const": "not_a_git_repo",
+          "description": "The path exists but is not a git checkout.",
+          "type": "string"
+        },
+        {
+          "const": "dest_exists",
+          "description": "The clone destination exists. `CloneTarget.sameRemote` says whether it is already this repository.",
+          "type": "string"
+        },
+        {
+          "const": "clone_failed",
+          "description": "git clone failed; the message is git's own last line.",
+          "type": "string"
+        },
+        {
+          "const": "node_too_old",
+          "description": "The machine's node is older than this hub and cannot do this.",
+          "type": "string"
+        }
+      ]
     },
     "ProjectRef": {
       "properties": {

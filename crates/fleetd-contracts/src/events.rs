@@ -21,6 +21,16 @@ pub enum HubEventType {
     /// The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
     #[serde(rename = "project.removed")]
     ProjectRemoved,
+    /// A project was added from a path or a finished clone: `data` is `ProjectAddedData` (the inspect line included).
+    #[serde(rename = "project.added")]
+    ProjectAdded,
+    /// A clone `project_add` accepted is running: `data` is `CloneProgressData`. Throttled; never stored past the
+    /// event log's own retention.
+    #[serde(rename = "project.clone_progress")]
+    ProjectCloneProgress,
+    /// A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.
+    #[serde(rename = "project.add_failed")]
+    ProjectAddFailed,
     #[serde(rename = "thread.started")]
     ThreadStarted,
     #[serde(rename = "thread.completed")]
@@ -192,6 +202,9 @@ impl HubEventType {
             Self::MachineDegraded => "machine.degraded",
             Self::MachineSlept => "machine.slept",
             Self::ProjectRemoved => "project.removed",
+            Self::ProjectAdded => "project.added",
+            Self::ProjectCloneProgress => "project.clone_progress",
+            Self::ProjectAddFailed => "project.add_failed",
             Self::ThreadStarted => "thread.started",
             Self::ThreadCompleted => "thread.completed",
             Self::ThreadFailed => "thread.failed",

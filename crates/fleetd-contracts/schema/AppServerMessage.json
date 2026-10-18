@@ -434,6 +434,21 @@
           "type": "string"
         },
         {
+          "const": "project.added",
+          "description": "A project was added from a path or a finished clone: `data` is `ProjectAddedData` (the inspect line included).",
+          "type": "string"
+        },
+        {
+          "const": "project.clone_progress",
+          "description": "A clone `project_add` accepted is running: `data` is `CloneProgressData`. Throttled; never stored past the\nevent log's own retention.",
+          "type": "string"
+        },
+        {
+          "const": "project.add_failed",
+          "description": "A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.",
+          "type": "string"
+        },
+        {
           "const": "thread.waiting",
           "description": "Needs approval or user input.",
           "type": "string"
