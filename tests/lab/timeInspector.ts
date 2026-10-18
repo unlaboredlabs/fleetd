@@ -225,11 +225,13 @@ export async function timeInspector(lab: Lab) {
     const [ghStart, ghEnd] = [Date.parse(github!.started_at), Date.parse(github!.completed_at)];
     check(Math.abs(ciSpan!.startMs - ghStart) <= 1000 && Math.abs(ciSpan!.endMs - ghEnd) <= 1000, `ci span ${ciSpan!.startMs}-${ciSpan!.endMs} = GitHub ${github!.started_at} to ${github!.completed_at} (±1 s)`);
     const ciStage = stages.find((s) => s.kind === "change.ci")!;
-    check(ciStage.startMs <= ciSpan!.startMs + 1000 && ciSpan!.endMs <= ciStage.endMs + 1000, `change.ci ${ciStage.startMs}-${ciStage.endMs} contains the ci check`);
+    // On a rebased head the check runs inside change.ci. After a no-op rebase the train waits on the PR's own head,
+    // whose CI may have finished before the train got to it; either way it ends before the train decides.
+    check(ciSpan!.endMs <= ciStage.endMs + 1000 && ciSpan!.startMs >= p.startMs - 1000, `the ci check ${ciSpan!.startMs}-${ciSpan!.endMs} ends by change.ci's end ${ciStage.endMs}, within the order`);
     ok(`3. ${stages.map((s) => `${s.kind.slice(7)} ${(dur(s) / 1000).toFixed(0)}s`).join(" → ")}; ci check ${(dur(ciSpan!) / 1000).toFixed(0)} s matches GitHub; the train noticed ${((ciStage.endMs - ghEnd) / 1000).toFixed(0)} s after`);
 
-    // 4. The approval wait: the gated ask's wait.ask span, from filing to the Approve, counted as waiting on you.
-    const approval = spans.find((s) => s.kind === "wait.ask" && s.extra?.key === `gated.${askId}`);
+    // 4. The approval wait (decision keys are stored lowercase): the gated ask's wait.ask span, from filing to the Approve, counted as waiting on you.
+    const approval = spans.find((s) => s.kind === "wait.ask" && s.extra?.key === `gated.${askId}`.toLowerCase());
     check(approval, `a wait.ask span for gated.${askId}: ${JSON.stringify(spans.filter((s) => (s.kind as string).includes("ask")))}`);
     check(dur(approval!) >= APPROVAL_WAIT_MS && dur(approval!) <= answeredAt - filedAt + 1000, `approval wait ${dur(approval!)} ms within [${APPROVAL_WAIT_MS}, ${answeredAt - filedAt + 1000}]`);
     const human = (breakdown.byCategory as Array<Body>).find((c) => c.cat === "human");
