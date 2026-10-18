@@ -476,26 +476,52 @@ mod tests {
     /// non-JSON stdout line and 200 KB of stderr (past any pipe buffer), then `answer`, and waits for stdin to
     /// close. With an empty `answer` it exits 1 with "boom" on stderr instead.
     fn stand_in(dir: &Path, version: &str, answer: &str) -> PathBuf {
-        let answer_path = dir.join("answer.json");
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let answer_path = dir.join(format!("answer-{n}.json"));
         std::fs::write(&answer_path, answer).unwrap();
-        let bin = dir.join("claude");
-        std::fs::write(
-            &bin,
-            format!(
-                "#!/bin/sh\n\
-                 if [ \"$1\" = --version ]; then echo '{version}'; exit 0; fi\n\
-                 read -r request\n\
-                 if [ ! -s '{a}' ]; then echo boom >&2; exit 1; fi\n\
-                 echo 'Claude Code: a banner, not JSON'\n\
-                 head -c 200000 /dev/zero | tr '\\0' x >&2\n\
-                 cat '{a}'\n\
-                 while read -r more; do :; done\n",
-                a = answer_path.display()
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let script = format!(
+            "#!/bin/sh\n\
+             if [ \"$1\" = --version ]; then echo '{version}'; exit 0; fi\n\
+             read -r request\n\
+             if [ ! -s '{a}' ]; then echo boom >&2; exit 1; fi\n\
+             echo 'Claude Code: a banner, not JSON'\n\
+             head -c 200000 /dev/zero | tr '\\0' x >&2\n\
+             cat '{a}'\n\
+             while read -r more; do :; done\n",
+            a = answer_path.display()
+        );
+        // Written under a temp name, synced, closed and renamed, so nothing execs a half-written file.
+        let tmp = dir.join(format!(".claude-{n}.tmp"));
+        let mut file = std::fs::File::create(&tmp).unwrap();
+        file.write_all(script.as_bytes()).unwrap();
+        file.set_permissions(std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        let bin = dir.join(format!("claude-{n}"));
+        std::fs::rename(&tmp, &bin).unwrap();
+        wait_until_executable(&bin);
         bin
+    }
+
+    /// Linux refuses to exec a file while any process holds it open for writing (ETXTBSY). Tests run in parallel
+    /// threads, so a child another test forks while our write fd is open inherits it until that child execs
+    /// (O_CLOEXEC closes it then). That window is microseconds; retry the exec through it.
+    fn wait_until_executable(bin: &Path) {
+        const ETXTBSY: i32 = 26;
+        for _ in 0..200 {
+            match std::process::Command::new(bin).arg("--version").output() {
+                Err(e) if e.raw_os_error() == Some(ETXTBSY) => {
+                    std::thread::sleep(Duration::from_millis(5))
+                }
+                Err(e) => panic!("stand-in claude: {e}"),
+                Ok(_) => return,
+            }
+        }
+        panic!("stand-in claude stayed busy (ETXTBSY)");
     }
 
     fn env() -> Vec<(String, String)> {
