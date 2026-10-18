@@ -1,4 +1,4 @@
-//! systemd user units and launchd agents for the hub, T3 and the node, and the shell commands that drive them.
+//! systemd user units and launchd agents for the hub and the node, and the shell commands that drive them.
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -19,6 +19,7 @@ impl Platform {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     Hub,
+    /// Only for `--purge` where an older fleetd installed T3 Code.
     T3,
     Node,
 }
@@ -150,6 +151,10 @@ pub fn render_systemd_unit(spec: &ServiceSpec) -> String {
             .collect::<Vec<_>>()
             .join(" ")
     ));
+    // The node's claude processes get its SIGTERM first and their own grace, rather than the whole group at once.
+    if spec.role == Role::Node {
+        lines.push("KillMode=mixed".into());
+    }
     lines.extend([
         "Restart=always".to_owned(),
         "RestartSec=5".into(),
@@ -347,26 +352,6 @@ impl ServiceManager {
             Platform::Darwin => self.bootout(role),
         }
     }
-
-    /// argv (no shell) the node runs to restart T3 when it stops answering.
-    pub fn restart_argv(&self, role: Role) -> Vec<String> {
-        match self.platform {
-            Platform::Linux => vec![
-                "/usr/bin/env".into(),
-                format!("XDG_RUNTIME_DIR=/run/user/{}", self.uid),
-                "systemctl".into(),
-                "--user".into(),
-                "restart".into(),
-                systemd_name(role, &self.suffix),
-            ],
-            Platform::Darwin => vec![
-                "launchctl".into(),
-                "kickstart".into(),
-                "-k".into(),
-                self.target(role),
-            ],
-        }
-    }
 }
 
 #[cfg(test)]
@@ -379,7 +364,7 @@ mod tests {
             suffix: "-fleetdlab".into(),
             description: "fleetd node".into(),
             program: [
-                "/home/a b/.local/share/fleetd/bin/fleetd",
+                "/home/a b/.fleetd/bin/fleetd",
                 "node",
                 "run",
                 "--home",
@@ -393,7 +378,7 @@ mod tests {
                 ("HOME".into(), "/home/a b".into()),
                 ("PATH".into(), "/usr/bin:/a&b".into()),
             ],
-            env_file: Some("/home/a b/.fleetd/t3.env".into()),
+            env_file: Some("/home/a b/.fleetd/hub.env".into()),
             working_directory: "/home/a b".into(),
             log_path: "/home/a b/.fleetd/logs/node.log".into(),
         }

@@ -15,6 +15,9 @@ use crate::hub::store::HubDb;
 pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--home <dir>]
              print a one-time code (15 min) that pairs the desktop app with this hub;
              the app on this machine pairs by itself
+  pair --worker <machine-id> [--home <dir>]
+             print the one command that makes another machine a worker of this hub, with
+             a one-time code (15 min): for a machine the hub can't reach over SSH
 "#;
 
 /// A minted pairing code and everything a device needs to redeem it.
@@ -83,7 +86,13 @@ fn write_app_pair(file: &Path, hub: &str, code: &str, expires_at: &str) -> Resul
 /// The hub's listen address and URL from `setup.json`, or the defaults when `fleetd init` never ran.
 fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
     let setup = super::setup::state::read_setup(home)?;
-    let listen_text = setup.as_ref().map_or(DEFAULT_LISTEN, |s| s.listen.as_str());
+    // Without init's setup.json, the hub someone started by hand tells its address in its own command line.
+    let running = setup.is_none().then(|| running_listen(home)).flatten();
+    let listen_text = setup
+        .as_ref()
+        .map(|s| s.listen.as_str())
+        .or(running.as_deref())
+        .unwrap_or(DEFAULT_LISTEN);
     let (host, port) = parse_listen(listen_text)
         .ok_or_else(|| format!("the hub's listen address '{listen_text}' is not host:port"))?;
     let host_ip = host.parse::<IpAddr>().ok();
@@ -97,6 +106,34 @@ fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
         (None, None)
     };
     Ok(hub_urls(&host, port, configured.as_deref(), tailnet, lan))
+}
+
+/// `--listen` of the hub process that has this home's database open.
+fn running_listen(home: &Path) -> Option<String> {
+    super::setup::processes_holding(&home.join("hub.sqlite"))
+        .into_iter()
+        .find_map(|pid| {
+            let out = std::process::Command::new("ps")
+                .args(["-o", "args=", "-p", &pid.to_string()])
+                .stderr(std::process::Stdio::null())
+                .output()
+                .ok()?;
+            listen_from_args(&String::from_utf8_lossy(&out.stdout))
+        })
+}
+
+/// `--listen <addr>` or `--listen=<addr>` in a `fleetd hub start` command line.
+fn listen_from_args(args: &str) -> Option<String> {
+    let mut words = args.split_whitespace();
+    while let Some(word) = words.next() {
+        if word == "--listen" {
+            return words.next().map(str::to_owned);
+        }
+        if let Some(value) = word.strip_prefix("--listen=") {
+            return Some(value.to_owned());
+        }
+    }
+    None
 }
 
 /// Best first: tailnet, other names, LAN, loopback. A hub on every interface is offered at each address that
@@ -213,13 +250,27 @@ pub fn pair_command(argv: &[String]) -> CliResult {
     let v = match args::parse(
         argv,
         &Spec {
-            options: &[("home", Kind::Str), ("name", Kind::Str)],
+            options: &[
+                ("home", Kind::Str),
+                ("name", Kind::Str),
+                ("worker", Kind::Str),
+            ],
             positionals: false,
         },
     ) {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
+    if let Some(machine) = v.str("worker") {
+        return match worker_command(v.str("home"), machine) {
+            Ok(text) => CliResult {
+                code: 0,
+                stdout: text,
+                stderr: String::new(),
+            },
+            Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
+        };
+    }
     match mint(v.str("home"), v.str("name")) {
         Ok(minted) => CliResult {
             code: 0,
@@ -228,6 +279,34 @@ pub fn pair_command(argv: &[String]) -> CliResult {
         },
         Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
     }
+}
+
+/// The command a new worker runs to join: the installer, then `fleetd init --join` with a one-time enrollment code
+/// for `machine` (the node join path's own token, so nothing new crosses the wire).
+pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, String> {
+    let machine_id = fleetd_contracts::ids::MachineId::new(machine)
+        .map_err(|_| format!("'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"))?;
+    let home = super::hub_key::resolve_home(home)?;
+    let setup = super::setup::state::read_setup(&home)?;
+    let urls = local_hub_urls(&home)?;
+    let hub = super::hub_key::open_hub(&home)?;
+    let token = hub
+        .auth
+        .create_enroll_token(&machine_id)
+        .map_err(|error| error.to_string())?;
+    let identity = setup
+        .and_then(|s| s.git_identity)
+        .map(|id| {
+            format!(
+                " --git-identity {}",
+                super::setup::units::q(&format!("{} <{}>", id.name, id.email))
+            )
+        })
+        .unwrap_or_default();
+    Ok(format!(
+        "On {machine}, run:\n\n  curl -fsSL https://fleetd.sh | sh && ~/.local/bin/fleetd init --join {} --code {} --machine-id {machine}{identity}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
+        urls[0], token.token, token.expires_at
+    ))
 }
 
 fn describe(minted: &Minted) -> String {
@@ -247,6 +326,19 @@ fn describe(minted: &Minted) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn reads_the_listen_address_of_a_running_hub() {
+        let line =
+            "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796 --queue-ttl 60";
+        assert_eq!(listen_from_args(line).as_deref(), Some("127.0.0.1:4796"));
+        assert_eq!(
+            listen_from_args("fleetd hub start --listen=[::1]:4790").as_deref(),
+            Some("[::1]:4790")
+        );
+        assert_eq!(listen_from_args("fleetd hub start --home /h"), None);
+    }
+
     use super::*;
 
     #[test]

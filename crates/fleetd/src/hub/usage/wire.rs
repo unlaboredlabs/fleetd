@@ -143,9 +143,9 @@ impl UsageSource for OpsPorts {
     }
 }
 
+use crate::hub::doctor::DoctorFleet;
 use crate::hub::doctor::checks::MachineView;
 use crate::hub::doctor::service::ActionOutcome;
-use crate::hub::doctor::{DoctorFleet, T3Settings};
 use crate::hub::retro::records::SqlRunner;
 use crate::hub::usage::service::UsageStatus;
 
@@ -157,19 +157,6 @@ impl DoctorFleet for OpsPorts {
                 .machines_list()
                 .map(|ms| ms.iter().filter_map(convert).collect())
                 .unwrap_or_default()
-        })
-    }
-    fn connected(&self, machine_id: &str) -> BoxFut<'_, bool> {
-        let m = machine(machine_id);
-        Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
-    }
-    fn await_live(&self, machine_id: &str) -> BoxFut<'_, ()> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            match m {
-                Some(m) => self.hub().executors.await_live(&m).await,
-                None => std::future::pending().await,
-            }
         })
     }
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus> {
@@ -220,24 +207,6 @@ impl DoctorFleet for OpsPorts {
                 probe: result.probe.as_ref().and_then(convert),
             })
         })
-    }
-}
-
-/// The native runner has no T3 settings: reads and writes fail with why, until the doctor stops asking (S1).
-const NO_T3_SETTINGS: &str =
-    "fleetd no longer runs T3 on its nodes, so there are no T3 settings to read or change";
-
-impl T3Settings for OpsPorts {
-    fn read(&self, _machine_id: &str) -> BoxFut<'_, Result<Value, String>> {
-        Box::pin(async { Err(NO_T3_SETTINGS.to_owned()) })
-    }
-    fn update(
-        &self,
-        _machine_id: &str,
-        _patch: Value,
-        _mutation: Option<Value>,
-    ) -> BoxFut<'_, Result<Value, String>> {
-        Box::pin(async { Err(NO_T3_SETTINGS.to_owned()) })
     }
 }
 
@@ -297,7 +266,6 @@ pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::C
         listen_port: config.listen.port,
         home: config.home.clone(),
         fleet: ports.clone(),
-        settings: ports.clone(),
         events: ports.clone(),
         clock: clock.clone(),
     });

@@ -1,5 +1,5 @@
-//! JSON that keeps object keys in file order, as `JSON.parse`/`JSON.stringify` do. T3's settings.json and the node's
-//! node.json are compared byte for byte on every `machine add`, so their key order must survive a rewrite. (serde_json's
+//! JSON that keeps object keys in file order, as `JSON.parse`/`JSON.stringify` do. The node's node.json is
+//! compared byte for byte on every `machine add`, so its key order must survive a rewrite. (serde_json's
 //! `preserve_order` would do it, but features unify across the workspace and it reorders the contracts' schemas.)
 
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};

@@ -1,29 +1,22 @@
-//! Every remote command `fleetd machine add` runs, derived from what a read-only probe found on the machine, and
-//! the commands `machine remove` undoes it with.
+//! Every command `fleetd machine add` runs on a worker, derived from what a read-only probe found there, and the
+//! commands `machine remove` undoes it with. A worker needs the fleetd binary, the `claude` CLI (installed by the
+//! user; fleetd never installs it) and one service: the node, which runs claude itself.
 
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use base64::Engine;
 use serde_json::{Value, json};
 
 use super::ordered_json::{Json, Object};
 use super::state::{GitIdentity, git_identity_env};
-use super::t3_settings::apply_fleetd_settings;
 use super::units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, q, render_unit, unit_path};
+use crate::node::runner::version::{self, VersionVerdict};
 
-pub const DEFAULT_T3_PORT: u16 = 3774;
-/// The node.json fields `machine add` sets, in the node's own key order; the rest (cmdRoots) are the user's.
-const NODE_CONFIG_OWNED: [&str; 8] = [
-    "hub",
-    "machineId",
-    "name",
-    "tags",
-    "t3Home",
-    "t3Url",
-    "t3Cmd",
-    "t3RestartCmd",
-];
-const MIN_NODE_MAJOR: u32 = 24;
+/// Claude Code's own installer, user-space; fleetd never installs claude itself.
+pub const CLAUDE_INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
+
+/// The node.json fields `machine add` sets; the rest (cmdRoots, …) are the user's or the node's and are kept.
+const NODE_CONFIG_OWNED: [&str; 4] = ["hub", "machineId", "name", "tags"];
 
 /// Where fleetd puts things on a machine, under the SSH user's home.
 #[derive(Clone, Debug)]
@@ -31,21 +24,16 @@ pub struct MachineLayout {
     pub fleetd: String,
     pub node_home: String,
     pub node_config: String,
-    /// Its own T3 home, so a T3 the user already runs on the machine (~/.t3) is never touched.
-    pub t3_home: String,
-    pub t3_settings: String,
+    /// fleetd's own Claude config dir (`CLAUDE_CONFIG_DIR`), so the user's ~/.claude is never touched.
     pub claude_dir: String,
-    /// The fleetd instance's Claude login (e.g. CLAUDE_CODE_OAUTH_TOKEN=…), 0600, filled in by the user.
+    /// fleetd's Claude login or gateway variables, KEY=value lines, 0600, read by the node for each session.
     pub env_file: String,
     pub logs: String,
-    /// Where older releases installed the CLI bundle; deleted when the binary replaces it.
-    pub legacy_cli_dir: String,
     pub bin_dir: String,
-    /// The fleetd binary itself: the node service runs it and leads find it on T3's PATH.
+    /// The fleetd binary: the node service runs it, and the installer puts the CLI at the same path.
     pub bin: String,
-    pub npm_prefix: String,
-    pub t3_bin: String,
-    pub t3_package: String,
+    /// Where older releases put the fleetd binary.
+    pub legacy_share: Vec<String>,
 }
 
 pub fn machine_layout(home: &str) -> MachineLayout {
@@ -55,41 +43,37 @@ pub fn machine_layout(home: &str) -> MachineLayout {
     MachineLayout {
         node_home: format!("{fleetd}/node"),
         node_config: format!("{fleetd}/node/node.json"),
-        t3_home: format!("{fleetd}/t3"),
-        t3_settings: format!("{fleetd}/t3/userdata/settings.json"),
         claude_dir: format!("{fleetd}/claude"),
-        env_file: format!("{fleetd}/t3.env"),
+        env_file: format!("{fleetd}/claude.env"),
         logs: format!("{fleetd}/logs"),
-        legacy_cli_dir: format!("{share}/cli"),
-        bin_dir: format!("{share}/bin"),
-        bin: format!("{share}/bin/fleetd"),
-        npm_prefix: format!("{share}/npm"),
-        t3_bin: format!("{share}/npm/bin/t3"),
-        t3_package: format!("{share}/npm/lib/node_modules/t3/package.json"),
+        bin_dir: format!("{fleetd}/bin"),
+        bin: format!("{fleetd}/bin/fleetd"),
+        legacy_share: ["bin", "cli"].map(|d| format!("{share}/{d}")).to_vec(),
         fleetd,
     }
 }
 
-/// What the read-only probe reports about the machine. Files are keyed by absolute path; null when absent.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// What the read-only probe reports about the machine. Files are keyed by absolute path; `None` when absent.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Facts {
     pub home: String,
     pub config_home: String,
     pub user: String,
     pub uid: u32,
+    /// `linux` or `darwin`.
     pub platform: String,
-    /// `process.arch` of the machine's Node: x64, arm64, …
+    /// `x64` or `arm64`.
     pub arch: String,
-    pub node_path: String,
-    pub node_version: String,
     pub path: String,
+    /// `claude` on PATH or in its installer's usual places.
     pub claude: Option<String>,
+    /// What `claude --version` printed.
+    pub claude_version: Option<String>,
     pub linger: String,
     pub files: HashMap<String, Option<String>>,
-    /// Size in bytes, null when absent: for files whose content the probe must not read.
+    /// Size in bytes: for files whose content the probe must not read (the login).
     pub sizes: HashMap<String, Option<u64>>,
-    /// sha256 of a file's content, null when absent.
+    /// sha256 of a file's content.
     pub digests: HashMap<String, Option<String>>,
 }
 
@@ -99,60 +83,94 @@ impl Facts {
     }
 }
 
-/// Paths the probe reads, with `{home}` and `{config}` filled in on the machine.
-pub fn probe_spec(suffix: &str) -> Value {
-    let l = machine_layout("{home}");
-    let dirs = Dirs {
-        home: "{home}",
-        config_home: "{config}",
-    };
-    let mut read = vec![
-        l.t3_settings.clone(),
-        l.node_config.clone(),
-        l.t3_package.clone(),
-    ];
-    for role in [Role::T3, Role::Node] {
-        read.push(unit_path(Platform::Linux, &dirs, role, suffix));
-        read.push(unit_path(Platform::Darwin, &dirs, role, suffix));
-    }
-    // The Claude login file is only sized: the probe never reads a secret.
-    json!({ "read": read, "size": [l.env_file], "digest": [l.bin] })
-}
-
-/// Read-only, CommonJS so any Node runs it from stdin. Prints one JSON line of Facts.
-pub const PROBE_SCRIPT: &str = r#"
-const fs = require("fs"), os = require("os"), path = require("path"), cp = require("child_process"), crypto = require("crypto");
-const spec = JSON.parse(process.argv[2]);
-const home = os.homedir();
-const configHome = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
-const at = (p) => p.replaceAll("{home}", home).replaceAll("{config}", configHome);
-const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } };
-const which = (bin) => (process.env.PATH || "").split(":").map((d) => path.join(d, bin)).find((f) => { try { fs.accessSync(f, fs.constants.X_OK); return true; } catch { return false; } }) || null;
-const digest = (p) => { try { return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex"); } catch { return null; } };
-let linger = "unknown";
-if (process.platform === "linux") {
-  try { linger = cp.execFileSync("loginctl", ["show-user", os.userInfo().username, "-p", "Linger", "--value"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || "unknown"; } catch {}
-}
-const files = {}, sizes = {}, digests = {};
-for (const p of spec.read) files[at(p)] = read(at(p));
-for (const p of spec.size) { try { sizes[at(p)] = fs.statSync(at(p)).size; } catch { sizes[at(p)] = null; } }
-for (const p of spec.digest) digests[at(p)] = digest(at(p));
-console.log(JSON.stringify({ home, configHome, user: os.userInfo().username, uid: process.getuid(), platform: process.platform, arch: process.arch,
-  nodePath: process.execPath, nodeVersion: process.version, path: process.env.PATH || "", claude: which("claude"), linger, files, sizes, digests }));
-"#;
-
-/// Finds a Node even where a non-interactive SSH shell's PATH lacks it (Homebrew, ~/.local), then runs the probe from stdin.
+/// The probe: POSIX sh only, so a machine needs nothing but a shell to be read. One fact per line.
 pub fn probe_command(suffix: &str) -> String {
+    let l = machine_layout("$H");
+    let dirs = Dirs {
+        home: "$H",
+        config_home: "$C",
+    };
+    let mut reads = vec![l.node_config.clone()];
+    reads.push(unit_path(Platform::Linux, &dirs, Role::Node, suffix));
+    reads.push(unit_path(Platform::Darwin, &dirs, Role::Node, suffix));
+    let quoted = |paths: &[String]| {
+        paths
+            .iter()
+            .map(|p| format!("\"{p}\""))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     [
-        "N=$(command -v node || true)".to_owned(),
-        r#"for c in /opt/homebrew/bin/node /usr/local/bin/node "$HOME/.local/bin/node"; do [ -n "$N" ] && break; [ -x "$c" ] && N=$c; done"#.into(),
-        r#"[ -n "$N" ] || { echo '{"error":"no-node"}'; exit 0; }"#.into(),
-        format!(r#"exec "$N" - {}"#, q(&probe_spec(suffix).to_string())),
+        r#"H=$HOME; C=${XDG_CONFIG_HOME:-$HOME/.config}"#.to_owned(),
+        r#"echo "home $H"; echo "config $C"; echo "user $(id -un)"; echo "uid $(id -u)"; echo "os $(uname -s)"; echo "arch $(uname -m)"; echo "path $PATH""#.into(),
+        r#"CL=$(command -v claude || true); for c in "$H/.local/bin/claude" "$H/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do [ -n "$CL" ] && break; [ -x "$c" ] && CL=$c; done"#.into(),
+        r#"if [ -n "$CL" ]; then echo "claude $CL"; echo "claude_version $("$CL" --version 2>/dev/null | head -n 1)"; fi"#.into(),
+        r#"L=unknown; if command -v loginctl >/dev/null 2>&1; then L=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true); fi; echo "linger ${L:-unknown}""#.into(),
+        format!(r#"for f in {}; do if [ -f "$f" ]; then printf 'file %s ' "$f"; base64 < "$f" | tr -d '\n'; echo; fi; done"#, quoted(&reads)),
+        format!(r#"for f in {}; do if [ -e "$f" ]; then echo "size $f $(wc -c < "$f" | tr -d ' ')"; fi; done"#, quoted(std::slice::from_ref(&l.env_file))),
+        format!(r#"for f in {}; do if [ -f "$f" ]; then echo "digest $f $( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d ' ' -f 1)"; fi; done"#, quoted(std::slice::from_ref(&l.bin))),
     ]
-    .join("; ")
+    .join("\n")
 }
 
-/// The OS and architecture of the running fleetd, in Node's names (what the probe reports).
+/// The probe's output. Files it found are listed; every path it was asked about and didn't list is absent.
+pub fn parse_facts(output: &str) -> Result<Facts, String> {
+    let mut facts = Facts::default();
+    for line in output.lines() {
+        let (key, rest) = line.split_once(' ').unwrap_or((line, ""));
+        match key {
+            "home" => facts.home = rest.into(),
+            "config" => facts.config_home = rest.into(),
+            "user" => facts.user = rest.into(),
+            "uid" => facts.uid = rest.trim().parse().map_err(|_| format!("uid '{rest}'"))?,
+            "os" => {
+                facts.platform = match rest.trim() {
+                    "Linux" => "linux".into(),
+                    "Darwin" => "darwin".into(),
+                    other => other.to_lowercase(),
+                }
+            }
+            "arch" => {
+                facts.arch = match rest.trim() {
+                    "x86_64" | "amd64" => "x64".into(),
+                    "aarch64" | "arm64" => "arm64".into(),
+                    other => other.into(),
+                }
+            }
+            "path" => facts.path = rest.into(),
+            "claude" => facts.claude = Some(rest.into()).filter(|c: &String| !c.is_empty()),
+            "claude_version" => {
+                facts.claude_version = Some(rest.trim().into()).filter(|v: &String| !v.is_empty())
+            }
+            "linger" => facts.linger = rest.trim().into(),
+            "file" => {
+                let (path, data) = rest.split_once(' ').unwrap_or((rest, ""));
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data.trim())
+                    .map_err(|e| format!("{path}: {e}"))?;
+                facts.files.insert(
+                    path.into(),
+                    Some(String::from_utf8_lossy(&bytes).into_owned()),
+                );
+            }
+            "size" => {
+                let (path, size) = rest.rsplit_once(' ').unwrap_or((rest, ""));
+                facts.sizes.insert(path.into(), size.parse().ok());
+            }
+            "digest" => {
+                let (path, digest) = rest.rsplit_once(' ').unwrap_or((rest, ""));
+                facts.digests.insert(path.into(), Some(digest.into()));
+            }
+            _ => {}
+        }
+    }
+    if facts.home.is_empty() || facts.platform.is_empty() {
+        return Err("the probe printed no home or OS".into());
+    }
+    Ok(facts)
+}
+
+/// The OS and architecture of the running fleetd, as the probe names them.
 pub fn local_target() -> (String, String) {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
@@ -171,8 +189,6 @@ pub struct MachineAddInput {
     pub tags: Vec<String>,
     pub hub_url: String,
     pub unit_suffix: String,
-    pub t3_port: u16,
-    pub t3_version: String,
     pub git_identity: Option<GitIdentity>,
     /// sha256 of the fleetd binary this hub copies to the machine: the one running now.
     pub binary_digest: String,
@@ -227,9 +243,9 @@ pub struct MachinePlan {
     pub platform: Platform,
     pub layout: MachineLayout,
     pub steps: Vec<Step>,
-    /// Things the user should know or do by hand (linger, the Claude login).
+    /// Things the user should know or do by hand (linger, an untested claude).
     pub notes: Vec<String>,
-    /// The node will (re)connect during this run, so `machine add` waits for a fresh machine.online.
+    /// The node will (re)connect during this run, so `machine add` waits for it to come back.
     pub node_restarts: bool,
 }
 
@@ -264,25 +280,9 @@ fn write_file(title: &str, file: &str, text: String, mode: &str) -> Step {
     }
 }
 
-fn strings(items: &[&str]) -> Vec<String> {
-    items.iter().map(|s| (*s).to_owned()).collect()
-}
-
-/// Every remote command `fleetd machine add` runs, in order, for a machine in the state `facts` describes. Steps whose
-/// result is already in place are left out, so a re-run on a set-up machine only checks that both services run.
+/// Every command `fleetd machine add` runs, in order, for a machine in the state `facts` describes. Steps whose
+/// result is already in place are left out, so a re-run on a set-up machine only checks that the node runs.
 pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<MachinePlan, String> {
-    let major: u32 = facts
-        .node_version
-        .strip_prefix('v')
-        .and_then(|v| v.split_once('.'))
-        .and_then(|(major, _)| major.parse().ok())
-        .unwrap_or(0);
-    if major < MIN_NODE_MAJOR {
-        return Err(format!(
-            "Node {MIN_NODE_MAJOR} or newer is needed on the machine; it has {} at {}",
-            facts.node_version, facts.node_path
-        ));
-    }
     let platform = match facts.platform.as_str() {
         "linux" => Platform::Linux,
         "darwin" => Platform::Darwin,
@@ -299,12 +299,24 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             facts.platform, facts.arch
         ));
     }
-    if facts.home.chars().any(char::is_whitespace)
-        || facts.node_path.chars().any(char::is_whitespace)
-    {
+    if facts.home.chars().any(char::is_whitespace) {
         return Err(format!(
-            "the machine's home ({}) and Node path ({}) must not contain spaces",
-            facts.home, facts.node_path
+            "the machine's home ({}) must not contain spaces",
+            facts.home
+        ));
+    }
+    let Some(claude) = &facts.claude else {
+        return Err(format!(
+            "claude is not installed on the machine; fleetd runs its agents through it. Fix: on the machine, run {CLAUDE_INSTALL}"
+        ));
+    };
+    let printed = facts.claude_version.as_deref().unwrap_or("");
+    let claude_verdict = version::check(printed);
+    if !claude_verdict.runs() {
+        return Err(format!(
+            "{} Fix: on the machine, run {}",
+            claude_verdict.problem(printed).unwrap_or_default(),
+            claude_verdict.fix().unwrap_or_default()
         ));
     }
 
@@ -315,60 +327,21 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     };
     let unit_file = |role: Role| unit_path(platform, &dirs, role, &input.unit_suffix);
     let services = ServiceManager::new(platform, facts.uid, &input.unit_suffix, unit_file);
-    let node_dir = dirname(&facts.node_path).to_owned();
-    let mut path_dirs = vec![l.bin_dir.clone(), node_dir.clone()];
-    path_dirs.extend(
-        facts
-            .path
-            .split(':')
-            .filter(|dir| *dir != l.bin_dir && *dir != node_dir && !dir.is_empty())
-            .map(str::to_owned),
-    );
-    let service_path = path_dirs.join(":");
-    let t3_url = format!("http://127.0.0.1:{}", input.t3_port);
-    let mut common = vec![
+    let claude_bin_dir = dirname(claude).to_owned();
+    let mut path_dirs = vec![l.bin_dir.clone(), claude_bin_dir.clone()];
+    for dir in facts.path.split(':') {
+        if !dir.is_empty() && !path_dirs.iter().any(|d| d == dir) {
+            path_dirs.push(dir.to_owned());
+        }
+    }
+    let mut env = vec![
         ("HOME".to_owned(), facts.home.clone()),
-        ("PATH".into(), service_path),
+        ("PATH".into(), path_dirs.join(":")),
         ("LANG".into(), "C.UTF-8".into()),
-    ];
-    common.extend(git_identity_env(input.git_identity.as_ref()));
-
-    let mut t3_env = common.clone();
-    t3_env.extend([
-        ("T3CODE_HOME".to_owned(), l.t3_home.clone()),
-        // Every Claude process this T3 starts keeps its config apart from the user's own ~/.claude.
+        // Every claude the node starts keeps its login and settings apart from the user's own ~/.claude.
         ("CLAUDE_CONFIG_DIR".into(), l.claude_dir.clone()),
-        ("CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS".into(), "2".into()),
-        ("T3CODE_TELEMETRY_ENABLED".into(), "false".into()),
-        ("T3CODE_NO_BROWSER".into(), "true".into()),
-        // Leads run `fleetd` from their shell and reach the hub through this node.
-        (
-            "FLEETD_NODE_SOCK".into(),
-            format!("{}/node.sock", l.node_home),
-        ),
-    ]);
-    // T3 is a Node app and runs with the machine's Node; fleetd itself is the one binary.
-    let t3_spec = ServiceSpec {
-        role: Role::T3,
-        suffix: input.unit_suffix.clone(),
-        description: "T3 Code for fleetd".into(),
-        program: vec![
-            facts.node_path.clone(),
-            l.t3_bin.clone(),
-            "serve".into(),
-            "--base-dir".into(),
-            l.t3_home.clone(),
-            "--host".into(),
-            "127.0.0.1".into(),
-            "--port".into(),
-            input.t3_port.to_string(),
-            "--no-browser".into(),
-        ],
-        env: t3_env,
-        env_file: Some(l.env_file.clone()),
-        working_directory: facts.home.clone(),
-        log_path: format!("{}/t3.log", l.logs),
-    };
+    ];
+    env.extend(git_identity_env(input.git_identity.as_ref()));
     let node_spec = ServiceSpec {
         role: Role::Node,
         suffix: input.unit_suffix.clone(),
@@ -380,47 +353,23 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             "--home".into(),
             l.node_home.clone(),
         ],
-        env: common,
+        env,
         env_file: None,
         working_directory: facts.home.clone(),
         log_path: format!("{}/node.log", l.logs),
     };
-
-    // The node runs T3's CLI with a scrubbed environment, so T3's home goes in through env(1).
-    let t3_cmd = vec![
-        "/usr/bin/env".to_owned(),
-        format!("T3CODE_HOME={}", l.t3_home),
-        facts.node_path.clone(),
-        l.t3_bin.clone(),
-    ];
-    let t3_restart_cmd = services.restart_argv(Role::T3);
-    let desired_node = json!({
-        "hub": input.hub_url,
-        "machineId": input.machine_id,
-        "name": input.machine_id,
-        "tags": input.tags,
-        "t3Home": l.t3_home,
-        "t3Url": t3_url,
-        "t3Cmd": t3_cmd,
-        "t3RestartCmd": t3_restart_cmd,
-    });
 
     let mut steps = Vec::new();
     let mut notes = Vec::new();
     steps.push(step(
         "create fleetd's directories",
         format!(
-            "mkdir -p {} && chmod 700 {}",
-            [
-                &l.node_home,
-                &l.claude_dir,
-                &l.logs,
-                &l.bin_dir,
-                &l.npm_prefix
-            ]
-            .map(|d| q(d))
-            .join(" "),
-            q(&l.fleetd)
+            "mkdir -p {} && chmod 700 {} {}",
+            [&l.node_home, &l.claude_dir, &l.logs, &l.bin_dir]
+                .map(|d| q(d))
+                .join(" "),
+            q(&l.fleetd),
+            q(&l.claude_dir)
         ),
     ));
 
@@ -432,111 +381,62 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             command: format!(
                 "{} && rm -rf {}",
                 write_command(&l.bin, "755"),
-                q(&l.legacy_cli_dir)
+                l.legacy_share
+                    .iter()
+                    .map(|d| q(d))
+                    .collect::<Vec<_>>()
+                    .join(" ")
             ),
             stdin: Some(Stdin::Binary),
             writes: None,
         });
     }
 
-    let installed_t3 = facts
-        .file(&l.t3_package)
-        .and_then(|text| serde_json::from_str::<Value>(text).ok())
-        .and_then(|pkg| {
-            pkg.get("version")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        });
-    let t3_installs = installed_t3.as_deref() != Some(input.t3_version.as_str());
-    if t3_installs {
+    if facts.sizes.get(&l.env_file).copied().flatten().is_none() {
         steps.push(step(
-            format!("install T3 {} from npm", input.t3_version),
-            // npm's own shebang needs node on PATH. `t3 --version` fetches T3's verified executable into its home now, not at first start.
-            format!(
-                "PATH={}:\"$PATH\" npm_config_cache={} {} install --global --prefix {} --no-fund --no-audit --loglevel=error t3@{} && T3CODE_HOME={} {} {} --version",
-                q(&node_dir),
-                q(&format!("{}/.npm", facts.home.trim_end_matches('/'))),
-                q(&format!("{node_dir}/npm")),
-                q(&l.npm_prefix),
-                input.t3_version,
-                q(&l.t3_home),
-                q(&facts.node_path),
-                q(&l.t3_bin)
-            ),
-        ));
-    }
-
-    let settings =
-        apply_fleetd_settings(facts.file(&l.t3_settings), &l.claude_dir).map_err(|error| {
-            format!(
-                "{} is not valid JSON ({error}); fix or remove it, then run again",
-                l.t3_settings
-            )
-        })?;
-    let settings_change = Some(settings.as_str()) != facts.file(&l.t3_settings);
-    if settings_change {
-        steps.push(write_file(
-            "configure the fleetd Claude instance in T3's settings",
-            &l.t3_settings,
-            settings,
-            "600",
-        ));
-    }
-    let login_size = facts.sizes.get(&l.env_file).copied().flatten();
-    if login_size.is_none() {
-        steps.push(step(
-            "create the fleetd instance's Claude login file (empty, 0600)",
+            "create fleetd's Claude login file (empty, 0600)",
             format!("[ -e {f} ] || (umask 077 && : > {f})", f = q(&l.env_file)),
         ));
     }
 
-    let mut unit_state = Vec::new();
-    for (role, spec) in [(Role::T3, &t3_spec), (Role::Node, &node_spec)] {
-        let text = render_unit(platform, spec);
-        let existing = facts.file(&unit_file(role));
-        let changed = existing != Some(text.as_str());
-        if changed {
-            let title = if role == Role::T3 {
-                "write the T3 service"
-            } else {
-                "write the node service"
-            };
-            steps.push(write_file(title, &unit_file(role), text, "644"));
-        }
-        unit_state.push((changed, existing.is_some()));
+    let text = render_unit(platform, &node_spec);
+    let existing_unit = facts.file(&unit_file(Role::Node));
+    let node_changed = existing_unit != Some(text.as_str());
+    let node_existed = existing_unit.is_some();
+    if node_changed {
+        steps.push(write_file(
+            "write the node service",
+            &unit_file(Role::Node),
+            text,
+            "644",
+        ));
     }
-    let [(t3_changed, t3_existed), (node_changed, node_existed)] = [unit_state[0], unit_state[1]];
 
-    steps.push(if t3_changed || settings_change || t3_installs {
-        step(
-            "(re)start T3",
-            services.restart(Role::T3, t3_changed && t3_existed),
-        )
-    } else {
-        step("make sure T3 runs", services.ensure_running(Role::T3))
+    let desired = json!({
+        "hub": input.hub_url,
+        "machineId": input.machine_id,
+        "name": input.machine_id,
+        "tags": input.tags,
     });
-    let wait = r#"const u=process.argv[1]+"/.well-known/t3/environment";const end=Date.now()+180000;(async()=>{for(;;){try{const r=await fetch(u);if(r.ok){console.log((await r.json()).serverVersion);return}}catch{}if(Date.now()>end){console.error("T3 did not answer at "+u+" within 3 min");process.exit(1)}await new Promise(r=>setTimeout(r,1000))}})()"#;
-    steps.push(step(
-        "wait for T3 to answer",
-        format!("{} -e {} {t3_url}", q(&facts.node_path), q(wait)),
-    ));
-
     let existing_node = facts
         .file(&l.node_config)
-        .and_then(|text| serde_json::from_str::<Value>(text).ok())
-        .filter(Value::is_object);
-    let enrolled = existing_node.as_ref().is_some_and(|node| {
-        node.get("enrolled") == Some(&Value::Bool(true))
-            && node.get("machineId").and_then(Value::as_str) == Some(input.machine_id.as_str())
-            && node.get("hub").and_then(Value::as_str) == Some(input.hub_url.as_str())
-    });
-    let enrolls = !input.hub_has_node_key || !enrolled;
-    // Field by field, so key order in the file does not matter; cmdRoots is the user's to set and is kept.
-    let owned = |c: &Value| NODE_CONFIG_OWNED.map(|k| c.get(k).cloned().unwrap_or(Value::Null));
-    let node_config_change = !enrolls
-        && existing_node
+        .and_then(|text| Json::parse(text).ok())
+        .filter(|j| j.as_object().is_some());
+    let get = |key: &str| {
+        existing_node
             .as_ref()
-            .is_some_and(|node| owned(node) != owned(&desired_node));
+            .and_then(|j| j.as_object())
+            .and_then(|o| o.get(key))
+            .map(|v| serde_json::to_value(v).unwrap_or_default())
+    };
+    let enrolled = get("enrolled") == Some(Value::Bool(true))
+        && get("machineId") == Some(desired["machineId"].clone())
+        && get("hub") == Some(desired["hub"].clone());
+    let enrolls = !input.hub_has_node_key || !enrolled;
+    let config_change = !enrolls
+        && NODE_CONFIG_OWNED
+            .iter()
+            .any(|k| get(k).unwrap_or(Value::Null) != desired[*k]);
     if enrolls {
         let mut argv = vec![
             l.bin.clone(),
@@ -548,20 +448,15 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             "-".into(),
             "--machine".into(),
             input.machine_id.clone(),
-            "--t3-home".into(),
-            l.t3_home.clone(),
-            "--t3-url".into(),
-            t3_url.clone(),
-            "--t3-cmd".into(),
-            t3_cmd.join(" "),
-            "--t3-restart-cmd".into(),
-            t3_restart_cmd.join(" "),
         ];
         if !input.tags.is_empty() {
             argv.extend(["--tags".to_owned(), input.tags.join(",")]);
         }
-        argv.extend(strings(&["--home"]));
-        argv.extend([l.node_home.clone(), "--enroll-only".into()]);
+        argv.extend([
+            "--home".to_owned(),
+            l.node_home.clone(),
+            "--enroll-only".into(),
+        ]);
         let stop_first = if node_existed {
             format!("{}; ", services.remove(Role::Node))
         } else {
@@ -576,26 +471,24 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             stdin: Some(Stdin::EnrollToken),
             writes: None,
         });
-    } else if node_config_change {
-        // `{ ...desired, ...cmdRoots, enrolled: true }`, in that key order.
-        let mut config = Object::default();
+    } else if config_change {
+        // The owned keys replaced in place, every other key (cmdRoots, the node's own) kept in its order.
+        let mut config: Object = existing_node
+            .as_ref()
+            .and_then(|j| j.as_object().cloned())
+            .unwrap_or_default();
         for key in NODE_CONFIG_OWNED {
-            config.insert(key, Json::from(desired_node[key].clone()));
+            config.insert(key, Json::from(desired[key].clone()));
         }
-        if let Some(roots) = existing_node.as_ref().and_then(|node| node.get("cmdRoots")) {
-            config.insert("cmdRoots", Json::from(roots.clone()));
-        }
-        config.insert("enrolled", Json::Bool(true));
-        let text = format!("{}\n", Json::Object(config).pretty());
         steps.push(write_file(
             "update the node's settings",
             &l.node_config,
-            text,
+            format!("{}\n", Json::Object(config).pretty()),
             "600",
         ));
     }
     // A new binary is new node code: the running node keeps the old one until it restarts.
-    let node_restarts = enrolls || node_config_change || node_changed || binary_changes;
+    let node_restarts = enrolls || config_change || node_changed || binary_changes;
     steps.push(if node_restarts {
         step(
             "(re)start the node",
@@ -608,27 +501,28 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         )
     });
 
+    if claude_verdict == VersionVerdict::UntestedNewer {
+        notes.push(format!(
+            "{} If sessions misbehave, run on the machine: {}",
+            claude_verdict.problem(printed).unwrap_or_default(),
+            claude_verdict.fix().unwrap_or_default()
+        ));
+    }
     if platform == Platform::Linux && facts.linger != "yes" {
         notes.push(format!(
-            "linger is {} for {u}, so both services stop when {u} logs out. Have an admin run: sudo loginctl enable-linger {u}",
+            "linger is {} for {u}, so the node stops when {u} logs out. Fix: sudo loginctl enable-linger {u}",
             facts.linger,
             u = facts.user
         ));
     }
     if platform == Platform::Darwin {
-        notes.push(format!("launchd runs both services while {} is logged in; keep that user logged in on this Mac.", facts.user));
-    }
-    if facts.claude.is_none() {
-        notes.push("no `claude` on the machine's PATH: install Claude Code there before fleetd runs turns on it.".into());
-    }
-    if login_size.is_none_or(|size| size == 0) {
         notes.push(format!(
-            "the fleetd instance logs in from {} (0600): put CLAUDE_CODE_OAUTH_TOKEN=… (from `claude setup-token`) or ANTHROPIC_BASE_URL=… and ANTHROPIC_AUTH_TOKEN=… there, then restart T3.",
-            l.env_file
+            "launchd runs the node while {} is logged in; keep that user logged in on this Mac.",
+            facts.user
         ));
     }
     if input.git_identity.is_none() {
-        notes.push(r#"no commit identity on the hub: run `fleetd init --git-identity "Name <id+user@users.noreply.github.com>"`, then add this machine again."#.into());
+        notes.push(r#"no commit identity on the hub. Fix: fleetd init --git-identity "Name <id+user@users.noreply.github.com>", then add this machine again."#.into());
     }
     Ok(MachinePlan {
         platform,
@@ -637,6 +531,65 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         notes,
         node_restarts,
     })
+}
+
+/// Whether fleetd's Claude is logged in on the machine, asked exactly as the node will run it: an environment built
+/// from scratch (HOME, PATH, USER, LANG), then claude.env, then fleetd's own config dir. Nothing from the shell that
+/// runs setup leaks in. Prints `claude auth status --json`.
+pub fn login_status_command(l: &MachineLayout, claude: &str) -> String {
+    let inner = format!(
+        "set -a; [ -f {env} ] && . {env}; set +a; CLAUDE_CONFIG_DIR={dir} exec {claude} auth status --json",
+        env = q(&l.env_file),
+        dir = q(&l.claude_dir),
+        claude = q(claude)
+    );
+    format!(
+        "env -i HOME=\"$HOME\" PATH=\"$PATH\" USER=\"$USER\" LANG=C.UTF-8 /bin/sh -c {}",
+        q(&inner)
+    )
+}
+
+/// Login variables a shell may carry that fleetd's services never see unless they are in claude.env.
+pub const SHELL_LOGIN_VARS: [&str; 4] = [
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+];
+
+/// claude.env with `vars` set: each key replaces its line in place, new keys go at the end, every other line stays.
+pub fn merge_env_file(existing: &str, vars: &[(String, String)]) -> String {
+    let key_of = |line: &str| {
+        let line = line.trim();
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        line.split_once('=').map(|(k, _)| k.trim().to_owned())
+    };
+    let mut lines: Vec<String> = Vec::new();
+    let mut done: Vec<&str> = Vec::new();
+    for line in existing.lines() {
+        match key_of(line).and_then(|k| vars.iter().find(|(key, _)| *key == k)) {
+            Some((key, value)) => {
+                lines.push(format!("{key}={value}"));
+                done.push(key);
+            }
+            None => lines.push(line.to_owned()),
+        }
+    }
+    for (key, value) in vars {
+        if !done.contains(&key.as_str()) {
+            lines.push(format!("{key}={value}"));
+        }
+    }
+    format!("{}\n", lines.join("\n"))
+}
+
+/// The login a person runs on the machine, in fleetd's own config dir.
+pub fn login_command(l: &MachineLayout, claude: &str) -> String {
+    format!(
+        "CLAUDE_CONFIG_DIR={} {} auth login",
+        q(&l.claude_dir),
+        q(claude)
+    )
 }
 
 /// A machine fleetd has never touched: what `--dry-run` plans against, since it does not connect.
@@ -648,76 +601,80 @@ pub fn fresh_facts(user: &str, arch: &str) -> Facts {
         uid: 1000,
         platform: "linux".into(),
         arch: arch.into(),
-        node_path: "/usr/bin/node".into(),
-        node_version: "v24.0.0".into(),
         path: "/usr/local/bin:/usr/bin:/bin".into(),
         claude: Some(format!("/home/{user}/.local/bin/claude")),
+        claude_version: Some(format!("{} (Claude Code)", version::TESTED)),
         linger: "yes".into(),
-        files: HashMap::new(),
-        sizes: HashMap::new(),
-        digests: HashMap::new(),
+        ..Facts::default()
     }
 }
 
-/// Commands that undo `machine add`: the node always, T3 and its data only with `purge_t3`.
+/// What an older fleetd installed for T3 Code on a machine: its service and its files. Only `--purge` removes them,
+/// and prints the line only where there is something to remove.
+pub fn old_t3_removal(
+    platform: Platform,
+    home: &str,
+    config_home: &str,
+    uid: u32,
+    suffix: &str,
+) -> Step {
+    let home = home.trim_end_matches('/');
+    let dirs = Dirs { home, config_home };
+    let unit = unit_path(platform, &dirs, Role::T3, suffix);
+    let services = ServiceManager::new(platform, uid, suffix, |role| {
+        unit_path(platform, &dirs, role, suffix)
+    });
+    let files = [
+        format!("{home}/.fleetd/t3"),
+        format!("{home}/.fleetd/t3.env"),
+        format!("{home}/.local/share/fleetd/npm"),
+    ];
+    let quoted = files.iter().map(|f| q(f)).collect::<Vec<_>>().join(" ");
+    step(
+        "remove T3 Code, if an older fleetd installed it",
+        format!(
+            "if [ -e {unit} ] || [ -e {first} ]; then echo 'older fleetd installed T3 Code; removing it'; {remove}; rm -rf {unit} {quoted}; fi",
+            unit = q(&unit),
+            first = q(&files[0]),
+            remove = services.remove(Role::T3),
+        ),
+    )
+}
+
+/// Commands that undo `machine add`: the node's service always; with `purge` also the node's key and settings,
+/// fleetd's Claude login and config, its logs, and what an older fleetd left. The fleetd binary stays: it may be
+/// the CLI the installer put there.
 pub fn plan_machine_remove(
     platform: Platform,
     home: &str,
     config_home: &str,
     uid: u32,
     suffix: &str,
-    purge_t3: bool,
+    purge: bool,
 ) -> Vec<Step> {
     let l = machine_layout(home);
     let dirs = Dirs { home, config_home };
     let unit_file = |role: Role| unit_path(platform, &dirs, role, suffix);
     let services = ServiceManager::new(platform, uid, suffix, unit_file);
-    let mut steps = vec![
-        step(
-            "stop and remove the node service",
-            format!(
-                "{}; rm -f {}",
-                services.remove(Role::Node),
-                q(&unit_file(Role::Node))
-            ),
+    let mut steps = vec![step(
+        "stop and remove the node service",
+        format!(
+            "{}; rm -f {}",
+            services.remove(Role::Node),
+            q(&unit_file(Role::Node))
         ),
-        step(
-            "delete the node's key and settings, and the fleetd binary",
+    )];
+    if purge {
+        let mut paths = vec![&l.node_home, &l.claude_dir, &l.env_file, &l.logs];
+        paths.extend(l.legacy_share.iter());
+        steps.push(step(
+            "delete the node's key and settings, fleetd's Claude login and config, and its logs",
             format!(
                 "rm -rf {}",
-                [&l.node_home, &l.legacy_cli_dir, &l.bin]
-                    .map(|p| q(p))
-                    .join(" ")
-            ),
-        ),
-    ];
-    if purge_t3 {
-        steps.push(step(
-            "stop and remove the T3 service",
-            format!(
-                "{}; rm -f {}",
-                services.remove(Role::T3),
-                q(&unit_file(Role::T3))
+                paths.iter().map(|p| q(p)).collect::<Vec<_>>().join(" ")
             ),
         ));
-        steps.push(step(
-            "delete T3, its data and the fleetd Claude config",
-            format!(
-                "rm -rf {}; rmdir {} 2>/dev/null || true",
-                [
-                    &l.t3_home,
-                    &l.claude_dir,
-                    &l.env_file,
-                    &l.npm_prefix,
-                    &l.logs
-                ]
-                .map(|p| q(p))
-                .join(" "),
-                [l.bin_dir.as_str(), dirname(&l.bin_dir), l.fleetd.as_str()]
-                    .map(q)
-                    .join(" ")
-            ),
-        ));
+        steps.push(old_t3_removal(platform, home, config_home, uid, suffix));
     }
     if platform == Platform::Linux {
         steps.push(step(
@@ -738,8 +695,6 @@ mod tests {
             tags: vec!["macos".into(), "xcode".into()],
             hub_url: "https://forge.example.ts.net".into(),
             unit_suffix: String::new(),
-            t3_port: 3774,
-            t3_version: "0.1.1-nightly.20261017.3238".into(),
             git_identity: Some(GitIdentity {
                 name: "wynn-dev".into(),
                 email: "1+wynn-dev@users.noreply.github.com".into(),
@@ -795,12 +750,19 @@ mod tests {
         let Some(Stdin::Text { text, .. }) = &node_unit.stdin else {
             panic!("unit text")
         };
-        assert!(text.contains("ExecStart=/home/wynn/.local/share/fleetd/bin/fleetd node run --home /home/wynn/.fleetd/node\n"));
+        assert!(text.contains(
+            "ExecStart=/home/wynn/.fleetd/bin/fleetd node run --home /home/wynn/.fleetd/node\n"
+        ));
+        assert!(text.contains("Environment=CLAUDE_CONFIG_DIR=/home/wynn/.fleetd/claude\n"));
+        assert!(text.contains(
+            "Environment=PATH=/home/wynn/.fleetd/bin:/home/wynn/.local/bin:/usr/local/bin:"
+        ));
+        assert!(text.contains("KillMode=mixed\n"));
     }
 
-    /// A second run on a set-up machine only makes sure both services run.
+    /// A second run on a set-up machine only makes sure the node runs.
     #[test]
-    fn rerun_is_idempotent() {
+    fn rerun_is_idempotent_and_keeps_the_users_node_settings() {
         let first = plan_machine_add(&fresh_facts("wynn", "x64"), &input()).unwrap();
         let mut facts = fresh_facts("wynn", "x64");
         let l = machine_layout(&facts.home);
@@ -809,61 +771,49 @@ mod tests {
                 facts.files.insert(file.clone(), Some(text.clone()));
             }
         }
-        let node = json!({ "hub": "https://forge.example.ts.net", "machineId": "mac-mini", "name": "mac-mini", "tags": ["macos", "xcode"],
-            "t3Home": l.t3_home, "t3Url": "http://127.0.0.1:3774", "t3Cmd": ["/usr/bin/env", format!("T3CODE_HOME={}", l.t3_home), "/usr/bin/node", l.t3_bin],
-            "t3RestartCmd": ["/usr/bin/env", "XDG_RUNTIME_DIR=/run/user/1000", "systemctl", "--user", "restart", "fleetd-t3.service"], "enrolled": true });
+        let node = json!({ "hub": "https://forge.example.ts.net", "machineId": "mac-mini", "name": "mac-mini",
+            "tags": ["macos", "xcode"], "cmdRoots": ["/srv"], "enrolled": true });
         facts
             .files
             .insert(l.node_config.clone(), Some(node.to_string()));
-        facts.files.insert(
-            l.t3_package.clone(),
-            Some(json!({ "name": "t3", "version": input().t3_version }).to_string()),
-        );
         facts.sizes.insert(l.env_file.clone(), Some(0));
         facts.digests.insert(l.bin.clone(), Some("b".repeat(64)));
-        let again = plan_machine_add(
+        let set_up = MachineAddInput {
+            hub_has_node_key: true,
+            ..input()
+        };
+        let titles = |plan: MachinePlan| -> Vec<String> {
+            plan.steps.into_iter().map(|s| s.title).collect()
+        };
+        assert_eq!(
+            titles(plan_machine_add(&facts, &set_up).unwrap()),
+            ["create fleetd's directories", "make sure the node runs"]
+        );
+
+        // Tags changed: only the owned keys are rewritten, cmdRoots and the rest stay.
+        let retagged = plan_machine_add(
             &facts,
             &MachineAddInput {
-                hub_has_node_key: true,
-                ..input()
+                tags: vec!["gpu".into()],
+                ..set_up
             },
         )
         .unwrap();
-        let titles: Vec<&str> = again.steps.iter().map(|s| s.title.as_str()).collect();
-        assert_eq!(
-            titles,
-            [
-                "create fleetd's directories",
-                "make sure T3 runs",
-                "wait for T3 to answer",
-                "make sure the node runs"
-            ]
-        );
-        assert!(!again.node_restarts);
-        let newer = plan_machine_add(
-            &facts,
-            &MachineAddInput {
-                hub_has_node_key: true,
-                binary_digest: "c".repeat(64),
-                ..input()
-            },
-        )
-        .unwrap();
-        let titles: Vec<&str> = newer.steps.iter().map(|s| s.title.as_str()).collect();
-        assert_eq!(
-            titles,
-            [
-                "create fleetd's directories",
-                "install fleetd 0.0.0",
-                "make sure T3 runs",
-                "wait for T3 to answer",
-                "(re)start the node"
-            ]
-        );
+        let update = retagged
+            .steps
+            .iter()
+            .find(|s| s.title == "update the node's settings")
+            .unwrap();
+        let Some(Stdin::Text { text, .. }) = &update.stdin else {
+            panic!()
+        };
+        let written: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(written["tags"], json!(["gpu"]));
+        assert_eq!(written["cmdRoots"], json!(["/srv"]));
     }
 
     #[test]
-    fn refuses_another_arch_old_node_and_unknown_os() {
+    fn refuses_another_arch_unknown_os_and_a_missing_or_wrong_claude() {
         let facts = fresh_facts("wynn", "arm64");
         assert!(
             plan_machine_add(&facts, &input())
@@ -871,18 +821,139 @@ mod tests {
                 .unwrap()
                 .starts_with("the machine is linux-arm64 and this fleetd is a linux-x64 build")
         );
-        let old = Facts {
-            node_version: "v22.11.0".into(),
-            ..fresh_facts("wynn", "x64")
-        };
-        assert_eq!(
-            plan_machine_add(&old, &input()).err().unwrap(),
-            "Node 24 or newer is needed on the machine; it has v22.11.0 at /usr/bin/node"
-        );
         let win = Facts {
             platform: "win32".into(),
             ..fresh_facts("wynn", "x64")
         };
         assert!(plan_machine_add(&win, &input()).is_err());
+        let none = Facts {
+            claude: None,
+            ..fresh_facts("wynn", "x64")
+        };
+        assert!(
+            plan_machine_add(&none, &input()).err().unwrap().ends_with(
+                "Fix: on the machine, run curl -fsSL https://claude.ai/install.sh | bash"
+            )
+        );
+        let old = Facts {
+            claude_version: Some("2.0.14 (Claude Code)".into()),
+            ..fresh_facts("wynn", "x64")
+        };
+        assert!(
+            plan_machine_add(&old, &input())
+                .err()
+                .unwrap()
+                .ends_with("Fix: on the machine, run claude update (or claude install 2.1.302)")
+        );
+    }
+
+    #[test]
+    fn carrying_a_shell_login_into_claude_env_keeps_the_rest() {
+        let existing = "# fleetd's Claude login\nexport ANTHROPIC_BASE_URL=https://old\nHTTPS_PROXY=http://p\n";
+        let merged = merge_env_file(
+            existing,
+            &[
+                ("ANTHROPIC_BASE_URL".into(), "https://gw".into()),
+                ("ANTHROPIC_AUTH_TOKEN".into(), "t".into()),
+            ],
+        );
+        assert_eq!(
+            merged,
+            "# fleetd's Claude login\nANTHROPIC_BASE_URL=https://gw\nHTTPS_PROXY=http://p\nANTHROPIC_AUTH_TOKEN=t\n"
+        );
+        assert_eq!(merge_env_file("", &[("A".into(), "1".into())]), "A=1\n");
+    }
+
+    /// The login check sees claude.env and fleetd's config dir, and nothing of the shell that runs it.
+    #[test]
+    fn the_login_check_runs_with_only_the_nodes_environment() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        let l = machine_layout(h);
+        std::fs::create_dir_all(&l.fleetd).unwrap();
+        std::fs::write(&l.env_file, "ANTHROPIC_BASE_URL=https://gw\n").unwrap();
+        let fake = format!("{h}/claude");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\necho \"$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL|${ANTHROPIC_AUTH_TOKEN:-none}\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let out = std::process::Command::new("/bin/sh")
+            .args(["-c", &login_status_command(&l, &fake)])
+            .env("HOME", h)
+            .env("ANTHROPIC_AUTH_TOKEN", "from-the-shell")
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            format!("{h}/.fleetd/claude|https://gw|none")
+        );
+    }
+
+    #[test]
+    fn reads_the_probe() {
+        let out = "home /home/ada\nconfig /home/ada/.config\nuser ada\nuid 1001\nos Darwin\narch arm64\n\
+                   path /usr/bin:/bin\nclaude /home/ada/.local/bin/claude\nclaude_version 2.1.302 (Claude Code)\n\
+                   linger unknown\nfile /home/ada/.fleetd/node/node.json eyJlbnJvbGxlZCI6dHJ1ZX0=\n\
+                   file /home/ada/empty \nsize /home/ada/.fleetd/claude.env 0\n\
+                   digest /home/ada/.fleetd/bin/fleetd abc123\n";
+        let facts = parse_facts(out).unwrap();
+        assert_eq!(
+            (facts.platform.as_str(), facts.arch.as_str(), facts.uid),
+            ("darwin", "arm64", 1001)
+        );
+        assert_eq!(
+            facts.claude_version.as_deref(),
+            Some("2.1.302 (Claude Code)")
+        );
+        assert_eq!(
+            facts.file("/home/ada/.fleetd/node/node.json"),
+            Some(r#"{"enrolled":true}"#)
+        );
+        assert_eq!(facts.file("/home/ada/empty"), Some(""));
+        assert_eq!(facts.file("/home/ada/missing"), None);
+        assert_eq!(facts.sizes["/home/ada/.fleetd/claude.env"], Some(0));
+        assert_eq!(
+            facts.digests["/home/ada/.fleetd/bin/fleetd"].as_deref(),
+            Some("abc123")
+        );
+        let machine = parse_facts("home /h\nos Linux\narch x86_64\n").unwrap();
+        assert_eq!(
+            (machine.platform.as_str(), machine.arch.as_str()),
+            ("linux", "x64")
+        );
+        assert_eq!(machine.claude, None);
+        assert!(parse_facts("nothing\n").is_err());
+    }
+
+    /// The probe is POSIX sh, so it runs here as it would on a machine.
+    #[test]
+    fn the_probe_runs_in_sh_and_reads_back() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        std::fs::create_dir_all(format!("{h}/.fleetd/node")).unwrap();
+        std::fs::write(format!("{h}/.fleetd/node/node.json"), "{\"hub\":\"x\"}\n").unwrap();
+        std::fs::write(format!("{h}/.fleetd/claude.env"), "").unwrap();
+        let out = std::process::Command::new("/bin/sh")
+            .args(["-c", &probe_command("")])
+            .env("HOME", h)
+            .env_remove("XDG_CONFIG_HOME")
+            .output()
+            .unwrap();
+        let facts = parse_facts(&String::from_utf8_lossy(&out.stdout)).unwrap();
+        assert_eq!(facts.home, h);
+        assert_eq!(facts.config_home, format!("{h}/.config"));
+        assert_eq!(
+            facts.file(&format!("{h}/.fleetd/node/node.json")),
+            Some("{\"hub\":\"x\"}\n")
+        );
+        assert_eq!(facts.sizes[&format!("{h}/.fleetd/claude.env")], Some(0));
+        assert!(
+            !facts
+                .files
+                .contains_key(&format!("{h}/.config/systemd/user/fleetd-node.service"))
+        );
     }
 }

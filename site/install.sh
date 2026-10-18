@@ -115,9 +115,17 @@ install_app_linux() {
   mkdir -p "$app_dir.new"
   tar -xzf "$tmp/app.tar.gz" -C "$app_dir.new"
   swap "$app_dir.new" "$app_dir"
-  sed -e "s|^Exec=.*|Exec=$app_dir/fleetd-app|" -e "s|^Icon=.*|Icon=$app_dir/fleetd.png|" \
+  # %u hands a fleetd:// pairing link to the app.
+  sed -e "s|^Exec=.*|Exec=$app_dir/fleetd-app %u|" -e "s|^Icon=.*|Icon=$app_dir/fleetd.png|" \
     "$app_dir/fleetd.desktop" >"$apps_dir/.fleetd.desktop.new"
   mv "$apps_dir/.fleetd.desktop.new" "$apps_dir/fleetd.desktop"
+  # Best effort: without these the app still pairs by code, only the fleetd:// link does not open it.
+  if command -v xdg-mime >/dev/null 2>&1; then
+    xdg-mime default fleetd.desktop x-scheme-handler/fleetd 2>/dev/null || true
+  fi
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$apps_dir" 2>/dev/null || true
+  fi
   say "installed the app: $app_dir (menu entry: $apps_dir/fleetd.desktop)"
   installed=1
 }
@@ -215,11 +223,13 @@ main() {
   [ "$installed" = 1 ] || die "nothing to install from $base"
 
   if [ -x "$bin_dir/fleetd" ]; then
+    # One next command; `fleetd init` itself says how to put ~/.local/bin on PATH when it isn't.
+    # shellcheck disable=SC2088 # the tilde is printed for the user to type
     case ":$PATH:" in
-      *":$HOME/.local/bin:"*) ;;
-      *) say "add ~/.local/bin to your PATH:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+      *":$HOME/.local/bin:"*) next="fleetd init" ;;
+      *) next="~/.local/bin/fleetd init" ;;
     esac
-    say "next: fleetd init"
+    printf '\nNext, run:\n  %s\n' "$next"
   fi
 }
 

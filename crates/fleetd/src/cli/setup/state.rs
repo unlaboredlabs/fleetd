@@ -20,12 +20,14 @@ pub struct MachineRecord {
     pub ssh_host: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub ssh_config: Option<String>,
+    /// The hub's own machine, set up without SSH.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub local: bool,
     pub platform: Platform,
     pub home: String,
     pub config_home: String,
     pub uid: u32,
     pub unit_suffix: String,
-    pub t3_port: u16,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -35,7 +37,7 @@ pub struct SetupState {
     /// Where devices and nodes reach the hub.
     pub url: String,
     pub unit_suffix: String,
-    /// Commit identity for every T3 and node fleetd sets up (public repos want the GitHub noreply address).
+    /// Commit identity for every node fleetd sets up (public repos want the GitHub noreply address).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub git_identity: Option<GitIdentity>,
     pub machines: BTreeMap<String, MachineRecord>,
