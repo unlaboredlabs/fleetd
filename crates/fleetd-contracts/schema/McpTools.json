@@ -2307,6 +2307,10 @@
           "$ref": "#/$defs/IntakeEcho",
           "description": "Present with workstreamId."
         },
+        "leadWaiting": {
+          "description": "Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.",
+          "type": "string"
+        },
         "next": {
           "type": "string"
         },

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Projects &amp; orders · fleetd docs</title>
-<meta name="description" content="Add a project, start its lead, send an order, follow it, and see how &quot;done&quot; is checked.">
+<meta name="description" content="Add a project, send an order, follow it, and see how &quot;done&quot; is checked.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -55,10 +55,15 @@
 of your setup stays as it is.</p>
 <p>From an MCP client, <code>project_add {machineId, path, title}</code> adds one and <code>project_remove {machineId, projectId}</code>
 forgets it (its files, branches and worktrees stay).</p>
-<h2 id="start-its-lead">Start its lead<a class="anchor" href="#start-its-lead" aria-label="Link to this section">#</a></h2>
-<p>Each project has one lead. Until it has one, orders for it wait as drafts. Start it from an MCP client:</p>
-<pre class="code text"><code>lead_start {machineId, projectId}</code></pre>
-<p><code>model</code> and <code>effort</code> are optional and saved for the project (default <code>claude-opus-5-5</code>, high).</p>
+<h2 id="its-lead">Its lead<a class="anchor" href="#its-lead" aria-label="Link to this section">#</a></h2>
+<p>Each project has one lead, and the project's first order starts it: there is nothing to start by hand. The lead's
+first message lists the order, and the app shows the lead starting.</p>
+<p>If the lead can't start, because <code>claude</code> on the worker is logged out or outside the supported version range, or the
+worker is offline, the order waits. The app's reply says why and what to run on the worker. Once the worker comes back
+online with a usable <code>claude</code>, its lead starts and picks up every waiting order.</p>
+<p>To choose the lead's model and effort, or to start it before any order, call <code>lead_start {machineId, projectId, model, effort}</code> from an MCP client; the model and effort are saved for the project (default <code>claude-opus-5-5</code>, high). To keep
+a project's lead from starting by itself, set <code>lead.autoStart: false</code> in its <a href="/docs/config-and-files#policy">policy file</a>:
+orders then wait until <code>lead_start</code>, and the reply says so.</p>
 <h2 id="connect-an-mcp-client">Connect an MCP client<a class="anchor" href="#connect-an-mcp-client" aria-label="Link to this section">#</a></h2>
 <p>The hub's MCP endpoint is <code>&lt;hub url&gt;/mcp</code>. Give the client an agent key, shown once:</p>
 <pre class="code console" data-copy><code><span class="c">$ fleetd hub key create --name ci-bot --role operate --machines '*'</span>
@@ -95,7 +100,7 @@ every claim with its evidence.</p>
 <p>On this page</p>
 <ul>
 <li><a href="#add-a-project">Add a project</a></li>
-<li><a href="#start-its-lead">Start its lead</a></li>
+<li><a href="#its-lead">Its lead</a></li>
 <li><a href="#connect-an-mcp-client">Connect an MCP client</a></li>
 <li><a href="#send-an-order">Send an order</a></li>
 <li><a href="#follow-it">Follow it</a></li>

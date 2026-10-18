@@ -382,6 +382,25 @@ impl PolicyHook for PolicyFromLeases {
             Ok(policy.finish_all.map(|f| f.max_children.get() as u32))
         })
     }
+
+    fn auto_start(
+        &self,
+        project_ref: &ProjectRef,
+    ) -> BoxFuture<Result<bool, crate::hub::leads::error::LeadError>> {
+        let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
+        Box::pin(async move {
+            let policy =
+                policies
+                    .get(&r)
+                    .await
+                    .map_err(|e| crate::hub::leads::error::LeadError {
+                        code: e.code,
+                        message: e.message,
+                        fix: e.fix,
+                    })?;
+            Ok(policy.lead.is_none_or(|l| l.auto_start))
+        })
+    }
 }
 
 /// Everything tasks, slots and leases hook into once the `Hub` exists: the ports' leads half, the lead calls, the

@@ -78,6 +78,8 @@ finishAll:                # optional
 tools:                    # optional: claude permission rules for every session
   allow: ["Bash(npm test:*)"]
   deny: ["Bash(git push:*)"]
+lead:                     # optional
+  autoStart: false        # orders wait for lead_start instead of starting the lead (default true)
 ```
 
 Area names are lowercase slugs. A broken file is refused with the exact problem, never ignored, so a typo can't widen

@@ -165,6 +165,17 @@ fn check_shape(value: &Value) -> Result<(), String> {
             },
         }
     }
+    if let Some(lead) = root.get("lead") {
+        let Value::Mapping(lead) = lead else {
+            return Err(format!("Expected object at {}", key("lead")));
+        };
+        let p = at(&[key("lead"), key("autoStart")]);
+        match lead.get("autoStart") {
+            None => return Err(format!("Missing key at {p}")),
+            Some(Value::Bool(_)) => {}
+            Some(_) => return Err(format!("Expected boolean at {p}")),
+        }
+    }
     Ok(())
 }
 
@@ -304,11 +315,11 @@ mod tests {
 
     #[test]
     fn reads_areas_and_defaults() {
-        let text = "areas:\n  docs: [\"docs/**\"]\n  hub: [apps/hub/**, packages/contracts/**]\ndefaults:\n  model: claude-sonnet-5-5\n  effort: high\n";
+        let text = "areas:\n  docs: [\"docs/**\"]\n  hub: [apps/hub/**, packages/contracts/**]\ndefaults:\n  model: claude-sonnet-5-5\n  effort: high\nlead:\n  autoStart: false\n";
         let policy = parse_policy(text).unwrap();
         assert_eq!(
             serde_json::to_value(policy).unwrap(),
-            json!({ "areas": { "docs": ["docs/**"], "hub": ["apps/hub/**", "packages/contracts/**"] }, "defaults": { "model": "claude-sonnet-5-5", "effort": "high" } })
+            json!({ "areas": { "docs": ["docs/**"], "hub": ["apps/hub/**", "packages/contracts/**"] }, "defaults": { "model": "claude-sonnet-5-5", "effort": "high" }, "lead": { "autoStart": false } })
         );
     }
 
@@ -340,6 +351,10 @@ mod tests {
             (
                 "areas:\n  docs: [docs/**]\ndefaults:\n  effort: medum\n",
                 "at [\"defaults\"][\"effort\"]",
+            ),
+            (
+                "areas:\n  docs: [docs/**]\nlead:\n  autoStart: no thanks\n",
+                "is invalid: Expected boolean at [\"lead\"][\"autoStart\"]",
             ),
         ];
         for (text, message) in cases {

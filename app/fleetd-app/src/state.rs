@@ -655,6 +655,9 @@ impl State {
             }
             Purpose::Order { to } => {
                 match parse::<IntakeSubmitOutput>(output) {
+                    Ok(IntakeSubmitOutput { workstream_id: Some(ws), lead_waiting: Some(why), .. }) => {
+                        self.echo = Some(Echo { text: format!("Order {ws} waits for its lead: {why}"), ok: false });
+                    }
                     Ok(IntakeSubmitOutput { workstream_id: Some(ws), echo, .. }) => {
                         let project = echo.as_ref().map(|e| e.project_ref.project_id.to_string()).or_else(|| to.as_ref().map(|k| k.1.clone()));
                         let text = match (project, echo) {
@@ -913,6 +916,12 @@ mod tests {
         let refresh = calls(&s.apply(result(id, json!({ "workstreamId": "W7", "echo": echo }))));
         assert_eq!(s.echo, Some(Echo { text: "Order W7 is with p1's lead: named in the order".into(), ok: true }));
         assert_eq!(refresh[0].1, "asks_list");
+
+        // No lead could start: the order waits, and the echo says why and what to run.
+        let AppClientMessage::Call { id, .. } = &s.submit_order(Some(&key), "ship it", "app-4")[0] else { panic!() };
+        let why = "claude is not logged in on this machine On lab-a: claude auth login.";
+        s.apply(result(id, json!({ "workstreamId": "W8", "echo": echo, "leadWaiting": why })));
+        assert_eq!(s.echo, Some(Echo { text: format!("Order W8 waits for its lead: {why}"), ok: false }));
 
         // Unrouted: the hub asks which project, as an inbox item.
         let AppClientMessage::Call { id, input, .. } = &s.submit_order(None, "fix it", "app-2")[0] else { panic!() };

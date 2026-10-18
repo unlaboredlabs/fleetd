@@ -88,7 +88,7 @@ async fn project_add(
     Ok(json!({
         "projectId": project_id,
         "created": created,
-        "next": format!("Start its lead with lead_start, or launch a thread with thread_launch on {m}."),
+        "next": format!("Send it an order with intake_submit; its lead starts with the first one. Or launch a thread with thread_launch on {m}."),
     }))
 }
 

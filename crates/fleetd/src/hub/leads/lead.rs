@@ -3,18 +3,18 @@ use std::sync::Arc;
 
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
-use fleetd_contracts::ledger::{Lead, LeadState};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
+use fleetd_contracts::ledger::{Lead, LeadState, WorkstreamState};
 use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
 use fleetd_contracts::model::{ProjectSummary, ThreadStatus, ThreadSummary};
 use tokio::sync::Mutex;
 
 use super::error::LeadError;
 use super::prompt::{LEAD_PROMPT, LEAD_PROMPT_VERSION, render_lead_prompt};
-use super::records::{LeadRecords, LeadSettings, StoredLead};
+use super::records::{LeadRecords, LeadSettings, StoredLead, WorkstreamFilter};
 use super::wakes::LeadWakes;
 use super::{Ctx, now_iso};
-use crate::hub::store::{NewEvent, now_ms};
+use crate::hub::store::{NewEvent, WaitInput, now_ms};
 
 pub const DEFAULT_LEAD_MODEL: &str = "claude-opus-5-5";
 pub const DEFAULT_LEAD_EFFORT: Effort = Effort::High;
@@ -24,6 +24,20 @@ pub struct LeadsOptions {
     /// Hub-wide default model and effort; per-project settings override them.
     pub model: Option<String>,
     pub effort: Option<Effort>,
+}
+
+/// What an order for a project without a lead did about the lead.
+#[derive(Debug, Clone)]
+pub enum AutoStart {
+    /// The project already had its lead.
+    Running(Lead),
+    /// The lead was just started; its first message lists the order.
+    Started(Lead),
+    /// `lead.autoStart: false` in the project's policy file: the order waits for lead_start.
+    Off,
+    /// The lead could not start now (the runner is logged out or out of range, the machine is offline, the policy
+    /// file is broken): why, and the fix. The order waits; the lead starts once the machine is online again.
+    Held(LeadError),
 }
 
 /// The lead's state, read off its thread as the shell stream last reported it; stopped once the project was removed.
@@ -72,6 +86,91 @@ impl Leads {
         }
         let project = self.project_of(r)?;
         self.launch(r, &project, 0).await
+    }
+
+    /// Starts the project's lead for its waiting orders, unless its policy turns that off. The lead's first message
+    /// carries the digest, which lists every draft, so the orders reach it with the start.
+    pub async fn auto_start(&self, r: &ProjectRef) -> AutoStart {
+        match self.get(r) {
+            Ok(Some(lead)) => return AutoStart::Running(lead),
+            Ok(None) => {}
+            Err(e) => return AutoStart::Held(e),
+        }
+        if let Some(policy) = self.ctx.hooks.policy.get() {
+            match policy.auto_start(r).await {
+                Ok(true) => {}
+                Ok(false) => return AutoStart::Off,
+                Err(e) => return AutoStart::Held(e),
+            }
+        }
+        match self.start(r).await {
+            Ok(lead) => AutoStart::Started(lead),
+            Err(e) => AutoStart::Held(e),
+        }
+    }
+
+    /// Starts the lead of each project on `machine_id` that has orders waiting as drafts and no lead.
+    pub async fn start_waiting(&self, machine_id: &MachineId) -> Result<(), LeadError> {
+        for project in self.ctx.store.projects_list(Some(machine_id), None)? {
+            let r = ProjectRef {
+                machine_id: project.machine_id.clone(),
+                project_id: project.project_id.clone(),
+            };
+            if self.records.lead_get(&r)?.is_some() {
+                continue;
+            }
+            let drafts = self.records.workstreams_list(&WorkstreamFilter {
+                project_ref: Some(r.clone()),
+                state: Some(WorkstreamState::Draft),
+                limit: 1,
+                ..Default::default()
+            })?;
+            if drafts.is_empty() {
+                continue;
+            }
+            match self.auto_start(&r).await {
+                AutoStart::Held(e) => {
+                    tracing::info!(project = %project.title, reason = %e.message, "waiting orders: lead still not started")
+                }
+                AutoStart::Off | AutoStart::Running(_) | AutoStart::Started(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// A machine comes online once its runner is usable (a login, an update, a reconnect): then the leads its waiting
+    /// orders need start. Follows the event log from the hub's start; the nodes' reconnects after a hub restart
+    /// cover the orders that waited across it.
+    pub async fn run_waiting(self: Arc<Self>) {
+        let events = Arc::clone(&self.ctx.events);
+        let mut cursor = events.head();
+        loop {
+            let page = match events
+                .wait(WaitInput {
+                    cursor: Some(cursor),
+                    types: Some(vec![HubEventType::MachineOnline]),
+                    machine_id: None,
+                    timeout_sec: 3600,
+                })
+                .await
+            {
+                Ok(page) => page,
+                Err(error) => {
+                    tracing::warn!(%error, "waiting orders: event log read failed");
+                    self.ctx
+                        .clock
+                        .sleep(std::time::Duration::from_secs(1))
+                        .await;
+                    continue;
+                }
+            };
+            cursor = page.cursor;
+            for machine_id in page.events.into_iter().filter_map(|e| e.machine_id) {
+                if let Err(error) = self.start_waiting(&machine_id).await {
+                    tracing::warn!(%error, "waiting orders: leads not started");
+                }
+            }
+        }
     }
 
     /// A fresh lead thread from the current digest; bumps `sessionGeneration`. The old thread stays on the node.
@@ -164,6 +263,8 @@ impl Leads {
             .effort
             .or(self.options.effort)
             .unwrap_or(DEFAULT_LEAD_EFFORT);
+        // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).
+        let at = now_iso(&self.ctx);
         let prompt = format!(
             "{}\n\n{}",
             render_lead_prompt(LEAD_PROMPT, r, &project.title),
@@ -188,7 +289,6 @@ impl Leads {
         }))
         .map_err(|e| LeadError::bare(ErrorCode::Invalid, format!("The lead launch is invalid: {e}")))?;
         let thread_id = self.ctx.ports().launch(&r.machine_id, input).await?;
-        let at = now_iso(&self.ctx);
         let lead = StoredLead {
             project_ref: r.clone(),
             thread_id: thread_id.clone(),

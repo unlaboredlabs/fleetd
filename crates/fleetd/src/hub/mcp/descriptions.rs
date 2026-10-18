@@ -62,7 +62,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks only product/money/credential/irreversible questions, and never writes code. Returns the existing lead if there is one. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
+        "Start the project's lead: one thread that turns intents into briefs, asks only product/money/credential/irreversible questions, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier or with another model. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
     ),
     (
         "lead_restart",
@@ -70,7 +70,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "intake_submit",
-        "Give one intent in plain words (e.g. \"fix: the README has a typo\"). Without machineId and projectId, a leading @<project> (title or folder name) picks the project, else a one-shot claude router does; when it cannot, you get an askId for the human to pick the project. Prefixes bug:/fix:, research: and finish: set the template. Creates a draft workstream, wakes the lead, and echoes where it went and why. Idempotent per clientRequestId.",
+        "Give one intent in plain words (e.g. \"fix: the README has a typo\"). Without machineId and projectId, a leading @<project> (title or folder name) picks the project, else a one-shot claude router does; when it cannot, you get an askId for the human to pick the project. Prefixes bug:/fix:, research: and finish: set the template. Creates a draft workstream and wakes the lead, starting it if the project has none; echoes where it went and why. leadWaiting, when present, says why no lead could take it yet and what to do. Idempotent per clientRequestId.",
     ),
     (
         "workstream_list",

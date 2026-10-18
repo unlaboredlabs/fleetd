@@ -51,6 +51,13 @@ fn from_executor(error: ExecutorError) -> LeadError {
         ExecutorError::MachineNotConnected { machine_id } => {
             LeadError::machine_offline(&machine_id)
         }
+        // The node's own words and fix, e.g. claude not logged in and how to log it in.
+        ExecutorError::NodeRequestFailed {
+            fix: Some(ref fix), ..
+        } => LeadError {
+            fix: Some(fix.clone()),
+            ..LeadError::failed(error.to_string())
+        },
         other => LeadError::failed(other.to_string()),
     }
 }

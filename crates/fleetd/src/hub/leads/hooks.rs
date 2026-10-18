@@ -63,13 +63,18 @@ pub trait TrainHook: Send + Sync {
     ) -> Option<Vec<String>>;
 }
 
-/// Policies: finish-all's max children.
+/// Policies: finish-all's max children, and whether an order starts the project's lead.
 pub trait PolicyHook: Send + Sync {
     /// `Err` when the policy file cannot be read: finish-all fails the call.
     fn max_children(
         &self,
         project_ref: &ProjectRef,
     ) -> BoxFuture<Result<Option<u32>, super::error::LeadError>>;
+    /// `lead.autoStart`, true without it; `Err` when the policy file cannot be read.
+    fn auto_start(
+        &self,
+        project_ref: &ProjectRef,
+    ) -> BoxFuture<Result<bool, super::error::LeadError>>;
 }
 
 /// GitHub through `gh api`.

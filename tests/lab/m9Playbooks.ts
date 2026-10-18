@@ -127,17 +127,20 @@ export async function m9Playbooks(lab: Lab) {
   try {
     const tb = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
     tbRef = { machineId: MACHINE, projectId: tb };
-    const f = await callTool("intake_submit", { ...tbRef, text: "finish: everything still open", clientRequestId: randomUUID() });
-    check(!f.isError && f.body.echo?.template === "finish-all" && f.body.echo.projectRef.projectId === tb, `finish-all intake: ${JSON.stringify(f.body)}`);
-    wf = f.body.workstreamId as string;
+    // Started first, so the order doesn't start it with the default model; the order then reaches it as a wake.
     cursor = await lab.cursor();
     const started = await callTool("lead_start", { ...tbRef, model: MODEL, effort: "low" });
     check(!started.isError, `lead_start on the testbed: ${JSON.stringify(started.body)}`);
     leads.push(started.body.threadId);
-    await leadTurnEnds(started.body.threadId, cursor);
+    cursor = (await leadTurnEnds(started.body.threadId, cursor)).cursor;
+    const f = await callTool("intake_submit", { ...tbRef, text: "finish: everything still open", clientRequestId: randomUUID() });
+    check(!f.isError && f.body.echo?.template === "finish-all" && f.body.echo.projectRef.projectId === tb, `finish-all intake: ${JSON.stringify(f.body)}`);
+    wf = f.body.workstreamId as string;
+    const woken = await lab.waitEvent("the testbed lead woken with the order", 60_000, { cursor, types: ["lead.woken"], match: (e) => e.threadId === started.body.threadId });
+    await leadTurnEnds(started.body.threadId, woken.event.seq);
     let state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
     if (state === "idle") {
-      ok(`(d) the testbed lead ran fleetd inventory itself in its first turn; ${wf} is idle`);
+      ok(`(d) the testbed lead ran fleetd inventory itself when the order woke it; ${wf} is idle`);
     } else {
       const before = state;
       const inventory = shell(TESTBED).run("inventory");

@@ -1,7 +1,7 @@
 // Lab check: an intent without a project is routed by a hub installed the way users get it (`fleetd init`'s systemd
 // user unit, so only HOME, PATH and LANG in its environment), proving the router reaches Claude through the user's own
 // `claude` login. Lab only: its own hub home, port (FLEETD_LAB_SLOT shifts it) and unit suffix, and the two lab machines
-// with their test repos as projects. One haiku router run.
+// with their test repos as projects. One haiku router run; a policy file keeps the order from starting a lead.
 //
 //   node tests/lab/hubUnitRouter.ts
 import { execFileSync } from "node:child_process";
@@ -19,10 +19,13 @@ const RUN = path.join(LAB, `hub-unit-${PORT}`);
 const HOME = path.join(RUN, "hub");
 const SUFFIX = SLOT === 0 ? "-labroute" : `-labroute${SLOT}`;
 const UNIT = `fleetd-hub${SUFFIX}.service`;
+const POLICY = 'areas:\n  all: ["**"]\nlead:\n  autoStart: false\n';
 
 const main = async () => {
   if (fs.existsSync(path.join(LAB, "test-lab.lock"))) throw new Error("another test:lab run holds the lab lock");
   let client: Client | undefined;
+  // Each repo's own policy file, if it had one, put back afterwards.
+  const policies = new Map<string, string | undefined>();
   try {
     fs.rmSync(RUN, { recursive: true, force: true });
     // The machines' homes live in the lab's shared run dir, which no run is using (the lock above): start them fresh.
@@ -38,6 +41,10 @@ const main = async () => {
     check(key !== undefined, "an agent key");
     for (const m of MACHINES) {
       seedRepo(m.repo, m.id);
+      const file = path.join(m.repo, ".fleetd/policy.yaml");
+      policies.set(file, fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, POLICY);
       joinNode(URL_, HOME, m.id);
     }
     client = new Client({ name: "lab-hub-unit", version: "0" });
@@ -73,8 +80,14 @@ const main = async () => {
     check(runs.length >= 1 && runs.every((r) => r.ok === true), `router runs ok: ${JSON.stringify(runs)}`);
     check(submitted.body.workstreamId !== undefined && event.projectId === target.projectId, `routed to lab-b's project: ${JSON.stringify({ event, body: submitted.body })}`);
     ok(`routed "${text}" → lab-b/${target.title} (${runs.map((r) => `${r.model} ${r.durationMs} ms`).join(", ")}); echo: ${submitted.body.echo?.reason}`);
+    check(String(submitted.body.leadWaiting ?? "").includes("lead.autoStart: false"), `the order waits for lead_start, as the policy says: ${JSON.stringify(submitted.body)}`);
+    ok(`no lead started: ${submitted.body.leadWaiting}`);
     ok("PASS hub-unit router");
   } finally {
+    for (const [file, text] of policies) {
+      if (text === undefined) fs.rmSync(file, { force: true });
+      else fs.writeFileSync(file, text);
+    }
     await client?.close().catch(() => {});
     await stopAll();
     try {

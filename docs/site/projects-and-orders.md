@@ -2,7 +2,7 @@
 title: Projects & orders
 section: Using fleetd
 order: 50
-description: Add a project, start its lead, send an order, follow it, and see how "done" is checked.
+description: Add a project, send an order, follow it, and see how "done" is checked.
 ---
 
 ## Add a project
@@ -13,15 +13,19 @@ of your setup stays as it is.
 From an MCP client, `project_add {machineId, path, title}` adds one and `project_remove {machineId, projectId}`
 forgets it (its files, branches and worktrees stay).
 
-## Start its lead
+## Its lead
 
-Each project has one lead. Until it has one, orders for it wait as drafts. Start it from an MCP client:
+Each project has one lead, and the project's first order starts it: there is nothing to start by hand. The lead's
+first message lists the order, and the app shows the lead starting.
 
-```text
-lead_start {machineId, projectId}
-```
+If the lead can't start, because `claude` on the worker is logged out or outside the supported version range, or the
+worker is offline, the order waits. The app's reply says why and what to run on the worker. Once the worker comes back
+online with a usable `claude`, its lead starts and picks up every waiting order.
 
-`model` and `effort` are optional and saved for the project (default `claude-opus-5-5`, high).
+To choose the lead's model and effort, or to start it before any order, call `lead_start {machineId, projectId, model,
+effort}` from an MCP client; the model and effort are saved for the project (default `claude-opus-5-5`, high). To keep
+a project's lead from starting by itself, set `lead.autoStart: false` in its [policy file](config-and-files.md#policy):
+orders then wait until `lead_start`, and the reply says so.
 
 ## Connect an MCP client
 

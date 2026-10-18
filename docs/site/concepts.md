@@ -21,8 +21,8 @@ login of its own in `~/.fleetd/claude`, separate from yours in `~/.claude`. The 
 ## Leads
 
 Each project has one lead: a long-running `claude` session that turns orders into briefs, splits them into tasks
-for writer and reviewer sessions, and never writes code itself. Leads run on `claude-opus-5-5` by default. Orders
-for a project without a lead wait as drafts.
+for writer and reviewer sessions, and never writes code itself. Leads run on `claude-opus-5-5` by default. A
+project's first order starts its lead.
 
 ## Orders
 
