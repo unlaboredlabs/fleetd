@@ -463,9 +463,14 @@ impl Shell {
             loop {
                 cx.background_executor().timer(POLL_EVERY).await;
                 let ok = this.update(cx, |this, cx| {
+                    let before = this.state.status.phase();
                     let out = this.state.poll(now_ms());
                     this.send(out);
                     this.notify_if_due(cx);
+                    // A lost status wait just turned the view not live: redraw now, not at the next input.
+                    if this.state.status.phase() != before {
+                        cx.notify();
+                    }
                 });
                 if ok.is_err() {
                     return;

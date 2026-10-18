@@ -10,7 +10,8 @@ use crate::fake::FIXTURE_NOW;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Variant {
     Live,
-    /// buildbox stopped sending heartbeats and GitHub stopped answering for acme/storefront.
+    /// GitHub stopped answering for acme/storefront, on top of the live picture (where buildbox is already offline,
+    /// as the bench's machine strip shows it, with nothing of these scopes on it).
     Stale,
 }
 
@@ -25,7 +26,8 @@ fn stale(since: &str, reason: &str) -> Value {
 pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
     let quiet = variant == Variant::Stale;
     let github = quiet.then(|| stale("10:01:02", "GitHub not reached since 10:01: gh: connect: network is unreachable"));
-    let buildbox = quiet.then(|| stale("10:03:02", "no heartbeat from buildbox since 10:03"));
+    // Offline since 09:55, like the live frame's buildbox: stale in every variant, as an offline machine is.
+    let buildbox = Some(stale("09:55:45", "no heartbeat from buildbox since 09:55"));
     let (title, scope_json) = match scope {
         StatusScope::Fleet => ("Fleet", json!({ "kind": "fleet" })),
         StatusScope::Project { .. } => {
@@ -68,9 +70,7 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
     };
     let headline_text = match (kind.as_str(), quiet) {
         ("fleet", false) => "Fixing cart rounding and speeding up product search, waiting on the full lab run. 3 decisions need you.",
-        ("fleet", true) => {
-            "Not live: buildbox silent 4m · GitHub unchecked 6m. Fixing cart rounding and speeding up product search, waiting on the full lab run."
-        }
+        ("fleet", true) => "Not live: GitHub unchecked 6m. Fixing cart rounding and speeding up product search, waiting on the full lab run.",
         ("project", _) => "Rounding fix in review, search speedup merging; the lab run gates the rest. 1 decision needs you.",
         _ => "T31 is fixing the rounding while #212 is reviewed; it waits on your answer about the health path.",
     };
@@ -98,7 +98,7 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
         "fleet" => json!([
             { "title": "storefront", "scope": { "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "storefront" } },
               "progress": progress(64, 7, 11, Some("+3 items"), github.as_ref()), "eta": "2026-10-22T14:00:00.000Z" },
-            { "title": "web-app", "scope": { "kind": "project", "projectRef": { "machineId": "buildbox", "projectId": "web-app" } },
+            { "title": "web-app", "scope": { "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "web-app" } },
               "progress": progress(86, 6, 7, None, None), "eta": "2026-10-18T17:00:00.000Z" },
             { "title": "mailer", "scope": { "kind": "project", "projectRef": { "machineId": "devbox", "projectId": "mailer" } },
               "progress": progress(0, 0, 1, None, None) }
@@ -119,7 +119,7 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
         "gate": "CI on #212", "eta": "2026-10-18T09:55:00.000Z", "overdueMinutes": 12 });
     let mut doing_w9 = json!({ "itemId": "P21", "workstreamId": "W9", "title": "Login form keeps the email on error",
         "taskIds": ["T41"], "changeIds": [], "eta": "2026-10-18T11:20:00.000Z" });
-    if let Some(s) = &buildbox {
+    if let Some(s) = &github {
         doing_w9["stale"] = s.clone();
     }
     let in_progress = match kind.as_str() {
@@ -145,7 +145,7 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
     };
     let mut risks = vec![
         json!({ "rule": "ci_red_main", "level": "danger", "message": "main CI red on acme/storefront: rust (macos) since 09:40" }),
-        json!({ "rule": "machine_flaky", "level": "warning", "message": "buildbox went offline 2× today (last 09:02, 11m)" }),
+        json!({ "rule": "machine_flaky", "level": "warning", "message": "buildbox went offline 3× today (last 09:55, still offline)" }),
         json!({ "rule": "slipping", "level": "warning", "message": "ETA slipped 20h (6h scope, 14h slower)" }),
         json!({ "rule": "riskiest_item", "level": "warning", "message": "riskiest: P12 Round totals per currency (l, 2 failed attempts)" }),
     ];
@@ -164,18 +164,12 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
         }
         _ => json!([ci_store]),
     };
-    let mut buildbox_m = if quiet {
-        json!({ "machineId": "buildbox", "status": "offline", "lastSeenAt": at("10:03:02"), "dropsToday": 3 })
-    } else {
-        json!({ "machineId": "buildbox", "status": "online", "lastSeenAt": at("10:07:01"),
-            "slept": { "fromMs": crate::live::state::parse_ms(&at("08:51:10")).unwrap_or(0), "toMs": crate::live::state::parse_ms(&at("09:01:56")).unwrap_or(0) },
-            "dropsToday": 2 })
-    };
+    let mut buildbox_m = json!({ "machineId": "buildbox", "status": "offline", "lastSeenAt": at("09:55:00"), "dropsToday": 3 });
     if let Some(s) = &buildbox {
         buildbox_m["stale"] = s.clone();
     }
     let mut usage_b =
-        json!({ "limitType": "seven_day", "machineId": "buildbox", "utilization": 0.41, "status": "allowed", "observedAt": at("09:58:30") });
+        json!({ "limitType": "seven_day", "machineId": "buildbox", "utilization": 0.41, "status": "allowed", "observedAt": at("09:52:30") });
     if let Some(s) = &buildbox {
         usage_b["stale"] = s.clone();
     }
@@ -185,14 +179,15 @@ pub fn doc(scope: &StatusScope, variant: Variant) -> StatusDoc {
         "usage": [{ "limitType": "five_hour", "machineId": "devbox", "utilization": 0.58, "status": "allowed", "observedAt": at("10:05:20") }, usage_b],
         "slots": { "running": 8, "used": 8, "cap": 40, "queued": 1 }
     });
-    let stale_list = match (&github, &buildbox) {
-        (Some(g), Some(b)) => json!([
-            { "source": "machine:buildbox", "since": b["since"], "reason": b["reason"] },
-            { "source": "usage:buildbox", "since": b["since"], "reason": "buildbox is silent, so its usage reading is from 09:58" },
-            { "source": "github:acme/storefront", "since": g["since"], "reason": g["reason"] }
-        ]),
-        _ => json!([]),
-    };
+    let mut stale_list = Vec::new();
+    if let Some(b) = &buildbox {
+        stale_list.push(json!({ "source": "machine:buildbox", "since": b["since"], "reason": b["reason"] }));
+        stale_list
+            .push(json!({ "source": "usage:buildbox", "since": b["since"], "reason": "buildbox is silent, so its usage reading is from 09:52" }));
+    }
+    if let Some(g) = &github {
+        stale_list.push(json!({ "source": "github:acme/storefront", "since": g["since"], "reason": g["reason"] }));
+    }
     let mut progress_top = json!({ "pct": pct, "polishPct": (polish_done * 100) / polish_total.max(1), "done": done, "total": total,
         "polishDone": polish_done, "polishTotal": polish_total, "asOf": at(if quiet { "10:01:02" } else { "10:07:10" }), "marker": marker });
     if let Some(g) = &github {
@@ -218,7 +213,7 @@ mod tests {
             for v in [Variant::Live, Variant::Stale] {
                 let d = doc(&scope, v);
                 assert_eq!(d.scope.key(), scope.key());
-                assert_eq!(d.stale.is_empty(), v == Variant::Live);
+                assert_eq!(d.stale.iter().any(|s| s.source.starts_with("github:")), v == Variant::Stale);
             }
         }
     }

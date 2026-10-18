@@ -823,10 +823,12 @@ mod tests {
     fn the_digest_says_the_figure_what_changed_and_when_it_is_not_live() {
         let (title, body) = digest_text(&fixture::doc(&StatusScope::Fleet, fixture::Variant::Live));
         assert_eq!(title, "fleetd · 72%");
-        assert!(body.starts_with("Fixing cart rounding"), "{body}");
+        // buildbox is offline (a stale source) and the hub's line doesn't say so: the digest does.
+        assert!(body.starts_with("Not live: machine:buildbox, usage:buildbox stale. Fixing cart rounding"), "{body}");
         assert!(body.ends_with("Since you looked: 7 merged, 3 verified, 2 started, 1 failed. 3 need you."), "{body}");
         let mut stale = fixture::doc(&StatusScope::Fleet, fixture::Variant::Stale);
-        assert!(digest_text(&stale).1.starts_with("Not live: buildbox silent"), "the hub's own clause, once");
+        let (_, body) = digest_text(&stale);
+        assert!(body.starts_with("Not live: GitHub unchecked") && body.matches("Not live").count() == 1, "the hub's own clause, once: {body}");
         stale.headline.text = fleetd_contracts::prim::Line::unchecked("Nothing running.");
         let (_, body) = digest_text(&stale);
         assert!(body.starts_with("Not live: machine:buildbox, usage:buildbox, github:acme/storefront stale. Nothing running."), "{body}");
@@ -855,6 +857,7 @@ mod tests {
         answer(&mut s, &tool(&out[0]).0, serde_json::json!({ "doc": doc(4, 72) }));
         let deadline = s.status.wait_deadline.expect("a wait is out with a deadline");
         assert!(deadline - now_ms() <= WAIT_SEC as i64 * 1000 + WAIT_GRACE_MS);
+        // The shell redraws on the 3 s tick only when the phase changed: not before the deadline, once after it.
         assert!(s.status_check_deadline(deadline - 1).is_empty());
         assert_eq!(s.status.phase(), Phase::Live);
         let out = s.status_check_deadline(deadline + 1);
