@@ -62,8 +62,8 @@ If gh is missing, install it from [cli.github.com](https://cli.github.com) first
 claude auth login
 ```
 
-For a gateway instead, set `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` in the `env` block of
-`~/.claude/settings.json`. If claude is missing ("Claude Code (claude) is not on the hub's PATH"), install it first
+For a gateway or API key instead, put `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (or `ANTHROPIC_API_KEY`) in
+`~/.fleetd/claude.env` and restart the hub service: see [claude.env](config-and-files.md#claude-env). If claude is missing ("Claude Code (claude) is not on the hub's PATH"), install it first
 (next section).
 
 ## claude on the hub is missing or the wrong version {#hub-claude_version}
@@ -156,6 +156,9 @@ For a machine set up over SSH, write the hub's identity into its service again, 
 ```sh
 fleetd machine add laptop
 ```
+
+For the hub's own machine, the finding prints `fleetd machine add localhost`; run `fleetd machine add --local`
+instead.
 
 For one that joined with a code, run `fleetd pair --worker laptop` on the hub, then the command it prints on the
 machine. Without a hub identity, set one on the machine:

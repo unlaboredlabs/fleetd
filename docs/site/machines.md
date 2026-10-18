@@ -33,8 +33,16 @@ dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /hom
 [exit 0]
 ```
 
-It is safe to run again: a real run reads the machine's state first and skips what is done. `--local` sets up this
-machine.
+It is safe to run again: a real run reads the machine's state first and skips what is done.
+
+## Add this machine {#local}
+
+```sh
+fleetd machine add --local
+```
+
+The same steps, run here without SSH. Use it to make the hub machine a worker too, or to repair it. `fleetd init`
+does this when you pick "(this machine)".
 
 ## Add a machine the hub can't reach
 
@@ -61,8 +69,9 @@ The node runs `claude` with its own config dir, so your own login doesn't carry 
 CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login
 ```
 
-Or run `claude setup-token` and put `CLAUDE_CODE_OAUTH_TOKEN=<token>` in `~/.fleetd/claude.env`. `fleetd init` offers
-both when it sets a machine up.
+Or run `claude setup-token` and put `CLAUDE_CODE_OAUTH_TOKEN=<token>` in `~/.fleetd/claude.env`. When `fleetd init`
+sets a machine up, it offers to run the login for you. On the hub machine, it also offers to copy a token or gateway
+variables that your shell has into `claude.env`.
 
 ## Remove a machine {#remove}
 

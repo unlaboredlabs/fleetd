@@ -63,7 +63,8 @@ command that fixes it. Run it again at any time: it keeps what works and repairs
 <pre class="code console" data-copy><code><span class="c">$ fleetd init</span>
 <span class="o">fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
 ✔ Is this machine the hub (the always-on machine that runs your fleet)? · yes
-✓ reachability: the hub listens on 100.x.y.z:4790, reached at http://hub.your-tailnet.ts.net:4790
+✔ Where should the hub listen? · http://hub.your-tailnet.ts.net:4790  your tailnet: the app and your other machines reach it, nothing public
+✓ reachability: the hub will answer at http://hub.your-tailnet.ts.net:4790
 ✓ claude: 2.1.302, logged in (claude.ai)
 ✓ gh: logged in as ada-lovelace
 ✔ Commit author for your agents' commits (Name &lt;email&gt;) · ada-lovelace &lt;1234567+ada-lovelace@users.noreply.github.com&gt;
@@ -82,8 +83,13 @@ command that fixes it. Run it again at any time: it keeps what works and repairs
 
 fleetd is set up.
 Next: install the desktop app on the computer you work from (curl -fsSL https://fleetd.sh | sh -s -- --app), open it and enter the pairing code; then type your first order in it.</span></code></pre>
-<p>The hub listens on your tailnet when it finds Tailscale, otherwise on <code>127.0.0.1:4790</code> only. It never opens itself to
-the internet.</p>
+<p><code>fleetd init</code> asks where the hub listens: your tailnet first when it finds Tailscale, then this machine only, then
+your LAN:</p>
+<pre class="code text"><code>? Where should the hub listen? ›
+❯ http://hub.your-tailnet.ts.net:4790  your tailnet: the app and your other machines reach it, nothing public
+  http://127.0.0.1:4790  this machine only: workers on other machines can't reach it
+  http://192.168.1.20:4790  your LAN: anyone on this network can reach it (plain HTTP)</code></pre>
+<p>It never opens the hub to the internet.</p>
 <h2 id="3-send-your-first-order">3. Send your first order<a class="anchor" href="#3-send-your-first-order" aria-label="Link to this section">#</a></h2>
 <p>On the computer you work from, install fleetd with its app and open it:</p>
 <pre class="code sh" data-copy><code><span class="l">curl -fsSL https://fleetd.sh | sh -s -- --app</span>
