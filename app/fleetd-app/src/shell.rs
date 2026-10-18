@@ -43,6 +43,8 @@ use crate::ui::{self, Variant};
 
 const LINES_PER_SEC: u64 = 50;
 const SCROLL_PX_PER_SEC: f32 = 2400.;
+/// How long launch shows a blank window before the connect screen while the saved key is still loading.
+const LOAD_WAIT: Duration = Duration::from_secs(5);
 const POLL_EVERY: Duration = Duration::from_secs(3);
 /// The board resorts this long after the pointer leaves it (spec rule 8: nothing jumps while you look).
 const RESORT_AFTER: Duration = Duration::from_secs(2);
@@ -353,25 +355,48 @@ impl Shell {
     // ---- hub link ------------------------------------------------------------------------
 
     fn load_saved(&mut self, cx: &mut Context<Self>) {
+        // The one-time move of an old keychain item can sit behind a system prompt: the connect screen doesn't wait.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(LOAD_WAIT).await;
+            this.update(cx, |this, cx| {
+                if matches!(this.screen, Screen::Loading) {
+                    this.first_run(cx);
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
         cx.spawn(async move |this, cx| {
             let loaded = match keychain::from_env() {
                 Some(saved) => Ok(keychain::Loaded { saved: Some(saved), note: None }),
                 None => cx.background_executor().spawn(async { keychain::load() }).await,
             };
             this.update(cx, |this, cx| {
+                // Paired another way while a prompt was up.
+                if this.hub.is_some() {
+                    return;
+                }
+                let waiting = matches!(this.screen, Screen::Loading);
                 match loaded {
                     Ok(keychain::Loaded { saved: Some(saved), note }) => {
                         this.note = note;
                         this.connect(saved, cx);
                     }
                     Ok(keychain::Loaded { saved: None, note }) => {
-                        this.form.status = note;
-                        this.first_run(cx);
+                        if note.is_some() {
+                            this.form.status = note;
+                        }
+                        if waiting {
+                            this.first_run(cx);
+                        }
                     }
                     Err(e) => {
                         let fix = "You can still connect; the key then lasts until the app quits.";
                         this.form.error = Some(Failure { code: String::new(), message: e, fix: Some(fix.into()) });
-                        this.first_run(cx);
+                        if waiting {
+                            this.first_run(cx);
+                        }
                     }
                 }
                 cx.notify();

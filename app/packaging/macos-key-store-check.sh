@@ -11,7 +11,7 @@
 #   2. a normal relaunch;
 #   3. a relaunch of a rebuilt app (same signer, new code hash), as after an update.
 # Before 2 and 3 the old item is replaced by one only /usr/bin/security may read, so a read would prompt and stall.
-# fs_usage (sudo) records whether the app process opens the login keychain at all: launch 1 must (the control),
+# fs_usage (sudo) records whether the app process touches a keychain file at all: launch 1 must (the control),
 # and in `file` mode launches 2 and 3 must not.
 set -euo pipefail
 app="$(cd "$1" && pwd)"
@@ -25,10 +25,29 @@ url="http://127.0.0.1:$port"
 saved="{\"url\":\"$url\",\"key\":\"fld_ci_check\"}"
 fail() { echo "::error::$*"; exit 1; }
 
-security delete-generic-password -s fleetd -a hub >/dev/null 2>&1 || true
-security delete-generic-password -s fleetd -a hub-developer-id >/dev/null 2>&1 || true
+# A keychain of our own, made this user's default for the run, so its password is known: the old item needs a
+# partition list naming the app, or even an any-app item would prompt.
+kc="$work/check.keychain-db"
+security create-keychain -p check "$kc"
+security unlock-keychain -p check "$kc"
+security set-keychain-settings "$kc"
+old_default="$(security default-keychain -d user | tr -d ' "')"
+old_list="$(security list-keychains -d user | tr -d '"')"
+restore() {
+  security default-keychain -d user -s "$old_default" || true
+  # shellcheck disable=SC2086 # one keychain per word
+  security list-keychains -d user -s $old_list || true
+  security delete-keychain "$kc" || true
+}
+trap restore EXIT
+# shellcheck disable=SC2086
+security list-keychains -d user -s "$kc" $old_list
+security default-keychain -d user -s "$kc"
+team="$(codesign -dvv "$app" 2>&1 | sed -n 's/^TeamIdentifier=\([A-Z0-9]\{10\}\)$/\1/p')"
+partition="apple-tool:,apple:,unsigned:,cdhash:$(codesign -dvvv "$app" 2>&1 | sed -n 's/^CDHash=//p')${team:+,teamid:$team}"
 rm -f "$dir/hub.json" "$dir/keychain-migrated"
-security add-generic-password -A -s fleetd -a hub -w "$saved"
+security add-generic-password -A -s fleetd -a hub -w "$saved" "$kc"
+security set-generic-password-partition-list -S "$partition" -s fleetd -a hub -k check "$kc" >/dev/null
 
 first_opens='' second_opens='' updated_opens=''
 launch() { # <label> <app>
@@ -49,6 +68,9 @@ launch() { # <label> <app>
     sleep 0.5
   done
   sleep 1
+  # A keychain prompt is SecurityAgent's window.
+  local agent=no
+  if pgrep -x SecurityAgent >/dev/null; then agent=yes; fi
   kill "$app_pid" 2>/dev/null || true
   wait "$app_pid" 2>/dev/null || true
   kill "$nc_pid" 2>/dev/null || true
@@ -57,9 +79,10 @@ launch() { # <label> <app>
   echo "--- launch $label: app log"
   cat "$log"
   local opens
-  opens="$(grep -c 'Keychains/login.keychain' "$trace" || true)"
+  opens="$(grep -c '\.keychain' "$trace" || true)"
   echo "--- launch $label: the stand-in hub got: $(head -1 "$hub" | tr -d '\r')"
-  echo "--- launch $label: app file events on the login keychain: $opens"
+  echo "--- launch $label: app file events on a keychain: $opens"
+  echo "--- launch $label: SecurityAgent (keychain prompt) running at the end: $agent"
   [ "$ok" = 1 ] || fail "launch $label: the app never dialled the hub with its saved key (a keychain prompt would stall it here)"
   printf -v "${label}_opens" %s "$opens"
 }
@@ -84,12 +107,12 @@ if [ "$mode" = file ]; then
   written="$(stat -f %m "$dir/hub.json")"
 else
   [ ! -e "$dir/hub.json" ] || fail "a Developer ID build left the key in a file"
-  security find-generic-password -s fleetd -a hub-developer-id >/dev/null || fail "no hub-developer-id item"
+  security find-generic-password -s fleetd -a hub-developer-id "$kc" >/dev/null || fail "no hub-developer-id item"
 fi
 
 # From here, any read of the old item would raise a prompt.
-security delete-generic-password -s fleetd -a hub >/dev/null
-security add-generic-password -s fleetd -a hub -w '{"url":"http://127.0.0.1:9","key":"fld_must_not_be_read"}' -T /usr/bin/security
+security delete-generic-password -s fleetd -a hub "$kc" >/dev/null
+security add-generic-password -s fleetd -a hub -w '{"url":"http://127.0.0.1:9","key":"fld_must_not_be_read"}' -T /usr/bin/security "$kc"
 
 launch second "$app"
 expect_store second
@@ -115,8 +138,8 @@ for label in second updated; do
   if grep -q "reading the hub key an earlier version" "$work/$label.log"; then fail "launch $label read the old item again"; fi
 done
 if [ "$mode" = file ]; then
-  [ "$second_opens" = 0 ] || fail "launch 2 touched the login keychain ($second_opens events)"
-  [ "$updated_opens" = 0 ] || fail "launch 3 touched the login keychain ($updated_opens events)"
+  [ "$second_opens" = 0 ] || fail "launch 2 touched the keychain ($second_opens events)"
+  [ "$updated_opens" = 0 ] || fail "launch 3 touched the keychain ($updated_opens events)"
   [ "$(stat -f %m "$dir/hub.json")" = "$written" ] || fail "hub.json was rewritten on a relaunch"
 fi
 echo "key store check ($mode): migrated once; two relaunches, one after an update, with no prompt"
