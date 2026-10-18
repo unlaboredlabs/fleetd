@@ -10,15 +10,18 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText } from "./harness.ts";
+import { type Body, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT } from "./harness.ts";
 
 const MACHINE = "lab-a";
-export const REPO = "unlaboredlabs/fleetd-testbed";
+// One testbed repo per lab slot, so slots run the train in parallel: slots 0 and 9 (the demo) share the original,
+// slot N uses fleetd-testbed-N. FLEETD_TESTBED overrides; tests/lab/testbed.ts creates a missing one.
+export const REPO =
+  process.env.FLEETD_TESTBED ?? (SLOT === 0 || SLOT === 9 ? "unlaboredlabs/fleetd-testbed" : `unlaboredlabs/fleetd-testbed-${SLOT}`);
 export const TESTBED = path.join(LAB, "testbed");
 const TURN_MS = 240_000;
 const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
-const FREEZE_KEY = "policy.freeze.unlaboredlabs.fleetd-testbed";
+const FREEZE_KEY = `policy.freeze.${REPO.replace("/", ".")}`;
 /** Branch prefixes this scenario pushes to the testbed, cleaned up before and after. */
 const OURS = ["fleetd/", "lab-m7/"];
 // Each run writes under its own directory, since main keeps what earlier runs merged.
@@ -90,7 +93,10 @@ export async function m7Train(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
   requireGhLogin();
-  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run node tests/lab/testbed.ts --clone ${TESTBED})`);
+  const setup = `node tests/lab/testbed.ts --repo ${REPO} --clone ${TESTBED}`;
+  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run ${setup})`);
+  const origin = git("remote", "get-url", "origin");
+  check(origin.replace(/\.git$/u, "").endsWith(REPO), `${TESTBED} is a clone of ${origin}, not ${REPO} (move it aside and run ${setup})`);
   cleanTestbed();
   prepareCheckout();
   ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked .fleetd/policy.yaml (alpha, beta, gamma, ci); no fleetd/* branches on ${REPO}`);
