@@ -71,10 +71,12 @@ const terms = fs
   .filter((l) => l !== "" && !l.startsWith("#"))
   .map((l) => new RegExp(l, "iu"));
 
-// "  machine add <ssh-host> ..." -> ["machine", "add"]; "  init [--home <dir>] ..." -> ["init", undefined].
+// "  machine add <ssh-host> ..." -> ["machine", "add"]; "  init [--home <dir>] ..." -> ["init", undefined];
+// "  instructions show|edit ..." -> ["instructions", "show"] and ["instructions", "edit"].
 const commands = help.split("\n").flatMap((l) => {
-  const m = /^ {2}([a-z][a-z-]*)(?: ([a-z][a-z-]*))?/u.exec(l);
-  return m ? [[m[1], m[2]]] : [];
+  const m = /^ {2}([a-z][a-z-]*)(?: ([a-z][a-z|-]*))?/u.exec(l);
+  if (!m) return [];
+  return m[2] === undefined ? [[m[1], undefined]] : m[2].split("|").map((s) => [m[1], s]);
 });
 if (commands.length < 10) errors.push(`${process.argv[2]} doesn't look like \`fleetd help\` output`);
 

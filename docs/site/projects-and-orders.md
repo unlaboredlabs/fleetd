@@ -79,9 +79,9 @@ The lead reports done with `fleetd claim done`. The hub then runs the brief's do
 them passing makes the workstream done. A failure wakes the lead with the exit code and output. `claims_list` shows
 every claim with its evidence.
 
-A done order cleans up after itself: its PRs that aren't merged and aren't on the train (queued, reviewing, ready,
-rebasing, CI failed) are closed with a comment saying why, and its leftover tasks are cancelled. A PR the train is
-already landing is left to land.
+A done order cleans up after itself: its PRs still waiting (queued, in review, ready, needing a rebase, or with failed
+CI) are closed on GitHub with a comment saying why, and its leftover tasks are cancelled. A PR the train is already
+rebasing, checking or merging is left to land.
 
 ## MCP tools for orders {#tools}
 

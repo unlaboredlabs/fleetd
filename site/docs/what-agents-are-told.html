@@ -51,76 +51,147 @@
 <main class="doc" id="main">
 <p class="kicker">Using fleetd</p>
 <h1>What agents are told</h1>
-<p>Every word fleetd sends a model is listed here, readable in the app and the CLI, and editable. A session keeps the
-text it started with.</p>
+<p>Every word fleetd sends a model is listed on this page and in <code>fleetd prompts list</code>, and you can edit each one. A
+session keeps the text it started with.</p>
 <h2 id="how-a-session-gets-its-instructions">How a session gets its instructions<a class="anchor" href="#how-a-session-gets-its-instructions" aria-label="Link to this section">#</a></h2>
 <p>There is no hidden system prompt. fleetd's instructions are the first message of a session (lead, task, reviewer,
 judge), later messages into it (wakes, review findings, train news, nudges), or the input of a one-shot <code>claude -p</code>
 with no tools (the router, the retro). Your own claude setup applies as usual underneath
-(<a href="/docs/config-and-files">Config &amp; files</a>).</p>
-<h2 id="prompts">The prompts<a class="anchor" href="#prompts" aria-label="Link to this section">#</a></h2>
-<p>Grouped as in Settings → Prompts.</p>
-<div class="table"><table><thead><tr><th>Group</th><th>Ids</th><th>Sent</th></tr></thead><tbody>
-<tr><td>Lead</td><td><code>lead.start</code>, <code>lead.digest</code></td><td>at lead start and every restart; the digest also tops every wake</td></tr>
-<tr><td>Tasks</td><td><code>task.brief.write</code>, <code>task.brief.read</code>, <code>task.brief.review</code>, <code>task.review_findings</code>, <code>task.train_rebase</code>, <code>task.train_ci_failed</code></td><td>at each task attempt, then into it</td></tr>
-<tr><td>Reviews and checks</td><td><code>review.reviewer</code>, <code>review.verifier</code>, <code>judge</code>, <code>judge.research</code></td><td>per PR head by review tier; per <code>judge</code> done-when check</td></tr>
-<tr><td>Wakes and messages</td><td><code>wake.*</code>, <code>digest.*</code>, <code>watchdog.nudge</code>, <code>usage.continue</code>, <code>permission.denied.*</code></td><td>into a running session: one line per event, a stalled run, a usage reset, a refused tool call</td></tr>
-<tr><td>One-shots</td><td><code>router</code>, <code>router.retry</code>, <code>retro</code></td><td>per order without a project; per retro run</td></tr>
-<tr><td>Playbooks</td><td><code>playbook.feature</code>, <code>playbook.bugfix</code>, <code>playbook.research</code>, <code>playbook.finish-all</code></td><td>in the lead's digest while an order uses it</td></tr>
-</tbody></table></div>
-<p><code>fleetd prompts list</code> prints them all with where each comes from; <code>fleetd prompts show &lt;id&gt;</code> prints one.</p>
+(<a href="/docs/config-and-files">Config &amp; files</a>). <a href="#prompts">Every prompt</a> is listed at the end of this page.</p>
 <h2 id="safety">Safety rules: code or prompt<a class="anchor" href="#safety" aria-label="Link to this section">#</a></h2>
 <p>Most rules don't depend on the prompt. fleetd enforces them in code whatever the text says: secrets are sealed to a
 machine, gated commands wait for your tap, only the train merges, and done is decided by the hub running the checks.
 Editing those words away only means agents hit refusals they weren't warned about.</p>
-<p>A few rules live only in the prompt: reviewers don't read the PR description, no subagents, the lead never writes
-code, a lead doesn't re-ask a decided question, and it asks you only about product, money, credentials or something
-irreversible. Remove one of these and nothing else stops it.</p>
+<p>Some rules live only in the prompt, marked "prompt only" in the table below: the lead never writes code, reviewers
+don't read the PR description, a lead doesn't re-ask a decided question and asks you only about product, money,
+credentials or something irreversible. Remove one and nothing else stops it.</p>
 <h2 id="edit-a-prompt">Edit a prompt<a class="anchor" href="#edit-a-prompt" aria-label="Link to this section">#</a></h2>
-<p>In the app: Settings → Prompts. Pick Global or a project at the top, open a prompt, edit, Save. Reset to default and
-Diff are next to Save. On the hub machine:</p>
-<pre class="code sh" data-copy><code><span class="l">fleetd prompts edit lead.start</span>
+<p>On the hub machine:</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd prompts show lead.start</span>
+<span class="l">fleetd prompts edit lead.start</span>
 <span class="l">fleetd prompts edit task.brief.write --project builder-1/app</span>
 <span class="l">fleetd prompts diff lead.start</span>
 <span class="l">fleetd prompts reset lead.start</span></code></pre>
-<p><code>edit</code> opens <code>$VISUAL</code> or <code>$EDITOR</code>, shows the warnings and asks before saving. A project's version beats the global
-one, which beats fleetd's. Playbooks have only the global level. Your versions are files under
-<code>~/.fleetd/hub/prompts/</code> (<a href="/docs/config-and-files">Config &amp; files</a>); edit them with <code>fleetd prompts edit</code>, not by hand.</p>
-<p>Prompts fill in <code>{{name}}</code> placeholders, such as <code>{{project}}</code>; the editor lists each prompt's own. Nothing else is
-template syntax.</p>
+<p><code>edit</code> opens <code>$VISUAL</code> or <code>$EDITOR</code>, prints the warnings and asks <code>Save? [Y/n]</code>. <code>diff</code> shows fleetd's text against
+yours; <code>show --default</code> prints fleetd's. A project's version beats the global one, which beats fleetd's; one-shots and
+playbooks have only the global level. Your versions are files under <code>~/.fleetd/hub/prompts/</code>
+(<a href="/docs/config-and-files">Config &amp; files</a>); change them with <code>fleetd prompts edit</code>, not by hand. From an MCP client:
+<code>prompts_list</code>, <code>prompt_get</code>, <code>prompt_set</code> (with <code>dryRun</code> to see the warnings only) and <code>prompt_reset</code>.</p>
+<p>Prompts fill in <code>{{name}}</code> placeholders, such as <code>{{project}}</code>. Nothing else is template syntax.</p>
 <h3 id="warnings">Warnings<a class="anchor" href="#warnings" aria-label="Link to this section">#</a></h3>
 <p>Saving never refuses text that isn't empty, but it warns:</p>
 <div class="table"><table><thead><tr><th>Warning</th><th>Means</th></tr></thead><tbody>
 <tr><td>a required placeholder is missing</td><td>that value no longer reaches the agent (for <code>task.brief.write</code> without <code>{{serves}}</code>, the PR's <code>Source:</code> line)</td></tr>
 <tr><td>unknown placeholder</td><td><code>{{name}}</code> isn't one this prompt fills; it is sent as written</td></tr>
 <tr><td>a safety rule is missing</td><td>its wording is gone; the warning says whether fleetd still enforces it in code or nothing does</td></tr>
-<tr><td>too long</td><td>past the prompt's budget; the digest cuts long playbook lines</td></tr>
+<tr><td>too long</td><td>over three times the length of fleetd's text</td></tr>
 </tbody></table></div>
 <h2 id="instructions">Your own instructions<a class="anchor" href="#instructions" aria-label="Link to this section">#</a></h2>
-<p>Settings → Instructions, Global or per project, or:</p>
 <pre class="code sh" data-copy><code><span class="l">fleetd instructions edit</span>
-<span class="l">fleetd instructions edit --project builder-1/app</span></code></pre>
+<span class="l">fleetd instructions edit --project builder-1/app</span>
+<span class="l">fleetd instructions show</span></code></pre>
 <p>They are added to every lead's first message and every task brief (writers, reviewers and judges), global first, under
 "Custom instructions from the human". Not to the router, the retro or wakes.</p>
 <h2 id="when-fleetd-changes-a-default-you-edited">When fleetd changes a default you edited<a class="anchor" href="#when-fleetd-changes-a-default-you-edited" aria-label="Link to this section">#</a></h2>
-<p>Your version stays in use. The prompt gets an "update" chip in Settings → Prompts; <code>fleetd prompts diff &lt;id&gt;</code> shows
-what changed in fleetd's text and in yours since you edited it, and <code>edit</code> opens a merge of both. Save it, keep yours,
-or reset. A safety rule the new default added and your text lacks shows as a warning.</p>
-<p>Playbooks are the exception: an edited playbook gets no notice when fleetd's version changes. Compare it yourself
-with <code>fleetd prompts diff playbook.&lt;name&gt;</code> after an update.</p>
+<p>Your version stays in use, and <code>fleetd prompts list</code> marks the prompt <code>update</code>. Then <code>fleetd prompts diff &lt;id&gt;</code> shows
+what fleetd changed and what you changed since you edited it, and <code>edit</code> opens both merged. Save it, or reset. A
+safety rule the new default added and your text lacks shows as a warning.</p>
+<p>Playbooks are the exception: an edited playbook gets no notice when fleetd's version changes. After an update,
+compare it with <code>fleetd prompts diff playbook.&lt;name&gt;</code>.</p>
 <h2 id="pinning">What a running agent keeps<a class="anchor" href="#pinning" aria-label="Link to this section">#</a></h2>
 <p>Each session keeps the exact prompt versions it started with, wakes included. An edit reaches new sessions at once: a
 task at its next attempt, a lead at its next start. To give a running lead your edit now, restart it with
 <code>lead_restart</code> from an MCP client (<a href="/docs/projects-and-orders#its-lead">Its lead</a>).</p>
 <h2 id="told">See exactly what an agent was told<a class="anchor" href="#told" aria-label="Link to this section">#</a></h2>
-<p>In an order, a lane's menu or the lead's header has "Show full prompt": the exact first message, which versions it
-used (default, edited globally, project), your instructions, and the tools it may not use. Or:</p>
 <pre class="code sh" data-copy><code><span class="l">fleetd prompts show --session &lt;machine&gt;/&lt;thread&gt;</span></code></pre>
-<p>Later messages are in the lead's conversation.</p>
+<p>prints the exact first message a session was sent; <code>session_prompt_get</code> from an MCP client also returns which version
+of each prompt it used and the tools it may not use. Later messages are in the lead's conversation in the app.</p>
 <h2 id="not-editable-tool-descriptions-and-cli-replies">Not editable: tool descriptions and CLI replies<a class="anchor" href="#not-editable-tool-descriptions-and-cli-replies" aria-label="Link to this section">#</a></h2>
 <p>MCP tool descriptions and what the lead-side CLI prints back (each <code>next:</code> and <code>fix:</code>) are the other half of a
-protocol with code: a description must match its tool, a <code>next:</code> must name a real command. They are listed in the
-<a href="/docs/cli">CLI reference</a> and the <a href="/docs/projects-and-orders#tools">MCP tools</a>, not editable.</p>
+protocol with code: a description must match its tool, a <code>next:</code> must name a real command. See the
+<a href="/docs/cli">CLI reference</a> and the <a href="/docs/projects-and-orders#tools">order tools</a>.</p>
+<h2 id="prompts">Every prompt<a class="anchor" href="#prompts" aria-label="Link to this section">#</a></h2>
+<p>Generated from the registry in the binary this site was built with. <code>fleetd prompts show &lt;id&gt;</code> prints one.</p>
+<h3 id="lead">Lead<a class="anchor" href="#lead" aria-label="Link to this section">#</a></h3>
+<div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
+<tr><td><code>lead.start</code></td><td>lead start and every lead_restart, followed by the digest</td><td>the lead never writes code (prompt only); delegates only with <code>fleetd task spawn</code>, no other agents (prompt only); asks the human only about product, money, credentials, irreversible (prompt only); secrets only through <code>fleetd ask --kind secret</code>; prod writes, spends and deletes only through <code>fleetd gated run</code>; never blocks on a question (<code>--proceeded</code>) (prompt only); done only through <code>fleetd claim done</code>; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with <code>--amend</code></td></tr>
+<tr><td><code>lead.digest</code></td><td>the top of the lead's first message and of every wake</td><td>the digest is the truth, over the lead's memory (prompt only)</td></tr>
+</tbody></table></div>
+<h3 id="tasks">Tasks<a class="anchor" href="#tasks" aria-label="Link to this section">#</a></h3>
+<div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
+<tr><td><code>task.brief.write</code></td><td>every write task attempt</td><td>changes only its areas; never merges; the train does; the PR body carries <code>Source:</code>; does the task itself, no subagents (prompt only)</td></tr>
+<tr><td><code>task.brief.read</code></td><td>every read task attempt</td><td>changes no files (prompt only); does the task itself, no subagents (prompt only)</td></tr>
+<tr><td><code>task.brief.review</code></td><td>every review, verifier and judge task attempt</td><td>changes no files (prompt only); does the task itself, no subagents (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>task.train_rebase</code></td><td>per PR the train could not rebase</td><td></td></tr>
+<tr><td><code>task.train_ci_failed</code></td><td>per PR whose CI failed or timed out</td><td></td></tr>
+</tbody></table></div>
+<h3 id="reviews-and-checks">Reviews and checks<a class="anchor" href="#reviews-and-checks" aria-label="Link to this section">#</a></h3>
+<div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
+<tr><td><code>wake.claim_failed</code></td><td>per failed done claim</td><td></td></tr>
+<tr><td><code>wake.claim_passed</code></td><td>per claim that passed late</td><td></td></tr>
+<tr><td><code>wake.research_verdict.go</code></td><td>per research claim that went GO</td><td></td></tr>
+<tr><td><code>wake.research_verdict.stop</code></td><td>per research claim that went STOP</td><td>STOP is a success (prompt only)</td></tr>
+<tr><td><code>wake.research_verdict.inconclusive</code></td><td>per research claim that was inconclusive</td><td></td></tr>
+<tr><td><code>review.reviewer</code></td><td>per PR head per review round, by the tier's rules; Claude or Codex</td><td>does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>review.verifier</code></td><td>tier L, per PR head</td><td>works in a detached temporary worktree (prompt only); does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>judge</code></td><td>per <code>judge</code> done-when check of each claim</td><td>trusts no claim in the artifacts (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>judge.research</code></td><td>per <code>judge</code> check of a research claim</td><td>trusts no claim in the artifacts (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>task.review_findings</code></td><td>per blocking review verdict</td><td>never merges; the train does</td></tr>
+</tbody></table></div>
+<h3 id="wakes-and-messages">Wakes and messages<a class="anchor" href="#wakes-and-messages" aria-label="Link to this section">#</a></h3>
+<div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
+<tr><td><code>digest.workstream.no_brief</code></td><td>each digest, per draft order</td><td></td></tr>
+<tr><td><code>digest.finish_all_idle</code></td><td>each digest, per idle finish-all order</td><td></td></tr>
+<tr><td><code>digest.answer.withdrawn</code></td><td>each digest, per dropped ask</td><td></td></tr>
+<tr><td><code>digest.tasks.running</code></td><td>each digest, per running task</td><td></td></tr>
+<tr><td><code>digest.tasks.idle</code></td><td>each digest, per idle task</td><td></td></tr>
+<tr><td><code>digest.tasks.queued</code></td><td>each digest, per queued task</td><td></td></tr>
+<tr><td><code>digest.tasks.ended</code></td><td>each digest, per task ended since the last wake</td><td></td></tr>
+<tr><td><code>digest.train.repo</code></td><td>each digest, per train</td><td></td></tr>
+<tr><td><code>digest.train.merged</code></td><td>each digest, per merge since the last wake</td><td></td></tr>
+<tr><td><code>digest.train.parked</code></td><td>each digest, per PR needing a rebase or red CI</td><td></td></tr>
+<tr><td><code>digest.train.waived</code></td><td>each digest, per waived PR</td><td></td></tr>
+<tr><td><code>wake.frame</code></td><td>every wake</td><td></td></tr>
+<tr><td><code>wake.intent</code></td><td>per new order</td><td></td></tr>
+<tr><td><code>wake.intent.playbook</code></td><td>per new order with a playbook the digest does not show</td><td></td></tr>
+<tr><td><code>wake.intent.playbook_listed</code></td><td>per new order with a playbook the digest shows</td><td></td></tr>
+<tr><td><code>wake.decision</code></td><td>per decision the human recorded in the project</td><td></td></tr>
+<tr><td><code>wake.answers</code></td><td>per batch of answers</td><td></td></tr>
+<tr><td><code>wake.task_result</code></td><td>per task that completed or failed</td><td></td></tr>
+<tr><td><code>wake.task_cancelled</code></td><td>per cancelled task</td><td></td></tr>
+<tr><td><code>wake.task_waiting</code></td><td>per task waiting on input</td><td>asks the human only about product, money, credentials, irreversible (prompt only)</td></tr>
+<tr><td><code>wake.task_start_failed</code></td><td>per queued task that failed to start (its result)</td><td></td></tr>
+<tr><td><code>wake.train.line</code></td><td>when the train could not reach a PR's author task</td><td></td></tr>
+<tr><td><code>wake.train.left</code></td><td>per PR the train abandoned</td><td></td></tr>
+<tr><td><code>wake.train.merged</code></td><td>per merge</td><td></td></tr>
+<tr><td><code>wake.train.gave_up</code></td><td>per PR GitHub refused to merge too often</td><td></td></tr>
+<tr><td><code>wake.train.refused</code></td><td>per task PR the train would not take</td><td></td></tr>
+<tr><td><code>wake.order_note</code></td><td>per order_note</td><td></td></tr>
+<tr><td><code>wake.order_refs</code></td><td>per new order with references or attachments</td><td></td></tr>
+<tr><td><code>wake.order_stopped</code></td><td>per order_stop</td><td>does no more work on a stopped order (prompt only)</td></tr>
+<tr><td><code>wake.order_idle</code></td><td>when the lead ends a turn with a frozen order and nothing under way</td><td></td></tr>
+<tr><td><code>wake.scheduled_late</code></td><td>a wake_set message that fired late</td><td></td></tr>
+<tr><td><code>wake.scheduled_held</code></td><td>a wake_set message held by a usage pause</td><td></td></tr>
+<tr><td><code>watchdog.nudge</code></td><td>once per stalled run</td><td></td></tr>
+<tr><td><code>usage.continue</code></td><td>per parked thread when the usage limit resets</td><td></td></tr>
+<tr><td><code>permission.denied.policy</code></td><td>per tool call a tools.deny rule refuses (tool result)</td><td></td></tr>
+<tr><td><code>permission.denied.withdrawn</code></td><td>per tool ask withdrawn before an answer (tool result)</td><td>does not retry the call (prompt only)</td></tr>
+<tr><td><code>permission.denied.human</code></td><td>per tool ask the human denied (tool result)</td><td></td></tr>
+<tr><td><code>permission.denied.answer</code></td><td>per tool call denied with thread_answer and no message (tool result)</td><td></td></tr>
+</tbody></table></div>
+<h3 id="one-shots">One-shots<a class="anchor" href="#one-shots" aria-label="Link to this section">#</a></h3>
+<div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
+<tr><td><code>router</code></td><td>each order without @project or a template prefix</td><td>uses no tools; replies with JSON only (prompt only)</td></tr>
+<tr><td><code>router.retry</code></td><td>once per order, after an unusable first answer</td><td></td></tr>
+<tr><td><code>retro</code></td><td>each retro run (at most 2 a day)</td><td>uses no tools; at most 3 changes</td></tr>
+</tbody></table></div>
+<h3 id="playbooks">Playbooks<a class="anchor" href="#playbooks" aria-label="Link to this section">#</a></h3>
+<div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
+<tr><td><code>playbook.bugfix</code></td><td>in the digest and the intake wake, while an order follows it</td><td>never merges; the train does</td></tr>
+<tr><td><code>playbook.feature</code></td><td>in the digest and the intake wake, while an order follows it</td><td>never merges; the train does</td></tr>
+<tr><td><code>playbook.research</code></td><td>in the digest and the intake wake, while an order follows it</td><td>STOP is a success (prompt only)</td></tr>
+<tr><td><code>playbook.finish-all</code></td><td>in the digest and the intake wake, while an order follows it</td><td></td></tr>
+</tbody></table></div>
 <nav class="pn" aria-label="Previous and next">
 <a class="prev" href="/docs/approvals-and-secrets"><span>Previous</span>Approvals &amp; secrets</a>
 <a class="next" href="/docs/desktop-app"><span>Next</span>The desktop app</a>
@@ -131,7 +202,6 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <p>On this page</p>
 <ul>
 <li><a href="#how-a-session-gets-its-instructions">How a session gets its instructions</a></li>
-<li><a href="#prompts">The prompts</a></li>
 <li><a href="#safety">Safety rules: code or prompt</a></li>
 <li><a href="#edit-a-prompt">Edit a prompt</a></li>
 <li><a href="#instructions">Your own instructions</a></li>
@@ -139,6 +209,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <li><a href="#pinning">What a running agent keeps</a></li>
 <li><a href="#told">See exactly what an agent was told</a></li>
 <li><a href="#not-editable-tool-descriptions-and-cli-replies">Not editable: tool descriptions and CLI replies</a></li>
+<li><a href="#prompts">Every prompt</a></li>
 </ul>
 </aside>
 </div>

@@ -96,9 +96,9 @@ stopped: send it again as a new order.</p>
 <p>The lead reports done with <code>fleetd claim done</code>. The hub then runs the brief's done-when checks itself, and only all of
 them passing makes the workstream done. A failure wakes the lead with the exit code and output. <code>claims_list</code> shows
 every claim with its evidence.</p>
-<p>A done order cleans up after itself: its PRs that aren't merged and aren't on the train (queued, reviewing, ready,
-rebasing, CI failed) are closed with a comment saying why, and its leftover tasks are cancelled. A PR the train is
-already landing is left to land.</p>
+<p>A done order cleans up after itself: its PRs still waiting (queued, in review, ready, needing a rebase, or with failed
+CI) are closed on GitHub with a comment saying why, and its leftover tasks are cancelled. A PR the train is already
+rebasing, checking or merging is left to land.</p>
 <h2 id="tools">MCP tools for orders<a class="anchor" href="#tools" aria-label="Link to this section">#</a></h2>
 <div class="table"><table><thead><tr><th>Tool</th><th>Does</th><th>Role</th></tr></thead><tbody>
 <tr><td><code>intake_submit {text}</code></td><td>send an order (optional <code>attachments</code>, <code>refs</code>)</td><td>operate</td></tr>

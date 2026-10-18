@@ -1,0 +1,69 @@
+//! The prompt table on "What agents are told", from the hub's own registry, so a new or renamed prompt can't be
+//! missing from the docs. A line that is exactly `{{prompt-table}}` in a page's markdown becomes it.
+
+use fleetd::hub::prompts::registry::{ENTRIES, INSTRUCTIONS};
+use fleetd_contracts::prompts::{Enforcement, PromptGroup};
+
+pub const MARKER: &str = "{{prompt-table}}";
+
+const GROUPS: [(PromptGroup, &str); 6] = [
+    (PromptGroup::Lead, "Lead"),
+    (PromptGroup::Tasks, "Tasks"),
+    (PromptGroup::ReviewsAndChecks, "Reviews and checks"),
+    (PromptGroup::WakesAndMessages, "Wakes and messages"),
+    (PromptGroup::OneShots, "One-shots"),
+    (PromptGroup::Playbooks, "Playbooks"),
+];
+
+/// Markdown: one `###` per group, then a row per prompt with its id, when it is sent and the safety rules it
+/// carries (prompt-only ones marked).
+pub fn table() -> String {
+    let mut md = String::new();
+    for (group, title) in GROUPS {
+        md.push_str(&format!(
+            "### {title}\n\n| Id | Sent | Safety rules |\n|---|---|---|\n"
+        ));
+        for e in ENTRIES
+            .iter()
+            .filter(|e| e.group == group && e.id != INSTRUCTIONS)
+        {
+            let rules: Vec<String> = e
+                .safety_rules()
+                .iter()
+                .map(|r| match r.enforced {
+                    Enforcement::Code => cell(&r.label),
+                    Enforcement::Prompt => format!("{} (prompt only)", cell(&r.label)),
+                })
+                .collect();
+            md.push_str(&format!(
+                "| `{}` | {} | {} |\n",
+                e.id,
+                cell(e.sent_when),
+                rules.join("; ")
+            ));
+        }
+        md.push('\n');
+    }
+    md
+}
+
+/// Table-cell safe: a `|` would end the cell.
+fn cell(text: &str) -> String {
+    text.replace('|', "\\|")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_prompt_but_the_instructions_has_a_row() {
+        let table = super::table();
+        for e in fleetd::hub::prompts::registry::ENTRIES {
+            assert_eq!(
+                table.contains(&format!("`{}`", e.id)),
+                e.id != "instructions",
+                "{}",
+                e.id
+            );
+        }
+    }
+}
