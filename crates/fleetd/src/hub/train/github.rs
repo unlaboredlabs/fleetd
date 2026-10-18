@@ -339,6 +339,23 @@ impl TrainGitHub {
         }
     }
 
+    /// Comments on the PR with why, then closes it.
+    pub async fn close(&self, repo: &str, n: i64, comment: &str) -> Result<(), GhError> {
+        self.json::<Value>(
+            "POST",
+            &format!("repos/{repo}/issues/{n}/comments"),
+            &[("body", comment)],
+        )
+        .await?;
+        self.json::<Value>(
+            "PATCH",
+            &format!("repos/{repo}/pulls/{n}"),
+            &[("state", "closed")],
+        )
+        .await
+        .map(|_| ())
+    }
+
     /// Recently updated closed PRs that were merged.
     pub async fn merged_pulls(&self, repo: &str) -> Result<Vec<MergedPull>, GhError> {
         let pulls: Vec<ClosedPull> = self

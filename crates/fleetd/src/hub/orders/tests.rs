@@ -179,3 +179,23 @@ fn trains_list_head_then_queue_then_todays_merges() {
     assert_eq!(chips, vec![10, 12, 13, 9]);
     assert_eq!(train.merged_today.get(), 1);
 }
+
+#[test]
+fn a_done_order_leaves_only_its_open_prs_that_are_not_on_their_way_in() {
+    let mut other = change("X9", 19, "T9", "reviewing");
+    other.workstream_id = fleetd_contracts::ledger::WorkstreamId::new("W99").unwrap();
+    let changes = vec![
+        change("X1", 11, "T1", "reviewing"),
+        change("X2", 12, "T2", "merged"),
+        change("X3", 13, "T3", "ci"),
+        change("X4", 14, "T4", "needs_rebase"),
+        other,
+    ];
+    let id = fleetd_contracts::ledger::WorkstreamId::new("W14").unwrap();
+    let left: Vec<i64> = crate::hub::train::service::leftovers(&changes, &id)
+        .iter()
+        .map(|c| c.pr_number.get())
+        .collect();
+    // Merged stays merged, the PR in CI may still land, another order's PR is not touched.
+    assert_eq!(left, vec![11, 14]);
+}

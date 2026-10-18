@@ -21,6 +21,7 @@ use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
 use super::rules::{Refusal, check_source, check_tier, freeze_key, is_frozen_value};
 use super::time::{iso, millis, parse_iso};
 use crate::clock::Clock;
+use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::Text;
 
 /// Recorded as the sender of the train's task messages.
@@ -425,6 +426,42 @@ impl Train {
             self.to_gate(reviewing).await;
         }
         Ok(())
+    }
+
+    /// When an order's done-when passed, its PRs that are not merged and not already on their way in are left
+    /// over: each leaves the train and is closed on GitHub with `why`. The design's rule is that done-when alone
+    /// decides done, so an orphan PR must not stay open looking like work in progress. Returns the ones closed.
+    pub async fn close_leftovers(
+        &self,
+        project_ref: &ProjectRef,
+        workstream_id: &WorkstreamId,
+        why: &str,
+    ) -> Vec<Change> {
+        let changes = self.list(&ListFilter {
+            project_ref: Some(project_ref.clone()),
+            limit: 500,
+            ..Default::default()
+        });
+        let mut closed = Vec::new();
+        for change in leftovers(&changes, workstream_id) {
+            let Some(left) = self.update(&change.change_id, Some(&[change.state]), |mut c| {
+                c.state = ChangeState::Abandoned;
+                c.last_error = Some(last_error(why));
+                c
+            }) else {
+                continue;
+            };
+            let comment = format!("Closed by fleetd: {why}");
+            if let Err(error) = self
+                .github
+                .close(&left.repo, left.pr_number.get(), &comment)
+                .await
+            {
+                tracing::warn!(change = %left.change_id, ?error, "train: leftover PR not closed on GitHub");
+            }
+            closed.push(left);
+        }
+        closed
     }
 
     async fn abandon(&self, change: &Change, why: &str) {
@@ -1358,4 +1395,22 @@ impl Train {
     pub fn note(&self, change_id: &ChangeId, text: &str) {
         self.records.note(change_id, text);
     }
+}
+
+/// The order's Changes that are neither merged (or otherwise ended) nor being rebased, checked or merged now.
+pub fn leftovers<'a>(changes: &'a [Change], workstream_id: &WorkstreamId) -> Vec<&'a Change> {
+    changes
+        .iter()
+        .filter(|c| &c.workstream_id == workstream_id)
+        .filter(|c| {
+            matches!(
+                c.state,
+                ChangeState::Queued
+                    | ChangeState::Reviewing
+                    | ChangeState::Ready
+                    | ChangeState::NeedsRebase
+                    | ChangeState::CiFailed
+            )
+        })
+        .collect()
 }
