@@ -120,8 +120,9 @@ fn live_rows(app: &str, row: &mut impl FnMut(&str, String)) {
     let n = |line: &str, k: &str| field(line, k).unwrap_or("?").to_string();
     let us = |line: &str, k: &str| field(line, k).and_then(|v| v.parse::<f64>().ok()).map_or("?".into(), |v| format!("{:.1} ms", v / 1000.0));
     let scope = format!("{} orders, {} lanes", n(&full, "orders"), n(&full, "lanes"));
-    row(&format!("Live board ({scope}), feed at 4 Hz for 5 s: presented frames/s"), n(&full, "fps"));
-    row("  worst frame interval", us(&full, "worst_frame_us"));
+    row(&format!("Live board ({scope}, virtualized), feed at 4 Hz for 5 s: presented frames/s"), n(&full, "fps"));
+    row("  inside sparkline shifts (180 ms, every lane at once): presented frames/s, median", n(&full, "anim_fps"));
+    row("  inside sparkline shifts: worst frame interval", us(&full, "anim_worst_us"));
     row(
         &format!("  frame draw, layout + paint ({} frames)", n(&full, "frames")),
         format!("median {}, p99 {}, max {}", us(&full, "draw_p50_us"), us(&full, "draw_p99_us"), us(&full, "draw_max_us")),

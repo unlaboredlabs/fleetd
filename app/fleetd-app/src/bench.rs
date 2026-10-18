@@ -286,6 +286,28 @@ pub fn scroll_stats(presents: &[Instant], start: Instant, end: Instant) -> (f64,
     (inside.len() as f64 / end.duration_since(start).as_secs_f64(), worst)
 }
 
+/// Frames inside animations: for each start (an event that starts an animation of length `dur`), the presents from
+/// the first one after it until `dur` (plus one 60 Hz frame) later. Returns the median of their presented frame
+/// rates and the longest gap between two presents inside any of them, or `None` with no such window.
+pub fn anim_stats(presents: &[Instant], starts: &[Instant], dur: Duration) -> Option<(f64, Duration)> {
+    let mut rates = Vec::new();
+    let mut worst = Duration::ZERO;
+    for &s in starts {
+        let Some(&first) = presents.iter().find(|&&p| p >= s) else { continue };
+        let end = first + dur + Duration::from_micros(16_700);
+        let inside: Vec<Instant> = presents.iter().copied().filter(|&p| p >= first && p <= end).collect();
+        if inside.len() < 2 {
+            continue;
+        }
+        for w in inside.windows(2) {
+            worst = worst.max(w[1].duration_since(w[0]));
+        }
+        rates.push((inside.len() - 1) as f64 / inside[inside.len() - 1].duration_since(first).as_secs_f64());
+    }
+    rates.sort_by(f64::total_cmp);
+    (!rates.is_empty()).then(|| (rates[rates.len() / 2], worst))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,6 +357,19 @@ mod tests {
         assert_eq!(pending.len(), 1);
         let got = match_keys(&mut pending, &mut last, &[Frame::Present { end: ms(t, 9) }]);
         assert_eq!(got, vec![('a', Duration::from_millis(4))]);
+    }
+
+    #[test]
+    fn animation_windows_start_at_the_first_frame_after_the_event() {
+        let t = Instant::now();
+        // An event at 100 ms; frames every 10 ms from 110 to 300, with one 30 ms gap; another before it.
+        let mut presents = vec![ms(t, 50)];
+        presents.extend((110..=200).step_by(10).map(|n| ms(t, n)));
+        presents.extend((230..=300).step_by(10).map(|n| ms(t, n)));
+        let (fps, worst) = anim_stats(&presents, &[ms(t, 100)], Duration::from_millis(180)).unwrap();
+        assert_eq!(worst, Duration::from_millis(30));
+        assert!((fps - 90.0).abs() < 1.0, "{fps}");
+        assert!(anim_stats(&presents, &[ms(t, 400)], Duration::from_millis(180)).is_none());
     }
 
     #[test]

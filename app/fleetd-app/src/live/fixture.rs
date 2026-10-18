@@ -11,11 +11,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::app::AppServerMessage;
 use fleetd_contracts::ids::Timestamp;
+use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::live::{Activity, ActivityNow, AgentLane, LaneStatus, LiveFrame, LiveLane, OrderPhase, SPARK_BUCKETS, Spark, Tokens};
 use fleetd_contracts::mcp::{OrderGetOutput, OrdersBoardOutput};
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::train::ChangeState;
-use gpui::{App, AppContext, Context, Entity, IntoElement, Render, SharedString, Window, WindowOptions, div, prelude::*, px};
+use gpui::{
+    App, AppContext, Context, Entity, IntoElement, ListAlignment, ListState, Render, SharedString, Window, WindowOptions, div, list, prelude::*, px,
+};
 use serde_json::Value;
 
 use super::chips::{phase_chip, pr_chip};
@@ -34,6 +37,7 @@ macro_rules! fixture {
 }
 
 pub const FULL: &str = fixture!("app_server_live_full.json");
+#[cfg(test)]
 pub const DELTA: &str = fixture!("app_server_live_delta.json");
 const BOARD: &str = fixture!("orders_board.output.json");
 const ORDER: &str = fixture!("order_get.output.json");
@@ -132,6 +136,8 @@ pub struct Feed {
 pub struct Step {
     pub frame: LiveFrame,
     pub boards_changed: bool,
+    /// A sparkline bucket closed: every lane's bars shift.
+    pub rolled: bool,
 }
 
 impl Feed {
@@ -341,7 +347,7 @@ impl Feed {
                 b.at = Timestamp::from(fmt_iso(now_ms));
             }
         }
-        Step { frame, boards_changed }
+        Step { frame, boards_changed, rolled: roll }
     }
 
     /// Marks one working lane done on its board and starts a new lane in the same order.
@@ -465,14 +471,25 @@ fn local_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
 }
 
-/// The bench board: the fixture's orders, grouped by project, each with its lanes, then the two strips.
+#[derive(Clone)]
+enum Item {
+    Project(ProjectKey),
+    Card(WorkstreamId),
+}
+
+/// The bench board: the fixture's orders, grouped by project, each with its lanes, then the two strips. A
+/// virtualized `list`, as a board must be: gpui lays out and paints every glyph it is given, on screen or not.
 struct BenchBoard {
     feed: Feed,
     state: LiveState,
-    lanes: Vec<(fleetd_contracts::ledger::WorkstreamId, Entity<FleetLanes>)>,
+    lanes: Vec<(WorkstreamId, Entity<FleetLanes>)>,
     train: Entity<TrainStrip>,
+    items: Vec<Item>,
+    list: ListState,
     feeding: bool,
     probe: Option<Probe>,
+    /// When the feed closed a sparkline bucket: the bench's animation windows.
+    rolls: Vec<Instant>,
     /// `FLEETD_LIVE=order`: W14's lanes at order-view density instead of the board, from its `order_get`.
     order: Option<(OrderGetOutput, Entity<FleetLanes>)>,
 }
@@ -480,7 +497,18 @@ struct BenchBoard {
 impl BenchBoard {
     fn new(feed: Feed, cx: &mut Context<Self>) -> Self {
         let train = cx.new(|_| TrainStrip::new());
-        let mut this = Self { feed, state: LiveState::default(), lanes: Vec::new(), train, feeding: false, probe: None, order: None };
+        let mut this = Self {
+            feed,
+            state: LiveState::default(),
+            lanes: Vec::new(),
+            train,
+            items: Vec::new(),
+            list: ListState::new(0, ListAlignment::Top, px(200.)),
+            feeding: false,
+            probe: None,
+            rolls: Vec::new(),
+            order: None,
+        };
         let now = local_ms();
         for (key, board) in this.feed.boards.clone() {
             this.state.set_board(&key, board);
@@ -522,6 +550,18 @@ impl BenchBoard {
         }
         let trains = self.state.trains().to_vec();
         self.train.update(cx, |t, cx| t.set(trains, cx));
+        let items: Vec<Item> = self
+            .feed
+            .boards
+            .iter()
+            .flat_map(|(k, _)| {
+                std::iter::once(Item::Project(k.clone())).chain(self.state.orders(k).iter().map(|o| Item::Card(o.workstream_id.clone())))
+            })
+            .collect();
+        if items.len() != self.list.item_count() {
+            self.list.reset(items.len());
+        }
+        self.items = items;
         cx.notify();
     }
 
@@ -541,14 +581,100 @@ impl BenchBoard {
             }
         }
         self.state.apply(step.frame, now);
+        if step.rolled {
+            self.rolls.push(Instant::now());
+        }
         self.sync(cx);
+    }
+
+    fn item(&mut self, ix: usize, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let t = theme(cx).clone();
+        let now = self.state.hub_now_ms(local_ms());
+        let Some(item) = self.items.get(ix).cloned() else { return div().into_any_element() };
+        let key = match &item {
+            Item::Project(k) => k.clone(),
+            Item::Card(w) => match self.feed.boards.iter().find(|(_, b)| b.orders.iter().any(|o| &o.workstream_id == w)) {
+                Some((k, _)) => k.clone(),
+                None => return div().into_any_element(),
+            },
+        };
+        let orders = self.state.orders(&key);
+        let Item::Card(w) = item else {
+            let settled: i64 = orders.iter().map(|o| o.settled.get()).sum();
+            let total: i64 = orders.iter().map(|o| o.total.get()).sum();
+            // A list item is laid out on its own: without a width it shrinks to its content.
+            return div()
+                .w_full()
+                .pt_3()
+                .h(px(metric::ROW + 12.))
+                .px_2()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(div().font_weight(STRONG).child(key.1.clone()))
+                .child(div().text_size(px(size::XS)).text_color(t.quiet).child(format!("{} orders · {settled}/{total} agents settled", orders.len())))
+                .into_any_element();
+        };
+        let Some(o) = orders.iter().find(|o| o.workstream_id == w) else { return div().into_any_element() };
+        let lanes = self.lanes.iter().find(|(id, _)| id == &o.workstream_id).map(|(_, e)| e.clone());
+        let age = parse_ms(o.created_at.as_str()).map(|c| format!("{}m", ((now - c) / 60_000).max(0))).unwrap_or_default();
+        let loud = o.needs_you.get() > 0;
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .pb_2()
+            .child(
+                div()
+                    .h(px(metric::ROW))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        div()
+                            .w(px(40.))
+                            .flex_none()
+                            .font_family(t.mono_font.clone())
+                            .text_size(px(size::SM))
+                            .text_color(t.quiet)
+                            .child(o.workstream_id.to_string()),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .when(loud, |d| d.font_weight(STRONG))
+                            .child(o.title.to_string()),
+                    )
+                    .child(phase_chip(&t, o.phase, o.phase_detail.as_deref()))
+                    .child(div().flex_1())
+                    .child(div().text_size(px(size::XS)).text_color(t.quiet).child(age)),
+            )
+            .child(div().pl(px(48.)).children(lanes))
+            .when(!o.prs.is_empty() || o.next.is_some(), |d| {
+                d.child(
+                    div()
+                        .pl(px(56.))
+                        .h(px(LINE_H))
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .text_size(px(size::XS))
+                        .text_color(t.quiet)
+                        .children(o.prs.iter().map(|p| pr_chip(&t, p)))
+                        .when_some(o.next.as_ref(), |d, n| d.child(SharedString::from(format!("next: {n}")))),
+                )
+            })
+            .into_any_element()
     }
 }
 
 impl Render for BenchBoard {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme(cx).clone();
-        let now = self.state.hub_now_ms(local_ms());
         if let Some((detail, lanes)) = &self.order {
             let o = &detail.order;
             return div()
@@ -583,72 +709,7 @@ impl Render for BenchBoard {
                 .child(self.train.clone())
                 .into_any_element();
         }
-        let groups = self.feed.boards.iter().map(|(key, _)| {
-            let orders = self.state.orders(key);
-            let cards = orders.iter().map(|o| {
-                let lanes = self.lanes.iter().find(|(w, _)| w == &o.workstream_id).map(|(_, e)| e.clone());
-                let age = parse_ms(o.created_at.as_str()).map(|c| format!("{}m", ((now - c) / 60_000).max(0))).unwrap_or_default();
-                let loud = o.needs_you.get() > 0;
-                div()
-                    .flex()
-                    .flex_col()
-                    .pb_2()
-                    .child(
-                        div()
-                            .h(px(metric::ROW))
-                            .px_2()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .child(
-                                div()
-                                    .w(px(40.))
-                                    .flex_none()
-                                    .font_family(t.mono_font.clone())
-                                    .text_size(px(size::SM))
-                                    .text_color(t.quiet)
-                                    .child(o.workstream_id.to_string()),
-                            )
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .overflow_hidden()
-                                    .text_ellipsis()
-                                    .whitespace_nowrap()
-                                    .when(loud, |d| d.font_weight(STRONG))
-                                    .child(o.title.to_string()),
-                            )
-                            .child(phase_chip(&t, o.phase, o.phase_detail.as_deref()))
-                            .child(div().flex_1())
-                            .child(div().text_size(px(size::XS)).text_color(t.quiet).child(age)),
-                    )
-                    .child(div().pl(px(48.)).children(lanes))
-                    .when(!o.prs.is_empty() || o.next.is_some(), |d| {
-                        d.child(
-                            div()
-                                .pl(px(56.))
-                                .h(px(LINE_H))
-                                .flex()
-                                .items_center()
-                                .gap_3()
-                                .text_size(px(size::XS))
-                                .text_color(t.quiet)
-                                .children(o.prs.iter().map(|p| pr_chip(&t, p)))
-                                .when_some(o.next.as_ref(), |d, n| d.child(SharedString::from(format!("next: {n}")))),
-                        )
-                    })
-            });
-            let settled: i64 = orders.iter().map(|o| o.settled.get()).sum();
-            let total: i64 = orders.iter().map(|o| o.total.get()).sum();
-            div()
-                .flex()
-                .flex_col()
-                .pt_3()
-                .child(div().h(px(metric::ROW)).px_2().flex().items_center().gap_3().child(div().font_weight(STRONG).child(key.1.clone())).child(
-                    div().text_size(px(size::XS)).text_color(t.quiet).child(format!("{} orders · {settled}/{total} agents settled", orders.len())),
-                ))
-                .children(cards)
-        });
+        let board = list(self.list.clone(), cx.processor(|this, ix, _, cx| this.item(ix, cx))).size_full();
         div()
             .size_full()
             .flex()
@@ -657,7 +718,7 @@ impl Render for BenchBoard {
             .text_color(t.text)
             .font_family(t.ui_font.clone())
             .text_size(px(size::MD))
-            .child(div().id("board").flex_1().min_h_0().overflow_y_scroll().px_4().pb_4().child(div().max_w(px(1040.)).children(groups)))
+            .child(div().flex_1().min_h_0().px_4().child(div().size_full().max_w(px(1040.)).child(board)))
             .child(machine_strip(&t, self.state.machines(), self.state.slots()))
             .child(self.train.clone())
             .into_any_element()
@@ -677,8 +738,13 @@ pub fn open_bench(options: WindowOptions, cx: &mut App) {
     cx.open_window(options, move |window, cx| {
         crate::theme::init(window, cx);
         let now = local_ms();
-        let feed = if demo { Feed::demo(now) } else { Feed::bench(now, 50, 4) };
-        let board = cx.new(|cx| BenchBoard::new(feed, cx));
+        let orders = std::env::var("FLEETD_LIVE_ORDERS").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+        let feed = if demo { Feed::demo(now) } else { Feed::bench(now, orders, 4) };
+        let board = cx.new(|cx| {
+            // Startup stages and the watchdog, as for the shell's window.
+            crate::bench::watch_window(window, cx);
+            BenchBoard::new(feed, cx)
+        });
         board.update(cx, |b, cx| {
             if view == "order" {
                 b.show_order(cx);
@@ -715,8 +781,9 @@ fn pump(cx: &mut Context<BenchBoard>) {
 }
 
 /// First present; then 3 s idle (feed off: only the elapsed tick), 5 s with the feed at its maximum rate, and 5 s
-/// paused after every hold and exit the feed started has run out. Reports presented frames/s, the worst frame
-/// interval and frame draw times (layout + paint) while live.
+/// paused after every hold and exit the feed started has run out. Reports presented frames/s, the frame rate and
+/// worst frame interval inside the sparkline shifts (every lane's bars move at once), and frame draw times
+/// (layout + paint) while live.
 fn measure(window: &mut Window, cx: &mut Context<BenchBoard>) {
     let x11 = x11_window_id(window).unwrap_or(0);
     cx.spawn_in(window, async move |this, cx| {
@@ -752,9 +819,21 @@ fn measure(window: &mut Window, cx: &mut Context<BenchBoard>) {
             out
         };
         let (idle_fps, _, _) = window_fps(cx, Duration::from_secs(3)).await;
-        this.update(cx, |b, _| b.feeding = true).ok();
-        let (live_fps, worst, mut draws) = window_fps(cx, Duration::from_secs(5)).await;
+        this.update(cx, |b, _| {
+            b.rolls.clear();
+            b.feeding = true;
+        })
+        .ok();
+        let (live_fps, _, mut draws) = window_fps(cx, Duration::from_secs(5)).await;
         this.update(cx, |b, _| b.feeding = false).ok();
+        let mut anim = None;
+        this.update(cx, |b, _| {
+            let p = b.probe.as_mut().unwrap();
+            p.poll();
+            anim = crate::bench::anim_stats(&p.presents, &b.rolls, super::motion::dur::SPARK);
+        })
+        .ok();
+        let (anim_fps, anim_worst) = anim.unwrap_or((0., Duration::ZERO));
         wait(cx, super::motion::dur::DONE_HOLD + Duration::from_millis(1500)).await;
         let (paused_fps, _, _) = window_fps(cx, Duration::from_secs(5)).await;
         draws.sort();
@@ -763,8 +842,8 @@ fn measure(window: &mut Window, cx: &mut Context<BenchBoard>) {
         let reduced = cx.update(|_, cx| cx.reduce_motion()).unwrap_or(false);
         probe(cx, &mut |p| {
             p.emit(&format!(
-                "event=live fps={live_fps:.1} worst_frame_us={} draw_p50_us={} draw_p99_us={} draw_max_us={} frames={} idle_fps={idle_fps:.2} paused_fps={paused_fps:.2} lanes={lanes} orders={orders} reduce_motion={reduced}",
-                worst.as_micros(),
+                "event=live fps={live_fps:.1} anim_fps={anim_fps:.1} anim_worst_us={} draw_p50_us={} draw_p99_us={} draw_max_us={} frames={} idle_fps={idle_fps:.2} paused_fps={paused_fps:.2} lanes={lanes} orders={orders} reduce_motion={reduced}",
+                anim_worst.as_micros(),
                 pick(0.5),
                 pick(0.99),
                 draws.last().map_or(0, |d| d.as_micros()),
