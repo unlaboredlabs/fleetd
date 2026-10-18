@@ -13,7 +13,7 @@ use tokio::time::Instant;
 
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
-use crate::node::runner::failure::LOGIN_FIX;
+use crate::node::runner::failure::login_fix;
 
 /// The scheduled probe: version drift, a login that expired, a conformance break after `claude update`.
 pub const PROBE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
@@ -39,12 +39,13 @@ impl Health {
         let mut info = probed.clone();
         if let Some(mark) = &self.auth_failed {
             info.login = LoginStatus::LoggedOut;
+            let fix = login_fix(info.proxy.is_some());
             let refused = format!(
-                "claude refused fleetd's login: {}. Fix: {LOGIN_FIX}",
+                "claude refused its login: {}. Fix: {fix}",
                 mark.message.trim_end_matches('.')
             );
             info.problem = Some(match info.problem.take() {
-                Some(other) if !other.contains(LOGIN_FIX) => format!("{refused} {other}"),
+                Some(other) if !other.contains(fix) => format!("{refused} {other}"),
                 _ => refused,
             });
         }
@@ -111,6 +112,10 @@ mod tests {
             login_kind: Some("subscription".into()),
             conformance_ok: Some(true),
             problem: None,
+            login_label: None,
+            proxy: None,
+            proxy_source: None,
+            config_dir: None,
         }
     }
 
@@ -168,8 +173,9 @@ mod tests {
         assert_eq!(
             shown.problem,
             Some(format!(
-                "claude refused fleetd's login: Failed to authenticate. API Error: 401 OAuth token has expired. \
-                 Fix: {LOGIN_FIX}"
+                "claude refused its login: Failed to authenticate. API Error: 401 OAuth token has expired. \
+                 Fix: {}",
+                login_fix(false)
             ))
         );
         // Logged out is unusable and the last probe is older than RECHECK_AFTER: probed again now.

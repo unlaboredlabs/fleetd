@@ -731,6 +731,10 @@ mod tests {
             login_kind: Some("subscription".into()),
             conformance_ok: conformance,
             problem: None,
+            login_label: None,
+            proxy: None,
+            proxy_source: None,
+            config_dir: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)
