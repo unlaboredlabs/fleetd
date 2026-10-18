@@ -84,9 +84,13 @@ const LEAD_COMMANDS: &[&str] = &[
     "inventory",
 ];
 
+/// `status` is a lead call only as `status set`; any other `fleetd status` is the human's progress view.
 pub fn is_lead_command(argv: &[String]) -> bool {
-    argv.first()
-        .is_some_and(|command| LEAD_COMMANDS.contains(&command.as_str()))
+    match argv.first().map(String::as_str) {
+        Some("status") => argv.get(1).map(String::as_str) == Some("set"),
+        Some(command) => LEAD_COMMANDS.contains(&command),
+        None => false,
+    }
 }
 
 fn usage(message: &str) -> CliResult {
