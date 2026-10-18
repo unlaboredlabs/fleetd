@@ -23,7 +23,7 @@ FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts
 
 It stands up a hub and a node on that lab slot, has a haiku lead file three numbered asks (three tiny turns), runs the
 desktop app under a private Xvfb at the page's image size, shoots the inbox, types the reply, shoots the inbox again
-and then the lead's view (it publishes the shots `home.html` shows); then it runs the `fleetd init --yes --no-service`
+(it publishes the shots `home.html` shows); then it runs the `fleetd init --yes --no-service`
 wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME that has the lab's claude and gh logins, and
 reads the merge train from the newest lab m7 run, if there is one: the whole path of its first two merged changes and
 the first of each refusal, freeze, red CI and conflict, at most 16 lines. This machine's tailnet name and addresses
@@ -31,6 +31,12 @@ become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login `demo`, and it
 names this machine, its home or lab paths, a non-loopback address or a key. Review the result with `git diff site/`.
 The callout positions (`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and
 ids on the page that its run didn't produce, and you re-aim the callouts if the app's layout moved.
+
+`fleet-board.png`, the board at the top of the page, is a still of the app during the lab's demo order
+(`FLEETD_DEMO_ORDER=app npm --prefix tests/lab run lab -- demo`, the app at 1400x900@2x in the light theme, pointed
+at the lab hub with `FLEETD_HUB_URL` and `FLEETD_AGENT_KEY` from `RUN/demo/app.json`), taken while all nine checkers
+work. The app shots in the docs (`site/docs/img/`) are the app's fixture screens at the same size
+(`FLEETD_BENCH=idle FLEETD_SCREEN=status`, `time`, `order+steer`, `board+add-cloning`).
 
 ## Docs (fleetd.sh/docs)
 

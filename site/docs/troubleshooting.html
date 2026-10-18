@@ -68,7 +68,7 @@ a hub check <code>hub/&lt;name&gt;</code> is <code>#hub-&lt;name&gt;</code>, a m
 <p>✗ is a failure; ! is a warning or a check that couldn't tell.</p>
 <h2 id="no-hub">The hub doesn't answer<a class="anchor" href="#no-hub" aria-label="Link to this section">#</a></h2>
 <pre class="code console" data-copy data-capture="doctor-no-hub"><code><span class="c">$ fleetd doctor</span>
-<span class="o">✗ doctor: the hub does not answer at 127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)
+<span class="o">✗  doctor the hub does not answer at http://127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)
 [exit 4]</span></code></pre>
 <p>Run <code>fleetd init</code>. If you run the hub yourself (<code>--no-service</code>), start it with <code>fleetd hub start</code>. The log is
 <code>~/.fleetd/hub/hub.log</code>.</p>

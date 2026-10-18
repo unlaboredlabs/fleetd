@@ -64,12 +64,11 @@ until the machine is online. It prints every remote command before it runs it. <
 <pre class="code console" data-copy data-capture="machine-add"><code><span class="c">$ fleetd machine add builder-1 --dry-run</span>
 <span class="o">dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
 [probe] read the machine's state (read-only)
-[1/6] create fleetd's directories
-[2/6] install fleetd 0.0.0
-[3/6] create fleetd's Claude login file (empty, 0600)
-[4/6] write the node service
-[5/6] enroll the node with a one-time token (sent on stdin)
-[6/6] (re)start the node
+[1/5] create fleetd's directories
+[2/5] install fleetd 0.0.0
+[3/5] write the node service
+[4/5] enroll the node with a one-time token (sent on stdin)
+[5/5] (re)start the node
 [hub] wait until builder-1 is online
 [exit 0]</span></code></pre>
 <p>It is safe to run again: a real run reads the machine's state first and skips what is done.</p>
