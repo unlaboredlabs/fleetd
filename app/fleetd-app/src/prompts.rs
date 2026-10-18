@@ -10,11 +10,14 @@ use std::time::Duration;
 
 use fleetd_contracts::app::AppClientMessage;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
+use fleetd_contracts::mcp::{
+    PromptGetInput, PromptGetOutput, PromptResetInput, PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput, SessionPromptGetInput,
+    SessionPromptGetOutput,
+};
 use fleetd_contracts::prompts::{
     Enforcement, PromptDetail, PromptGroup, PromptId, PromptRef, PromptScope, PromptSummary, PromptWarning, PromptWarningCode, SessionPrompt,
 };
 use gpui::{AnyElement, Context, Div, Entity, Focusable, SharedString, Stateful, Subscription, Task, anchored, deferred, div, prelude::*, px};
-use serde::{Deserialize, Serialize};
 
 use crate::client::Incoming;
 use crate::diffview::DiffView;
@@ -28,80 +31,6 @@ use crate::ui::{self, Variant};
 pub const INSTRUCTIONS: &str = "instructions";
 /// The dry run waits for a pause in typing this long (spec 2h).
 const CHECK_AFTER: Duration = Duration::from_millis(300);
-
-// ---- wire: the hub's prompt tools (spec 2f) ----------------------------------------------------
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PromptsListInput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_ref: Option<ProjectRef>,
-}
-
-/// The spec's `PromptSummary[]`. An MCP tool's structured output has to be an object, so `{ "prompts": [...] }` is
-/// read as well.
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum PromptsListOutput {
-    Bare(Vec<PromptSummary>),
-    Wrapped { prompts: Vec<PromptSummary> },
-}
-
-impl PromptsListOutput {
-    fn into_vec(self) -> Vec<PromptSummary> {
-        match self {
-            Self::Bare(v) | Self::Wrapped { prompts: v } => v,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PromptGetInput {
-    pub id: PromptId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_ref: Option<ProjectRef>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PromptSetInput {
-    pub id: PromptId,
-    pub scope: PromptScope,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_ref: Option<ProjectRef>,
-    pub text: String,
-    /// The default the text was edited from, so the hub can tell when a later release changes it.
-    pub base: PromptRef,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dry_run: Option<bool>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct PromptSetOutput {
-    pub r#ref: PromptRef,
-    #[serde(default)]
-    pub warnings: Vec<PromptWarning>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PromptResetInput {
-    pub id: PromptId,
-    pub scope: PromptScope,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_ref: Option<ProjectRef>,
-}
-
-/// `{effective}`; the app refetches the prompt instead of reading it.
-pub type PromptResetOutput = serde_json::Value;
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionPromptGetInput {
-    pub machine_id: MachineId,
-    pub thread_id: ThreadId,
-}
 
 // ---- state ------------------------------------------------------------------------------------
 
@@ -322,8 +251,14 @@ impl State {
             },
             _ => None,
         };
-        let input =
-            PromptSetInput { id: detail.id.clone(), scope, project_ref, text: text.to_string(), base: detail.default.r#ref.clone(), dry_run: None };
+        let input = PromptSetInput {
+            id: detail.id.clone(),
+            scope,
+            project_ref,
+            text: text.to_string(),
+            base: Some(detail.default.r#ref.clone()),
+            dry_run: None,
+        };
         self.prompts.instructions_busy = Some(scope);
         self.prompts.instructions_echo = None;
         vec![self.call(Purpose::Prompt(Call::InstructionsSave(scope)), &input)]
@@ -363,9 +298,9 @@ impl State {
     pub(crate) fn on_prompt_result(&mut self, call: &Call, output: serde_json::Value) -> Out {
         let p = &mut self.prompts;
         match call {
-            Call::List(seq) if *seq == p.want_list => p.list = Load::from(parse::<PromptsListOutput>(output).map(PromptsListOutput::into_vec)),
+            Call::List(seq) if *seq == p.want_list => p.list = Load::from(parse::<PromptsListOutput>(output).map(|o| o.prompts)),
             Call::Get(seq) if *seq == p.want_detail => {
-                let detail = Load::from(parse::<PromptDetail>(output));
+                let detail = Load::from(parse::<PromptGetOutput>(output).map(|o| o.prompt));
                 if let Load::Ready(d) = &detail {
                     p.checked = Some((d.effective.text.clone(), d.warnings.clone()));
                 }
@@ -395,10 +330,10 @@ impl State {
             }
             Call::Told(thread) => {
                 if let Some(told) = p.told.as_mut().filter(|t| &t.thread == thread) {
-                    told.prompt = Load::from(parse::<SessionPrompt>(output));
+                    told.prompt = Load::from(parse::<SessionPromptGetOutput>(output).map(|o| o.session));
                 }
             }
-            Call::Instructions(seq) if *seq == p.want_instructions => p.instructions = Load::from(parse::<PromptDetail>(output)),
+            Call::Instructions(seq) if *seq == p.want_instructions => p.instructions = Load::from(parse::<PromptGetOutput>(output).map(|o| o.prompt)),
             Call::InstructionsSave(scope) => {
                 p.instructions_busy = None;
                 let whose = match (scope, &p.instructions_for) {
@@ -480,7 +415,7 @@ impl State {
             scope,
             project_ref: (scope == PromptScope::Project).then(|| self.prompts.project.as_ref().map(project_ref)).flatten(),
             text: text.to_string(),
-            base: detail.default.r#ref.clone(),
+            base: Some(detail.default.r#ref.clone()),
             dry_run,
         })
     }
@@ -1429,8 +1364,9 @@ mod tests {
         let out = r.state.prompt_select(PromptId::unchecked("router"));
         r.run(out);
         r.sent.clear();
-        // What `prompt.changed` and `prompt.default_changed` do (the reducer routes every `prompt.*` event here).
-        let out = r.state.on_prompt_event();
+        let event = serde_json::json!({ "seq": 9, "type": "prompt.changed", "at": "2026-10-18T10:00:00.000Z", "summary": "lead.start saved",
+            "data": { "id": "router", "scope": "global" } });
+        let out = r.state.apply(Incoming::Message(fleetd_contracts::app::AppServerMessage::Event(serde_json::from_value(event).unwrap())));
         r.run(out);
         assert_eq!(r.tools(), ["prompts_list", "prompt_get"]);
     }

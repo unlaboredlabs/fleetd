@@ -696,9 +696,10 @@ impl PromptHub {
                     Some("project") => p.projects.retain(|(k, _)| Some(k) != project.as_ref()),
                     _ => p.global = None,
                 }
-                json!({ "effective": p.effective(project.as_ref()).0 })
+                let (text, scope) = p.effective(project.as_ref());
+                json!({ "effective": p.version(&text), "scope": scope })
             }),
-            "session_prompt_get" => Ok(serde_json::to_value(self.session(&str_at(input, "machineId"), &str_at(input, "threadId"))).unwrap()),
+            "session_prompt_get" => Ok(json!({ "session": self.session(&str_at(input, "machineId"), &str_at(input, "threadId")) })),
             _ => return None,
         };
         Some(match output {

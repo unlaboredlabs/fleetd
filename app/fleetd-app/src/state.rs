@@ -30,10 +30,10 @@ use serde::de::DeserializeOwned;
 use crate::client::Incoming;
 use crate::live::state::LiveState;
 use crate::notify::{Notification, Notifier, Policy};
-use crate::prompts::{
-    PromptGetInput, PromptResetInput, PromptResetOutput, PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput, SessionPromptGetInput,
+use fleetd_contracts::mcp::{
+    PromptGetInput, PromptGetOutput, PromptResetInput, PromptResetOutput, PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput,
+    SessionPromptGetInput, SessionPromptGetOutput,
 };
-use fleetd_contracts::prompts::{PromptDetail, SessionPrompt};
 
 /// A tool the app calls: its input type, wire name and output type.
 pub(crate) trait Tool: Serialize {
@@ -68,10 +68,10 @@ tools! {
     AttachmentPutInput => AttachmentPutOutput, "attachment_put";
     ProjectFilesInput => ProjectFilesOutput, "project_files";
     PromptsListInput => PromptsListOutput, "prompts_list";
-    PromptGetInput => PromptDetail, "prompt_get";
+    PromptGetInput => PromptGetOutput, "prompt_get";
     PromptSetInput => PromptSetOutput, "prompt_set";
     PromptResetInput => PromptResetOutput, "prompt_reset";
-    SessionPromptGetInput => SessionPrompt, "session_prompt_get";
+    SessionPromptGetInput => SessionPromptGetOutput, "session_prompt_get";
 }
 
 /// (machineId, projectId)
@@ -934,7 +934,7 @@ impl State {
         // A fetch sent just now for this event can say whether its ask was answered; one already in flight can't.
         self.notifier.push(event, asks_before);
         out.extend(self.on_order_event(event));
-        if kind.starts_with("prompt.") {
+        if matches!(event.r#type, HubEventType::PromptChanged | HubEventType::PromptDefaultChanged) {
             out.extend(self.on_prompt_event());
         }
         let project_scoped = ["workstream.", "lead.", "thread."].iter().any(|p| kind.starts_with(p));
