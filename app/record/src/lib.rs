@@ -55,6 +55,9 @@ pub fn start(window: u32, dir: PathBuf, fps: u32) -> std::io::Result<()> {
         libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
     }
     std::thread::Builder::new().name("fleetd-record".into()).spawn(move || {
+        // A default-QoS thread's sleeps overshot by ~40 ms on a CI Mac (timer coalescing), halving the frame rate.
+        // SAFETY: sets this thread's own QoS class.
+        unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0) };
         let signalled = run(window, &dir, fps);
         DONE.store(true, Ordering::SeqCst);
         // A signal ends the process once the file is whole; a quit is already on its way out.
