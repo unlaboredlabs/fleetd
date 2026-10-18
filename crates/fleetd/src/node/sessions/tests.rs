@@ -699,3 +699,40 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
     assert_eq!(spawned.len(), 1);
     assert!(spawned[0].resume);
 }
+
+#[tokio::test]
+async fn a_project_with_a_live_process_is_not_removed_even_when_idle() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    assert_eq!(hub.settled("r1").await.status, SessionStatus::Idle);
+
+    let remove = || SessionCall::ProjectRemove {
+        project_id: ProjectId::unchecked("p1"),
+    };
+    let SessionResult::Err(refused) = hub.call(remove()).await else {
+        panic!("removed a project whose claude is still running")
+    };
+    assert_eq!(refused.code, SessionErrorCode::Invalid);
+    assert!(refused.message.contains("s1"), "{}", refused.message);
+
+    hub.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    })
+    .await;
+    assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
+}

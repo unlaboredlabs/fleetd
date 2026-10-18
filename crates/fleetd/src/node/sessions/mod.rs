@@ -542,6 +542,25 @@ impl SessionService {
             } => self.project_upsert(project_id, title.to_string(), workspace_root.to_string()),
             SessionCall::ProjectRemove { project_id } => {
                 let st = self.st();
+                // An idle process the hub sees as not running still has the project as its cwd.
+                let mut live: Vec<&str> = st
+                    .live
+                    .keys()
+                    .filter(|id| {
+                        self.store()
+                            .session(id)
+                            .is_ok_and(|r| r.is_some_and(|r| r.summary.project_id == project_id))
+                    })
+                    .map(String::as_str)
+                    .collect();
+                if !live.is_empty() {
+                    live.sort_unstable();
+                    return Err(invalid(format!(
+                        "project {project_id} still has a live claude process in session(s) {}: wait for the idle \
+                         reap or stop them, then remove the project",
+                        live.join(", ")
+                    )));
+                }
                 let frame = self
                     .store()
                     .remove_project(&project_id)?
