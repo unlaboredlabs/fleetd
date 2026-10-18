@@ -40,6 +40,8 @@ pub struct WorkstreamFacts {
     pub passed: HashSet<usize>,
     /// `etaText` of the calibrated estimate.
     pub eta: Option<String>,
+    /// "plan: 5/8 items, 62%" when the order has plan items.
+    pub plan: Option<String>,
 }
 
 pub struct DigestInput<'a> {
@@ -228,8 +230,12 @@ fn workstream_lines(
         .and_then(|f| f.eta.as_ref())
         .map(|e| format!("\n  {e}"))
         .unwrap_or_default();
+    let plan = facts
+        .and_then(|f| f.plan.as_ref())
+        .map(|p| format!("\n  {p}"))
+        .unwrap_or_default();
     format!(
-        "{head}{status}\n  done when: {}{eta}",
+        "{head}{status}\n  done when: {}{eta}{plan}",
         done_when_text(&brief.done_when, facts.map(|f| &f.passed), 120)
     )
 }

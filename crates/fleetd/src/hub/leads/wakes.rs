@@ -453,7 +453,25 @@ impl LeadWakes {
                 .estimates
                 .get()
                 .and_then(|e| e.eta(w).map(|eta| e.eta_text(&eta)));
-            facts.insert(w.workstream_id.clone(), WorkstreamFacts { passed, eta });
+            let plan = self
+                .ctx
+                .db
+                .with(|c| {
+                    Ok(crate::hub::plan::store::items_of_workstream(
+                        c,
+                        w.workstream_id.as_str(),
+                    )?)
+                })
+                .ok()
+                .filter(|items| !items.is_empty())
+                .map(|items| {
+                    let f = crate::hub::plan::figure_of(&items);
+                    format!("plan: {}/{} items, {}%", f.must_done, f.must_total, f.pct())
+                });
+            facts.insert(
+                w.workstream_id.clone(),
+                WorkstreamFacts { passed, eta, plan },
+            );
         }
         facts
     }
