@@ -46,6 +46,10 @@ fn main() {
         // One window: closing it quits, on macOS too, rather than leaving a windowless app in the Dock.
         .with_quit_mode(QuitMode::LastWindowClosed);
     let links = pair::listen(&app);
+    if bench.is_some() {
+        // Splits the time before `app_launched` into gpui's platform setup and AppKit's own launch.
+        bench::stage("platform_ready", "");
+    }
     // On macOS this closure runs inside applicationDidFinishLaunching, which can't unwind.
     app.run(move |cx: &mut App| crash::guard("startup", || launch(bench, links, cx)));
 }

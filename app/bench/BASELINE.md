@@ -206,9 +206,35 @@ sg video -c "sg render -c 'FLEETD_VK_ICD=$HOME/src/fleetd-lab/sysroot/usr/share/
 Not tried: whether RADV can present to Xvfb, which has no DRI3. If it can't, run the same command against
 a real or nested X server.
 
-## macOS
+## macOS (Adri's MacBook Air): nightly, quick block
 
-Pending: run [MAC-RUN.md](MAC-RUN.md).
+**MacBook Air M4 (Mac16,12)**, macOS 27.2, Metal (runtime shaders), on an **external 1920x1080 display at scale 1
+(not Retina), about 120 Hz**. Nightly 0.0.0-nightly.20261018.8305f18, the quick block from
+[MAC-RUN.md](MAC-RUN.md) (no driver, no binary size). Battery or mains: not reported.
+
+The app was started from a background shell, so its window was never key: every run reports `active=false`.
+Bench mode lifts gpui's 30 fps cap for unfocused windows, so this doesn't hold frames back, but a window a
+person clicked into could differ.
+
+| Metric | Value |
+|---|---|
+| Idle RSS, empty log, 10 s after first frame | pending: rerun after fix (idle with streaming off never reported a present) |
+| Idle RSS, 20k-line log loaded, 10 s after first frame | pending: rerun after fix |
+| RSS, 20k-line log + streaming 50 lines/s, after 10 s | 104.5 MiB |
+| Cold start, exec -> first frame presented, warm cache (10 runs) | median 181.8 ms, p90 182.8 ms, max 197.7 ms |
+| Input latency in-app, key handler -> echo frame presented (200 keys, gpui dispatch) | median 3.6 ms, p90 7.7 ms, max 17.6 ms |
+| Scroll 20k-line log for 5 s: presented frames/s | 119.9 |
+| Scroll 20k-line log for 5 s: worst frame interval | 13.4 ms |
+
+Startup stages of one diagnostic cold run, ms from `main`: `app_launched` 111, `window_created` 155,
+`first_draw` 187, `first_present` 244 (another run: 212), 3 frames drawn up to the first counted present.
+
+What shapes these numbers:
+- **Cold start** includes a few ms of shell overhead (the quick block times from zsh, not the driver), and runs
+  about 110 ms longer than on forge. Most of the gap is before `app_launched`, which is gpui's platform setup
+  and AppKit's own launch; the app's own work there is a panic hook and one defaults write.
+- **Input latency and scroll** follow the 120 Hz display: a key waits about half a frame (4 ms) for its draw.
+- The full driver table, with a built-in Retina display, is still pending.
 
 ## Method
 
@@ -218,8 +244,10 @@ Pending: run [MAC-RUN.md](MAC-RUN.md).
   its present (`present_end` = the platform's present call returned). The app maps those to wall-clock
   time and the driver compares against its own clock taken just before `spawn`.
 - **Cold start** = driver's spawn to the end of the first present that gpui counts for a visible
-  window. gpui drops the very first frame's present, because that frame is drawn before the window
-  maps; the cold-start figure therefore is the second drawn frame, which is the first the user sees.
+  window. gpui drops the present of any frame drawn before the window became visible (the first frame
+  is drawn before the window maps), so the figure is the first frame drawn after that, which is the
+  first the user sees. In bench mode the app redraws once when the window becomes visible, because
+  macOS, unlike X11, doesn't ask for a redraw then.
   "Warm cache" follows one discarded run. "Evicted" calls `posix_fadvise(DONTNEED)` on the binary and
   every file it had mapped, before each run. Pages other processes are using (e.g. libc) stay resident,
   so this is "cold for our files", not "after a reboot". A true cold cache needs root
