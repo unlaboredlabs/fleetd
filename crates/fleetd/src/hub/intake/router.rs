@@ -19,11 +19,13 @@ pub const DEFAULT_ROUTER_MODEL: &str = "claude-haiku-5-5";
 const RUN_TIMEOUT: Duration = Duration::from_secs(90);
 const MAX_STDOUT: usize = 1 << 20;
 
-/// Copied from the hub's environment into the run: what lets `claude` reach the user's login or proxy.
-pub const LOGIN_ENV: [&str; 3] = [
+/// Copied from the hub's environment into the run: what lets `claude` reach the user's login or proxy. The same
+/// variables `fleetd init` checks the hub's claude with from `claude.env`, so a login that passes there works here.
+pub const LOGIN_ENV: [&str; 4] = [
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
 ];
 const BASE_ENV: [&str; 4] = ["HOME", "PATH", "USER", "LANG"];
 
