@@ -8,9 +8,9 @@
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>[ -f '/home/a b/.fleetd/t3.env' ] &amp;&amp; set -a &amp;&amp; . '/home/a b/.fleetd/t3.env' &amp;&amp; set +a; exec "$@"</string>
+    <string>[ -f '/home/a b/.fleetd/hub.env' ] &amp;&amp; set -a &amp;&amp; . '/home/a b/.fleetd/hub.env' &amp;&amp; set +a; exec "$@"</string>
     <string>sh</string>
-    <string>/home/a b/.local/share/fleetd/bin/fleetd</string>
+    <string>/home/a b/.fleetd/bin/fleetd</string>
     <string>node</string>
     <string>run</string>
     <string>--home</string>

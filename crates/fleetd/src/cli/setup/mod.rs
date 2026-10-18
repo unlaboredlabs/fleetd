@@ -1,6 +1,7 @@
 //! Setup: `fleetd init` and `fleetd uninstall` on the hub machine, `fleetd machine add|remove` for workers.
 
 mod checklist;
+pub mod claude_check;
 pub mod detect;
 pub mod doctor;
 pub mod machine;
@@ -8,7 +9,6 @@ pub mod machine_plan;
 pub mod ordered_json;
 pub mod ssh;
 pub mod state;
-pub mod t3_settings;
 pub mod units;
 mod wizard;
 
@@ -26,9 +26,6 @@ use units::{
     Dirs, Platform, Role, ServiceManager, ServiceSpec, render_unit, unit_path, unit_suffix,
 };
 
-/// The npm `t3` release built from the pinned T3 commit (vendor/t3/pin.json): what `machine add` installs.
-pub const T3_NPM_VERSION: &str = env!("FLEETD_T3_NPM_VERSION");
-
 /// Where `hub start` listens unless told otherwise (the hub's own default).
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:4790";
 
@@ -43,6 +40,9 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              hub (default http://<listen>); --git-identity is the commit author for every
              machine (the GitHub noreply address for public repos); --no-service prepares
              everything but leaves starting the hub to you
+  init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"]
+             make this machine a worker of that hub, without SSH from the hub: the command
+             fleetd pair --worker prints on the hub
   doctor [--fix] [--home <dir>]
              run every setup check on the hub now and print each problem with its fix;
              --fix also applies the fixes the hub can make by itself
@@ -312,6 +312,9 @@ pub struct InitOptions {
     pub suffix: String,
     pub with_service: bool,
     pub yes: bool,
+    /// `--join <hub url> --code <code>`: this machine becomes a worker of that hub (`fleetd pair --worker`).
+    pub join: Option<(String, String)>,
+    pub machine_id: Option<String>,
 }
 
 /// Everything `install_hub` writes and starts.
@@ -545,6 +548,9 @@ const INIT_OPTIONS: &[(&str, Kind)] = &[
     ("no-service", Kind::Bool),
     ("unit-suffix", Kind::Str),
     ("yes", Kind::Bool),
+    ("join", Kind::Str),
+    ("code", Kind::Str),
+    ("machine-id", Kind::Str),
 ];
 
 fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
@@ -591,7 +597,18 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
             ))
         })?,
     };
+    let join = match (v.string("join"), v.string("code")) {
+        (Some(hub), Some(code)) => Some((hub, code)),
+        (None, None) => None,
+        _ => {
+            return Err(usage(
+                "--join and --code go together: both are in what fleetd pair --worker prints",
+            ));
+        }
+    };
     Ok(InitOptions {
+        join,
+        machine_id: v.string("machine-id"),
         home,
         previous,
         listen: v.string("listen"),
@@ -659,7 +676,7 @@ async fn init_command(argv: &[String]) -> u8 {
         Err(code) => return code,
     };
     let terminal = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
-    if opts.yes || terminal {
+    if opts.yes || terminal || opts.join.is_some() {
         let interactive = terminal && !opts.yes;
         wizard::run(opts, interactive).await
     } else {

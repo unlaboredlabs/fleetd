@@ -3,20 +3,18 @@
 //! finds what exists, keeps what works and repairs the rest; it never deletes data or makes a second key or unit.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, MultiSelect, Select};
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::ids::MachineId;
-use serde_json::{Value, json};
 
 use super::checklist::Checklist;
 use super::detect::{self, Tailnet};
 use super::machine::{self, Added, local_host_name, machine_id_from_host};
-use super::machine_plan::{DEFAULT_T3_PORT, machine_layout};
+use super::machine_plan::{login_command, login_status_command};
 use super::ssh::{run_attached, run_local, run_ssh};
-use super::state::{GitIdentity, MachineRecord, is_noreply, parse_git_identity, read_setup};
+use super::state::{GitIdentity, is_noreply, parse_git_identity, read_setup};
 use super::units::q;
 use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen, say};
 use crate::cli::hub_key::open_hub;
@@ -190,13 +188,14 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
         "fleetd init: sets up fleetd on this machine, step by step. Enter takes the default."
     });
 
-    if previous.is_none()
-        && !ui.confirm(
-            "Is this machine the hub (the always-on machine that runs your fleet)?",
-            true,
-        )?
+    if opts.join.is_some()
+        || previous.is_none()
+            && !ui.confirm(
+                "Is this machine the hub (the always-on machine that runs your fleet)?",
+                true,
+            )?
     {
-        return Ok(worker_only(&mut list).await);
+        return join_hub(opts, ui, &mut list).await;
     }
 
     // Reachability.
@@ -239,7 +238,7 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
 
     if hub_up {
         let local = workers(opts, ui, &mut list, net.as_ref()).await?;
-        first_project(opts, ui, &mut list, local.as_ref(), gh_ok).await?;
+        first_project(opts, ui, &mut list, local.as_deref(), gh_ok).await?;
     } else {
         list.skipped(
             "workers, first project and doctor",
@@ -254,59 +253,67 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
     Ok(u8::from(list.failures().next().is_some()))
 }
 
-/// Not the hub: workers are set up from the hub over SSH, so check what that needs here and say what to run there.
-async fn worker_only(list: &mut Checklist) -> u8 {
-    let net = tailnet().await;
-    let host = net
-        .as_ref()
-        .and_then(|n| n.dns_name.clone())
-        .unwrap_or_else(local_host_name);
-    let user = std::env::var("USER").unwrap_or_else(|_| "you".into());
-    let ssh = tokio::time::timeout(
-        Duration::from_secs(2),
-        tokio::net::TcpStream::connect("127.0.0.1:22"),
+/// Not the hub: join one as a worker with the one-time code `fleetd pair --worker` printed there.
+async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, Stopped> {
+    let (hub, code) = match &opts.join {
+        Some(join) => join.clone(),
+        None => {
+            say(
+                "On the hub, run `fleetd pair --worker <name for this machine>`; it prints the address and a code.",
+            );
+            (ui.input("Hub address", "")?, ui.input("One-time code", "")?)
+        }
+    };
+    let machine_id = match &opts.machine_id {
+        Some(id) => id.clone(),
+        None if opts.join.is_some() => machine_id_from_host(&local_host_name()),
+        None => ui.input(
+            "This machine's name on the hub (as given to fleetd pair --worker)",
+            &machine_id_from_host(&local_host_name()),
+        )?,
+    };
+    if hub.trim().is_empty() || code.trim().is_empty() {
+        list.failed(
+            "join",
+            "needs the hub's address and a one-time code",
+            "on the hub, run fleetd pair --worker <name>, then run the command it prints here",
+        );
+        return Ok(1);
+    }
+    let title = format!("worker {machine_id}");
+    list.start(&title);
+    match machine::join(
+        hub.trim(),
+        code.trim(),
+        Some(machine_id),
+        opts.identity.clone(),
     )
     .await
-    .is_ok_and(|c| c.is_ok());
-    if ssh {
-        list.done("ssh", "this machine accepts SSH");
+    {
+        Ok(added) => {
+            list.done(&title, &format!("joined {} and runs its node", hub.trim()));
+            worker_claude(ui, list, &added).await?;
+        }
+        Err(_) => list.failed(
+            &title,
+            "joining stopped (see above)",
+            "fix the cause it names, then run the same fleetd init again",
+        ),
+    }
+    let failed = list.failures().next().is_some();
+    if failed {
+        let items: Vec<String> = list.failures().map(|i| list.line(i)).collect();
+        say(&format!(
+            "\n{} step(s) need you:\n  {}",
+            items.len(),
+            items.join("\n  ")
+        ));
     } else {
-        list.failed(
-            "ssh",
-            "no SSH server answers on this machine; the hub sets workers up over SSH",
-            if cfg!(target_os = "macos") {
-                "sudo systemsetup -setremotelogin on"
-            } else {
-                "sudo apt install openssh-server"
-            },
+        say(
+            "\nThis machine is a worker now. Its agents start from orders you send in the desktop app.",
         );
     }
-    let node = run_local("node", &["--version".into()], None).await;
-    let major: u32 = node
-        .stdout
-        .trim()
-        .strip_prefix('v')
-        .and_then(|v| v.split('.').next())
-        .and_then(|m| m.parse().ok())
-        .unwrap_or(0);
-    if major >= 24 {
-        list.done("node", node.stdout.trim());
-    } else {
-        list.failed("node", "T3 needs Node 24 or newer here", &install("node"));
-    }
-    if which("claude").is_some() {
-        list.done("claude", "installed");
-    } else {
-        list.failed(
-            "claude",
-            "agents here run through Claude Code",
-            &install("claude"),
-        );
-    }
-    say(&format!(
-        "\nNext, on your hub machine, run:\n  fleetd machine add {user}@{host}\nIt sets this machine up over SSH and shows every command first."
-    ));
-    u8::from(list.failures().next().is_some())
+    Ok(u8::from(failed))
 }
 
 async fn reachability(
@@ -520,68 +527,66 @@ async fn commit_identity(
 struct Candidate {
     id: String,
     label: String,
-    argv: Vec<String>,
+    /// The ssh host, or `None` for this machine.
+    host: Option<String>,
+    ssh_config: Option<String>,
     picked: bool,
 }
 
-/// Picks the machines that run agents and runs `machine add` on each. Returns this machine's record when it is one.
+/// Picks the machines that run agents and runs `machine add` on each. Returns this machine's id when it is one.
 async fn workers(
     opts: &InitOptions,
     ui: &Ui,
     list: &mut Checklist,
     net: Option<&Tailnet>,
-) -> Result<Option<MachineRecord>, Stopped> {
+) -> Result<Option<String>, Stopped> {
     let state = read_setup(&opts.home).ok().flatten();
     let recorded = state.map(|s| s.machines).unwrap_or_default();
-    let me = machine_id_from_host(&local_host_name());
-    let mut candidates = Vec::new();
-    let local_id = recorded
-        .iter()
-        .find(|(_, r)| r.local)
-        .map_or(me.clone(), |(id, _)| id.clone());
-    candidates.push(Candidate {
+    let local_id = recorded.iter().find(|(_, r)| r.local).map_or_else(
+        || machine_id_from_host(&local_host_name()),
+        |(id, _)| id.clone(),
+    );
+    let mut candidates = vec![Candidate {
         label: format!("{local_id} (this machine)"),
-        argv: vec!["--local".into(), "--machine-id".into(), local_id.clone()],
+        host: None,
+        ssh_config: None,
         id: local_id.clone(),
         picked: recorded.is_empty() || recorded.contains_key(&local_id),
-    });
+    }];
     for (id, record) in recorded.iter().filter(|(_, r)| !r.local) {
-        let mut argv = vec![record.ssh_host.clone(), "--machine-id".into(), id.clone()];
-        if let Some(config) = &record.ssh_config {
-            argv.extend(["--ssh-config".into(), config.clone()]);
-        }
         candidates.push(Candidate {
             id: id.clone(),
             label: format!("{id} (set up from here; {})", record.ssh_host),
-            argv,
+            host: Some(record.ssh_host.clone()),
+            ssh_config: record.ssh_config.clone(),
             picked: true,
         });
     }
-    let ssh_config = home_dir().join(".ssh/config");
-    let hosts = std::fs::read_to_string(&ssh_config)
+    let hosts = std::fs::read_to_string(home_dir().join(".ssh/config"))
         .map(|text| detect::parse_ssh_hosts(&text))
         .unwrap_or_default();
-    for host in hosts {
-        let id = machine_id_from_host(&host);
+    let mut offer = |id: String, label: String, host: String| {
         if MachineId::new(id.clone()).is_ok() && !candidates.iter().any(|c| c.id == id) {
             candidates.push(Candidate {
-                label: format!("{id} (~/.ssh/config: {host})"),
-                argv: vec![host, "--machine-id".into(), id.clone()],
                 id,
+                label,
+                host: Some(host),
+                ssh_config: None,
                 picked: false,
             });
         }
+    };
+    for host in hosts {
+        let id = machine_id_from_host(&host);
+        offer(id.clone(), format!("{id} (~/.ssh/config: {host})"), host);
     }
     for peer in net.map(|n| n.peers.as_slice()).unwrap_or_default() {
         let id = machine_id_from_host(&peer.name);
-        if MachineId::new(id.clone()).is_ok() && !candidates.iter().any(|c| c.id == id) {
-            candidates.push(Candidate {
-                label: format!("{id} (on your tailnet: {})", peer.dns_name),
-                argv: vec![peer.dns_name.clone(), "--machine-id".into(), id.clone()],
-                id,
-                picked: false,
-            });
-        }
+        offer(
+            id.clone(),
+            format!("{id} (on your tailnet: {})", peer.dns_name),
+            peer.dns_name.clone(),
+        );
     }
     let labels: Vec<String> = candidates.iter().map(|c| c.label.clone()).collect();
     let picked = candidates.iter().map(|c| c.picked).collect::<Vec<_>>();
@@ -593,26 +598,40 @@ async fn workers(
     if chosen.is_empty() {
         list.skipped(
             "workers",
-            "none picked; add one later with fleetd machine add <ssh-host>",
+            "none picked; add one later with fleetd machine add <ssh-host>, or fleetd pair --worker <name> for a machine this one can't SSH to",
         );
         return Ok(None);
     }
     let home = opts.home.to_string_lossy().into_owned();
+    let mut local = None;
     for index in chosen {
         let candidate = &candidates[index];
         let title = format!("worker {}", candidate.id);
         list.start(&title);
-        let mut argv = candidate.argv.clone();
-        argv.extend(["--home".into(), home.clone()]);
-        let again = if candidate.argv[0] == "--local" {
-            "fleetd machine add --local".to_owned()
-        } else {
-            format!("fleetd machine add {}", candidate.argv[0])
+        let again = match &candidate.host {
+            None => "fleetd machine add --local".to_owned(),
+            Some(host) => format!("fleetd machine add {host}"),
         };
-        match machine::add(&argv).await {
+        let added = machine::add(machine::AddArgs {
+            host: candidate.host.clone(),
+            machine_id: Some(candidate.id.clone()),
+            tags: Vec::new(),
+            dry_run: false,
+            hub_url: None,
+            ssh_config: candidate.ssh_config.clone(),
+            home: Some(home.clone()),
+            unit_suffix: None,
+            enroll: machine::Enroll::Hub,
+            git_identity: None,
+        })
+        .await;
+        match added {
             Ok(Some(added)) => {
                 list.done(&title, "online");
                 worker_claude(ui, list, &added).await?;
+                if candidate.host.is_none() {
+                    local = Some(added.machine_id);
+                }
             }
             Ok(None) => {}
             Err(_) => list.failed(
@@ -622,48 +641,22 @@ async fn workers(
             ),
         }
     }
-    Ok(read_setup(&opts.home)
-        .ok()
-        .flatten()
-        .and_then(|s| s.machines.into_values().find(|r| r.local)))
+    Ok(local)
 }
 
-/// The fleetd Claude instance on a worker has a login of its own (its own config dir, or a token in t3.env).
+/// fleetd's Claude on a worker keeps a login of its own (its own config dir, or a token in claude.env).
 async fn worker_claude(ui: &Ui, list: &mut Checklist, added: &Added) -> Result<(), Stopped> {
     let title = format!("claude on {}", added.machine_id);
-    let Some(claude) = &added.claude else {
-        list.failed(
-            &title,
-            "Claude Code is not installed there",
-            &install("claude"),
-        );
-        return Ok(());
-    };
-    let login = format!(
-        "CLAUDE_CONFIG_DIR={} {} auth login",
-        q(&added.claude_dir),
-        q(claude)
-    );
+    let login = login_command(&added.layout, &added.claude);
     let fix = if added.target.local {
         login.clone()
     } else {
         format!("ssh -t {} {}", added.target.host, q(&login))
     };
-    let status = format!(
-        "[ -s {env} ] && echo '{{\"loggedIn\":true,\"authMethod\":\"token in t3.env\"}}' || CLAUDE_CONFIG_DIR={dir} {claude} auth status --json",
-        env = q(&added.env_file),
-        dir = q(&added.claude_dir),
-        claude = q(claude)
-    );
+    let mut logged_in = added.logged_in;
     let mut offered = false;
     loop {
-        let out = run_ssh(&added.target, &status, None).await;
-        let entry = checks::claude_login(&CmdOutcome::Ran {
-            exit_code: out.code,
-            stdout: out.stdout,
-            stderr: out.stderr,
-        });
-        if entry.check.status == DoctorStatus::Ok {
+        if logged_in {
             list.done(&title, "fleetd's Claude is logged in");
             return Ok(());
         }
@@ -674,6 +667,20 @@ async fn worker_claude(ui: &Ui, list: &mut Checklist, added: &Added) -> Result<(
         }
         offered = true;
         run_attached(&added.target, &login);
+        let out = run_ssh(
+            &added.target,
+            &login_status_command(&added.layout, &added.claude),
+            None,
+        )
+        .await;
+        logged_in = checks::claude_login(&CmdOutcome::Ran {
+            exit_code: out.code,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        })
+        .check
+        .status
+            == DoctorStatus::Ok;
     }
 }
 
@@ -681,7 +688,7 @@ async fn first_project(
     opts: &InitOptions,
     ui: &Ui,
     list: &mut Checklist,
-    local: Option<&MachineRecord>,
+    local: Option<&str>,
     gh_ok: bool,
 ) -> Result<(), Stopped> {
     let title = "first project";
@@ -701,18 +708,17 @@ async fn first_project(
         );
         return Ok(());
     }
-    let Some(local) = local else {
+    let Some(machine_id) = local else {
         list.skipped(title, "this machine runs no agents, so no project here yet");
         return Ok(());
     };
-    let Some(machine_id) = read_setup(&opts.home).ok().flatten().and_then(|s| {
-        s.machines
-            .into_iter()
-            .find(|(_, r)| r.local)
-            .map(|(id, _)| id)
-    }) else {
+    if !ui.interactive {
+        list.skipped(
+            title,
+            "--yes does not pick one; run fleetd init in a terminal to pick a repo",
+        );
         return Ok(());
-    };
+    }
     let roots: Vec<PathBuf> = detect::REPO_ROOTS
         .iter()
         .map(|r| home_dir().join(r))
@@ -729,13 +735,6 @@ async fn first_project(
     let shown = labels.len();
     labels.push("clone one from GitHub (paste its URL)".into());
     labels.push("not now".into());
-    if !ui.interactive {
-        list.skipped(
-            title,
-            "--yes does not pick one; run fleetd init in a terminal to pick a repo",
-        );
-        return Ok(());
-    }
     let picked = ui.select("Which repo should be your first project?", &labels, 0)?;
     let path = if picked < shown {
         repos[picked].path.clone()
@@ -785,115 +784,11 @@ async fn first_project(
         return Ok(());
     };
     list.start(title);
-    match register_project(&opts.home, local, &machine_id, &path).await {
+    match super::doctor::add_project(&opts.home, machine_id, &path).await {
         Ok(()) => list.done(title, &format!("{} on {machine_id}", tilde(&path))),
         Err(failure) => list.failed(title, &failure.message, &failure.fix),
     }
     Ok(())
-}
-
-/// A project is a T3 project on a worker; the hub learns it from that machine's node. So: create it in this
-/// machine's fleetd T3, then wait until the hub lists it.
-async fn register_project(
-    hub_home: &Path,
-    record: &MachineRecord,
-    machine_id: &str,
-    path: &Path,
-) -> Result<(), super::Failure> {
-    let failure = |message: String| super::Failure {
-        message,
-        fix: "fleetd machine add --local, then run fleetd init again".into(),
-    };
-    let layout = machine_layout(&record.home);
-    let issue = format!(
-        "T3CODE_HOME={home} node {bin} auth session issue --base-dir {home} --ttl 5m --label fleetd-init --token-only",
-        home = q(&layout.t3_home),
-        bin = q(&layout.t3_bin)
-    );
-    let out = run_local("/bin/sh", &["-c".into(), issue], None).await;
-    let bearer = out
-        .stdout
-        .trim()
-        .lines()
-        .last()
-        .unwrap_or("")
-        .trim()
-        .to_owned();
-    if out.code != 0 || bearer.is_empty() {
-        return Err(failure(format!(
-            "could not get a session from this machine's T3: {}",
-            out.stderr.trim()
-        )));
-    }
-    let port = if record.t3_port == 0 {
-        DEFAULT_T3_PORT
-    } else {
-        record.t3_port
-    };
-    let base = format!("http://127.0.0.1:{port}");
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| failure(e.to_string()))?;
-    let root = path.to_string_lossy().into_owned();
-    let have: Value = http
-        .get(format!("{base}/api/projects"))
-        .bearer_auth(&bearer)
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| failure(format!("this machine's T3 at {base} did not answer: {e}")))?
-        .json()
-        .await
-        .unwrap_or_default();
-    let exists = have
-        .get("projects")
-        .and_then(Value::as_array)
-        .is_some_and(|ps| {
-            ps.iter()
-                .any(|p| p.get("workspaceRoot").and_then(Value::as_str) == Some(root.as_str()))
-        });
-    if !exists {
-        let title = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| root.clone());
-        http.post(format!("{base}/api/projects/mutate"))
-            .bearer_auth(&bearer)
-            .json(&json!({
-                "type": "project.create",
-                "commandId": crate::hub::executor::new_uuid(),
-                "projectId": crate::hub::executor::new_uuid(),
-                "title": title,
-                "workspaceRoot": root,
-            }))
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|e| failure(format!("T3 refused the project: {e}")))?;
-    }
-    let machine = MachineId::new(machine_id.to_owned())
-        .map_err(|_| failure(format!("bad machine id {machine_id}")))?;
-    let hub = open_hub(hub_home).map_err(failure)?;
-    let deadline = Instant::now() + Duration::from_secs(60);
-    loop {
-        let listed = hub
-            .store
-            .projects_list(Some(&machine), None)
-            .unwrap_or_default()
-            .iter()
-            .any(|p| p.workspace_root == root);
-        if listed {
-            return Ok(());
-        }
-        if Instant::now() > deadline {
-            return Err(super::Failure {
-                message: "T3 has the project but the hub has not listed it within 60 s".into(),
-                fix: format!("fleetd doctor shows whether {machine_id}'s node is connected"),
-            });
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
 }
 
 /// How to open the desktop app here, or how to install it.

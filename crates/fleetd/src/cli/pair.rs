@@ -15,6 +15,9 @@ use crate::hub::store::HubDb;
 pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--home <dir>]
              print a one-time code (15 min) that pairs the desktop app with this hub;
              the app on this machine pairs by itself
+  pair --worker <machine-id> [--home <dir>]
+             print the one command that makes another machine a worker of this hub, with
+             a one-time code (15 min): for a machine the hub can't reach over SSH
 "#;
 
 /// A minted pairing code and everything a device needs to redeem it.
@@ -247,13 +250,27 @@ pub fn pair_command(argv: &[String]) -> CliResult {
     let v = match args::parse(
         argv,
         &Spec {
-            options: &[("home", Kind::Str), ("name", Kind::Str)],
+            options: &[
+                ("home", Kind::Str),
+                ("name", Kind::Str),
+                ("worker", Kind::Str),
+            ],
             positionals: false,
         },
     ) {
         Ok(v) => v,
         Err(message) => return usage(&message),
     };
+    if let Some(machine) = v.str("worker") {
+        return match worker_command(v.str("home"), machine) {
+            Ok(text) => CliResult {
+                code: 0,
+                stdout: text,
+                stderr: String::new(),
+            },
+            Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
+        };
+    }
     match mint(v.str("home"), v.str("name")) {
         Ok(minted) => CliResult {
             code: 0,
@@ -262,6 +279,34 @@ pub fn pair_command(argv: &[String]) -> CliResult {
         },
         Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
     }
+}
+
+/// The command a new worker runs to join: the installer, then `fleetd init --join` with a one-time enrollment code
+/// for `machine` (the node join path's own token, so nothing new crosses the wire).
+pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, String> {
+    let machine_id = fleetd_contracts::ids::MachineId::new(machine)
+        .map_err(|_| format!("'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"))?;
+    let home = super::hub_key::resolve_home(home)?;
+    let setup = super::setup::state::read_setup(&home)?;
+    let urls = local_hub_urls(&home)?;
+    let hub = super::hub_key::open_hub(&home)?;
+    let token = hub
+        .auth
+        .create_enroll_token(&machine_id)
+        .map_err(|error| error.to_string())?;
+    let identity = setup
+        .and_then(|s| s.git_identity)
+        .map(|id| {
+            format!(
+                " --git-identity {}",
+                super::setup::units::q(&format!("{} <{}>", id.name, id.email))
+            )
+        })
+        .unwrap_or_default();
+    Ok(format!(
+        "On {machine}, run:\n\n  curl -fsSL https://fleetd.sh | sh && ~/.local/bin/fleetd init --join {} --code {} --machine-id {machine}{identity}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
+        urls[0], token.token, token.expires_at
+    ))
 }
 
 fn describe(minted: &Minted) -> String {
@@ -284,7 +329,8 @@ mod tests {
 
     #[test]
     fn reads_the_listen_address_of_a_running_hub() {
-        let line = "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796 --queue-ttl 60";
+        let line =
+            "/home/u/.fleetd/bin/fleetd hub start --home /h --listen 127.0.0.1:4796 --queue-ttl 60";
         assert_eq!(listen_from_args(line).as_deref(), Some("127.0.0.1:4796"));
         assert_eq!(
             listen_from_args("fleetd hub start --listen=[::1]:4790").as_deref(),

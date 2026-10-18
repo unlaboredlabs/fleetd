@@ -28,7 +28,6 @@ pub struct MachineRecord {
     pub config_home: String,
     pub uid: u32,
     pub unit_suffix: String,
-    pub t3_port: u16,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

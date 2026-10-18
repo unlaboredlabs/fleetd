@@ -117,6 +117,42 @@ pub async fn run(home: &Path, fix: bool) -> Result<Vec<DoctorCheck>, Failure> {
     list(&mut client).await
 }
 
+/// Registers `path` on `machine_id` as a project through the hub (project_add, the path the app and agents use).
+pub async fn add_project(home: &Path, machine_id: &str, path: &Path) -> Result<(), Failure> {
+    let mut client = connect(home).await?;
+    let title = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let fix =
+        format!("fleetd doctor shows whether {machine_id} is online; then run fleetd init again");
+    let result = client
+        .call_tool(
+            "project_add",
+            json!({ "machineId": machine_id, "path": path.to_string_lossy(), "title": title }),
+            Duration::from_secs(60),
+        )
+        .await
+        .map_err(|error| Failure {
+            message: format!("project_add failed: {}", error.message()),
+            fix: fix.clone(),
+        })?;
+    if result.is_error {
+        let text = |key: &str| {
+            result
+                .body
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        return Err(Failure {
+            message: text("message").unwrap_or_else(|| result.body.to_string()),
+            fix: text("fix").unwrap_or(fix),
+        });
+    }
+    Ok(())
+}
+
 /// One checklist line per check that isn't ok, except those in `shown`; how many passed.
 pub fn show(list: &mut Checklist, checks: &[DoctorCheck], shown: &[&str]) -> usize {
     for check in checks
