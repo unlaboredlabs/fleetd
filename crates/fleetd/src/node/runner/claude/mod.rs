@@ -39,18 +39,14 @@ const NESTING_VARS: &[&str] = &[
 pub struct ClaudeRunner {
     /// The `claude` binary, resolved once at node start.
     pub binary: PathBuf,
-    /// What [`Runner::probe`] runs claude with: the base every session's env starts from (`HOME`, `PATH`,
-    /// `CLAUDE_CONFIG_DIR`, `claude.env`), since the login it reports depends on exactly these.
-    pub env: Vec<(String, String)>,
     /// [`failure::classify`]; replaceable so tests can see the evidence a run left.
     pub classify: Classify,
 }
 
 impl ClaudeRunner {
-    pub fn new(binary: PathBuf, env: Vec<(String, String)>) -> Self {
+    pub fn new(binary: PathBuf) -> Self {
         Self {
             binary,
-            env,
             classify: Arc::new(failure::classify),
         }
     }
@@ -126,8 +122,8 @@ impl Runner for ClaudeRunner {
         RunnerKind::Claude
     }
 
-    fn probe(&self) -> BoxFut<'_, RunnerInfo> {
-        Box::pin(conformance::probe(&self.binary, &self.env))
+    fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo> {
+        Box::pin(conformance::probe(&self.binary, env))
     }
 
     fn spawn(&self, mut spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
@@ -157,6 +153,7 @@ impl Runner for ClaudeRunner {
         }
 
         process::adopt_orphans();
+        let marker = process::marker(&spec.session_id);
         let mut cmd = tokio::process::Command::new(&self.binary);
         cmd.args(self.args(&spec))
             .current_dir(&spec.cwd)
@@ -171,7 +168,7 @@ impl Runner for ClaudeRunner {
                     })
                     .map(|(k, v)| (k, v)),
             )
-            .env(process::SESSION_MARKER, &spec.session_id)
+            .env(process::SESSION_MARKER, &marker)
             // Some refusals at startup (a session held by a background job, a CLI too old for the org) then also come
             // as a `result` with `startup_failure_reason`, not as stderr alone. "Session ID … is already in use" stays
             // stderr-only (observed on 2.1.302), hence [`session_in_use`].
@@ -191,12 +188,7 @@ impl Runner for ClaudeRunner {
             }
         })?;
         let mapper = StreamMapper::new(spec.session_id.clone(), self.classify.clone());
-        Ok(session::start(
-            child,
-            spec.session_id,
-            mapper,
-            spec.transcript,
-        ))
+        Ok(session::start(child, marker, mapper, spec.transcript))
     }
 }
 
@@ -263,7 +255,7 @@ mod tests {
 
     #[test]
     fn argv_names_everything_explicitly() {
-        let runner = ClaudeRunner::new("claude".into(), Vec::new());
+        let runner = ClaudeRunner::new("claude".into());
         let args = runner.args(&spec()).join(" ");
         assert_eq!(
             args,
@@ -303,7 +295,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_refuses_without_an_isolated_config_dir() {
-        let runner = ClaudeRunner::new("/bin/true".into(), Vec::new());
+        let runner = ClaudeRunner::new("/bin/true".into());
         let refused = runner.spawn(spec()).err().map(|e| e.to_string());
         assert_eq!(
             refused.as_deref(),

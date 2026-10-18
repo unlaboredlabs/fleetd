@@ -64,11 +64,12 @@ enum Phase {
 
 pub(super) fn start(
     mut child: Child,
-    session_id: String,
+    marker: String,
     mapper: StreamMapper,
     transcript: Option<PathBuf>,
 ) -> SessionHandle {
     let pid = child.id().unwrap_or_default();
+    process::track(pid as i32);
     let (out_tx, out_rx) = mpsc::channel(64);
     if let Some(stdout) = child.stdout.take() {
         tokio::spawn(read_lines(stdout, out_tx.clone(), true));
@@ -85,7 +86,7 @@ pub(super) fn start(
     let (ev_tx, ev_rx) = mpsc::channel(256);
     let session = Session {
         pid: pid as i32,
-        session_id,
+        marker,
         mapper,
         stdin,
         transcript: transcript.map(Transcript::open),
@@ -105,7 +106,8 @@ pub(super) fn start(
 
 struct Session {
     pid: i32,
-    session_id: String,
+    /// This spawn's [`process::marker`], which every process it starts inherits.
+    marker: String,
     mapper: StreamMapper,
     /// `None` once stdin is closed.
     stdin: Option<mpsc::UnboundedSender<String>>,
@@ -134,14 +136,20 @@ impl Session {
             if self.pending_delta.is_some() && out_rx.is_empty() {
                 self.flush_delta();
             }
-            if !commands_open && !events_open {
-                // Nobody can drive or watch this session any more.
-                self.shutdown(Duration::ZERO);
+            if !events_open {
+                // Nobody reads the events any more: drop them, so stdout keeps being read and claude never blocks
+                // on it while the session ends.
+                self.queue.clear();
+                self.pending_delta = None;
             }
             let deadline = self.deadline;
             tokio::select! {
                 biased;
-                status = child.wait() => break status,
+                status = child.wait() => {
+                    // tokio has collected the status; from here the pid is no longer claude's.
+                    process::untrack(self.pid);
+                    break status;
+                }
                 _ = tokio::time::sleep_until(deadline.unwrap_or_else(tokio::time::Instant::now)), if deadline.is_some() => {
                     self.escalate().await;
                 }
@@ -157,9 +165,14 @@ impl Session {
                     Ok(permit) => permit.send(self.queue.pop_front().expect("checked non-empty")),
                     Err(_) => {
                         events_open = false;
-                        self.queue.clear();
+                        self.shutdown(Duration::ZERO);
                     }
                 },
+                // The event receiver was dropped: nobody can see this session, so end it (with the sweep).
+                () = ev_tx.closed(), if events_open => {
+                    events_open = false;
+                    self.shutdown(Duration::ZERO);
+                }
                 out = out_rx.recv(), if eofs < 2 && self.queue.len() < QUEUE_MAX => match out {
                     Some(Out::Eof) | None => eofs += 1,
                     Some(out) => self.output(out),
@@ -168,8 +181,8 @@ impl Session {
         };
 
         // Exited. Whatever the session started dies with it, which also releases any pipe a descendant held.
-        let (pid, session) = (self.pid, self.session_id.clone());
-        let found = tokio::task::spawn_blocking(move || process::sweep(pid, &session))
+        let (pid, marker) = (self.pid, self.marker.clone());
+        let found = tokio::task::spawn_blocking(move || process::sweep(pid, &marker))
             .await
             .unwrap_or_default();
         self.swept.extend(found);
@@ -284,9 +297,9 @@ impl Session {
     }
 
     async fn escalate(&mut self) {
-        let (pid, session) = (self.pid, self.session_id.clone());
+        let (pid, marker) = (self.pid, self.marker.clone());
         // The sweep comes before the signal: once claude is gone its children can no longer be found by ppid.
-        let found = tokio::task::spawn_blocking(move || process::sweep(pid, &session))
+        let found = tokio::task::spawn_blocking(move || process::sweep(pid, &marker))
             .await
             .unwrap_or_default();
         self.swept.extend(found);

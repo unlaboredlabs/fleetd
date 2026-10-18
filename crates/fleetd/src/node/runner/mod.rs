@@ -178,7 +178,9 @@ pub enum RunnerError {
 pub trait Runner: Send + Sync + 'static {
     fn kind(&self) -> RunnerKind;
     /// Version, login and a zero-cost conformance check (an `initialize` control request, no model call).
-    fn probe(&self) -> BoxFut<'_, RunnerInfo>;
+    /// `env` is the environment a session would get now (`CLAUDE_CONFIG_DIR`, `claude.env`, …): the login it reports
+    /// depends on exactly that, and the node re-reads it per spawn.
+    fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo>;
     /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
 }

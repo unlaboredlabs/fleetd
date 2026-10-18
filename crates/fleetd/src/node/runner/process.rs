@@ -5,14 +5,15 @@
 //! SIGKILL to claude's group the tool's child ran on, reparented to the user manager (fixture `sigkill-mid-tool`).
 //! A sweep therefore collects the session's processes three ways, always *before* signalling:
 //! - the descendants of the session's root pid, walking ppid links (`/proc/*/stat` on Linux, `ps` on macOS);
-//! - on Linux, every process whose environment carries [`SESSION_MARKER`] for the session. Children inherit it through
-//!   forks, `setsid` and reparenting, so this also finds what escaped after its parent died;
+//! - on Linux, every process whose environment carries the spawn's [`SESSION_MARKER`] value ([`marker`]). Children
+//!   inherit it through forks, `setsid` and reparenting, so this also finds what escaped after its parent died;
 //! - on Linux, the node is child subreaper ([`adopt_orphans`]), so orphans reparent to the node instead of escaping to
-//!   init, and get reaped here.
+//!   init. The node then has to reap them, including the ones that exit on their own ([`reap_adopted`]).
 //!
 //! Nothing here touches a process that is not provably the session's: groups are signalled only when their leader is
 //! in the sweep, the node's own group never, and on Linux every pid is re-checked against its start time first.
 use std::collections::{HashMap, HashSet};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use nix::errno::Errno;
@@ -20,14 +21,27 @@ use nix::sys::signal::{Signal, kill, killpg};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::{Pid, getpgrp, getpid};
 
-/// Set to the session id in every runner child's environment.
+/// Set in every runner child's environment to its spawn's [`marker`].
 pub const SESSION_MARKER: &str = "FLEETD_RUNNER_SESSION";
+
+/// The marker value for one spawn: the session id plus a nonce, so no sweep of this spawn ever matches a process of
+/// an earlier or later process of the same session (a respawn while the old tree is still being torn down).
+pub fn marker(session: &str) -> String {
+    static SPAWNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SPAWNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{session}.{}.{nanos:x}.{n}", getpid())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Proc {
     pub pid: i32,
     pub ppid: i32,
     pub pgid: i32,
+    /// Linux: the session id (`setsid` makes a new one). 0 on macOS, where it is not read.
+    pub sid: i32,
     /// Linux: start time in clock ticks since boot (`/proc/<pid>/stat` field 22), so a reused pid is never mistaken
     /// for the process that was swept. `None` on macOS.
     pub start: Option<u64>,
@@ -43,6 +57,7 @@ pub fn parse_stat(pid: i32, stat: &str) -> Option<Proc> {
         zombie: *fields.first()? == "Z",
         ppid: fields.get(1)?.parse().ok()?,
         pgid: fields.get(2)?.parse().ok()?,
+        sid: fields.get(3)?.parse().ok()?,
         start: fields.get(19).and_then(|s| s.parse().ok()),
     })
 }
@@ -81,6 +96,7 @@ pub fn table() -> Vec<Proc> {
                 pid: f.next()?.parse().ok()?,
                 ppid: f.next()?.parse().ok()?,
                 pgid: f.next()?.parse().ok()?,
+                sid: 0,
                 start: None,
                 zombie: f.next().is_some_and(|s| s.starts_with('Z')),
             })
@@ -112,38 +128,39 @@ pub fn descendants(table: &[Proc], root: i32) -> Vec<Proc> {
     out
 }
 
-/// The live processes in `table` whose environment marks them as `session`'s.
+/// The live processes in `table` whose environment carries `marker`.
 #[cfg(target_os = "linux")]
-pub fn marked(table: &[Proc], session: &str) -> Vec<Proc> {
-    let needle = format!("{SESSION_MARKER}={session}");
+pub fn marked(table: &[Proc], marker: &str) -> Vec<Proc> {
     let own = getpid().as_raw();
     table
         .iter()
         .filter(|p| p.pid != own && !p.zombie)
-        .filter(|p| {
-            // Unreadable for other users' processes, empty for zombies: neither is ours to sweep.
-            std::fs::read(format!("/proc/{}/environ", p.pid))
-                .is_ok_and(|env| env.split(|b| *b == 0).any(|var| var == needle.as_bytes()))
-        })
+        .filter(|p| marker_of(p.pid).as_deref() == Some(marker))
         .copied()
         .collect()
 }
 
+/// `pid`'s [`SESSION_MARKER`] value. None when it has none, belongs to another user, or is a zombie (no environ).
+#[cfg(target_os = "linux")]
+fn marker_of(pid: i32) -> Option<String> {
+    let env = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+    let prefix = format!("{SESSION_MARKER}=");
+    env.split(|b| *b == 0)
+        .find_map(|var| var.strip_prefix(prefix.as_bytes()))
+        .map(|v| String::from_utf8_lossy(v).into_owned())
+}
+
 /// macOS cannot read another process's environment without parsing `ps -E`; the ppid walk has to do.
 #[cfg(not(target_os = "linux"))]
-pub fn marked(_table: &[Proc], _session: &str) -> Vec<Proc> {
+pub fn marked(_table: &[Proc], _marker: &str) -> Vec<Proc> {
     Vec::new()
 }
 
-/// What a sweep of `session` (rooted at `root`) finds right now. Blocking: on macOS it runs `ps`.
-pub fn sweep(root: i32, session: &str) -> Vec<Proc> {
+/// What a sweep of the spawn rooted at `root` and marked `marker` finds right now. Blocking: on macOS it runs `ps`.
+pub fn sweep(root: i32, marker: &str) -> Vec<Proc> {
     let table = table();
     let mut found = descendants(&table, root);
-    found.extend(
-        marked(&table, session)
-            .into_iter()
-            .filter(|p| p.pid != root),
-    );
+    found.extend(marked(&table, marker).into_iter().filter(|p| p.pid != root));
     dedupe(&mut found);
     found
 }
@@ -207,16 +224,43 @@ pub async fn reap(procs: &[Proc], limit: Duration) {
     let _ = tokio::time::timeout(limit, waits).await;
 }
 
-/// Whether the node may reap an adopted zombie it never identified. The node itself starts children only in its
-/// own process group (std and tokio defaults) or as group leaders (`process_group(0)`), and tokio must reap those
-/// itself or its `wait` fails. A child in neither is therefore an orphan the node adopted as subreaper.
-pub fn adopted(proc: &Proc, own_group: i32) -> bool {
-    proc.pgid != proc.pid && proc.pgid != own_group
+/// The live claude processes the runner spawned. tokio reaps those itself (its `wait` fails if anyone else does), so
+/// [`reap_adopted`] never touches them, whatever they look like.
+static TRACKED: LazyLock<Mutex<HashSet<i32>>> = LazyLock::new(Default::default);
+/// A process across pid reuse: (pid, start time).
+#[cfg(target_os = "linux")]
+type ProcKey = (i32, Option<u64>);
+/// Live children of the node seen carrying a runner marker: orphans it adopted.
+#[cfg(target_os = "linux")]
+static ADOPTED: LazyLock<Mutex<HashSet<ProcKey>>> = LazyLock::new(Default::default);
+
+/// Registers a spawned claude until its exit status has been collected ([`untrack`]).
+pub fn track(pid: i32) {
+    TRACKED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(pid);
+}
+
+pub fn untrack(pid: i32) {
+    TRACKED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&pid);
+}
+
+/// Whether a zombie child the node never identified alive is an adopted orphan, safe to reap. The node starts its
+/// own children (std/tokio defaults, `process_group(0)`) in its own session and either in its own process group or
+/// as a group leader, and never with `setsid`. A child outside that shape (a non-leader in a foreign group, or in a
+/// session of its own, e.g. a tool that detached) cannot be one tokio waits for.
+pub fn adopted(proc: &Proc, own_group: i32, own_session: i32) -> bool {
+    proc.pgid != own_group && (proc.pgid != proc.pid || proc.sid != own_session)
 }
 
 /// Makes the node child subreaper (Linux), so a session's orphans reparent to the node, where a sweep can still
-/// find them by ppid, instead of escaping to init. Idempotent. Adopted orphans that exit on their own are reaped on
-/// each SIGCHLD (see [`adopted`]); swept ones by [`reap`].
+/// find them by ppid, instead of escaping to init. Idempotent. From then on [`reap_adopted`] runs on every SIGCHLD and
+/// every few seconds, so an adopted orphan that exits on its own never lingers as a zombie; swept ones are also reaped
+/// by [`reap`].
 #[cfg(target_os = "linux")]
 pub fn adopt_orphans() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -230,7 +274,14 @@ pub fn adopt_orphans() {
             return;
         };
         tokio::spawn(async move {
-            while sigchld.recv().await.is_some() {
+            // The interval catches orphans alive (by their marker) before they die, for the few that look like the
+            // node's own children once they are zombies.
+            let mut every = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                tokio::select! {
+                    signal = sigchld.recv() => if signal.is_none() { return },
+                    _ = every.tick() => {}
+                }
                 let _ = tokio::task::spawn_blocking(reap_adopted).await;
             }
         });
@@ -240,15 +291,33 @@ pub fn adopt_orphans() {
 #[cfg(not(target_os = "linux"))]
 pub fn adopt_orphans() {}
 
+/// One pass over the node's children: remember live ones that carry a runner marker other than the node's own (an
+/// orphan from a session tree, not a child the node spawned), and reap zombies that are known orphans or
+/// [`adopted`]. Never a tracked claude, alive or dead.
 #[cfg(target_os = "linux")]
-fn reap_adopted() {
+pub(crate) fn reap_adopted() {
     let own_pid = getpid().as_raw();
     let own_group = getpgrp().as_raw();
-    for proc in table() {
-        if proc.ppid == own_pid && proc.zombie && adopted(&proc, own_group) {
+    let own_session = nix::unistd::getsid(None).map_or(0, Pid::as_raw);
+    // A node that itself runs inside a session (a lab) passes that marker to every child it spawns.
+    let own_marker = std::env::var(SESSION_MARKER).ok();
+    let tracked = TRACKED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let mut known = ADOPTED.lock().unwrap_or_else(|e| e.into_inner());
+    let children: Vec<Proc> = table().into_iter().filter(|p| p.ppid == own_pid).collect();
+    for proc in &children {
+        let key = (proc.pid, proc.start);
+        if tracked.contains(&proc.pid) {
+            known.remove(&key);
+        } else if !proc.zombie {
+            if marker_of(proc.pid).is_some_and(|m| own_marker.as_deref() != Some(m.as_str())) {
+                known.insert(key);
+            }
+        } else if known.remove(&key) || adopted(proc, own_group, own_session) {
             let _ = waitpid(Pid::from_raw(proc.pid), Some(WaitPidFlag::WNOHANG));
         }
     }
+    // Forget orphans that are gone some other way (a sweep reaped them).
+    known.retain(|key| children.iter().any(|p| (p.pid, p.start) == *key));
 }
 
 #[cfg(test)]
@@ -260,6 +329,7 @@ mod tests {
             pid,
             ppid,
             pgid,
+            sid: 100,
             start: None,
             zombie: false,
         }
@@ -274,6 +344,7 @@ mod tests {
                 pid: 4242,
                 ppid: 4200,
                 pgid: 4242,
+                sid: 4100,
                 start: Some(987654),
                 zombie: false
             })
@@ -303,12 +374,18 @@ mod tests {
 
     #[test]
     fn only_orphans_outside_the_nodes_own_spawn_patterns_count_as_adopted() {
-        let own_group = 100;
+        let (own_group, own_session) = (100, 100);
+        let adopted = |p: Proc| adopted(&p, own_group, own_session);
         // Inherited the node's group: a std/tokio child the node spawned itself.
-        assert!(!adopted(&proc(5, 100, 100), own_group));
-        // A group leader: claude or a cmd check (`process_group(0)`); tokio reaps those.
-        assert!(!adopted(&proc(6, 100, 6), own_group));
+        assert!(!adopted(proc(5, 100, 100)));
+        // A group leader in the node's session: claude or a cmd check (`process_group(0)`); tokio reaps those.
+        assert!(!adopted(proc(6, 100, 6)));
         // In some other process's group: a tool child orphaned to the node.
-        assert!(adopted(&proc(7, 100, 6), own_group));
+        assert!(adopted(proc(7, 100, 6)));
+        // A leader of its own session: a tool that detached with setsid. The node never spawns with setsid.
+        assert!(adopted(Proc {
+            sid: 8,
+            ..proc(8, 100, 8)
+        }));
     }
 }
