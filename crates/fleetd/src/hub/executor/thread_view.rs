@@ -182,6 +182,17 @@ pub fn to_action(item: &ThreadItem) -> Option<Action> {
                 None,
             )
         }
+        ItemKind::NodeRetry {
+            attempt,
+            of,
+            delay_ms,
+            reason,
+        } => base(
+            "other",
+            &node_retry_summary(*attempt, *of, *delay_ms, reason.class),
+            None,
+            None,
+        ),
         ItemKind::Error { failure } => {
             let summary = format!(
                 "{}: {}",

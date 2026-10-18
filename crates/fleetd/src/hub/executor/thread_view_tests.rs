@@ -193,6 +193,23 @@ fn a_pending_prompt_reads_as_what_it_would_do() {
 #[test]
 fn a_node_retry_reads_as_when_and_why() {
     use fleetd_contracts::sessions::FailureClass;
+    let mut view = followed();
+    apply_thread_event(
+        &mut view,
+        &event(
+            json!({ "type": "item", "id": "i9", "runId": "r1", "status": "completed", "title": "",
+            "startedAt": "2026-10-17T10:12:00.000Z", "updatedAt": "2026-10-17T10:12:00.000Z",
+            "kind": { "type": "node_retry", "attempt": 1, "of": 3, "delayMs": 60000,
+                "reason": { "class": "overloaded", "message": "API Error: 529 Overloaded." } } }),
+        ),
+    );
+    let (id, retry) = &actions_of(&view, 1, false)[0];
+    assert_eq!(id, "i9");
+    // An `other` action, which receipts never count.
+    assert_eq!(
+        (retry.kind, retry.summary.as_str(), retry.failed),
+        ("other", "node retry 1/3 in 60 s: overloaded", false)
+    );
     assert_eq!(
         node_retry_summary(1, 3, 60_000, FailureClass::Overloaded),
         "node retry 1/3 in 60 s: overloaded"
