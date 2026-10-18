@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   plan:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       version: ${{ steps.plan.outputs.version }}
@@ -73,10 +73,9 @@ jobs:
   cli:
     needs: plan
     if: needs.plan.outputs.has-cli == 'true'
-    # The release critical path: 8 vCPU builds the three targets in parallel in about half the time of 4 vCPU,
-    # for the same cost per run.
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 30
+    # The release critical path. GitHub-hosted runners are free for this public repo; no paid larger runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
     steps:
@@ -125,10 +124,9 @@ jobs:
 
   app-macos:
     needs: plan
-    # Mac minutes cost 10x Linux ones: only builds that publish (pull request dry runs skip it). PR CI still
-    # bundles the app on GitHub-hosted macOS.
+    # Only builds that publish (pull request dry runs skip it); PR CI already bundles the app on macOS.
     if: needs.plan.outputs.build-app == 'true' && inputs.publish
-    runs-on: blacksmith-6vcpu-macos-latest
+    runs-on: macos-latest
     timeout-minutes: 60
     env:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
@@ -174,7 +172,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.build-app == 'true'
     # 22.04, not 24.04: the binary needs the glibc it was linked against, and 22.04's 2.35 covers older distros.
-    runs-on: blacksmith-8vcpu-ubuntu-2204
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
@@ -209,7 +207,7 @@ jobs:
     if: >-
       always() && inputs.publish && needs.plan.result == 'success' &&
       !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write

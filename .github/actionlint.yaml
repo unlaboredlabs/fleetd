@@ -1,4 +1,0 @@
-# Blacksmith runner labels (https://docs.blacksmith.sh/blacksmith-runners/overview), so actionlint knows them.
-self-hosted-runner:
-  labels:
-    - blacksmith-*
