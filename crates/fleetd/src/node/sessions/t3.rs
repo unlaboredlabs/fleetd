@@ -10,8 +10,8 @@ use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, watch};
 use zeroize::Zeroizing;
 
-use super::supervisor::{T3Supervisor, exec};
-use super::util::{AbortOnDrop, tail_utf16};
+use crate::node::supervisor::{T3Supervisor, exec};
+use crate::node::util::{AbortOnDrop, tail_utf16};
 
 pub struct T3Session {
     pub session_id: String,

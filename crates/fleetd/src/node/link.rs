@@ -15,16 +15,13 @@ use super::cmd::run_cmd_check;
 use super::identity::{NodeBoxKey, NodeIdentity};
 use super::lead::LeadRelay;
 use super::secrets::{SecretsContext, deliver_secret, run_gated};
-use super::sessions::SessionKeeper;
+use super::sessions::{SessionKeeper, SessionService};
 use super::supervisor::{Probe, Restart, T3Info, T3State, T3Supervisor, T3Unreachable};
 use super::util::now_iso;
 use super::wire::{
     Heartbeat, HubToNode, MachineId, NodeHello, NodeT3Endpoint, NodeT3Session, NodeT3State,
     NodeToHub, PROTOCOL_VERSION, ProtocolVersion, T3RunState, Text, Timestamp, close,
     decode_hub_frame, to_json,
-};
-use fleetd_contracts::sessions::{
-    SessionError, SessionErrorCode, SessionReplyFrame, SessionResult,
 };
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
@@ -179,6 +176,8 @@ pub struct RunNodeOptions {
     /// Runs after the first welcome of a link that carried the enroll token.
     pub on_enrolled: Option<Box<dyn FnOnce() + Send>>,
     pub sessions: Arc<dyn super::sessions::T3Sessions>,
+    /// Runs the hub's `session_call`s and feeds the machine and thread streams.
+    pub node_sessions: SessionService,
     pub lead_calls: LeadRelay,
     /// Directories `cmd_check` and approved commands may run in (and below), and secret sinks may be written in.
     pub cmd_roots: Vec<String>,
@@ -191,6 +190,7 @@ struct Shared {
     identity: NodeIdentity,
     t3: T3Supervisor,
     keeper: SessionKeeper,
+    node_sessions: SessionService,
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
@@ -255,6 +255,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         identity: options.identity,
         t3,
         keeper,
+        node_sessions: options.node_sessions,
         lead_calls: options.lead_calls,
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
@@ -501,6 +502,7 @@ async fn run_link_once(
         });
     }
     let _attached = shared.lead_calls.attach(tx.clone());
+    let _sessions_attached = shared.node_sessions.attach(tx.clone());
 
     loop {
         while tasks.try_join_next().is_some() {}
@@ -539,15 +541,16 @@ async fn run_link_once(
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
                 });
             }
-            // Until the node session service lands, every session call is refused, so the hub never waits on one.
-            HubToNode::SessionCall(call) => send(NodeToHub::SessionReply(SessionReplyFrame {
-                id: call.id,
-                result: SessionResult::Err(SessionError {
-                    code: SessionErrorCode::RunnerUnavailable,
-                    message: Text::unchecked("this node does not run sessions yet"),
-                    fix: Some("Update fleetd on this machine.".into()),
-                }),
-            })),
+            // Not on the link's task set: a call that started (a launch half way through a spawn) finishes even if
+            // the link drops, and only its reply is lost.
+            HubToNode::SessionCall(call) => {
+                let service = shared.node_sessions.clone();
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let reply = service.handle(call).await;
+                    let _ = tx.send(to_json(&NodeToHub::SessionReply(reply)));
+                });
+            }
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }
     }
