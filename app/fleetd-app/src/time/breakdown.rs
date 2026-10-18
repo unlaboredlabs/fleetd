@@ -235,7 +235,8 @@ pub fn render(v: &mut TimeView, t: &Theme, cx: &mut Context<TimeView>) -> AnyEle
                 .on_click(cx.listener(move |v, _, _, cx| v.show_linked(linked.clone(), None, cx))),
         );
     }
-    body.child(notes(t, &b)).into_any_element()
+    let detail_since = v.missing().and_then(|m| m.detail_since);
+    body.child(notes(t, &b, detail_since)).into_any_element()
 }
 
 fn summary_line(v: &TimeView, t: &Theme, b: &TimeBreakdownOutput) -> Div {
@@ -245,12 +246,8 @@ fn summary_line(v: &TimeView, t: &Theme, b: &TimeBreakdownOutput) -> Div {
     if wall > 0 {
         parts.push(format!("parallelism {:.1}×", agent as f64 / wall as f64));
     }
-    let coverage = if b.coverage.complete {
-        "coverage complete".to_string()
-    } else {
-        let n = b.coverage.gaps.len();
-        format!("coverage: {n} gap{}", if n == 1 { "" } else { "s" })
-    };
+    let n = b.coverage.gaps.len();
+    let coverage = if n == 0 { "no gaps in the data".to_string() } else { format!("coverage: {n} gap{}", if n == 1 { "" } else { "s" }) };
     div()
         .pt_4()
         .flex()
@@ -262,7 +259,7 @@ fn summary_line(v: &TimeView, t: &Theme, b: &TimeBreakdownOutput) -> Div {
                 .gap_3()
                 .text_color(t.text)
                 .child(parts.join(" · "))
-                .child(div().text_color(if b.coverage.complete { t.quiet } else { t.warning }).child(coverage)),
+                .child(div().text_color(if n == 0 { t.quiet } else { t.warning }).child(coverage)),
         )
         .child(
             div()
@@ -365,15 +362,15 @@ pub fn gap_text(g: &Gap) -> String {
 }
 
 /// What these numbers can't say, in the reader's words (spec §2f), and any data the hub knows is missing.
-fn notes(t: &Theme, b: &TimeBreakdownOutput) -> Div {
+fn notes(t: &Theme, b: &TimeBreakdownOutput, detail_since: Option<String>) -> Div {
     let mut lines: Vec<String> = Vec::new();
     for g in b.coverage.gaps.iter() {
         lines.push(format!("Missing: {}.", gap_text(g)));
     }
-    if let Some(since) = &b.coverage.detail_since {
+    if let Some(since) = &detail_since {
         lines.push(format!(
             "Detail since {}: commands, CI checks and findings start there (retention); totals before that come from daily roll-ups.",
-            since.as_str().get(..10).unwrap_or("")
+            since
         ));
     }
     if b.coverage.capped == Some(true) {

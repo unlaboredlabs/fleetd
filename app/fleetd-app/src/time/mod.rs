@@ -20,7 +20,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::live::AgentRole;
 use fleetd_contracts::mcp::{TailItem, TailRole, TimeBreakdownInput, TimeBreakdownOutput, TimeInsightsInput, TimeInsightsOutput};
-use fleetd_contracts::time::{Category, Period, Span, SpanKind, SpanStatus, TimeFilters, TimeScope};
+use fleetd_contracts::time::{Category, Coverage, Period, Span, SpanKind, SpanStatus, TimeFilters, TimeScope};
 use gpui::{
     Background, Bounds, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, Hsla, KeyDownEvent, Pixels, SharedString, Stateful,
     UniformListScrollHandle, Window, anchored, deferred, div, pattern_slash, point, prelude::*, px, solid_background,
@@ -412,6 +412,21 @@ impl TimeView {
         cx.notify();
     }
 
+    /// What the hub says is missing from what this view shows; see [`missing`].
+    pub(crate) fn missing(&self) -> Option<Missing> {
+        let c = self.coverage.as_ref()?;
+        // An order is asked for a year back, so a retention cutoff matters only if the order began before it;
+        // other scopes matter from the start of their period.
+        let from =
+            match &self.order {
+                Some(_) => self.model.as_ref().map(|m| m.start_ms).or_else(|| {
+                    self.breakdown.as_ref().and_then(|b| b.as_ref().ok()).and_then(|b| b.critical_path.as_ref()).map(|p| p.start_ms.get())
+                }),
+                None => crate::live::state::parse_ms(self.query().breakdown.since.as_str()),
+            };
+        Some(missing(c, from))
+    }
+
     fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         if event.keystroke.key != "escape" {
             return;
@@ -481,17 +496,16 @@ impl TimeView {
             .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().font_weight(STRONG).child(title))
             .child(div().flex_1())
             .child(div().flex_none().text_size(px(size::XS)).text_color(t.quiet).whitespace_nowrap().child(figures.join(" · ")))
-            .when_some(self.coverage.as_ref().filter(|c| !c.complete || c.capped == Some(true) || c.detail_since.is_some()), |d, c| {
+            .when_some(self.missing().filter(|m| !m.is_empty()), |d, m| {
                 let mut said = Vec::new();
-                if !c.complete {
-                    let n = c.gaps.len().max(1);
-                    said.push(format!("{n} gap{} in the data", if n == 1 { "" } else { "s" }));
+                if m.gaps > 0 {
+                    said.push(format!("{} gap{} in the data", m.gaps, if m.gaps == 1 { "" } else { "s" }));
                 }
-                if c.capped == Some(true) {
+                if m.capped {
                     said.push("capped at 200k spans".into());
                 }
-                if let Some(since) = &c.detail_since {
-                    said.push(format!("detail since {}", since.as_str().get(..10).unwrap_or("")));
+                if let Some(since) = &m.detail_since {
+                    said.push(format!("detail since {since}"));
                 }
                 d.child(
                     div()
@@ -805,6 +819,28 @@ fn transcript_item(t: &Theme, item: &TailItem, focused: bool) -> Stateful<Div> {
         .child(div().flex_1().min_w_0().child(body))
 }
 
+/// What to say is missing. `complete: false` alone says nothing: the hub sets it when a long read reaches past
+/// retention, which is the cutoff's business, not a gap's.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Missing {
+    pub gaps: usize,
+    pub capped: bool,
+    /// "2026-10-12": the retention cutoff, when what is shown began before it.
+    pub detail_since: Option<String>,
+}
+
+impl Missing {
+    pub fn is_empty(&self) -> bool {
+        self.gaps == 0 && !self.capped && self.detail_since.is_none()
+    }
+}
+
+/// `from`: when what is shown began (an order's start, a period's since); unknown flags no cutoff.
+pub fn missing(c: &Coverage, from: Option<i64>) -> Missing {
+    let cut = c.detail_since.as_ref().filter(|s| matches!((from, crate::live::state::parse_ms(s.as_str())), (Some(f), Some(cut)) if f < cut));
+    Missing { gaps: c.gaps.len(), capped: c.capped == Some(true), detail_since: cut.map(|s| s.as_str().get(..10).unwrap_or("").to_string()) }
+}
+
 // ---- words and figures -----------------------------------------------------------------------
 
 /// "840 ms", "3.2s", "42s", "2m10s", "34m", "1h42m".
@@ -1005,6 +1041,24 @@ mod tests {
         assert_eq!(fmt_dur(102 * 60_000), "1h42m");
         assert_eq!(fmt_dur(185 * 60_000 + 20_000), "3h05m");
         assert_eq!(fmt_dur(-5), "0 ms", "a clock step backwards never shows as negative");
+    }
+
+    #[test]
+    fn missing_data_is_said_only_where_it_applies() {
+        let cov = |v: serde_json::Value| -> Coverage { serde_json::from_value(v).unwrap() };
+        let at = |iso: &str| crate::live::state::parse_ms(iso).unwrap();
+        // A year-back read on a hub keeping 30 days: incomplete, no gaps. An order that began after the cutoff
+        // has nothing missing; one that began before it is flagged with the date.
+        let cut = cov(serde_json::json!({ "complete": false, "gaps": [], "detailSince": "2026-09-18T10:00:00.000Z" }));
+        assert!(missing(&cut, Some(at("2026-10-18T08:10:00.000Z"))).is_empty());
+        assert_eq!(missing(&cut, Some(at("2026-09-01T08:00:00.000Z"))).detail_since.as_deref(), Some("2026-09-18"));
+        assert!(missing(&cut, None).is_empty(), "an unknown start flags nothing");
+        // Gaps are counted as they are, never at least one.
+        let gaps = cov(serde_json::json!({ "complete": false, "gaps": [
+            { "why": "node_older", "fromMs": 0, "toMs": 1 }, { "why": "hub_dropped", "fromMs": 0, "toMs": 1, "count": 3 }] }));
+        assert_eq!(missing(&gaps, None).gaps, 2);
+        assert!(missing(&cov(serde_json::json!({ "complete": false, "gaps": [] })), None).is_empty());
+        assert!(missing(&cov(serde_json::json!({ "complete": true, "gaps": [], "capped": true })), None).capped);
     }
 
     #[test]

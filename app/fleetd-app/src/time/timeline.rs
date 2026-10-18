@@ -691,15 +691,16 @@ pub fn render(v: &mut TimeView, t: &Theme, _window: &mut Window, cx: &mut Contex
     let path_row = path_row(v, t, &paint, cx);
     let banner = v.highlight.clone().map(|h| highlight_banner(t, &h, cx));
     // What the hub knows is missing, said above the bars it affects; the rows mark where.
-    let coverage = v.coverage.clone().filter(|c| !c.complete || c.capped == Some(true) || c.detail_since.is_some()).map(|c| {
+    let missing = v.missing().filter(|m| !m.is_empty());
+    let coverage = missing.clone().zip(v.coverage.clone()).map(|(miss, c)| {
         let mut reasons: Vec<String> = c.gaps.iter().map(super::breakdown::gap_text).collect();
-        if c.capped == Some(true) {
+        if miss.capped {
             reasons.push("capped: the order has more spans than the hub reads at once (200k), so only the newest are drawn".into());
         }
-        if let Some(since) = &c.detail_since {
-            reasons.push(format!("detail since {}; totals before that come from daily roll-ups", since.as_str().get(..10).unwrap_or("")));
+        if let Some(since) = &miss.detail_since {
+            reasons.push(format!("detail since {since}; totals before that come from daily roll-ups"));
         }
-        let text = if reasons.is_empty() { "the hub reports missing data for this order".to_string() } else { reasons.join("; ") };
+        let text = reasons.join("; ");
         div()
             .px_4()
             .py_1p5()
@@ -861,7 +862,7 @@ fn legend(v: &TimeView, t: &Theme, cx: &mut Context<TimeView>) -> Div {
         .child(
             div().flex().items_center().gap_1().child(div().w(px(14.)).h(px(8.)).border_1().border_color(t.danger).rounded(px(1.))).child("failed"),
         )
-        .when(v.coverage.as_ref().is_some_and(|c| !c.complete), |d| {
+        .when(v.coverage.as_ref().is_some_and(|c| !c.gaps.is_empty()), |d| {
             d.child(div().flex().items_center().gap_1().child(div().w(px(14.)).h(px(3.)).bg(t.warning)).child("missing data"))
         })
         .child(div().flex_1())
