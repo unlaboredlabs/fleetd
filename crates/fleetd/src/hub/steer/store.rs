@@ -225,3 +225,14 @@ pub fn bind(db: &HubDb, steer: &Steer) -> Result<(), StoreError> {
         Ok(())
     })
 }
+
+/// Steers sent since `since_ms` or still waiting for a receipt, newest first: what the status view shows.
+pub fn recent(db: &HubDb, since_ms: i64) -> Result<Vec<Steer>, StoreError> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT data FROM steers WHERE queued_ms >= ? OR stage IN ('queued', 'delivered') ORDER BY n DESC LIMIT 500",
+        )?;
+        let rows = stmt.query_map([since_ms], |r| r.get::<_, String>(0))?;
+        rows.map(|r| decode(r?)).collect()
+    })
+}

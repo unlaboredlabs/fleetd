@@ -14,7 +14,7 @@ use fleetd_contracts::status::{
     CiState, DoneRow, EtaBasis, EtaSlip, Gate, GateKind, Headline, HeadlineFacts, HeadlineSource,
     Health, HealthCi, HealthMachine, HealthSlots, HealthUsage, InProgressRow, Marker, MoreCounts,
     NeedsYou, NextRow, Progress, ScopePart, SleptAt, StaleMark, StaleSource, StatusDoc, StatusEta,
-    StatusScope,
+    StatusScope, StatusSteer,
 };
 use fleetd_contracts::tasks::{SlotState, TaskId};
 use fleetd_contracts::train::{ChangeId, ChangeState, GitHubRepo};
@@ -84,6 +84,8 @@ pub struct World {
     pub slots_queued_since: Option<i64>,
     /// Placeholders of orders with no plan, in their figure.
     pub placeholders: HashMap<String, Placeholder>,
+    /// The last day's steers and any still waiting for a receipt, newest first.
+    pub steers: Vec<fleetd_contracts::steer::Steer>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -258,6 +260,7 @@ impl World {
             .map(|(r, p)| (r.to_lowercase(), plan::store::pkey(&p)))
             .collect();
         let failures = item_failures(&items, &recent, &links);
+        let steers = crate::hub::steer::store::recent(&hub.db, now - DAY_MS)?;
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -278,6 +281,7 @@ impl World {
             failures,
             slots_queued_since,
             placeholders,
+            steers,
         })
     }
 }
@@ -390,6 +394,20 @@ struct Scope<'a> {
     history: Vec<&'a ItemRow>,
     pkeys: HashSet<String>,
     machines: HashSet<String>,
+}
+
+fn status_steer(x: &fleetd_contracts::steer::Steer) -> StatusSteer {
+    StatusSteer {
+        id: x.id.clone(),
+        text: line(&x.text),
+        stage: x.stage,
+        at: x.queued_at.clone(),
+        plan_change: x
+            .plan_change
+            .as_ref()
+            .filter(|p| !p.is_empty())
+            .map(|p| line(p)),
+    }
 }
 
 fn scope_of<'a>(w: &'a World, scope: &StatusScope) -> Option<Scope<'a>> {
@@ -1194,6 +1212,7 @@ pub fn render(
                             .filter(|e| *e < now)
                             .map(|e| Count::unchecked((now - e) / 60_000)),
                         stale: ws.and_then(order_stale),
+                        steers: None,
                     });
                 } else {
                     let after: Vec<PlanItemId> = i
@@ -1244,10 +1263,28 @@ pub fn render(
                 eta: None,
                 overdue_minutes: None,
                 stale: order_stale(o.id()),
+                steers: None,
             });
         }
     }
     done.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+    // Each order's latest steers, on its first in-progress row.
+    let mut steered: HashSet<String> = HashSet::new();
+    for row in &mut in_progress {
+        if !steered.insert(row.workstream_id.to_string()) {
+            continue;
+        }
+        let list: Vec<StatusSteer> = w
+            .steers
+            .iter()
+            .filter(|x| x.workstream_id == row.workstream_id)
+            .take(3)
+            .map(status_steer)
+            .collect();
+        if !list.is_empty() {
+            row.steers = Some(List::unchecked(list));
+        }
+    }
 
     // Gates: plan gates (an in-progress item others wait on), then each open order's phase.
     let mut gates: Vec<Gate> = Vec::new();
@@ -1349,6 +1386,34 @@ pub fn render(
             .and_then(|t| parse_ms(t.as_str()))
             .map_or_else(|| "now".to_owned(), |t| clock(t, now, tz))
     };
+    let mut steers_unacked = Vec::new();
+    for x in w
+        .steers
+        .iter()
+        .filter(|x| s.orders.iter().any(|o| o.id() == x.workstream_id.as_str()))
+    {
+        let sent = parse_ms(x.queued_at.as_str()).unwrap_or(now);
+        let late = match x.stage {
+            fleetd_contracts::steer::SteerStage::Unacknowledged => true,
+            fleetd_contracts::steer::SteerStage::Delivered => {
+                let at = x
+                    .delivered_at
+                    .as_ref()
+                    .and_then(|t| parse_ms(t.as_str()))
+                    .unwrap_or(sent);
+                wake.at(at + risks::STEER_ACK_MS);
+                now - at >= risks::STEER_ACK_MS
+            }
+            _ => false,
+        };
+        if late {
+            let to = match &x.target {
+                fleetd_contracts::steer::SteerTarget::Lead { .. } => "the lead".to_owned(),
+                fleetd_contracts::steer::SteerTarget::Task { task_id } => task_id.to_string(),
+            };
+            steers_unacked.push((x.id.to_string(), to, clock(sent, now, tz)));
+        }
+    }
     let rf = RiskFacts {
         ci_red: ci
             .iter()
@@ -1452,6 +1517,7 @@ pub fn render(
                 Some((o.id().to_owned(), format!("{:?}", o.tier()), now - started))
             })
             .collect(),
+        steers_unacked,
     };
     let (risk_list, risks_more) = capped::<_, 5>(risks::risks(&rf));
 

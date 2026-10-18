@@ -3457,6 +3457,14 @@
         "stale": {
           "$ref": "#/$defs/StaleMark"
         },
+        "steers": {
+          "description": "The order's latest steers, newest first, on its first in-progress row only.",
+          "items": {
+            "$ref": "#/$defs/StatusSteer"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
         "taskIds": {
           "description": "Join to the live feed's lanes for what each agent is doing now.",
           "items": {
@@ -7688,21 +7696,30 @@
       "type": "string"
     },
     "RiskRule": {
-      "enum": [
-        "ci_red_main",
-        "machine_offline",
-        "blocked_on_you",
-        "slipping",
-        "estimate_drift",
-        "riskiest_item",
-        "ci_red_repeat",
-        "machine_flaky",
-        "usage_high",
-        "slots_full",
-        "github_drift",
-        "no_plan"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "ci_red_main",
+            "machine_offline",
+            "blocked_on_you",
+            "slipping",
+            "estimate_drift",
+            "riskiest_item",
+            "ci_red_repeat",
+            "machine_flaky",
+            "usage_high",
+            "slots_full",
+            "github_drift",
+            "no_plan"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "steer_unacknowledged",
+          "description": "A steer was not acknowledged, or has gone 10 minutes delivered without it.",
+          "type": "string"
+        }
+      ]
     },
     "RuntimeMode": {
       "enum": [
@@ -8885,6 +8902,40 @@
       },
       "required": [
         "recorded"
+      ],
+      "type": "object"
+    },
+    "StatusSteer": {
+      "description": "A steer as the status doc shows it: \"↳ you steered S12 14:02 · acknowledged · −1 item\".",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "id": {
+          "$ref": "#/$defs/SteerId"
+        },
+        "planChange": {
+          "description": "The plan change it made, e.g. \"−1 item\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/SteerStage"
+        },
+        "text": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "stage",
+        "at"
       ],
       "type": "object"
     },

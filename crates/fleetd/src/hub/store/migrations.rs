@@ -335,7 +335,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     // Steer; `held` marks a steer to a task that is not running, sent with the task's next run (`message`, the text
     // it added to the task's pending message), and `rides_with` the steer whose run carried it. A queued write
     // remembers its send mode and steer, so one sent while the machine was away goes out as it was given (null
-    // mode = a plain send).
+    // mode = a plain send). A plan change made with `--steer` names its steer.
     r#"
   CREATE TABLE steers (n INTEGER PRIMARY KEY AUTOINCREMENT, workstream_id TEXT NOT NULL, task_id TEXT,
     machine_id TEXT NOT NULL, thread_id TEXT NOT NULL, run_id TEXT NOT NULL, by TEXT NOT NULL, mode TEXT NOT NULL,
@@ -345,5 +345,6 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   CREATE INDEX steers_by_run ON steers (run_id);
   ALTER TABLE queued_writes ADD COLUMN mode TEXT;
   ALTER TABLE queued_writes ADD COLUMN steer_id TEXT;
+  ALTER TABLE plan_changes ADD COLUMN steer_id TEXT;
   "#,
 ];

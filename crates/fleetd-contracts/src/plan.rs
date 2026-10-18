@@ -1,6 +1,7 @@
 //! A project's plan: milestones `M<n>` holding items `P<n>`, each must or polish with a size. Only the hub marks an
 //! item done, from verification (a train merge and passed done-when checks); leads add, edit and drop.
 
+use crate::steer::SteerId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
@@ -258,6 +259,8 @@ pub struct PlanAddCall {
     pub pr: Option<GitHubPrUrl>,
     pub check: Option<CheckIndex>,
     pub why: Option<PlanWhy>,
+    /// `--steer S12`: the change carries out a steer; it stands in for `--why` and acknowledges the steer.
+    pub steer: Option<SteerId>,
 }
 
 /// `fleetd plan edit P1 [--title] [--size] [--must|--polish] [--milestone] [--workstream] [--after] [--pr +url|-url]
@@ -284,14 +287,19 @@ pub struct PlanEditCall {
     pub check_remove: UniqueList<CheckIndex, 0, 20>,
     pub position: Option<Count>,
     pub why: Option<PlanWhy>,
+    /// `--steer S12`, as on `plan add`.
+    pub steer: Option<SteerId>,
 }
 
-/// `fleetd plan drop P1 --why "<reason>"`.
+/// `fleetd plan drop P1 --why "<reason>" | --steer S12`: one of the two is required.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanDropCall {
     pub item_id: PlanItemId,
-    pub why: PlanWhy,
+    pub why: Option<PlanWhy>,
+    /// `--steer S12`, as on `plan add`.
+    pub steer: Option<SteerId>,
 }
 
 /// `fleetd plan show [--workstream W]`.

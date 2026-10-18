@@ -38,7 +38,12 @@ pub struct RiskFacts {
     pub missed_webhooks_today: i64,
     /// (order, tier letter, running for ms)
     pub no_plan: Vec<(String, String, i64)>,
+    /// (steer, who it went to, sent at clock text) of steers unacknowledged, or delivered past [`STEER_ACK_MS`].
+    pub steers_unacked: Vec<(String, String, String)>,
 }
+
+/// A delivered steer is a risk once it has gone this long without an acknowledgement.
+pub const STEER_ACK_MS: i64 = 10 * 60_000;
 
 fn risk(rule: RiskRule, level: RiskLevel, message: String) -> Risk {
     Risk {
@@ -174,6 +179,13 @@ pub fn risks(f: &RiskFacts) -> Vec<Risk> {
             ));
         }
     }
+    for (id, to, at) in &f.steers_unacked {
+        out.push(risk(
+            RiskRule::SteerUnacknowledged,
+            Warning,
+            format!("{id} to {to} was not acknowledged ({at})"),
+        ));
+    }
     out
 }
 
@@ -222,6 +234,7 @@ mod tests {
             ],
             slots_queued: Some((SLOTS_FULL_MS, 1, 40)),
             no_plan: vec![("W42".into(), "M".into(), NO_PLAN_MS)],
+            steers_unacked: vec![("S12".into(), "the lead".into(), "14:02".into())],
             open_must: vec![
                 ("P3".into(), "runner".into(), 'm', 1),
                 ("P4".into(), "lab".into(), 'l', 0),
@@ -238,7 +251,8 @@ mod tests {
                 RiskRule::MachineFlaky,
                 RiskRule::UsageHigh,
                 RiskRule::SlotsFull,
-                RiskRule::NoPlan
+                RiskRule::NoPlan,
+                RiskRule::SteerUnacknowledged
             ]
         );
         let all = risks(&f);

@@ -645,3 +645,78 @@ async fn the_sweep_closes_every_steer_of_a_batch_whose_receipts_never_came() {
         assert_eq!(now.stage, SteerStage::Failed, "{}", s.id);
     }
 }
+
+fn plan_call(
+    lab: &Lab,
+    call: serde_json::Value,
+) -> Result<fleetd_contracts::lead_calls::LeadCallResult, McpToolErrorAlias> {
+    let call: fleetd_contracts::lead_calls::LeadCall = serde_json::from_value(call).unwrap();
+    let op = crate::hub::link::lead_calls::op_of(&call);
+    let handler = lab.hub.lead_calls.handler(&op).unwrap();
+    let caller = crate::hub::link::LeadCaller {
+        project_ref: ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+        },
+        by: "lead:lab-a/p1".into(),
+        cwd: "/work/project".into(),
+    };
+    futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
+}
+
+type McpToolErrorAlias = fleetd_contracts::mcp::McpToolError;
+
+#[tokio::test]
+async fn a_plan_change_naming_a_delivered_steer_acknowledges_it() {
+    let lab = lab();
+    let steer = send(
+        &lab.hub,
+        By::Human(&person("k1")),
+        to_lead("skip the docs page", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    plan_call(&lab, json!({ "op": "plan_milestone", "title": "API" })).unwrap();
+    let add = json!({ "op": "plan_add", "title": "docs page", "milestoneId": "M1", "steer": "S1" });
+    // Not delivered yet: refused.
+    let refused = plan_call(&lab, add.clone()).unwrap_err();
+    assert_eq!(refused.code, ErrorCode::Invalid);
+    assert!(
+        refused.message.contains("not a delivered steer"),
+        "{}",
+        refused.message
+    );
+    on_receipt(
+        &lab.hub,
+        &MachineId::unchecked("lab-a"),
+        &receipt(&steer, SteerStage::Delivered),
+    );
+    plan_call(
+        &lab,
+        json!({ "op": "plan_add", "title": "docs page", "milestoneId": "M1" }),
+    )
+    .unwrap();
+    // A drop needs --why or --steer; the steer stands in for --why and is acknowledged by the change.
+    let bare = plan_call(&lab, json!({ "op": "plan_drop", "itemId": "P1" })).unwrap_err();
+    assert_eq!(bare.code, ErrorCode::Invalid);
+    plan_call(
+        &lab,
+        json!({ "op": "plan_drop", "itemId": "P1", "steer": "S1" }),
+    )
+    .unwrap();
+    let (now, _) = store::get(&lab.hub.db, &steer.id).unwrap().unwrap();
+    assert_eq!(now.stage, SteerStage::Acknowledged);
+    assert!(
+        now.ack_excerpt.as_deref().unwrap().starts_with("plan:"),
+        "{now:?}"
+    );
+    assert!(now.plan_change.is_some());
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerAcknowledged), 1);
+    // A steer of another project is refused like an unknown one.
+    let unknown = plan_call(
+        &lab,
+        json!({ "op": "plan_drop", "itemId": "P1", "steer": "S9" }),
+    )
+    .unwrap_err();
+    assert!(unknown.message.contains("not a delivered steer"));
+}

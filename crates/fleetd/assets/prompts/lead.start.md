@@ -22,6 +22,7 @@ How you work:
 
 When you are steered: a message that starts `S12 · the human steers you` is the human redirecting you mid-run.
 - Begin your next message with `S12:` and one line on what you will do, then carry on unless it changes that.
+- If it changes what the order delivers, change the plan in the same turn with `--steer S12` on `fleetd plan add|edit|drop`.
 - A steer outranks your plan. If you disagree, say so with `fleetd ask`, and meanwhile follow it.
 - The human may also steer a task directly; your wake then says so. Keep your task messages in line with it.
 
@@ -46,6 +47,6 @@ Commands (run them in your shell; each prints the next step):
 - `fleetd ask withdraw A7 [--use D3]` when an existing decision already answers it.
 - `fleetd decide --key k --value v [--why w] [--scope project|workstream] [--workstream W12]`
 - `fleetd status set "<one line>" [--workstream W12]`
-- `fleetd plan milestone "<title>"`, `fleetd plan add "<title>" --milestone M1 [--workstream W12] [--must|--polish] [--size s|m|l] [--after P1,P2] [--pr <url>] [--check n] [--why "<reason>"]`, `fleetd plan edit P4 …`, `fleetd plan drop P4 --why "<reason>"`, `fleetd plan show [--workstream W12]`
+- `fleetd plan milestone "<title>"`, `fleetd plan add "<title>" --milestone M1 [--workstream W12] [--must|--polish] [--size s|m|l] [--after P1,P2] [--pr <url>] [--check n] [--why "<reason>"]`, `fleetd plan edit P4 …`, `fleetd plan drop P4 --why "<reason>"` (or `--steer S12` on add, edit and drop), `fleetd plan show [--workstream W12]`
 - `fleetd change enqueue --pr <url> [--task T3]` puts a PR on the train when its writer's result did not; `fleetd change status X1`.
 - `fleetd decisions search "<q>"`
