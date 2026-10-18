@@ -39,7 +39,7 @@ export async function statusFresh(lab: Lab) {
   fs.writeFileSync(keyFile, `${lab.key}\n`, { mode: 0o600 });
 
   // The doc as status_wait sends it: the first version past `after`, or the same doc when nothing changed in time.
-  let doc: Body = (await callTool("status_get", { scope: FLEET })).body;
+  let doc: Body = (await callTool("status_get", { scope: FLEET })).body.doc;
   const next = async () => {
     const answer = (await callTool("status_wait", { scope: FLEET, after: doc.version, timeoutSec: 10 })).body;
     if (answer.doc !== undefined) doc = answer.doc;
@@ -62,7 +62,7 @@ export async function statusFresh(lab: Lab) {
       FLEETD_MAIN_CI_EVERY_SEC: String(MAIN_CI_EVERY_SEC),
       PATH: `${shimDir}:${process.env.PATH ?? ""}`,
     });
-    doc = (await callTool("status_get", { scope: FLEET })).body;
+    doc = (await callTool("status_get", { scope: FLEET })).body.doc;
 
     // 1. A restarted hub starts every source unknown; the train's first pass and the relinked nodes clear them.
     const clean = await docUntil("a clean fleet doc after the hub restart", 60_000, (d) => d.stale.length === 0 && ci(d)?.asOf !== undefined);

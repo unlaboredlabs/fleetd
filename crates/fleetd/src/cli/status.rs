@@ -11,7 +11,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::ledger::WorkstreamId;
-use fleetd_contracts::mcp::StatusWaitOutput;
+use fleetd_contracts::mcp::{StatusGetOutput, StatusWaitOutput};
 use fleetd_contracts::model::MachineStatus;
 use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::status::{
@@ -772,7 +772,7 @@ async fn get(client: &mut McpClient, scope: &Value) -> Result<Result<StatusDoc, 
         Duration::from_secs(30),
     )
     .await?;
-    Ok(decode("status_get", body))
+    Ok(decode::<StatusGetOutput>("status_get", body).map(|out| out.doc))
 }
 
 async fn record_seen(client: &mut McpClient, scope: &Value, doc: &StatusDoc) {
