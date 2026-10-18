@@ -4,8 +4,7 @@ A runbook for Adri to execute. Adri has SSH to forge as `wynn` (no sudo) and a s
 the desktop app (step 4); that is where he answers everything.
 
 **Ground rule: nothing in the live setup changes.** That means:
-- `t3code.service` stays untouched (the live T3 at `100.104.249.49:3773`, home `~/.t3`);
-- the leads Adri runs on it stay untouched;
+- the live T3 (`t3code.service`, `~/.t3`) and the leads Adri runs on it stay untouched;
 - CLIProxyAPI on the Mac and Hermes are not modified.
 
 Every step below uses its own ports, directories and unit names, and step 5 removes all of it.
@@ -14,7 +13,6 @@ Every step below uses its own ports, directories and unit names, and step 5 remo
 
 | Thing | Where | Address / path |
 |---|---|---|
-| Live T3 (untouched, not used by fleetd) | `t3code.service` | `100.104.249.49:3773`, `~/.t3` |
 | fleetd hub | `fleetd-hub.service` (systemd user unit) | `127.0.0.1:4790`, home `~/.fleetd/hub`, log `~/.fleetd/hub/hub.log` |
 | Hub over HTTPS (desktop app, other machines) | `tailscale serve` (wynn is the tailscale operator, so no sudo is needed) | `https://forge.tailb10092.ts.net` → `127.0.0.1:4790` |
 | fleetd node on forge (runs the `claude` sessions) | `fleetd-node.service` | home `~/.fleetd/node`, worktrees `~/.fleetd/node/worktrees`, log `~/.fleetd/logs/node.log` |
@@ -24,9 +22,9 @@ Every step below uses its own ports, directories and unit names, and step 5 remo
 
 ## Decision (2): fleetd's agents stay out of the live setup
 
-fleetd's node runs `claude` itself. It doesn't use T3, so it never talks to `t3code.service` or reads `~/.t3`. Its
-sessions use their own config dir (`~/.fleetd/claude`) and their own worktrees under `~/.fleetd/node/worktrees`. The
-only things it shares with the live setup are the OS user, the `gh` login and the `claude` binary.
+fleetd's node runs `claude` itself, and its sessions use their own config dir (`~/.fleetd/claude`) and their own
+worktrees under `~/.fleetd/node/worktrees`. The only things it shares with the live setup are the OS user, the `gh`
+login and the `claude` binary.
 
 The hub's router and retro run `claude -p` as wynn with his own `~/.claude` login, like any other `claude` run.
 
@@ -53,22 +51,15 @@ Two cautions:
 ## Step 0: pre-flight (read-only, about 2 min)
 
 ```sh
-ssh forge 'systemctl --user is-active t3code.service; ss -H -ltn | grep -E ":(3773|4790)\b"; ls ~/.fleetd 2>&1; tailscale serve status'
+ssh forge 'ss -H -ltn | grep -E ":4790\b"; ls ~/.fleetd 2>&1; tailscale serve status'
 ```
 
 Expect:
-- `active`;
-- only `100.104.249.49:3773` listening;
+- nothing listening on 4790;
 - `~/.fleetd` missing;
 - `No serve config`.
 
 If 4790 is taken, pick a free port and use it in every command below (`--listen`, `--hub-url`, `tailscale serve`).
-
-forge has one harmless leftover from testing, a failed unit record. Clear it:
-
-```sh
-ssh forge 'systemctl --user reset-failed fleetd-t3-fleetdlab.service 2>/dev/null; true'
-```
 
 ## Step 1: hub on forge (about 10 min)
 
@@ -114,7 +105,7 @@ fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 os.write(fd, "".join(f"{k}={env[k]}\n" for k in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN")).encode())
 os.close(fd); print("written", p)
 EOF
-systemctl --user restart fleetd-node.service      # fleetd's node only; never t3code.service
+systemctl --user restart fleetd-node.service      # fleetd's node only
 ```
 
 ## Step 3: the first project and its lead (about 10 min)
@@ -192,7 +183,6 @@ tailscale serve --https=443 off
 curl -fsSL https://fleetd.sh | sh -s -- --uninstall   # removes the binary and its ~/.local/bin link
 rm -rf ~/fleetd-work ~/.fleetd
 systemctl --user list-units --all --no-legend | grep fleetd   # expect nothing
-systemctl --user is-active t3code.service                     # still active, never touched
 ```
 
 Elsewhere:

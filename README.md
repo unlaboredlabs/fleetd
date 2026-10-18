@@ -36,7 +36,7 @@ It asks a few questions (Enter takes the default) and ticks off each step. A ✗
 that fixes it. Run `fleetd init` again at any time: it keeps what works and repairs the rest.
 
 <!-- expected-output: a real `fleetd init` run (#89), sanitized. Illustrative only, not verbatim: the first-project
-     lines (the real run picked "not now") and the doctor line (the real run's one failure was a T3 leftover). -->
+     lines (the real run picked "not now") and the doctor line (the real run's one failure was a leftover that S1 removes). -->
 ```text
 fleetd init: sets up fleetd on this machine, step by step. Enter takes the default.
 ✔ Is this machine the hub (the always-on machine that runs your fleet)? · yes
