@@ -126,15 +126,16 @@ mod tests {
         assert_eq!(format!("{s:?}"), "Secret(0 bytes)");
     }
 
-    /// Rust seals, the node's libsodium (`libsodium-wrappers`, as `apps/node` uses it) opens. Needs node and
-    /// `pnpm install`; CI's Rust job sets FLEETD_REQUIRE_NODE_SEAL=1 so a missing node fails instead of skipping.
+    /// Rust seals, libsodium (`libsodium-wrappers`, from the lab suite's packages) opens. Needs node and
+    /// `npm ci --prefix tests/lab`; CI's Rust job sets FLEETD_REQUIRE_NODE_SEAL=1 so a missing node fails instead of
+    /// skipping.
     #[test]
     fn node_libsodium_opens_what_rust_seals() {
-        let node_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps/node");
+        let node_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/lab");
         let has_sodium = std::path::Path::new(node_dir).join("node_modules/libsodium-wrappers").exists();
         if !has_sodium || Command::new("node").arg("--version").output().is_err() {
-            assert!(std::env::var_os("FLEETD_REQUIRE_NODE_SEAL").is_none(), "node or apps/node/node_modules missing");
-            eprintln!("skipped: node or apps/node/node_modules/libsodium-wrappers missing");
+            assert!(std::env::var_os("FLEETD_REQUIRE_NODE_SEAL").is_none(), "node or tests/lab/node_modules missing");
+            eprintln!("skipped: node or tests/lab/node_modules/libsodium-wrappers missing");
             return;
         }
         let (secret, public) = keypair();

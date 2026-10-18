@@ -1,8 +1,6 @@
-//! fleetd's wire types, ported from `packages/contracts` (Effect Schema) with the same JSON on the wire.
-//!
-//! Module names follow the TS files and type names follow the TS exports. Every type decodes with the same checks as
-//! its TS schema, so the hub refuses what the TS hub refuses; `schema::render_json_schemas` writes the JSON Schemas
-//! the app validates against.
+//! fleetd's wire types, shared by the binary and the app. They were ported from the TypeScript contracts with the same
+//! JSON on the wire and the same decode checks, so data a TS hub stored still reads back.
+//! `schema::render_json_schemas` writes the JSON Schemas committed in `schema/`.
 
 pub mod prim;
 

@@ -1,4 +1,4 @@
-//! Bakes the pinned T3 release (vendor/t3/pin.json, written by `pnpm sync:t3`) into the binary as
+//! Bakes the pinned T3 release (vendor/t3/pin.json) into the binary as
 //! `FLEETD_T3_NPM_VERSION` and `FLEETD_T3_PIN`, so a built fleetd needs no repo checkout to know it.
 
 use std::path::Path;

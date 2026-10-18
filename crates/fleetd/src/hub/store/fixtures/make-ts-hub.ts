@@ -1,6 +1,6 @@
 // Writes ts-hub.sqlite and ts-hub.json next to this file with the TS hub's own HubDb, HubStore, EventLog and Auth,
 // so the Rust store's tests prove it opens and reads a TS hub's database unchanged. Run from a TS checkout:
-//   node crates/fleetd/src/hub/store/fixtures/make-ts-hub.ts <fleetd TS checkout with node_modules>
+//   node crates/fleetd/src/hub/store/fixtures/make-ts-hub.ts <fleetd checkout from before the Rust cutover, with node_modules>
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

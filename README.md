@@ -8,7 +8,8 @@ money, credentials and irreversible steps, and reports "done" only after fleetd 
 curl -fsSL https://fleetd.sh | sh
 ```
 
-This installs the `fleetd` binary (Linux x64, macOS arm64 and x64) and, on a desktop, the fleetd app.
+This installs the `fleetd` binary from the nightly GitHub release (Linux x64, macOS arm64 and x64) after checking its
+checksum. On a desktop it installs the fleetd app too.
 
 ## Quick start
 

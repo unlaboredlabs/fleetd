@@ -115,7 +115,7 @@ fn t3_conformance(args: &[String]) -> anyhow::Result<bool> {
         None => default_checkout(&pin),
     };
     let mut problems = conformance(&checkout)?;
-    let replayed = replay::replay(&repo_root().join("apps/hub/test/fixtures"))?;
+    let replayed = replay::replay(&repo_root().join("crates/t3-wire/fixtures"))?;
     problems.extend(replayed.problems);
     if problems.is_empty() {
         println!(

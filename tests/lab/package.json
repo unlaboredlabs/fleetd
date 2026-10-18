@@ -1,0 +1,21 @@
+{
+  "name": "fleetd-lab",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end lab suite for the fleetd binary against disposable stock T3 instances. Never run in CI.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lab": "node testLab.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "libsodium-wrappers": "0.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.4",
+    "typescript": "7.0.2"
+  }
+}

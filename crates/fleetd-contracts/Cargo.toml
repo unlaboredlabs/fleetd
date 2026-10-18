@@ -1,6 +1,6 @@
 [package]
 name = "fleetd-contracts"
-description = "fleetd wire types: serde + JSON Schema, the same JSON as packages/contracts"
+description = "fleetd wire types: serde + JSON Schema"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
