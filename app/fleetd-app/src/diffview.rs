@@ -1,8 +1,12 @@
 //! A readable unified diff: one header per file with its +/- counts, quiet hunk headers, old and new line
 //! numbers in two grey gutters, and tinted added and removed lines. `git diff`'s index/---/+++ lines carry
-//! nothing a reader needs, so they are dropped. Virtualised, so a long diff costs only what is on screen.
+//! nothing a reader needs, so they are dropped. Virtualised, so a long diff costs only what is on screen. Long
+//! lines scroll sideways rather than being cut off.
+//!
+//! `uniform_list` gives every row the height of the one it measures, here the widest; so every row, the file
+//! header included, is exactly one line tall.
 
-use gpui::{Context, Div, SharedString, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list};
+use gpui::{Context, Div, ListHorizontalSizingBehavior, SharedString, UniformListScrollHandle, Window, div, prelude::*, px, uniform_list};
 
 use crate::diff::{DiffKind, DiffLine, parse_unified};
 use crate::theme::{STRONG, metric, size, theme};
@@ -17,12 +21,15 @@ enum Row {
 
 pub struct DiffView {
     rows: Vec<Row>,
+    /// The row with the most characters: the list takes its width from it.
+    widest: usize,
     scroll: UniformListScrollHandle,
 }
 
 impl DiffView {
     pub fn new(text: &str) -> Self {
-        Self { rows: rows(&parse_unified(text)), scroll: UniformListScrollHandle::new() }
+        let rows = rows(&parse_unified(text));
+        Self { widest: widest(&rows), rows, scroll: UniformListScrollHandle::new() }
     }
 
     /// (files, lines added, lines removed), for a summary line.
@@ -50,8 +57,7 @@ impl DiffView {
         match &self.rows[ix] {
             Row::File { path, added, removed } => div()
                 .w_full()
-                .h(px(metric::ROW + 8.))
-                .pt_2()
+                .h(px(metric::LINE))
                 .px_3()
                 .flex()
                 .items_center()
@@ -91,6 +97,8 @@ impl Render for DiffView {
             cx.processor(|this, range: std::ops::Range<usize>, _, cx| range.map(|ix| this.row(ix, cx)).collect::<Vec<_>>()),
         )
         .track_scroll(&self.scroll)
+        .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
+        .with_width_from_item(Some(self.widest))
         .size_full()
         .font_family(t.mono_font.clone())
         .text_size(px(size::SM))
@@ -102,6 +110,15 @@ impl Render for DiffView {
 /// True when `text` reads as a unified diff (an Edit's or `git diff`'s output in a lead log).
 pub fn looks_like_diff(text: &str) -> bool {
     text.lines().any(|l| l.starts_with("@@ -")) && text.lines().any(|l| l.starts_with('+') || l.starts_with('-'))
+}
+
+fn widest(rows: &[Row]) -> usize {
+    let width = |row: &Row| match row {
+        Row::File { path, .. } => path.chars().count() + 12,
+        Row::Hunk(text) => text.chars().count(),
+        Row::Line(l) => l.text.chars().count() + 10,
+    };
+    rows.iter().enumerate().max_by_key(|(_, r)| width(r)).map_or(0, |(ix, _)| ix)
 }
 
 fn rows(lines: &[DiffLine]) -> Vec<Row> {
@@ -164,7 +181,7 @@ diff --git a/src/b.rs b/src/b.rs
         assert_eq!(rows.iter().filter(|r| matches!(r, Row::File { .. })).count(), 2);
         assert!(rows.contains(&Row::File { path: "src/b.rs".into(), added: 2, removed: 0 }));
         assert!(!rows.iter().any(|r| matches!(r, Row::Line(l) if l.text.starts_with("index") || l.text.starts_with("--- "))));
-        let view = DiffView { rows, scroll: UniformListScrollHandle::new() };
+        let view = DiffView { widest: widest(&rows), rows, scroll: UniformListScrollHandle::new() };
         assert_eq!(view.totals(), (2, 3, 1));
     }
 

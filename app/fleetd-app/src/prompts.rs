@@ -505,9 +505,12 @@ pub struct Ui {
     pub merged: Entity<TextInput>,
     pub instr_global: Entity<TextInput>,
     pub instr_project: Entity<TextInput>,
-    /// The prompt, effective ref and text the editor was last filled from.
-    loaded: Option<(PromptId, PromptRef, String)>,
-    merged_for: Option<(PromptId, PromptRef)>,
+    /// What the editor was last filled from.
+    loaded: Option<Filled>,
+    /// What the update view's merged text was last filled from (`ref` = the new default's).
+    merged_for: Option<Filled>,
+    /// A switch held back because the editor has unsaved edits: Discard goes ahead, Keep editing drops it.
+    pub confirm: Option<Switch>,
     /// The instructions the two fields were last filled from: (project, hub-wide text, project text).
     pub(crate) instr_loaded: Option<(Option<ProjectKey>, String, String)>,
     pub tab: Tab,
@@ -535,6 +538,7 @@ impl Ui {
             instr_project,
             loaded: None,
             merged_for: None,
+            confirm: None,
             instr_loaded: None,
             tab: Tab::Edit,
             picker: None,
@@ -545,6 +549,32 @@ impl Ui {
             _subs: subs,
         }
     }
+}
+
+/// What an editor was filled from: the scope's project (`None`: hub-wide), the prompt, and the text there.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Filled {
+    pub project: Option<ProjectKey>,
+    pub id: PromptId,
+    pub r#ref: PromptRef,
+    pub text: String,
+}
+
+/// Whether the editor takes `now`'s text. Always for another prompt or another scope: a draft written for one scope
+/// must never sit under another scope's Save. For the same prompt and scope, only when the hub's text changed and the
+/// editor holds no unsaved edit of the old one.
+pub fn refill(before: Option<&Filled>, now: &Filled, editor: &str) -> bool {
+    match before {
+        Some(b) if b.project == now.project && b.id == now.id => b.r#ref != now.r#ref && editor == b.text,
+        _ => true,
+    }
+}
+
+/// Where the page was asked to go while the editor had unsaved edits.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Switch {
+    Scope(Option<ProjectKey>),
+    Prompt(PromptId),
 }
 
 /// A small label after a row's title: quiet for the default, outlined for an edit, amber for an update.
@@ -613,36 +643,104 @@ impl Shell {
         self.send_prompts(out, cx);
     }
 
-    /// Fills the editors from what the hub sent, unless you have unsaved edits to the same prompt.
+    /// Fills the editors from what the hub sent for the prompt and scope on screen (see [`refill`]).
     fn sync_prompt_editors(&mut self, cx: &mut Context<Self>) {
         let Some(d) = self.state.prompts.detail.ready() else { return };
-        let now = (d.id.clone(), d.effective.r#ref.clone());
-        let fill = match &self.prompts_ui.loaded {
-            Some((id, r, _)) if *id == now.0 && *r == now.1 => false,
-            Some((id, _, text)) if *id == now.0 => self.prompts_ui.editor.read(cx).text() == text,
-            _ => true,
-        };
-        if fill {
-            let text = d.effective.text.clone();
-            self.prompts_ui.editor.update(cx, |i, cx| {
-                i.set_text(&text, cx);
+        let project = self.state.prompts.project.clone();
+        let now = Filled { project: project.clone(), id: d.id.clone(), r#ref: d.effective.r#ref.clone(), text: d.effective.text.clone() };
+        let editor = self.prompts_ui.editor.clone();
+        if refill(self.prompts_ui.loaded.as_ref(), &now, editor.read(cx).text()) {
+            editor.update(cx, |i, cx| {
+                i.set_text(&now.text, cx);
                 i.caret_to_start(cx);
             });
         }
-        self.prompts_ui.loaded = Some((now.0.clone(), now.1.clone(), d.effective.text.clone()));
+        self.prompts_ui.loaded = Some(now);
         if let Some(stale) = &d.stale {
-            let key = (now.0.clone(), stale.current.r#ref.clone());
-            if self.prompts_ui.merged_for.as_ref() != Some(&key) {
-                let merged = stale.merged.clone();
-                self.prompts_ui.merged.update(cx, |i, cx| {
-                    i.set_text(&merged, cx);
+            let now = Filled { project, id: d.id.clone(), r#ref: stale.current.r#ref.clone(), text: stale.merged.clone() };
+            let merged = self.prompts_ui.merged.clone();
+            if refill(self.prompts_ui.merged_for.as_ref(), &now, merged.read(cx).text()) {
+                merged.update(cx, |i, cx| {
+                    i.set_text(&now.text, cx);
                     i.caret_to_start(cx);
                 });
-                self.prompts_ui.merged_for = Some(key);
             }
+            self.prompts_ui.merged_for = Some(now);
         } else if self.prompts_ui.tab == Tab::Update {
             self.prompts_ui.tab = Tab::Edit;
         }
+    }
+
+    /// The editor, or the update view's merged text, differs from what it was filled with.
+    fn prompt_draft_dirty(&self, cx: &Context<Self>) -> bool {
+        let dirty = |field: &Entity<TextInput>, from: &Option<Filled>| from.as_ref().is_some_and(|f| field.read(cx).text() != f.text);
+        dirty(&self.prompts_ui.editor, &self.prompts_ui.loaded) || dirty(&self.prompts_ui.merged, &self.prompts_ui.merged_for)
+    }
+
+    /// Goes to another scope or prompt, or asks first when that would drop unsaved edits.
+    pub(crate) fn switch_prompts(&mut self, to: Switch, cx: &mut Context<Self>) {
+        self.prompts_ui.picker = None;
+        let same = match &to {
+            Switch::Scope(key) => *key == self.state.prompts.project,
+            Switch::Prompt(id) => self.state.prompts.selected.as_ref() == Some(id),
+        };
+        if same {
+            self.prompts_ui.confirm = None;
+            return cx.notify();
+        }
+        if self.prompt_draft_dirty(cx) {
+            self.prompts_ui.confirm = Some(to);
+            return cx.notify();
+        }
+        self.go_prompts(to, cx);
+    }
+
+    fn go_prompts(&mut self, to: Switch, cx: &mut Context<Self>) {
+        self.prompts_ui.confirm = None;
+        match to {
+            Switch::Scope(key) => self.open_prompts(key, cx),
+            Switch::Prompt(id) => self.select_prompt(id, cx),
+        }
+    }
+
+    /// "Discard your edit?" for a held-back switch, above the list and the editor.
+    fn prompt_confirm(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let to = self.prompts_ui.confirm.clone()?;
+        let t = &theme(cx).clone();
+        let scope_name = |key: &Option<ProjectKey>| match key {
+            Some(k) => self.state.project(k).map_or(k.1.clone(), |r| r.summary.title.to_string()),
+            None => "hub-wide".to_string(),
+        };
+        let title = self.state.prompts.detail.ready().map_or_else(String::new, |d| d.title.clone());
+        let here = scope_name(&self.state.prompts.project);
+        let going = match &to {
+            Switch::Scope(key) => format!("Showing {} drops it.", scope_name(key)),
+            Switch::Prompt(_) => "Opening another prompt drops it.".to_string(),
+        };
+        let keep = ui::button(t, "prompt-keep-editing", "Keep editing", Variant::Secondary, true).on_click(cx.listener(|this, _, _, cx| {
+            this.prompts_ui.confirm = None;
+            cx.notify();
+        }));
+        let discard = ui::button(t, "prompt-discard", "Discard", Variant::Danger, true).on_click(cx.listener(move |this, _, _, cx| {
+            // A new scope or prompt refills the editor (see `refill`); the draft goes with the old one.
+            let to = to.clone();
+            this.go_prompts(to, cx);
+        }));
+        Some(
+            div()
+                .flex_none()
+                .px_4()
+                .py_2()
+                .flex()
+                .items_center()
+                .gap_2()
+                .border_b_1()
+                .border_color(t.hairline)
+                .child(ui::dot(t.warning))
+                .child(div().flex_1().min_w_0().whitespace_normal().child(format!("You have unsaved changes to {title} ({here}). {going}")))
+                .child(keep)
+                .child(discard),
+        )
     }
 
     /// A cached diff view of `old` → `new`; rebuilt only when either side changes.
@@ -728,7 +826,8 @@ impl Shell {
         }
         self.sync_prompt_editors(cx);
         let project = self.state.prompts.project.clone();
-        let picker = self.project_picker("prompts-for", project.as_ref(), Some("Hub-wide"), |this, key, cx| this.open_prompts(key, cx), cx);
+        let picker =
+            self.project_picker("prompts-for", project.as_ref(), Some("Hub-wide"), |this, key, cx| this.switch_prompts(Switch::Scope(key), cx), cx);
         let top = div()
             .flex_none()
             .px_4()
@@ -742,6 +841,7 @@ impl Shell {
             .child(picker)
             .child(div().flex_1())
             .child(div().text_size(px(size::XS)).text_color(t.quiet).child("Running sessions keep the text they started with."));
+        let confirm = self.prompt_confirm(cx);
         let list = self.prompt_list(cx);
         let detail = self.prompt_detail(cx);
         div()
@@ -750,6 +850,7 @@ impl Shell {
             .flex()
             .flex_col()
             .child(top)
+            .children(confirm)
             .child(
                 div()
                     .flex_1()
@@ -800,7 +901,7 @@ impl Shell {
                     ui::row(t, SharedString::from(format!("prompt-{}", row.id)), selected.as_ref() == Some(&row.id))
                         .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(row.title.clone()))
                         .child(chips)
-                        .on_click(cx.listener(move |this, _, _, cx| this.select_prompt(id.clone(), cx))),
+                        .on_click(cx.listener(move |this, _, _, cx| this.switch_prompts(Switch::Prompt(id.clone()), cx))),
                 );
             }
         }
@@ -1116,7 +1217,7 @@ impl Shell {
 }
 
 impl Shell {
-    /// `FLEETD_SCREEN=prompts[+compare|+update|+project|+picker]` and `instructions`, for screenshots.
+    /// `FLEETD_SCREEN=prompts[+compare|+update|+project|+picker|+confirm]` and `instructions`, for screenshots.
     pub(crate) fn bench_prompts(&mut self, base: &str, extra: &str, cx: &mut Context<Self>) {
         let storefront: ProjectKey = ("devbox".into(), "storefront".into());
         self.go(crate::shell::Screen::Settings);
@@ -1135,6 +1236,9 @@ impl Shell {
         };
         if extra == "picker" {
             self.prompts_ui.picker = Some("prompts-for");
+        }
+        if extra == "confirm" {
+            self.prompts_ui.confirm = Some(Switch::Scope(Some(("devbox".into(), "storefront".into()))));
         }
     }
 
@@ -1346,6 +1450,29 @@ mod tests {
         let sp = told.prompt.ready().unwrap();
         assert!(sp.text.starts_with("You are fleetd task T31"));
         assert!(sp.refs.iter().any(|r| r.id.as_str() == INSTRUCTIONS));
+    }
+
+    #[test]
+    fn a_draft_never_carries_over_to_another_scope_or_prompt() {
+        let filled = |project: Option<&str>, id: &str, r: &str, text: &str| Filled {
+            project: project.map(|p| ("devbox".to_string(), p.to_string())),
+            id: PromptId::unchecked(id),
+            r#ref: PromptRef::unchecked(format!("{id}@{r}")),
+            text: text.into(),
+        };
+        let storefront = filled(Some("storefront"), "task.brief.write", "aaaaaaaaaa", "storefront's text");
+        // The same hub-wide text in effect for another project is still another scope's Save.
+        let mailer = filled(Some("mailer"), "task.brief.write", "aaaaaaaaaa", "storefront's text");
+        assert!(refill(Some(&storefront), &mailer, "a draft"));
+        assert!(refill(Some(&storefront), &filled(None, "task.brief.write", "aaaaaaaaaa", "x"), "a draft"));
+        assert!(refill(Some(&storefront), &filled(Some("storefront"), "review.reviewer", "bbbbbbbbbb", "y"), "a draft"));
+        assert!(refill(None, &storefront, ""));
+        // Same prompt and scope: the hub's answer to its own save or another device's edit replaces a clean editor
+        // and leaves a draft alone; the same text again changes nothing.
+        let saved = filled(Some("storefront"), "task.brief.write", "cccccccccc", "saved elsewhere");
+        assert!(refill(Some(&storefront), &saved, "storefront's text"));
+        assert!(!refill(Some(&storefront), &saved, "a draft"));
+        assert!(!refill(Some(&storefront), &storefront, "a draft"));
     }
 
     #[test]
