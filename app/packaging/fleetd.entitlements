@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The hardened runtime's entitlements for fleetd.app: none. Each exception it could ask for, and why it doesn't:
+  - cs.allow-jit, cs.allow-unsigned-executable-memory: no JIT. Metal compiles gpui's shaders in Apple's own
+    compiler service, not in this process.
+  - cs.disable-library-validation: the app loads only system frameworks; everything else is linked in statically.
+  - cs.allow-dyld-environment-variables: nothing relies on DYLD_* variables.
+  - device.camera, device.audio-input, automation.apple-events: the app uses none of them. Recording its own
+    window (FLEETD_RECORD) needs Screen Recording consent, which has no entitlement.
+  - Network, notifications and the login keychain need no entitlement outside the App Sandbox, which the app
+    doesn't use.
+  The key store check in the release dry run launches the signed app and has it dial a hub, so a missing exception
+  shows up there, not on someone's Mac.
+-->
+<plist version="1.0">
+<dict/>
+</plist>
