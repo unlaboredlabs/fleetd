@@ -197,6 +197,9 @@ pub struct MachineAddInput {
     pub version: String,
     /// The hub already holds a node key for this machine id.
     pub hub_has_node_key: bool,
+    /// Run the node as a user service; false (`--no-service`): nothing goes to systemd or launchd, and
+    /// [`MachinePlan::run_by_hand`] says how to start it.
+    pub service: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,6 +250,8 @@ pub struct MachinePlan {
     pub notes: Vec<String>,
     /// The node will (re)connect during this run, so `machine add` waits for it to come back.
     pub node_restarts: bool,
+    /// Without a service: the command that runs the node, with the environment its unit would have set.
+    pub run_by_hand: Option<String>,
 }
 
 fn dirname(path: &str) -> &str {
@@ -401,8 +406,8 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
 
     let text = render_unit(platform, &node_spec);
     let existing_unit = facts.file(&unit_file(Role::Node));
-    let node_changed = existing_unit != Some(text.as_str());
-    let node_existed = existing_unit.is_some();
+    let node_changed = input.service && existing_unit != Some(text.as_str());
+    let node_existed = input.service && existing_unit.is_some();
     if node_changed {
         steps.push(write_file(
             "write the node service",
@@ -488,18 +493,31 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ));
     }
     // A new binary is new node code: the running node keeps the old one until it restarts.
-    let node_restarts = enrolls || config_change || node_changed || binary_changes;
-    steps.push(if node_restarts {
-        step(
-            "(re)start the node",
-            services.restart(Role::Node, node_changed && node_existed),
-        )
-    } else {
-        step(
-            "make sure the node runs",
-            services.ensure_running(Role::Node),
-        )
+    let node_restarts =
+        input.service && (enrolls || config_change || node_changed || binary_changes);
+    let run_by_hand = (!input.service).then(|| {
+        let env = node_spec
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with("GIT_") || k == "CLAUDE_CONFIG_DIR")
+            .map(|(k, v)| format!("{k}={}", q(v)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{env} {} node run --home {}", q(&l.bin), q(&l.node_home))
     });
+    if input.service {
+        steps.push(if node_restarts {
+            step(
+                "(re)start the node",
+                services.restart(Role::Node, node_changed && node_existed),
+            )
+        } else {
+            step(
+                "make sure the node runs",
+                services.ensure_running(Role::Node),
+            )
+        });
+    }
 
     if claude_verdict == VersionVerdict::UntestedNewer {
         notes.push(format!(
@@ -508,7 +526,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             claude_verdict.fix().unwrap_or_default()
         ));
     }
-    if platform == Platform::Linux && facts.linger != "yes" {
+    if input.service && platform == Platform::Linux && facts.linger != "yes" {
         notes.push(format!(
             "linger is {} for {u}, so the node stops when {u} logs out. Fix: sudo loginctl enable-linger {u}",
             facts.linger,
@@ -530,6 +548,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         steps,
         notes,
         node_restarts,
+        run_by_hand,
     })
 }
 
@@ -703,6 +722,7 @@ mod tests {
             binary_target: ("linux".into(), "x64".into()),
             version: "0.0.0".into(),
             hub_has_node_key: false,
+            service: true,
         }
     }
 
@@ -810,6 +830,36 @@ mod tests {
         let written: Value = serde_json::from_str(text).unwrap();
         assert_eq!(written["tags"], json!(["gpu"]));
         assert_eq!(written["cmdRoots"], json!(["/srv"]));
+    }
+
+    /// --no-service: nothing for systemd or launchd, and the node's command to run by hand.
+    #[test]
+    fn no_service_writes_no_unit_and_says_how_to_run_the_node() {
+        let plan = plan_machine_add(
+            &fresh_facts("wynn", "x64"),
+            &MachineAddInput {
+                service: false,
+                ..input()
+            },
+        )
+        .unwrap();
+        assert!(
+            plan.steps
+                .iter()
+                .all(|s| !s.command.contains("systemctl") && !s.command.contains("systemd/user"))
+        );
+        assert!(
+            plan.steps
+                .iter()
+                .any(|s| s.stdin == Some(Stdin::EnrollToken))
+        );
+        assert!(!plan.node_restarts);
+        assert_eq!(
+            plan.run_by_hand.as_deref(),
+            Some(
+                "CLAUDE_CONFIG_DIR=/home/wynn/.fleetd/claude GIT_AUTHOR_NAME=wynn-dev GIT_AUTHOR_EMAIL=1+wynn-dev@users.noreply.github.com GIT_COMMITTER_NAME=wynn-dev GIT_COMMITTER_EMAIL=1+wynn-dev@users.noreply.github.com /home/wynn/.fleetd/bin/fleetd node run --home /home/wynn/.fleetd/node"
+            )
+        );
     }
 
     #[test]

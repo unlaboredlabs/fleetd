@@ -241,11 +241,15 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
     let hub_up = match install_hub(&plan, &indent).await {
         Ok(how) => {
             let running = !how.starts_with("not started");
-            let how = format!("{how} (home {})", tilde(&opts.home));
             if running {
                 list.done("hub", &how);
             } else {
-                list.skipped("hub", &how);
+                list.todo(
+                    "hub",
+                    &format!("not started: --no-service (home {})", tilde(&opts.home)),
+                    "start the hub, then run fleetd init again to add workers",
+                    &hub_by_hand(&opts.home, &listen),
+                );
             }
             running
         }
@@ -255,10 +259,10 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
         }
     };
 
-    let mut added = Vec::new();
+    let (mut added, mut idle) = (Vec::new(), Vec::new());
     if hub_up {
-        let (local, ids) = workers(opts, ui, &mut list, net.as_ref()).await?;
-        added = ids;
+        let (local, ids, by_hand) = workers(opts, ui, &mut list, net.as_ref()).await?;
+        (added, idle) = (ids, by_hand);
         first_project(opts, ui, &mut list, local.as_deref(), gh_ok).await?;
     } else {
         list.skipped(
@@ -269,7 +273,7 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
     let paired = app(opts, ui, &mut list)?;
     if hub_up {
         await_runner_checks(opts, &mut list, &added).await;
-        doctor(opts, &mut list).await;
+        doctor(opts, &mut list, &idle).await;
     }
     finish(&list, paired);
     Ok(u8::from(list.failures().next().is_some()))
@@ -311,11 +315,12 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         Vec::new(),
         opts.identity.clone(),
         &opts.suffix,
+        opts.with_service,
     )
     .await;
     match joined {
         Ok(added) => {
-            list.done(&title, &format!("joined {} and runs its node", hub.trim()));
+            node_line(list, &title, &added, &format!("joined {} and runs its node", hub.trim()));
             worker_claude(ui, list, &added).await?;
         }
         Err(_) => list.failed(
@@ -348,12 +353,15 @@ async fn repair_worker(
         joined.tags.clone(),
         opts.identity.clone().or(joined.identity.clone()),
         &joined.suffix,
+        opts.with_service,
     )
     .await;
     match repaired {
         Ok(added) => {
-            list.done(
+            node_line(
+                list,
                 &title,
+                &added,
                 &format!("enrolled with {}; its node runs", joined.hub),
             );
             worker_claude(ui, list, &added).await?;
@@ -367,16 +375,59 @@ async fn repair_worker(
     Ok(worker_summary(list, "This machine is a worker."))
 }
 
-fn worker_summary(list: &Checklist, ok: &str) -> u8 {
-    let failed = list.failures().next().is_some();
-    if failed {
-        let items: Vec<String> = list.failures().map(|i| list.line(i)).collect();
+/// The hub started by hand with what its service would have read: ~/.fleetd/claude.env, the claude login.
+fn hub_by_hand(home: &Path, listen: &str) -> String {
+    let start = format!(
+        "fleetd hub start --home {} --listen {listen}",
+        super::units::q(&home.to_string_lossy())
+    );
+    let env = home_dir().join(".fleetd/claude.env");
+    if std::fs::metadata(&env).is_ok_and(|m| m.len() > 0) {
+        format!(
+            "sh -c {}",
+            super::units::q(&format!(
+                "set -a; . {}; set +a; exec {start}",
+                super::units::q(&env.to_string_lossy())
+            ))
+        )
+    } else {
+        start
+    }
+}
+
+/// A worker's line: done when its node runs as a service; with --no-service, left to the user with its command.
+fn node_line(list: &mut Checklist, title: &str, added: &Added, done: &str) {
+    match &added.run_by_hand {
+        None => list.done(title, done),
+        Some(cmd) => list.todo(
+            title,
+            "enrolled; its node isn't started (--no-service)",
+            &format!("start {}'s node", added.machine_id),
+            &if added.target.local {
+                cmd.clone()
+            } else {
+                format!("ssh {} {}", added.target.host, super::units::q(cmd))
+            },
+        ),
+    }
+}
+
+/// "N step(s) need you:" and the list, when there is one.
+fn print_needs_you(list: &Checklist) {
+    let lines = list.needs_you();
+    if !lines.is_empty() {
         say(&format!(
             "\n{} step(s) need you:\n  {}",
-            items.len(),
-            items.join("\n  ")
+            lines.len(),
+            lines.join("\n  ")
         ));
-    } else {
+    }
+}
+
+fn worker_summary(list: &Checklist, ok: &str) -> u8 {
+    let failed = list.failures().next().is_some();
+    print_needs_you(list);
+    if !failed && list.todos.is_empty() {
         say(&format!(
             "\n{ok} Its agents start from orders you send in the desktop app."
         ));
@@ -723,7 +774,7 @@ async fn workers(
     ui: &Ui,
     list: &mut Checklist,
     net: Option<&Tailnet>,
-) -> Result<(Option<String>, Vec<String>), Stopped> {
+) -> Result<(Option<String>, Vec<String>, Vec<String>), Stopped> {
     let state = read_setup(&opts.home).ok().flatten();
     let recorded = state.map(|s| s.machines).unwrap_or_default();
     let local_id = recorded.iter().find(|(_, r)| r.local).map_or_else(
@@ -784,11 +835,11 @@ async fn workers(
             "workers",
             "none picked; add one later with fleetd machine add <ssh-host>, or fleetd pair --worker <name> for a machine this one can't SSH to",
         );
-        return Ok((None, Vec::new()));
+        return Ok((None, Vec::new(), Vec::new()));
     }
     let home = opts.home.to_string_lossy().into_owned();
     let mut local = None;
-    let mut ids = Vec::new();
+    let (mut ids, mut by_hand) = (Vec::new(), Vec::new());
     for index in chosen {
         let candidate = &candidates[index];
         let title = format!("worker {}", candidate.id);
@@ -808,13 +859,18 @@ async fn workers(
             unit_suffix: None,
             enroll: machine::Enroll::Hub,
             git_identity: None,
+            no_service: !opts.with_service,
         })
         .await;
         match added {
             Ok(Some(added)) => {
-                list.done(&title, "online");
+                node_line(list, &title, &added, "online");
                 worker_claude(ui, list, &added).await?;
-                ids.push(added.machine_id.clone());
+                if added.run_by_hand.is_none() {
+                    ids.push(added.machine_id.clone());
+                } else {
+                    by_hand.push(added.machine_id.clone());
+                }
                 if candidate.host.is_none() {
                     local = Some(added.machine_id);
                 }
@@ -827,7 +883,7 @@ async fn workers(
             ),
         }
     }
-    Ok((local, ids))
+    Ok((local, ids, by_hand))
 }
 
 /// A node that just linked is "degraded: checking …" until its first claude check answers, about a second later.
@@ -1039,6 +1095,14 @@ async fn first_project(
     Ok(())
 }
 
+/// A desktop session the app could open in: always on macOS, an X or Wayland display on Linux.
+fn has_display() -> bool {
+    cfg!(target_os = "macos")
+        || ["DISPLAY", "WAYLAND_DISPLAY"]
+            .iter()
+            .any(|k| std::env::var_os(k).is_some_and(|v| !v.is_empty()))
+}
+
 /// How to open the desktop app here, or how to install it.
 fn app_hint() -> (bool, String) {
     let home = home_dir();
@@ -1108,11 +1172,19 @@ fn app(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<bool, Stoppe
                     minted.code, minted.expires_at
                 ),
             );
-            say(&format!(
-                "    The app on this machine pairs by itself ({}).\n    On another computer: open the app, enter {hub} and the code, or open {}",
-                tilde(&minted.app_pair_file),
-                minted.deep_link
-            ));
+            let (installed, _) = app_hint();
+            say(&if installed && has_display() {
+                format!(
+                    "    The app on this machine pairs by itself ({}).\n    On another computer: open the app, enter {hub} and the code, or open {}",
+                    tilde(&minted.app_pair_file),
+                    minted.deep_link
+                )
+            } else {
+                format!(
+                    "    In the fleetd app on the computer you work from, enter {hub} and the code, or open {} there.",
+                    minted.deep_link
+                )
+            });
             Ok(true)
         }
         Err(message) => {
@@ -1122,11 +1194,11 @@ fn app(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<bool, Stoppe
     }
 }
 
-async fn doctor(opts: &InitOptions, list: &mut Checklist) {
+async fn doctor(opts: &InitOptions, list: &mut Checklist, idle: &[String]) {
     list.start("doctor");
     match super::doctor::run(&opts.home).await {
         Ok(checks) => {
-            let ok = super::doctor::show(list, &checks, &[]);
+            let ok = super::doctor::show(list, &checks, idle);
             list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
         }
         Err(failure) => list.failed("doctor", &failure.message, &failure.fix),
@@ -1134,18 +1206,13 @@ async fn doctor(opts: &InitOptions, list: &mut Checklist) {
 }
 
 fn finish(list: &Checklist, paired: bool) {
-    let failures: Vec<_> = list.failures().collect();
-    if !failures.is_empty() {
-        say(&format!("\n{} step(s) need you:", failures.len()));
-        for item in &failures {
-            say(&format!("  {}", list.line(item)));
-        }
+    print_needs_you(list);
+    if list.failures().next().is_some() {
         say("Then run fleetd init again; it keeps what is done.");
-    } else {
-        say("\nfleetd is set up.");
-    }
-    if !failures.is_empty() {
         return;
+    }
+    if list.todos.is_empty() {
+        say("\nfleetd is set up.");
     }
     let (installed, open) = app_hint();
     let next = match (installed, paired) {

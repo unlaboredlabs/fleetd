@@ -20,6 +20,8 @@ pub struct Item {
 
 pub struct Checklist {
     pub items: Vec<Item>,
+    /// Steps left to the user on purpose (`--no-service`: start the hub and nodes): (what, command).
+    pub todos: Vec<(String, String)>,
     tty: bool,
     /// The running step's title and the line count when it started.
     running: Option<(String, usize)>,
@@ -29,6 +31,7 @@ impl Checklist {
     pub fn new() -> Self {
         Checklist {
             items: Vec::new(),
+            todos: Vec::new(),
             tty: std::io::stderr().is_terminal(),
             running: None,
         }
@@ -102,5 +105,71 @@ impl Checklist {
 
     pub fn failures(&self) -> impl Iterator<Item = &Item> {
         self.items.iter().filter(|i| i.state == State::Failed)
+    }
+
+    /// A step left to the user: shown now as skipped, and listed again at the end with its command.
+    pub fn todo(&mut self, title: &str, detail: &str, what: &str, command: &str) {
+        self.skipped(title, detail);
+        self.todos.push((what.to_owned(), command.to_owned()));
+    }
+
+    /// A failure with this fix is already on the list.
+    pub fn has_fix(&self, fix: &str) -> bool {
+        self.failures().any(|i| i.fix.as_deref() == Some(fix))
+    }
+
+    /// What the closing summary lists: each failure once (the doctor may find what a step already reported), then
+    /// what was left to the user.
+    pub fn needs_you(&self) -> Vec<String> {
+        let mut lines: Vec<String> = Vec::new();
+        let mut fixes: Vec<&str> = Vec::new();
+        for item in self.failures() {
+            if let Some(fix) = item.fix.as_deref() {
+                if fixes.contains(&fix) {
+                    continue;
+                }
+                fixes.push(fix);
+            }
+            lines.push(self.line(item));
+        }
+        lines.extend(
+            self.todos
+                .iter()
+                .map(|(what, command)| format!("→ {what}: {}", self.paint("1", command))),
+        );
+        lines
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_closing_list_names_each_problem_once_then_what_is_left_to_you() {
+        let mut list = Checklist::new();
+        list.tty = false;
+        list.failed("claude", "not logged in", "claude auth login");
+        list.failed("gh", "not logged in", "gh auth login");
+        list.failed(
+            "doctor hub",
+            "claude on the hub is not logged in",
+            "claude auth login",
+        );
+        list.todo(
+            "hub",
+            "not started",
+            "start the hub",
+            "fleetd hub start --home ~/.fleetd/hub --listen 127.0.0.1:4790",
+        );
+        assert!(list.has_fix("gh auth login"));
+        assert_eq!(
+            list.needs_you(),
+            [
+                "✗ claude: not logged in. Fix: claude auth login",
+                "✗ gh: not logged in. Fix: gh auth login",
+                "→ start the hub: fleetd hub start --home ~/.fleetd/hub --listen 127.0.0.1:4790",
+            ]
+        );
     }
 }

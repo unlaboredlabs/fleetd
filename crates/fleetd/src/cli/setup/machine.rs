@@ -21,12 +21,13 @@ use super::{Probe, current_exe, parse_listen, probe_listen, say};
 pub fn machine_usage() -> String {
     use crate::node::runner::version::SUPPORTED;
     format!(
-        "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run]
+        "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--no-service]
             [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]
              set up a machine that runs agents, over SSH (--local: this machine): copies this fleetd
              there, checks its claude (installed, version {SUPPORTED}, logged in), enrolls the node and
              runs it as a user service, then waits until the machine is online; prints every command
-             first, --dry-run only prints (for a fresh machine, without connecting); safe to run again
+             first, --dry-run only prints (for a fresh machine, without connecting); --no-service
+             enrolls the node but writes no service and prints how to run it; safe to run again
   machine remove <id> [--purge] [--home <hub home>]
              stop and remove the node's service on the machine and revoke its key on the hub; --purge
              also deletes ~/.fleetd/node, ~/.fleetd/claude and ~/.fleetd/claude.env there, and
@@ -166,6 +167,8 @@ pub struct Added {
     pub layout: MachineLayout,
     pub claude: String,
     pub logged_in: bool,
+    /// `--no-service`: how to run its node by hand.
+    pub run_by_hand: Option<String>,
 }
 
 /// Where the one-time enrollment token comes from: the hub's database (on the hub), `fleetd pair --worker` (on a
@@ -282,6 +285,8 @@ pub struct AddArgs {
     pub enroll: Enroll,
     /// Only for a joining worker, which has no hub setup to read it from.
     pub git_identity: Option<GitIdentity>,
+    /// `--no-service`: enroll, but leave running the node to the user.
+    pub no_service: bool,
 }
 
 fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
@@ -294,6 +299,7 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         ("ssh-config", Kind::Str),
         ("home", Kind::Str),
         ("unit-suffix", Kind::Str),
+        ("no-service", Kind::Bool),
     ];
     let v = args::parse(
         argv,
@@ -330,6 +336,7 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         unit_suffix: v.string("unit-suffix"),
         enroll: Enroll::Hub,
         git_identity: None,
+        no_service: v.flag("no-service"),
     })
 }
 
@@ -440,6 +447,7 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         binary_target: local_target(),
         version: env!("CARGO_PKG_VERSION").into(),
         hub_has_node_key: false,
+        service: !a.no_service,
     };
     let again = if joining {
         "fleetd init again".to_owned()
@@ -613,7 +621,16 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         }
     }
 
-    if let Some(hub) = &hub {
+    if let Some(cmd) = &plan.run_by_hand {
+        say(&format!(
+            "{machine_id} is enrolled; with --no-service, start its node yourself{}:\n  {cmd}",
+            if local {
+                String::new()
+            } else {
+                format!(" on {host}")
+            }
+        ));
+    } else if let Some(hub) = &hub {
         let already = !plan.node_restarts
             && hub
                 .store
@@ -661,6 +678,7 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         layout: plan.layout,
         claude,
         logged_in,
+        run_by_hand: plan.run_by_hand,
     }))
 }
 
@@ -798,6 +816,7 @@ pub async fn join(
     tags: Vec<String>,
     identity: Option<GitIdentity>,
     unit_suffix: &str,
+    service: bool,
 ) -> Result<Added, u8> {
     add(AddArgs {
         host: None,
@@ -810,6 +829,7 @@ pub async fn join(
         unit_suffix: Some(unit_suffix.to_owned()),
         enroll,
         git_identity: identity,
+        no_service: !service,
     })
     .await
     .map(|added| added.expect("not a dry run"))

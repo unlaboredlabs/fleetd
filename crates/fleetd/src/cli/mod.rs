@@ -55,15 +55,14 @@ pub fn usage_text() -> String {
 commands:
   version    print the fleetd version and protocol
   help       show this message
-  update [--check] [--channel <c>]
-             replace this fleetd with the latest release
-
+{}
 setting up (on the hub machine):
 {}{}{}
 running by hand:
 {}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
 {}",
+        UPDATE_USAGE,
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
         pair::PAIR_USAGE,
@@ -75,6 +74,45 @@ lead-side commands (run by a lead or task inside a project workspace):
         retro::RETRO_USAGE,
         lead::LEAD_USAGE
     )
+}
+
+const UPDATE_USAGE: &str = "  update [--check] [--channel <c>]
+             replace this fleetd with the latest release
+";
+
+/// `fleetd <command> … --help` (or `-h`): that command's usage, for stdout and exit 0. After `--` they are arguments.
+pub fn help_for(argv: &[String]) -> Option<String> {
+    let (command, rest) = argv.split_first()?;
+    let asked = rest
+        .iter()
+        .take_while(|a| *a != "--")
+        .any(|a| a == "--help" || a == "-h");
+    if !asked {
+        return None;
+    }
+    let text = match command.as_str() {
+        "init" | "doctor" | "uninstall" => setup::SETUP_USAGE.to_owned(),
+        "machine" => setup::machine::machine_usage(),
+        "pair" => pair::PAIR_USAGE.to_owned(),
+        "hub" => match rest.first().map(String::as_str) {
+            Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
+            Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
+            Some("token") => hub_key::HUB_TOKEN_USAGE.to_owned(),
+            _ => format!(
+                "{}{}{}",
+                node::HUB_START_USAGE,
+                hub_key::HUB_KEY_USAGE,
+                hub_key::HUB_TOKEN_USAGE
+            ),
+        },
+        "node" => node::NODE_USAGE.to_owned(),
+        "listen" => listen::LISTEN_USAGE.to_owned(),
+        "retro" => retro::RETRO_USAGE.to_owned(),
+        "update" => UPDATE_USAGE.to_owned(),
+        _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
+        _ => return None,
+    };
+    Some(format!("usage:\n{text}"))
 }
 
 /// The short-lived commands that are not lead calls: version, help and `hub key|token`.
@@ -164,6 +202,10 @@ async fn update_command(argv: &[String]) -> u8 {
 
 pub fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(text) = help_for(&argv) {
+        print!("{text}");
+        return ExitCode::SUCCESS;
+    }
     if argv.first().map(String::as_str) == Some("hub")
         && matches!(argv.get(1).map(String::as_str), Some("start" | "serve"))
     {
@@ -252,5 +294,37 @@ mod tests {
         );
         assert_eq!(run(&argv(&["hub", "device", "add"])).code, 2);
         assert!(!usage_text().contains("hub device"));
+    }
+
+    #[test]
+    fn every_command_answers_help() {
+        let help = |args: &[&str]| help_for(&argv(args));
+        assert!(help(&["init", "--help"]).unwrap().contains("init [--yes]"));
+        assert!(
+            help(&["machine", "add", "-h"])
+                .unwrap()
+                .contains("machine add <ssh-host>")
+        );
+        assert!(
+            help(&["hub", "key", "create", "--help"])
+                .unwrap()
+                .contains("hub key create")
+        );
+        assert!(!help(&["hub", "key", "-h"]).unwrap().contains("hub start"));
+        assert!(
+            help(&["hub", "--help"])
+                .unwrap()
+                .contains("hub token create")
+        );
+        assert!(
+            help(&["update", "-h"])
+                .unwrap()
+                .contains("update [--check]")
+        );
+        assert!(help(&["status", "--help"]).is_some());
+        // After `--` it is an argument, and unknown commands keep their error.
+        assert_eq!(help(&["task", "--", "-h"]), None);
+        assert_eq!(help(&["frobnicate", "--help"]), None);
+        assert_eq!(help(&["init"]), None);
     }
 }
