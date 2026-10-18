@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::app::AppServerMessage;
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::live::{Activity, ActivityNow, AgentLane, LaneStatus, LiveFrame, LiveLane, SPARK_BUCKETS, Spark, Tokens};
+use fleetd_contracts::live::{Activity, ActivityNow, AgentLane, LaneStatus, LiveFrame, LiveLane, OrderPhase, SPARK_BUCKETS, Spark, Tokens};
 use fleetd_contracts::mcp::{OrderGetOutput, OrdersBoardOutput};
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::train::ChangeState;
@@ -124,6 +124,8 @@ pub struct Feed {
     next_pr: i64,
     /// Lanes that finished last tick; the next board refetch leaves them out, as the hub's board does.
     finished: Vec<String>,
+    /// Lanes that finished, newest first, for the order view's done list.
+    pub retired: Vec<AgentLane>,
     machines_json: Value,
 }
 
@@ -205,6 +207,7 @@ impl Feed {
             next_task: 100,
             next_pr: 216,
             finished: Vec::new(),
+            retired: Vec::new(),
             machines_json,
         };
         for lane in feed.working().into_iter().map(|(_, _, l)| l) {
@@ -276,7 +279,12 @@ impl Feed {
             for (_, board) in &mut self.boards {
                 edit(&mut board.orders, |orders| {
                     for card in orders {
-                        edit(&mut card.lanes, |lanes| lanes.retain(|l| l.lane_id.as_str() != id));
+                        edit(&mut card.lanes, |lanes| {
+                            if let Some(l) = lanes.iter().find(|l| l.lane_id.as_str() == id) {
+                                self.retired.insert(0, l.clone());
+                            }
+                            lanes.retain(|l| l.lane_id.as_str() != id)
+                        });
                     }
                 });
             }
@@ -371,7 +379,33 @@ impl Feed {
         let next_pr = self.next_pr;
         let Some((_, board)) = self.boards.iter_mut().find(|(_, b)| !b.trains.is_empty()) else { return };
         self.next_pr += 1;
-        edit(&mut board.trains, |trains| move_train(&mut trains[0], next_pr));
+        let chips = edit(&mut board.trains, |trains| {
+            move_train(&mut trains[0], next_pr);
+            trains[0].chips.clone()
+        });
+        // The orders' PR rows follow their chips, and an order with no agents left takes its phase from its PRs,
+        // as the hub's next orders_board would.
+        edit(&mut board.orders, |orders| {
+            for card in orders {
+                edit(&mut card.prs, |prs| {
+                    for pr in prs {
+                        if let Some(c) = chips.iter().find(|c| c.change_id == pr.change_id) {
+                            pr.state = c.state;
+                            pr.position = c.position;
+                        }
+                    }
+                });
+                if card.lanes.is_empty() && !card.prs.is_empty() {
+                    let open = card.prs.iter().find(|p| p.state != ChangeState::Merged);
+                    let (phase, detail) = match open {
+                        Some(p) => (OrderPhase::Merging, format!("#{} {}", p.number, if p.state == ChangeState::Ci { "in CI" } else { "merging" })),
+                        None => (OrderPhase::Done, format!("done · {} PR{}", card.prs.len(), if card.prs.len() == 1 { "" } else { "s" })),
+                    };
+                    card.phase = phase;
+                    card.phase_detail = Some(Text::unchecked(detail));
+                }
+            }
+        });
     }
 }
 
@@ -412,7 +446,9 @@ const SPARK_BUCKET_TICKS: u64 = 8;
 
 impl Sim {
     fn new(seed: usize, now_ms: i64) -> Self {
-        let samples = (0..SPARK_BUCKETS).map(|i| (((seed + i * 7) % 11) * 4) as u8).collect();
+        // A minute of history in the shape of the fixture's T31, started at a different bucket per lane.
+        let t31 = frame_fixture(FULL).lanes.iter().find(|l| l.lane_id.as_str() == "T31").and_then(|l| l.spark.clone()).expect("T31 spark");
+        let samples = (0..SPARK_BUCKETS).map(|i| t31.samples[(seed + i) % t31.samples.len()]).collect();
         Self { act: seed, since: now_ms, input: 800 + seed as u64 * 3, output: 120 + seed as u64, bucket: 0, samples }
     }
 }
@@ -437,12 +473,14 @@ struct BenchBoard {
     train: Entity<TrainStrip>,
     feeding: bool,
     probe: Option<Probe>,
+    /// `FLEETD_LIVE=order`: W14's lanes at order-view density instead of the board, from its `order_get`.
+    order: Option<(OrderGetOutput, Entity<FleetLanes>)>,
 }
 
 impl BenchBoard {
     fn new(feed: Feed, cx: &mut Context<Self>) -> Self {
         let train = cx.new(|_| TrainStrip::new());
-        let mut this = Self { feed, state: LiveState::default(), lanes: Vec::new(), train, feeding: false, probe: None };
+        let mut this = Self { feed, state: LiveState::default(), lanes: Vec::new(), train, feeding: false, probe: None, order: None };
         let now = local_ms();
         for (key, board) in this.feed.boards.clone() {
             this.state.set_board(&key, board);
@@ -471,9 +509,27 @@ impl BenchBoard {
             };
             entity.update(cx, |l, cx| l.set(lanes, hub_now, stale, cx));
         }
+        if let Some((base, entity)) = &self.order {
+            let w = base.order.workstream_id.clone();
+            let mut detail = base.clone();
+            if let Some(card) = self.feed.boards.iter().flat_map(|(_, b)| b.orders.iter()).find(|o| o.workstream_id == w) {
+                detail.order = card.clone();
+            }
+            detail.done_lanes = List::unchecked(self.feed.retired.iter().chain(base.done_lanes.iter()).take(30).cloned().collect());
+            self.state.set_order(detail);
+            let lanes = self.state.lanes(&w);
+            entity.update(cx, |l, cx| l.set(lanes, hub_now, stale, cx));
+        }
         let trains = self.state.trains().to_vec();
         self.train.update(cx, |t, cx| t.set(trains, cx));
         cx.notify();
+    }
+
+    fn show_order(&mut self, cx: &mut Context<Self>) {
+        let detail: OrderGetOutput = shifted(ORDER, local_ms() - parse_ms(FIXTURE_AT).unwrap());
+        let entity = cx.new(|cx| FleetLanes::new(detail.order.workstream_id.clone(), Density::Full, cx));
+        self.order = Some((detail, entity));
+        self.sync(cx);
     }
 
     fn step(&mut self, cx: &mut Context<Self>) {
@@ -493,6 +549,40 @@ impl Render for BenchBoard {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme(cx).clone();
         let now = self.state.hub_now_ms(local_ms());
+        if let Some((detail, lanes)) = &self.order {
+            let o = &detail.order;
+            return div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .bg(t.bg)
+                .text_color(t.text)
+                .font_family(t.ui_font.clone())
+                .text_size(px(size::MD))
+                .child(
+                    div()
+                        .h(px(metric::BAR))
+                        .px_4()
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .border_b_1()
+                        .border_color(t.hairline)
+                        .child(div().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(o.workstream_id.to_string()))
+                        .child(div().font_weight(STRONG).child(o.title.to_string()))
+                        .child(phase_chip(&t, o.phase, o.phase_detail.as_deref())),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .child(div().w(gpui::relative(0.56)).px_2().py_2().border_r_1().border_color(t.hairline).child(lanes.clone())),
+                )
+                .child(machine_strip(&t, self.state.machines(), self.state.slots()))
+                .child(self.train.clone())
+                .into_any_element();
+        }
         let groups = self.feed.boards.iter().map(|(key, _)| {
             let orders = self.state.orders(key);
             let cards = orders.iter().map(|o| {
@@ -567,9 +657,10 @@ impl Render for BenchBoard {
             .text_color(t.text)
             .font_family(t.ui_font.clone())
             .text_size(px(size::MD))
-            .child(div().id("board").flex_1().min_h_0().overflow_y_scroll().px_4().pb_4().children(groups))
+            .child(div().id("board").flex_1().min_h_0().overflow_y_scroll().px_4().pb_4().child(div().max_w(px(1040.)).children(groups)))
             .child(machine_strip(&t, self.state.machines(), self.state.slots()))
             .child(self.train.clone())
+            .into_any_element()
     }
 }
 
@@ -581,13 +672,17 @@ pub fn open_bench(options: WindowOptions, cx: &mut App) {
     let reduced = std::env::var("FLEETD_MOTION").as_deref() == Ok("reduced");
     // The bench measures motion, so it doesn't follow the host's setting unless asked.
     motion::set_pref(if reduced { MotionPref::Reduced } else { MotionPref::Full }, cx);
-    let demo = std::env::var("FLEETD_LIVE").as_deref() == Ok("demo");
+    let view = std::env::var("FLEETD_LIVE").unwrap_or_default();
+    let demo = matches!(view.as_str(), "demo" | "order");
     cx.open_window(options, move |window, cx| {
         crate::theme::init(window, cx);
         let now = local_ms();
         let feed = if demo { Feed::demo(now) } else { Feed::bench(now, 50, 4) };
         let board = cx.new(|cx| BenchBoard::new(feed, cx));
         board.update(cx, |b, cx| {
+            if view == "order" {
+                b.show_order(cx);
+            }
             if demo {
                 b.feeding = true;
             } else {

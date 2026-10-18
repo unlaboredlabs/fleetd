@@ -1,6 +1,6 @@
 //! Runs fleetd-app in its FLEETD_BENCH modes and prints a markdown table of the results.
 //!
-//! usage: fleetd-bench <path/to/fleetd-app> [--runs N] [--label TEXT]
+//! usage: fleetd-bench <path/to/fleetd-app> [--runs N] [--label TEXT] [--only live]
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -14,6 +14,8 @@ struct Args {
     app: String,
     runs: usize,
     label: String,
+    /// `live`: only the live board rows.
+    only: Option<String>,
 }
 
 fn main() {
@@ -25,11 +27,12 @@ fn main() {
         _ => {}
     }
     let mut it = std::env::args().skip(1);
-    let mut args = Args { app: String::new(), runs: 10, label: String::new() };
+    let mut args = Args { app: String::new(), runs: 10, label: String::new(), only: None };
     while let Some(a) = it.next() {
         match a.as_str() {
             "--runs" => args.runs = it.next().and_then(|v| v.parse().ok()).expect("--runs N"),
             "--label" => args.label = it.next().expect("--label TEXT"),
+            "--only" => args.only = it.next(),
             _ => args.app = a,
         }
     }
@@ -40,6 +43,11 @@ fn main() {
         eprintln!("  {name}: {value}");
         rows.push((name.to_string(), value));
     };
+
+    if args.only.as_deref() == Some("live") {
+        live_rows(&args.app, &mut row);
+        return print_table(&args.label, rows);
+    }
 
     let size = std::fs::metadata(&args.app).expect("app binary").len();
     row("Binary size (release, stripped)", format!("{:.1} MiB", size as f64 / 1048576.0));
@@ -91,12 +99,49 @@ fn main() {
     row("Scroll 20k-line log for 5 s: presented frames/s", format!("{fps:.1}"));
     row("Scroll 20k-line log for 5 s: worst frame interval", format!("{worst:.1} ms"));
 
-    println!("{}", args.label);
+    live_rows(&args.app, &mut row);
+    print_table(&args.label, rows);
+}
+
+fn print_table(label: &str, rows: Vec<(String, String)>) {
+    println!("{label}");
     println!();
     println!("| Metric | Value |\n|---|---|");
     for (k, v) in rows {
         println!("| {k} | {v} |");
     }
+}
+
+/// The live board (`FLEETD_BENCH=live`): 50 orders and 200 lanes under the scripted feed at its maximum rate, with
+/// motion on and with reduce-motion.
+fn live_rows(app: &str, row: &mut impl FnMut(&str, String)) {
+    eprintln!("live board ...");
+    let full = live(app, &[]);
+    let n = |line: &str, k: &str| field(line, k).unwrap_or("?").to_string();
+    let us = |line: &str, k: &str| field(line, k).and_then(|v| v.parse::<f64>().ok()).map_or("?".into(), |v| format!("{:.1} ms", v / 1000.0));
+    let scope = format!("{} orders, {} lanes", n(&full, "orders"), n(&full, "lanes"));
+    row(&format!("Live board ({scope}), feed at 4 Hz for 5 s: presented frames/s"), n(&full, "fps"));
+    row("  worst frame interval", us(&full, "worst_frame_us"));
+    row(
+        &format!("  frame draw, layout + paint ({} frames)", n(&full, "frames")),
+        format!("median {}, p99 {}, max {}", us(&full, "draw_p50_us"), us(&full, "draw_p99_us"), us(&full, "draw_max_us")),
+    );
+    row("Live board, before the feed starts: presented frames/s", n(&full, "idle_fps"));
+    row("Live board, feed paused (after its holds and exits): presented frames/s", n(&full, "paused_fps"));
+    let reduced = live(app, &[("FLEETD_MOTION", "reduced")]);
+    row("Live board with reduce-motion, feed at 4 Hz: presented frames/s", n(&reduced, "fps"));
+    row(
+        "  frame draw, layout + paint",
+        format!("median {}, p99 {}, max {}", us(&reduced, "draw_p50_us"), us(&reduced, "draw_p99_us"), us(&reduced, "draw_max_us")),
+    );
+}
+
+fn live(app: &str, env: &[(&str, &str)]) -> String {
+    let run = Run::start(app, "live", env);
+    focus(&run.expect("first_present"));
+    let line = run.expect("live");
+    run.finish();
+    line
 }
 
 fn mib(kib: u64) -> String {
