@@ -26,10 +26,13 @@ pub enum Mode {
     KeysExternal,
     /// Scroll the log programmatically for 5 s; report presented fps and the worst frame interval.
     Scroll,
+    /// The live lanes board (live/fixture.rs) under the scripted feed: frame times while it animates, then
+    /// presented frames with the feed paused.
+    Live,
 }
 
 impl Mode {
-    const NAMES: &str = "cold, idle, keys-internal, keys-external or scroll";
+    const NAMES: &str = "cold, idle, keys-internal, keys-external, scroll or live";
 
     /// `FLEETD_BENCH`, unset or empty meaning no bench. Read before gpui starts, so a bad value is an error
     /// message instead of a panic inside AppKit's launch callback.
@@ -47,6 +50,7 @@ impl Mode {
             "keys-internal" => Mode::KeysInternal,
             "keys-external" => Mode::KeysExternal,
             "scroll" => Mode::Scroll,
+            "live" => Mode::Live,
             other => {
                 return Err(format!(
                     "FLEETD_BENCH={other:?} is not a bench mode; use {}. The fleetd-bench driver sets it for you (app/bench/MAC-RUN.md).",
