@@ -73,11 +73,17 @@ export async function ownProxy(lab: Lab) {
     claudeSettings: { env: { ANTHROPIC_BASE_URL: proxy.url, ANTHROPIC_AUTH_TOKEN: TOKEN, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" } },
   });
   try {
-    await lab.waitLive(MACHINE);
+    // Online means its node's probe found a usable login, which here only the proxy settings provide.
+    await lab.until(`${MACHINE} online`, 120_000, async () => {
+      const s = (await callTool("fleetd_status")).body;
+      if ((s.machines as Array<Body>).some((m) => m.machineId === MACHINE && m.status === "online")) return true;
+      await callTool("events_wait", { cursor: s.cursor, timeoutSec: 5 });
+      return undefined;
+    });
     const checks = (await callTool("doctor_list", { rerun: true })).body.checks as Array<Body>;
     const login = checks.find((c) => c.id === `${MACHINE}/claude_login`);
     const described = `via proxy ${proxy.url} from ~/.claude/settings.json`;
-    check(login?.status === "pass" && String(login.message).includes(described), `doctor names the user's proxy: ${JSON.stringify(login)}`);
+    check(login?.status === "ok" && String(login.message).includes(described), `doctor names the user's proxy: ${JSON.stringify(login)}`);
     ok(`doctor ${login!.id}: ${login!.message}`);
     check(proxy.seen.every((r) => r.method !== "POST" || !r.url.includes("/messages")), `the probe made no model call: ${JSON.stringify(proxy.seen)}`);
 
