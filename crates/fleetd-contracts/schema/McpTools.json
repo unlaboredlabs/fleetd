@@ -2625,6 +2625,11 @@
           "type": "string"
         },
         {
+          "const": "train.blocked",
+          "description": "Something that is not the train's sits where its worktree goes, and a person has to move it; `data.changeId`,\n`data.repo`, `data.error` (what to move).",
+          "type": "string"
+        },
+        {
           "const": "change.refused",
           "description": "Refused at enqueue; `data.prUrl`, `data.fix`.",
           "type": "string"

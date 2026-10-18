@@ -1097,3 +1097,98 @@ async fn sends_a_change_back_to_reviewing_when_a_clean_rebase_changes_its_patch_
     assert!(kit.train.step(REPO).await);
     assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn replaces_a_stale_train_worktree_left_by_an_earlier_clone() {
+    let kit = Kit::new();
+    let dir = kit.author.parent().unwrap().to_path_buf();
+    // An earlier clone of the project made the train worktree, then was deleted: its .git file points nowhere.
+    let earlier = dir.join("earlier");
+    git(
+        &dir,
+        &[
+            "clone",
+            "-q",
+            kit.gh.origin.to_str().unwrap(),
+            earlier.to_str().unwrap(),
+        ],
+    );
+    let worktree = dir.join("train-wt");
+    git(
+        &earlier,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "--detach",
+            worktree.to_str().unwrap(),
+        ],
+    );
+    std::fs::remove_dir_all(&earlier).unwrap();
+
+    let pr = kit.open_pr(5, "stale", &[add("b.txt", "b\n")], "Source: done:0");
+    let change = kit.enqueue(pr, None).await;
+    assert_eq!(
+        (
+            change.last_error.as_ref().map(|e| e.as_str()),
+            change.patch_id.is_some()
+        ),
+        (None, true)
+    );
+    let common = git(
+        &worktree,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    );
+    assert!(common.ends_with("/project/.git"), "{common}");
+
+    // A healthy worktree is kept as it is.
+    std::fs::write(worktree.join("kept"), "").unwrap();
+    let next = kit.open_pr(6, "next", &[add("c.txt", "c\n")], "Source: done:0");
+    assert!(kit.enqueue(next, None).await.last_error.is_none());
+    assert!(worktree.join("kept").exists());
+    assert!(kit.host.events_of("train.blocked").is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn leaves_what_is_not_the_trains_where_its_worktree_goes_and_says_what_to_move() {
+    let kit = Kit::new();
+    let worktree = kit.author.parent().unwrap().join("train-wt");
+    std::fs::create_dir_all(&worktree).unwrap();
+    std::fs::write(worktree.join("notes.txt"), "mine\n").unwrap();
+    let path = worktree.display().to_string();
+
+    let pr = kit.open_pr(6, "blocked", &[add("b.txt", "b\n")], "Source: done:0");
+    let change = kit.enqueue(pr, None).await;
+    assert_eq!(change.state, ChangeState::Queued);
+    let error = change.last_error.unwrap();
+    assert!(
+        error
+            .as_str()
+            .contains(&format!("`mv {path} {path}.moved`")),
+        "{}",
+        error.as_str()
+    );
+    assert_eq!(
+        std::fs::read_to_string(worktree.join("notes.txt")).unwrap(),
+        "mine\n"
+    );
+    let blocked = kit.host.events_of("train.blocked");
+    assert_eq!(
+        (blocked.len(), blocked[0]["changeId"].as_str()),
+        (1, Some(change.change_id.as_str()))
+    );
+
+    // Each pass retries, but the event is not repeated for the same error; once moved, the train goes on.
+    kit.train.step(REPO).await;
+    assert_eq!(kit.host.events_of("train.blocked").len(), 1);
+    std::fs::rename(&worktree, format!("{path}.moved")).unwrap();
+    kit.train.step(REPO).await;
+    let after = kit.get(&change.change_id);
+    assert_eq!(
+        (
+            after.last_error.as_ref().map(|e| e.as_str()),
+            after.patch_id.is_some()
+        ),
+        (None, true)
+    );
+}
