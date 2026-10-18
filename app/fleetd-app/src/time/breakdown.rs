@@ -3,7 +3,7 @@
 //! category shows the previous period beside this one. Every row opens the spans behind it.
 
 use fleetd_contracts::mcp::TimeBreakdownOutput;
-use fleetd_contracts::time::{Category, CategoryTotal, GapWhy, InsightRule, SpanKind};
+use fleetd_contracts::time::{Category, CategoryTotal, Gap, GapWhy, InsightRule, SpanKind};
 use gpui::{AnyElement, Context, Div, SharedString, div, prelude::*, px};
 
 use super::{SHOWN, TimeView, cat_label, fmt_bytes, fmt_dur, kind_word, swatch};
@@ -350,19 +350,25 @@ fn commands(t: &Theme, b: &TimeBreakdownOutput, cx: &mut Context<TimeView>) -> D
     div().child(section(t, "Slowest commands", "per call: each call's own time, so calls that ran together can overlap")).child(rows)
 }
 
+/// One coverage gap in words: "a machine runs a fleetd too old to record tool time (buildbox), 16:20:00 to 18:02:00".
+pub fn gap_text(g: &Gap) -> String {
+    let count = g.count.map_or(String::new(), |c| format!("{} ", c.get()));
+    let what = match g.why {
+        GapWhy::NodeOlder => "a machine runs a fleetd too old to record tool time".to_string(),
+        GapWhy::NodeDropped => format!("a machine dropped {count}spans it couldn't send in time"),
+        GapWhy::HubDropped => format!("the hub was too busy to keep {count}spans"),
+        GapWhy::NoNodeSpans => "a session has no tool timeline".to_string(),
+        GapWhy::NothingRunning => "the critical path found time with nothing running".to_string(),
+    };
+    let on = g.machine_id.as_ref().map(|m| format!(" ({m})")).unwrap_or_default();
+    format!("{what}{on}, {} to {}", super::clock_ms(g.from_ms.get()), super::clock_ms(g.to_ms.get()))
+}
+
 /// What these numbers can't say, in the reader's words (spec §2f), and any data the hub knows is missing.
 fn notes(t: &Theme, b: &TimeBreakdownOutput) -> Div {
     let mut lines: Vec<String> = Vec::new();
     for g in b.coverage.gaps.iter() {
-        let what = match g.why {
-            GapWhy::NodeOlder => "a machine runs a fleetd too old to record tool time".to_string(),
-            GapWhy::NodeDropped => format!("a machine dropped {} spans it couldn't send in time", g.count.map_or(0, |c| c.get())),
-            GapWhy::HubDropped => format!("the hub was too busy to keep {} spans", g.count.map_or(0, |c| c.get())),
-            GapWhy::NoNodeSpans => "a session has no tool timeline".to_string(),
-            GapWhy::NothingRunning => "the critical path found time with nothing running".to_string(),
-        };
-        let on = g.machine_id.as_ref().map(|m| format!(" ({m})")).unwrap_or_default();
-        lines.push(format!("Missing: {what}{on}, {} to {}.", super::clock_ms(g.from_ms.get()), super::clock_ms(g.to_ms.get())));
+        lines.push(format!("Missing: {}.", gap_text(g)));
     }
     lines.extend(
         [

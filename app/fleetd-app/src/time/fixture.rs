@@ -792,6 +792,16 @@ pub fn answer(state: &mut State) {
             now.gaps.push(json!({ "why": "node_older", "machineId": "buildbox", "fromMs": at("2026-10-16T16:20:00.000Z"), "toMs": at("2026-10-16T18:02:00.000Z") }));
         }
     }
+    // FLEETD_TIME_GAPS=1: the order as a hub with missing data shows it (a node dropped spans from writer b's run,
+    // and the reviewer's machine ran an older fleetd), for the coverage screenshots.
+    if !fleet && std::env::var("FLEETD_TIME_GAPS").is_ok_and(|v| v == "1") {
+        let t0 = specs[0].start;
+        let (a, b) = (t0 + 20 * MIN, t0 + 31 * MIN);
+        now.spans.push(from(json!({ "id": 9_100_000, "kind": "gap", "cat": "idle", "lane": "thread:devbox/s-22", "startMs": a, "endMs": b,
+            "threadId": "s-22", "machineId": "devbox", "workstreamId": specs[0].id, "status": "ok", "extra": { "count": 412 } })));
+        now.gaps.push(json!({ "why": "node_dropped", "lane": "thread:devbox/s-22", "machineId": "devbox", "fromMs": a, "toMs": b, "count": 412 }));
+        now.gaps.push(json!({ "why": "no_node_spans", "lane": "thread:buildbox/s-24", "machineId": "buildbox", "fromMs": t0 + 60 * MIN, "toMs": t0 + 70 * MIN }));
+    }
     let prev = (q.breakdown.compare.is_some() && fleet).then(|| {
         let older: Vec<OrderSpec> = specs.iter().map(before).collect();
         collect(&older, None, &f).0

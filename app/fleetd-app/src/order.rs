@@ -306,11 +306,11 @@ impl Shell {
             .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().font_weight(STRONG).child(title))
             .child(div().flex_1())
             .when(needs, |d| d.child(ui::dot(t.warning)))
-            .child(div().text_size(px(size::XS)).text_color(t.quiet).child(status))
             .child(ui::button(t, "order-time", "Time", Variant::Ghost, true).on_click(cx.listener({
                 let w = w.clone();
                 move |this, _, _, cx| this.open_time(Some(w.clone()), cx)
             })))
+            .child(div().text_size(px(size::XS)).text_color(t.quiet).child(status))
             .child(ui::kbd(t, ui::shortcut(".")))
             .child(stop);
         let wide = window.viewport_size().width >= px(1100.);

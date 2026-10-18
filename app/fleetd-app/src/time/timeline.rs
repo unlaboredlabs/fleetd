@@ -10,7 +10,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use fleetd_contracts::live::AgentRole;
-use fleetd_contracts::time::{Category, CriticalPath, DecidedBy, Span, SpanKind, SpanStatus};
+use fleetd_contracts::time::{Category, Coverage, CriticalPath, DecidedBy, GapWhy, Span, SpanKind, SpanStatus};
 use gpui::{
     AnyElement, BorderStyle, Bounds, Context, Div, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Window, canvas, div,
     fill, point, prelude::*, px, quad, relative, size, uniform_list,
@@ -27,8 +27,8 @@ use crate::ui::{self, Variant};
 const LABEL_W: f32 = 220.;
 const ROW_H: f32 = 26.;
 const BAR_H: f32 = 12.;
-/// Off the critical path, bars drop to this.
-const OFF_PATH: f32 = 0.6;
+/// Off the critical path, bars drop to this: still 3:1 against the light background, as non-text contrast needs.
+const OFF_PATH: f32 = 0.75;
 /// With a highlight on, the other bars drop to this.
 const UNLIT: f32 = 0.22;
 
@@ -51,6 +51,8 @@ pub struct Row {
     /// "Bash 41m · model 22m": the row's two biggest kinds.
     pub summary: String,
     pub agent_ms: i64,
+    /// Stretches the hub knows it has no spans for, and why. Drawn as a mark under the row; never hit.
+    pub gaps: Vec<(i64, i64, GapWhy)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,6 +82,9 @@ pub struct Model {
     pub by_id: HashMap<i64, usize>,
     pub rows: Vec<Row>,
     pub items: Vec<Item>,
+    /// Per row, the latest end of its items so far (a running max over `items`). A row's spans can overlap (a
+    /// permission wait inside its tool, a debounce over the lead's turn, asks), so ends alone are not in order.
+    pub reach: Vec<i64>,
     pub start_ms: i64,
     pub end_ms: i64,
     pub path: Vec<Seg>,
@@ -94,7 +99,7 @@ pub struct Model {
 
 fn row_key(s: &Span) -> String {
     match (s.kind, s.extra.as_ref().and_then(|e| e.check.as_ref())) {
-        (SpanKind::CiCheck, Some(name)) => format!("{}#{}", s.lane, name),
+        (SpanKind::CiCheck, Some(name)) => format!("{}#ci#{}", s.lane, name),
         // Asks that blocked nothing overlap the blocking ones; they get their own row.
         (SpanKind::AskInfo, _) => format!("{}#info", s.lane),
         _ => s.lane.to_string(),
@@ -102,7 +107,7 @@ fn row_key(s: &Span) -> String {
 }
 
 impl Model {
-    pub fn build(spans: &[Span], path: Option<&CriticalPath>, names: &Names, now_ms: i64) -> Self {
+    pub fn build(spans: &[Span], path: Option<&CriticalPath>, coverage: Option<&Coverage>, names: &Names, now_ms: i64) -> Self {
         let spans = spans.to_vec();
         let by_id: HashMap<i64, usize> = spans.iter().enumerate().map(|(i, s)| (s.id.get(), i)).collect();
         let mut children: HashMap<i64, Vec<usize>> = HashMap::new();
@@ -119,11 +124,22 @@ impl Model {
         let path_ids: HashSet<i64> = path.iter().flat_map(|p| p.segments.iter()).filter_map(|s| s.span_id.map(|i| i.get())).collect();
         // Leaves only: an envelope's time is its children's, and a group is drawn instead of its overlapping calls.
         let drawn = |s: &Span| match s.kind {
-            SpanKind::Run | SpanKind::Idle => false,
+            SpanKind::Run | SpanKind::Idle | SpanKind::Gap => false,
             SpanKind::ModelMessage => !children.contains_key(&s.id.get()),
             _ => !parallel.contains(&s.id.get()),
         };
         let mut rows_by_key: HashMap<String, (i64, Vec<Item>, RowKind)> = HashMap::new();
+        // Lost data, per lane: the node's own gap spans, and the hub's coverage gaps (a lane with no node spans
+        // at all gets a row of its own, so the order doesn't look like it had fewer agents).
+        let mut gaps: HashMap<String, Vec<(i64, i64, GapWhy)>> = HashMap::new();
+        for s in spans.iter().filter(|s| s.kind == SpanKind::Gap) {
+            gaps.entry(s.lane.to_string()).or_default().push((s.start_ms.get(), s.end_ms.map_or(now_ms, |e| e.get()), GapWhy::NodeDropped));
+        }
+        for g in coverage.iter().flat_map(|c| c.gaps.iter()) {
+            if let Some(lane) = &g.lane {
+                gaps.entry(lane.to_string()).or_default().push((g.from_ms.get(), g.to_ms.get(), g.why));
+            }
+        }
         for (i, s) in spans.iter().enumerate() {
             if !drawn(s) {
                 continue;
@@ -160,7 +176,7 @@ impl Model {
         let rank = |k: &str, kind: RowKind| match kind {
             RowKind::Lead => (0, String::new()),
             RowKind::Agent => (1, String::new()),
-            RowKind::Change | RowKind::Check => (2, k.split('#').next().unwrap_or(k).to_string()),
+            RowKind::Change | RowKind::Check => (2, k.split_once("#ci#").map_or(k, |(lane, _)| lane).to_string()),
             RowKind::Asks => (3, k.to_string()),
             RowKind::Other => (4, String::new()),
         };
@@ -170,6 +186,7 @@ impl Model {
         });
         let mut rows = Vec::new();
         let mut items = Vec::new();
+        let mut reach = Vec::new();
         for (key, _, kind) in keys {
             let (_, mut list, _) = rows_by_key.remove(&key).unwrap();
             list.sort_by_key(|it| (it.start, it.end));
@@ -197,20 +214,33 @@ impl Model {
                     Some((role, task, title)) => (title.clone(), task.clone(), Some(*role)),
                     None => (first.task_id.as_ref().map_or_else(|| thread.clone().unwrap_or_default(), |t| t.to_string()), None, None),
                 },
-                RowKind::Check => (key.split_once('#').map_or(key.clone(), |(_, n)| n.to_string()), None, None),
+                RowKind::Check => (key.rsplit_once("#ci#").map_or(key.clone(), |(_, n)| n.to_string()), None, None),
                 RowKind::Asks if key.ends_with("#info") => ("asks that blocked nothing".to_string(), None, None),
                 _ => (lane_name(names, first), None, None),
             };
             let start = items.len();
+            reach.extend(self::reach(&list));
             items.extend(list);
-            rows.push(Row { name, task, role, kind, items: start..items.len(), summary, agent_ms });
+            let row_gaps = if kind == RowKind::Check { Vec::new() } else { gaps.remove(&key).unwrap_or_default() };
+            rows.push(Row { name, task, role, kind, items: start..items.len(), summary, agent_ms, gaps: row_gaps });
+        }
+        // Lanes the hub knows of but has no spans for.
+        let mut missing: Vec<_> = gaps.into_iter().collect();
+        missing.sort_by(|a, b| a.0.cmp(&b.0));
+        for (lane, g) in missing {
+            let name = match lane.strip_prefix("thread:").and_then(|t| t.split_once('/')).map(|(_, t)| t) {
+                Some(thread) => names.threads.get(thread).map_or_else(
+                    || thread.to_string(),
+                    |(role, task, title)| format!("{} {} {title}", crate::live::chips::role_word(*role), task.clone().unwrap_or_default()),
+                ),
+                None => lane.clone(),
+            };
+            let at = items.len();
+            rows.push(Row { name, task: None, role: None, kind: RowKind::Other, items: at..at, summary: String::new(), agent_ms: 0, gaps: g });
         }
         let row_of = |span: &Span| -> Option<usize> {
             let key = row_key(span);
-            rows.iter().position(|r| {
-                let first = &spans[items[r.items.start].span];
-                row_key(first) == key
-            })
+            rows.iter().position(|r| !r.items.is_empty() && row_key(&spans[items[r.items.start].span]) == key)
         };
         let path_segs: Vec<Seg> = path
             .iter()
@@ -237,6 +267,7 @@ impl Model {
             by_id,
             rows,
             items,
+            reach,
             start_ms,
             end_ms: end_ms.max(start_ms + 1),
             has_path: path.is_some(),
@@ -264,17 +295,31 @@ pub struct Bar {
     pub lit: bool,
 }
 
-/// The bars of one row's items (`items` is the row's slice, `offset` its start in `Model::items`) for the view
-/// `[v0, v1)` across `width` px. Items at least a pixel wide stay one bar each; narrower ones merge per pixel
-/// column into a bar coloured by the category with the most time in it.
-pub fn bars(items: &[Item], offset: usize, v0: i64, v1: i64, width: f32, lit: &dyn Fn(&Item) -> bool) -> Vec<Bar> {
+/// The running max of `end` over items sorted by start: what `bars` searches to skip the left of the view.
+pub fn reach(items: &[Item]) -> Vec<i64> {
+    let mut max = i64::MIN;
+    items
+        .iter()
+        .map(|it| {
+            max = max.max(it.end);
+            max
+        })
+        .collect()
+}
+
+/// The bars of one row's items (`items` is the row's slice sorted by start, `reach` its running max of ends,
+/// `offset` its start in `Model::items`) for the view `[v0, v1)` across `width` px. Items at least a pixel wide
+/// stay one bar each; narrower ones merge per pixel column into a bar coloured by the category with the most time
+/// in it.
+#[allow(clippy::too_many_arguments)]
+pub fn bars(items: &[Item], reach: &[i64], offset: usize, v0: i64, v1: i64, width: f32, lit: &dyn Fn(&Item) -> bool) -> Vec<Bar> {
     let mut out = Vec::new();
     if v1 <= v0 || width <= 0. {
         return out;
     }
     let k = width as f64 / (v1 - v0) as f64;
-    // Leaves tile their lane, so ends are in order too; a binary search skips what is left of the view.
-    let from = items.partition_point(|it| it.end <= v0);
+    // Everything before `from` ended before the view; overlapping spans can't hide behind it, as `reach` only grows.
+    let from = reach.partition_point(|&r| r <= v0);
     let to = items.partition_point(|it| it.start < v1);
     let mut bucket: Option<(f32, [i64; 7], Bar)> = None;
     let flush = |b: &mut Option<(f32, [i64; 7], Bar)>, out: &mut Vec<Bar>| {
@@ -321,14 +366,13 @@ pub fn bars(items: &[Item], offset: usize, v0: i64, v1: i64, width: f32, lit: &d
     out
 }
 
-/// The bar under the pointer, with a few px of slack for hairline bars.
+/// The bar under the pointer, with a few px of slack for hairline bars. Where bars overlap (a wait inside its
+/// tool), the shortest span under the pointer wins: it is the innermost, and it is drawn on top.
 pub fn hit(bars: &[Bar], x: f32) -> Option<Bar> {
+    let d = |b: &Bar| if x >= b.x0 && x <= b.x1 { 0. } else { (b.x0 - x).abs().min((b.x1 - x).abs()) };
     bars.iter()
         .filter(|b| x >= b.x0 - 2. && x <= b.x1 + 2.)
-        .min_by(|a, b| {
-            let d = |b: &Bar| if x >= b.x0 && x <= b.x1 { 0. } else { (b.x0 - x).abs().min((b.x1 - x).abs()) };
-            d(a).total_cmp(&d(b))
-        })
+        .min_by(|a, b| d(a).total_cmp(&d(b)).then((a.end - a.start).cmp(&(b.end - b.start))))
         .copied()
 }
 
@@ -371,7 +415,7 @@ impl TimeView {
         let width = f32::from(self.track.get().size.width);
         let ids = self.highlight.as_ref().map(|h| h.ids.clone());
         let lit = |it: &Item| ids.as_ref().is_some_and(|ids| ids.contains(&m.spans[it.span].id.get()));
-        bars(&m.items[r.items.clone()], r.items.start, v0, v1, width, &lit)
+        bars(&m.items[r.items.clone()], &m.reach[r.items.clone()], r.items.start, v0, v1, width, &lit)
     }
 
     fn on_track_move(&mut self, row: usize, e: &MouseMoveEvent, cx: &mut Context<Self>) {
@@ -463,6 +507,7 @@ struct Paint {
     colors: Rc<[(Option<gpui::Background>, Option<Hsla>); 7]>,
     danger: Hsla,
     accent: Hsla,
+    missing: Hsla,
     grid: Hsla,
     selection: Hsla,
     track: Rc<std::cell::Cell<Bounds<Pixels>>>,
@@ -495,7 +540,15 @@ fn paint_row(p: &Paint, row: usize, bounds: Bounds<Pixels>, window: &mut Window)
     let ids = p.ids.clone();
     let lit = |it: &Item| ids.as_ref().is_some_and(|ids| ids.contains(&p.model.spans[it.span].id.get()));
     let y = snap(oy + (h - BAR_H) / 2.);
-    for bar in bars(&p.model.items[r.items.clone()], r.items.start, v0, v1, w, &lit) {
+    for &(a, b, _) in &r.gaps {
+        if b <= v0 || a >= v1 {
+            continue;
+        }
+        let x0 = snap(ox + ((a.max(v0) - v0) as f64 / (v1 - v0) as f64 * w as f64) as f32);
+        let x1 = snap(ox + ((b.min(v1) - v0) as f64 / (v1 - v0) as f64 * w as f64) as f32);
+        window.paint_quad(fill(Bounds::new(point(px(x0), px(y + BAR_H + 3.)), size(px((x1 - x0).max(1.)), px(3.))), p.missing));
+    }
+    for bar in bars(&p.model.items[r.items.clone()], &p.model.reach[r.items.clone()], r.items.start, v0, v1, w, &lit) {
         let (bg, border) = &p.colors[bar.cat.code() as usize];
         let opacity = match (&p.ids, p.model.has_path) {
             (Some(_), _) if bar.lit => 1.,
@@ -535,6 +588,7 @@ pub fn render(v: &mut TimeView, t: &Theme, _window: &mut Window, cx: &mut Contex
         colors: Rc::new(Category::ALL.map(|c| cat_paint(t, c))),
         danger: t.danger,
         accent: t.accent,
+        missing: t.warning,
         grid: t.hairline,
         selection: t.selected,
         track: v.track.clone(),
@@ -636,6 +690,35 @@ pub fn render(v: &mut TimeView, t: &Theme, _window: &mut Window, cx: &mut Contex
     }));
     let path_row = path_row(v, t, &paint, cx);
     let banner = v.highlight.clone().map(|h| highlight_banner(t, &h, cx));
+    // What the hub knows is missing, said above the bars it affects; the rows mark where.
+    let coverage = v.coverage.clone().filter(|c| !c.complete || c.capped == Some(true)).map(|c| {
+        let mut reasons: Vec<String> = c.gaps.iter().map(super::breakdown::gap_text).collect();
+        if c.capped == Some(true) {
+            reasons.push("the order has more spans than one read returns, so only the newest are drawn".into());
+        }
+        if let Some(since) = &c.detail_since {
+            reasons.push(format!("spans before {} were past retention and are gone", since.as_str().get(..16).unwrap_or("").replace('T', " ")));
+        }
+        let text = if reasons.is_empty() { "the hub reports missing data for this order".to_string() } else { reasons.join("; ") };
+        div()
+            .px_4()
+            .py_1p5()
+            .flex()
+            .items_start()
+            .gap_2()
+            .border_b_1()
+            .border_color(t.hairline)
+            .text_size(px(tsize::XS))
+            .child(ui::dot(t.warning))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .whitespace_normal()
+                    .text_color(t.text)
+                    .child(format!("Timeline incomplete: {text}. Marked under the rows; those stretches have no bars, not idle time.")),
+            )
+    });
     let loading = (!v.spans_done)
         .then(|| div().px_4().py_1().text_size(px(tsize::XS)).text_color(t.quiet).child(format!("Loading spans… {} so far", m.spans.len())));
     div()
@@ -643,6 +726,7 @@ pub fn render(v: &mut TimeView, t: &Theme, _window: &mut Window, cx: &mut Contex
         .min_h_0()
         .flex()
         .flex_col()
+        .children(coverage)
         .children(banner)
         .children(loading)
         .child(axis)
@@ -782,6 +866,9 @@ fn legend(v: &TimeView, t: &Theme, cx: &mut Context<TimeView>) -> Div {
         .child(
             div().flex().items_center().gap_1().child(div().w(px(14.)).h(px(8.)).border_1().border_color(t.danger).rounded(px(1.))).child("failed"),
         )
+        .when(v.coverage.as_ref().is_some_and(|c| !c.complete), |d| {
+            d.child(div().flex().items_center().gap_1().child(div().w(px(14.)).h(px(3.)).bg(t.warning)).child("missing data"))
+        })
         .child(div().flex_1())
         .child("drag to zoom · click a bar for its transcript")
         .when(zoomed, |d| {
@@ -969,6 +1056,14 @@ pub fn lane_card(t: &Theme, m: &Model, row: usize) -> Vec<Div> {
     if !r.summary.is_empty() {
         out.push(line(t).child(r.summary.clone()));
     }
+    for &(a, b, why) in r.gaps.iter().take(4) {
+        let what = match why {
+            GapWhy::NodeOlder | GapWhy::NoNodeSpans => "no tool timeline",
+            GapWhy::NodeDropped | GapWhy::HubDropped => "spans lost",
+            GapWhy::NothingRunning => "nothing running",
+        };
+        out.push(div().text_color(t.warning).child(format!("{what} {} to {}", clock_ms(a), clock_ms(b))));
+    }
     if r.kind == RowKind::Lead {
         out.push(note(
             t,
@@ -1005,7 +1100,12 @@ pub fn category_link(cat: Category) -> Linked {
     Linked {
         title: format!("{} time", cat_label(cat)),
         rule: None,
-        kinds: SpanKind::ALL.iter().copied().filter(|k| k.category() == cat && !k.is_envelope()).collect(),
+        // Envelopes hold their children's time, not their own.
+        kinds: SpanKind::ALL
+            .iter()
+            .copied()
+            .filter(|k| k.category() == cat && !matches!(k, SpanKind::Run | SpanKind::ModelMessage | SpanKind::ToolsParallel))
+            .collect(),
         label: None,
         check: None,
     }
@@ -1029,7 +1129,7 @@ mod tests {
             item(10, 500, Category::Tools),
             item(500, 1000, Category::Human),
         ];
-        let b = bars(&items, 0, 0, 1000, 100., &|_| false);
+        let b = bars(&items, &reach(&items), 0, 0, 1000, 100., &|_| false);
         assert_eq!(b.len(), 3, "{b:?}");
         assert_eq!((b[0].n, b[0].cat, b[0].x0, b[0].x1), (3, Category::Tools, 0., 1.), "tools has 6 of the 10 ms in the column");
         assert_eq!((b[1].n, b[1].cat, b[1].x0, b[1].x1), (1, Category::Tools, 1., 50.));
@@ -1040,10 +1140,11 @@ mod tests {
     fn only_what_is_in_view_is_drawn_and_bars_stay_bounded_by_width() {
         let items: Vec<Item> =
             (0..10_000).map(|i| item(i * 100, i * 100 + 100, if i % 3 == 0 { Category::Model } else { Category::Tools })).collect();
-        let all = bars(&items, 0, 0, 1_000_000, 400., &|_| false);
+        let r = reach(&items);
+        let all = bars(&items, &r, 0, 0, 1_000_000, 400., &|_| false);
         assert!(all.len() <= 400, "10k spans on 400 px draw at most a bar per px, got {}", all.len());
         assert!(all.iter().all(|b| b.cat == Category::Tools), "tools dominate every column");
-        let zoomed = bars(&items, 0, 50_000, 51_000, 1000., &|_| false);
+        let zoomed = bars(&items, &r, 0, 50_000, 51_000, 1000., &|_| false);
         assert_eq!(zoomed.len(), 10, "zoomed in, each span is its own bar");
         assert_eq!(zoomed[0].first, 500);
     }
@@ -1053,9 +1154,43 @@ mod tests {
         let mut items = vec![item(0, 2, Category::Model), item(2, 4, Category::Tools)];
         items[1].failed = true;
         items[1].on_path = true;
-        let b = bars(&items, 0, 0, 1000, 100., &|it| it.start == 2);
+        let b = bars(&items, &reach(&items), 0, 0, 1000, 100., &|it| it.start == 2);
         assert_eq!(b.len(), 1);
         assert!(b[0].failed && b[0].on_path && b[0].lit);
+    }
+
+    #[test]
+    fn overlapping_spans_stay_drawn_and_hit_when_zoomed_into_the_inner_one() {
+        // A tool call (0-60 s) with a permission wait inside it (10-21 s), then the next call: zoomed to the wait,
+        // the wait is drawn and wins the hit over the call it sits in.
+        let items = vec![item(0, 60_000, Category::Tools), item(10_000, 21_000, Category::Human), item(60_000, 70_000, Category::Model)];
+        let b = bars(&items, &reach(&items), 0, 12_000, 20_000, 800., &|_| false);
+        assert_eq!(b.len(), 2, "{b:?}");
+        assert_eq!(hit(&b, 400.).map(|b| b.cat), Some(Category::Human));
+        // The wait ends before the call it sits in; a view after the wait still finds the call.
+        let b = bars(&items, &reach(&items), 0, 30_000, 40_000, 800., &|_| false);
+        assert_eq!(b.iter().map(|b| b.cat).collect::<Vec<_>>(), [Category::Tools]);
+    }
+
+    #[test]
+    fn gaps_get_a_row_mark_and_never_a_bar() {
+        let span = |id: i64, kind: &str, lane: &str, a: i64, b: i64| -> Span {
+            let cat = serde_json::to_value(SpanKind::parse(kind).unwrap().category()).unwrap();
+            serde_json::from_value(serde_json::json!({ "id": id, "kind": kind, "cat": cat, "lane": lane, "startMs": a, "endMs": b,
+                "status": "ok", "threadId": "s-1" }))
+            .unwrap()
+        };
+        let spans = vec![span(1, "gap", "thread:m/s-1", 0, 100_000), span(2, "tool.bash", "thread:m/s-1", 10_000, 20_000)];
+        let coverage: Coverage = serde_json::from_value(serde_json::json!({ "complete": false,
+            "gaps": [{ "why": "no_node_spans", "lane": "thread:m/s-9", "fromMs": 0, "toMs": 50_000 }] }))
+        .unwrap();
+        let m = Model::build(&spans, None, Some(&coverage), &Names::default(), 100_000);
+        assert_eq!(m.items.len(), 1, "the gap is not a bar, so it never takes a hover or a click");
+        assert_eq!(m.spans[m.items[0].span].id.get(), 2);
+        assert_eq!(m.rows.len(), 2, "the lane with no spans still has a row");
+        assert_eq!(m.rows[0].gaps.len(), 1);
+        assert_eq!(m.rows[1].gaps, vec![(0, 50_000, GapWhy::NoNodeSpans)]);
+        assert!(m.rows[1].items.is_empty());
     }
 
     #[test]
@@ -1069,7 +1204,8 @@ mod tests {
 
     #[test]
     fn the_nearest_bar_is_hit_within_a_little_slack() {
-        let b = bars(&[item(0, 100, Category::Model), item(500, 510, Category::Tools)], 0, 0, 1000, 100., &|_| false);
+        let items = [item(0, 100, Category::Model), item(500, 510, Category::Tools)];
+        let b = bars(&items, &reach(&items), 0, 0, 1000, 100., &|_| false);
         assert_eq!(hit(&b, 5.).map(|b| b.first), Some(0));
         assert_eq!(hit(&b, 51.5).map(|b| b.first), Some(1), "a 1 px bar is hit from beside it");
         assert_eq!(hit(&b, 30.), None);

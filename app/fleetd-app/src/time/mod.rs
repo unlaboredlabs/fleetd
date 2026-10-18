@@ -140,6 +140,8 @@ pub struct TimeView {
     pub(crate) window: TranscriptWindow,
     pub(crate) spans_done: bool,
     pub(crate) spans_error: Option<String>,
+    /// What the hub knows is missing: the spans' coverage, else the breakdown's.
+    pub(crate) coverage: Option<fleetd_contracts::time::Coverage>,
     /// The zoomed range, hub ms; None shows the whole order.
     pub(crate) view: Option<(i64, i64)>,
     /// A drag on the tracks, window x: (from, to).
@@ -188,6 +190,7 @@ impl TimeView {
             window: None,
             spans_done: false,
             spans_error: None,
+            coverage: None,
             view: None,
             drag: None,
             hover: None,
@@ -305,7 +308,10 @@ impl TimeView {
         self.spans_done = t.spans_done;
         self.spans_error = t.spans_error.clone();
         let path = self.breakdown.as_ref().and_then(|b| b.as_ref().ok()).and_then(|b| b.critical_path.clone());
-        self.model = (self.order.is_some() && !t.spans.is_empty()).then(|| Rc::new(Model::build(&t.spans, path.as_ref(), &self.names, now_ms)));
+        self.coverage = t.spans_coverage.clone().or_else(|| self.breakdown.as_ref().and_then(|b| b.as_ref().ok()).map(|b| b.coverage.clone()));
+        let coverage = self.coverage.clone();
+        self.model = (self.order.is_some() && !t.spans.is_empty())
+            .then(|| Rc::new(Model::build(&t.spans, path.as_ref(), coverage.as_ref(), &self.names, now_ms)));
         if let Some(h) = self.highlight.clone().filter(|h| h.matched && self.model.is_some()) {
             self.highlight_local(h.linked, h.title, None);
         }
@@ -475,6 +481,20 @@ impl TimeView {
             .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().font_weight(STRONG).child(title))
             .child(div().flex_1())
             .child(div().flex_none().text_size(px(size::XS)).text_color(t.quiet).whitespace_nowrap().child(figures.join(" · ")))
+            .when_some(self.coverage.as_ref().filter(|c| !c.complete), |d, c| {
+                let n = c.gaps.len().max(1);
+                d.child(
+                    div()
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .text_size(px(size::XS))
+                        .text_color(t.warning)
+                        .child(ui::dot(t.warning))
+                        .child(format!("{n} gap{} in the data", if n == 1 { "" } else { "s" })),
+                )
+            })
             .child(
                 div()
                     .flex()
@@ -945,7 +965,7 @@ pub fn cat_paint(t: &Theme, cat: Category) -> (Option<Background>, Option<Hsla>)
         Category::Machine => (None, Some(t.warning)),
         Category::Queue => (Some(pattern_slash(t.warning, 1.5, 3.)), Some(t.warning)),
         Category::Human => (Some(solid_background(t.text)), None),
-        Category::Pipeline => (Some(pattern_slash(t.quiet, 1., 2.5)), Some(t.faint)),
+        Category::Pipeline => (Some(pattern_slash(t.quiet, 1., 2.5)), Some(t.quiet)),
         Category::Idle => (None, None),
     }
 }

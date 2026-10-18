@@ -349,6 +349,8 @@ pub struct TimeState {
     pub spans: Vec<TimeSpan>,
     pub spans_done: bool,
     pub spans_error: Option<String>,
+    /// What the hub knows is missing from those spans.
+    pub spans_coverage: Option<fleetd_contracts::time::Coverage>,
     /// What was asked for, and its spans once they arrived (the first page only: 500).
     pub linked: LinkedSpans,
     /// (machine, thread, item) and its transcript window.
@@ -737,6 +739,7 @@ impl State {
         t.spans.clear();
         t.spans_done = !query.spans;
         t.spans_error = None;
+        t.spans_coverage = None;
         t.linked = None;
         t.window = None;
         t.version += 1;
@@ -852,6 +855,7 @@ impl State {
             TimeCall::Spans => match parse::<TimeSpansOutput>(output) {
                 Ok(page) => {
                     let t = &mut self.time;
+                    t.spans_coverage = Some(page.coverage.clone());
                     for span in page.spans.into_iter() {
                         match t.spans.binary_search_by_key(&span.id.get(), |s| s.id.get()) {
                             Ok(ix) => t.spans[ix] = span,
