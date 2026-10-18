@@ -85,7 +85,7 @@ pub fn warnings(entry: &Entry, text: &str) -> Vec<PromptWarning> {
             out.push(PromptWarning {
                 code: PromptWarningCode::PlaceholderMissing,
                 message: format!(
-                    "{{{{{}}}}} is gone, so {} no longer reaches the model.",
+                    "{{{{{}}}}} is gone: the model no longer gets {}.",
                     p.name, p.description
                 ),
                 placeholder: Some(p.name.clone()),
@@ -119,7 +119,7 @@ pub fn warnings(entry: &Entry, text: &str) -> Vec<PromptWarning> {
             out.push(PromptWarning {
                 code: PromptWarningCode::SafetyRuleMissing,
                 message: format!(
-                    "The text no longer says that it {} ({}): {consequence}.",
+                    "The text no longer carries the rule \"{}\" ({}): {consequence}.",
                     rule.label, rule.id
                 ),
                 placeholder: None,

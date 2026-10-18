@@ -10,6 +10,7 @@ pub mod mcp_client;
 pub mod node;
 pub mod pair;
 pub mod pending;
+pub mod prompts;
 pub mod retro;
 pub mod setup;
 pub mod update;
@@ -59,7 +60,7 @@ commands:
 setting up (on the hub machine):
 {}{}{}
 running by hand:
-{}{}{}{}{}{}
+{}{}{}{}{}{}{}
 lead-side commands (run by a lead or task inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -72,6 +73,7 @@ lead-side commands (run by a lead or task inside a project workspace):
         node::NODE_USAGE,
         listen::LISTEN_USAGE,
         retro::RETRO_USAGE,
+        prompts::PROMPTS_USAGE,
         lead::LEAD_USAGE
     )
 }
@@ -108,6 +110,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "node" => node::NODE_USAGE.to_owned(),
         "listen" => listen::LISTEN_USAGE.to_owned(),
         "retro" => retro::RETRO_USAGE.to_owned(),
+        "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
         _ if lead::is_lead_command(argv) => lead::LEAD_USAGE.to_owned(),
         _ => return None,
@@ -134,6 +137,8 @@ pub fn run(argv: &[String]) -> CliResult {
             stderr: String::new(),
         },
         Some("pair") => pair::pair_command(&argv[1..]),
+        Some("prompts") => prompts::prompts_command(&argv[1..]),
+        Some("instructions") => prompts::instructions_command(&argv[1..]),
         Some("hub") => match argv.get(1).map(String::as_str) {
             Some("key") => hub_key::hub_key(&argv[2..]),
             Some("token") => hub_key::hub_token(&argv[2..]),

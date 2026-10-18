@@ -108,6 +108,18 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dd>deliver hub events, at least once and in order, to a command (one event's JSON on stdin) or a URL; the cursor lives in <code>~/.fleetd/listen/&lt;name&gt;.cursor</code> (name default &quot;default&quot;). Exits 78 when the hub refuses the key.</dd>
 <dt id="retro-run"><a class="anchor" href="#retro-run" aria-label="Link to fleetd retro run">#</a><pre class="syn"><code>fleetd retro run --hub &lt;url&gt; --key-file &lt;path&gt; [--window 14d] [--advise]</code></pre></dt>
 <dd>run the retro now: one claude -p turn over the window's incidents (1-28 days) proposes playbook changes; <code>--advise</code> only suggests them</dd>
+<dt id="prompts-list"><a class="anchor" href="#prompts-list" aria-label="Link to fleetd prompts list">#</a><pre class="syn"><code>fleetd prompts list [--project &lt;machine&gt;/&lt;project&gt;] [--home &lt;dir&gt;]</code></pre></dt>
+<dd>every prompt fleetd sends a model, which text is in effect, and &quot;update&quot; where a release changed the default you edited</dd>
+<dt id="prompts-show"><a class="anchor" href="#prompts-show" aria-label="Link to fleetd prompts show">#</a><pre class="syn"><code>fleetd prompts show &lt;id&gt; [--project &lt;machine&gt;/&lt;project&gt;] [--default] [--home &lt;dir&gt;]</code></pre></dt>
+<dt id="prompts-show-session"><a class="anchor" href="#prompts-show-session" aria-label="Link to fleetd prompts show">#</a><pre class="syn"><code>fleetd prompts show --session &lt;machine&gt;/&lt;thread&gt; [--home &lt;dir&gt;]</code></pre></dt>
+<dd>the text in effect (or the shipped one), or exactly what a session was told</dd>
+<dt id="prompts-edit"><a class="anchor" href="#prompts-edit" aria-label="Link to fleetd prompts edit">#</a><pre class="syn"><code>fleetd prompts edit &lt;id&gt; [--project &lt;machine&gt;/&lt;project&gt;] [--home &lt;dir&gt;]</code></pre></dt>
+<dd>edit it in $VISUAL or $EDITOR; warns when a placeholder or a safety rule is gone</dd>
+<dt id="prompts-reset"><a class="anchor" href="#prompts-reset" aria-label="Link to fleetd prompts reset">#</a><pre class="syn"><code>fleetd prompts reset &lt;id&gt; [--project &lt;machine&gt;/&lt;project&gt;] [--home &lt;dir&gt;]</code></pre></dt>
+<dt id="prompts-diff"><a class="anchor" href="#prompts-diff" aria-label="Link to fleetd prompts diff">#</a><pre class="syn"><code>fleetd prompts diff &lt;id&gt; [--project &lt;machine&gt;/&lt;project&gt;] [--home &lt;dir&gt;]</code></pre></dt>
+<dd>shipped vs yours; after a release changed it, what changed in each</dd>
+<dt id="instructions"><a class="anchor" href="#instructions" aria-label="Link to fleetd instructions">#</a><pre class="syn"><code>fleetd instructions show|edit [--project &lt;machine&gt;/&lt;project&gt;] [--home &lt;dir&gt;]</code></pre></dt>
+<dd>your custom instructions, appended to every lead and task</dd>
 </dl>
 <h2 id="lead-side-commands">Lead-side commands<a class="anchor" href="#lead-side-commands" aria-label="Link to this section">#</a></h2>
 <p class="lede">Run by a lead or task inside a project workspace.</p>

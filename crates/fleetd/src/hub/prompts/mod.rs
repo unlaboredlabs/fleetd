@@ -68,3 +68,33 @@ pub fn start(db: &HubDb, events: &EventLog, at: &str) -> Result<(), StoreError> 
     }
     Ok(())
 }
+
+/// `prompt.changed`: an override was saved (`data.ref`, `data.warnings`) or reset. The text stays out of the event.
+pub fn changed(
+    events: &EventLog,
+    at: &str,
+    id: &str,
+    scope: fleetd_contracts::prompts::PromptScope,
+    project: Option<&fleetd_contracts::ids::ProjectRef>,
+    mut data: serde_json::Value,
+) -> Result<(), StoreError> {
+    data["id"] = json!(id);
+    data["scope"] = json!(scope);
+    if let Some(r) = project {
+        data["projectRef"] = json!(r);
+    }
+    events.append(NewEvent {
+        at: at.into(),
+        r#type: HubEventType::PromptChanged,
+        machine_id: project.map(|r| r.machine_id.clone()),
+        project_id: project.map(|r| r.project_id.clone()),
+        thread_id: None,
+        summary: match project {
+            Some(r) => format!("Prompt {id} changed for {}/{}", r.machine_id, r.project_id),
+            None => format!("Prompt {id} changed hub-wide"),
+        },
+        data: Some(data),
+        attention: None,
+    })?;
+    Ok(())
+}

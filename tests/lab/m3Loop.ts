@@ -3,7 +3,7 @@
 // delivered to the lead inline, the same key is then answered from the log, and a naming question is refused.
 // Five lead turns, each tiny: start, the intent wake, one ask, the answer wake, the re-ask plus refusal.
 import { randomUUID } from "node:crypto";
-import { type Body, type Lab, LEAD_PROMPT_VERSION, MODEL } from "./harness.ts";
+import { type Body, type Lab, MODEL } from "./harness.ts";
 
 const MACHINE = "lab-a";
 // The v1 prompt has the lead delegate at once; m5 decides when tasks run, so this lead registers the brief only.
@@ -45,7 +45,15 @@ export async function m3Loop(lab: Lab) {
   const again = (await callTool("lead_start", ref)).body;
   check(again.threadId === threadId, `a second lead_start returns the same lead: ${JSON.stringify(again)}`);
   const leadStarted = await lab.waitEvent("lead.started", 10_000, { cursor, machineId: MACHINE, types: ["lead.started"] });
-  check(leadStarted.event.data?.prompt === LEAD_PROMPT_VERSION, `lead.started names prompt ${LEAD_PROMPT_VERSION}: ${JSON.stringify(leadStarted.event)}`);
+  const { promptRef, textSha } = (leadStarted.event.data ?? {}) as { promptRef?: string; textSha?: string };
+  check(/^lead\.start@[0-9a-f]{10}$/u.test(promptRef ?? "") && /^[0-9a-f]{40}$/u.test(textSha ?? ""), `lead.started names its prompt and first message: ${JSON.stringify(leadStarted.event)}`);
+  // What the lead was told, byte for byte: kept by the hub, with the refs it is pinned to.
+  const told = (await callTool("session_prompt_get", { machineId: MACHINE, threadId })).body;
+  check(
+    told.session?.textSha === textSha && told.session.text.includes("# fleetd digest:") && told.session.refs.some((r: Body) => r.id === "lead.start" && r.ref === promptRef),
+    `session_prompt_get returns the lead's first message: ${JSON.stringify(told).slice(0, 300)}`,
+  );
+  ok(`lead.started ${promptRef}, first message ${textSha?.slice(0, 12)}… kept (session_prompt_get)`);
   cursor = await turnDone(threadId, cursor, "start");
   // thread_tail keeps a long message's end: the prompt's last command line, then the digest.
   const firstTail = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body;
@@ -53,7 +61,7 @@ export async function m3Loop(lab: Lab) {
     (firstTail.items as Array<Body> | undefined)?.some(
       (i) => i.role === "user" && i.text.includes("`fleetd decisions search") && i.text.includes("# fleetd digest:"),
     ),
-    `the lead's first message is the ${LEAD_PROMPT_VERSION} prompt (built into the binary) plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
+    `the lead's first message is the lead.start prompt plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
   );
   const outcome = (await callTool("project_get", ref)).body;
   check(outcome.lead?.threadId === threadId && outcome.lead.state === "idle", `project_get lead: ${JSON.stringify(outcome.lead)}`);

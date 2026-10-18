@@ -1827,6 +1827,21 @@
       ],
       "type": "string"
     },
+    "Enforcement": {
+      "description": "Who keeps a safety rule when the prompt no longer says it.",
+      "oneOf": [
+        {
+          "const": "code",
+          "description": "fleetd refuses the action anyway; agents just stop being told why.",
+          "type": "string"
+        },
+        {
+          "const": "prompt",
+          "description": "Only the prompt says it; nothing else enforces it.",
+          "type": "string"
+        }
+      ]
+    },
     "EnvName": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
       "type": "string"
@@ -2313,6 +2328,16 @@
         {
           "const": "workstream.note",
           "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
+          "type": "string"
+        },
+        {
+          "const": "prompt.changed",
+          "description": "A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),\n`data.warnings` (their codes). The text is not in the event; prompt_get reads it.",
+          "type": "string"
+        },
+        {
+          "const": "prompt.default_changed",
+          "description": "This release changed the default of a prompt you overrode; yours stays in effect until you save it again or\nreset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.",
           "type": "string"
         }
       ]
@@ -3203,6 +3228,30 @@
         "projects_list.output": {
           "$ref": "#/$defs/ProjectsListOutput"
         },
+        "prompt_get.input": {
+          "$ref": "#/$defs/PromptGetInput"
+        },
+        "prompt_get.output": {
+          "$ref": "#/$defs/PromptGetOutput"
+        },
+        "prompt_reset.input": {
+          "$ref": "#/$defs/PromptResetInput"
+        },
+        "prompt_reset.output": {
+          "$ref": "#/$defs/PromptResetOutput"
+        },
+        "prompt_set.input": {
+          "$ref": "#/$defs/PromptSetInput"
+        },
+        "prompt_set.output": {
+          "$ref": "#/$defs/PromptSetOutput"
+        },
+        "prompts_list.input": {
+          "$ref": "#/$defs/PromptsListInput"
+        },
+        "prompts_list.output": {
+          "$ref": "#/$defs/PromptsListOutput"
+        },
         "retro_proposals.input": {
           "$ref": "#/$defs/RetroProposalsInput"
         },
@@ -3220,6 +3269,12 @@
         },
         "secret_submit.output": {
           "$ref": "#/$defs/SecretSubmitOutput"
+        },
+        "session_prompt_get.input": {
+          "$ref": "#/$defs/SessionPromptGetInput"
+        },
+        "session_prompt_get.output": {
+          "$ref": "#/$defs/SessionPromptGetOutput"
         },
         "subscription_delete.input": {
           "$ref": "#/$defs/SubscriptionDeleteInput"
@@ -3403,12 +3458,22 @@
         "project_remove.output",
         "projects_list.input",
         "projects_list.output",
+        "prompt_get.input",
+        "prompt_get.output",
+        "prompt_reset.input",
+        "prompt_reset.output",
+        "prompt_set.input",
+        "prompt_set.output",
+        "prompts_list.input",
+        "prompts_list.output",
         "retro_proposals.input",
         "retro_proposals.output",
         "retro_run.input",
         "retro_run.output",
         "secret_submit.input",
         "secret_submit.output",
+        "session_prompt_get.input",
+        "session_prompt_get.output",
         "subscription_delete.input",
         "subscription_delete.output",
         "subscription_list.input",
@@ -3893,6 +3958,26 @@
       ],
       "type": "string"
     },
+    "Placeholder": {
+      "description": "A `{{name}}` the code fills in. A required one missing from an edit gets a warning.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "required",
+        "description"
+      ],
+      "type": "object"
+    },
     "PlaybookChangeKind": {
       "enum": [
         "wording",
@@ -4291,6 +4376,411 @@
       },
       "required": [
         "projects"
+      ],
+      "type": "object"
+    },
+    "PromptGetInput": {
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PromptId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "PromptGetOutput": {
+      "description": "`prompt_get`: every level of one prompt for the asked project (or hub-wide).",
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/PromptVersion"
+        },
+        "effective": {
+          "$ref": "#/$defs/PromptVersion"
+        },
+        "global": {
+          "$ref": "#/$defs/PromptOverride"
+        },
+        "group": {
+          "$ref": "#/$defs/PromptGroup"
+        },
+        "id": {
+          "$ref": "#/$defs/PromptId"
+        },
+        "kind": {
+          "$ref": "#/$defs/PromptKind"
+        },
+        "next": {
+          "type": "string"
+        },
+        "perProject": {
+          "description": "False for playbooks, router and retro: they have the hub-wide level only.",
+          "type": "boolean"
+        },
+        "placeholders": {
+          "items": {
+            "$ref": "#/$defs/Placeholder"
+          },
+          "type": "array"
+        },
+        "project": {
+          "$ref": "#/$defs/PromptOverride"
+        },
+        "safetyRules": {
+          "description": "The default's rules, with `present` for `effective`.",
+          "items": {
+            "$ref": "#/$defs/SafetyRule"
+          },
+          "type": "array"
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope",
+          "description": "The scope of `effective`."
+        },
+        "sentWhen": {
+          "type": "string"
+        },
+        "stale": {
+          "$ref": "#/$defs/StalePrompt"
+        },
+        "title": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/PromptWarning"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "group",
+        "sentWhen",
+        "perProject",
+        "default",
+        "scope",
+        "effective",
+        "placeholders",
+        "safetyRules",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "PromptGroup": {
+      "description": "Where the app lists it.",
+      "enum": [
+        "lead",
+        "tasks",
+        "reviews_and_checks",
+        "wakes_and_messages",
+        "one_shots",
+        "playbooks",
+        "instructions"
+      ],
+      "type": "string"
+    },
+    "PromptId": {
+      "description": "Prompt registry id, dotted lowercase words",
+      "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "PromptKind": {
+      "description": "How the text reaches the model.",
+      "oneOf": [
+        {
+          "const": "start",
+          "description": "The first message of a session.",
+          "type": "string"
+        },
+        {
+          "const": "wake",
+          "description": "A piece of a lead wake (or of the digest every wake starts with).",
+          "type": "string"
+        },
+        {
+          "const": "msg",
+          "description": "A later message into a running session, or a tool result it reads back.",
+          "type": "string"
+        },
+        {
+          "const": "oneshot",
+          "description": "The input of a tool-less one-shot `claude -p` (router, retro).",
+          "type": "string"
+        },
+        {
+          "const": "playbook",
+          "description": "A playbook file; its `leadInstructions` go into the digest and intake wakes.",
+          "type": "string"
+        },
+        {
+          "const": "instructions",
+          "description": "The human's custom instructions, appended to every lead and task first message.",
+          "type": "string"
+        }
+      ]
+    },
+    "PromptOverride": {
+      "description": "A human's override: its text and the default it was edited from (absent for a hand-made file).",
+      "properties": {
+        "base": {
+          "$ref": "#/$defs/PromptRef"
+        },
+        "ref": {
+          "$ref": "#/$defs/PromptRef"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "text"
+      ],
+      "type": "object"
+    },
+    "PromptRef": {
+      "description": "<prompt id>@<10 lowercase hex of the text's git blob SHA>",
+      "pattern": "^[a-z][a-z0-9_-]*(?:\\.[a-z0-9_-]+)*@[0-9a-f]{10}$",
+      "type": "string"
+    },
+    "PromptResetInput": {
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PromptId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope"
+        }
+      },
+      "required": [
+        "id",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "PromptResetOutput": {
+      "properties": {
+        "effective": {
+          "$ref": "#/$defs/PromptVersion"
+        },
+        "next": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "effective",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "PromptScope": {
+      "description": "Which text is meant: the one shipped in the binary, the hub-wide override, or one project's override.",
+      "enum": [
+        "default",
+        "global",
+        "project"
+      ],
+      "type": "string"
+    },
+    "PromptSetInput": {
+      "properties": {
+        "base": {
+          "$ref": "#/$defs/PromptRef",
+          "description": "The default ref the text was edited from (`prompt_get` default.ref); absent: the one shipped now."
+        },
+        "dryRun": {
+          "description": "Return the warnings without saving.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/PromptId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope"
+        },
+        "text": {
+          "description": "May be empty only for `instructions`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "text"
+      ],
+      "type": "object"
+    },
+    "PromptSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ref": {
+          "$ref": "#/$defs/PromptRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "description": "What the edit may break; it is saved anyway.",
+          "items": {
+            "$ref": "#/$defs/PromptWarning"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ref",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "PromptSummary": {
+      "description": "A row of `prompts_list`.",
+      "properties": {
+        "defaultRef": {
+          "$ref": "#/$defs/PromptRef"
+        },
+        "group": {
+          "$ref": "#/$defs/PromptGroup"
+        },
+        "id": {
+          "$ref": "#/$defs/PromptId"
+        },
+        "kind": {
+          "$ref": "#/$defs/PromptKind"
+        },
+        "overrideRef": {
+          "$ref": "#/$defs/PromptRef",
+          "description": "The override in effect, when `scope` is not `default`."
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope",
+          "description": "Which text is in effect for the asked project (or hub-wide)."
+        },
+        "sentWhen": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "group",
+        "sentWhen",
+        "scope",
+        "defaultRef",
+        "stale"
+      ],
+      "type": "object"
+    },
+    "PromptVersion": {
+      "description": "One exact text.",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/PromptRef"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "text"
+      ],
+      "type": "object"
+    },
+    "PromptWarning": {
+      "description": "What an edit may break. Never a refusal: the text is saved anyway.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/PromptWarningCode"
+        },
+        "enforced": {
+          "$ref": "#/$defs/Enforcement"
+        },
+        "message": {
+          "type": "string"
+        },
+        "placeholder": {
+          "description": "`placeholder_*`: its name.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "`safety_rule_missing`: the rule's id and who still enforces it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "PromptWarningCode": {
+      "enum": [
+        "placeholder_missing",
+        "placeholder_unknown",
+        "safety_rule_missing",
+        "too_long"
+      ],
+      "type": "string"
+    },
+    "PromptsListInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The texts in effect for this project; absent: hub-wide."
+        }
+      },
+      "type": "object"
+    },
+    "PromptsListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "prompts": {
+          "items": {
+            "$ref": "#/$defs/PromptSummary"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prompts"
       ],
       "type": "object"
     },
@@ -4765,6 +5255,35 @@
       ],
       "type": "string"
     },
+    "SafetyRule": {
+      "description": "A rule the default text carries, found in a text by `needle` (a case-insensitive regex).",
+      "properties": {
+        "enforced": {
+          "$ref": "#/$defs/Enforcement"
+        },
+        "id": {
+          "description": "Stable, e.g. `secrets-via-ask`.",
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "needle": {
+          "type": "string"
+        },
+        "present": {
+          "description": "In `PromptDetail`: whether the effective text still matches `needle`.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "needle",
+        "enforced"
+      ],
+      "type": "object"
+    },
     "SealedSecret": {
       "type": "string"
     },
@@ -4830,6 +5349,106 @@
     },
     "Serves": {
       "type": "string"
+    },
+    "SessionPrompt": {
+      "description": "`session_prompt_get`: exactly what a session was told at its start.",
+      "properties": {
+        "disallowedTools": {
+          "description": "Tools the claude runner never offers a fleetd session.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "refs": {
+          "items": {
+            "$ref": "#/$defs/SessionPromptRef"
+          },
+          "type": "array"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "text": {
+          "description": "The exact first message.",
+          "type": "string"
+        },
+        "textSha": {
+          "description": "The text's full git blob SHA.",
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId",
+        "startedAt",
+        "text",
+        "textSha",
+        "refs",
+        "disallowedTools"
+      ],
+      "type": "object"
+    },
+    "SessionPromptGetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "SessionPromptGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "session": {
+          "$ref": "#/$defs/SessionPrompt"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "SessionPromptRef": {
+      "description": "One prompt a session pinned at its start; every later message to it renders from this text.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PromptId"
+        },
+        "ref": {
+          "$ref": "#/$defs/PromptRef"
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope"
+        }
+      },
+      "required": [
+        "id",
+        "ref",
+        "scope"
+      ],
+      "type": "object"
     },
     "SlotState": {
       "properties": {
@@ -4915,6 +5534,39 @@
       "required": [
         "endAt",
         "samples"
+      ],
+      "type": "object"
+    },
+    "StalePrompt": {
+      "description": "An override edited from an older default than the one this release ships. It stays in effect until the human\nsaves it again with `base` = `current.ref`, or resets it.",
+      "properties": {
+        "base": {
+          "$ref": "#/$defs/PromptVersion",
+          "description": "The default it was edited from; absent when the file has no `base` or that text is unknown to this hub."
+        },
+        "conflicts": {
+          "type": "boolean"
+        },
+        "current": {
+          "$ref": "#/$defs/PromptVersion"
+        },
+        "merged": {
+          "description": "A line 3-way merge of base → current into yours; with `<<<<<<<` markers where they conflict.",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope"
+        },
+        "yours": {
+          "$ref": "#/$defs/PromptVersion"
+        }
+      },
+      "required": [
+        "scope",
+        "current",
+        "yours",
+        "merged",
+        "conflicts"
       ],
       "type": "object"
     },

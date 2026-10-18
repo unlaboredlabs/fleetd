@@ -20,12 +20,12 @@ use crate::model::{
     ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary,
 };
 use crate::playbooks::IntakeEcho;
+use crate::prim::{
+    Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
+};
 use crate::prompts::{
     PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
     SessionPrompt,
-};
-use crate::prim::{
-    Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
@@ -867,9 +867,17 @@ output!(PromptSetOutput {
     warnings: Vec<PromptWarning>,
 });
 input!(PromptResetInput { id: PromptId, scope: PromptScope, project_ref: Option<ProjectRef> });
-output!(PromptResetOutput { effective: PromptVersion, scope: PromptScope });
-input!(SessionPromptGetInput { machine_id: MachineId, thread_id: ThreadId });
-output!(SessionPromptGetOutput { session: SessionPrompt });
+output!(PromptResetOutput {
+    effective: PromptVersion,
+    scope: PromptScope
+});
+input!(SessionPromptGetInput {
+    machine_id: MachineId,
+    thread_id: ThreadId
+});
+output!(SessionPromptGetOutput {
+    session: SessionPrompt
+});
 
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
@@ -1123,7 +1131,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 53);
+        assert_eq!(McpToolName::ALL.len(), 58);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());

@@ -2,7 +2,6 @@
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
     ErrorCode, PromptGetInput, PromptGetOutput, PromptResetInput, PromptResetOutput,
@@ -17,7 +16,7 @@ use super::store::{PromptError, entry};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, require,
 };
-use crate::hub::store::{NewEvent, iso_ms, now_ms};
+use crate::hub::store::{iso_ms, now_ms};
 
 pub fn register(tools: &mut Registry) {
     tools.add("prompts_list", prompts_list);
@@ -110,35 +109,6 @@ async fn prompt_get(
     })
 }
 
-fn changed(
-    hub: &Hub,
-    id: &str,
-    scope: PromptScope,
-    r: Option<&ProjectRef>,
-    data: serde_json::Value,
-) -> Result<(), ToolError> {
-    let mut data = data;
-    data["id"] = json!(id);
-    data["scope"] = json!(scope);
-    if let Some(r) = r {
-        data["projectRef"] = json!(r);
-    }
-    hub.events.append(NewEvent {
-        at: iso_ms(now_ms(hub.clock.as_ref())).into(),
-        r#type: HubEventType::PromptChanged,
-        machine_id: r.map(|r| r.machine_id.clone()),
-        project_id: r.map(|r| r.project_id.clone()),
-        thread_id: None,
-        summary: match r {
-            Some(r) => format!("Prompt {id} changed for {}/{}", r.machine_id, r.project_id),
-            None => format!("Prompt {id} changed hub-wide"),
-        },
-        data: Some(data),
-        attention: None,
-    })?;
-    Ok(())
-}
-
 async fn prompt_set(
     hub: Arc<Hub>,
     caller: Caller,
@@ -164,8 +134,9 @@ async fn prompt_set(
         input.base.as_ref().map(|b| b.as_str()),
     )?;
     let codes: Vec<_> = found.iter().map(|w| w.code).collect();
-    changed(
-        &hub,
+    super::changed(
+        &hub.events,
+        &iso_ms(now_ms(hub.clock.as_ref())),
         e.id,
         input.scope,
         r,
@@ -191,7 +162,14 @@ async fn prompt_reset(
     may_edit(&caller, input.scope, r)?;
     readable_project(&hub, &caller, r)?;
     hub.db.prompts().reset(e, input.scope, r)?;
-    changed(&hub, e.id, input.scope, r, json!({}))?;
+    super::changed(
+        &hub.events,
+        &iso_ms(now_ms(hub.clock.as_ref())),
+        e.id,
+        input.scope,
+        r,
+        json!({}),
+    )?;
     let detail = hub.db.prompts().detail(e, r);
     Ok(PromptResetOutput {
         effective: detail.effective,
