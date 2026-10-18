@@ -536,14 +536,19 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
-        "wake.order_note",
-        Wake,
+        "steer.message",
+        Msg,
         WakesAndMessages,
-        Lead,
-        "Wake: the human added to an order",
-        "per order_note",
-        "verb!=steered or added to; workstreamId!=W<n>; title!=the order's title; text!=the human's words; references!=references and attachments, or nothing",
-        &[]
+        Any,
+        "A steer: the human's (or the lead's) words mid-run",
+        "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+        "id!=the steer, S<n>; who!=the human or your lead; scope!=the order (W<n> 'title') or the task (T<n> (kind) for W<n>); text!=the words; references=references and attachments, or nothing",
+        &[(
+            "names-steer",
+            "asks the agent to name the steer first, so its receipt can say it was acknowledged",
+            r"\{\{id\}\}:",
+            Prompt
+        )]
     ),
     entry!(
         "wake.order_refs",

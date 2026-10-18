@@ -407,6 +407,7 @@ pub fn build_on(
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::plan::calls::register_lead_calls(&hub);
+    crate::hub::steer::wire(&hub);
     Ok(hub)
 }
 
@@ -427,6 +428,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     hub.link.start();
     loops.push(hub.watchdog.start());
     loops.push(tokio::spawn(crate::hub::orders::idle::run(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::steer::run_sweep(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::checks::start_loops(hub));

@@ -1,0 +1,322 @@
+//! The Steers service over a real hub with an in-memory database and no node linked: steers wait in the offline
+//! queue, and receipts are fed as the node would send them.
+use std::sync::Arc;
+use std::time::Duration;
+
+use fleetd_contracts::auth::KeyKind;
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{ProjectRef, ThreadId};
+use fleetd_contracts::ledger::{IntakeChannel, WorkstreamId};
+use fleetd_contracts::steer::{DeliveredHow, SteerReceipt};
+use serde_json::json;
+
+use super::*;
+use crate::hub::api::HubConfig;
+use crate::hub::leads::records::{NewWorkstream, StoredLead};
+use crate::hub::store::HubDb;
+use crate::hub::store::test_clock::ManualClock;
+
+const AT: &str = "2026-10-18T10:00:00.000Z";
+
+struct Lab {
+    hub: Arc<Hub>,
+    clock: Arc<ManualClock>,
+    _home: tempfile::TempDir,
+}
+
+fn lab() -> Lab {
+    let home = tempfile::tempdir().unwrap();
+    let config = HubConfig {
+        home: home.path().to_path_buf(),
+        listen: Default::default(),
+        url: None,
+        queue_ttl_sec: None,
+        router_model: None,
+    };
+    let clock = ManualClock::at(1_792_000_000_000);
+    let hub =
+        crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone()).unwrap();
+    let r = ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+    };
+    let (w, _) = hub
+        .leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: r.clone(),
+            title: "Ship the API".into(),
+            text: "Ship the API".into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+            playbook: None,
+            parent: None,
+        })
+        .unwrap();
+    assert_eq!(w.workstream_id.as_str(), "W1");
+    hub.leads
+        .records
+        .lead_put(&StoredLead {
+            project_ref: r,
+            thread_id: ThreadId::unchecked("lead-thread"),
+            started_at: AT.into(),
+            last_wake_at: None,
+            session_generation: 1,
+        })
+        .unwrap();
+    Lab {
+        hub,
+        clock,
+        _home: home,
+    }
+}
+
+fn person(key_id: &str) -> Caller {
+    serde_json::from_value::<Caller>(json!({
+        "keyId": key_id, "name": "wynn-mac", "prefix": "fld_abcdef", "createdAt": AT,
+        "grants": [{ "role": "operate", "machines": "*" }],
+    }))
+    .map(|c| Caller {
+        kind: Some(KeyKind::Human),
+        ..c
+    })
+    .unwrap()
+}
+
+fn to_lead<'a>(text: &'a str, mode: SteerMode, crid: &'a str) -> SteerRequest<'a> {
+    SteerRequest {
+        target: SteerTarget::Lead {
+            workstream_id: WorkstreamId::unchecked("W1"),
+        },
+        text,
+        mode,
+        refs: vec![],
+        attached: vec![],
+        client_request_id: crid,
+    }
+}
+
+fn events_of(hub: &Hub, kind: HubEventType) -> i64 {
+    hub.db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM events WHERE type = ?",
+                [kind.as_str()],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap()
+}
+
+fn receipt(steer: &Steer, stage: SteerStage) -> SteerReceipt {
+    SteerReceipt {
+        session_id: steer.thread.thread_id.clone(),
+        run_id: steer.run_id.clone(),
+        steer_id: steer.id.clone(),
+        stage,
+        at: "2026-10-18T10:00:02.000Z".into(),
+        how: (stage == SteerStage::Delivered).then_some(DeliveredHow::Stopped),
+        stopped_tool: (stage == SteerStage::Delivered).then(|| Text::unchecked("cargo test")),
+        seen_at: None,
+        message_id: None,
+        excerpt: (stage == SteerStage::Acknowledged)
+            .then(|| Text::unchecked("S1: dropping the docs page")),
+        reason: None,
+    }
+}
+
+#[tokio::test]
+async fn a_resent_steer_with_the_same_key_and_request_id_is_one_steer() {
+    let lab = lab();
+    let me = person("k1");
+    let first = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("skip the docs page", SteerMode::Now, "r1"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(first.id.as_str(), "S1");
+    assert_eq!(first.stage, SteerStage::Queued);
+    // No node is linked: it waits in the offline queue, and says so.
+    assert!(
+        first
+            .detail
+            .as_deref()
+            .unwrap()
+            .starts_with("waiting for lab-a")
+    );
+    let again = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("skip the docs page", SteerMode::Now, "r1"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(again, first);
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerQueued), 1);
+    let queued: i64 = lab
+        .hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM queued_writes", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(queued, 1);
+    // Another device's request with the same id is its own steer.
+    let other = send(
+        &lab.hub,
+        By::Human(&person("k2")),
+        to_lead("and the CLI", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(other.id.as_str(), "S2");
+    // The message the lead gets names the steer and asks it to answer to it.
+    let message: String = lab
+        .hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT message FROM queued_writes ORDER BY write_id LIMIT 1",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert!(
+        message.starts_with("S1 · the human steers you (W1 'Ship the API'): 'skip the docs page'")
+    );
+    assert!(message.contains("\"S1:\""));
+}
+
+#[tokio::test]
+async fn receipts_move_a_steer_forward_once_and_replays_change_nothing() {
+    let lab = lab();
+    let me = person("k1");
+    let steer = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("skip the docs page", SteerMode::Now, "r1"),
+    )
+    .await
+    .unwrap();
+    let machine = MachineId::unchecked("lab-a");
+    on_receipt(&lab.hub, &machine, &receipt(&steer, SteerStage::Delivered));
+    on_receipt(&lab.hub, &machine, &receipt(&steer, SteerStage::Delivered));
+    on_receipt(
+        &lab.hub,
+        &machine,
+        &receipt(&steer, SteerStage::Acknowledged),
+    );
+    on_receipt(&lab.hub, &machine, &receipt(&steer, SteerStage::Delivered));
+    on_receipt(
+        &lab.hub,
+        &machine,
+        &receipt(&steer, SteerStage::Unacknowledged),
+    );
+    let (now, _) = store::get(&lab.hub.db, &steer.id).unwrap().unwrap();
+    assert_eq!(now.stage, SteerStage::Acknowledged);
+    assert_eq!(now.how, Some(DeliveredHow::Stopped));
+    assert_eq!(now.stopped_tool.as_deref(), Some("cargo test"));
+    assert_eq!(
+        now.ack_excerpt.as_deref(),
+        Some("S1: dropping the docs page")
+    );
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerDelivered), 1);
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerAcknowledged), 1);
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerUnacknowledged), 0);
+    // A receipt from another machine is not this steer's.
+    let mut stray = receipt(&steer, SteerStage::Failed);
+    stray.steer_id = SteerId::unchecked("S1");
+    on_receipt(&lab.hub, &MachineId::unchecked("lab-b"), &stray);
+    assert_eq!(
+        store::get(&lab.hub.db, &steer.id).unwrap().unwrap().0.stage,
+        SteerStage::Acknowledged
+    );
+}
+
+#[tokio::test]
+async fn a_queued_steer_is_withdrawn_from_the_offline_queue_and_a_delivered_one_is_not() {
+    let lab = lab();
+    let me = person("k1");
+    let steer = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("skip the docs page", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    let refused = withdraw(&lab.hub, &person("k2"), &steer.id)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::Forbidden);
+    let gone = withdraw(&lab.hub, &me, &steer.id).await.unwrap();
+    assert_eq!(gone.stage, SteerStage::Withdrawn);
+    assert!(!lab.hub.queue.has_steer(&steer.id));
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerWithdrawn), 1);
+
+    let second = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("ship the CLI too", SteerMode::Queue, "r2"),
+    )
+    .await
+    .unwrap();
+    on_receipt(
+        &lab.hub,
+        &MachineId::unchecked("lab-a"),
+        &receipt(&second, SteerStage::Delivered),
+    );
+    let late = withdraw(&lab.hub, &me, &second.id).await.unwrap_err();
+    assert_eq!(late.code, ErrorCode::Invalid);
+    assert!(
+        late.message.contains("already delivered at 10:00:02"),
+        "{}",
+        late.message
+    );
+}
+
+#[tokio::test]
+async fn steers_a_restarted_node_forgot_are_closed_after_the_grace() {
+    let lab = lab();
+    let me = person("k1");
+    let delivered = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("skip the docs page", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    let waiting = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("and the CLI", SteerMode::Queue, "r2"),
+    )
+    .await
+    .unwrap();
+    let lost = send(
+        &lab.hub,
+        By::Human(&me),
+        to_lead("and the site", SteerMode::Queue, "r3"),
+    )
+    .await
+    .unwrap();
+    // The node took two of them; the third still waits in the hub's queue for the machine.
+    lab.hub.queue.withdraw_steer(&delivered.id);
+    lab.hub.queue.withdraw_steer(&lost.id);
+    on_receipt(
+        &lab.hub,
+        &MachineId::unchecked("lab-a"),
+        &receipt(&delivered, SteerStage::Delivered),
+    );
+    assert_eq!(sweep(&lab.hub), 0, "nothing closes inside the grace");
+    lab.clock.advance(RECEIPT_GRACE + Duration::from_secs(1));
+    assert_eq!(sweep(&lab.hub), 2);
+    let stage = |s: &Steer| store::get(&lab.hub.db, &s.id).unwrap().unwrap().0;
+    assert_eq!(stage(&delivered).stage, SteerStage::Unacknowledged);
+    assert_eq!(stage(&lost).stage, SteerStage::Failed);
+    assert!(stage(&lost).detail.unwrap().contains("restarted"));
+    assert_eq!(stage(&waiting).stage, SteerStage::Queued);
+    assert_eq!(sweep(&lab.hub), 0, "a closed steer stays closed");
+}

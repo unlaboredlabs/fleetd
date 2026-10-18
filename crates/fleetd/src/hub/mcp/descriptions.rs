@@ -198,7 +198,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "order_note",
-        "Add to an order for its lead, with optional references (files, orders, PRs) and attachments from attachment_put. The lead reads it at its next wake; urgent wakes it now. A person's device (a human key) only.",
+        "Add to an order for its lead, with optional references (files, orders, PRs) and attachments from attachment_put. It reaches the lead as a steer (steerId): at its next tool boundary, or, when urgent, now, stopping its current step. A person's device (a human key) only.",
     ),
     (
         "steer_send",
