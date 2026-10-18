@@ -78,12 +78,17 @@ export type Body = Record<string, any>;
 export const scrubbedEnv = () =>
   Object.fromEntries(["HOME", "PATH", "USER", "LANG"].flatMap((k) => (process.env[k] === undefined ? [] : [[k, process.env[k]!]])));
 
+const userClaudeSettings = (): { env?: Record<string, unknown>; apiKeyHelper?: unknown } => {
+  const file = path.join(os.homedir(), ".claude/settings.json");
+  return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as { env?: Record<string, unknown> }) : {};
+};
+
 /**
  * The user's own `claude` login variables from ~/.claude/settings.json (a gateway's base URL and token, or a token
  * or key). Read only: nothing is ever written under ~/.claude.
  */
 export const claudeLoginEnv = (): Record<string, string> => {
-  const settings = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude/settings.json"), "utf8")) as { env?: Record<string, unknown> };
+  const settings = userClaudeSettings();
   return Object.fromEntries(
     ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"].flatMap((k) =>
       typeof settings.env?.[k] === "string" && settings.env[k] !== "" ? [[k, settings.env[k] as string]] : [],
@@ -92,13 +97,14 @@ export const claudeLoginEnv = (): Record<string, string> => {
 };
 
 // A lab machine is a `fleetd node` whose HOME is RUN/home-<id>, so everything the node derives from HOME is the
-// machine's own: ~/.fleetd/node (node home and socket), ~/.fleetd/claude (CLAUDE_CONFIG_DIR) and ~/.fleetd/claude.env.
-// The real ~/.fleetd and ~/.claude are never touched.
+// machine's own: ~/.fleetd/node (node home and socket) and ~/.claude, the user's claude setup that sessions use, as on
+// a real machine. The real ~/.fleetd and ~/.claude are never touched.
 export const machineHome = (id: string) => path.join(RUN, `home-${id}`);
 export const nodeHome = (id: string) => path.join(machineHome(id), ".fleetd/node");
 export const nodeSock = (id: string) => path.join(nodeHome(id), "node.sock");
-export const claudeConfigDir = (id: string) => path.join(machineHome(id), ".fleetd/claude");
-const claudeEnvFile = (id: string) => path.join(machineHome(id), ".fleetd/claude.env");
+export const claudeConfigDir = (id: string) => path.join(machineHome(id), ".claude");
+/** The files a machine's ~/.claude gets from the user's: the login material, never their hooks or plugins. */
+const LOGIN_FILES = ["settings.json", ".credentials.json"];
 
 /** The git identity the lab's agents commit with: the user's own (a GitHub noreply address), as on a real machine. */
 const gitIdentity = (): Record<string, string> => {
@@ -114,17 +120,36 @@ const gitIdentity = (): Record<string, string> => {
   return { GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email };
 };
 
+export interface MachineHomeOptions {
+  /** False: an empty ~/.claude, nobody logged in. */
+  readonly login?: boolean;
+  /** The machine user's ~/.claude/settings.json instead of the copied login (e.g. one pointing at a stub proxy). */
+  readonly claudeSettings?: Readonly<Record<string, unknown>>;
+}
+
 /**
- * Lays out a machine's HOME before its node starts. `login: true` puts the user's claude login variables in its
- * claude.env (0600, inside the run dir, removed by `cleanupMachineHomes`); `login: false` leaves the config dir
- * empty and claude.env blank, a machine nobody has logged in on. Agents push to GitHub (m7, m9) with the user's `gh`
- * login, copied in (never linked: nothing flows back) along with a .gitconfig that uses it.
+ * Lays out a machine's HOME before its node starts. `login: true` gives its ~/.claude the user's login material, read
+ * from the real ~/.claude and copied (0600, inside the run dir, removed by `cleanupMachineHomes`): a settings.json with
+ * only the login variables and `apiKeyHelper` of theirs, and their `.credentials.json` if they have one. `login:
+ * false` leaves ~/.claude empty, a machine nobody has logged in on. Agents push to GitHub (m7, m9) with the user's
+ * `gh` login, copied in (never linked: nothing flows back) along with a .gitconfig that uses it.
  */
-export const prepareMachineHome = (id: string, opts: { readonly login?: boolean } = {}) => {
+export const prepareMachineHome = (id: string, opts: MachineHomeOptions = {}) => {
   const home = machineHome(id);
   for (const dir of [nodeHome(id), claudeConfigDir(id)]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const login = opts.login === false ? {} : claudeLoginEnv();
-  fs.writeFileSync(claudeEnvFile(id), Object.entries(login).map(([k, v]) => `${k}=${v}\n`).join(""), { mode: 0o600 });
+  for (const file of LOGIN_FILES) fs.rmSync(path.join(claudeConfigDir(id), file), { force: true });
+  if (opts.claudeSettings !== undefined) {
+    fs.writeFileSync(path.join(claudeConfigDir(id), "settings.json"), `${JSON.stringify(opts.claudeSettings, null, 2)}\n`, { mode: 0o600 });
+  } else if (opts.login !== false) {
+    const helper = userClaudeSettings().apiKeyHelper;
+    const settings = { env: claudeLoginEnv(), ...(typeof helper === "string" ? { apiKeyHelper: helper } : {}) };
+    fs.writeFileSync(path.join(claudeConfigDir(id), "settings.json"), `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+    const credentials = path.join(os.homedir(), ".claude/.credentials.json");
+    if (fs.existsSync(credentials)) {
+      fs.copyFileSync(credentials, path.join(claudeConfigDir(id), ".credentials.json"));
+      fs.chmodSync(path.join(claudeConfigDir(id), ".credentials.json"), 0o600);
+    }
+  }
   const identity = gitIdentity();
   const ghDir = path.join(os.homedir(), ".config/gh");
   const hasGh = fs.existsSync(path.join(ghDir, "hosts.yml"));
@@ -150,11 +175,11 @@ export const requireGhLogin = () => {
   }
 };
 
-/** Deletes every machine's claude.env and gh copy: the login stays only as long as the run needs it. */
+/** Deletes every machine's copied claude login and gh copy: the login stays only as long as the run needs it. */
 export const cleanupMachineHomes = () => {
   if (!fs.existsSync(RUN)) return;
   for (const entry of fs.readdirSync(RUN).filter((e) => e.startsWith("home-"))) {
-    fs.rmSync(path.join(RUN, entry, ".fleetd/claude.env"), { force: true });
+    for (const file of LOGIN_FILES) fs.rmSync(path.join(RUN, entry, ".claude", file), { force: true });
     fs.rmSync(path.join(RUN, entry, ".config/gh"), { recursive: true, force: true });
   }
 };
@@ -274,7 +299,7 @@ export const sessionText = (machineId: string, threadId: string): string => {
 
 /**
  * The user messages claude recorded for a thread, in full and in order, from its own session file
- * (`$CLAUDE_CONFIG_DIR/projects/<cwd>/<session>.jsonl`). Tool results, which claude files as user turns too, are left out.
+ * (`~/.claude/projects/<cwd>/<session>.jsonl`). Tool results, which claude files as user turns too, are left out.
  */
 export const userMessages = (machineId: string, threadId: string): Array<string> => {
   const projects = path.join(claudeConfigDir(machineId), "projects");
@@ -379,7 +404,7 @@ export const stopAll = async () => {
 };
 
 /** `node join` for a machine on `hubHome`'s hub: an enrollment token, the machine's HOME, then the node itself. */
-export const joinNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & { readonly login?: boolean } = {}) => {
+export const joinNode = (hubUrl: string, hubHome: string, id: string, opts: NodeOptions & MachineHomeOptions = {}) => {
   prepareMachineHome(id, opts);
   const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", id))?.[0];
   if (token === undefined) throw new Error(`no enrollment token for ${id}`);
@@ -418,7 +443,7 @@ export interface Lab {
   /** The live node's PID, captured at spawn. */
   readonly nodePid: (machineId: string) => number | undefined;
   /** Joins a new machine to the hub (its own HOME under the run dir) and starts its node. */
-  readonly joinNode: (machineId: string, opts?: NodeOptions & { readonly login?: boolean }) => void;
+  readonly joinNode: (machineId: string, opts?: NodeOptions & MachineHomeOptions) => void;
   /** Registers a directory as a project on a machine with `project_add`; returns its project id once listed. */
   readonly addProject: (machineId: string, dir: string, title: string) => Promise<string>;
   /** (Re)starts the hub on the same home and port with `env` added, waits for /healthz and reconnects the MCP client. */

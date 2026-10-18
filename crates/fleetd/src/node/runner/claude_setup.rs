@@ -33,17 +33,13 @@ pub struct ClaudeSetup {
 
 /// Probes `binary` with `env` (the environment a session would get) and describes the result.
 pub async fn describe(binary: &Path, env: &[(String, String)]) -> ClaudeSetup {
-    ClaudeSetup::from_info(&conformance::probe(binary, env).await, env)
+    ClaudeSetup::from_info(&conformance::probe(binary, env).await)
 }
 
 impl ClaudeSetup {
-    /// From a probe's [`RunnerInfo`], e.g. one a node sent the hub. `env` only fills what an older node left out.
-    pub fn from_info(info: &RunnerInfo, env: &[(String, String)]) -> Self {
-        let (proxy, proxy_source) = match (&info.proxy, &info.proxy_source) {
-            (Some(url), source) => (Some(url.clone()), source.clone()),
-            (None, _) if info.config_dir.is_some() => (None, None),
-            (None, _) => proxy_of(env).map_or((None, None), |(u, s)| (Some(u), Some(s))),
-        };
+    /// From a probe's [`RunnerInfo`], e.g. one a node sent the hub. Only what the probe reported: the hub never reads
+    /// its own files to describe another machine.
+    pub fn from_info(info: &RunnerInfo) -> Self {
         Self {
             version: info
                 .version
@@ -56,12 +52,10 @@ impl ClaudeSetup {
                     .or_else(|| info.login_kind.clone())
                     .unwrap_or_else(|| "unknown kind".to_owned())
             }),
-            proxy,
-            proxy_source,
-            config_dir: info
-                .config_dir
-                .as_deref()
-                .map_or_else(|| config_dir(env), PathBuf::from),
+            proxy: info.proxy.clone(),
+            proxy_source: info.proxy_source.clone(),
+            // A node from before these fields reports none; it ran its sessions in fleetd's old profile.
+            config_dir: PathBuf::from(info.config_dir.as_deref().unwrap_or("~/.fleetd/claude")),
             problem: info.problem.clone(),
         }
     }
@@ -107,9 +101,9 @@ pub fn config_dir(env: &[(String, String)]) -> PathBuf {
     env_get(env, "CLAUDE_CONFIG_DIR").map_or_else(|| home(env).join(".claude"), PathBuf::from)
 }
 
+/// `<home>/.claude`, whatever the home: a hub describes machines whose home is not its own.
 fn is_default_dir(dir: &Path) -> bool {
     dir.file_name().is_some_and(|n| n == ".claude")
-        && dir.parent() == Some(crate::node::util::home_dir().as_path())
 }
 
 /// `~/…` for paths under the home directory, for messages.

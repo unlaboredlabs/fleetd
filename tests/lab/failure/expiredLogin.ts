@@ -1,7 +1,7 @@
-// expired-login: a machine whose fleetd claude has no login (empty CLAUDE_CONFIG_DIR, blank claude.env, so no
-// gateway variables either). The node's start probe (`initialize`, no model call) reports it logged out, so the
-// machine must show degraded with a login reason, every launch there must be refused, and the doctor's
-// claude_login check must fail with the fleetd login command. No session may start: no claude session file and no
+// expired-login: a machine whose user's claude has no login (an empty ~/.claude, so no proxy or gateway variables
+// either). The node's start probe (`initialize`, no model call) reports it logged out, so the machine must show
+// degraded with a login reason, every launch there must be refused, and the doctor's claude_login check must fail
+// with the plain `claude auth login` the user would run for their own claude. No session may start: no claude session file and no
 // transcript appear on the machine, so no model call was possible.
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -48,7 +48,7 @@ export async function expiredLogin(lab: Lab) {
     const login = checks.find((c) => c.id === `${MACHINE}/claude_login`);
     check(login?.status === "fail", `doctor ${MACHINE}/claude_login fails: ${JSON.stringify(login)}`);
     const fix = `${login!.fix?.label ?? ""} ${login!.fix?.command ?? ""}`;
-    check(/claude (auth )?\/?login|setup-token/u.test(fix) && fix.includes("CLAUDE_CONFIG_DIR"), `the fix is the fleetd login command: ${fix}`);
+    check(login!.fix?.command === "claude auth login" && !fix.includes(".fleetd/claude"), `the fix is the user's own login command: ${fix}`);
     ok(`doctor ${login!.id}: ${login!.message}; fix: ${fix.trim()}`);
 
     // claude files a session on its first user message, and the node keeps a transcript per session it ran.

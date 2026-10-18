@@ -9,11 +9,10 @@ use serde_json::Value;
 use std::sync::LazyLock;
 
 use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
+use crate::node::runner::claude_setup::ClaudeSetup;
+use crate::node::runner::failure::login_fix;
 use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
-
-/// The login a person runs on a worker: fleetd's Claude keeps its own config dir there.
-pub const MACHINE_LOGIN_FIX: &str = "CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -380,30 +379,50 @@ pub fn machine_online(machine: &MachineView, setup: Option<&MachineSetup>) -> En
             &format!("{id} is offline (last seen {}).", machine.last_seen_at),
             restart(),
         ),
-        "degraded" => machine_entry(
-            id,
-            "online",
-            Warn,
-            &format!(
-                "{id} is degraded: {}.",
-                machine
-                    .degraded_reason
-                    .as_deref()
-                    .unwrap_or("its node reports a problem")
-            ),
-            restart(),
-        ),
+        "degraded" => {
+            let reason = machine
+                .degraded_reason
+                .as_deref()
+                .unwrap_or("its node reports a problem");
+            // A runner problem names its own fix (a login, an update; the claude checks repeat it): restarting the
+            // node would not help, so the line offers no second, wrong one.
+            let fix = if reason.contains("Fix: ") {
+                None
+            } else {
+                restart()
+            };
+            machine_entry(
+                id,
+                "online",
+                Warn,
+                &format!("{id} is degraded: {}.", reason.trim_end_matches('.')),
+                fix,
+            )
+        }
         _ => machine_entry(id, "online", Pass, &format!("{id} is online."), None),
     }
 }
 
 /// `claude_version`, `claude_login` and `runner_conformance` from what the node's runner reports (`runner_info`).
 pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
+    // Sessions use the machine's own claude setup, so the fix is the login the user would do for their own claude.
+    let setup = ClaudeSetup::from_info(info);
     let login_fix = || {
-        Some(manual(
-            &format!("Log fleetd's Claude in on {machine_id} (its own config dir)"),
-            Some(MACHINE_LOGIN_FIX.into()),
-        ))
+        Some(if setup.proxy.is_some() {
+            manual(
+                &format!(
+                    "On {machine_id}, {} (claude goes through {})",
+                    login_fix(true),
+                    setup.proxy.as_deref().unwrap_or_default()
+                ),
+                None,
+            )
+        } else {
+            manual(
+                &format!("Log claude in on {machine_id}"),
+                Some(login_fix(false).into()),
+            )
+        })
     };
     let version = match &info.version {
         None => machine_entry(
@@ -425,21 +444,14 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
             machine_id,
             "claude_login",
             Pass,
-            &format!(
-                "fleetd's Claude on {machine_id} is logged in{}.",
-                info.login_kind
-                    .as_deref()
-                    .map_or(String::new(), |k| format!(" ({k})"))
-            ),
+            &format!("{machine_id}: {setup}."),
             None,
         ),
         LoginStatus::LoggedOut => machine_entry(
             machine_id,
             "claude_login",
             Fail,
-            &format!(
-                "fleetd's Claude on {machine_id} is not logged in, so its sessions can't start."
-            ),
+            &format!("{machine_id}: {setup}, so its sessions can't start."),
             login_fix(),
         ),
         LoginStatus::Unknown => machine_entry(
@@ -765,7 +777,46 @@ mod tests {
         );
         assert_eq!(
             bad[1].check.fix.as_ref().and_then(|f| f.command.as_deref()),
-            Some(MACHINE_LOGIN_FIX)
+            Some("claude auth login")
+        );
+        // Behind a proxy the proxy holds the login: no `claude auth login`, and the message names the proxy.
+        let proxied = runner_checks(
+            "mac",
+            &RunnerInfo {
+                proxy: Some("http://127.0.0.1:8317".into()),
+                proxy_source: Some("~/.claude/settings.json".into()),
+                config_dir: Some("/Users/ada/.claude".into()),
+                ..info(
+                    Some("2.1.302 (Claude Code)"),
+                    LoginStatus::LoggedOut,
+                    Some(true),
+                )
+            },
+        );
+        let fix = proxied[1].check.fix.as_ref().unwrap();
+        assert_eq!(fix.command, None);
+        assert!(
+            fix.label.contains("log in with your proxy"),
+            "{}",
+            fix.label
+        );
+        let ok = runner_checks(
+            "mac",
+            &RunnerInfo {
+                login_label: Some("Max".into()),
+                proxy: Some("http://127.0.0.1:8317".into()),
+                proxy_source: Some("~/.claude/settings.json".into()),
+                config_dir: Some("/Users/ada/.claude".into()),
+                ..info(
+                    Some("2.1.302 (Claude Code)"),
+                    LoginStatus::LoggedIn,
+                    Some(true),
+                )
+            },
+        );
+        assert_eq!(
+            ok[1].check.message,
+            "mac: claude 2.1.302, logged in (Max), via proxy http://127.0.0.1:8317 from ~/.claude/settings.json."
         );
         assert_eq!(bad[2].check.status, Fail);
         let newer = runner_checks(

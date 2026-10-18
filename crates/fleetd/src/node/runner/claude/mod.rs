@@ -257,6 +257,7 @@ mod tests {
             ],
             disallowed_tools: vec!["Task".into(), "WebFetch".into()],
             mcp_config: None,
+            settings: None,
             env: Vec::new(),
             transcript: None,
         }
@@ -274,8 +275,7 @@ mod tests {
              --allowedTools Bash(npm test:*) Bash(git commit -m \"a, b\") \
              --disallowedTools Task Workflow AskUserQuestion EnterPlanMode ExitPlanMode CronCreate CronDelete \
              CronList ScheduleWakeup EnterWorktree ExitWorktree WebFetch \
-             --strict-mcp-config --mcp-config {\"mcpServers\":{}} --setting-sources user,project,local \
-             --add-dir /work/root"
+             --setting-sources user,project,local --add-dir /work/root"
         );
 
         let resumed = SessionSpec {
@@ -283,12 +283,15 @@ mod tests {
             runtime_mode: RuntimeMode::FullAccess,
             allowed_tools: Vec::new(),
             mcp_config: Some("/n/mcp.json".into()),
+            settings: Some("/n/settings.json".into()),
             ..spec()
         };
         let args = runner.args(&resumed).join(" ");
         assert!(args.contains("--resume 7f0c0000-0000-4000-8000-000000000001 "));
         assert!(args.contains("--permission-mode bypassPermissions --disallowedTools"));
-        assert!(args.contains("--mcp-config /n/mcp.json "));
+        // fleetd's servers and settings are added to the user's own, never in place of them.
+        assert!(args.contains("--mcp-config /n/mcp.json --settings /n/settings.json "));
+        assert!(!args.contains("--strict-mcp-config"));
     }
 
     #[test]
@@ -301,15 +304,5 @@ mod tests {
         );
         let long = format!("/nonexistent/{}", "x".repeat(200));
         assert_eq!(session_file(config, Path::new(&long), "s1"), None);
-    }
-
-    #[tokio::test]
-    async fn spawn_refuses_without_an_isolated_config_dir() {
-        let runner = ClaudeRunner::new("/bin/true".into());
-        let refused = runner.spawn(spec()).err().map(|e| e.to_string());
-        assert_eq!(
-            refused.as_deref(),
-            Some("could not start /bin/true: CLAUDE_CONFIG_DIR is not set for the session")
-        );
     }
 }

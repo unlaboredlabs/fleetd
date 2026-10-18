@@ -268,9 +268,9 @@ function demoHome(opts: { readonly logins?: boolean } = {}) {
   fs.copyFileSync(fleetdCommand([])[0], path.join(home, ".local/bin/fleetd"));
   const dirs = [`${home}/.local/bin`, "/usr/bin:/bin"];
   if (opts.logins) {
-    fs.mkdirSync(path.join(home, ".fleetd"), { mode: 0o700 });
-    const login = Object.entries(claudeLoginEnv()).map(([k, v]) => `${k}=${v}\n`).join("");
-    fs.writeFileSync(path.join(home, ".fleetd/claude.env"), login, { mode: 0o600 });
+    // The demo user's own claude setup: their login variables in ~/.claude/settings.json, as claude keeps them.
+    fs.mkdirSync(path.join(home, ".claude"), { mode: 0o700 });
+    fs.writeFileSync(path.join(home, ".claude/settings.json"), `${JSON.stringify({ env: claudeLoginEnv() }, null, 2)}\n`, { mode: 0o600 });
     const gh = path.join(os.homedir(), ".config/gh/hosts.yml");
     if (fs.existsSync(gh)) {
       fs.mkdirSync(path.join(home, ".config/gh"), { recursive: true, mode: 0o700 });

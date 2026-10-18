@@ -46,9 +46,10 @@ TLS uses webpki roots.
 ## Lab suite
 
 The lab runs the release binary end to end: a hub and two nodes, driven through a real MCP client. Each node is a
-`fleetd node` with its own HOME under the lab directory, so it has its own `~/.fleetd` and its own
-`CLAUDE_CONFIG_DIR`. The lab passes your `claude` login variables from `~/.claude/settings.json` to the nodes through
-process env only, and never writes under `~/.claude` or your real `~/.fleetd`. It isn't run in CI. It costs a
+`fleetd node` with its own HOME under the lab directory, so it has its own `~/.fleetd` and its own `~/.claude`,
+which its sessions use as a real machine's sessions use the user's. The lab copies your `claude` login material into
+it (the login variables and `apiKeyHelper` from `~/.claude/settings.json`, and `.credentials.json` if you have one),
+deletes the copies when the run ends, and never writes under your real `~/.claude` or `~/.fleetd`. It isn't run in CI. It costs a
 handful of small `claude` haiku turns, and needs Node 24 or newer to run its TypeScript. The m7 and m9 scenarios also
 use your `gh` login and a public testbed repository.
 
