@@ -155,6 +155,9 @@ pub struct Steer {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SteerTag {
     pub id: SteerId,
+    /// Older steers the same message carries (held for a task's next run): each gets its own receipts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub riders: Vec<SteerId>,
 }
 
 /// Node -> hub: a steer's receipt moved, decided from claude's own frames.

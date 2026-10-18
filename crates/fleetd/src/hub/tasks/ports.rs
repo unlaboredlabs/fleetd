@@ -104,7 +104,7 @@ pub trait TaskPorts: Send + Sync {
         thread: &'a ThreadRef,
         message: &'a str,
         client_request_id: &'a str,
-        _steer: fleetd_contracts::steer::SteerId,
+        _steer: fleetd_contracts::steer::SteerTag,
     ) -> BoxFut<'a, Result<(), PortError>> {
         self.send(thread, message, client_request_id)
     }

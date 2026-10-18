@@ -1383,7 +1383,10 @@ impl Executors {
             run_id: NonEmpty::unchecked(run_id.clone()),
             text: non_empty(&r.machine_id, op, "message", message)?,
             mode: opts.mode,
-            steer: opts.steer.clone().map(|id| SteerTag { id }),
+            steer: opts.steer.clone().map(|id| SteerTag {
+                id,
+                riders: opts.riders.clone(),
+            }),
         };
         Ok(
             match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {

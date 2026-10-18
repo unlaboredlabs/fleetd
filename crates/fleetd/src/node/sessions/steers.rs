@@ -20,8 +20,11 @@ pub(super) const SEND_NOW_WAIT: Duration = Duration::from_secs(2);
 const WITHDRAW_WAIT: Duration = Duration::from_secs(3);
 const EXCERPT: usize = 200;
 
+/// One tracked steer. A run may carry several (steers held for a task's next run go in one message): each has its
+/// own track and its own receipts. `SessionService`'s map is keyed by steer id.
 pub(super) struct SteerTrack {
     session_id: String,
+    run_id: String,
     steer_id: SteerId,
     /// Another run was active when it was sent: delivered at a boundary rather than as a fresh turn.
     behind: bool,
@@ -37,9 +40,10 @@ impl SessionService {
     /// Starts tracking a tagged send before it is dispatched, so its first frame finds it.
     pub(super) fn track_steer(&self, id: &str, run_id: &str, steer_id: SteerId, behind: bool) {
         self.st().steers.insert(
-            run_id.to_owned(),
+            steer_id.to_string(),
             SteerTrack {
                 session_id: id.to_owned(),
+                run_id: run_id.to_owned(),
                 steer_id,
                 behind,
                 stopped: None,
@@ -51,28 +55,47 @@ impl SessionService {
     }
 
     pub(super) fn steer_delivered(&self, run_id: &str, joined: bool) {
-        let receipt = {
+        let receipts: Vec<SteerReceipt> = {
             let mut st = self.st();
-            let Some(t) = st.steers.get_mut(run_id).filter(|t| !t.delivered) else {
-                return;
-            };
-            t.delivered = true;
-            let how = delivered_how(joined, t.stopped.is_some(), t.behind);
-            let mut r = receipt(t, run_id, SteerStage::Delivered);
-            r.how = Some(how);
-            r.stopped_tool = t.stopped.clone().flatten().map(|s| clip(&s));
-            r
+            st.steers
+                .values_mut()
+                .filter(|t| t.run_id == run_id && !t.delivered)
+                .map(|t| {
+                    t.delivered = true;
+                    let how = delivered_how(joined, t.stopped.is_some(), t.behind);
+                    let mut r = receipt(t, SteerStage::Delivered);
+                    r.how = Some(how);
+                    r.stopped_tool = t.stopped.clone().flatten().map(|s| clip(&s));
+                    r
+                })
+                .collect()
         };
-        self.emit_steer(receipt);
+        for r in receipts {
+            self.emit_steer(r);
+        }
     }
 
     pub(super) fn steer_seen(&self, run_ids: &[String]) {
         let mut st = self.st();
-        for run_id in run_ids {
-            if let Some(t) = st.steers.get_mut(run_id).filter(|t| t.delivered) {
-                t.seen_at.get_or_insert_with(now);
-            }
+        for t in st
+            .steers
+            .values_mut()
+            .filter(|t| t.delivered && run_ids.contains(&t.run_id))
+        {
+            t.seen_at.get_or_insert_with(now);
         }
+    }
+
+    /// Stops tracking every steer of `run_id`.
+    fn take_run(&self, run_id: &str) -> Vec<SteerTrack> {
+        let mut st = self.st();
+        let ids: Vec<String> = st
+            .steers
+            .iter()
+            .filter(|(_, t)| t.run_id == run_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.iter().filter_map(|id| st.steers.remove(id)).collect()
     }
 
     pub(super) fn steer_send_now(
@@ -85,25 +108,22 @@ impl SessionService {
         if let Some(waiter) = st.send_now_waiters.remove(run_id) {
             let _ = waiter.send(outcome);
         }
-        if let (SendNow::Stopped, Some(t)) = (outcome, st.steers.get_mut(run_id)) {
-            t.stopped = Some(stopped_tool);
+        if outcome == SendNow::Stopped {
+            for t in st.steers.values_mut().filter(|t| t.run_id == run_id) {
+                t.stopped = Some(stopped_tool.clone());
+            }
         }
     }
 
     pub(super) fn steer_withdrawn(&self, run_id: &str, cancelled: bool, by_stop: bool) {
-        let track = {
-            let mut st = self.st();
-            if let Some(waiter) = st.withdraw_waiters.remove(run_id) {
-                let _ = waiter.send(cancelled);
-            }
-            if cancelled {
-                st.steers.remove(run_id)
-            } else {
-                None
-            }
-        };
-        if let Some(t) = track {
-            let mut r = receipt(&t, run_id, SteerStage::Withdrawn);
+        if let Some(waiter) = self.st().withdraw_waiters.remove(run_id) {
+            let _ = waiter.send(cancelled);
+        }
+        if !cancelled {
+            return;
+        }
+        for t in self.take_run(run_id) {
+            let mut r = receipt(&t, SteerStage::Withdrawn);
             if by_stop {
                 r.reason = Some(Text::unchecked(
                     "the turn it waited on was stopped before it took this in",
@@ -115,28 +135,26 @@ impl SessionService {
 
     /// The session's claude exited: every steer still open on it gets its final receipt, and is no longer tracked.
     pub(super) fn steers_exited(&self, id: &str, exit: &ExitInfo) {
-        let open: Vec<(String, SteerTrack)> = {
+        let open: Vec<SteerTrack> = {
             let mut st = self.st();
-            let runs: Vec<String> = st
+            let ids: Vec<String> = st
                 .steers
                 .iter()
                 .filter(|(_, t)| t.session_id == id)
-                .map(|(r, _)| r.clone())
+                .map(|(s, _)| s.clone())
                 .collect();
-            runs.into_iter()
-                .filter_map(|r| st.steers.remove(&r).map(|t| (r, t)))
-                .collect()
+            ids.iter().filter_map(|s| st.steers.remove(s)).collect()
         };
-        for (run_id, t) in open {
+        for t in open {
             let r = if t.delivered {
-                let mut r = receipt(&t, &run_id, SteerStage::Unacknowledged);
+                let mut r = receipt(&t, SteerStage::Unacknowledged);
                 if let Some((message_id, text)) = &t.first {
                     r.message_id = NonEmpty::new(message_id.as_str()).ok();
                     r.excerpt = Some(clip(text));
                 }
                 r
             } else {
-                let mut r = receipt(&t, &run_id, SteerStage::Failed);
+                let mut r = receipt(&t, SteerStage::Failed);
                 let code = exit
                     .code
                     .map_or_else(|| "a signal".to_owned(), |c| format!("code {c}"));
@@ -152,12 +170,12 @@ impl SessionService {
         let acked: Vec<SteerReceipt> = {
             let mut st = self.st();
             let mut acked = Vec::new();
-            st.steers.retain(|run_id, t| {
+            st.steers.retain(|_, t| {
                 if t.session_id != id || !t.delivered {
                     return true;
                 }
                 if names_steer(text, &t.steer_id) {
-                    let mut r = receipt(t, run_id, SteerStage::Acknowledged);
+                    let mut r = receipt(t, SteerStage::Acknowledged);
                     r.message_id = NonEmpty::new(message_id).ok();
                     r.excerpt = Some(clip(text));
                     acked.push(r);
@@ -176,36 +194,34 @@ impl SessionService {
 
     /// The steer's run ended (and the node is not retrying it).
     pub(super) fn steer_ended(&self, run_id: &str, outcome: &RunOutcome) {
-        let Some(t) = self.st().steers.remove(run_id) else {
-            return;
-        };
-        let r = if t.delivered {
-            let mut r = receipt(&t, run_id, SteerStage::Unacknowledged);
-            if let Some((message_id, text)) = &t.first {
-                r.message_id = NonEmpty::new(message_id.as_str()).ok();
-                r.excerpt = Some(clip(text));
-            }
-            r
-        } else {
-            let mut r = receipt(&t, run_id, SteerStage::Failed);
-            let why = match outcome {
-                RunOutcome::Failed(f) => f.message.to_string(),
-                _ => "claude dropped it before taking it in".into(),
+        for t in self.take_run(run_id) {
+            let r = if t.delivered {
+                let mut r = receipt(&t, SteerStage::Unacknowledged);
+                if let Some((message_id, text)) = &t.first {
+                    r.message_id = NonEmpty::new(message_id.as_str()).ok();
+                    r.excerpt = Some(clip(text));
+                }
+                r
+            } else {
+                let mut r = receipt(&t, SteerStage::Failed);
+                let why = match outcome {
+                    RunOutcome::Failed(f) => f.message.to_string(),
+                    _ => "claude dropped it before taking it in".into(),
+                };
+                r.reason = Text::new(head_utf16(&why, 400)).ok();
+                r
             };
-            r.reason = Text::new(head_utf16(&why, 400)).ok();
-            r
-        };
-        self.emit_steer(r);
+            self.emit_steer(r);
+        }
     }
 
     /// A tagged send that never reached claude.
     pub(super) fn steer_failed(&self, run_id: &str, why: &str) {
-        let Some(t) = self.st().steers.remove(run_id) else {
-            return;
-        };
-        let mut r = receipt(&t, run_id, SteerStage::Failed);
-        r.reason = Text::new(head_utf16(why, 400)).ok();
-        self.emit_steer(r);
+        for t in self.take_run(run_id) {
+            let mut r = receipt(&t, SteerStage::Failed);
+            r.reason = Text::new(head_utf16(why, 400)).ok();
+            self.emit_steer(r);
+        }
     }
 
     fn emit_steer(&self, receipt: SteerReceipt) {
@@ -256,10 +272,10 @@ fn delivered_how(joined: bool, stopped: bool, behind: bool) -> DeliveredHow {
     }
 }
 
-fn receipt(t: &SteerTrack, run_id: &str, stage: SteerStage) -> SteerReceipt {
+fn receipt(t: &SteerTrack, stage: SteerStage) -> SteerReceipt {
     SteerReceipt {
         session_id: ThreadId::unchecked(t.session_id.as_str()),
-        run_id: NonEmpty::unchecked(run_id),
+        run_id: NonEmpty::unchecked(t.run_id.as_str()),
         steer_id: t.steer_id.clone(),
         stage,
         at: now(),

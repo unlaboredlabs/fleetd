@@ -596,7 +596,7 @@ impl Tasks {
                 None => self.d.ports.send(thread, message, &id).await,
             };
             if let (Err(_), Some(steer)) = (&sent, &steer) {
-                crate::hub::steer::rehold(&self.d.db, steer);
+                crate::hub::steer::rehold(&self.d.db, &steer.id);
             }
             sent.map(|_| (thread.clone(), None))
                 .map_err(StartError::from)

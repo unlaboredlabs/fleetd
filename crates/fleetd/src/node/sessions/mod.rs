@@ -361,7 +361,7 @@ struct State {
     spawned: HashSet<String>,
     /// Runs the node is retrying: when the retry was scheduled (ms), its attempt and delay.
     node_retry: HashMap<String, (u64, u32, u64)>,
-    /// Tagged sends (steers) by run id, until their receipt is final.
+    /// Tagged sends (steers) by steer id, until their receipt is final.
     steers: HashMap<String, steers::SteerTrack>,
     send_now_waiters: HashMap<String, oneshot::Sender<SendNow>>,
     withdraw_waiters: HashMap<String, oneshot::Sender<bool>>,
@@ -1152,6 +1152,9 @@ impl SessionService {
             }
         }
         if let Some(tag) = steer {
+            for rider in tag.riders {
+                self.track_steer(id, run_id, rider, queued);
+            }
             self.track_steer(id, run_id, tag.id, queued);
         }
         let command = SessionCommand::Send {

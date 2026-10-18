@@ -484,9 +484,10 @@ async fn a_steer_to_a_task_that_is_not_running_waits_for_its_next_run_and_is_nev
     );
     // When the run goes out, the steer is that run's.
     let thread = task.thread_ref.clone().unwrap();
-    let id = take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
-    assert_eq!(id, steer.id);
-    let (bound, _) = store::get(&lab.hub.db, &id).unwrap().unwrap();
+    let tag = take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
+    assert_eq!(tag.id, steer.id);
+    assert!(tag.riders.is_empty());
+    let (bound, _) = store::get(&lab.hub.db, &tag.id).unwrap().unwrap();
     assert_eq!(
         bound.run_id.as_str(),
         Executors::send_run_id(&thread, "next-run")
@@ -566,24 +567,81 @@ async fn held_steers_go_out_in_order_with_the_next_run_and_any_still_held_can_be
             && pending().contains("'one'")
             && pending().contains("'three'")
     );
-    // The next run carries the rest, tagged with the newest; the older one rides with it.
+    // The next run carries the rest in order: the newest is its tag, the older one rides with it, and each has its
+    // own receipts.
     let thread = task.thread_ref.clone().unwrap();
-    let leader = take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
-    assert_eq!(leader, sent[2].id);
-    let (bound, _) = store::get(&lab.hub.db, &leader).unwrap().unwrap();
+    let tag = take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
+    assert_eq!(tag.id, sent[2].id);
+    assert_eq!(tag.riders, [sent[0].id.clone()]);
+    let stage = |s: &Steer| store::get(&lab.hub.db, &s.id).unwrap().unwrap().0;
+    let (leader, rider) = (stage(&sent[2]), stage(&sent[0]));
+    assert_eq!(leader.run_id, rider.run_id);
+    assert!(
+        rider
+            .detail
+            .as_deref()
+            .unwrap()
+            .contains("together with S3")
+    );
     let machine = MachineId::unchecked("lab-a");
-    on_receipt(&lab.hub, &machine, &receipt(&bound, SteerStage::Delivered));
+    on_receipt(&lab.hub, &machine, &receipt(&leader, SteerStage::Delivered));
+    on_receipt(&lab.hub, &machine, &receipt(&rider, SteerStage::Delivered));
+    // The agent named only the newest: the older one is not acknowledged by it.
     on_receipt(
         &lab.hub,
         &machine,
-        &receipt(&bound, SteerStage::Acknowledged),
+        &receipt(&leader, SteerStage::Acknowledged),
     );
-    let stage = |s: &Steer| store::get(&lab.hub.db, &s.id).unwrap().unwrap().0;
     assert_eq!(stage(&sent[2]).stage, SteerStage::Acknowledged);
-    let rider = stage(&sent[0]);
-    assert_eq!(rider.stage, SteerStage::Acknowledged);
-    assert!(rider.detail.unwrap().contains("together with S3"));
+    assert_eq!(stage(&sent[0]).stage, SteerStage::Delivered);
+    on_receipt(
+        &lab.hub,
+        &machine,
+        &receipt(&rider, SteerStage::Unacknowledged),
+    );
+    assert_eq!(stage(&sent[0]).stage, SteerStage::Unacknowledged);
     assert_eq!(stage(&sent[1]).stage, SteerStage::Withdrawn);
-    lab.clock.advance(RECEIPT_GRACE * 10);
-    assert_eq!(sweep(&lab.hub), 0);
+}
+
+#[tokio::test]
+async fn the_sweep_closes_every_steer_of_a_batch_whose_receipts_never_came() {
+    let lab = lab();
+    let mut task = running_task(&lab.hub, "p1");
+    task.state = TaskState::Idle;
+    lab.hub
+        .db
+        .with(|c| {
+            Ok(crate::hub::tasks::records::TaskRecords::put(
+                c,
+                &crate::hub::tasks::records::StoredTask {
+                    task: task.clone(),
+                    pending_message: None,
+                },
+            )?)
+        })
+        .unwrap();
+    let me = person("k1");
+    let a = send(
+        &lab.hub,
+        By::Human(&me),
+        to_task(&task, "one", SteerMode::Queue, "r1"),
+    )
+    .await
+    .unwrap();
+    let b = send(
+        &lab.hub,
+        By::Human(&me),
+        to_task(&task, "two", SteerMode::Queue, "r2"),
+    )
+    .await
+    .unwrap();
+    let thread = task.thread_ref.clone().unwrap();
+    take_held(&lab.hub.db, "T1", &thread, "next-run").unwrap();
+    // The node restarted before either receipt came.
+    lab.clock.advance(RECEIPT_GRACE + Duration::from_secs(1));
+    assert_eq!(sweep(&lab.hub), 2);
+    for s in [&a, &b] {
+        let (now, _) = store::get(&lab.hub.db, &s.id).unwrap().unwrap();
+        assert_eq!(now.stage, SteerStage::Failed, "{}", s.id);
+    }
 }

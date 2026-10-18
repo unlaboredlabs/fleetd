@@ -338,10 +338,11 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     // mode = a plain send).
     r#"
   CREATE TABLE steers (n INTEGER PRIMARY KEY AUTOINCREMENT, workstream_id TEXT NOT NULL, task_id TEXT,
-    machine_id TEXT NOT NULL, thread_id TEXT NOT NULL, run_id TEXT NOT NULL UNIQUE, by TEXT NOT NULL, mode TEXT NOT NULL,
+    machine_id TEXT NOT NULL, thread_id TEXT NOT NULL, run_id TEXT NOT NULL, by TEXT NOT NULL, mode TEXT NOT NULL,
     stage TEXT NOT NULL, queued_ms INTEGER NOT NULL, delivered_ms INTEGER, acked_ms INTEGER,
     held INTEGER NOT NULL DEFAULT 0, rides_with INTEGER, message TEXT, data TEXT NOT NULL);
   CREATE INDEX steers_by_workstream ON steers (workstream_id, n);
+  CREATE INDEX steers_by_run ON steers (run_id);
   ALTER TABLE queued_writes ADD COLUMN mode TEXT;
   ALTER TABLE queued_writes ADD COLUMN steer_id TEXT;
   "#,

@@ -296,6 +296,7 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
             SteerMode::Now => SendMode::Now,
         },
         steer: Some(steer.id.clone()),
+        riders: Vec::new(),
     };
     match hub
         .queue
@@ -364,29 +365,37 @@ pub fn digest_line(db: &crate::hub::store::HubDb, workstream_id: &WorkstreamId) 
 }
 
 /// The tasks area is about to send a task's next run (a start from the queue or a continuation), whose message
-/// carries every held steer in the order they came. The newest leads: the run is sent tagged with it, so the node's
-/// receipts find it, and the others ride with it and take its receipts.
+/// carries every held steer in the order they came. All become that run's: the newest is the tag and the older ones
+/// its riders, each tracked by the node with its own receipts.
 pub fn take_held(
     db: &crate::hub::store::HubDb,
     task_id: &str,
     thread: &ThreadRef,
     client_request_id: &str,
-) -> Option<SteerId> {
+) -> Option<fleetd_contracts::steer::SteerTag> {
     let mut held = store::held_for_task(db, task_id).ok()?;
     let mut leader = held.pop()?;
-    leader.run_id = NonEmpty::unchecked(Executors::send_run_id(thread, client_request_id));
+    let run_id = NonEmpty::unchecked(Executors::send_run_id(thread, client_request_id));
+    leader.run_id = run_id.clone();
     leader.thread = thread.clone();
     leader.detail = None;
     store::bind(db, &leader).ok()?;
+    let mut riders = Vec::new();
     for mut rider in held {
+        rider.run_id = run_id.clone();
         rider.thread = thread.clone();
         rider.detail = Some(Text::unchecked(format!(
             "sent with {task_id}'s next run, together with {}",
             leader.id
         )));
-        let _ = store::ride(db, &rider, &leader.id);
+        if store::ride(db, &rider, &leader.id).is_ok() {
+            riders.push(rider.id);
+        }
     }
-    Some(leader.id)
+    Some(fleetd_contracts::steer::SteerTag {
+        id: leader.id,
+        riders,
+    })
 }
 
 /// The run it was bound to never went out (the machine was away): it and its riders are held again.
@@ -403,29 +412,6 @@ pub fn rehold(db: &crate::hub::store::HubDb, id: &SteerId) {
             "queued until {task_id} starts; it gets this with its next run"
         )));
         let _ = store::put(db, &steer, None, None).and_then(|()| store::hold(db, &steer.id, None));
-    }
-}
-
-/// A receipt for a run that carried other steers: each takes it, saying whose it was.
-fn to_riders(hub: &Hub, leader: &Steer, delivered: Option<i64>, acked: Option<i64>) {
-    for mut rider in store::riders(&hub.db, &leader.id).unwrap_or_default() {
-        if rider.stage.is_final() {
-            continue;
-        }
-        rider.stage = leader.stage;
-        rider.delivered_at = leader.delivered_at.clone();
-        rider.how = leader.how;
-        rider.stopped_tool = leader.stopped_tool.clone();
-        rider.seen_at = leader.seen_at.clone();
-        rider.acked_at = leader.acked_at.clone();
-        rider.ack_excerpt = leader.ack_excerpt.clone();
-        rider.detail = Some(Text::unchecked(format!(
-            "sent together with {}; its receipt is that run's",
-            leader.id
-        )));
-        if store::put(&hub.db, &rider, delivered, acked).is_ok() {
-            emit(hub, &rider, event_type(rider.stage), None);
-        }
     }
 }
 
@@ -495,7 +481,6 @@ pub fn on_receipt(hub: &Hub, machine_id: &MachineId, r: &SteerReceipt) {
         return tracing::error!(%error, "steer receipt not stored");
     }
     emit(hub, &steer, event_type(r.stage), None);
-    to_riders(hub, &steer, delivered, acked);
 }
 
 fn event_type(stage: SteerStage) -> HubEventType {

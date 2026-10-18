@@ -121,12 +121,13 @@ impl TaskPorts for HubTaskPorts {
         thread: &'a ThreadRef,
         message: &'a str,
         client_request_id: &'a str,
-        steer: fleetd_contracts::steer::SteerId,
+        steer: fleetd_contracts::steer::SteerTag,
     ) -> BoxFut<'a, Result<(), PortError>> {
         Box::pin(async move {
             let opts = crate::hub::queue::ports::SendOpts {
                 mode: fleetd_contracts::sessions::SendMode::Boundary,
-                steer: Some(steer),
+                steer: Some(steer.id),
+                riders: steer.riders,
             };
             self.executors
                 .send_with(thread, message, client_request_id, &opts)

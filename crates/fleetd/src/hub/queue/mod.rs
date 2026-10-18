@@ -85,6 +85,7 @@ fn to_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
             steer: r
                 .get::<_, Option<String>>("steer_id")?
                 .map(SteerId::unchecked),
+            riders: Vec::new(),
         },
     })
 }

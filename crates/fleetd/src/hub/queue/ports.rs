@@ -65,6 +65,8 @@ pub enum ExecutorError {
 pub struct SendOpts {
     pub mode: SendMode,
     pub steer: Option<SteerId>,
+    /// Older steers the same message carries; each gets its own receipts.
+    pub riders: Vec<SteerId>,
 }
 
 /// A message the node took.

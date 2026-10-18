@@ -990,6 +990,7 @@ fn steer(id: &str, run_id: &str, mode: SendMode, tag: Option<&str>) -> SessionCa
         mode,
         steer: tag.map(|t| SteerTag {
             id: SteerId::unchecked(t),
+            riders: vec![],
         }),
     }
 }
@@ -1215,4 +1216,61 @@ async fn a_steer_still_open_when_claude_exits_gets_its_final_receipt() {
         "{receipts:?}"
     );
     assert!(hub.service.st().steers.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn each_steer_a_run_carries_gets_its_own_receipts() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
+        .await;
+    // One message carrying S2 and, held before it, S1; the reply names only S1.
+    let SessionCall::Send {
+        session_id,
+        run_id,
+        text,
+        mode,
+        ..
+    } = steer("s1", "r2", SendMode::Now, None)
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Send {
+        session_id,
+        run_id,
+        text,
+        mode,
+        steer: Some(SteerTag {
+            id: SteerId::unchecked("S2"),
+            riders: vec![SteerId::unchecked("S1")],
+        }),
+    })
+    .await;
+    let mut finals = std::collections::BTreeMap::new();
+    while finals.len() < 2 {
+        let r = hub
+            .until(|f| match f {
+                NodeToHub::MachineEvent(f) => match f.event {
+                    MachineEvent::Steer(r) => Some(r),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .await;
+        assert_eq!(r.run_id, "r2");
+        if r.stage.is_final() {
+            finals.insert(r.steer_id.to_string(), r.stage);
+        }
+    }
+    assert_eq!(finals["S1"], SteerStage::Acknowledged);
+    assert_eq!(finals["S2"], SteerStage::Unacknowledged);
 }

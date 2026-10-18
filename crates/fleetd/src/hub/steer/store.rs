@@ -133,7 +133,7 @@ pub fn open(db: &HubDb) -> Result<Vec<(Steer, i64)>, StoreError> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
             "SELECT data, COALESCE(delivered_ms, queued_ms) FROM steers
-             WHERE stage IN ('queued', 'delivered') AND held = 0 AND rides_with IS NULL",
+             WHERE stage IN ('queued', 'delivered') AND held = 0",
         )?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         rows.map(|r| {
@@ -188,8 +188,13 @@ pub fn riders(db: &HubDb, leader: &SteerId) -> Result<Vec<Steer>, StoreError> {
 pub fn ride(db: &HubDb, rider: &Steer, leader: &SteerId) -> Result<(), StoreError> {
     db.with(|conn| {
         conn.execute(
-            "UPDATE steers SET held = 0, rides_with = ?, data = ? WHERE n = ?",
-            params![leader.n(), serde_json::to_string(rider)?, rider.id.n()],
+            "UPDATE steers SET held = 0, rides_with = ?, run_id = ?, data = ? WHERE n = ?",
+            params![
+                leader.n(),
+                rider.run_id.as_str(),
+                serde_json::to_string(rider)?,
+                rider.id.n()
+            ],
         )?;
         Ok(())
     })
