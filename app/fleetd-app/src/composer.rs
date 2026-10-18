@@ -626,6 +626,16 @@ impl Composer {
         self.input.update(cx, |i, cx| i.insert(text, cx));
     }
 
+    /// Whether `@name` would pick a project yet (the hub has sent the project list).
+    pub fn knows_project(&self, name: &str) -> bool {
+        self.sync.targets.iter().any(|t| t.key.1 == name || t.title == name)
+    }
+
+    /// Sends what is typed, as Enter does.
+    pub fn submit(&mut self, cx: &mut Context<Self>) {
+        self.send(false, cx);
+    }
+
     /// Attaches dropped files (onto the composer, or onto an order card for its follow-up).
     pub fn attach_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         self.attach_files(paths, cx);

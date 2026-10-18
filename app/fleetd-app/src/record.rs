@@ -72,6 +72,12 @@ pub fn start(config: Config, cx: &mut App) {
     }
 }
 
+/// Begins `<dir>/clip.mp4` with the next frame (macOS; nothing elsewhere or when not recording). SIGUSR1 ends it.
+pub fn clip_start() {
+    #[cfg(target_os = "macos")]
+    fleetd_record::clip_start();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

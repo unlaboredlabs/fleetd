@@ -13,8 +13,9 @@
 // gets one line per milestone with its wall-clock time, for cutting the recording. Costs about 15-25 haiku turns.
 //
 // FLEETD_DEMO_APP=<fleetd-app binary> also starts the app on the hub with the human key, recording its own window into
-// FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD, macOS) from before the order until the merges; then it stops
-// the app by its PID, which finishes the MP4. scripts/demo-mac.sh runs it so on a Mac.
+// FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD, macOS). The app types the order into its composer and sends
+// it (FLEETD_DEMO_TYPE); clip.mp4 runs from just before the first key to 3 s after the last merge, fleetd.mp4 is the
+// whole capture. Then it stops the app by its PID, which finishes both. scripts/demo-mac.sh runs it so on a Mac.
 //
 // It closes and deletes only the PRs and branches it made, so a run on another machine against the same testbed is
 // left alone. Task ids, and so branch names, restart at T1 with every run, so they are written to LAB/demo-testbed.ledger
@@ -33,7 +34,7 @@ const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const PAGES = ["alpha", "beta", "gamma"] as const;
-/** On screen before the order goes in, and after the last merge: the board settled, for the cut. */
+/** How long the full capture runs on after the last merge, past the clip's end. */
 const APP_HOLD_MS = 6_000;
 const POLICY = `areas:
 ${PAGES.map((p) => `  ${p}: ["${DIR}/${p}.md"]`).join("\n")}
@@ -133,11 +134,11 @@ const watchLedger = (lab: Lab, from: number) => {
 };
 
 /** The app on the hub with the human key, recording itself; resolves once the recorder has a window. */
-const startApp = async (lab: Lab, bin: string, key: string, out: string) => {
+const startApp = async (lab: Lab, bin: string, key: string, out: string, order: string) => {
   fs.mkdirSync(out, { recursive: true });
   const logFile = path.join(lab.dir, "app.log");
   const child = spawn(bin, [], {
-    env: { ...scrubbedEnv(), FLEETD_HUB_URL: lab.hubUrl, FLEETD_AGENT_KEY: key, FLEETD_RECORD: out },
+    env: { ...scrubbedEnv(), FLEETD_HUB_URL: lab.hubUrl, FLEETD_AGENT_KEY: key, FLEETD_RECORD: out, FLEETD_DEMO_TYPE: order },
     stdio: ["ignore", fs.openSync(logFile, "a"), fs.openSync(logFile, "a")],
     ...detached(),
   });
@@ -240,13 +241,13 @@ export async function demoFanout(lab: Lab) {
     check(key, "hub key create --human printed a key");
     app = await appSession(key!);
     app.live(true);
+    const orderCursor = await lab.cursor();
     if (process.env.FLEETD_DEMO_APP) {
-      desktop = await startApp(lab, process.env.FLEETD_DEMO_APP, key!, record);
-      await sleep(APP_HOLD_MS);
+      // The app types the order itself (FLEETD_DEMO_TYPE), its clip opening just before the first key.
+      desktop = await startApp(lab, process.env.FLEETD_DEMO_APP, key!, record, `@fleetd-testbed ${ORDER}`);
       mark("app recording", { record });
     }
-    const fromApp = process.env.FLEETD_DEMO_ORDER === "app";
-    const orderCursor = await lab.cursor();
+    const fromApp = process.env.FLEETD_DEMO_ORDER === "app" || desktop !== undefined;
     let workstreamId: string;
     if (fromApp) {
       const handoff = path.join(lab.dir, "app.json");
@@ -307,6 +308,12 @@ export async function demoFanout(lab: Lab) {
         mark(`PR ${merged.size} of 3 merged`, { pr: next.event.data.prNumber });
       }
     }
+    if (desktop !== undefined) {
+      // Nothing after the last merge belongs in the clip.
+      await sleep(3_000);
+      desktop.kill("SIGUSR1");
+      mark("clip ended");
+    }
     check(merged.size === 3, `the train merged all three pages (${merged.size})`);
     const board = await app.call("orders_board", { projectRef: ref, includeDoneSince: new Date(Date.now() - 3_600_000).toISOString() });
     const trains = board.trains as Array<Body>;
@@ -315,7 +322,7 @@ export async function demoFanout(lab: Lab) {
     if (desktop !== undefined) {
       await sleep(APP_HOLD_MS);
       await stopApp(lab, desktop);
-      mark("app stopped", { mp4: path.join(record, "fleetd.mp4") });
+      mark("app stopped", { clip: path.join(record, "clip.mp4"), raw: path.join(record, "fleetd.mp4") });
     }
 
     // What came over the live feed, against its bounds.

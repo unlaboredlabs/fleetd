@@ -5,7 +5,7 @@ name: record-mac
 # (GitHub only dispatches workflows that are on main), and by hand: gh workflow run record-mac.yml --ref <branch>
 on:
   pull_request:
-    paths: [app/record/**, app/fleetd-app/src/record.rs, .github/workflows/record-mac.yml]
+    paths: [app/record/**, app/fleetd-app/src/record.rs, app/fleetd-app/src/shell.rs, .github/workflows/record-mac.yml]
   workflow_dispatch:
     inputs:
       seconds:
@@ -63,6 +63,25 @@ jobs:
           record "$RUNNER_TEMP/rec/no-permission" 8
           grep -q 'screen_capture_access=false' "$RUNNER_TEMP/rec/no-permission/app.log" ||
             { echo "::error::Screen Recording is still granted after tccutil reset"; exit 1; }
+      - name: Record a typed order's clip
+        # What scripts/demo-mac.sh records: the shell types FLEETD_DEMO_TYPE (here into an offline composer), the
+        # clip opens just before the first key, and SIGUSR1 ends it while the full capture goes on.
+        run: |
+          out="$RUNNER_TEMP/rec/typed"
+          FLEETD_HUB_URL=http://127.0.0.1:9 FLEETD_AGENT_KEY=fld_aaaaaaaaaaaaaaaaaaaaaaaa HOME="$RUNNER_TEMP/home" \
+            FLEETD_DEMO_TYPE="Tier L. Add three short pages, one writer each, all three in parallel." FLEETD_RECORD="$out,30" \
+            target/debug/fleetd-app >"$RUNNER_TEMP/typed.log" 2>&1 &
+          pid=$!
+          sleep 14
+          kill -USR1 "$pid"
+          sleep 3
+          kill -TERM "$pid"
+          for _ in $(seq 150); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+          kill -0 "$pid" 2>/dev/null && { echo "::error::the app did not exit after SIGTERM"; kill -9 "$pid"; }
+          grep -E 'FLEETD_RECORD|FLEETD_DEMO' "$RUNNER_TEMP/typed.log"
+          mv "$RUNNER_TEMP/typed.log" "$out/app.log"
+          grep -q 'FLEETD_RECORD clip_done' "$out/app.log" || { echo "::error::no finished clip"; exit 1; }
+          grep -q 'FLEETD_RECORD done' "$out/app.log" || { echo "::error::no finished full recording"; exit 1; }
       - name: Check the MP4
         run: |
           brew install --quiet ffmpeg
@@ -88,7 +107,9 @@ jobs:
           mkdir -p "$out/from-mp4"
           for t in 2 8 14 20; do ffmpeg -v error -ss "$t" -i "$out/fleetd.mp4" -frames:v 1 "$out/from-mp4/at-${t}s.png"; done
           ffmpeg -v error -ss 4 -i "$out/no-permission/fleetd.mp4" -frames:v 1 "$out/from-mp4/no-permission-at-4s.png"
-          for f in "$out"/*.sb-* "$out"/no-permission/*.sb-*; do
+          for t in 0 1 3 6; do ffmpeg -v error -ss "$t" -i "$out/typed/clip.mp4" -frames:v 1 "$out/from-mp4/clip-at-${t}s.png"; done
+          for f in clip fleetd; do ffprobe -v error -show_entries format=duration -of default=nw=1 "$out/typed/$f.mp4"; done
+          for f in "$out"/*.sb-* "$out"/no-permission/*.sb-* "$out"/typed/*.sb-*; do
             if [ -e "$f" ]; then echo "::error::a writer temporary was left behind: $f"; exit 1; fi
           done
       - uses: actions/upload-artifact@v7
