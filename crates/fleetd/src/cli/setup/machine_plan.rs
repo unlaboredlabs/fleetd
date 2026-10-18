@@ -473,13 +473,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             "--machine".into(),
             input.machine_id.clone(),
         ];
-        // `node join` still requires the T3 flags until the node session service drops them; nothing runs there.
-        argv.extend([
-            "--t3-home".into(),
-            l.legacy_t3_home.clone(),
-            "--t3-url".into(),
-            "http://127.0.0.1:3774".into(),
-        ]);
         if !input.tags.is_empty() {
             argv.extend(["--tags".to_owned(), input.tags.join(",")]);
         }

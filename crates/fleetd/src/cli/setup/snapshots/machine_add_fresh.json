@@ -18,7 +18,7 @@
     "title": "write the node service"
   },
   {
-    "command": "/home/wynn/.fleetd/bin/fleetd node join --hub https://forge.example.ts.net --token-file - --machine mac-mini --t3-home /home/wynn/.fleetd/t3 --t3-url http://127.0.0.1:3774 --tags macos,xcode --home /home/wynn/.fleetd/node --enroll-only",
+    "command": "/home/wynn/.fleetd/bin/fleetd node join --hub https://forge.example.ts.net --token-file - --machine mac-mini --tags macos,xcode --home /home/wynn/.fleetd/node --enroll-only",
     "stdin": "enrollToken",
     "title": "enroll the node with a one-time token (sent on stdin)"
   },
