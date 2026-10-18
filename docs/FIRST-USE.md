@@ -131,12 +131,12 @@ Add one MCP entry to Adri: `https://forge.tailb10092.ts.net/mcp` with header `Au
 
 Then, through that MCP:
 1. With the admin key:
-   - `project_add {machine: "forge", path: "/home/wynn/fleetd-work/cliproxyapi-console", title: "cliproxyapi-console"}`;
+   - `project_add {machineId: "forge", path: "/home/wynn/fleetd-work/cliproxyapi-console", title: "cliproxyapi-console"}`
+     → note the `projectId` it returns;
    - `cap_set {cap: 8}`, the global subagent cap for the first week.
 2. `fleetd hub key revoke <setup-admin keyId>`.
-3. `projects_list` → note the `projectId` of cliproxyapi-console on `forge`.
-4. `lead_start {machineId: "forge", projectId}`. The default lead is `claude-opus-5-5` at effort high.
-5. `doctor_list {rerun: true}`. Everything should be ok, in particular:
+3. `lead_start {machineId: "forge", projectId}`. The default lead is `claude-opus-5-5` at effort high.
+4. `doctor_list {rerun: true}`. Everything should be ok, in particular:
    - forge's `claude_version`, `claude_login` and `runner_conformance`;
    - `hub/claude_login`, which means the hub's router and retro can reach Claude through wynn's own login.
 
