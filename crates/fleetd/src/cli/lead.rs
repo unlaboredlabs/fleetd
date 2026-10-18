@@ -46,8 +46,9 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              that plan item
   task list [--state <s>] [--workstream <W>]
   task status <T>
-  task message <T> "<text>"
-             steer a running task, answer a waiting one, or continue an ended one
+  task message <T> "<text>" [--now]
+             steer a running task (at its next step; --now stops its current step), answer a
+             waiting one, or continue an ended one
   task cancel <T> [--reason <r>]
   claim done --workstream <W>
              fleetd runs the workstream's done-when checks itself; only all of them passing makes
@@ -141,6 +142,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("serves", Kind::Str),
     ("pr", Kind::Str),
     ("qa", Kind::Bool),
+    ("now", Kind::Bool),
     ("state", Kind::Str),
     ("reason", Kind::Str),
     ("task", Kind::Str),
@@ -495,11 +497,16 @@ pub fn parse_lead_args(
                 json!({ "op": "task_status", "taskId": rest[0] })
             }
             Some("message") => {
-                only(&[])?;
+                only(&["now"])?;
                 if rest.len() < 2 {
-                    return Err(r#"expected fleetd task message <T> "<text>""#.into());
+                    return Err(r#"expected fleetd task message <T> "<text>" [--now]"#.into());
                 }
-                json!({ "op": "task_message", "taskId": rest[0], "message": rest[1..].join(" ") })
+                defined(vec![
+                    ("op", s(Some("task_message"))),
+                    ("taskId", s(Some(rest[0]))),
+                    ("message", Some(Value::String(rest[1..].join(" ")))),
+                    ("now", v.flag("now").then_some(Value::Bool(true))),
+                ])
             }
             Some("cancel") => {
                 only(&["reason"])?;
@@ -1295,16 +1302,22 @@ pub fn format_result(result: &Value) -> String {
         "task_message" => {
             let task = &result["task"];
             let queued = st(task, "state") == "queued";
+            // The steer this message was sent as; its receipt reaches the lead's digest.
+            let steer = ["steerId", "steer_id"]
+                .iter()
+                .find_map(|k| result.get(*k).and_then(Value::as_str))
+                .map(|id| format!(" as steer {id}"))
+                .unwrap_or_default();
             lines.push(if queued {
                 format!(
-                    "Message for {} held until it starts ({}).",
+                    "Message for {}{steer} held until it starts ({}).",
                     st(task, "taskId"),
                     opt(task, "queuedReason")
                         .and_then(Value::as_str)
                         .unwrap_or("queued")
                 )
             } else {
-                format!("Message sent to {}.", st(task, "taskId"))
+                format!("Message sent to {}{steer}.", st(task, "taskId"))
             });
             lines.push(task_line(task));
             next = if queued {
@@ -1572,6 +1585,18 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Value, String> {
         parse_lead_args(&argv(args), &|_| Err(std::io::Error::other("no such file")))
+    }
+
+    #[test]
+    fn task_message_now_is_a_steer_that_stops_the_step() {
+        assert_eq!(
+            parse(&["task", "message", "T88", "skip", "the", "docs"]).unwrap(),
+            json!({ "op": "task_message", "taskId": "T88", "message": "skip the docs", "now": false })
+        );
+        assert_eq!(
+            parse(&["task", "message", "T88", "stop that", "--now"]).unwrap(),
+            json!({ "op": "task_message", "taskId": "T88", "message": "stop that", "now": true })
+        );
     }
 
     fn decision() -> Value {
