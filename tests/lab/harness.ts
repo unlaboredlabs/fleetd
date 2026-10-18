@@ -265,6 +265,29 @@ export const sessionText = (machineId: string, threadId: string): string => {
   return parts.join("\n");
 };
 
+/**
+ * The user messages claude recorded for a thread, in full and in order, from its own session file
+ * (`$CLAUDE_CONFIG_DIR/projects/<cwd>/<session>.jsonl`). Tool results, which claude files as user turns too, are left out.
+ */
+export const userMessages = (machineId: string, threadId: string): Array<string> => {
+  const projects = path.join(claudeConfigDir(machineId), "projects");
+  if (!fs.existsSync(projects)) return [];
+  const out: Array<string> = [];
+  for (const dir of fs.readdirSync(projects)) {
+    const file = path.join(projects, dir, `${threadId}.jsonl`);
+    if (!fs.existsSync(file)) continue;
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      if (!line.startsWith("{")) continue;
+      const entry = JSON.parse(line) as Body;
+      if (entry.type !== "user" || entry.isMeta === true) continue;
+      const content = entry.message?.content as string | Array<Body> | undefined;
+      const text = typeof content === "string" ? content : (content ?? []).filter((c) => c.type === "text").map((c) => c.text as string).join("\n");
+      if (text !== "") out.push(text);
+    }
+  }
+  return out;
+};
+
 /** The tools claude reported at session start (`system/init`) for a thread, from its transcript. */
 export const initTools = (machineId: string, threadId: string): ReadonlyArray<string> | undefined => {
   const tools = /"subtype":\s*"init".*?"tools":\s*(\[[^\]]*\])/u.exec(sessionText(machineId, threadId))?.[1];

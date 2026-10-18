@@ -127,7 +127,8 @@ export async function stallNudgeFail(ctx: LabContext, machineId = "lab-a") {
 const waitRunEnded = async (machineId: string, threadId: string, ms: number) => {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    if (/"type":\s*"result"/u.test(sessionText(machineId, threadId))) return;
+    // The transcript may hold claude's lines as they came or quoted inside a wrapper.
+    if (/\\?"type\\?":\s*\\?"result\\?"/u.test(sessionText(machineId, threadId))) return;
     await sleep(500);
   }
   throw new Error(`timed out after ${ms / 1000}s: ${machineId} ended the run of ${threadId}`);

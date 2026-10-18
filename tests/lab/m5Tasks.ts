@@ -10,7 +10,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, cli, fleetdCommand, initTools, type Lab, MODEL, nodeSock, scrubbedEnv, sessionText } from "./harness.ts";
+import { type Body, callToolWith, cli, fleetdCommand, initTools, type Lab, MODEL, nodeSock, scrubbedEnv, userMessages } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -201,12 +201,13 @@ export async function m5Tasks(lab: Lab) {
     await spawnTurn;
     const afterWake = await leadTurnDone(wake.event.seq, "T1 result wake");
     // Results that land within the debounce window share one wake, which can outgrow thread_tail's 2,000 characters,
-    // so read the wakes as Claude received them, in its own session file (JSON, so newlines show as \n).
-    const delivered = sessionText(MACHINE, leadThread);
+    // so read the wakes as Claude received them, in its own session file.
     const head = "- T1 completed: add file (branch fleetd/T1-add-file)";
+    const delivered = userMessages(MACHINE, leadThread).filter((m) => m.includes(head));
+    const parts = delivered[0]?.split(head) ?? [];
     check(
-      delivered.split(head).length === 2 && /^(\\n {2}receipts: [^\\]*)?\\n {2}result:\\n {2}> \S/u.test(delivered.split(head)[1]!),
-      `exactly one wake carries T1's result inline: ${delivered.slice(delivered.indexOf(head), delivered.indexOf(head) + 400)}`,
+      delivered.length === 1 && parts.length === 2 && /^(\n {2}receipts: [^\n]*)?\n {2}result:\n {2}> \S/u.test(parts[1]!),
+      `exactly one wake carries T1's result inline: ${JSON.stringify(delivered.map((m) => m.slice(m.indexOf(head), m.indexOf(head) + 400)))}`,
     );
     ok(`1. one wake carried "${head.slice(2)}" with the result tail inline (triggers: ${JSON.stringify(wake.event.data?.triggers)})`);
     check(git(root, "branch", "--list", "fleetd/T1-add-file").trim() !== "", "branch fleetd/T1-add-file exists in the repo");
