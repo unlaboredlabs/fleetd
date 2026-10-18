@@ -560,6 +560,9 @@ pub enum Tab {
     Update,
 }
 
+/// A diff view, the hash of the two texts it shows, and its (added, removed) counts.
+type CachedDiff = (u64, Entity<DiffView>, (usize, usize));
+
 /// The Prompts and Instructions pages' fields and view state, kept on the shell.
 pub struct Ui {
     pub editor: Entity<TextInput>,
@@ -576,7 +579,7 @@ pub struct Ui {
     /// The open project picker, by id.
     pub picker: Option<&'static str>,
     picker_closed: Option<(&'static str, std::time::Instant)>,
-    diffs: HashMap<&'static str, (u64, Entity<DiffView>, (usize, usize))>,
+    diffs: HashMap<&'static str, CachedDiff>,
     check: Option<Task<()>>,
     /// The bench's stand-in for the hub's prompt tools.
     pub fake: Option<crate::fake::PromptHub>,
