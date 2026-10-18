@@ -108,3 +108,32 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         (edited_ref.as_str(), PromptScope::Global)
     );
 }
+
+/// A project id is whatever a node reports; as a path it must not reach the hub-wide overrides or leave the home.
+#[test]
+fn a_project_id_never_steers_where_an_override_is_written() {
+    let home = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let db = crate::hub::store::HubDb::open(home.path()).unwrap();
+    let prompts = db.prompts();
+    let e = entry("lead.start").unwrap();
+    prompts
+        .save(e, PromptScope::Global, None, "hub-wide", None)
+        .unwrap();
+    let project = |id: &str| fleetd_contracts::ids::ProjectRef {
+        machine_id: fleetd_contracts::ids::MachineId::new("lab-a").unwrap(),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked(id),
+    };
+    let absolute = outside.path().join("lead.start").display().to_string();
+    for id in ["../..", "..", absolute.as_str()] {
+        let p = project(id);
+        prompts
+            .save(e, PromptScope::Project, Some(&p), "project", None)
+            .unwrap();
+        assert_eq!(prompts.override_of(e, Some(&p)).unwrap().text, "project");
+        prompts.reset(e, PromptScope::Project, Some(&p)).unwrap();
+    }
+    assert_eq!(prompts.override_of(e, None).unwrap().text, "hub-wide");
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    assert!(!home.path().join("lead.start.md").exists());
+}

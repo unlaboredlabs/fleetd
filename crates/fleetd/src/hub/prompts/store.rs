@@ -1,6 +1,6 @@
 //! Where prompt texts live and which one a message gets.
 //!
-//! Overrides are files under `<hub home>/prompts` (`<id>.md`, `projects/<machine>/<project>/<id>.md`), each with a
+//! Overrides are files under `<hub home>/prompts` (`<id>.md`, `projects/<key>/<id>.md`, `<key>` a hash of the project ref), each with a
 //! `base:` frontmatter naming the default it was edited from; playbooks keep `<hub home>/playbooks/<name>.md`. Files
 //! are read on every resolve, so an edit (a tool call, the CLI, or by hand) reaches the next session at once. Every
 //! text a session was given is kept in `prompt_versions`, and `session_prompts` pins each session to its refs: every
@@ -15,6 +15,7 @@ use fleetd_contracts::prompts::{
     PromptWarning, SessionPrompt, SessionPromptRef, StalePrompt,
 };
 use rusqlite::{OptionalExtension, params};
+use sha2::{Digest, Sha256};
 
 use super::registry::{self, Audience, ENTRIES, Entry, INSTRUCTIONS};
 use super::render::{self, merge, ref_of, rule_present, warnings};
@@ -192,14 +193,15 @@ impl Prompts<'_> {
                     .join(format!("{}.md", name.as_str())),
             );
         }
-        Some(match project {
+        let file = match project {
             None => dir.join(format!("{}.md", e.id)),
             Some(p) => dir
                 .join("projects")
-                .join(p.machine_id.as_str())
-                .join(p.project_id.as_str())
+                .join(project_key(p))
                 .join(format!("{}.md", e.id)),
-        })
+        };
+        // Ids are registry constants and the key is hex, so this holds; checked anyway, since the file is written.
+        file.starts_with(dir).then_some(file)
     }
 
     /// The override at exactly this level.
@@ -651,17 +653,19 @@ impl Prompts<'_> {
     /// Every override edited from an older default than the one shipped now.
     pub fn stale(&self) -> Vec<StaleOverride> {
         let mut levels: Vec<Option<ProjectRef>> = vec![None];
-        if let Some(projects) = self.db.prompts_dir().map(|d| d.join("projects")) {
-            for machine in subdirs(&projects) {
-                let Ok(machine_id) = MachineId::new(machine.clone()) else {
-                    continue;
-                };
-                for project in subdirs(&projects.join(&machine)) {
-                    levels.push(Some(ProjectRef {
-                        machine_id: machine_id.clone(),
-                        project_id: ProjectId::unchecked(project),
-                    }));
-                }
+        let known: Result<Vec<(String, String)>, StoreError> = self.db.with(|c| {
+            let mut rows = c.prepare("SELECT machine_id, project_id FROM projects")?;
+            let rows = rows
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+            Ok(rows)
+        });
+        for (machine, project) in known.unwrap_or_default() {
+            if let Ok(machine_id) = MachineId::new(machine) {
+                levels.push(Some(ProjectRef {
+                    machine_id,
+                    project_id: ProjectId::unchecked(project),
+                }));
             }
         }
         let mut out = Vec::new();
@@ -682,13 +686,9 @@ impl Prompts<'_> {
     }
 }
 
-fn subdirs(dir: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter_map(|e| e.file_name().into_string().ok())
-        .collect()
+/// A project's override directory: a hash of its ref, never the ids themselves. A project id is whatever a node
+/// reports, so as a path component `../..` would land on the hub-wide overrides or anywhere else.
+fn project_key(p: &ProjectRef) -> String {
+    let digest = Sha256::digest(format!("{}\0{}", p.machine_id, p.project_id).as_bytes());
+    digest[..8].iter().map(|b| format!("{b:02x}")).collect()
 }
