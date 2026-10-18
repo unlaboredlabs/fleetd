@@ -324,7 +324,7 @@ async fn tools_check_the_role_then_the_machine_grant_and_filter_fleet_wide_reads
     let (_, body) = a_only.call("wake_cancel", json!({})).await;
     assert_eq!(
         body,
-        json!({ "code": "t3_error", "message": "The hub failed to answer that request.", "fix": "Retry; if it keeps failing, check the hub log." })
+        json!({ "code": "failed", "message": "The hub failed to answer that request.", "fix": "Retry; if it keeps failing, check the hub log." })
     );
     assert!(
         !reader

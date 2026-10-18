@@ -298,6 +298,7 @@ pub fn build_on(
         ports: task_ports.clone(),
     };
     let policies = crate::hub::leases::Policies::new(Arc::new(source), clock.clone());
+    executors.set_tool_policy(policies.clone());
     let tasks = crate::hub::tasks::Tasks::new(crate::hub::tasks::TaskDeps {
         db: db.clone(),
         store: store.clone(),

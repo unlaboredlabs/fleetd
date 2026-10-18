@@ -67,7 +67,7 @@ pub fn outside_every_project(machine_id: &str, cwd: &str, roots: &[&str]) -> (St
                 "the hub knows no projects on {machine_id} yet, so it cannot tell which project {cwd} belongs to"
             ),
             format!(
-                "check that T3 is up on {machine_id} (fleetd_status), then run the command again"
+                "check that the node on {machine_id} is online and has added the project (fleetd_status), then run the command again"
             ),
         );
     }
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(resolve(&PROJECTS, "/a/b"), Some("ab"));
         assert_eq!(resolve(&PROJECTS, "/a/b/src"), Some("ab"));
         assert_eq!(
-            resolve(&PROJECTS, "/a/b/.t3/worktrees/w12/apps"),
+            resolve(&PROJECTS, "/a/b/.fleetd/worktrees/w12/apps"),
             Some("ab")
         );
     }
@@ -168,7 +168,7 @@ mod tests {
         let (_, fix) = outside_every_project("lab-a", "/src/api", &[]);
         assert_eq!(
             fix,
-            "check that T3 is up on lab-a (fleetd_status), then run the command again"
+            "check that the node on lab-a is online and has added the project (fleetd_status), then run the command again"
         );
     }
 }

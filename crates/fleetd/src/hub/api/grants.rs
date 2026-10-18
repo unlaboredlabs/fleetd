@@ -127,7 +127,7 @@ pub fn unknown_thread(r: &ThreadRef) -> ToolError {
 /// What a store failure or a panicking handler answers.
 pub fn internal_error() -> ToolError {
     error(
-        ErrorCode::T3Error,
+        ErrorCode::Failed,
         "The hub failed to answer that request.",
         "Retry; if it keeps failing, check the hub log.",
     )

@@ -44,7 +44,7 @@ fn code(code: LedgerCode) -> ErrorCode {
         LedgerCode::NotFound => ErrorCode::NotFound,
         LedgerCode::Invalid => ErrorCode::Invalid,
         LedgerCode::Forbidden => ErrorCode::Forbidden,
-        LedgerCode::Internal => ErrorCode::T3Error,
+        LedgerCode::Internal => ErrorCode::Failed,
     }
 }
 

@@ -105,7 +105,7 @@ pub struct ReviewSpawn {
     pub model: Option<String>,
 }
 
-/// One provider instance on a machine, as executor/ProviderList reads it from T3.
+/// One runner on a machine as a provider instance (executor/providers, from the node's `runner_info`).
 pub use crate::hub::executor::providers::ProviderInstance as ProviderView;
 
 /// One entry of a PR's verdict history, newest first, as the value bar's review rules read it.

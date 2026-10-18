@@ -102,7 +102,7 @@ fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) ->
 fn store_error(error: StoreError) -> TaskError {
     tracing::error!(%error, "tasks: store failed");
     lead_error(
-        ErrorCode::T3Error,
+        ErrorCode::Failed,
         "The hub failed to answer that request.",
         Some("Retry; if it keeps failing, check the hub's log."),
     )
