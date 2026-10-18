@@ -5,8 +5,9 @@ fetch user agents and `home.html` to everyone else. `install.sh` is also at `/in
 (`capture-*.png`) and transcripts are real fleetd output, `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
 
-There is deliberately no `index.html`: Vercel serves files before applying rewrites, so an `index.html` would win
-over the user-agent rewrite at `/`.
+There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
+would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves
+`docs/<page>.html` at `/docs/<page>`.
 
 ## Refreshing the captures
 
@@ -103,15 +104,15 @@ $ fleetd doctor
 ````
 
 - `<name>`: `[a-z0-9-]+`, unique across all pages.
-- `node tests/lab/site-capture.ts --docs` (no lab, no claude turns, ~seconds) runs each marked block's `$ ` lines in
-  order, in a throwaway HOME (user `demo`, home `/home/demo` shown as `~`) where `fleetd init --listen 127.0.0.1:4778
-  --git-identity "Demo <demo@users.noreply.github.com>" --no-service` has already run, and rewrites the output under
-  each command. A nonzero exit is kept as a final `[exit N]` line. It refuses to write a hostname, a real /home path,
-  a non-loopback IP or a key. Then rerun `cargo run -q -p docsgen`.
-- Commands that need a live hub, a node or claude (orders, asks, digest) can't be captured that way: use these
-  reserved names, filled from the full lab run (`FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts`): `digest`,
-  `machine-add` (the dry-run plan, same as the landing page). For anything else that needs a live fleet, paste real
-  output from a lab or throwaway run into an UNMARKED `console` block and say where it came from in your PR.
+- `node tests/lab/site-capture.ts --docs` (no lab, no claude turns; needs the release build or `FLEETD_BIN`) runs
+  each marked block's `$ ` lines in order, in a fresh throwaway HOME (user `demo`, shown as `~`) where `fleetd init
+  --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service` has already run (unless
+  the block's first command is `fleetd init` itself), writes each command's output under it, keeps a nonzero exit as
+  a final `[exit N]` line, and regenerates `site/docs`. It refuses to write a hostname, a real `/home` path, a
+  non-loopback IP or a key.
+- Output that needs a live hub, a node or claude can't be captured that way. A block named `digest` is filled from
+  the full lab run (`FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts`, which also does everything `--docs` does).
+  For anything else that needs a live fleet, paste real output from a lab run into an unmarked `console` block.
 - Never invent or edit output by hand inside a capture block.
 
 ### Doctor findings (Troubleshooting)

@@ -11,7 +11,7 @@ Install
   curl -fsSL https://fleetd.sh | sh
   Linux x64, macOS arm64 and x64. Installs the fleetd CLI and the desktop app. MIT.
 
-Docs:   https://github.com/unlaboredlabs/fleetd/blob/main/docs/FIRST-USE.md
+Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
 
 

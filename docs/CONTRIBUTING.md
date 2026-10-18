@@ -18,7 +18,8 @@ fleetd is one Cargo workspace. The shipped `fleetd` is one static binary with no
 - `app/`: the desktop app (`fleetd-app`, GPUI pinned to a Zed release tag) and its speed harness (`app/bench/`, run
   with `app/bench/run.sh`).
 - `tests/lab`: the end-to-end lab suite.
-- `site/` and `.github/release/`: the `fleetd.sh` installer and the release pipeline.
+- `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` holds
+  the docs' sources and `crates/docsgen` renders them into `site/docs/`.
 
 ## Building the app
 
@@ -63,12 +64,15 @@ to day.
 `tests/lab` is TypeScript run directly by Node: relative imports with `.ts` extensions and erasable syntax only
 (`npm --prefix tests/lab run typecheck`).
 
-## The landing page
+## The site
 
-`site/` shows real app screenshots and real setup output. A change that alters what the app shows or what `fleetd
+`site/` is fleetd.sh: the landing page and the docs at `/docs`, generated from `docs/site/*.md` by `crates/docsgen`
+(`cargo run -q -p docsgen`, then commit `site/docs`; CI fails while it is out of date). The site shows real app
+screenshots and real setup output. A change that alters what the app shows or what `fleetd
 init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts` and commits the updated `site/` in the same
-PR (see `site/README.md`). A change that removes something the page mentions adds it to `site/.stale-terms`, which CI
-checks the page against.
+PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures only the docs' output blocks. A change
+that removes something the site mentions adds it to `site/.stale-terms`, which CI checks the page and the docs'
+sources against. A new or renamed command shows up in the docs' CLI reference by itself.
 
 ## Conventions
 
