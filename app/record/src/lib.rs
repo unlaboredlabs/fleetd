@@ -48,6 +48,7 @@ pub fn window_number(handle: WindowHandle<'_>) -> Option<u32> {
 /// Starts recording window `window` into `dir` at `fps`, until a signal (which then exits the process) or `finish`.
 pub fn start(window: u32, dir: PathBuf, fps: u32) -> std::io::Result<()> {
     std::fs::create_dir_all(dir.join("frames"))?;
+    hold_off_app_nap();
     // SAFETY: the handler only stores to an atomic, which is async-signal-safe.
     unsafe {
         libc::signal(libc::SIGTERM, on_signal as *const () as libc::sighandler_t);
@@ -62,6 +63,21 @@ pub fn start(window: u32, dir: PathBuf, fps: u32) -> std::io::Result<()> {
         }
     })?;
     Ok(())
+}
+
+/// macOS coalesces the timers of an app it considers idle (App Nap), which would stretch the capture thread's
+/// sleeps. A latency-critical activity, held until the process exits, keeps it on time.
+fn hold_off_app_nap() {
+    const USER_INITIATED: u64 = 0x00FF_FFFF;
+    const LATENCY_CRITICAL: u64 = 0xFF_0000_0000;
+    // SAFETY: -beginActivityWithOptions:reason: returns a token object; it is retained here and never released,
+    // so the activity lasts as long as the process.
+    unsafe {
+        let info: *mut AnyObject = msg_send![class!(NSProcessInfo), processInfo];
+        let reason: *mut AnyObject = msg_send![class!(NSString), stringWithUTF8String: c"fleetd is recording its window".as_ptr()];
+        let token: *mut AnyObject = msg_send![info, beginActivityWithOptions: USER_INITIATED | LATENCY_CRITICAL, reason: reason];
+        let _: *mut AnyObject = msg_send![token, retain];
+    }
 }
 
 /// Stops recording and waits up to `timeout` for the file to be finished. For the app's quit.
@@ -92,6 +108,8 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
     let (mut frames, mut skipped, mut pngs) = (0u64, 0u64, 0u32);
     // Time spent in the window server's capture and in drawing + appending, to tell which one limits the rate.
     let (mut grab, mut encode) = (Duration::ZERO, Duration::ZERO);
+    // Ticks run, and ticks that started late (the previous one overran or the sleep overslept).
+    let (mut ticks, mut late) = (0u64, 0u64);
     let mut next_png = Duration::ZERO;
     let mut tick = started;
     while !STOP.load(Ordering::SeqCst) && !failed {
@@ -126,20 +144,25 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
                 }
             }
         });
+        ticks += 1;
         tick += interval;
         match tick.checked_duration_since(Instant::now()) {
             Some(wait) => std::thread::sleep(wait),
             // Behind: the next frame is due now, and the missed ticks are simply not recorded.
-            None => tick = Instant::now(),
+            None => {
+                late += 1;
+                tick = Instant::now();
+            }
         }
     }
     let signalled = STOP.load(Ordering::SeqCst) && !QUITTING.load(Ordering::SeqCst);
     let seconds = started.elapsed().as_secs_f64();
     match writer.map(Writer::finish) {
         Some(Ok(())) => {
+            remove_writer_temporaries(dir);
             let per_frame = |d: Duration| d.as_secs_f64() * 1000. / (frames + skipped).max(1) as f64;
             eprintln!(
-                "FLEETD_RECORD done mp4={} frames={frames} skipped={skipped} pngs={pngs} seconds={seconds:.1} grab_ms={:.1} encode_ms={:.1}",
+                "FLEETD_RECORD done mp4={} frames={frames} skipped={skipped} ticks={ticks} late={late} pngs={pngs} seconds={seconds:.1} grab_ms={:.1} encode_ms={:.1}",
                 mp4.display(),
                 per_frame(grab),
                 per_frame(encode)
@@ -150,6 +173,15 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
         None => eprintln!("FLEETD_RECORD error=no frame captured (window {window} never came back from CGWindowListCreateImage)"),
     }
     signalled
+}
+
+/// AVAssetWriter's faststart pass leaves its pre-pass copy (`fleetd.mp4.sb-*`) beside the finished file.
+fn remove_writer_temporaries(dir: &Path) {
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if entry.file_name().to_string_lossy().starts_with("fleetd.mp4.sb-") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 // ---- CoreGraphics / ImageIO ----
@@ -487,8 +519,7 @@ impl Writer {
     }
 
     fn finish(self) -> Result<(), String> {
-        // The status turns Completed before the writer has moved the faststart copy into place, so wait for the
-        // completion handler: exiting earlier leaves a `fleetd.mp4.sb-*` temporary beside the file.
+        // The file is whole once the completion handler has run, not when the status first reads Completed.
         let finished = std::sync::Arc::new(AtomicBool::new(false));
         let flag = finished.clone();
         let block = block2::RcBlock::new(move || flag.store(true, Ordering::SeqCst));
