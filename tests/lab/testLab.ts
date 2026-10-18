@@ -56,6 +56,7 @@ import { m9Playbooks } from "./m9Playbooks.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
 import { statusFresh } from "./statusFresh.ts";
+import { steerMidTurn } from "./steerMidTurn.ts";
 import { timeInspector } from "./timeInspector.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
 import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
@@ -71,6 +72,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "queue", run: offlineQueue },
   // Last: its lead thread on lab-a would otherwise be picked as an idle thread by the scenarios above.
   { name: "m3", run: m3Loop },
+  // After m3: it reuses m3's lead (or starts one) and adds its own order; m5 spawns under either.
+  { name: "steer", run: steerMidTurn },
   // After m3: it reuses m3's lead and workstream when they exist.
   { name: "m5", run: m5Tasks },
   // After m5: it reuses the lead when there is one.
