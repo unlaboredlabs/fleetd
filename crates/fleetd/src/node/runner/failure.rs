@@ -286,11 +286,17 @@ fn decide(e: &FailureEvidence, stderr: &str) -> (FailureClass, Option<i64>) {
     if let Some(startup) = e.startup_failure_reason.as_deref() {
         return (startup_class(startup), None);
     }
-    // claude itself doesn't know the model, so a gateway's "unknown provider" means a typo, not a drained pool.
-    if error == Some("model_not_found") || stderr.contains(UNRECOGNIZED_MODEL) {
+    if error == Some("model_not_found") {
         return (InvalidRequest, None);
     }
     if let Some(limit) = gateway_limit(text, now) {
+        // claude tags every model name it doesn't know, gateway aliases and models newer than the pin included,
+        // so the tag alone decides nothing. It only turns the gateway's "unknown provider for model X" from a
+        // drained pool into a bad model name, which neither claude nor the gateway knows.
+        let unknown_provider = limit.model.is_some();
+        if unknown_provider && stderr.contains(UNRECOGNIZED_MODEL) {
+            return (InvalidRequest, None);
+        }
         return (limit.class, limit.reset_ms);
     }
     if error.is_some_and(|err| AUTH_ERRORS.contains(&err)) || status == Some(401) {
@@ -737,6 +743,38 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(classify(&e).unwrap().class, InvalidRequest);
+    }
+
+    /// The unrecognized-model tag on stderr (any model claude doesn't know, e.g. a gateway alias) must not mask
+    /// the real failure.
+    #[test]
+    fn the_unrecognized_model_tag_leaves_retries_and_parking_alone() {
+        let tag =
+            "[claude-code:unrecognized_model] {\"model\":\"gw-alias\",\"query_source\":\"sdk\"}\n";
+        let tagged = |fixture: &str| {
+            let mut e = evidence(fixture);
+            e.stderr.push_str(tag);
+            classify(&e).unwrap()
+        };
+        let f = tagged("overloaded-529");
+        assert_eq!((f.class, f.api_status), (Overloaded, Some(529)));
+        assert!(retryable(f.class));
+        assert_eq!(tagged("network-refused").class, Network);
+        let f = tagged("usage-limit-subscription.documented");
+        assert_eq!(
+            (f.class, f.reset_at.unwrap().0),
+            (UsageLimit, "2026-10-18T15:00:00.000Z".into())
+        );
+        assert_eq!(tagged("rate-limit-429").class, FailureClass::RateLimit);
+        assert_eq!(tagged("auth-expired-401").class, Auth);
+        // A cooldown or a signed-out pool behind the gateway still parks.
+        let mut e = evidence("overloaded-529");
+        e.stderr.push_str(tag);
+        e.text = r#"API Error: 429 {"error":{"code":"model_cooldown","reset_seconds":120}}"#.into();
+        e.api_error_status = Some(429);
+        assert_eq!(classify(&e).unwrap().class, UsageLimit);
+        e.text = "API Error: 503 no available account for gw-alias".into();
+        assert_eq!(classify(&e).unwrap().class, PoolExhausted);
     }
 
     #[test]
