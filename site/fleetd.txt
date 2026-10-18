@@ -1,15 +1,18 @@
 fleetd
 https://fleetd.sh
 
-You send one line. A lead runs Claude Code agents across your machines and asks
-you only about product, money and calls that can't be undone.
+fleetd runs Claude Code on your machines: you type what you want, and it plans
+the work, runs the agents, opens pull requests it has checked, and asks you only
+about real decisions.
 
 An agent saying "done" doesn't merge anything. Every change goes through
 fleetd's merge train: reviewed, rebased onto main, merged only on green CI.
 
 Install
   curl -fsSL https://fleetd.sh | sh
-  Linux x64, macOS arm64 and x64. Installs the fleetd CLI and the desktop app. MIT.
+  Installs and sets up fleetd: about a minute later the hub runs, the app is
+  paired, and you type your first order. You need macOS or Linux x64, git,
+  the claude CLI logged in, and gh. MIT.
 
 Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd

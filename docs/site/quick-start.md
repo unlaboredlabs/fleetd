@@ -2,25 +2,26 @@
 title: Quick start
 section: Get started
 order: 20
-description: Install, set up the hub and send a first order in three steps.
+description: One command installs and sets up fleetd; then send your first order.
 ---
 
-Run steps 1 and 2 on the always-on machine that will be your hub. Step 3 is on the computer you work from.
+fleetd runs Claude Code on your machines: you type what you want, and it plans the work, runs the agents, opens
+pull requests it has checked, and asks you only about real decisions.
 
-## 1. Install fleetd
+**You need:** macOS or Linux x64, `git`, the `claude` CLI logged in, and `gh` for pull requests. About a minute later the
+hub runs on this machine, the app is paired, and you type your first order.
 
-```console
-$ curl -fsSL https://fleetd.sh | sh
-fleetd: installed the CLI: ~/.fleetd/bin/fleetd
+## 1. Install and set up
 
-Next, run:
-  fleetd init
+On the always-on machine that will be your hub:
+
+```sh
+curl -fsSL https://fleetd.sh | sh
 ```
 
-## 2. Set it up
-
-Run `fleetd init`. It asks a few questions (Enter takes the default) and ticks off each step. A ✗ line ends with the
-command that fixes it. Run it again at any time: it keeps what works and repairs the rest.
+It installs fleetd and runs `fleetd init`, which asks a few questions (Enter takes the default) and ticks off each
+step. A ✗ line ends with the command that fixes it. Run `fleetd init` again at any time: it keeps what works and
+repairs the rest. `curl -fsSL https://fleetd.sh | sh -s -- --no-init` only installs.
 
 ```console
 $ fleetd init
@@ -60,9 +61,10 @@ your LAN:
 
 It never opens the hub to the internet.
 
-## 3. Send your first order
+## 2. Send your first order
 
-On the computer you work from, install fleetd with its app and open it:
+On the hub machine, if it has a desktop, the app pairs by itself. To work from another computer, install
+fleetd there with its app and open it:
 
 ```sh
 curl -fsSL https://fleetd.sh | sh -s -- --app
