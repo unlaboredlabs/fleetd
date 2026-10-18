@@ -280,3 +280,190 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
     assert_eq!(fleet.title.as_str(), "Fleet");
     assert!(serde_json::to_vec(&fleet).unwrap().len() <= 16 * 1024);
 }
+
+fn set_order_state(hub: &Hub, state: &str) {
+    hub.db
+        .with(|c| {
+            c.execute(
+                "UPDATE workstreams SET state = ?1, data = json_set(data, '$.state', ?1) WHERE n = 1",
+                [state],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+fn markers(hub: &Hub) -> Vec<String> {
+    hub.db
+        .with(|c| {
+            Ok(c.prepare("SELECT note FROM plan_changes ORDER BY n")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<Vec<String>>>()?)
+        })
+        .unwrap()
+}
+
+#[tokio::test]
+async fn an_unplanned_order_enters_and_leaves_the_figure_only_with_markers() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let fleet = |hub: &Hub| {
+        hub.status
+            .get(hub, &person(), &StatusScope::Fleet, None)
+            .unwrap()
+    };
+    assert!(hub.plans.placeholder_enter("W1", false));
+    assert!(!hub.plans.placeholder_enter("W1", false), "once");
+    assert_eq!(
+        markers(&hub),
+        vec!["+1 item: W1 Checkout redesign (no plan yet)"]
+    );
+    let doc = fleet(&hub);
+    assert_eq!(
+        (
+            doc.progress.done.get(),
+            doc.progress.total.get(),
+            doc.progress.pct.get()
+        ),
+        (0, 1, 0)
+    );
+    assert_eq!(
+        doc.markers[0].text.as_str(),
+        "+1 item: W1 Checkout redesign (no plan yet)"
+    );
+
+    set_order_state(&hub, "done");
+    hub.plans
+        .placeholder_order_ended("W1", fleetd_contracts::ledger::WorkstreamState::Done);
+    clock.advance(Duration::from_secs(1));
+    let doc = fleet(&hub);
+    assert_eq!(
+        (doc.progress.done.get(), doc.progress.total.get()),
+        (1, 1),
+        "done stays in the figure"
+    );
+    assert_eq!(markers(&hub).len(), 1, "done changes no denominator");
+
+    clock.advance(Duration::from_secs(12 * 3600));
+    assert!(
+        hub.plans.placeholder_roll_off().is_some(),
+        "the roll-off is a deadline"
+    );
+    assert_eq!(markers(&hub).len(), 1, "not yet due");
+    clock.advance(Duration::from_secs(12 * 3600));
+    assert_eq!(hub.plans.placeholder_roll_off(), None);
+    assert_eq!(markers(&hub)[1], "W1 done a day ago, leaves the figure");
+    let doc = fleet(&hub);
+    assert_eq!(doc.progress.total.get(), 0);
+}
+
+#[tokio::test]
+async fn a_planned_or_stopped_order_s_placeholder_leaves_with_a_marker() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let (r, by) = (project(), "lead:devbox/storefront");
+    hub.plans.placeholder_enter("W1", false);
+    hub.plans
+        .milestone(
+            &r,
+            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
+        )
+        .unwrap();
+    hub.plans
+        .add(&r, by, add("cart page", json!({ "workstreamId": "W1" })))
+        .unwrap();
+    assert_eq!(
+        markers(&hub)[1],
+        "−1 item: W1's placeholder gives way to its plan"
+    );
+    let doc = hub
+        .status
+        .get(&hub, &person(), &StatusScope::Fleet, None)
+        .unwrap();
+    assert_eq!(doc.progress.total.get(), 1, "the real item, not both");
+
+    let clock2 = ManualClock::at(T0);
+    let (hub2, _home2) = self::hub(clock2);
+    hub2.plans.placeholder_enter("W1", false);
+    hub2.plans
+        .placeholder_order_ended("W1", fleetd_contracts::ledger::WorkstreamState::Stopped);
+    assert_eq!(markers(&hub2)[1], "−1: W1 stopped");
+}
+
+/// Spec §13: a plan re-check per event stays within milliseconds and a full render within 200 ms (release builds;
+/// debug builds get 20× the room), however much history the project has.
+#[tokio::test]
+async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    let r = project();
+    hub.plans
+        .milestone(
+            &r,
+            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Big" })).unwrap(),
+        )
+        .unwrap();
+    hub.db
+        .with(|c| {
+            let tx = c.unchecked_transaction()?;
+            let sha = "b".repeat(40);
+            for n in 1..=2000i64 {
+                let change = json!({
+                    "changeId": format!("X{n}"), "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+                    "repo": "acme/storefront", "prNumber": n, "prUrl": format!("https://github.com/acme/storefront/pull/{n}"),
+                    "branch": "b", "taskId": format!("T{n}"), "workstreamId": "W1", "serves": "done:0", "tier": "M",
+                    "headSha": sha, "state": "merged", "reviews": [], "createdAt": AT, "updatedAt": AT,
+                });
+                tx.execute(
+                    "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+                     VALUES ('acme/storefront', ?, 'merged', 'devbox', 'storefront', 0, ?)",
+                    params![n, change.to_string()],
+                )?;
+                let state = if n <= 1980 { "done" } else { "open" };
+                let data = json!({ "title": format!("item {n}"), "links": { "tasks": [format!("T{n}")], "prs": [], "checks": [] }, "after": [] });
+                tx.execute(
+                    "INSERT INTO plan_items (project_ref, milestone, workstream_id, state, weight, size, position, done_ms, data)
+                     VALUES ('devbox/storefront', 1, 'W1', ?, 'must', 3, ?, ?, ?)",
+                    params![state, n, (state == "done").then_some(T0 as i64), data.to_string()],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .unwrap();
+    let plan: String = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "EXPLAIN QUERY PLAN SELECT data FROM changes
+                 WHERE (CASE WHEN json_valid(data) THEN json_extract(data, '$.taskId') END) = 'T1'",
+                [],
+                |r| r.get(3),
+            )?)
+        })
+        .unwrap();
+    assert!(
+        plan.contains("changes_by_task"),
+        "linked Changes are an index lookup: {plan}"
+    );
+    let room = if cfg!(debug_assertions) { 20 } else { 1 };
+    hub.plans.verify("W1");
+    let started = std::time::Instant::now();
+    hub.plans.verify("W1");
+    let again = started.elapsed();
+    assert!(
+        again.as_millis() <= 2 * room as u128,
+        "re-check took {again:?}"
+    );
+    let started = std::time::Instant::now();
+    let doc = hub
+        .status
+        .get(&hub, &person(), &StatusScope::Fleet, None)
+        .unwrap();
+    let render = started.elapsed();
+    assert!(
+        render.as_millis() <= 200 * room as u128,
+        "full render took {render:?}"
+    );
+    assert!(serde_json::to_vec(&doc).unwrap().len() <= super::render::MAX_DOC_BYTES);
+}

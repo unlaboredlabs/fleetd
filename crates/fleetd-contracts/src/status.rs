@@ -51,12 +51,14 @@ impl StatusScope {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StaleMark {
+    /// The source's last good signal (a heartbeat, a GitHub answer, a train pass).
     pub since: Timestamp,
     /// "no heartbeat from forge for 4m", "GitHub not reached for 4m: …".
     pub reason: Line<1, 200>,
 }
 
-/// A source that is stale now. `source` is `machine:<m>`, `usage:<m>`, `github:<repo>`, `train:<repo>` or
+/// A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,
+/// `github:<repo>`, `train:<repo>` or
 /// `webhook:<repo>`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

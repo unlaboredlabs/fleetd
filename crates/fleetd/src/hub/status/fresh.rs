@@ -216,12 +216,12 @@ impl Fresh {
             }
             let reason = reason_for(name, now_ms - as_of, s.last_error.as_deref());
             s.stale = Some(Stale {
-                since_ms: as_of + s.stale_after_ms,
+                since_ms: as_of,
                 reason: reason.clone(),
             });
             flips.push(Flip::Stale {
                 source: name.clone(),
-                since_ms: as_of + s.stale_after_ms,
+                since_ms: as_of,
                 reason,
             });
         }
@@ -328,7 +328,7 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(*since_ms, 280_000);
+        assert_eq!(*since_ms, 100_000, "since the last good answer");
         assert!(reason.contains("unreachable"), "{reason}");
         assert!(f.check(400_000).is_empty(), "flips once");
         assert_eq!(f.next_deadline(), None);
@@ -337,7 +337,7 @@ mod tests {
             f.check(400_000),
             vec![Flip::Fresh {
                 source: "github:acme/storefront".into(),
-                stale_ms: 120_000
+                stale_ms: 300_000
             }]
         );
         assert!(

@@ -303,7 +303,8 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   "#,
     // The status view: each project's plan (milestones, items, and the markers of every scope change), what each
     // person last looked at, each scope's first ETA, the latest generated headline per scope, and the repo hooks
-    // made by opt-in GitHub webhooks. `events_by_type` counts "since you looked".
+    // made by opt-in GitHub webhooks. An order with no plan items counts as one placeholder item from when it starts
+    // running until it gets a plan, stops, or a day after it is done. `events_by_type` counts "since you looked".
     r#"
   CREATE TABLE plan_milestones (n INTEGER PRIMARY KEY AUTOINCREMENT, project_ref TEXT NOT NULL, title TEXT NOT NULL,
     position INTEGER NOT NULL, created_ms INTEGER NOT NULL, first_item_ms INTEGER, done_ms INTEGER);
@@ -323,6 +324,10 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     basis TEXT NOT NULL);
   CREATE TABLE status_headlines (scope TEXT PRIMARY KEY, facts_hash BLOB NOT NULL, text TEXT NOT NULL, run TEXT NOT NULL,
     at_ms INTEGER NOT NULL);
+  CREATE TABLE plan_placeholders (workstream_id TEXT PRIMARY KEY, project_ref TEXT NOT NULL, size INTEGER NOT NULL,
+    title TEXT NOT NULL, state TEXT NOT NULL, entered_ms INTEGER NOT NULL, done_ms INTEGER, left_ms INTEGER);
+  CREATE INDEX plan_placeholders_live ON plan_placeholders (state, done_ms) WHERE state != 'left';
+  CREATE INDEX changes_by_task ON changes (CASE WHEN json_valid(data) THEN json_extract(data, '$.taskId') END);
   CREATE TABLE github_hooks (repo TEXT PRIMARY KEY, hook_id INTEGER NOT NULL, url TEXT NOT NULL);
   CREATE INDEX events_by_type ON events (type, seq);
   "#,

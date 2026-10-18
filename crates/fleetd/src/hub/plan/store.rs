@@ -287,6 +287,18 @@ pub fn items_all(c: &Connection) -> rusqlite::Result<Vec<ItemRow>> {
     .collect()
 }
 
+/// Items a render needs: open ones, those in open milestones, and those done since `since_ms`.
+pub fn items_live(c: &Connection, since_ms: i64) -> rusqlite::Result<Vec<ItemRow>> {
+    c.prepare_cached(&format!(
+        "SELECT {ITEM_COLS} FROM plan_items
+         WHERE state = 'open' OR done_ms >= ?
+            OR milestone IN (SELECT n FROM plan_milestones WHERE done_ms IS NULL)
+         ORDER BY project_ref, milestone, position, n"
+    ))?
+    .query_map([since_ms], item_of)?
+    .collect()
+}
+
 pub fn next_item_position(c: &Connection, milestone: i64) -> rusqlite::Result<i64> {
     c.query_row(
         "SELECT COALESCE(MAX(position) + 1, 0) FROM plan_items WHERE milestone = ?",

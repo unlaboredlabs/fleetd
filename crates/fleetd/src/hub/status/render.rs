@@ -31,8 +31,6 @@ use crate::hub::plan::{self, clip, figure_of, marker_of, parse_ms, progress_of};
 use crate::hub::store::iso_ms;
 
 const DAY_MS: i64 = 24 * 3_600_000;
-/// The link's silence timeout: a machine is offline after this long without a frame.
-const SILENCE_MS: i64 = 45_000;
 
 /// An order the view counts: open, or done in the last day.
 #[derive(Clone, Debug)]
@@ -84,13 +82,22 @@ pub struct World {
     pub failures: HashMap<i64, i64>,
     /// When something first queued for a slot and is still queued.
     pub slots_queued_since: Option<i64>,
+    /// Placeholders of orders with no plan, in their figure.
+    pub placeholders: HashMap<String, Placeholder>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Placeholder {
+    pub size: i64,
+    pub done: bool,
 }
 
 fn order_rows(c: &Connection, since_iso: &str) -> rusqlite::Result<Vec<Order>> {
     let mut stmt = c.prepare_cached(
         "SELECT machine_id, project_id, data FROM workstreams
          WHERE state IN ('running', 'converging', 'verifying', 'idle')
-            OR (state = 'done' AND json_extract(data, '$.updatedAt') >= ?)",
+            OR (state = 'done' AND (json_extract(data, '$.updatedAt') >= ?
+                OR 'W' || n IN (SELECT workstream_id FROM plan_placeholders WHERE state != 'left')))",
     )?;
     let rows = stmt.query_map([since_iso], |r| {
         Ok((
@@ -167,24 +174,60 @@ type ChangeLinks = HashMap<String, (String, Option<String>)>;
 impl World {
     pub fn read(hub: &Hub, now: i64, slots_queued_since: Option<i64>) -> anyhow::Result<World> {
         let since_iso = iso_ms(now - DAY_MS);
-        let (orders, items, milestones, markers, estimates, recent, changes) =
+        // Bounded reads: open and recent plan items, Changes only as repos (plus the few the last day's CI failures
+        // name), so a render costs the same after months of history.
+        let (orders, items, milestones, markers, estimates, recent, change_repos, placeholders) =
             hub.db.with(|c| {
-                let changes: Vec<(String, String, String)> = c
+                let mut change_repos: HashMap<String, HashSet<String>> = HashMap::new();
+                for row in c
+                    .prepare_cached("SELECT DISTINCT machine_id || '/' || project_id, lower(repo) FROM changes")?
+                    .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+                {
+                    let (pk, repo) = row?;
+                    change_repos.entry(pk).or_default().insert(repo);
+                }
+                let placeholders: HashMap<String, Placeholder> = c
                     .prepare_cached(
-                        "SELECT machine_id || '/' || project_id, lower(repo), data FROM changes",
+                        "SELECT workstream_id, size, state FROM plan_placeholders WHERE state != 'left'",
                     )?
-                    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                    .query_map([], |r| {
+                        Ok((r.get::<_, String>(0)?, Placeholder { size: r.get(1)?, done: r.get::<_, String>(2)? == "done" }))
+                    })?
                     .collect::<rusqlite::Result<_>>()?;
                 Ok((
                     order_rows(c, &since_iso)?,
-                    plan::store::items_all(c)?,
+                    plan::store::items_live(c, now - eta::WINDOW_MS)?,
                     plan::store::milestones_all(c)?,
                     plan::store::changes_all(c, 200)?,
                     estimate_rows(c, now - eta::WINDOW_MS)?,
                     recent_events(c, now - DAY_MS)?,
-                    changes,
+                    change_repos,
+                    placeholders,
                 ))
             })?;
+        let failed_changes: HashSet<i64> = recent
+            .iter()
+            .filter(|(t, _)| t == "change.ci_failed")
+            .filter_map(|(_, e)| e.pointer("/data/changeId")?.as_str().map(plan::number))
+            .collect();
+        let mut links: ChangeLinks = HashMap::new();
+        hub.db.with(|c| {
+            for n in &failed_changes {
+                let data: Option<String> = c
+                    .prepare_cached("SELECT data FROM changes WHERE n = ?")?
+                    .query_row([n], |r| r.get(0))
+                    .optional()?;
+                if let Some(ch) = data
+                    .and_then(|d| serde_json::from_str::<fleetd_contracts::train::Change>(&d).ok())
+                {
+                    links.insert(
+                        ch.change_id.to_string(),
+                        (ch.pr_url.to_string(), ch.task_id.map(|t| t.to_string())),
+                    );
+                }
+            }
+            Ok(())
+        })?;
         let workstreams: Vec<Workstream> = orders.iter().map(|o| o.w.clone()).collect();
         let (cards, _, _) = crate::hub::orders::board(hub, &workstreams);
         let cards = cards
@@ -214,20 +257,6 @@ impl World {
             .into_iter()
             .map(|(r, p)| (r.to_lowercase(), plan::store::pkey(&p)))
             .collect();
-        let mut change_repos: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut links: ChangeLinks = HashMap::new();
-        for (pk, repo, data) in &changes {
-            change_repos
-                .entry(pk.clone())
-                .or_default()
-                .insert(repo.clone());
-            if let Ok(ch) = serde_json::from_str::<fleetd_contracts::train::Change>(data) {
-                links.insert(
-                    ch.change_id.to_string(),
-                    (ch.pr_url.to_string(), ch.task_id.map(|t| t.to_string())),
-                );
-            }
-        }
         let failures = item_failures(&items, &recent, &links);
         Ok(World {
             now,
@@ -248,6 +277,7 @@ impl World {
             change_repos,
             failures,
             slots_queued_since,
+            placeholders,
         })
     }
 }
@@ -447,32 +477,39 @@ fn scope_of<'a>(w: &'a World, scope: &StatusScope) -> Option<Scope<'a>> {
     })
 }
 
-/// Orders with no plan items count as one must item of their tier, done when the order is done.
+/// Orders with no plan items count as one must item of their tier from when they start running (a placeholder, with
+/// a marker on the way in and out), done when the order is done.
 fn virtual_orders<'a>(w: &World, s: &Scope<'a>) -> Vec<&'a Order> {
-    let planned: HashSet<&str> = w
-        .items
-        .iter()
-        .filter_map(|i| i.workstream_id.as_deref())
-        .collect();
     s.orders
         .iter()
         .copied()
-        .filter(|o| !planned.contains(o.id()))
+        .filter(|o| w.placeholders.contains_key(o.id()))
         .collect()
 }
 
-fn figure(s: &Scope<'_>, virtuals: &[&Order]) -> Figure {
+fn figure(w: &World, s: &Scope<'_>, virtuals: &[&Order]) -> Figure {
     let mut f = Figure::default();
     for i in &s.items {
         f.add(i.weight, i.size, i.state);
     }
     for o in virtuals {
-        let state = if o.w.state == WorkstreamState::Done {
-            PlanItemState::Done
-        } else {
-            PlanItemState::Open
+        let Some(p) = w.placeholders.get(o.id()) else {
+            continue;
         };
-        f.add(Weight::Must, o.tier().into(), state);
+        let size = match p.size {
+            1 => Size::S,
+            8 => Size::L,
+            _ => Size::M,
+        };
+        f.add(
+            Weight::Must,
+            size,
+            if p.done {
+                PlanItemState::Done
+            } else {
+                PlanItemState::Open
+            },
+        );
     }
     f
 }
@@ -722,7 +759,7 @@ fn machine_stale(m: &Machine, now: i64, tz: Tz) -> Option<StaleMark> {
     }
     let seen = parse_ms(m.last_seen_at.as_str()).unwrap_or(now);
     Some(StaleMark {
-        since: ts(seen + SILENCE_MS),
+        since: ts(seen),
         reason: line(&format!(
             "no heartbeat from {} since {}",
             m.machine_id,
@@ -848,7 +885,7 @@ pub fn render(
     let (now, tz) = (w.now, w.tz);
     let mut wake = Wake(None, now);
     let virtuals = virtual_orders(w, &s);
-    let f = figure(&s, &virtuals);
+    let f = figure(w, &s, &virtuals);
     let markers: Vec<Marker> = w
         .markers
         .iter()
@@ -903,7 +940,7 @@ pub fn render(
         match as_of {
             Some(a) if now - a > due => {
                 let m = StaleMark {
-                    since: ts(a + due),
+                    since: ts(a),
                     reason: line(&format!(
                         "main CI of {repo} last read {}",
                         clock(a, now, tz)
@@ -1182,7 +1219,7 @@ pub fn render(
     }
     for o in &virtuals {
         let title = crate::hub::orders::short_title(&o.w);
-        if o.w.state == WorkstreamState::Done {
+        if w.placeholders.get(o.id()).is_some_and(|p| p.done) {
             let at = parse_ms(o.w.updated_at.as_str()).unwrap_or(now);
             done.push((
                 at,
@@ -1431,7 +1468,7 @@ pub fn render(
                 let Some(cs) = scope_of(w, &child) else {
                     continue;
                 };
-                let cf = figure(&cs, &virtual_orders(w, &cs));
+                let cf = figure(w, &cs, &virtual_orders(w, &cs));
                 if cf.must_total + cf.polish_total == 0 {
                     continue;
                 }
@@ -1690,6 +1727,10 @@ mod tests {
             (10, 10),
             "least important first"
         );
-        assert_eq!(doc.in_progress.len() as i64 + doc.more.in_progress.get(), 20, "every trimmed row is counted");
+        assert_eq!(
+            doc.in_progress.len() as i64 + doc.more.in_progress.get(),
+            20,
+            "every trimmed row is counted"
+        );
     }
 }

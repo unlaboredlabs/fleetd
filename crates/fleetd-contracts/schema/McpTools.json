@@ -8440,7 +8440,8 @@
           "type": "string"
         },
         "since": {
-          "$ref": "#/$defs/Timestamp"
+          "$ref": "#/$defs/Timestamp",
+          "description": "The source's last good signal (a heartbeat, a GitHub answer, a train pass)."
         }
       },
       "required": [
@@ -8483,7 +8484,7 @@
       "type": "object"
     },
     "StaleSource": {
-      "description": "A source that is stale now. `source` is `machine:<m>`, `usage:<m>`, `github:<repo>`, `train:<repo>` or\n`webhook:<repo>`.",
+      "description": "A source that is stale now, `since` its last good signal. `source` is `machine:<m>`, `usage:<m>`, `ci:<repo>`,\n`github:<repo>`, `train:<repo>` or\n`webhook:<repo>`.",
       "properties": {
         "reason": {
           "maxLength": 200,

@@ -729,6 +729,7 @@ mod tests {
         let repo = "acme/storefront";
         fresh.expect(&fresh::github(repo), 1_000, 0);
         fresh.touch(&fresh::github(repo), 0);
+        fresh.check(0);
         assert!(github.pull(repo, 1).await.is_err());
         let flips = fresh.check(5_000);
         let crate::hub::status::fresh::Flip::Stale { reason, .. } = &flips[0] else {

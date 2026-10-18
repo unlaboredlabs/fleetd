@@ -74,6 +74,7 @@ const FOLLOWED: &[HubEventType] = &[
 
 /// Events after which an order's plan items are checked against the done rule again.
 const VERIFY_ON: &[HubEventType] = &[
+    HubEventType::WorkstreamRunning,
     HubEventType::PrMerged,
     HubEventType::ChangeState,
     HubEventType::ClaimPassed,
@@ -87,6 +88,7 @@ struct Cached {
     doc: StatusDoc,
     /// The doc's content without its times, to tell a real change from a re-render.
     content: String,
+    rendered_ms: i64,
     wake_at: Option<i64>,
 }
 
@@ -118,6 +120,8 @@ pub struct Status {
     versions: watch::Sender<i64>,
     headlines: Mutex<headline::Scheduler>,
     wake: Notify,
+    /// Since-you-looked counts per key, scope and mark, with the seq they run to.
+    since_cache: Mutex<HashMap<String, (i64, i64, fleetd_contracts::status::Since)>>,
 }
 
 fn content_of(doc: &StatusDoc) -> String {
@@ -153,6 +157,7 @@ impl Status {
             versions: watch::Sender::new(0),
             headlines: Mutex::default(),
             wake: Notify::new(),
+            since_cache: Mutex::default(),
         })
     }
 
@@ -228,6 +233,7 @@ impl Status {
                 Cached {
                     doc,
                     content,
+                    rendered_ms: now,
                     wake_at: r.wake_at,
                 },
             );
@@ -423,7 +429,19 @@ impl Status {
     ) -> Option<StatusDoc> {
         let now = now_ms(hub.clock.as_ref());
         self.view(scope, now);
-        self.render_scopes(hub, std::slice::from_ref(scope));
+        // A doc rendered in the last 250 ms with no event since is current: serve it instead of rebuilding.
+        let fresh = {
+            let st = self.state.lock().unwrap();
+            let key = scope.key();
+            let head = hub.events.head();
+            st.docs
+                .get(&key)
+                .is_some_and(|c| now - c.rendered_ms < COALESCE_MS && c.doc.seq.get() == head)
+                && !st.dirty.contains(&key)
+        };
+        if !fresh {
+            self.render_scopes(hub, std::slice::from_ref(scope));
+        }
         self.wake.notify_one();
         let doc = self
             .state
@@ -508,14 +526,35 @@ impl Status {
         since_seq: Option<i64>,
     ) -> StatusDoc {
         if since_seq.is_some() || is_human(caller) {
+            let scope_key = doc.scope.key();
+            let cache_key = format!(
+                "{}|{}|{}",
+                caller.key_id,
+                scope_key,
+                since_seq.map_or(String::new(), |s| s.to_string())
+            );
+            let cached = self.since_cache.lock().unwrap().get(&cache_key).cloned();
             let since = hub.db.with(|c| {
                 let mark = match since_seq {
                     Some(seq) => Some((seq, now_ms(hub.clock.as_ref()))),
-                    None => seen::get(c, &caller.key_id, &doc.scope.key())?,
+                    None => seen::get(c, &caller.key_id, &scope_key)?,
                 };
-                Ok(seen::since(c, &doc.scope, mark)?)
+                // Reuse counts only for the same mark.
+                let base = cached
+                    .as_ref()
+                    .filter(|(m, _, _)| Some(*m) == mark.map(|m| m.0))
+                    .map(|(_, to, s)| (*to, s));
+                let (counted, to) = seen::since_from(c, &doc.scope, mark, base)?;
+                Ok((mark.map(|m| m.0), to, counted))
             });
-            doc.since = since.unwrap_or_default();
+            if let Ok((Some(mark), to, counted)) = &since {
+                let mut cache = self.since_cache.lock().unwrap();
+                if cache.len() > 256 {
+                    cache.clear();
+                }
+                cache.insert(cache_key, (*mark, *to, counted.clone()));
+            }
+            doc.since = since.map(|(_, _, s)| s).unwrap_or_default();
             if since_seq.is_some() {
                 doc.since.seen_at = None;
             }
@@ -615,6 +654,10 @@ impl Status {
                     .flatten()
             });
         let Some(ws) = ws else { return };
+        if event.r#type == HubEventType::WorkstreamRunning {
+            hub.plans.placeholder_enter(&ws, false);
+            return;
+        }
         hub.plans.verify(&ws);
         let state = match event.r#type {
             HubEventType::WorkstreamDone => Some(WorkstreamState::Done),
@@ -628,6 +671,7 @@ impl Status {
         };
         if let Some(state) = state {
             hub.plans.close_order(&ws, state);
+            hub.plans.placeholder_order_ended(&ws, state);
         }
     }
 
@@ -648,6 +692,7 @@ impl Status {
         for ws in orders {
             hub.plans.verify(&ws);
         }
+        hub.plans.placeholder_backfill();
         let mut last_render = 0i64;
         loop {
             let now = now_ms(hub.clock.as_ref());
@@ -704,7 +749,8 @@ impl Status {
                     .min();
                 (due, wakes)
             };
-            let mut deadline = [self.fresh.next_deadline(), next_wake]
+            let roll_off = hub.plans.placeholder_roll_off();
+            let mut deadline = [self.fresh.next_deadline(), next_wake, roll_off]
                 .into_iter()
                 .flatten()
                 .min();

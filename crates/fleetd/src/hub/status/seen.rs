@@ -56,8 +56,20 @@ pub fn since(
     scope: &StatusScope,
     mark: Option<(i64, i64)>,
 ) -> rusqlite::Result<Since> {
+    Ok(since_from(c, scope, mark, None)?.0)
+}
+
+/// [`since`], continuing from counts already made up to a seq (`base`), so a viewer that keeps asking scans only the
+/// events since its last answer. Returns the counts and the seq they run to.
+pub fn since_from(
+    c: &Connection,
+    scope: &StatusScope,
+    mark: Option<(i64, i64)>,
+    base: Option<(i64, &Since)>,
+) -> rusqlite::Result<(Since, i64)> {
+    let head: i64 = c.query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| r.get(0))?;
     let Some((after, at_ms)) = mark else {
-        return Ok(Since::default());
+        return Ok((Since::default(), head));
     };
     let oldest: Option<i64> = c.query_row("SELECT MIN(seq) FROM events", [], |r| r.get(0))?;
     let mut out = Since {
@@ -66,12 +78,31 @@ pub fn since(
         pruned: oldest.is_some_and(|o| o > after + 1).then_some(true),
         ..Default::default()
     };
-    let (mut merged, mut verified, mut started, mut failed, mut asked, mut scope_items) =
-        (0, 0, 0, 0, 0, 0);
-    let mut stmt =
-        c.prepare_cached("SELECT data FROM events WHERE type = ? AND seq > ? ORDER BY seq")?;
+    let from = match base {
+        Some((to, counted)) if to >= after => {
+            out.merged = counted.merged;
+            out.verified = counted.verified;
+            out.started = counted.started;
+            out.failed = counted.failed;
+            out.asked = counted.asked;
+            out.scope_items = counted.scope_items;
+            to
+        }
+        _ => after,
+    };
+    let (mut merged, mut verified, mut started, mut failed, mut asked, mut scope_items) = (
+        out.merged.get(),
+        out.verified.get(),
+        out.started.get(),
+        out.failed.get(),
+        out.asked.get(),
+        out.scope_items.get(),
+    );
+    let mut stmt = c.prepare_cached(
+        "SELECT data FROM events WHERE type = ? AND seq > ? AND seq <= ? ORDER BY seq",
+    )?;
     for t in COUNTED {
-        for row in stmt.query_map(params![t, after], |r| r.get::<_, String>(0))? {
+        for row in stmt.query_map(params![t, from, head], |r| r.get::<_, String>(0))? {
             let Ok(event) = serde_json::from_str::<Value>(&row?) else {
                 continue;
             };
@@ -117,7 +148,7 @@ pub fn since(
     out.failed = Count::unchecked(failed);
     out.asked = Count::unchecked(asked);
     out.scope_items = Int::unchecked(scope_items);
-    Ok(out)
+    Ok((out, head))
 }
 
 fn ask_in_scope(c: &Connection, scope: &StatusScope, ask: &str) -> rusqlite::Result<bool> {
@@ -176,6 +207,10 @@ mod tests {
             };
             assert_eq!(since(c, &other, Some((1, 10))).unwrap().merged.get(), 0);
             assert_eq!(since(c, &StatusScope::Fleet, None).unwrap(), Since::default(), "never looked");
+            let (base, to) = since_from(c, &StatusScope::Fleet, Some((1, 10)), None).unwrap();
+            add(c, "pr.merged", ev("pr.merged", "W3"));
+            let (more, _) = since_from(c, &StatusScope::Fleet, Some((1, 10)), Some((to, &base))).unwrap();
+            assert_eq!(more.merged.get(), 3, "continues from the counted seq");
             mark(c, "K1", "fleet", 0, 20).unwrap();
             assert_eq!(get(c, "K1", "fleet").unwrap(), Some((1, 20)), "a mark never moves back");
             Ok(())

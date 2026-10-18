@@ -133,34 +133,53 @@ pub fn latest_checks(c: &Connection, ws: &str) -> rusqlite::Result<HashMap<i64, 
     Ok(out)
 }
 
-/// Changes linked to an item: by its tasks (`Change.task_id`) or its PR URLs.
+/// Changes linked to an item: by its tasks (`Change.task_id`, the `changes_by_task` index) or its PR URLs
+/// (`changes_by_pr`). Indexed lookups per link, so the cost doesn't grow with the project's history.
 pub fn linked_changes(c: &Connection, item: &ItemRow) -> rusqlite::Result<Vec<LinkedChange>> {
-    if !item.has_work_links() {
-        return Ok(Vec::new());
-    }
-    let tasks: HashSet<&str> = item.data.links.tasks.iter().map(|t| t.as_str()).collect();
-    let prs: HashSet<&str> = item.data.links.prs.iter().map(|p| p.as_str()).collect();
-    let (m, p) = item.pkey.split_once('/').unwrap_or((&item.pkey, ""));
-    let mut stmt =
-        c.prepare_cached("SELECT data FROM changes WHERE machine_id = ? AND project_id = ?")?;
+    let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for data in stmt.query_map(params![m, p], |r| r.get::<_, String>(0))? {
-        let Ok(ch) = serde_json::from_str::<fleetd_contracts::train::Change>(&data?) else {
-            continue;
-        };
-        let by_task = ch
-            .task_id
-            .as_ref()
-            .is_some_and(|t| tasks.contains(t.as_str()));
-        if by_task || prs.contains(ch.pr_url.as_str()) {
+    let mut push = |data: String, out: &mut Vec<LinkedChange>| {
+        if let Ok(ch) = serde_json::from_str::<fleetd_contracts::train::Change>(&data)
+            && seen.insert(ch.change_id.to_string())
+            && plan_key_of(&ch.project_ref) == item.pkey
+        {
             out.push(LinkedChange {
                 change_id: ch.change_id.to_string(),
                 pr_number: ch.pr_number.get(),
                 state: ch.state,
             });
         }
+    };
+    for t in item.data.links.tasks.iter() {
+        let mut stmt =
+            c.prepare_cached("SELECT data FROM changes WHERE (CASE WHEN json_valid(data) THEN json_extract(data, '$.taskId') END) = ?")?;
+        for data in stmt.query_map([t.as_str()], |r| r.get::<_, String>(0))? {
+            push(data?, &mut out);
+        }
+    }
+    for pr in item.data.links.prs.iter() {
+        let Some((repo, number)) = pr_parts(pr.as_str()) else {
+            continue;
+        };
+        let mut stmt =
+            c.prepare_cached("SELECT data FROM changes WHERE repo = ? AND pr_number = ?")?;
+        for data in stmt.query_map(params![repo, number], |r| r.get::<_, String>(0))? {
+            push(data?, &mut out);
+        }
     }
     Ok(out)
+}
+
+fn plan_key_of(r: &ProjectRef) -> String {
+    pkey(r)
+}
+
+/// `https://github.com/Owner/Repo/pull/12` → ("owner/repo", 12); the train stores repos lowercased.
+fn pr_parts(url: &str) -> Option<(String, i64)> {
+    let rest = url.strip_prefix("https://github.com/")?;
+    let mut parts = rest.split('/');
+    let (owner, repo, pull, n) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    (pull == "pull").then(|| Some((format!("{owner}/{repo}").to_lowercase(), n.parse().ok()?)))?
 }
 
 pub fn figure_of(items: &[ItemRow]) -> Figure {
@@ -326,8 +345,20 @@ impl Plans {
     fn emit(&self, pending: Pending) {
         for ch in pending.changes {
             let (m, p) = ch.pkey.split_once('/').unwrap_or((&ch.pkey, ""));
-            let data = serde_json::to_value(change_contract(&ch)).ok();
-            let mut summary = format!("M{}: {}", ch.milestone, ch.note);
+            // A placeholder's marker belongs to no milestone (`milestone` 0), so it is not a `PlanChange`.
+            let data = if ch.milestone == 0 {
+                Some(serde_json::json!({
+                    "kind": ch.kind, "workstreamId": ch.workstream_id, "at": iso_ms(ch.at_ms), "by": ch.by,
+                    "deltaItems": ch.delta_items, "deltaSize": ch.delta_size, "note": ch.note,
+                }))
+            } else {
+                serde_json::to_value(change_contract(&ch)).ok()
+            };
+            let mut summary = if ch.milestone == 0 {
+                ch.note.clone()
+            } else {
+                format!("M{}: {}", ch.milestone, ch.note)
+            };
             if let (Some(b), Some(a)) = (ch.pct_before, ch.pct_after) {
                 summary = format!("{summary} ({b}% → {a}%)");
             }
@@ -595,6 +626,9 @@ impl Plans {
                 },
             };
             item.n = store::item_insert(c, &item)?;
+            if let Some(ws) = &item.workstream_id {
+                Self::placeholder_planned(c, ws, now, &mut pending)?;
+            }
             let what = format!("P{} {} added", item.n, item.data.title);
             let change = Self::scope_change(
                 c,
@@ -702,6 +736,9 @@ impl Plans {
                 }
             }
             store::item_set(c, &item)?;
+            if let Some(ws) = &item.workstream_id {
+                Self::placeholder_planned(c, ws, now, &mut pending)?;
+            }
             let what = format!("P{} {} changed", item.n, item.data.title);
             let ws = item.workstream_id.clone();
             let mut change = Self::scope_change(
@@ -946,7 +983,19 @@ impl Plans {
             verified: vec![],
         };
         let changed = self.tx(|c| {
-            let items = store::items_of_workstream(c, ws)?;
+            let mut items = store::items_of_workstream(c, ws)?;
+            // Items that list PRs but no order are checked with any order of their project.
+            if let Some(order) = order_info(c, ws)? {
+                items.extend(
+                    store::items_of_project(c, &order.pkey)?
+                        .into_iter()
+                        .filter(|i| {
+                            i.workstream_id.is_none()
+                                && i.has_work_links()
+                                && i.state != PlanItemState::Dropped
+                        }),
+                );
+            }
             if items.is_empty() {
                 return Ok(false);
             }
@@ -1114,7 +1163,8 @@ impl Plans {
             .with(|c| {
                 let milestones = store::milestones_of(c, &pk)?;
                 let all = store::items_of_project(c, &pk)?;
-                let changes = store::changes_of(c, &pk, 50)?;
+                let mut changes = store::changes_of(c, &pk, 60)?;
+                changes.retain(|ch| ch.milestone != 0);
                 Ok((milestones, all, changes))
             })
             .map_err(failed)
@@ -1169,6 +1219,187 @@ impl Plans {
                         .unwrap_or_default(),
                 }
             })
+    }
+}
+
+/// Hours a done order's placeholder stays in the figure before it leaves with a marker.
+pub const PLACEHOLDER_DONE_MS: i64 = 24 * 3_600_000;
+
+impl Plans {
+    #[allow(clippy::too_many_arguments)]
+    fn placeholder_marker(
+        c: &Connection,
+        ws: &str,
+        pkey: &str,
+        kind: PlanChangeKind,
+        delta: i64,
+        size: i64,
+        note: String,
+        now: i64,
+        pending: &mut Pending,
+    ) -> rusqlite::Result<()> {
+        let row = ChangeRow {
+            n: 0,
+            pkey: pkey.to_owned(),
+            milestone: 0,
+            workstream_id: Some(ws.to_owned()),
+            at_ms: now,
+            by: "hub".into(),
+            kind,
+            delta_items: delta,
+            delta_size: delta * size,
+            pct_before: None,
+            pct_after: None,
+            note,
+        };
+        store::change_insert(c, &row)?;
+        pending.changes.push(row);
+        Ok(())
+    }
+
+    /// An order started running with no plan items: it enters its project's figure as one item of its tier.
+    /// `quiet` (the backfill at start) writes no marker, since no figure was shown before it.
+    pub fn placeholder_enter(&self, ws: &str, quiet: bool) -> bool {
+        let now = self.now();
+        let mut pending = Pending {
+            changes: vec![],
+            verified: vec![],
+        };
+        let entered = self.tx(|c| {
+            let Some(order) = order_info(c, ws)? else { return Ok(false) };
+            let planned: bool =
+                c.query_row("SELECT EXISTS (SELECT 1 FROM plan_items WHERE workstream_id = ?)", [ws], |r| r.get(0))?;
+            if planned {
+                return Ok(false);
+            }
+            let size = fleetd_contracts::plan::Size::from(order.tier.unwrap_or(fleetd_contracts::ledger::Tier::M)).points();
+            let done = order.state == WorkstreamState::Done;
+            let n = c.execute(
+                "INSERT OR IGNORE INTO plan_placeholders (workstream_id, project_ref, size, title, state, entered_ms, done_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![ws, order.pkey, size, order.title, if done { "done" } else { "open" }, now, done.then_some(now)],
+            )?;
+            if n == 1 && !quiet {
+                let note = format!("+1 item: {ws} {} (no plan yet)", clip(&order.title, 100));
+                Self::placeholder_marker(c, ws, &order.pkey, PlanChangeKind::Scope, 1, size, note, now, &mut pending)?;
+            }
+            Ok(n == 1)
+        });
+        self.emit(pending);
+        entered.unwrap_or(false)
+    }
+
+    /// The order behind a placeholder finished: done stays in the figure (verified); stopped or failed leaves it.
+    pub fn placeholder_order_ended(&self, ws: &str, state: WorkstreamState) -> bool {
+        let now = self.now();
+        let mut pending = Pending {
+            changes: vec![],
+            verified: vec![],
+        };
+        let changed = self.tx(|c| {
+            let row: Option<(String, i64, String)> = c
+                .query_row(
+                    "SELECT project_ref, size, state FROM plan_placeholders WHERE workstream_id = ?",
+                    [ws],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .optional()?;
+            let Some((pkey, size, current)) = row.filter(|r| r.2 == "open") else { return Ok(false) };
+            let _ = current;
+            if state == WorkstreamState::Done {
+                c.execute("UPDATE plan_placeholders SET state = 'done', done_ms = ? WHERE workstream_id = ?", params![now, ws])?;
+                return Ok(true);
+            }
+            c.execute("UPDATE plan_placeholders SET state = 'left', left_ms = ? WHERE workstream_id = ?", params![now, ws])?;
+            let word = if state == WorkstreamState::Stopped { "stopped" } else { "failed" };
+            Self::placeholder_marker(c, ws, &pkey, PlanChangeKind::Closed, -1, size, format!("−1: {ws} {word}"), now, &mut pending)?;
+            Ok(true)
+        });
+        self.emit(pending);
+        changed.unwrap_or(false)
+    }
+
+    /// An order got plan items: its placeholder gives way, with a marker. Inside the caller's write.
+    fn placeholder_planned(
+        c: &Connection,
+        ws: &str,
+        now: i64,
+        pending: &mut Pending,
+    ) -> rusqlite::Result<()> {
+        let row: Option<(String, i64)> = c
+            .query_row(
+                "SELECT project_ref, size FROM plan_placeholders WHERE workstream_id = ? AND state != 'left'",
+                [ws],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((pkey, size)) = row else {
+            return Ok(());
+        };
+        c.execute(
+            "UPDATE plan_placeholders SET state = 'left', left_ms = ? WHERE workstream_id = ?",
+            params![now, ws],
+        )?;
+        let note = format!("−1 item: {ws}'s placeholder gives way to its plan");
+        Self::placeholder_marker(
+            c,
+            ws,
+            &pkey,
+            PlanChangeKind::Scope,
+            -1,
+            size,
+            note,
+            now,
+            pending,
+        )
+    }
+
+    /// Done placeholders leave the figure a day after their order finished, each with a marker. Returns the next
+    /// time one is due.
+    pub fn placeholder_roll_off(&self) -> Option<i64> {
+        let now = self.now();
+        let mut pending = Pending {
+            changes: vec![],
+            verified: vec![],
+        };
+        let next = self.tx(|c| {
+            let due: Vec<(String, String, i64)> = c
+                .prepare_cached(
+                    "SELECT workstream_id, project_ref, size FROM plan_placeholders WHERE state = 'done' AND done_ms <= ?",
+                )?
+                .query_map([now - PLACEHOLDER_DONE_MS], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            for (ws, pkey, size) in due {
+                c.execute("UPDATE plan_placeholders SET state = 'left', left_ms = ? WHERE workstream_id = ?", params![now, ws])?;
+                let note = format!("{ws} done a day ago, leaves the figure");
+                Self::placeholder_marker(c, &ws, &pkey, PlanChangeKind::Closed, -1, size, note, now, &mut pending)?;
+            }
+            let next: Option<i64> = c.query_row(
+                "SELECT MIN(done_ms) FROM plan_placeholders WHERE state = 'done'",
+                [],
+                |r| r.get(0),
+            )?;
+            Ok(next.map(|d| d + PLACEHOLDER_DONE_MS))
+        });
+        self.emit(pending);
+        next.unwrap_or(None)
+    }
+
+    /// At start: every running order with no plan and no placeholder gets one, quietly.
+    pub fn placeholder_backfill(&self) {
+        let orders: Vec<String> = self
+            .db
+            .with(|c| {
+                Ok(c.prepare(
+                    "SELECT 'W' || n FROM workstreams WHERE state IN ('running', 'converging', 'verifying', 'idle')",
+                )?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?)
+            })
+            .unwrap_or_default();
+        for ws in orders {
+            self.placeholder_enter(&ws, true);
+        }
     }
 }
 
