@@ -15,7 +15,7 @@ use gpui::{
     quadratic,
 };
 
-use super::chips::{stage_tone, stage_word, tone_color};
+use super::chips::{pr_track, stage_tone, stage_word, tone_color};
 use super::lanes::LaneEvent;
 use super::motion::{self, dur};
 use super::state::parse_ms;
@@ -145,8 +145,8 @@ pub fn machine_strip(t: &Theme, machines: &[MachineLive], slots: Option<&SlotSta
     row.child(div().flex_1()).when_some(slots, |d, s| d.child(div().flex_none().font_family(t.mono_font.clone()).child(slots_text(s))))
 }
 
-/// A train chip's slot: wide enough for "#1234 needs rebase ▸".
-const SLOT: f32 = 128.;
+/// A train chip's slot: wide enough for "#1234 ▬▬▬ needs rebase ▸".
+const SLOT: f32 = 168.;
 
 struct Shown {
     chip: PrChip,
@@ -273,6 +273,7 @@ impl TrainStrip {
                             .text_color(t.text)
                             .child(SharedString::from(format!("#{}", c.number))),
                     )
+                    .child(div().px_1().self_center().child(pr_track(t, &id, c.state)))
                     .child(div().text_color(tone).child(stage_word(c.state))),
             )
             .when(!last, |d| d.child(div().text_color(t.faint).child("▸")))

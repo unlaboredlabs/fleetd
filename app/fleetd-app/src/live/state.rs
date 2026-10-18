@@ -106,6 +106,12 @@ impl LiveState {
         Some(merge(lead, self.lanes.get(lead.lane_id.as_str())))
     }
 
+    /// A lane's latest live values as the feed sent them, e.g. a project lead's (`lead_lane_id`), which the board
+    /// feed carries though no order card lists it.
+    pub fn live_lane(&self, lane_id: &str) -> Option<&LiveLane> {
+        self.lanes.get(lane_id)
+    }
+
     pub fn machines(&self) -> &[MachineLive] {
         &self.machines
     }
@@ -205,6 +211,36 @@ pub fn fleet_summary(lanes: &[AgentLane]) -> String {
         return if done == 1 { "done".into() } else { format!("all {done} done") };
     }
     parts.iter().filter(|(c, _)| *c > 0).map(|(c, w)| format!("{c} {w}")).collect::<Vec<_>>().join(" · ")
+}
+
+/// What the fleet is doing, from its lanes: "3 writing · 2 reviewing · 1 verifying", each running agent counted
+/// by what its role does, the ones that need you or failed first. Empty when no lane is at work. This is what an
+/// order's phase line says while agents run, so it moves with their events instead of the lead's last note.
+pub fn fleet_activity(lanes: &[AgentLane]) -> String {
+    use fleetd_contracts::live::AgentRole::*;
+    let running = |l: &&AgentLane| matches!(l.status, LaneStatus::Starting | LaneStatus::Working);
+    let n = |pred: &dyn Fn(&AgentLane) -> bool| lanes.iter().filter(|l| pred(l)).count();
+    let by_role = |roles: &[fleetd_contracts::live::AgentRole]| lanes.iter().filter(running).filter(|l| roles.contains(&l.role)).count();
+    let parts = [
+        (n(&|l| l.status == LaneStatus::Waiting), "need you"),
+        (n(&|l| l.status == LaneStatus::Failed), "failed"),
+        (by_role(&[Implementer]), "writing"),
+        (by_role(&[Reader]), "reading"),
+        (by_role(&[Reviewer]), "reviewing"),
+        (by_role(&[Verifier, Qa]), "verifying"),
+        (by_role(&[Lead]), "planning"),
+        (n(&|l| l.status == LaneStatus::Stalled), "stalled"),
+        (n(&|l| l.status == LaneStatus::Parked), "parked"),
+        (n(&|l| l.status == LaneStatus::Queued), "queued"),
+    ];
+    let mut out: Vec<String> = parts.iter().filter(|(c, _)| *c > 0).map(|(c, w)| format!("{c} {w}")).collect();
+    // One agent waiting on you reads "1 needs you".
+    if let Some(first) = out.first_mut()
+        && first == "1 need you"
+    {
+        *first = "1 needs you".into();
+    }
+    out.join(" · ")
 }
 
 /// `m:ss` under an hour, then `1h 05m`.
@@ -387,6 +423,25 @@ mod tests {
         assert_eq!(s.slots().unwrap().cap.get(), 40);
         assert_eq!(s.trains()[0].chips.len(), 3);
         assert!(s.text(fleetd_contracts::live::lead_lane_id(&project).as_str()).unwrap().1.contains("T31"));
+    }
+
+    #[test]
+    fn the_fleet_line_counts_running_agents_by_what_their_role_does() {
+        use fleetd_contracts::live::AgentRole;
+        let with = |role, status| AgentLane { role, ..lane("x", status) };
+        let lanes = vec![
+            with(AgentRole::Implementer, LaneStatus::Working),
+            with(AgentRole::Implementer, LaneStatus::Starting),
+            with(AgentRole::Implementer, LaneStatus::Done),
+            with(AgentRole::Reviewer, LaneStatus::Working),
+            with(AgentRole::Reviewer, LaneStatus::Working),
+            with(AgentRole::Verifier, LaneStatus::Working),
+            with(AgentRole::Verifier, LaneStatus::Queued),
+        ];
+        assert_eq!(fleet_activity(&lanes), "2 writing · 2 reviewing · 1 verifying · 1 queued");
+        let waiting = vec![with(AgentRole::Reviewer, LaneStatus::Waiting), with(AgentRole::Implementer, LaneStatus::Working)];
+        assert_eq!(fleet_activity(&waiting), "1 needs you · 1 writing");
+        assert_eq!(fleet_activity(&[with(AgentRole::Implementer, LaneStatus::Done)]), "");
     }
 
     #[test]

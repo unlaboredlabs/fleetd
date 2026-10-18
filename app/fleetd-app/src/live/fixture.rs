@@ -3,8 +3,10 @@
 //!
 //! The board is the hub writer's coherent W14 fixture (crates/fleetd-contracts/tests/fixtures/live), its times
 //! moved to now. `FLEETD_LIVE=demo` opens that board with the feed at a natural pace and stays open (for
-//! screenshots); otherwise the bench scales it to 50 orders and 200 lanes, drives the feed at its maximum
-//! rate and measures frames (see `measure`).
+//! screenshots); `FLEETD_LIVE=fanout` plays one order the way the lab demo runs it (three writers, then two
+//! reviewers and a verifier per PR, the PRs through the train), scripted, for previews of the stage; otherwise
+//! the bench scales it to 50 orders and 200 lanes, drives the feed at its maximum rate and measures frames (see
+//! `measure`).
 
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -12,7 +14,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use fleetd_contracts::app::AppServerMessage;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::ledger::WorkstreamId;
-use fleetd_contracts::live::{Activity, ActivityNow, AgentLane, LaneStatus, LiveFrame, LiveLane, OrderPhase, SPARK_BUCKETS, Spark, Tokens};
+use fleetd_contracts::live::{
+    Activity, ActivityNow, AgentLane, AgentRole, LaneStatus, LiveFrame, LiveLane, OrderPhase, PrChip, PrRef, SPARK_BUCKETS, Spark, Tokens,
+    lead_lane_id,
+};
 use fleetd_contracts::mcp::{OrderGetOutput, OrdersBoardOutput};
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::train::ChangeState;
@@ -21,10 +26,11 @@ use gpui::{
 };
 use serde_json::Value;
 
-use super::chips::{phase_chip, pr_chip};
+use super::chips::phase_chip;
 use super::lanes::{Density, FleetLanes};
 use super::motion::{self, MotionPref};
-use super::state::{LiveState, fmt_iso, parse_ms};
+use super::stage::{STAGE_W, Stage, agents_at_work, lead_lane, pr_progress, stage};
+use super::state::{LiveState, fleet_activity, fmt_iso, parse_ms};
 use super::strips::{TrainStrip, machine_strip};
 use crate::bench::Probe;
 use crate::state::ProjectKey;
@@ -106,6 +112,15 @@ fn activity(ix: usize) -> (Activity, u32) {
     }
 }
 
+/// The lead between its agents: waiting on the model, or asking fleetd how they are doing.
+fn lead_activity(ix: usize) -> Activity {
+    match ix % 4 {
+        1 => Activity::Command { text: Text::unchecked("fleetd task list --order W14") },
+        3 => Activity::Command { text: Text::unchecked("fleetd train status") },
+        _ => Activity::Thinking,
+    }
+}
+
 /// One simulated agent: what the scripted feed says it does.
 struct Sim {
     act: usize,
@@ -131,6 +146,10 @@ pub struct Feed {
     /// Lanes that finished, newest first, for the order view's done list.
     pub retired: Vec<AgentLane>,
     machines_json: Value,
+    /// `fanout`: the scripted order, and its project lead's lane id.
+    script: Option<String>,
+    /// The script changed the board this tick.
+    script_moved: bool,
 }
 
 pub struct Step {
@@ -147,6 +166,64 @@ impl Feed {
         let board: OrdersBoardOutput = shifted(BOARD, by);
         let p = board.orders[0].project_ref.clone();
         Self::from_boards(vec![((p.machine_id.to_string(), p.project_id.to_string()), board)], false, now_ms)
+    }
+
+    /// One order as the lab demo runs it: its lead, three writers to start with, W12 done under it.
+    pub fn fanout(now_ms: i64) -> Self {
+        let by = now_ms - parse_ms(FIXTURE_AT).unwrap();
+        let mut base: Value = serde_json::from_str(BOARD).unwrap();
+        shift_times(&mut base, by);
+        let mut card = base["orders"][0].clone();
+        let template = card["lanes"][1].clone();
+        card["title"] = Value::from("Round cart totals once, in one place");
+        card["phase"] = Value::from("working");
+        card["phaseDetail"] = Value::from("3 working");
+        card["next"] = Value::from("brief frozen; three writers, one PR each");
+        card["needsYou"] = Value::from(0);
+        card["settled"] = Value::from(0);
+        card["total"] = Value::from(3);
+        card["prs"] = Value::Array(vec![]);
+        card["createdAt"] = Value::from(fmt_iso(now_ms - 41_000));
+        let writers = [("T41", "round in cart/total.ts", 12), ("T42", "use it in discounts", 10), ("T43", "receipts show the rounded total", 9)];
+        card["lanes"] = Value::Array(
+            writers
+                .iter()
+                .map(|(id, title, ago)| {
+                    let mut l = template.clone();
+                    l["laneId"] = Value::from(*id);
+                    l["taskId"] = Value::from(*id);
+                    l["role"] = Value::from("implementer");
+                    l["title"] = Value::from(*title);
+                    l["startedAt"] = Value::from(fmt_iso(now_ms - 1000 * ago));
+                    l.as_object_mut().unwrap().remove("live");
+                    l
+                })
+                .collect(),
+        );
+        let mut train = base["trains"][0].clone();
+        train["chips"] = Value::Array(vec![]);
+        let mut done = base["orders"][1].clone();
+        done["phase"] = Value::from("done");
+        done["phaseDetail"] = Value::from("1 PR");
+        done["prs"][0]["state"] = Value::from("merged");
+        let orders = Value::Array(vec![card, done]);
+        let board: OrdersBoardOutput =
+            serde_json::from_value(serde_json::json!({"orders": orders, "trains": [train], "at": fmt_iso(now_ms)})).unwrap();
+        let p = board.orders[0].project_ref.clone();
+        let lead = lead_lane_id(&p).to_string();
+        let mut feed = Self::from_boards(vec![((p.machine_id.to_string(), p.project_id.to_string()), board)], false, now_ms);
+        for (k, id) in ["T41", "T42", "T43"].into_iter().enumerate() {
+            // Ten seconds in: a few buckets of real-shaped work already behind them.
+            let mut sim = Sim::fresh(k * 3, now_ms);
+            let n = sim.samples.len();
+            for (j, v) in [16, 34, 9, 41, 25].into_iter().enumerate() {
+                sim.samples[n - 5 + j] = ((v + 7 * k) % 56) as u8;
+            }
+            feed.sims.insert(id.into(), sim);
+        }
+        feed.sims.insert(lead.clone(), Sim::fresh(3, now_ms - 40_000));
+        feed.script = Some(lead);
+        feed
     }
 
     /// `orders` copies of W14, `lanes` working lanes each, over five projects.
@@ -216,6 +293,8 @@ impl Feed {
             finished: Vec::new(),
             retired: Vec::new(),
             machines_json,
+            script: None,
+            script_moved: false,
         };
         for lane in feed.working().into_iter().map(|(_, _, l)| l) {
             let seed = feed.rand(1000);
@@ -245,9 +324,14 @@ impl Feed {
         out
     }
 
+    /// Every lane the feed speaks for: the working ones, and the scripted order's lead.
+    fn live_ids(&self) -> Vec<String> {
+        self.working().into_iter().map(|(_, _, id)| id).chain(self.script.clone()).collect()
+    }
+
     pub fn full_frame(&mut self, now_ms: i64) -> LiveFrame {
         let mut frame = frame_fixture(FULL);
-        let lanes = self.working().into_iter().map(|(_, _, id)| self.live_lane(&id, now_ms, true)).collect();
+        let lanes = self.live_ids().into_iter().map(|id| self.live_lane(&id, now_ms, true)).collect();
         frame.at = Timestamp::from(fmt_iso(now_ms));
         frame.lanes = List::unchecked(lanes);
         frame.text = List::default();
@@ -257,10 +341,11 @@ impl Feed {
 
     fn live_lane(&self, id: &str, now_ms: i64, with_spark: bool) -> LiveLane {
         let sim = &self.sims[id];
+        let now = if self.script.as_deref() == Some(id) { lead_activity(sim.act) } else { activity(sim.act).0 };
         LiveLane {
             lane_id: Text::unchecked(id),
             status: LaneStatus::Working,
-            activity: Some(ActivityNow { activity: activity(sim.act).0, since: Timestamp::from(fmt_iso(sim.since)) }),
+            activity: Some(ActivityNow { activity: now, since: Timestamp::from(fmt_iso(sim.since)) }),
             tokens: Some(Tokens { input: sim.input, output: sim.output, cache_read: 0, live: true }),
             spark: with_spark
                 .then(|| Spark { end_at: Timestamp::from(fmt_iso(now_ms)), samples: List::unchecked(sim.samples.iter().copied().collect()) }),
@@ -300,7 +385,7 @@ impl Feed {
         let roll = self.tick.is_multiple_of(SPARK_BUCKET_TICKS);
         let working = self.working();
         let mut changed = Vec::new();
-        for (_, _, id) in &working {
+        for id in &self.live_ids() {
             let move_on = self.max_rate || self.rand(3) == 0;
             let (inc_in, inc_out) = (self.rand(600), 20 + self.rand(90));
             let sim = self.sims.get_mut(id).unwrap();
@@ -324,16 +409,24 @@ impl Feed {
         }
         let mut lanes: Vec<LiveLane> = changed.iter().map(|id| self.live_lane(id, now_ms, roll)).collect();
         let pace = if self.max_rate { 1 } else { 2 };
-        if self.tick.is_multiple_of(12 * pace)
-            && let Some(done) = self.finish_one(now_ms, &working)
-        {
-            lanes.push(LiveLane { status: LaneStatus::Done, activity: None, spark: None, ..self.live_lane(&done, now_ms, false) });
-            self.finished.push(done);
-            boards_changed = true;
-        }
-        if self.tick.is_multiple_of(16 * pace) {
-            self.move_train();
-            boards_changed = true;
+        if self.script.is_some() {
+            for done in self.play(now_ms) {
+                lanes.push(LiveLane { status: LaneStatus::Done, activity: None, spark: None, ..self.live_lane(&done, now_ms, false) });
+                self.finished.push(done);
+            }
+            boards_changed |= self.script_moved;
+        } else {
+            if self.tick.is_multiple_of(12 * pace)
+                && let Some(done) = self.finish_one(now_ms, &working)
+            {
+                lanes.push(LiveLane { status: LaneStatus::Done, activity: None, spark: None, ..self.live_lane(&done, now_ms, false) });
+                self.finished.push(done);
+                boards_changed = true;
+            }
+            if self.tick.is_multiple_of(16 * pace) {
+                self.move_train();
+                boards_changed = true;
+            }
         }
         let machines = (self.tick % 20 == 1).then(|| self.machines(now_ms));
         let frame = LiveFrame {
@@ -417,6 +510,205 @@ impl Feed {
     }
 }
 
+/// The fan-out script, in 250 ms ticks: (tick, what happens).
+enum Beat {
+    /// A writer finishes with its PR; two reviewers and a verifier start on it.
+    Write(&'static str, i64, [&'static str; 3]),
+    /// A reviewer or verifier finishes.
+    Check(&'static str, i64),
+    /// The PR moves along the train.
+    Pr(i64, ChangeState),
+}
+
+const SCRIPT: &[(u64, Beat)] = &[
+    (14, Beat::Write("T41", 221, ["T44", "T45", "T46"])),
+    (22, Beat::Write("T42", 222, ["T47", "T48", "T49"])),
+    (30, Beat::Write("T43", 223, ["T50", "T51", "T52"])),
+    (44, Beat::Check("T44", 221)),
+    (48, Beat::Check("T45", 221)),
+    (52, Beat::Check("T46", 221)),
+    (52, Beat::Pr(221, ChangeState::Ci)),
+    (56, Beat::Check("T47", 222)),
+    (59, Beat::Check("T48", 222)),
+    (62, Beat::Check("T49", 222)),
+    (62, Beat::Pr(222, ChangeState::Queued)),
+    (66, Beat::Pr(221, ChangeState::Merged)),
+    (66, Beat::Pr(222, ChangeState::Ci)),
+    (68, Beat::Check("T50", 223)),
+    (71, Beat::Check("T51", 223)),
+    (74, Beat::Check("T52", 223)),
+    (74, Beat::Pr(223, ChangeState::Queued)),
+    (80, Beat::Pr(222, ChangeState::Merged)),
+    (80, Beat::Pr(223, ChangeState::Ci)),
+    (92, Beat::Pr(223, ChangeState::Merged)),
+];
+
+impl Feed {
+    /// This tick's beats of the fan-out script; returns the lanes that finished.
+    fn play(&mut self, now_ms: i64) -> Vec<String> {
+        self.script_moved = false;
+        let mut done = Vec::new();
+        let tick = self.tick;
+        for (_, beat) in SCRIPT.iter().filter(|(at, _)| *at == tick) {
+            self.script_moved = true;
+            match beat {
+                Beat::Write(id, pr, next) => {
+                    self.end_lane(now_ms, id, Some(*pr));
+                    self.open_pr(now_ms, *pr);
+                    for (k, n) in next.iter().enumerate() {
+                        let (role, title) =
+                            if k < 2 { (AgentRole::Reviewer, format!("review #{pr}")) } else { (AgentRole::Verifier, format!("check #{pr}")) };
+                        self.start_lane(now_ms, n, role, &title);
+                    }
+                    done.push(id.to_string());
+                }
+                Beat::Check(id, pr) => {
+                    let reviewer = self.lane_role(id) == Some(AgentRole::Reviewer);
+                    self.end_lane(now_ms, id, None);
+                    if reviewer {
+                        self.pr_reviewed(*pr);
+                    }
+                    done.push(id.to_string());
+                }
+                Beat::Pr(pr, state) => self.pr_state(*pr, *state),
+            }
+        }
+        if self.script_moved {
+            self.settle_card();
+        }
+        done
+    }
+
+    fn card_mut<R>(&mut self, f: impl FnOnce(&mut fleetd_contracts::live::OrderCard) -> R) -> R {
+        edit(&mut self.boards[0].1.orders, |orders| f(&mut orders[0]))
+    }
+
+    fn lane_role(&self, id: &str) -> Option<AgentRole> {
+        self.boards[0].1.orders[0].lanes.iter().find(|l| l.lane_id.as_str() == id).map(|l| l.role)
+    }
+
+    fn end_lane(&mut self, now_ms: i64, id: &str, pr: Option<i64>) {
+        let at = Timestamp::from(fmt_iso(now_ms));
+        self.card_mut(|card| {
+            edit(&mut card.lanes, |lanes| {
+                if let Some(l) = lanes.iter_mut().find(|l| l.lane_id.as_str() == id) {
+                    l.status = LaneStatus::Done;
+                    l.ended_at = Some(at);
+                    l.pr = pr.map(|n| pr_ref(n, ChangeState::Reviewing, 0));
+                }
+            });
+            card.settled = fleetd_contracts::prim::Count::unchecked(card.settled.get() + 1);
+        });
+    }
+
+    fn start_lane(&mut self, now_ms: i64, id: &str, role: AgentRole, title: &str) {
+        let at = Timestamp::from(fmt_iso(now_ms));
+        self.card_mut(|card| {
+            edit(&mut card.lanes, |lanes| {
+                let mut l = lanes[0].clone();
+                l.lane_id = Text::unchecked(id);
+                l.task_id = Some(fleetd_contracts::tasks::TaskId::unchecked(id));
+                l.role = role;
+                l.title = Text::unchecked(title);
+                l.status = LaneStatus::Starting;
+                l.started_at = Some(at);
+                l.ended_at = None;
+                l.pr = None;
+                l.live = None;
+                lanes.push(l);
+            });
+            card.total = fleetd_contracts::prim::Count::unchecked(card.total.get() + 1);
+        });
+        let seed = self.rand(1000) as usize;
+        self.sims.insert(id.into(), Sim::fresh(seed, now_ms));
+    }
+
+    fn open_pr(&mut self, _now_ms: i64, number: i64) {
+        self.card_mut(|card| edit(&mut card.prs, |prs| prs.push(pr_ref(number, ChangeState::Reviewing, 0))));
+        edit(&mut self.boards[0].1.trains, |trains| {
+            edit(&mut trains[0].chips, |chips| {
+                let chip: PrChip = serde_json::from_value(serde_json::json!({
+                    "changeId": format!("X{number}"), "number": number, "url": format!("https://github.com/acme/storefront/pull/{number}"),
+                    "workstreamId": "W14", "state": "reviewing"
+                }))
+                .unwrap();
+                chips.push(chip);
+            })
+        });
+    }
+
+    fn pr_reviewed(&mut self, number: i64) {
+        self.card_mut(|card| {
+            edit(&mut card.prs, |prs| {
+                if let Some(p) = prs.iter_mut().find(|p| p.number.get() == number) {
+                    p.reviews_done = fleetd_contracts::prim::Count::unchecked((p.reviews_done.get() + 1).min(p.reviews_needed.get()));
+                    if p.reviews_done == p.reviews_needed {
+                        p.state = ChangeState::Ready;
+                    }
+                }
+            })
+        });
+        let ready = self.boards[0].1.orders[0].prs.iter().any(|p| p.number.get() == number && p.state == ChangeState::Ready);
+        if ready {
+            self.pr_state(number, ChangeState::Ready);
+        }
+    }
+
+    fn pr_state(&mut self, number: i64, state: ChangeState) {
+        self.card_mut(|card| {
+            edit(&mut card.prs, |prs| {
+                if let Some(p) = prs.iter_mut().find(|p| p.number.get() == number) {
+                    p.state = state;
+                }
+            })
+        });
+        edit(&mut self.boards[0].1.trains, |trains| {
+            let merged = state == ChangeState::Merged;
+            if merged {
+                trains[0].merged_today = fleetd_contracts::prim::Count::unchecked(trains[0].merged_today.get() + 1);
+            }
+            edit(&mut trains[0].chips, |chips| {
+                if let Some(c) = chips.iter_mut().find(|c| c.number.get() == number) {
+                    c.state = state;
+                }
+                // Train order: what is moving first, merged last.
+                chips.sort_by_key(|c| match c.state {
+                    ChangeState::Merged => 3,
+                    ChangeState::Ci | ChangeState::Merging => 0,
+                    ChangeState::Queued | ChangeState::Ready => 1,
+                    _ => 2,
+                });
+            })
+        });
+    }
+
+    /// The card's phase as the hub would derive it once its agents are done.
+    fn settle_card(&mut self) {
+        self.card_mut(|card| {
+            let active = card.lanes.iter().filter(|l| !matches!(l.status, LaneStatus::Done | LaneStatus::Failed | LaneStatus::Cancelled)).count();
+            let (phase, detail) = if active > 0 {
+                (OrderPhase::Working, format!("{active} working"))
+            } else {
+                match card.prs.iter().find(|p| p.state != ChangeState::Merged) {
+                    Some(p) => (OrderPhase::Merging, format!("#{} {}", p.number, if p.state == ChangeState::Ci { "in CI" } else { "queued" })),
+                    None => (OrderPhase::Done, format!("done · {} PRs", card.prs.len())),
+                }
+            };
+            card.phase = phase;
+            card.phase_detail = Some(Text::unchecked(detail));
+        });
+    }
+}
+
+fn pr_ref(number: i64, state: ChangeState, reviews_done: i64) -> PrRef {
+    serde_json::from_value(serde_json::json!({
+        "changeId": format!("X{number}"), "repo": "acme/storefront", "number": number,
+        "url": format!("https://github.com/acme/storefront/pull/{number}"), "state": state,
+        "reviewsDone": reviews_done, "reviewsNeeded": 2
+    }))
+    .unwrap()
+}
+
 fn move_train(train: &mut fleetd_contracts::live::TrainLive, number: i64) {
     {
         let mut chips = std::mem::take(&mut train.chips).into_inner();
@@ -458,6 +750,11 @@ impl Sim {
         let t31 = frame_fixture(FULL).lanes.iter().find(|l| l.lane_id.as_str() == "T31").and_then(|l| l.spark.clone()).expect("T31 spark");
         let samples = (0..SPARK_BUCKETS).map(|i| t31.samples[(seed + i) % t31.samples.len()]).collect();
         Self { act: seed, since: now_ms, input: 800 + seed as u64 * 3, output: 120 + seed as u64, bucket: 0, samples }
+    }
+
+    /// An agent that just started: no history yet, its spark ending at the bucket it started in.
+    fn fresh(seed: usize, now_ms: i64) -> Self {
+        Self { act: seed, since: now_ms, input: 400 + seed as u64, output: 20, bucket: 0, samples: VecDeque::from(vec![0; SPARK_BUCKETS]) }
     }
 }
 
@@ -527,8 +824,13 @@ impl BenchBoard {
         let hub_now = self.state.hub_now_ms(now);
         let stale = self.state.stale();
         let orders: Vec<_> = self.feed.boards.iter().flat_map(|(k, _)| self.state.orders(k).iter().map(|o| o.workstream_id.clone())).collect();
+        let staged = self.staged().map(|o| (o.workstream_id.clone(), parse_ms(o.created_at.as_str())));
         for w in orders {
             let lanes = self.state.lanes(&w);
+            let (density, since) = match &staged {
+                Some((s, since)) if *s == w => (Density::Stage, *since),
+                _ => (Density::Card, None),
+            };
             let entity = match self.lanes.iter().find(|(id, _)| id == &w) {
                 Some((_, e)) => e.clone(),
                 None => {
@@ -537,7 +839,10 @@ impl BenchBoard {
                     e
                 }
             };
-            entity.update(cx, |l, cx| l.set(lanes, hub_now, stale, cx));
+            entity.update(cx, |l, cx| {
+                l.set_density(density, since, cx);
+                l.set(lanes, hub_now, stale, cx)
+            });
         }
         if let Some((base, entity)) = &self.order {
             let w = base.order.workstream_id.clone();
@@ -565,6 +870,18 @@ impl BenchBoard {
         }
         self.items = items;
         cx.notify();
+    }
+
+    /// The one open order, when there is exactly one: it takes the stage.
+    fn staged(&self) -> Option<fleetd_contracts::live::OrderCard> {
+        let mut open = self
+            .feed
+            .boards
+            .iter()
+            .flat_map(|(k, _)| self.state.orders(k).iter())
+            .filter(|o| !matches!(o.phase, OrderPhase::Done | OrderPhase::Stopped));
+        let one = open.next()?.clone();
+        open.next().is_none().then_some(one)
     }
 
     fn show_order(&mut self, cx: &mut Context<Self>) {
@@ -620,7 +937,13 @@ impl BenchBoard {
         let Some(o) = orders.iter().find(|o| o.workstream_id == w) else { return div().into_any_element() };
         let lanes = self.lanes.iter().find(|(id, _)| id == &o.workstream_id).map(|(_, e)| e.clone());
         let age = parse_ms(o.created_at.as_str()).map(|c| format!("{}m", ((now - c) / 60_000).max(0))).unwrap_or_default();
-        let loud = o.needs_you.get() > 0;
+        let agents = self.state.lanes(&o.workstream_id);
+        let busy = agents_at_work(&agents);
+        let chip = match fleet_activity(&agents) {
+            doing if busy && o.phase == OrderPhase::Working && !doing.is_empty() => phase_chip(&t, OrderPhase::Working, Some(&doing)),
+            _ => phase_chip(&t, o.phase, o.phase_detail.as_deref()),
+        };
+        let next = o.next.as_ref().filter(|_| !busy);
         div()
             .w_full()
             .flex()
@@ -642,32 +965,24 @@ impl BenchBoard {
                             .text_color(t.quiet)
                             .child(o.workstream_id.to_string()),
                     )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .when(loud, |d| d.font_weight(STRONG))
-                            .child(o.title.to_string()),
-                    )
-                    .child(phase_chip(&t, o.phase, o.phase_detail.as_deref()))
+                    .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().font_weight(STRONG).child(o.title.to_string()))
+                    .child(chip)
                     .child(div().flex_1())
                     .child(div().text_size(px(size::XS)).text_color(t.quiet).child(age)),
             )
             .child(div().pl(px(48.)).children(lanes))
-            .when(!o.prs.is_empty() || o.next.is_some(), |d| {
+            .when(!o.prs.is_empty() || next.is_some(), |d| {
                 d.child(
                     div()
                         .pl(px(56.))
                         .h(px(LINE_H))
                         .flex()
                         .items_center()
-                        .gap_3()
+                        .gap_4()
                         .text_size(px(size::XS))
                         .text_color(t.quiet)
-                        .children(o.prs.iter().map(|p| pr_chip(&t, p)))
-                        .when_some(o.next.as_ref(), |d, n| d.child(SharedString::from(format!("next: {n}")))),
+                        .children(o.prs.iter().map(|p| pr_progress(&t, p)))
+                        .when_some(next, |d, n| d.child(SharedString::from(format!("next: {n}")))),
                 )
             })
             .into_any_element()
@@ -711,6 +1026,38 @@ impl Render for BenchBoard {
                 .child(self.train.clone())
                 .into_any_element();
         }
+        if let Some(card) = self.staged() {
+            let lanes = self.lanes.iter().find(|(id, _)| *id == card.workstream_id).map(|(_, e)| e.clone());
+            if let Some(lanes) = lanes {
+                let lead = lead_lane_id(&card.project_ref);
+                let lead = self.state.live_lane(lead.as_str()).map(lead_lane);
+                let agents = self.state.lanes(&card.workstream_id);
+                let lanes_h = lanes.read(cx).height();
+                let staged = stage(&t, Stage { card: &card, agents: &agents, lanes, lead, lead_state: None, lanes_h, on_open: None });
+                return div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .bg(t.bg)
+                    .text_color(t.text)
+                    .font_family(t.ui_font.clone())
+                    .text_size(px(size::MD))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .px_6()
+                            .py_6()
+                            .flex()
+                            .flex_col()
+                            .justify_center()
+                            .child(div().w_full().max_w(px(STAGE_W)).mx_auto().child(staged)),
+                    )
+                    .child(machine_strip(&t, self.state.machines(), self.state.slots()))
+                    .child(self.train.clone())
+                    .into_any_element();
+            }
+        }
         let board = list(self.list.clone(), cx.processor(|this, ix, _, cx| this.item(ix, cx))).size_full();
         div()
             .size_full()
@@ -736,12 +1083,16 @@ pub fn open_bench(options: WindowOptions, cx: &mut App) {
     // The bench measures motion, so it doesn't follow the host's setting unless asked.
     motion::set_pref(if reduced { MotionPref::Reduced } else { MotionPref::Full }, cx);
     let view = std::env::var("FLEETD_LIVE").unwrap_or_default();
-    let demo = matches!(view.as_str(), "demo" | "order");
+    let demo = matches!(view.as_str(), "demo" | "order" | "fanout");
     cx.open_window(options, move |window, cx| {
         crate::theme::init(window, cx);
         let now = local_ms();
         let orders = std::env::var("FLEETD_LIVE_ORDERS").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
-        let feed = if demo { Feed::demo(now) } else { Feed::bench(now, orders, 4) };
+        let feed = match view.as_str() {
+            "fanout" => Feed::fanout(now),
+            _ if demo => Feed::demo(now),
+            _ => Feed::bench(now, orders, 4),
+        };
         let board = cx.new(|cx| {
             // Startup stages and the watchdog, as for the shell's window.
             crate::bench::watch_window(window, cx);

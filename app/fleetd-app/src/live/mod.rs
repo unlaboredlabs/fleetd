@@ -8,5 +8,6 @@ pub mod fixture;
 pub mod lanes;
 pub mod motion;
 pub mod spark;
+pub mod stage;
 pub mod state;
 pub mod strips;

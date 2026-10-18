@@ -1,7 +1,10 @@
-//! One row per agent of an order: role, model, what it is doing now, elapsed, a sparkline of the last minute
-//! and its tokens. `Density::Card` is the board (one line per lane, at most 4 rows, finished lanes hold 8 s
-//! then leave); `Density::Full` is the order view (two or three lines per lane, a status header, finished
-//! lanes folded into "done (n)" as short reports).
+//! One row per agent of an order: role, model, what it is doing now, elapsed, a sparkline of its work and its
+//! tokens, with the role's tint on the row's edge, its tag and its sparkline. Every agent gets a row: lists
+//! tighten when they are long and scroll past [`MAX_ROWS`]. `Density::Card` is a board card (one line per lane,
+//! finished lanes hold 8 s with a check, then leave); `Density::Stage` is the one active order given the whole
+//! board (larger rows under a line that counts what the fleet is doing, finished lanes as on a card);
+//! `Density::Full` is the order view (two or three lines per lane, a status header, finished lanes folded into
+//! "done (n)" as short reports).
 //!
 //! Rows enter and leave with `motion::enter_sized`/`exit_sized`, driven by a [`Presence`] diff of what the
 //! hub sent, so a row moves only when a lane arrived or went. The elapsed labels are the only thing that
@@ -22,16 +25,17 @@ use gpui::{
 };
 
 use super::activity::{self, describe};
-use super::chips::{pr_chip, role_tag};
+use super::chips::{check, pr_chip, role_tag, role_tint};
 use super::motion::{self, Presence, dur};
 use super::spark::sparkline;
-use super::state::{fleet_summary, fmt_elapsed, fmt_tokens, is_final, is_running, parse_ms};
+use super::state::{fleet_activity, fleet_summary, fmt_elapsed, fmt_tokens, is_final, is_running, parse_ms};
 use crate::theme::{STRONG, Theme, metric, radius, size, theme};
 use crate::ui;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Density {
     Card,
+    Stage,
     Full,
 }
 
@@ -43,14 +47,43 @@ pub enum LaneEvent {
     Told(ThreadRef, String),
 }
 
-/// Rows a card shows; past this the last row says "+N more agents".
-const CARD_ROWS: usize = 4;
+/// Rows shown before the list scrolls.
+pub const MAX_ROWS: usize = 12;
+/// Past this many rows a list takes its compact row height.
+const COMPACT_AFTER: usize = 6;
 pub const LANE_ROW_H: f32 = 24.;
-const SPARK_W: f32 = 48.;
-const SPARK_H: f32 = 12.;
-const MODEL_W: f32 = 72.;
+/// The stage's header line: what the fleet is doing, and for how long.
+const STAGE_HEAD_H: f32 = 32.;
+const MODEL_W: f32 = 56.;
+/// The status mark's column: a check, a dot, or nothing while the agent works.
+const MARK_W: f32 = 9.;
+/// A stage row taller than this has two lines.
+const TWO_LINE_H: f32 = 40.;
+/// The task title's column on a one-line stage row.
+const STAGE_TITLE_W: f32 = 150.;
 const CLOCK_W: f32 = 44.;
 const TOKENS_W: f32 = 40.;
+
+/// Row geometry per density, with `rows` rows listed.
+struct Geom {
+    row_h: f32,
+    spark_w: f32,
+    spark_h: f32,
+    /// The activity line's word size.
+    words: f32,
+    edge: f32,
+}
+
+fn geom(density: Density, rows: usize) -> Geom {
+    let compact = rows > COMPACT_AFTER;
+    match density {
+        Density::Stage => {
+            Geom { row_h: if compact { 30. } else { 54. }, spark_w: 120., spark_h: if compact { 16. } else { 20. }, words: size::MD, edge: 3. }
+        }
+        Density::Card => Geom { row_h: if compact { 22. } else { LANE_ROW_H }, spark_w: 72., spark_h: 14., words: size::XS, edge: 2. },
+        Density::Full => Geom { row_h: LANE_ROW_H, spark_w: 72., spark_h: 14., words: size::XS, edge: 2. },
+    }
+}
 
 struct Gone {
     lane: AgentLane,
@@ -74,6 +107,8 @@ pub struct FleetLanes {
     skew_ms: i64,
     stale: bool,
     done_open: bool,
+    /// The stage's order: when it started, for the header's clock.
+    started_ms: Option<i64>,
     drawn_at: Instant,
     wake: Option<Task<()>>,
 }
@@ -94,6 +129,7 @@ impl FleetLanes {
             skew_ms: 0,
             stale: false,
             done_open: false,
+            started_ms: None,
             drawn_at: Instant::now(),
             wake: None,
         }
@@ -101,6 +137,19 @@ impl FleetLanes {
 
     pub fn workstream(&self) -> &WorkstreamId {
         &self.workstream
+    }
+
+    /// The stage's density follows the board: a lone active order takes the stage, then gives it back.
+    pub fn set_density(&mut self, density: Density, started_ms: Option<i64>, cx: &mut Context<Self>) {
+        if self.density == density && self.started_ms == started_ms {
+            return;
+        }
+        self.density = density;
+        self.started_ms = started_ms;
+        if self.has_clock() {
+            Ticker::join(cx.entity().downgrade(), cx);
+        }
+        cx.notify();
     }
 
     pub fn set(&mut self, lanes: Vec<AgentLane>, hub_now_ms: i64, stale: bool, cx: &mut Context<Self>) {
@@ -118,7 +167,7 @@ impl FleetLanes {
             let lane = self.lanes[index].clone();
             // A lane the board saw finish stays for the rest of its hold; anything else leaves now.
             let exit_at = match self.ended.get(&id) {
-                Some(&at) if self.density == Density::Card => (at + dur::DONE_HOLD).max(now),
+                Some(&at) if self.holds_done() => (at + dur::DONE_HOLD).max(now),
                 _ => now,
             };
             self.gone.push(Gone { lane, index, exit_at });
@@ -151,17 +200,23 @@ impl FleetLanes {
         cx.notify();
     }
 
+    /// A card and the stage show a finished lane with its check for a while, then let it go.
+    fn holds_done(&self) -> bool {
+        self.density != Density::Full
+    }
+
     /// The order view lists active lanes and folds finished ones; a card lists everything it was given.
     fn listed(&self, lane: &AgentLane) -> bool {
-        self.density == Density::Card || !is_final(lane.status)
+        self.holds_done() || !is_final(lane.status)
     }
 
     fn has_clock(&self) -> bool {
-        self.lanes.iter().any(|l| is_running(l.status) && l.started_at.is_some() && l.ended_at.is_none())
+        let stage = self.density == Density::Stage && self.started_ms.is_some();
+        stage || self.lanes.iter().any(|l| is_running(l.status) && l.started_at.is_some() && l.ended_at.is_none())
     }
 
     fn exit_start(&self, lane: &AgentLane) -> Option<Instant> {
-        if self.density != Density::Card {
+        if !self.holds_done() {
             return None;
         }
         self.ended.get(lane.lane_id.as_str()).map(|&at| at + dur::DONE_HOLD)
@@ -216,18 +271,18 @@ impl FleetLanes {
     pub fn height(&self) -> f32 {
         let rows = self.rows(Instant::now());
         let mut h = 0.;
-        if self.density == Density::Full {
-            h += metric::ROW;
-            if self.lanes.is_empty() {
-                return h + metric::LINE;
+        match self.density {
+            Density::Full => {
+                h += metric::ROW;
+                if self.lanes.is_empty() {
+                    return h + metric::LINE;
+                }
             }
+            Density::Stage => h += STAGE_HEAD_H,
+            Density::Card => {}
         }
-        let overflow = self.density == Density::Card && rows.len() > CARD_ROWS;
-        let shown = if overflow { CARD_ROWS - 1 } else { rows.len() };
-        h += rows.iter().take(shown).map(|(l, _)| self.row_height(l)).sum::<f32>();
-        if overflow {
-            h += LANE_ROW_H;
-        }
+        let g = geom(self.density, rows.len());
+        h += rows.iter().take(MAX_ROWS).map(|(l, _)| self.row_height(l, &g)).sum::<f32>();
         if self.density == Density::Full {
             let done = self.lanes.iter().filter(|l| is_final(l.status)).count();
             if done > 0 {
@@ -237,9 +292,9 @@ impl FleetLanes {
         h
     }
 
-    fn row_height(&self, lane: &AgentLane) -> f32 {
+    fn row_height(&self, lane: &AgentLane, g: &Geom) -> f32 {
         match self.density {
-            Density::Card => LANE_ROW_H,
+            Density::Card | Density::Stage => g.row_h,
             Density::Full => {
                 let third = lane.branch.is_some() || lane.pr.is_some();
                 LANE_ROW_H + metric::LINE + if third { metric::LINE } else { 0. } + 6.
@@ -247,74 +302,138 @@ impl FleetLanes {
         }
     }
 
-    fn row(&self, t: &Theme, lane: &AgentLane, cx: &mut Context<Self>) -> Div {
+    fn row(&self, t: &Theme, lane: &AgentLane, g: &Geom, cx: &mut Context<Self>) -> Div {
         let id = lane.lane_id.to_string();
         let open = lane.lane_id.clone();
         let hover = t.hover;
         let said = describe(lane);
-        let line = || activity::render(t, &said, self.stale);
         let live = lane.live.as_ref();
         let running = !is_final(lane.status) && lane.status != LaneStatus::Queued;
-        let clock = lane.started_at.as_ref().and_then(|s| parse_ms(s.as_str())).filter(|_| lane.status != LaneStatus::Queued).map(|start| {
-            let end = lane.ended_at.as_ref().and_then(|e| parse_ms(e.as_str())).unwrap_or_else(|| self.hub_now());
+        let working = matches!(lane.status, LaneStatus::Working | LaneStatus::Starting);
+        let stage = self.density == Density::Stage;
+        let line = || activity::render_at(t, &said, self.stale, g.words, working);
+        let tint = role_tint(t, lane.role);
+        let now = self.hub_now();
+        let started = lane.started_at.as_ref().and_then(|s| parse_ms(s.as_str())).filter(|_| lane.status != LaneStatus::Queued);
+        let clock = started.map(|start| {
+            let end = lane.ended_at.as_ref().and_then(|e| parse_ms(e.as_str())).unwrap_or(now);
             fmt_elapsed(end - start)
         });
+        // How long the current step has run: the line ticks while a command or the model takes its time.
+        let step = (stage && working)
+            .then(|| live.and_then(|l| l.activity.as_ref()).and_then(|a| parse_ms(a.since.as_str())))
+            .flatten()
+            .map(|since| now - since)
+            .filter(|ms| *ms >= 2000)
+            .map(fmt_elapsed);
         let tokens = live.and_then(|l| l.tokens.as_ref()).map(|tk| fmt_tokens(tk.input + tk.output));
-        let mono = |s: String, w: f32| {
-            div().w(px(w)).flex_none().flex().justify_end().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(s)
+        let mono = |s: String, w: f32, color: Hsla| {
+            div().w(px(w)).flex_none().flex().justify_end().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(color).child(s)
         };
         let figures = div()
             .flex()
             .flex_none()
             .items_center()
             .gap_3()
-            .child(mono(clock.unwrap_or_default(), CLOCK_W))
+            .child(mono(clock.unwrap_or_default(), CLOCK_W, if working { t.text } else { t.quiet }))
             .child(if running {
-                sparkline(t, live.and_then(|l| l.spark.as_ref()), px(SPARK_W), px(SPARK_H))
+                sparkline(live.and_then(|l| l.spark.as_ref()), started, tint, px(g.spark_w), px(g.spark_h))
             } else {
-                div().w(px(SPARK_W)).flex_none().into_any_element()
+                div().w(px(g.spark_w)).flex_none().into_any_element()
             })
-            .child(mono(tokens.unwrap_or_default(), TOKENS_W));
+            .child(mono(tokens.unwrap_or_default(), TOKENS_W, t.quiet));
         let model = match (self.density, lane.model.as_deref().map(short_model), lane.effort) {
             (Density::Full, Some(m), Some(e)) => format!("{m} · {}", effort_word(e)),
             (_, Some(m), _) => m.to_string(),
             _ => String::new(),
         };
+        let one_line = self.density != Density::Full;
+        // The stage, while it has room, gives each agent two lines: what it is for, then what it is doing now.
+        let two_line = stage && g.row_h > TWO_LINE_H;
+        let doing = || {
+            let step_el =
+                step.clone().map(|s| div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(s));
+            div().flex_1().min_w_0().flex().items_center().gap_2().child(line()).children(step_el)
+        };
+        let title = |w: Option<f32>, text_size: f32, color: Hsla| {
+            div()
+                .when_some(w, |d, w| d.w(px(w)).flex_none())
+                .when(w.is_none(), |d| d.flex_1())
+                .min_w_0()
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap()
+                .text_size(px(text_size))
+                .text_color(color)
+                .child(lane.title.to_string())
+        };
+        let model_el = div()
+            .w(px(if self.density == Density::Full { 72. } else { MODEL_W }))
+            .flex_none()
+            .overflow_hidden()
+            .text_ellipsis()
+            .whitespace_nowrap()
+            .text_size(px(size::XS))
+            .text_color(t.quiet)
+            .child(model);
         let head = div()
-            .h(px(LANE_ROW_H))
+            .h(px(if two_line {
+                28.
+            } else if one_line {
+                g.row_h
+            } else {
+                LANE_ROW_H
+            }))
             .flex()
             .items_center()
             .gap_2()
-            .child(self.status_dot(t, lane))
-            .child(role_tag(t, lane.role))
+            .child(self.status_mark(t, lane))
+            .child(role_tag(t, lane.role, if stage { size::SM } else { size::XS }))
             .when(self.density == Density::Full, |d| {
                 d.when_some(lane.task_id.as_ref(), |d, task| {
                     d.child(div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(task.to_string()))
                 })
             })
-            .child(
-                div()
-                    .w(px(MODEL_W))
-                    .flex_none()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .text_size(px(size::XS))
-                    .text_color(t.quiet)
-                    .child(model),
-            )
-            .child(if self.density == Density::Card { line().flex_1() } else { div().flex_1() })
+            .map(|d| {
+                if two_line {
+                    d.child(title(None, size::MD, if working { t.text } else { t.quiet })).child(model_el)
+                } else if stage {
+                    d.child(title(Some(STAGE_TITLE_W), size::SM, t.quiet)).child(doing())
+                } else if one_line {
+                    d.child(model_el).child(doing())
+                } else {
+                    d.child(model_el).child(div().flex_1())
+                }
+            })
             .child(figures);
+        let head = if two_line {
+            // The second line starts under the title: past the mark, the role and their gaps.
+            div().child(head).child(div().h(px(20.)).pl(px(MARK_W + 8. + super::chips::ROLE_W + 8.)).flex().items_center().child(doing()))
+        } else {
+            head
+        };
+        // The role's edge: solid while the agent works, faint once it is done or before it starts.
+        let edge = div()
+            .absolute()
+            .left_0()
+            .top(px(if one_line { g.row_h * 0.2 } else { 5. }))
+            .bottom(px(if one_line { g.row_h * 0.2 } else { 5. }))
+            .w(px(g.edge))
+            .rounded(px(g.edge))
+            .bg(if working || lane.status == LaneStatus::Waiting { tint } else { tint.opacity(0.35) });
         let body = div()
             .id(SharedString::from(format!("lane-{id}")))
+            .relative()
             .w_full()
-            .px_2()
+            .pl(px(g.edge + 8.))
+            .pr_2()
             .rounded(px(radius::SM))
             .cursor_pointer()
             .hover(move |s| s.bg(hover))
             .on_click(cx.listener(move |_, _, _, cx| cx.emit(LaneEvent::Open(open.clone()))))
+            .child(edge)
             .child(head);
-        if self.density == Density::Card {
+        if one_line {
             return div().child(body);
         }
         let branch = lane.branch.as_ref().map(|b| b.to_string());
@@ -361,20 +480,27 @@ impl FleetLanes {
         div().pb(px(6.)).child(body.child(second).children(third))
     }
 
-    /// The lane's status dot; a status change crossfades its colour over 120 ms.
-    fn status_dot(&self, t: &Theme, lane: &AgentLane) -> AnyElement {
+    /// The lane's status mark: a check once it is done; nothing while it works (its edge says so); else a dot in
+    /// the status's colour. A status change crossfades the colour over 120 ms.
+    fn status_mark(&self, t: &Theme, lane: &AgentLane) -> AnyElement {
+        match lane.status {
+            LaneStatus::Done => return check(t.success, MARK_W).into_any_element(),
+            LaneStatus::Working | LaneStatus::Starting => return div().flex_none().w(px(MARK_W)).into_any_element(),
+            _ => {}
+        }
         let id = lane.lane_id.to_string();
         let to = status_color(t, lane.status);
-        let Some(&before) = self.was.get(&id) else { return ui::dot(to).into_any_element() };
+        // Every mark takes the check's width, so the role column lines up whatever the status.
+        let slot = || div().flex_none().w(px(MARK_W)).flex().justify_center();
+        let Some(&before) = self.was.get(&id) else { return slot().child(ui::dot(to)).into_any_element() };
         let from = status_color(t, before);
         // The animator rebuilds the dot at the blended colour; a dot has no state to keep.
-        div()
-            .flex_none()
+        slot()
             .child(ui::dot(to))
             .with_animation(
                 SharedString::from(format!("st-{id}-{:?}", lane.status)),
                 Animation::new(dur::MICRO).with_easing(ease_out_quint()),
-                move |_, p| div().flex_none().child(ui::dot(mix(from, to, p))),
+                move |_, p| div().flex_none().w(px(MARK_W)).flex().justify_center().child(ui::dot(mix(from, to, p))),
             )
             .into_any_element()
     }
@@ -390,6 +516,30 @@ impl FleetLanes {
             .child(div().font_weight(STRONG).text_color(t.quiet).child("Fleet"))
             .child(div().text_color(t.quiet).child(fleet_summary(&self.lanes)))
             .when(self.stale, |d| d.child(div().text_color(t.quiet).italic().child("live feed reconnecting")))
+    }
+
+    /// What the fleet is doing, counted from its lanes, and how long the order has run.
+    fn stage_header(&self, t: &Theme) -> Div {
+        let doing = fleet_activity(&self.lanes);
+        let clock = self.started_ms.map(|s| fmt_elapsed(self.hub_now() - s));
+        div()
+            .h(px(STAGE_HEAD_H))
+            .px_2()
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_color(if doing.is_empty() { t.quiet } else { t.text })
+                    .child(if doing.is_empty() { "No agent at work right now".to_string() } else { doing }),
+            )
+            .when(self.stale, |d| d.child(div().text_size(px(size::XS)).text_color(t.quiet).italic().child("live feed reconnecting")))
+            .when_some(clock, |d, c| d.child(div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(c)))
     }
 
     fn done_fold(&self, t: &Theme, cx: &mut Context<Self>) -> Option<Div> {
@@ -427,8 +577,8 @@ impl FleetLanes {
                 .whitespace_nowrap()
                 .text_size(px(size::XS))
                 .text_color(if l.status == LaneStatus::Failed { t.danger } else { t.quiet })
-                .child(ui::dot(status_color(t, l.status)))
-                .child(role_tag(t, l.role))
+                .child(if l.status == LaneStatus::Done { check(t.success, 9.) } else { ui::dot(status_color(t, l.status)) })
+                .child(role_tag(t, l.role, size::XS))
                 .when_some(l.task_id.as_ref(), |d, task| {
                     d.child(div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).child(task.to_string()))
                 })
@@ -452,37 +602,27 @@ impl Render for FleetLanes {
                 );
             }
         }
-        let overflow = self.density == Density::Card && rows.len() > CARD_ROWS;
-        let shown = if overflow { CARD_ROWS - 1 } else { rows.len() };
-        for (lane, leaving) in rows.iter().take(shown) {
+        if self.density == Density::Stage {
+            list = list.child(self.stage_header(&t));
+        }
+        let g = geom(self.density, rows.len());
+        let mut body = div().flex().flex_col().w_full();
+        for (lane, leaving) in &rows {
             let id = lane.lane_id.to_string();
-            let h = px(self.row_height(lane));
-            let row = self.row(&t, lane, cx);
-            list = list.child(match leaving {
+            let h = px(self.row_height(lane, &g));
+            let row = self.row(&t, lane, &g, cx);
+            body = body.child(match leaving {
                 Some(start) => motion::exit_sized(SharedString::from(format!("out-{id}-{start:?}")), row, h),
                 None if self.arrived.contains(&id) => motion::enter_sized(SharedString::from(format!("in-{id}")), row, h),
                 None => row.into_any_element(),
             });
         }
-        if overflow {
-            let first_hidden = rows[shown].0.lane_id.clone();
-            let hover = t.hover;
-            list = list.child(
-                div()
-                    .id("more-lanes")
-                    .h(px(LANE_ROW_H))
-                    .px_2()
-                    .flex()
-                    .items_center()
-                    .rounded(px(radius::SM))
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(hover))
-                    .text_size(px(size::XS))
-                    .text_color(t.quiet)
-                    .child(format!("+{} more agents", rows.len() - shown))
-                    .on_click(cx.listener(move |_, _, _, cx| cx.emit(LaneEvent::Open(first_hidden.clone())))),
-            );
-        }
+        list = if rows.len() > MAX_ROWS {
+            let h: f32 = rows.iter().take(MAX_ROWS).map(|(l, _)| self.row_height(l, &g)).sum();
+            list.child(div().id("lanes-scroll").h(px(h)).flex_none().overflow_y_scroll().child(body))
+        } else {
+            list.child(body)
+        };
         if self.density == Density::Full {
             list = list.children(self.done_fold(&t, cx));
         }
