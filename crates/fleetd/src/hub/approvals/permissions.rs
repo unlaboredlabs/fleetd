@@ -316,7 +316,7 @@ fn refused_by_node(e: NodeCommandError, machine_id: &str) -> ApprovalRefused {
             "Read the thread with thread_tail: the prompt may be answered or its run ended.".into(),
         ),
         _ => (
-            "t3_error",
+            "failed",
             "Retry; if it keeps failing, check the machine with fleetd_status.".into(),
         ),
     };
