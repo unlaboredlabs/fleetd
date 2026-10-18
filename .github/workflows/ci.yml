@@ -12,14 +12,13 @@ concurrency:
 permissions:
   contents: read
 
-# Linux jobs run on Blacksmith, except for pull requests from forks, which fall back to GitHub-hosted runners so a
-# stranger's PR never spends Blacksmith minutes (forks also need a maintainer's approval to run at all).
-# macOS stays on GitHub-hosted macos-latest, which is free for public repos.
+# Everything runs on GitHub-hosted runners, which are free for public repos. Rust caches are saved from main only:
+# the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
 
 jobs:
   rust-crates:
     # The root Cargo workspace minus the GPUI app and its bench, which `rust` below builds on Linux and macOS.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -27,6 +26,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --exclude fleetd-app --exclude fleetd-bench --all-targets -- -D warnings
       - run: cargo test --locked --workspace --exclude fleetd-app --exclude fleetd-bench
@@ -53,7 +54,7 @@ jobs:
     # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
     # landing page for a browser and install.sh for curl; and every link on the site resolves.
     needs: rust-crates
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -71,7 +72,7 @@ jobs:
   site-external-links:
     # Every external link on fleetd.sh and its docs answers (10 s a try, two tries). Links into this repo on GitHub
     # are checked against the checkout by the site job instead.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -84,22 +85,44 @@ jobs:
     strategy:
       matrix:
         os: [linux, macos]
-    runs-on: ${{ matrix.os == 'macos' && 'macos-latest' || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest') }}
+    runs-on: ${{ matrix.os == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
     # gpui is ~600 crates; the first uncached build takes a while.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Scope
+        # The macOS leg only builds fleetd-app, fleetd-bench and fleetd-contracts, so it does the work only when
+        # those, the dependency set or this workflow changed; otherwise it reports success at once, because
+        # `rust (macos)` is a required check. HEAD^1 is the base for a PR's merge commit and the previous main for a
+        # (squash-merged) push. crates/fleetd's macOS code is cross-built and checked by darwin-deps and the nightly.
+        id: scope
+        run: |
+          run=true
+          if [ "$RUNNER_OS" = macOS ] && git rev-parse -q --verify HEAD^1 >/dev/null &&
+            git diff --quiet HEAD^1 HEAD -- app crates/fleetd-contracts Cargo.toml Cargo.lock .github/workflows/ci.yml; then
+            run=false
+            echo "Nothing macOS-relevant changed; the Linux leg covers this."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
       # The seal interop test opens what Rust seals with libsodium (tests/lab's libsodium-wrappers).
-      - uses: actions/setup-node@v7
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: tests/lab/package-lock.json
-      - run: npm ci --prefix tests/lab --no-audit --no-fund
-      - uses: dtolnay/rust-toolchain@stable
+      - if: steps.scope.outputs.run == 'true'
+        run: npm ci --prefix tests/lab --no-audit --no-fund
+      - if: steps.scope.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - if: steps.scope.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: GPUI build deps (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -108,25 +131,28 @@ jobs:
             libxcb1-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev libwayland-dev libvulkan-dev
       - name: Use Command Line Tools only (macOS)
         # Proves the app builds without full Xcode: gpui's runtime_shaders feature skips `xcrun metal`.
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.scope.outputs.run == 'true'
         run: |
           sudo xcode-select --switch /Library/Developer/CommandLineTools
           xcode-select -p
           if xcrun --find metal 2>/dev/null; then echo "metal compiler unexpectedly present"; fi
-      - run: cargo clippy --locked -p fleetd-app -p fleetd-bench --all-targets -- -D warnings
-      - run: cargo test --locked -p fleetd-app -p fleetd-bench
+      - if: steps.scope.outputs.run == 'true'
+        run: cargo clippy --locked -p fleetd-app -p fleetd-bench --all-targets -- -D warnings
+      - if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p fleetd-app -p fleetd-bench
         env:
           FLEETD_REQUIRE_NODE_SEAL: "1"
-      - run: cargo build --locked -p fleetd-app
+      - if: steps.scope.outputs.run == 'true'
+        run: cargo build --locked -p fleetd-app
       - name: App bundle (macOS)
         # Notifications on macOS need the app bundle; this proves the script makes a valid, signed one.
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.scope.outputs.run == 'true'
         run: app/packaging/macos-bundle.sh target/debug/fleetd-app && codesign --verify target/debug/fleetd.app
 
   darwin-deps:
     # The release cross-builds the darwin fleetd binaries on Linux, which breaks on any crate that links a macOS
     # framework. Catch one here, before it lands on main.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
