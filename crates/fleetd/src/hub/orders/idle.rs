@@ -1,4 +1,5 @@
-//! A safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
+//! Order lifecycle follow-ups the hub runs off the event log. When an order is done, its leftover PRs and tasks
+//! are closed (`on_done`). And a safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
 //! no PR in the train, no open ask and no wake coming. Nothing would ever wake it again, so the hub wakes it once per
 //! order with a plain line. Bounded: a second idle turn on the same order gets no second nudge.
 use std::collections::HashSet;
@@ -127,7 +128,10 @@ pub async fn run(hub: Arc<Hub>) {
             .events
             .wait(WaitInput {
                 cursor: Some(cursor),
-                types: Some(vec![HubEventType::ThreadCompleted]),
+                types: Some(vec![
+                    HubEventType::ThreadCompleted,
+                    HubEventType::WorkstreamDone,
+                ]),
                 machine_id: None,
                 timeout_sec: 3600,
             })
@@ -142,6 +146,10 @@ pub async fn run(hub: Arc<Hub>) {
         };
         cursor = page.cursor;
         for event in page.events {
+            if event.r#type == HubEventType::WorkstreamDone {
+                on_done(&hub, &event).await;
+                continue;
+            }
             let (Some(machine_id), Some(project_id), Some(thread_id)) =
                 (event.machine_id, event.project_id, event.thread_id)
             else {
@@ -191,6 +199,44 @@ pub async fn run(hub: Arc<Hub>) {
                 );
                 nudged.lock().unwrap().insert(id);
             }
+        }
+    }
+}
+
+/// An order is done when its done-when passed (the design's rule), so what it left running is closed: PRs not on
+/// their way in leave the train and close on GitHub with a note, and its live tasks are cancelled.
+async fn on_done(hub: &Hub, event: &fleetd_contracts::events::HubEvent) {
+    let Some(id) = event
+        .data
+        .as_ref()
+        .and_then(|d| d.get("workstreamId"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| WorkstreamId::new(s).ok())
+    else {
+        return;
+    };
+    let Some(w) = hub.leads.records.workstream_get(&id).ok().flatten() else {
+        return;
+    };
+    let r = w.workstream.project_ref;
+    let why = format!("{id} is done: its done-when checks passed without this PR");
+    for change in hub.train.close_leftovers(&r, &id, &why).await {
+        tracing::info!(change = %change.change_id, pr = %change.pr_url, "order done: closed its leftover PR");
+    }
+    let caller = crate::hub::tasks::TaskCaller {
+        project_ref: r.clone(),
+        by: "hub".into(),
+    };
+    for task in super::order_tasks(hub, &id) {
+        if matches!(
+            task.state,
+            TaskState::Queued | TaskState::Running | TaskState::Idle
+        ) && let Err(error) = hub
+            .tasks
+            .cancel(&caller, &task.task_id, Some(&format!("Cancelled: {why}.")))
+            .await
+        {
+            tracing::warn!(task = %task.task_id, ?error, "order done: task not cancelled");
         }
     }
 }
