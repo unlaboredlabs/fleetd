@@ -284,13 +284,19 @@ async fn run_link_once(
 
     {
         let tx = tx.clone();
+        let sessions = shared.node_sessions.clone();
         tasks.spawn(async move {
             loop {
                 tokio::time::sleep(HEARTBEAT_EVERY).await;
+                let limits = sessions.login_limits();
+                let load = tokio::task::spawn_blocking(move || super::load::read(limits))
+                    .await
+                    .ok()
+                    .flatten();
                 if tx
                     .send(to_json(&NodeToHub::Heartbeat(Heartbeat {
                         at: Timestamp::from(now_iso()),
-                        load: None,
+                        load,
                     })))
                     .is_err()
                 {

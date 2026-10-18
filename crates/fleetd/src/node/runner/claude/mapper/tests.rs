@@ -234,10 +234,19 @@ fn two_turns_in_one_process() {
             cost_usd: Some(cost),
         })
     };
-    let turn = |run: &str, message: &str, text: &str, usage| {
+    let turn = |run: &str, message: &str, text: &str, usage: Option<RunUsage>| {
+        // The streamed usage (message_start, then message_delta) is the result's, without claude's cost estimate.
+        let live = RunnerEvent::Usage {
+            run_id: run.into(),
+            usage: RunUsage {
+                cost_usd: None,
+                ..usage.clone().unwrap()
+            },
+        };
         vec![
             RunnerEvent::RunStarted { run_id: run.into() },
             init.clone(),
+            live.clone(),
             RunnerEvent::Delta {
                 message_id: message.into(),
                 append: text.into(),
@@ -246,6 +255,7 @@ fn two_turns_in_one_process() {
                 message_id: message.into(),
                 text: text.into(),
             },
+            live,
             RunnerEvent::RunEnded {
                 run_id: run.into(),
                 outcome: RunOutcome::Completed { text: text.into() },
@@ -779,4 +789,49 @@ fn summarized_thinking_becomes_a_finished_item_and_never_the_reply() {
         if tool_name == "Thinking" && o.ends_with("keeps the history linear."))
     );
     assert_eq!(text, "Rebased.");
+}
+
+#[test]
+fn streamed_usage_adds_up_over_the_run_s_messages() {
+    let mut mapper = StreamMapper::new("s", recorder());
+    let stream =
+        |event: Value| line(json!({"type":"stream_event","event":event,"parent_tool_use_id":null}));
+    // Usage before any run started is not reported.
+    let early = mapper.feed(
+        stream(json!({"type":"message_start","message":{"id":"m0","usage":{"input_tokens":1}}})),
+        &now(),
+    );
+    assert!(early.events.is_empty());
+    mapper.feed(
+        line(json!({"type":"command_lifecycle","command_uuid":"r1","state":"started"})),
+        &now(),
+    );
+    let mut totals = Vec::new();
+    for event in [
+        json!({"type":"message_start","message":{"id":"m1","usage":{"input_tokens":100,"cache_read_input_tokens":40,"output_tokens":1}}}),
+        json!({"type":"message_delta","usage":{"output_tokens":30}}),
+        json!({"type":"message_start","message":{"id":"m2","usage":{"input_tokens":20,"output_tokens":1}}}),
+        json!({"type":"message_delta","usage":{"output_tokens":7}}),
+    ] {
+        for e in mapper.feed(stream(event), &now()).events {
+            if let RunnerEvent::Usage { run_id, usage } = e {
+                totals.push((
+                    run_id,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cache_read_input_tokens,
+                ));
+            }
+        }
+    }
+    let r = || "r1".to_owned();
+    assert_eq!(
+        totals,
+        vec![
+            (r(), 100, 1, 40),
+            (r(), 100, 30, 40),
+            (r(), 120, 31, 40),
+            (r(), 120, 37, 40)
+        ]
+    );
 }

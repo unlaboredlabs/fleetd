@@ -143,6 +143,11 @@ pub enum RunnerEvent {
     /// `system/status` compacting / null.
     Compacting(bool),
     RateLimit(RateLimit),
+    /// The active run's usage so far, cumulative, from claude's streamed `message_start` / `message_delta`.
+    Usage {
+        run_id: String,
+        usage: RunUsage,
+    },
     /// The run's `result` (or the process ended without one).
     RunEnded {
         run_id: String,

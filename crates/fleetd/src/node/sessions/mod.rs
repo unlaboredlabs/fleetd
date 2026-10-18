@@ -6,6 +6,7 @@
 //! on start, runs that were active are closed as interrupted (the hub's watchdog decides whether to continue them)
 //! and the next `send` resumes the claude session in the same cwd and config dir. Idle processes are reaped and
 //! respawned on demand. Permission prompts are answered from policy or held as a pending approval for the hub.
+pub mod files;
 mod health;
 mod proc;
 pub mod state;
@@ -24,10 +25,11 @@ use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame, MessageRole,
-    PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo, RunStatus, RunnerInfo,
-    SendAccepted, SessionCall, SessionCallFrame, SessionChanges, SessionError, SessionErrorCode,
-    SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult, SessionStatus, SessionSummary,
-    SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot,
+    PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo, RunStatus, RunUsage,
+    RunnerInfo, SendAccepted, SessionCall, SessionCallFrame, SessionChanges, SessionError,
+    SessionErrorCode, SessionLaunch, SessionOutput, SessionReplyFrame, SessionResult,
+    SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
+    ThreadMessage, ThreadSnapshot,
 };
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
@@ -51,6 +53,10 @@ const MCP_CONFIG: &str = "{\"mcpServers\":{}}\n";
 const SNAPSHOT_WINDOW: usize = 200;
 const TRANSCRIPT_CAP: u64 = 20 * 1024 * 1024;
 const DELTA_EVERY: Duration = Duration::from_millis(100);
+/// A project's file list is reused this long.
+const FILES_FOR: Duration = Duration::from_secs(30);
+/// Live usage goes to followers at most this often per session.
+const USAGE_EVERY: Duration = Duration::from_secs(1);
 /// An interrupt claude has not honoured by then escalates to SIGTERM, then SIGKILL.
 const INTERRUPT_GRACE: Duration = Duration::from_secs(5);
 /// `stop`: stdin closed, SIGTERM after this.
@@ -373,7 +379,14 @@ struct Inner {
     /// Wakes the prober when health changed without a probe, so an unusable runner is re-checked on its short
     /// schedule.
     health_changed: Arc<tokio::sync::Notify>,
+    /// The latest claude.ai usage window per limit type, for the heartbeat.
+    limits: Mutex<std::collections::BTreeMap<String, crate::node::runner::RateLimit>>,
+    /// Project files for @-mentions, per project, for `FILES_FOR`.
+    files: Mutex<HashMap<String, Listed>>,
 }
+
+/// A project's file list and when it was read.
+type Listed = (Instant, Arc<Vec<String>>);
 
 /// One session's pending change, applied by [`SessionService::update`].
 struct Change<'a> {
@@ -497,6 +510,8 @@ impl SessionService {
                 health: Mutex::new(Health::default()),
                 probing: tokio::sync::Mutex::new(()),
                 health_changed: Arc::new(tokio::sync::Notify::new()),
+                limits: Mutex::default(),
+                files: Mutex::default(),
             }),
         };
         for row in service.inner.store.sessions()? {
@@ -657,10 +672,85 @@ impl SessionService {
                 }))
             }
             SessionCall::RunnerInfo => Ok(SessionOutput::RunnerInfo(self.runner_info().await)),
-            SessionCall::ListFiles { .. } | SessionCall::PutFile { .. } => Err(invalid(
-                "this node does not list or write project files yet",
-            )),
+            SessionCall::ListFiles {
+                project_id,
+                query,
+                limit,
+            } => {
+                let all = self.project_files(&project_id).await?;
+                let limit = limit.get() as usize;
+                let (paths, truncated) = blocking(move || files::rank(&all, &query, limit)).await;
+                Ok(SessionOutput::Files { paths, truncated })
+            }
+            SessionCall::PutFile {
+                project_id,
+                rel_path,
+                data_b64,
+            } => {
+                use base64::Engine;
+                let root = self.project_root(&project_id)?;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data_b64.as_bytes())
+                    .map_err(|e| invalid(format!("the file is not base64: {e}")))?;
+                blocking(move || files::put_file(&root, &rel_path, &bytes))
+                    .await
+                    .map_err(invalid)?;
+                Ok(SessionOutput::Done)
+            }
         }
+    }
+
+    /// The project's files, listed at most every `FILES_FOR`.
+    async fn project_files(&self, project_id: &str) -> Result<Arc<Vec<String>>, SessionError> {
+        if let Some((at, files)) = self.inner.files.lock().unwrap().get(project_id)
+            && at.elapsed() < FILES_FOR
+        {
+            return Ok(files.clone());
+        }
+        let root = self.project_root(project_id)?;
+        let listed = Arc::new(
+            blocking(move || files::git_files(&root))
+                .await
+                .map_err(|e| error(SessionErrorCode::Git, e))?,
+        );
+        self.inner
+            .files
+            .lock()
+            .unwrap()
+            .insert(project_id.to_owned(), (Instant::now(), listed.clone()));
+        Ok(listed)
+    }
+
+    fn remember_limit(&self, limit: crate::node::runner::RateLimit) {
+        let key = limit.limit_type.clone().unwrap_or_else(|| "unknown".into());
+        self.inner.limits.lock().unwrap().insert(key, limit);
+    }
+
+    /// The claude.ai usage windows sessions last reported, for the heartbeat.
+    pub fn login_limits(&self) -> Vec<fleetd_contracts::node_link::LoginLimit> {
+        use fleetd_contracts::node_link::LoginLimit;
+        use fleetd_contracts::prim::{NonNegative, Text};
+        self.inner
+            .limits
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(kind, l)| {
+                Some(LoginLimit {
+                    limit_type: Text::new(super::util::head_utf16(kind, 40)).ok()?,
+                    utilization: l.utilization.and_then(|u| NonNegative::new(u).ok()),
+                    resets_at: l
+                        .resets_at
+                        .and_then(|s| chrono::DateTime::from_timestamp(s, 0))
+                        .map(|d| {
+                            d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                                .into()
+                        }),
+                    status: Text::new(super::util::head_utf16(&l.status, 40)).ok()?,
+                })
+            })
+            .take(4)
+            .collect()
     }
 
     fn session(&self, id: &str) -> Result<SessionRow, SessionError> {
@@ -1089,16 +1179,30 @@ impl SessionService {
     ) {
         let mut delta: Option<(String, String)> = None;
         let mut flushed: Option<Instant> = None;
+        let mut usage: Option<(String, RunUsage)> = None;
+        let mut usage_sent: Option<Instant> = None;
         let mut run_id: Option<String> = None;
         loop {
-            let next = match &delta {
-                Some(_) => {
-                    let due = flushed.map_or_else(Instant::now, |at| at + DELTA_EVERY);
+            let delta_due = delta
+                .as_ref()
+                .map(|_| flushed.map_or_else(Instant::now, |at| at + DELTA_EVERY));
+            let usage_due = usage
+                .as_ref()
+                .map(|_| usage_sent.map_or_else(Instant::now, |at| at + USAGE_EVERY));
+            let next = match delta_due.into_iter().chain(usage_due).min() {
+                Some(due) => {
                     tokio::select! {
                         event = events.recv() => event,
                         () = tokio::time::sleep_until(due) => {
-                            self.flush_delta(&id, &mut delta, &run_id);
-                            flushed = Some(Instant::now());
+                            let now = Instant::now();
+                            if delta_due.is_some_and(|d| d <= now) {
+                                self.flush_delta(&id, &mut delta, &run_id);
+                                flushed = Some(now);
+                            }
+                            if usage_due.is_some_and(|d| d <= now) {
+                                self.flush_usage(&id, &mut usage);
+                                usage_sent = Some(now);
+                            }
                             continue;
                         }
                     }
@@ -1178,12 +1282,30 @@ impl SessionService {
                 RunnerEvent::RunEnded {
                     run_id: ended,
                     outcome,
-                    usage,
+                    usage: usage_of_run,
                 } => {
                     let ended = self.resolve(&id, &ended);
-                    self.run_ended(&id, &ended, outcome, usage);
+                    // The run's own usage follows on its `run` event.
+                    if usage.as_ref().is_some_and(|(r, _)| *r == ended) {
+                        usage = None;
+                    }
+                    self.run_ended(&id, &ended, outcome, usage_of_run);
                 }
-                RunnerEvent::Init { .. } | RunnerEvent::RateLimit(_) => {}
+                RunnerEvent::Usage {
+                    run_id: run,
+                    usage: so_far,
+                } => {
+                    if !self.st().followed.contains(&id) {
+                        continue;
+                    }
+                    usage = Some((self.resolve(&id, &run), so_far));
+                    if usage_sent.is_none_or(|at| at + USAGE_EVERY <= Instant::now()) {
+                        self.flush_usage(&id, &mut usage);
+                        usage_sent = Some(Instant::now());
+                    }
+                }
+                RunnerEvent::RateLimit(limit) => self.remember_limit(limit),
+                RunnerEvent::Init { .. } => {}
             }
         }
         let _ = exited.send(true);
@@ -1201,6 +1323,14 @@ impl SessionService {
             .get(id)
             .and_then(|l| l.aliases.get(uuid).cloned())
             .unwrap_or_else(|| uuid.to_owned())
+    }
+
+    fn flush_usage(&self, id: &str, usage: &mut Option<(String, RunUsage)>) {
+        if let Some((run_id, usage)) = usage.take()
+            && let Ok(run_id) = NonEmpty::new(run_id)
+        {
+            self.st().thread(id, ThreadEvent::Usage { run_id, usage });
+        }
     }
 
     fn flush_delta(&self, id: &str, delta: &mut Option<(String, String)>, run_id: &Option<String>) {
