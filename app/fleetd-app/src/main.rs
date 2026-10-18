@@ -109,16 +109,10 @@ fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
 /// (the abort an early nightly hit inside applicationDidFinishLaunching, or a kill), the next one first shows a
 /// modal "quit unexpectedly while reopening windows" alert, so the app has no window and prints nothing until
 /// someone clicks it; a run killed while the alert is up leaves it armed for the next. The app restores nothing
-/// (it opens one window at a fixed size), so turn restoration off. A registered default is for this process
-/// only and writes nothing to the user's defaults; Xcode passes the same key when it runs an app.
+/// (it opens one window at a fixed size), so turn restoration off in its own defaults domain (Xcode passes the
+/// same key when it runs an app). Set on every launch, before AppKit reads it.
 #[cfg(target_os = "macos")]
 fn skip_window_restoration() {
-    use objc2::runtime::AnyObject;
-    use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
-    let key = NSString::from_str("ApplePersistenceIgnoreState");
-    let yes = NSNumber::numberWithBool(true);
-    let yes: &AnyObject = &yes;
-    let defaults = NSDictionary::from_slices(&[&*key], &[yes]);
-    // SAFETY: NSString keys to Foundation objects, the dictionary type registerDefaults takes.
-    unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&defaults) };
+    use objc2_foundation::{NSString, NSUserDefaults};
+    NSUserDefaults::standardUserDefaults().setBool_forKey(true, &NSString::from_str("ApplePersistenceIgnoreState"));
 }

@@ -2132,7 +2132,6 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "keyring",
- "objc2 0.6.5",
  "objc2-foundation 0.3.2",
  "raw-window-handle",
  "rustls-platform-verifier",
