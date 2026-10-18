@@ -17,11 +17,10 @@ use fleetd_contracts::live::OrderCard;
 use fleetd_contracts::mcp::{
     AsksListInput, AsksListOutput, AttachmentId, AttachmentMime, AttachmentPutInput, AttachmentPutOutput, AttentionPolicyInput,
     AttentionPolicyOutput, DoctorFixInput, DoctorFixOutput, DoctorListInput, DoctorListOutput, FleetStatus, InboxReplyInput, InboxReplyOutput,
-    IntakePreviewInput, IntakePreviewOutput, IntakeRef, IntakeSubmitInput, IntakeSubmitOutput, OrderGetInput, OrderGetOutput,
-    OrderStopInput, OrderStopOutput, OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput, ProjectGetInput,
-    ProjectGetOutput, SecretSubmitInput, SecretSubmitOutput, TailItem, ThreadTailInput, ThreadTailOutput, ThreadWindowInput, ThreadWindowOutput,
-    TimeBreakdownInput, TimeBreakdownOutput, TimeInsightsInput, TimeInsightsOutput, TimeRetentionSetInput, TimeRetentionSetOutput, TimeSpansInput,
-    TimeSpansOutput,
+    IntakePreviewInput, IntakePreviewOutput, IntakeRef, IntakeSubmitInput, IntakeSubmitOutput, OrderGetInput, OrderGetOutput, OrderStopInput,
+    OrderStopOutput, OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput, ProjectGetInput, ProjectGetOutput,
+    SecretSubmitInput, SecretSubmitOutput, TailItem, ThreadTailInput, ThreadTailOutput, ThreadWindowInput, ThreadWindowOutput, TimeBreakdownInput,
+    TimeBreakdownOutput, TimeInsightsInput, TimeInsightsOutput, TimeRetentionSetInput, TimeRetentionSetOutput, TimeSpansInput, TimeSpansOutput,
 };
 use fleetd_contracts::model::{Machine, MachineStatus, ProjectOutcome, ProjectSummary, ThreadStatus, ThreadSummary};
 use fleetd_contracts::prim::{Int, IntOr, List, Text};
