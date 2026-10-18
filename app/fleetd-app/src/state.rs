@@ -740,7 +740,7 @@ mod tests {
     fn snapshot(projects: &[(&str, &str)], cursor: u64) -> Incoming {
         let projects: Vec<Value> = projects.iter().map(|(m, p)| project_json(m, p)).collect();
         let frame = json!({ "t": "snapshot", "machines": [{ "machineId": "lab-a", "name": "lab-a", "tags": [], "status": "online",
-            "lastSeenAt": AT, "t3": null, "nodeVersion": "0.0.0" }], "projects": projects, "attention": [], "cursor": cursor });
+            "lastSeenAt": AT, "nodeVersion": "0.0.0" }], "projects": projects, "attention": [], "cursor": cursor });
         Incoming::Message(serde_json::from_value(frame).unwrap())
     }
 
@@ -1010,21 +1010,21 @@ mod tests {
     fn a_doctor_fix_replaces_its_check_and_echoes_what_ran() {
         let mut s = synced();
         let id = calls(&s.open_doctor())[0].0.clone();
-        let auto = json!({ "kind": "auto", "label": "Restart T3" });
-        s.apply(result(&id, json!({ "checks": [check("hub/gh_auth", "ok", None), check("lab-a/t3", "fail", Some(auto))], "checkedAt": AT })));
+        let auto = json!({ "kind": "auto", "label": "Restart the node" });
+        s.apply(result(&id, json!({ "checks": [check("hub/gh_auth", "ok", None), check("lab-a/node", "fail", Some(auto))], "checkedAt": AT })));
 
-        let out = s.fix_doctor(&check_id("lab-a/t3"));
+        let out = s.fix_doctor(&check_id("lab-a/node"));
         let AppClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
-        assert_eq!((tool.as_str(), input), ("doctor_fix", &json!({ "checkId": "lab-a/t3" })));
-        assert!(s.doctor_fixing(&check_id("lab-a/t3")));
-        assert!(s.fix_doctor(&check_id("lab-a/t3")).is_empty(), "one fix at a time per check");
-        s.apply(result(id, json!({ "ran": "Restarted T3 on lab-a.", "check": check("lab-a/t3", "ok", None) })));
+        assert_eq!((tool.as_str(), input), ("doctor_fix", &json!({ "checkId": "lab-a/node" })));
+        assert!(s.doctor_fixing(&check_id("lab-a/node")));
+        assert!(s.fix_doctor(&check_id("lab-a/node")).is_empty(), "one fix at a time per check");
+        s.apply(result(id, json!({ "ran": "Restarted the node on lab-a.", "check": check("lab-a/node", "ok", None) })));
         let checks = &s.doctor.as_ref().unwrap().checks;
         assert_eq!(
             checks.iter().map(|c| (c.id.as_str(), c.status)).collect::<Vec<_>>(),
-            [("hub/gh_auth", DoctorStatus::Ok), ("lab-a/t3", DoctorStatus::Ok)]
+            [("hub/gh_auth", DoctorStatus::Ok), ("lab-a/node", DoctorStatus::Ok)]
         );
-        assert_eq!(s.echo, Some(Echo { text: "Restarted T3 on lab-a.".into(), ok: true }));
+        assert_eq!(s.echo, Some(Echo { text: "Restarted the node on lab-a.".into(), ok: true }));
 
         let AppClientMessage::Call { id, .. } = &s.fix_doctor(&check_id("hub/gh_auth"))[0] else { panic!() };
         s.apply(error(id, ErrorCode::Invalid, "This fix is manual.", Some("Run gh auth login on the hub.")));
@@ -1033,7 +1033,7 @@ mod tests {
     }
 
     fn machine_json(id: &str, status: &str, box_key: Option<&str>) -> Value {
-        let mut m = json!({ "machineId": id, "name": id, "tags": [], "status": status, "lastSeenAt": AT, "t3": null, "nodeVersion": "0.0.0" });
+        let mut m = json!({ "machineId": id, "name": id, "tags": [], "status": status, "lastSeenAt": AT, "nodeVersion": "0.0.0" });
         if let Some(k) = box_key {
             m["boxPubKey"] = json!(k);
         }
