@@ -162,6 +162,22 @@ machine. Without a hub identity, set one on the machine:
 </blockquote>
 <p>Each writer session gets its own git worktree, so a machine needs room. Free space under the path the finding
 names; <code>df -h &lt;path&gt;</code> shows what is left.</p>
+<h2 id="sleep">A machine sleeps when idle<a class="anchor" href="#sleep" aria-label="Link to this section">#</a></h2>
+<blockquote>
+<p>laptop sleeps after 15 min idle on AC power (KDE power management). fleetd keeps it awake while agents run, but it
+still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it.</p>
+</blockquote>
+<p>While any agent runs, the node keeps its machine awake (<code>systemd-inhibit --list</code> or <code>pmset -g assertions</code> shows
+"fleetd: 2 agents running"). Between orders nothing does, so a machine set to sleep when idle drops off until
+someone wakes it. Sleep on battery only is fine. The fix names the setting for that machine's desktop:</p>
+<div class="table"><table><thead><tr><th>Where</th><th>Fix</th></tr></thead><tbody>
+<tr><td>KDE Plasma</td><td>System Settings &gt; Power Management &gt; On AC Power &gt; When inactive: Do nothing</td></tr>
+<tr><td>GNOME</td><td><code>gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'</code></td></tr>
+<tr><td>logind <code>IdleAction</code></td><td><code>IdleAction=ignore</code> in <code>/etc/systemd/logind.conf.d/fleetd.conf</code>, then reboot</td></tr>
+<tr><td>macOS</td><td><code>sudo pmset -c sleep 0</code></td></tr>
+</tbody></table></div>
+<p>When a machine wakes, its node links to the hub again at once, resumes any run whose claude went quiet during the
+sleep, and logs <code>machine.slept</code>. The app's machine strip shows "slept 10m46s" for an hour after.</p>
 <h2 id="usage_breaker">The usage breaker is open<a class="anchor" href="#usage_breaker" aria-label="Link to this section">#</a></h2>
 <blockquote>
 <p>New turns on laptop are paused by the usage breaker.</p>
@@ -189,6 +205,7 @@ or, once the login has capacity, call <code>usage_resume</code> for that machine
 <li><a href="#runner_conformance">claude doesn't answer the protocol probe</a></li>
 <li><a href="#commit_identity">No or the wrong commit identity</a></li>
 <li><a href="#disk">Low disk space</a></li>
+<li><a href="#sleep">A machine sleeps when idle</a></li>
 <li><a href="#usage_breaker">The usage breaker is open</a></li>
 </ul>
 </aside>

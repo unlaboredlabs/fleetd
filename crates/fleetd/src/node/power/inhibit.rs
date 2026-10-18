@@ -40,6 +40,28 @@ mod linux {
             .map(Hold)
             .map_err(|e| format!("logind answered without a descriptor: {e}"))
     }
+
+    #[cfg(test)]
+    mod tests {
+        /// Holds a real inhibitor for a moment: `cargo test -p fleetd --lib -- --ignored real_inhibitor`.
+        #[tokio::test]
+        #[ignore = "takes a real logind inhibitor on this machine"]
+        async fn real_inhibitor_shows_in_the_list_and_goes_away() {
+            let list = || {
+                let out = std::process::Command::new("systemd-inhibit")
+                    .args(["--list", "--no-pager"])
+                    .output()
+                    .unwrap();
+                String::from_utf8_lossy(&out.stdout).into_owned()
+            };
+            let hold = super::take(&super::super::why(2)).await.unwrap();
+            let held = list();
+            drop(hold);
+            println!("{held}");
+            assert!(held.contains("fleetd: 2 agents running"), "{held}");
+            assert!(!list().contains("fleetd: 2 agents running"));
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -53,11 +75,16 @@ mod macos {
     const UTF8: u32 = 0x0800_0100;
     const LEVEL_ON: u32 = 255;
 
+    type Create = unsafe extern "C" fn(CfString, u32, CfString, *mut u32) -> i32;
+    type Release = unsafe extern "C" fn(u32) -> i32;
+    type MakeString = unsafe extern "C" fn(*const c_void, *const c_char, u32) -> CfString;
+    type CfRelease = unsafe extern "C" fn(*const c_void);
+
     struct Api {
-        create: unsafe extern "C" fn(CfString, u32, CfString, *mut u32) -> i32,
-        release: unsafe extern "C" fn(u32) -> i32,
-        cf_string: unsafe extern "C" fn(*const c_void, *const c_char, u32) -> CfString,
-        cf_release: unsafe extern "C" fn(*const c_void),
+        create: Create,
+        release: Release,
+        cf_string: MakeString,
+        cf_release: CfRelease,
     }
 
     fn open(path: &CStr) -> Option<*mut c_void> {
@@ -77,22 +104,17 @@ mod macos {
         API.get_or_init(|| {
             let iokit = open(c"/System/Library/Frameworks/IOKit.framework/IOKit")?;
             let cf = open(c"/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")?;
+            let create = symbol(iokit, c"IOPMAssertionCreateWithName")?;
+            let release = symbol(iokit, c"IOPMAssertionRelease")?;
+            let cf_string = symbol(cf, c"CFStringCreateWithCString")?;
+            let cf_release = symbol(cf, c"CFRelease")?;
             // SAFETY: each symbol has this C signature in the macOS SDK headers.
             unsafe {
                 Some(Api {
-                    create: std::mem::transmute::<*mut c_void, _>(symbol(
-                        iokit,
-                        c"IOPMAssertionCreateWithName",
-                    )?),
-                    release: std::mem::transmute::<*mut c_void, _>(symbol(
-                        iokit,
-                        c"IOPMAssertionRelease",
-                    )?),
-                    cf_string: std::mem::transmute::<*mut c_void, _>(symbol(
-                        cf,
-                        c"CFStringCreateWithCString",
-                    )?),
-                    cf_release: std::mem::transmute::<*mut c_void, _>(symbol(cf, c"CFRelease")?),
+                    create: std::mem::transmute::<*mut c_void, Create>(create),
+                    release: std::mem::transmute::<*mut c_void, Release>(release),
+                    cf_string: std::mem::transmute::<*mut c_void, MakeString>(cf_string),
+                    cf_release: std::mem::transmute::<*mut c_void, CfRelease>(cf_release),
                 })
             }
         })

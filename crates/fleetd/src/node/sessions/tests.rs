@@ -626,6 +626,76 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
+    // The first turn's stream never comes back (its result is hours away); the retry's turn completes.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":7200000,"msg":{"type":"result","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":"done"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(lines);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.status == SessionStatus::Running).await;
+    assert_eq!(*hub.service.running().borrow(), 1);
+
+    // The machine slept a while after claude's last word.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    hub.service.woke();
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+    let retry = hub
+        .service
+        .store()
+        .item("s1", "node-retry-r1-1")
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        retry.kind,
+        ItemKind::NodeRetry {
+            reason: RunFailure {
+                class: FailureClass::Network,
+                ..
+            },
+            ..
+        }
+    ));
+    let received = hub.runner.received();
+    assert_eq!(
+        received
+            .iter()
+            .filter(|c| matches!(c, SessionCommand::Interrupt))
+            .count(),
+        1
+    );
+    assert!(
+        received
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+    );
+    // Honoured, so the process stayed: no stop, no respawn.
+    assert!(
+        !received
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Shutdown { .. }))
+    );
+    assert_eq!(hub.runner.spawned().len(), 1);
+    assert_eq!(*hub.service.running().borrow(), 0);
+}
+
+#[tokio::test(start_paused = true)]
 async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
     let lines = r#"
 {"dir":"in","ms":0,"msg":{"type":"user"}}

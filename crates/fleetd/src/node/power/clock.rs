@@ -67,17 +67,33 @@ fn asleep_ms() -> Option<i64> {
 
 #[cfg(target_os = "macos")]
 fn asleep_ms() -> Option<i64> {
-    unsafe extern "C" {
-        fn mach_continuous_time() -> u64;
-        fn mach_absolute_time() -> u64;
+    use std::ffi::c_void;
+    #[repr(C)]
+    struct Timebase {
+        numer: u32,
+        denom: u32,
     }
-    let mut base = libc::mach_timebase_info { numer: 0, denom: 0 };
+    unsafe extern "C" {
+        fn mach_absolute_time() -> u64;
+        fn mach_timebase_info(info: *mut Timebase) -> i32;
+    }
+    type Continuous = unsafe extern "C" fn() -> u64;
+    // Looked up at run time, like the IOKit calls: the cross-built darwin binary links only what zig's stubs have.
+    static CONTINUOUS: std::sync::OnceLock<Option<Continuous>> = std::sync::OnceLock::new();
+    let continuous = (*CONTINUOUS.get_or_init(|| {
+        // SAFETY: a constant symbol name; the pointer, when found, has this signature.
+        unsafe {
+            let f = libc::dlsym(libc::RTLD_DEFAULT, c"mach_continuous_time".as_ptr());
+            (!f.is_null()).then(|| std::mem::transmute::<*mut c_void, Continuous>(f))
+        }
+    }))?;
+    let mut base = Timebase { numer: 0, denom: 0 };
     // SAFETY: plain libSystem calls; `base` is a valid out-pointer.
     let (continuous, absolute) = unsafe {
-        if libc::mach_timebase_info(&mut base) != 0 || base.denom == 0 {
+        if mach_timebase_info(&mut base) != 0 || base.denom == 0 {
             return None;
         }
-        (mach_continuous_time(), mach_absolute_time())
+        (continuous(), mach_absolute_time())
     };
     let ticks = continuous.saturating_sub(absolute) as u128;
     Some((ticks * base.numer as u128 / base.denom as u128 / 1_000_000) as i64)
