@@ -127,9 +127,9 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 </tbody></table></div>
 <h3 id="tasks">Tasks<a class="anchor" href="#tasks" aria-label="Link to this section">#</a></h3>
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
-<tr><td><code>task.brief.write</code></td><td>every write task attempt</td><td>changes only its areas; never merges; the train does; the PR body carries <code>Source:</code>; does the task itself, no subagents (prompt only)</td></tr>
-<tr><td><code>task.brief.read</code></td><td>every read task attempt</td><td>changes no files (prompt only); does the task itself, no subagents (prompt only)</td></tr>
-<tr><td><code>task.brief.review</code></td><td>every review, verifier and judge task attempt</td><td>changes no files (prompt only); does the task itself, no subagents (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>task.brief.write</code></td><td>every write task attempt</td><td>changes only its areas; never merges; the train does; the PR body carries <code>Source:</code>; does the task itself, no subagents</td></tr>
+<tr><td><code>task.brief.read</code></td><td>every read task attempt</td><td>changes no files (prompt only); does the task itself, no subagents</td></tr>
+<tr><td><code>task.brief.review</code></td><td>every review, verifier and judge task attempt</td><td>changes no files (prompt only); does the task itself, no subagents; ends with one <code>fleetd review verdict</code></td></tr>
 <tr><td><code>task.train_rebase</code></td><td>per PR the train could not rebase</td><td></td></tr>
 <tr><td><code>task.train_ci_failed</code></td><td>per PR whose CI failed or timed out</td><td></td></tr>
 </tbody></table></div>
