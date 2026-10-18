@@ -476,6 +476,16 @@ impl Status {
         }
     }
 
+    /// The current version of a scope's doc, if one was rendered.
+    pub fn version_of(&self, key: &str) -> Option<i64> {
+        self.state
+            .lock()
+            .unwrap()
+            .docs
+            .get(key)
+            .map(|c| c.doc.version.get())
+    }
+
     pub fn seen(&self, hub: &Hub, caller: &Caller, scope: &StatusScope, seq: i64) -> bool {
         if !is_human(caller) {
             return false;

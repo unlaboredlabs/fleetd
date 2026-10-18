@@ -480,3 +480,52 @@ async fn github_deliveries_need_webhooks_on_and_a_valid_signature_then_kick_the_
     t.hub.shutdown.trigger();
     let _ = t.served.await;
 }
+
+#[tokio::test]
+async fn a_new_status_wait_supersedes_the_connection_s_old_one_at_once() {
+    let t = start().await;
+    let reader = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    app.send(Message::text(
+        json!({ "t": "auth", "key": reader }).to_string(),
+    ))
+    .await
+    .unwrap();
+    let read = async |app: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >|
+           -> Value {
+        serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap()
+    };
+    assert_eq!(read(&mut app).await["t"], "ready");
+    let fleet = json!({ "kind": "fleet" });
+    app.send(Message::text(
+        json!({ "t": "call", "id": "g", "tool": "status_get", "input": { "scope": fleet } })
+            .to_string(),
+    ))
+    .await
+    .unwrap();
+    let got = read(&mut app).await;
+    let version = got["output"]["doc"]["version"].as_i64().unwrap();
+    // Waits past the current version block; the second supersedes the first, which answers at once.
+    for id in ["w1", "w2"] {
+        let wait = json!({ "t": "call", "id": id, "tool": "status_wait", "input": { "scope": fleet, "after": version, "timeoutSec": 50 } });
+        app.send(Message::text(wait.to_string())).await.unwrap();
+    }
+    let first = tokio::time::timeout(std::time::Duration::from_secs(5), read(&mut app))
+        .await
+        .expect("w1 answered at once");
+    assert_eq!(first["id"], "w1");
+    assert_eq!(
+        first["output"],
+        json!({ "unchanged": true, "version": version })
+    );
+    // w2 stays open; nothing else arrives for it yet.
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(300), read(&mut app))
+            .await
+            .is_err()
+    );
+}

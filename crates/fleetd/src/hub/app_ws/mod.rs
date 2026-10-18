@@ -122,6 +122,24 @@ async fn stream_events(
     }
 }
 
+/// The one status_wait a connection has in flight. A new one supersedes it: the old answers `{unchanged}` at once, so
+/// waits left over from scope switches never pile up against the in-flight limit. Whoever claims `answered` first (the
+/// call finishing, or the superseder) sends the one result for its id.
+struct PendingWait {
+    id: String,
+    scope: Option<String>,
+    after: i64,
+    answered: Arc<std::sync::atomic::AtomicBool>,
+    abort: tokio::task::AbortHandle,
+}
+
+impl PendingWait {
+    /// True for exactly one caller.
+    fn claim(answered: &std::sync::atomic::AtomicBool) -> bool {
+        !answered.swap(true, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 struct Session {
     hub: Arc<Hub>,
     tools: Arc<Registry>,
@@ -133,6 +151,7 @@ struct Session {
     live: Option<tokio::task::JoinHandle<()>>,
     live_slot: Arc<live::LiveSlot>,
     budget: Arc<live::ConnBudget>,
+    status_wait: Option<PendingWait>,
 }
 
 /// What to do with the socket after a frame.
@@ -190,9 +209,31 @@ impl Session {
                     self.send(error_frame(&busy, Some(id.as_str())));
                     return After::Continue;
                 }
+                let is_wait = tool.as_str() == "status_wait";
+                if is_wait && let Some(old) = self.status_wait.take() {
+                    if PendingWait::claim(&old.answered) {
+                        old.abort.abort();
+                        let version = old
+                            .scope
+                            .as_deref()
+                            .and_then(|k| self.hub.status.version_of(k))
+                            .unwrap_or(old.after);
+                        self.send(json!({ "t": "result", "id": old.id, "output": { "unchanged": true, "version": version } }));
+                    }
+                }
+                let answered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let wait_scope = is_wait.then(|| {
+                    let scope = serde_json::from_value::<fleetd_contracts::status::StatusScope>(
+                        input["scope"].clone(),
+                    )
+                    .ok();
+                    (scope.map(|s| s.key()), input["after"].as_i64().unwrap_or(0))
+                });
                 let (hub, tools, out) = (self.hub.clone(), self.tools.clone(), self.out.clone());
                 let budget = self.budget.clone();
-                self.calls.spawn(async move {
+                let claim = answered.clone();
+                let call_id = id.as_str().to_owned();
+                let abort = self.calls.spawn(async move {
                     let frame = match call(&hub, &tools, &key, tool.as_str(), input).await {
                         Ok(output) => json!({ "t": "result", "id": id.as_str(), "output": output }),
                         Err(error) => error_frame(&error, Some(id.as_str())),
@@ -208,8 +249,20 @@ impl Session {
                         }
                         budget.spend(now_ms(hub.clock.as_ref()), bytes);
                     }
+                    if is_wait && !PendingWait::claim(&claim) {
+                        return;
+                    }
                     let _ = out.send(frame);
                 });
+                if let Some((scope, after)) = wait_scope {
+                    self.status_wait = Some(PendingWait {
+                        id: call_id,
+                        scope,
+                        after,
+                        answered,
+                        abort,
+                    });
+                }
             }
             AppClientMessage::Snapshot {} => match self
                 .tools
@@ -278,6 +331,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         live: None,
         live_slot: Arc::default(),
         budget: Arc::default(),
+        status_wait: None,
     };
     let live_slot = session.live_slot.clone();
     let close = loop {
