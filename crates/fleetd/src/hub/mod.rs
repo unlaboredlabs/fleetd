@@ -19,6 +19,7 @@ pub mod link;
 pub mod mcp;
 pub mod orders;
 pub mod pair;
+pub mod plan;
 pub mod playbooks;
 pub mod projects;
 pub mod prompts;

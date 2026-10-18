@@ -8698,6 +8698,10 @@
       "properties": {
         "scope": {
           "$ref": "#/$defs/StatusScope"
+        },
+        "sinceSeq": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "Count \"since\" from this seq instead of the key's status_seen mark (a client that keeps its own mark)."
         }
       },
       "required": [
@@ -8814,6 +8818,10 @@
         },
         "scope": {
           "$ref": "#/$defs/StatusScope"
+        },
+        "sinceSeq": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "As in status_get."
         },
         "timeoutSec": {
           "default": 50,

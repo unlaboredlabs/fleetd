@@ -1036,11 +1036,17 @@ output!(SessionPromptGetOutput {
 });
 
 // status_get, status_wait, status_seen: the status view of the fleet, a project or an order.
-input!(StatusGetInput { scope: StatusScope });
+input!(StatusGetInput {
+    scope: StatusScope,
+    /// Count "since" from this seq instead of the key's status_seen mark (a client that keeps its own mark).
+    since_seq: Option<EventSeq>,
+});
 // Not flattened: the doc's own `next` (Next-up rows) would clash with the output's `next` hint.
 output!(StatusGetOutput { doc: StatusDoc });
 input!(StatusWaitInput {
     scope: StatusScope,
+    /// As in status_get.
+    since_seq: Option<EventSeq>,
     /// The version the caller has; absent waits for none (answers at once).
     after: Option<Count>,
     #[serde(default)]

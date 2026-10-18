@@ -30,9 +30,26 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                     next: Some(next),
                 };
                 match call {
-                    LeadCall::ChangeEnqueue(input) => change_enqueue(&hub.train, r, input)
-                        .await
-                        .map(|c| LeadCallResult::ChangeEnqueue(result(c))),
+                    LeadCall::ChangeEnqueue(input) => {
+                        let item = input.item.clone();
+                        if let Some(item) = &item {
+                            hub.plans.check_item(r, item).map_err(|e| e.0)?;
+                        }
+                        let enqueued = change_enqueue(&hub.train, r, input).await;
+                        enqueued.map(|(change, mut next)| {
+                            if let Some(item) = &item
+                                && let Err(e) = hub.plans.link_pr(
+                                    r,
+                                    item,
+                                    &change.workstream_id,
+                                    &change.pr_url,
+                                )
+                            {
+                                next = format!("{next} Not linked to {item}: {}", e.0.message);
+                            }
+                            LeadCallResult::ChangeEnqueue(result((change, next)))
+                        })
+                    }
                     LeadCall::ChangeStatus(c) => change_status(&hub.train, r, &c.change_id)
                         .map(|c| LeadCallResult::ChangeStatus(result(c))),
                     other => Err(TrainError {
