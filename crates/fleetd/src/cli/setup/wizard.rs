@@ -796,9 +796,11 @@ async fn commit_identity(
         .identity
         .clone()
         .or_else(|| opts.previous.as_ref().and_then(|p| p.git_identity.clone()));
+    let mut asked = false;
     let identity = match known {
         Some(identity) => Some(identity),
         None => {
+            asked = ui.interactive;
             let from_gh = if gh_ok {
                 let out = run_local("gh", &["api".into(), "user".into()], None).await;
                 detect::noreply_identity(&out.stdout)
@@ -828,6 +830,8 @@ async fn commit_identity(
         }
     };
     match &identity {
+        // Just answered above: no second line saying the same.
+        Some(id) if is_noreply(id) && asked => {}
         Some(id) if is_noreply(id) => {
             list.done("commit author", &format!("{} <{}>", id.name, id.email))
         }

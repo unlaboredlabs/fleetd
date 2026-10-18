@@ -95,9 +95,14 @@ impl Checklist {
             String::new()
         };
         if self.rich {
+            // The intro already leaves a bar under itself.
+            let gap = if self.section > 1 {
+                format!("{}\n", style(BAR).dim().for_stderr())
+            } else {
+                String::new()
+            };
             self.out(&format!(
-                "{}\n{}  {}{}",
-                style(BAR).dim().for_stderr(),
+                "{gap}{}  {}{}",
                 style(STEP).cyan().for_stderr(),
                 style(name).bold().for_stderr(),
                 style(count).dim().for_stderr()
