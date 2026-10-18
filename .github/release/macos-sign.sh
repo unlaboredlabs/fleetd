@@ -67,10 +67,9 @@ sign)
       main="$path/Contents/MacOS/$(plutil -extract CFBundleExecutable raw -o - "$path/Contents/Info.plist")"
       # Inside out: every other Mach-O in the bundle (helpers, dylibs; none today), deepest first, then the bundle,
       # which signs its main executable with the entitlements.
-      find "$path/Contents" -type f -print0 | xargs -0 file | awk -F': ' '/Mach-O/ { print $1 }' |
-        awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2- | while IFS= read -r nested; do
-          [ "$nested" = "$main" ] || sign "$nested"
-        done
+      find "$path/Contents" -type f | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2- | while IFS= read -r nested; do
+        if [ "$nested" != "$main" ] && file -b "$nested" | grep -q Mach-O; then sign "$nested"; fi
+      done
       sign --entitlements "$entitlements" "$path"
     else
       # One identifier for the CLI, whatever the asset is called (it's installed as `fleetd`).
