@@ -76,7 +76,8 @@
 <p>Prompts and instructions: <a href="/docs/what-agents-are-told">What agents are told</a>. <code>fleetd uninstall</code> keeps all of it; see <a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a>.</p>
 <h2 id="timelines">Timelines<a class="anchor" href="#timelines" aria-label="Link to this section">#</a></h2>
 <p>The hub keeps the spans behind <a href="/docs/time-inspector">Where time went</a> in <code>hub.sqlite</code> for 30 days, and their daily
-totals and each finished order's critical path for 400 days. Set 1 to 365 days with <code>fleetd time --retention &lt;days&gt;</code>
+totals and each finished order's critical path for 400 days (older ranges show those totals, without the commands
+and findings). Set 1 to 365 days with <code>fleetd time --retention &lt;days&gt;</code>
 (an admin key) or in the app's Settings under Data, which shows their size; a busy fleet adds a few MB a day.</p>
 <p>Each node holds the timings it has not sent yet in <code>sessions.sqlite</code> and deletes them once the hub has them. While
 the hub is away it keeps up to 7 days or 500,000 of them; past that it drops the oldest and the timeline shows the

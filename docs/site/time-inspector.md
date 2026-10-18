@@ -69,8 +69,9 @@ Two numbers come back everywhere, and they mean different things:
 
 - **Wall time** is the clock: an order runs from when you sent it to when it was done.
 - **Agent time** adds up every agent's time. Three writers working for an hour at once are three hours of agent time
-  in one hour of wall time; **parallelism** is the ratio. Each agent's time is split so nothing is counted twice,
-  and its parts always add up to its total.
+  in one hour of wall time; **parallelism** is the ratio. Within one agent, one PR or one task, each moment
+  counts once, so its parts add up to its total. Asks are the exception: two asks open at the same time both count
+  as waiting on you.
 
 "Slowest commands" counts each call on its own, from start to finish. When an agent runs several tools at once,
 those calls overlap, so their totals can add up to more than the agent's tool time.
@@ -115,12 +116,15 @@ fleetd shows only what it can see. Where a number is a bound or a rule rather th
 
 The coverage line says whether the timeline is complete. It says "incomplete" when a machine runs an older fleetd
 that doesn't send timings, when a machine was away so long that it dropped old timings, or when the hub was too busy
-to keep some. It never fills a gap with a guess.
+to keep some, when the range is so busy that only its newest part could be read, and when the range reaches back past
+the details the hub still keeps (see below). It never fills a gap with a guess.
 
 ## How long it is kept {#retention}
 
 The hub keeps every span for 30 days by default, and daily totals and each finished order's critical path for 400
-days, so long-range breakdowns still work after the details are gone. Change it with an admin key, from 1 to 365
+days. A range that reaches back further than the spans still shows how agent time split across the groups for those
+days, from the daily totals; the commands, CI checks and findings cover only the days that still have spans, and the
+coverage line says from when. Change it with an admin key, from 1 to 365
 days:
 
 ```sh

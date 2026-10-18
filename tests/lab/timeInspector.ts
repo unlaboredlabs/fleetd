@@ -212,6 +212,28 @@ export async function timeInspector(lab: Lab) {
       worst = Math.max(worst, Math.abs(sum - dur(run)));
     }
     ok(`2. ${runs.length} runs tiled by their spans within max(250 ms, 1%); worst off by ${worst} ms`);
+    // And each lane as a whole: on session, change and task lanes nothing is counted twice, so the lane's exclusive
+    // time is the length of the time it covers. Detail spans carry no exclusive time and are left out; asks and
+    // checks lanes are not tiled by design (two open asks both count).
+    const DETAIL = ["ci.check", "ci.queue", "slots.full", "ask.info", "gap"];
+    const lanes = new Map<string, Array<Body>>();
+    for (const s of spans.filter((s) => /^(thread|change|task):/u.test(s.lane) && !s.lane.endsWith("/ci") && !DETAIL.includes(s.kind))) {
+      lanes.set(s.lane, [...(lanes.get(s.lane) ?? []), s]);
+    }
+    let laneWorst = 0;
+    for (const [lane, own] of lanes) {
+      const sorted = [...own].sort((x, y) => x.startMs - y.startMs);
+      let covered = 0;
+      let reach = -Infinity;
+      for (const s of sorted) {
+        covered += Math.max(0, s.endMs - Math.max(s.startMs, reach));
+        reach = Math.max(reach, s.endMs);
+      }
+      const excl = own.reduce((n, s) => n + ((s.exclMs as number | undefined) ?? 0), 0);
+      check(tiles(excl, covered), `${lane}: exclusive time ${excl} ms vs ${covered} ms covered`);
+      laneWorst = Math.max(laneWorst, Math.abs(excl - covered));
+    }
+    ok(`2. ${lanes.size} session, change and task lanes tiled: exclusive time = time covered; worst off by ${laneWorst} ms`);
 
     // 3. CI: the train's stages back to back, and the `ci` check as GitHub timed it, inside change.ci.
     const stages = spans.filter((s) => s.lane === changeLane && (s.kind as string).startsWith("change.")).sort((x, y) => x.startMs - y.startMs);
