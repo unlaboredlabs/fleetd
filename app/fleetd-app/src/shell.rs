@@ -1412,6 +1412,8 @@ impl Shell {
     fn conn_line(&self, t: &Theme) -> sidebar::Conn {
         let host = self.hub.as_ref().map(|h| h.url.split("://").nth(1).unwrap_or(&h.url).trim_end_matches('/').to_string()).unwrap_or_default();
         let (color, label) = match (&self.state.conn, self.bench.is_some()) {
+            // Screenshots of the fixture (the docs' app shots) show a connected footer, as a real app would.
+            (_, true) if shot_hub().is_some() => (t.success, format!("Connected to {}", shot_hub().unwrap_or_default())),
             (_, true) => (t.warning, "Bench fixture, no hub".to_string()),
             (Conn::Live, _) => (t.success, format!("Connected to {host}")),
             (Conn::Connecting { reason: None, .. }, _) => (t.faint, format!("Connecting to {host}…")),
@@ -2144,6 +2146,13 @@ impl Shell {
         state.base_handle.set_offset(point(px(0.), px(-y)));
         window.request_animation_frame();
     }
+}
+
+/// `FLEETD_SHOT_HUB=<host:port>`: the hub address the fixture's footer claims, for screenshots. Unset, the fixture
+/// says it is one.
+fn shot_hub() -> Option<&'static str> {
+    static HUB: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    HUB.get_or_init(|| std::env::var("FLEETD_SHOT_HUB").ok().filter(|v| !v.is_empty())).as_deref()
 }
 
 /// A contract enum's wire value, e.g. "irreversible".

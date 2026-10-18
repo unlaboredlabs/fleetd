@@ -36,7 +36,8 @@ ids on the page that its run didn't produce, and you re-aim the callouts if the 
 (`FLEETD_DEMO_ORDER=app npm --prefix tests/lab run lab -- demo`, the app at 1400x900@2x in the light theme, pointed
 at the lab hub with `FLEETD_HUB_URL` and `FLEETD_AGENT_KEY` from `RUN/demo/app.json`), taken while all nine checkers
 work. The app shots in the docs (`site/docs/img/`) are the app's fixture screens at the same size
-(`FLEETD_BENCH=idle FLEETD_SCREEN=status`, `time`, `order+steer`, `board+add-cloning`).
+(`FLEETD_BENCH=idle FLEETD_SCREEN=status`, `time`, `order+steer`, `board+add-cloning`), with
+`FLEETD_SHOT_HUB=127.0.0.1:4790` so the footer shows a connected lab hub rather than the fixture's own label.
 
 ## Docs (fleetd.sh/docs)
 
