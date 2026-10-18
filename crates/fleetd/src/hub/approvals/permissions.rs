@@ -209,6 +209,8 @@ struct Tracked {
     last_reminded_ms: Option<i64>,
     /// Answered before a hub restart with no record that the answer reached the node.
     redeliver: bool,
+    /// Sweeps in a row that found the machine in sync and this prompt no longer open on it.
+    gone_sweeps: u8,
 }
 
 type PromptKey = (String, String, String);
@@ -238,6 +240,24 @@ impl Prompts {
         self.0.lock().unwrap().retain(|(m, t, r), _| {
             !(m == machine_id && t == thread_id && keep != Some(r.as_str()))
         });
+    }
+    /// Counts one more sweep that found the prompt gone (or resets the count); returns the count.
+    fn gone(&self, t: &Tracked, gone: bool) -> u8 {
+        let key = (
+            t.project.machine_id.clone(),
+            t.thread_id.clone(),
+            t.request_id.clone(),
+        );
+        let mut map = self.0.lock().unwrap();
+        let Some(entry) = map.get_mut(&key) else {
+            return 0;
+        };
+        entry.gone_sweeps = if gone {
+            entry.gone_sweeps.saturating_add(1)
+        } else {
+            0
+        };
+        entry.gone_sweeps
     }
     fn reminded(&self, t: &Tracked, at: i64) {
         let key = (
@@ -270,6 +290,7 @@ impl Tracked {
             since_ms: o.filed_ms,
             last_reminded_ms: None,
             redeliver,
+            gone_sweeps: 0,
         }
     }
 }
@@ -472,6 +493,7 @@ impl Approvals {
             since_ms: system_ms(self.deps.clock.now()),
             last_reminded_ms: None,
             redeliver: false,
+            gone_sweeps: 0,
         });
         if let Err(e) = created {
             // The run still waits: say so loudly rather than leave it silent.
@@ -552,6 +574,9 @@ impl Approvals {
 
     pub(super) async fn sweep_prompts(&self, now: i64) {
         for t in self.prompts.all() {
+            if self.ended_unseen(&t).await {
+                continue;
+            }
             let ask = match &t.ask_id {
                 Some(id) => self.deps.asks.get(id).await,
                 None => None,
@@ -604,6 +629,42 @@ impl Approvals {
             )
             .await;
         }
+    }
+
+    /// A prompt whose run ended while the hub was down never gets its terminal event. The machine's own state is the
+    /// check: two sweeps in a row with the machine linked and the prompt not open there close it and its ask quietly.
+    /// Two, because a node just linked may not have sent its snapshot yet.
+    async fn ended_unseen(&self, t: &Tracked) -> bool {
+        let machine = &t.project.machine_id;
+        let gone = self.deps.nodes.is_linked(machine).await
+            && self
+                .deps
+                .nodes
+                .pending_permission(machine, &t.thread_id)
+                .await
+                .is_none_or(|p| p.request_id.as_str() != t.request_id);
+        if self.prompts.gone(t, gone) < 2 {
+            return false;
+        }
+        self.prompts.forget(machine, &t.thread_id, &t.request_id);
+        const WHY: &str = "expired: the run ended while the hub was down";
+        let Some(id) = &t.ask_id else {
+            return true;
+        };
+        let open = self
+            .deps
+            .asks
+            .get(id)
+            .await
+            .is_some_and(|a| s(&a, "state") == Some("open"));
+        if open {
+            let _ = self.deps.asks.withdraw(id, WHY).await;
+        } else {
+            let mut patch = Map::new();
+            patch.insert("evidence".into(), json!(WHY));
+            let _ = self.deps.asks.update(id, patch).await;
+        }
+        true
     }
 
     /// A lead withdrew the ask of a prompt that still waits: nobody approved it, so it is denied, and the ask says so.

@@ -204,6 +204,8 @@ pub trait ApprovalNodes: Send + Sync {
         request_id: &str,
         decision: PermissionDecision,
     ) -> BoxFut<'_, Result<(), NodeCommandError>>;
+    /// The machine's node is linked and its session stream subscribed.
+    fn is_linked(&self, machine_id: &str) -> BoxFut<'_, bool>;
     /// The prompt the thread's run waits on now, from the machine stream.
     fn pending_permission(
         &self,
@@ -819,6 +821,9 @@ mod tests {
             unreachable!()
         }
         fn pending_permission(&self, _: &str, _: &str) -> BoxFut<'_, Option<PendingPermission>> {
+            unreachable!()
+        }
+        fn is_linked(&self, _: &str) -> BoxFut<'_, bool> {
             unreachable!()
         }
     }

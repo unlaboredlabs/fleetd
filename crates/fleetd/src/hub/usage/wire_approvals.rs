@@ -286,6 +286,11 @@ impl ApprovalNodes for OpsPorts {
         })
     }
 
+    fn is_linked(&self, m: &str) -> BoxFut<'_, bool> {
+        let m: Option<fleetd_contracts::ids::MachineId> = convert(&m);
+        Box::pin(async move { m.is_some_and(|m| self.hub().executors.is_connected(&m)) })
+    }
+
     fn pending_permission(&self, m: &str, t: &str) -> BoxFut<'_, Option<PendingPermission>> {
         let r = thread_ref(m, t);
         Box::pin(async move { self.hub().executors.pending_permission(&r?) })

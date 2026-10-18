@@ -110,6 +110,7 @@ struct Fake {
     answers: Mutex<Vec<(String, String, String, PermissionDecision)>>,
     answer_fails: Mutex<Option<NodeCommandError>>,
     pending: Mutex<Option<PendingPermission>>,
+    linked: Mutex<bool>,
     rules: Mutex<Result<ToolRules, String>>,
     lead_thread: Mutex<Option<String>>,
     events: Mutex<Vec<NewEvent>>,
@@ -124,6 +125,7 @@ impl Default for Fake {
             answers: Mutex::default(),
             answer_fails: Mutex::default(),
             pending: Mutex::default(),
+            linked: Mutex::new(false),
             rules: Mutex::new(Ok(ToolRules::default())),
             lead_thread: Mutex::default(),
             events: Mutex::default(),
@@ -245,6 +247,10 @@ impl ApprovalNodes for Fake {
             }
         };
         Box::pin(async move { result })
+    }
+    fn is_linked(&self, _: &str) -> BoxFut<'_, bool> {
+        let l = *self.linked.lock().unwrap();
+        Box::pin(async move { l })
     }
     fn pending_permission(&self, _: &str, _: &str) -> BoxFut<'_, Option<PendingPermission>> {
         let p = self.pending.lock().unwrap().clone();
@@ -735,5 +741,51 @@ async fn after_a_restart_an_answer_with_no_delivery_record_is_delivered() {
     assert_eq!(
         fake.asks.lock().unwrap()[0]["evidence"],
         "allowed on lab-a, answered by human:desk"
+    );
+}
+
+#[tokio::test]
+async fn a_prompt_whose_run_ended_while_the_hub_was_down_closes_quietly() {
+    let fake = Arc::new(Fake::default());
+    fake.asks.lock().unwrap().push(json!({
+        "askId": "A1", "kind": "approve", "state": "open", "createdAt": "2026-10-18T10:00:00.000Z",
+        "projectRef": { "machineId": "lab-a", "projectId": "p1" },
+        "permission": { "threadId": "t1", "requestId": "q1", "toolName": "Bash", "summary": "ls" },
+    }));
+    let a = approvals(&fake);
+    a.seed_prompts().await;
+    let late = now_ms();
+    // Offline: the hub can't tell, so it keeps reminding.
+    a.sweep_prompts(late).await;
+    a.sweep_prompts(late + 1).await;
+    assert_eq!(a.prompts.len(), 1);
+    assert_eq!(
+        fake.events.lock().unwrap().len(),
+        1,
+        "an old prompt is reminded about"
+    );
+    // Linked, and the node's snapshot shows another prompt (or none): once is not enough, twice closes it.
+    *fake.linked.lock().unwrap() = true;
+    *fake.pending.lock().unwrap() = Some(pending("q7"));
+    a.sweep_prompts(late + 2).await;
+    assert_eq!(a.prompts.len(), 1);
+    a.sweep_prompts(late + 60_000).await;
+    assert_eq!(a.prompts.len(), 0);
+    let ask = fake.asks.lock().unwrap()[0].clone();
+    assert_eq!(
+        (ask["state"].as_str(), ask["answer"]["value"].as_str()),
+        (
+            Some("withdrawn"),
+            Some("expired: the run ended while the hub was down")
+        )
+    );
+    assert_eq!(
+        fake.events.lock().unwrap().len(),
+        1,
+        "closed quietly: no further reminder"
+    );
+    assert!(
+        fake.answers.lock().unwrap().is_empty(),
+        "nothing is sent to the node"
     );
 }
