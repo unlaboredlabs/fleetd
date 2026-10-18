@@ -213,7 +213,7 @@ mod tests {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let sodium = std::env::var_os("LIBSODIUM_WRAPPERS")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| manifest.join("../../apps/node/node_modules/libsodium-wrappers"));
+            .unwrap_or_else(|| manifest.join("../../tests/lab/node_modules/libsodium-wrappers"));
         if !sodium.exists() {
             eprintln!(
                 "skipped libsodium opening a Rust-sealed box: no libsodium-wrappers at {} (set LIBSODIUM_WRAPPERS)",
