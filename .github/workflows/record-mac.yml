@@ -32,6 +32,10 @@ jobs:
           SECONDS_TO_RECORD: ${{ inputs.seconds || '25' }}
         run: |
           sw_vers
+          # How far this machine's sleeps overshoot, which bounds the recorder's frame rate here.
+          python3 -c 'import time; t=[]
+          for _ in range(100): a=time.perf_counter(); time.sleep(0.01); t.append((time.perf_counter()-a)*1000)
+          t.sort(); print(f"sleep(10 ms) took median {t[50]:.1f} ms, p90 {t[90]:.1f} ms")'
           # $1: output dir, $2: seconds. SIGTERM is how scripts/demo-mac.sh stops the app: the recorder finishes
           # the file, then exits.
           record() {
