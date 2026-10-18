@@ -14,7 +14,7 @@ mod wizard;
 use std::io::IsTerminal;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use super::args::{self, Kind, Spec};
@@ -40,6 +40,7 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              machine (the GitHub noreply address for public repos); --no-service prepares
              everything but leaves starting the hub to you
   init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
+       [--claude-config-dir <dir>]
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
              and repairs the rest; --rejoin enrols again with a new code
@@ -50,16 +51,30 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              what an older fleetd installed for T3 Code
 "#;
 
-static SAID: AtomicUsize = AtomicUsize::new(0);
+/// While the wizard runs a step that prints as it goes (`machine add`), its lines are kept here instead of
+/// scrolling past the checklist; the wizard shows the tail only when the step fails.
+static CAPTURED: Mutex<Option<Vec<String>>> = Mutex::new(None);
 
 pub(crate) fn say(line: &str) {
-    SAID.fetch_add(1, Ordering::Relaxed);
+    if let Some(lines) = CAPTURED.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        lines.push(line.to_owned());
+        return;
+    }
     eprintln!("{line}");
 }
 
-/// Lines `say` printed so far: the checklist rewrites a step's line only while nothing came after it.
-pub(crate) fn said() -> usize {
-    SAID.load(Ordering::Relaxed)
+/// Starts keeping `say` lines instead of printing them.
+pub(crate) fn capture() {
+    *CAPTURED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Vec::new());
+}
+
+/// Stops keeping them and returns what was said.
+pub(crate) fn release() -> Vec<String> {
+    CAPTURED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+        .unwrap_or_default()
 }
 
 fn fail(message: &str) -> u8 {
@@ -289,8 +304,7 @@ pub fn hub_service_spec(
             ("PATH".into(), path.into()),
             ("LANG".into(), "C.UTF-8".into()),
         ],
-        // The same login file the node reads, so the router and the node log in alike.
-        env_file: Some(format!("{user_home}/.fleetd/claude.env")),
+        env_file: None,
         working_directory: home.into(),
         log_path: format!("{home}/hub.log"),
     }
@@ -318,10 +332,12 @@ pub struct InitOptions {
     pub machine_id: Option<String>,
     /// `--rejoin`: enrol again with the code even though this machine's node is enrolled with that hub.
     pub rejoin: bool,
+    /// `--claude-config-dir`: the CLAUDE_CONFIG_DIR this machine's node runs claude with (default: the user's own).
+    pub claude_config_dir: Option<String>,
 }
 
 /// What `fleetd init` sets up on this machine.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InitRole {
     /// This machine is the hub (its setup.json exists).
     Hub,
@@ -594,6 +610,7 @@ const INIT_OPTIONS: &[(&str, Kind)] = &[
     ("code", Kind::Str),
     ("machine-id", Kind::Str),
     ("rejoin", Kind::Bool),
+    ("claude-config-dir", Kind::Str),
 ];
 
 fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
@@ -653,6 +670,7 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
         join,
         machine_id: v.string("machine-id"),
         rejoin: v.flag("rejoin"),
+        claude_config_dir: v.string("claude-config-dir"),
         home,
         previous,
         listen: v.string("listen"),

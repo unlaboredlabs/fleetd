@@ -157,12 +157,19 @@ pub async fn hub_has_tool(home: &Path, name: &str) -> bool {
     }
 }
 
-/// One checklist line per check that isn't ok, except those in `shown`; how many passed.
-pub fn show(list: &mut Checklist, checks: &[DoctorCheck], shown: &[&str]) -> usize {
-    for check in checks
-        .iter()
-        .filter(|c| c.status != DoctorStatus::Ok && !shown.contains(&c.id.as_str()))
-    {
+/// One checklist line per check that isn't ok, except for machines in `idle` (their node is left to the user, and
+/// the list already says how to start it), a finding already listed, and a repeat of the same message; how many
+/// passed.
+pub fn show(list: &mut Checklist, checks: &[DoctorCheck], idle: &[String]) -> usize {
+    let mut said: Vec<(Option<&str>, &str)> = Vec::new();
+    for check in checks.iter().filter(|c| {
+        c.status != DoctorStatus::Ok && !c.machine_id.as_ref().is_some_and(|m| idle.contains(m))
+    }) {
+        let key = (check.machine_id.as_deref(), check.message.as_str());
+        if said.contains(&key) {
+            continue;
+        }
+        said.push(key);
         let state = match check.status {
             DoctorStatus::Fail => State::Failed,
             _ => State::Warn,
@@ -179,6 +186,10 @@ pub fn show(list: &mut Checklist, checks: &[DoctorCheck], shown: &[&str]) -> usi
             (State::Failed, None) => Some("fleetd doctor again once the cause is gone".to_owned()),
             (_, fix) => fix,
         };
+        // A step before (init's own check) already reported this, with the same fix.
+        if fix.as_deref().is_some_and(|f| list.has_fix(f)) {
+            continue;
+        }
         let title = check.machine_id.as_deref().unwrap_or("hub");
         if still_checking(&check.message) {
             list.skipped(

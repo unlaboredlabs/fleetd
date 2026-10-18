@@ -21,15 +21,17 @@ use super::{Probe, current_exe, parse_listen, probe_listen, say};
 pub fn machine_usage() -> String {
     use crate::node::runner::version::SUPPORTED;
     format!(
-        "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run]
+        "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--no-service]
             [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]
+            [--claude-config-dir <dir>]
              set up a machine that runs agents, over SSH (--local: this machine): copies this fleetd
              there, checks its claude (installed, version {SUPPORTED}, logged in), enrolls the node and
              runs it as a user service, then waits until the machine is online; prints every command
-             first, --dry-run only prints (for a fresh machine, without connecting); safe to run again
+             first, --dry-run only prints (for a fresh machine, without connecting); --no-service
+             enrolls the node but writes no service and prints how to run it; safe to run again
   machine remove <id> [--purge] [--home <hub home>]
              stop and remove the node's service on the machine and revoke its key on the hub; --purge
-             also deletes ~/.fleetd/node, ~/.fleetd/claude and ~/.fleetd/claude.env there, and
+             also deletes ~/.fleetd/node and ~/.fleetd/claude.env there, and
              what an older fleetd installed for T3 Code
 "
     )
@@ -166,6 +168,10 @@ pub struct Added {
     pub layout: MachineLayout,
     pub claude: String,
     pub logged_in: bool,
+    /// `--no-service`: how to run its node by hand.
+    pub run_by_hand: Option<String>,
+    /// The CLAUDE_CONFIG_DIR its node runs claude with; `None`: the user's own.
+    pub claude_config_dir: Option<String>,
 }
 
 /// Where the one-time enrollment token comes from: the hub's database (on the hub), `fleetd pair --worker` (on a
@@ -282,6 +288,10 @@ pub struct AddArgs {
     pub enroll: Enroll,
     /// Only for a joining worker, which has no hub setup to read it from.
     pub git_identity: Option<GitIdentity>,
+    /// `--no-service`: enroll, but leave running the node to the user.
+    pub no_service: bool,
+    /// `--claude-config-dir`: the node runs claude with this CLAUDE_CONFIG_DIR instead of the user's own.
+    pub claude_config_dir: Option<String>,
 }
 
 fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
@@ -294,6 +304,8 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         ("ssh-config", Kind::Str),
         ("home", Kind::Str),
         ("unit-suffix", Kind::Str),
+        ("no-service", Kind::Bool),
+        ("claude-config-dir", Kind::Str),
     ];
     let v = args::parse(
         argv,
@@ -330,6 +342,8 @@ fn parse_add(argv: &[String]) -> Result<AddArgs, u8> {
         unit_suffix: v.string("unit-suffix"),
         enroll: Enroll::Hub,
         git_identity: None,
+        no_service: v.flag("no-service"),
+        claude_config_dir: v.string("claude-config-dir"),
     })
 }
 
@@ -440,6 +454,8 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         binary_target: local_target(),
         version: env!("CARGO_PKG_VERSION").into(),
         hub_has_node_key: false,
+        service: !a.no_service,
+        claude_config_dir: a.claude_config_dir.clone(),
     };
     let again = if joining {
         "fleetd init again".to_owned()
@@ -613,7 +629,16 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         }
     }
 
-    if let Some(hub) = &hub {
+    if let Some(cmd) = &plan.run_by_hand {
+        say(&format!(
+            "{machine_id} is enrolled; with --no-service, start its node yourself{}:\n  {cmd}",
+            if local {
+                String::new()
+            } else {
+                format!(" on {host}")
+            }
+        ));
+    } else if let Some(hub) = &hub {
         let already = !plan.node_restarts
             && hub
                 .store
@@ -639,17 +664,27 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
     }
     // A worker's claude with no login fails every session; say so now, not at the first order.
     let claude = facts.claude.clone().unwrap_or_default();
-    let status = run_ssh(&target, &login_status_command(&plan.layout, &claude), None).await;
+    let config_dir = a.claude_config_dir.clone();
+    let status = run_ssh(
+        &target,
+        &login_status_command(&plan.layout, &claude, config_dir.as_deref()),
+        None,
+    )
+    .await;
     let logged_in = serde_json::from_str::<serde_json::Value>(status.stdout.trim())
         .ok()
         .and_then(|v| v.get("loggedIn").and_then(serde_json::Value::as_bool))
         == Some(true);
     let mut notes = plan.notes.clone();
     if !logged_in {
-        let login = login_command(&plan.layout, &claude);
+        let login = login_command(&claude, config_dir.as_deref());
         notes.push(format!(
-            "fleetd's Claude on {machine_id} is not logged in, so its sessions can't start. Fix: {}",
-            if local { login } else { format!("ssh -t {host} {}", super::units::q(&login)) }
+            "claude on {machine_id} is not logged in, so its sessions can't start. Fix: {}",
+            if local {
+                login
+            } else {
+                format!("ssh -t {host} {}", super::units::q(&login))
+            }
         ));
     }
     for note in &notes {
@@ -661,6 +696,8 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         layout: plan.layout,
         claude,
         logged_in,
+        run_by_hand: plan.run_by_hand,
+        claude_config_dir: config_dir,
     }))
 }
 
@@ -790,29 +827,38 @@ pub async fn machine_command(argv: &[String]) -> u8 {
     }
 }
 
-/// A worker joining by itself (`fleetd init --join <hub url> --code <token>`), or repaired after it did.
-pub async fn join(
-    hub_url: &str,
-    enroll: Enroll,
-    machine_id: Option<String>,
-    tags: Vec<String>,
-    identity: Option<GitIdentity>,
-    unit_suffix: &str,
-) -> Result<Added, u8> {
+/// A worker joining by itself (`fleetd init --join <hub url> --code <token>`), or repaired after it did: `machine
+/// add --local` against a hub this machine reaches but whose database it doesn't hold.
+pub async fn join(hub_url: &str, enroll: Enroll, args: AddArgs) -> Result<Added, u8> {
     add(AddArgs {
         host: None,
-        machine_id,
-        tags,
-        dry_run: false,
         hub_url: Some(hub_url.to_owned()),
-        ssh_config: None,
         home: None,
-        unit_suffix: Some(unit_suffix.to_owned()),
         enroll,
-        git_identity: identity,
+        ..args
     })
     .await
     .map(|added| added.expect("not a dry run"))
+}
+
+impl AddArgs {
+    /// This machine, nothing else set.
+    pub fn local(machine_id: String, unit_suffix: &str, service: bool) -> Self {
+        AddArgs {
+            host: None,
+            machine_id: Some(machine_id),
+            tags: Vec::new(),
+            dry_run: false,
+            hub_url: None,
+            ssh_config: None,
+            home: None,
+            unit_suffix: Some(unit_suffix.to_owned()),
+            enroll: Enroll::Hub,
+            git_identity: None,
+            no_service: !service,
+            claude_config_dir: None,
+        }
+    }
 }
 
 #[cfg(test)]

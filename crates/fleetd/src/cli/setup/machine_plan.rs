@@ -16,7 +16,7 @@ use crate::node::runner::version::{self, VersionVerdict};
 pub const CLAUDE_INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
 
 /// The node.json fields `machine add` sets; the rest (cmdRoots, …) are the user's or the node's and are kept.
-const NODE_CONFIG_OWNED: [&str; 4] = ["hub", "machineId", "name", "tags"];
+const NODE_CONFIG_OWNED: [&str; 5] = ["hub", "machineId", "name", "tags", "claudeConfigDir"];
 
 /// Where fleetd puts things on a machine, under the SSH user's home.
 #[derive(Clone, Debug)]
@@ -24,9 +24,7 @@ pub struct MachineLayout {
     pub fleetd: String,
     pub node_home: String,
     pub node_config: String,
-    /// fleetd's own Claude config dir (`CLAUDE_CONFIG_DIR`), so the user's ~/.claude is never touched.
-    pub claude_dir: String,
-    /// fleetd's Claude login or gateway variables, KEY=value lines, 0600, read by the node for each session.
+    /// Optional extra KEY=value lines the node adds to claude's environment; setup never creates it.
     pub env_file: String,
     pub logs: String,
     pub bin_dir: String,
@@ -43,7 +41,6 @@ pub fn machine_layout(home: &str) -> MachineLayout {
     MachineLayout {
         node_home: format!("{fleetd}/node"),
         node_config: format!("{fleetd}/node/node.json"),
-        claude_dir: format!("{fleetd}/claude"),
         env_file: format!("{fleetd}/claude.env"),
         logs: format!("{fleetd}/logs"),
         bin_dir: format!("{fleetd}/bin"),
@@ -197,6 +194,12 @@ pub struct MachineAddInput {
     pub version: String,
     /// The hub already holds a node key for this machine id.
     pub hub_has_node_key: bool,
+    /// Run the node as a user service; false (`--no-service`): nothing goes to systemd or launchd, and
+    /// [`MachinePlan::run_by_hand`] says how to start it.
+    pub service: bool,
+    /// `--claude-config-dir`: the CLAUDE_CONFIG_DIR the node runs claude with (node.json `claudeConfigDir`); `None`
+    /// keeps what the node has, which by default is the user's own (~/.claude).
+    pub claude_config_dir: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,6 +250,8 @@ pub struct MachinePlan {
     pub notes: Vec<String>,
     /// The node will (re)connect during this run, so `machine add` waits for it to come back.
     pub node_restarts: bool,
+    /// Without a service: the command that runs the node, with the environment its unit would have set.
+    pub run_by_hand: Option<String>,
 }
 
 fn dirname(path: &str) -> &str {
@@ -338,8 +343,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ("HOME".to_owned(), facts.home.clone()),
         ("PATH".into(), path_dirs.join(":")),
         ("LANG".into(), "C.UTF-8".into()),
-        // Every claude the node starts keeps its login and settings apart from the user's own ~/.claude.
-        ("CLAUDE_CONFIG_DIR".into(), l.claude_dir.clone()),
     ];
     env.extend(git_identity_env(input.git_identity.as_ref()));
     let node_spec = ServiceSpec {
@@ -364,12 +367,9 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     steps.push(step(
         "create fleetd's directories",
         format!(
-            "mkdir -p {} && chmod 700 {} {}",
-            [&l.node_home, &l.claude_dir, &l.logs, &l.bin_dir]
-                .map(|d| q(d))
-                .join(" "),
-            q(&l.fleetd),
-            q(&l.claude_dir)
+            "mkdir -p {} && chmod 700 {}",
+            [&l.node_home, &l.logs, &l.bin_dir].map(|d| q(d)).join(" "),
+            q(&l.fleetd)
         ),
     ));
 
@@ -392,17 +392,10 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         });
     }
 
-    if facts.sizes.get(&l.env_file).copied().flatten().is_none() {
-        steps.push(step(
-            "create fleetd's Claude login file (empty, 0600)",
-            format!("[ -e {f} ] || (umask 077 && : > {f})", f = q(&l.env_file)),
-        ));
-    }
-
     let text = render_unit(platform, &node_spec);
     let existing_unit = facts.file(&unit_file(Role::Node));
-    let node_changed = existing_unit != Some(text.as_str());
-    let node_existed = existing_unit.is_some();
+    let node_changed = input.service && existing_unit != Some(text.as_str());
+    let node_existed = input.service && existing_unit.is_some();
     if node_changed {
         steps.push(write_file(
             "write the node service",
@@ -412,12 +405,6 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ));
     }
 
-    let desired = json!({
-        "hub": input.hub_url,
-        "machineId": input.machine_id,
-        "name": input.machine_id,
-        "tags": input.tags,
-    });
     let existing_node = facts
         .file(&l.node_config)
         .and_then(|text| Json::parse(text).ok())
@@ -429,6 +416,20 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             .and_then(|o| o.get(key))
             .map(|v| serde_json::to_value(v).unwrap_or_default())
     };
+    // The flag wins; without it the node keeps the config dir it has (by default none: the user's ~/.claude).
+    let config_dir = input
+        .claude_config_dir
+        .clone()
+        .map(Value::String)
+        .or_else(|| get("claudeConfigDir"))
+        .unwrap_or(Value::Null);
+    let desired = json!({
+        "hub": input.hub_url,
+        "machineId": input.machine_id,
+        "name": input.machine_id,
+        "tags": input.tags,
+        "claudeConfigDir": config_dir,
+    });
     let enrolled = get("enrolled") == Some(Value::Bool(true))
         && get("machineId") == Some(desired["machineId"].clone())
         && get("hub") == Some(desired["hub"].clone());
@@ -451,6 +452,9 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ];
         if !input.tags.is_empty() {
             argv.extend(["--tags".to_owned(), input.tags.join(",")]);
+        }
+        if let Some(dir) = desired["claudeConfigDir"].as_str() {
+            argv.extend(["--claude-config-dir".to_owned(), dir.to_owned()]);
         }
         argv.extend([
             "--home".to_owned(),
@@ -478,7 +482,9 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             .and_then(|j| j.as_object().cloned())
             .unwrap_or_default();
         for key in NODE_CONFIG_OWNED {
-            config.insert(key, Json::from(desired[key].clone()));
+            if !desired[key].is_null() {
+                config.insert(key, Json::from(desired[key].clone()));
+            }
         }
         steps.push(write_file(
             "update the node's settings",
@@ -488,18 +494,33 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         ));
     }
     // A new binary is new node code: the running node keeps the old one until it restarts.
-    let node_restarts = enrolls || config_change || node_changed || binary_changes;
-    steps.push(if node_restarts {
-        step(
-            "(re)start the node",
-            services.restart(Role::Node, node_changed && node_existed),
-        )
-    } else {
-        step(
-            "make sure the node runs",
-            services.ensure_running(Role::Node),
-        )
+    let node_restarts =
+        input.service && (enrolls || config_change || node_changed || binary_changes);
+    let run_by_hand = (!input.service).then(|| {
+        let env = node_spec
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with("GIT_"))
+            .map(|(k, v)| format!("{k}={}", q(v)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{env} {} node run --home {}", q(&l.bin), q(&l.node_home))
+            .trim_start()
+            .to_owned()
     });
+    if input.service {
+        steps.push(if node_restarts {
+            step(
+                "(re)start the node",
+                services.restart(Role::Node, node_changed && node_existed),
+            )
+        } else {
+            step(
+                "make sure the node runs",
+                services.ensure_running(Role::Node),
+            )
+        });
+    }
 
     if claude_verdict == VersionVerdict::UntestedNewer {
         notes.push(format!(
@@ -508,7 +529,7 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             claude_verdict.fix().unwrap_or_default()
         ));
     }
-    if platform == Platform::Linux && facts.linger != "yes" {
+    if input.service && platform == Platform::Linux && facts.linger != "yes" {
         notes.push(format!(
             "linger is {} for {u}, so the node stops when {u} logs out. Fix: sudo loginctl enable-linger {u}",
             facts.linger,
@@ -530,17 +551,18 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
         steps,
         notes,
         node_restarts,
+        run_by_hand,
     })
 }
 
-/// Whether fleetd's Claude is logged in on the machine, asked exactly as the node will run it: an environment built
-/// from scratch (HOME, PATH, USER, LANG), then claude.env, then fleetd's own config dir. Nothing from the shell that
-/// runs setup leaks in. Prints `claude auth status --json`.
-pub fn login_status_command(l: &MachineLayout, claude: &str) -> String {
+/// Whether claude is logged in on the machine, asked as the node runs it: an environment built from scratch (HOME,
+/// PATH, USER, LANG), then the optional claude.env, and the config dir the node was given (default: the user's own).
+/// Nothing from the shell that runs setup leaks in. Prints `claude auth status --json`.
+pub fn login_status_command(l: &MachineLayout, claude: &str, config_dir: Option<&str>) -> String {
+    let dir = config_dir.map_or(String::new(), |d| format!("CLAUDE_CONFIG_DIR={} ", q(d)));
     let inner = format!(
-        "set -a; [ -f {env} ] && . {env}; set +a; CLAUDE_CONFIG_DIR={dir} exec {claude} auth status --json",
+        "set -a; [ -f {env} ] && . {env}; set +a; {dir}exec {claude} auth status --json",
         env = q(&l.env_file),
-        dir = q(&l.claude_dir),
         claude = q(claude)
     );
     format!(
@@ -549,47 +571,12 @@ pub fn login_status_command(l: &MachineLayout, claude: &str) -> String {
     )
 }
 
-/// Login variables a shell may carry that fleetd's services never see unless they are in claude.env.
-pub const SHELL_LOGIN_VARS: [&str; 4] = [
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_BASE_URL",
-];
-
-/// claude.env with `vars` set: each key replaces its line in place, new keys go at the end, every other line stays.
-pub fn merge_env_file(existing: &str, vars: &[(String, String)]) -> String {
-    let key_of = |line: &str| {
-        let line = line.trim();
-        let line = line.strip_prefix("export ").unwrap_or(line);
-        line.split_once('=').map(|(k, _)| k.trim().to_owned())
-    };
-    let mut lines: Vec<String> = Vec::new();
-    let mut done: Vec<&str> = Vec::new();
-    for line in existing.lines() {
-        match key_of(line).and_then(|k| vars.iter().find(|(key, _)| *key == k)) {
-            Some((key, value)) => {
-                lines.push(format!("{key}={value}"));
-                done.push(key);
-            }
-            None => lines.push(line.to_owned()),
-        }
+/// The login a person runs on the machine, in the config dir the node uses.
+pub fn login_command(claude: &str, config_dir: Option<&str>) -> String {
+    match config_dir {
+        Some(dir) => format!("CLAUDE_CONFIG_DIR={} {} auth login", q(dir), q(claude)),
+        None => format!("{} auth login", q(claude)),
     }
-    for (key, value) in vars {
-        if !done.contains(&key.as_str()) {
-            lines.push(format!("{key}={value}"));
-        }
-    }
-    format!("{}\n", lines.join("\n"))
-}
-
-/// The login a person runs on the machine, in fleetd's own config dir.
-pub fn login_command(l: &MachineLayout, claude: &str) -> String {
-    format!(
-        "CLAUDE_CONFIG_DIR={} {} auth login",
-        q(&l.claude_dir),
-        q(claude)
-    )
 }
 
 /// A machine fleetd has never touched: what `--dry-run` plans against, since it does not connect.
@@ -665,10 +652,10 @@ pub fn plan_machine_remove(
         ),
     )];
     if purge {
-        let mut paths = vec![&l.node_home, &l.claude_dir, &l.env_file, &l.logs];
+        let mut paths = vec![&l.node_home, &l.env_file, &l.logs];
         paths.extend(l.legacy_share.iter());
         steps.push(step(
-            "delete the node's key and settings, fleetd's Claude login and config, and its logs",
+            "delete the node's key and settings, its claude.env and its logs",
             format!(
                 "rm -rf {}",
                 paths.iter().map(|p| q(p)).collect::<Vec<_>>().join(" ")
@@ -703,6 +690,8 @@ mod tests {
             binary_target: ("linux".into(), "x64".into()),
             version: "0.0.0".into(),
             hub_has_node_key: false,
+            service: true,
+            claude_config_dir: None,
         }
     }
 
@@ -753,7 +742,7 @@ mod tests {
         assert!(text.contains(
             "ExecStart=/home/wynn/.fleetd/bin/fleetd node run --home /home/wynn/.fleetd/node\n"
         ));
-        assert!(text.contains("Environment=CLAUDE_CONFIG_DIR=/home/wynn/.fleetd/claude\n"));
+        assert!(!text.contains("CLAUDE_CONFIG_DIR"));
         assert!(text.contains(
             "Environment=PATH=/home/wynn/.fleetd/bin:/home/wynn/.local/bin:/usr/local/bin:"
         ));
@@ -812,6 +801,36 @@ mod tests {
         assert_eq!(written["cmdRoots"], json!(["/srv"]));
     }
 
+    /// --no-service: nothing for systemd or launchd, and the node's command to run by hand.
+    #[test]
+    fn no_service_writes_no_unit_and_says_how_to_run_the_node() {
+        let plan = plan_machine_add(
+            &fresh_facts("wynn", "x64"),
+            &MachineAddInput {
+                service: false,
+                ..input()
+            },
+        )
+        .unwrap();
+        assert!(
+            plan.steps
+                .iter()
+                .all(|s| !s.command.contains("systemctl") && !s.command.contains("systemd/user"))
+        );
+        assert!(
+            plan.steps
+                .iter()
+                .any(|s| s.stdin == Some(Stdin::EnrollToken))
+        );
+        assert!(!plan.node_restarts);
+        assert_eq!(
+            plan.run_by_hand.as_deref(),
+            Some(
+                "GIT_AUTHOR_NAME=wynn-dev GIT_AUTHOR_EMAIL=1+wynn-dev@users.noreply.github.com GIT_COMMITTER_NAME=wynn-dev GIT_COMMITTER_EMAIL=1+wynn-dev@users.noreply.github.com /home/wynn/.fleetd/bin/fleetd node run --home /home/wynn/.fleetd/node"
+            )
+        );
+    }
+
     #[test]
     fn refuses_another_arch_unknown_os_and_a_missing_or_wrong_claude() {
         let facts = fresh_facts("wynn", "arm64");
@@ -847,24 +866,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn carrying_a_shell_login_into_claude_env_keeps_the_rest() {
-        let existing = "# fleetd's Claude login\nexport ANTHROPIC_BASE_URL=https://old\nHTTPS_PROXY=http://p\n";
-        let merged = merge_env_file(
-            existing,
-            &[
-                ("ANTHROPIC_BASE_URL".into(), "https://gw".into()),
-                ("ANTHROPIC_AUTH_TOKEN".into(), "t".into()),
-            ],
-        );
-        assert_eq!(
-            merged,
-            "# fleetd's Claude login\nANTHROPIC_BASE_URL=https://gw\nHTTPS_PROXY=http://p\nANTHROPIC_AUTH_TOKEN=t\n"
-        );
-        assert_eq!(merge_env_file("", &[("A".into(), "1".into())]), "A=1\n");
-    }
-
-    /// The login check sees claude.env and fleetd's config dir, and nothing of the shell that runs it.
+    /// The login check sees claude.env and the node's config dir, and nothing of the shell that runs it.
     #[test]
     fn the_login_check_runs_with_only_the_nodes_environment() {
         let home = tempfile::tempdir().unwrap();
@@ -875,20 +877,20 @@ mod tests {
         let fake = format!("{h}/claude");
         std::fs::write(
             &fake,
-            "#!/bin/sh\necho \"$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL|${ANTHROPIC_AUTH_TOKEN:-none}\"\n",
+            "#!/bin/sh\necho \"${CLAUDE_CONFIG_DIR:-own}|$ANTHROPIC_BASE_URL|${ANTHROPIC_AUTH_TOKEN:-none}\"\n",
         )
         .unwrap();
         std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755))
             .unwrap();
         let out = std::process::Command::new("/bin/sh")
-            .args(["-c", &login_status_command(&l, &fake)])
+            .args(["-c", &login_status_command(&l, &fake, None)])
             .env("HOME", h)
             .env("ANTHROPIC_AUTH_TOKEN", "from-the-shell")
             .output()
             .unwrap();
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
-            format!("{h}/.fleetd/claude|https://gw|none")
+            "own|https://gw|none"
         );
     }
 

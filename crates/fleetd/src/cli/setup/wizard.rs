@@ -1,94 +1,139 @@
-//! `fleetd init` in a terminal (or with --yes): the hub, how it is reached, the claude and gh logins, the machines
-//! that run agents, a first project, the desktop app's pairing and the doctor, as a live checklist. Run again, it
-//! finds what exists, keeps what works and repairs the rest; it never deletes data or makes a second key or unit.
+//! `fleetd init` in a terminal (or with --yes): one question at a time under a step header, live checks that resolve
+//! to ✓/✗ with a one-line fix, and a short summary with the one next action. Run again, it finds what exists, keeps
+//! what works and repairs the rest; it never deletes data or makes a second key or unit.
 
 use std::path::{Path, PathBuf};
 
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Input, MultiSelect, Select};
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::ids::MachineId;
 
 use super::checklist::Checklist;
 use super::detect::{self, Tailnet};
 use super::machine::{self, Added, local_host_name, machine_id_from_host};
-use super::machine_plan::{SHELL_LOGIN_VARS, login_command, login_status_command, merge_env_file};
+use super::machine_plan::{login_command, login_status_command};
 use super::ssh::{run_attached, run_local, run_ssh};
 use super::state::{GitIdentity, is_noreply, parse_git_identity, read_setup};
 use super::units::q;
-use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen, say};
+use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen};
 use crate::cli::hub_key::open_hub;
-use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
-use fleetd_contracts::sessions::LoginStatus;
-
 use crate::cli::pair;
+use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
+use crate::node::runner::claude_setup::{ClaudeSetup, describe};
 
 const PORT: u16 = 4790;
+const AGAIN: &str = "Run fleetd init to continue; it keeps what's done.";
 
 /// The user pressed Esc or Ctrl-C at a prompt.
 struct Stopped;
 
+fn stopped(_: std::io::Error) -> Stopped {
+    Stopped
+}
+
+/// Prompts, one at a time. Without a terminal (or with --yes) each answers its default.
 struct Ui {
     interactive: bool,
-    theme: ColorfulTheme,
 }
 
 impl Ui {
-    fn confirm(&self, prompt: &str, default: bool) -> Result<bool, Stopped> {
+    fn confirm(&self, list: &mut Checklist, prompt: &str, default: bool) -> Result<bool, Stopped> {
         if !self.interactive {
             return Ok(default);
         }
-        Confirm::with_theme(&self.theme)
-            .with_prompt(prompt)
-            .default(default)
-            .interact_opt()
-            .ok()
-            .flatten()
-            .ok_or(Stopped)
+        list.stop_spinner();
+        let answer = cliclack::confirm(prompt)
+            .initial_value(default)
+            .interact()
+            .map_err(stopped);
+        list.prompted();
+        answer
     }
 
-    fn input(&self, prompt: &str, default: &str) -> Result<String, Stopped> {
+    /// Whether to run an interactive login (claude/gh auth login) now: only when a person is at the terminal and
+    /// says yes. Without a terminal, with --yes or in a scripted --join it is never offered, so nothing waits for a
+    /// browser; the step fails with its fix instead.
+    fn offer_login(&self, list: &mut Checklist, prompt: &str) -> Result<bool, Stopped> {
+        if !self.interactive {
+            return Ok(false);
+        }
+        self.confirm(list, prompt, true)
+    }
+
+    /// An input; Enter on an empty line takes `default`. `check` explains a bad answer inline.
+    fn input(
+        &self,
+        list: &mut Checklist,
+        prompt: &str,
+        default: &str,
+        placeholder: &str,
+        check: fn(&str) -> Result<(), String>,
+    ) -> Result<String, Stopped> {
         if !self.interactive {
             return Ok(default.to_owned());
         }
-        let mut input = Input::<String>::with_theme(&self.theme).with_prompt(prompt);
+        list.stop_spinner();
+        let mut input = cliclack::input(prompt).validate(move |s: &String| check(s.trim()));
         if !default.is_empty() {
-            input = input.default(default.to_owned());
+            input = input.default_input(default);
+        } else if !placeholder.is_empty() {
+            input = input.placeholder(placeholder);
         }
-        input.interact_text().map_err(|_| Stopped)
+        let answer = input
+            .interact::<String>()
+            .map(|s| s.trim().to_owned())
+            .map_err(stopped);
+        list.prompted();
+        answer
     }
 
-    fn select(&self, prompt: &str, items: &[String], default: usize) -> Result<usize, Stopped> {
+    /// `(value, label, hint)`; the default is preselected.
+    fn select<T: Clone + Eq>(
+        &self,
+        list: &mut Checklist,
+        prompt: &str,
+        items: &[(T, String, String)],
+        default: T,
+    ) -> Result<T, Stopped> {
         if !self.interactive {
             return Ok(default);
         }
-        Select::with_theme(&self.theme)
-            .with_prompt(prompt)
+        list.stop_spinner();
+        let answer = cliclack::select(prompt)
             .items(items)
-            .default(default)
-            .interact_opt()
-            .ok()
-            .flatten()
-            .ok_or(Stopped)
+            .initial_value(default)
+            .interact()
+            .map_err(stopped);
+        list.prompted();
+        answer
     }
 
-    fn multi(
+    fn multi<T: Clone + Eq>(
         &self,
+        list: &mut Checklist,
         prompt: &str,
-        items: &[String],
-        picked: &[bool],
-    ) -> Result<Vec<usize>, Stopped> {
+        items: &[(T, String, String)],
+        defaults: Vec<T>,
+    ) -> Result<Vec<T>, Stopped> {
         if !self.interactive {
-            return Ok((0..items.len()).filter(|i| picked[*i]).collect());
+            return Ok(defaults);
         }
-        MultiSelect::with_theme(&self.theme)
-            .with_prompt(prompt)
+        list.stop_spinner();
+        let answer = cliclack::multiselect(prompt)
             .items(items)
-            .defaults(picked)
-            .interact_opt()
-            .ok()
-            .flatten()
-            .ok_or(Stopped)
+            .initial_values(defaults)
+            .required(false)
+            .interact()
+            .map_err(stopped);
+        list.prompted();
+        answer
+    }
+}
+
+fn needed(s: &str) -> Result<(), String> {
+    if s.is_empty() {
+        Err("this one is needed".into())
+    } else {
+        Ok(())
     }
 }
 
@@ -105,8 +150,7 @@ fn which(bin: &str) -> Option<PathBuf> {
     })
 }
 
-/// Runs a command with only the environment the hub service has, as the doctor does, so a check sees what the hub
-/// will see.
+/// Runs a command with only the environment the hub service has, as the doctor does.
 async fn hub_env_run(program: &str, args: &[&str]) -> CmdOutcome {
     let output = tokio::process::Command::new(program)
         .args(args)
@@ -128,8 +172,9 @@ async fn hub_env_run(program: &str, args: &[&str]) -> CmdOutcome {
     }
 }
 
-/// A login flow with this terminal attached.
-fn attached(program: &str, args: &[&str]) -> bool {
+/// A login flow or a clone with this terminal attached.
+fn attached(list: &mut Checklist, program: &str, args: &[&str]) -> bool {
+    list.stop_spinner();
     std::process::Command::new(program)
         .args(args)
         .status()
@@ -164,31 +209,61 @@ fn tilde(path: &Path) -> String {
     }
 }
 
+/// "… Fix: <command>" split into the why and the command.
+fn split_fix(problem: &str) -> (String, String) {
+    match problem.split_once(" Fix: ") {
+        Some((why, fix)) => (
+            why.trim().trim_end_matches('.').to_owned(),
+            fix.trim().trim_end_matches('.').to_owned(),
+        ),
+        None => (
+            problem.trim().trim_end_matches('.').to_owned(),
+            problem.trim().to_owned(),
+        ),
+    }
+}
+
 pub async fn run(opts: InitOptions, interactive: bool) -> u8 {
-    let ui = Ui {
-        interactive,
-        theme: ColorfulTheme::default(),
-    };
-    match steps(&opts, &ui).await {
+    // Ctrl-C outside a prompt (a spinner, a check): give the cursor back and say how to go on.
+    tokio::spawn(async {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            let _ = console::Term::stderr().show_cursor();
+            eprintln!("\n{AGAIN}");
+            std::process::exit(130);
+        }
+    });
+    let ui = Ui { interactive };
+    let mut list = Checklist::new();
+    if list.rich {
+        let _ = cliclack::intro(
+            console::style(" fleetd init ")
+                .on_cyan()
+                .black()
+                .for_stderr(),
+        );
+    }
+    match steps(&opts, &ui, &mut list).await {
         Ok(code) => code,
         Err(Stopped) => {
-            say(
-                "stopped. Run fleetd init again to pick up where you left off; it keeps what is done.",
-            );
+            list.stop_spinner();
+            // cliclack has already closed the prompt with "Operation cancelled."
+            eprintln!("{}{AGAIN}", if list.rich { "   " } else { "" });
             130
         }
     }
 }
 
-async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
-    let mut list = Checklist::new();
-    let previous = opts.previous.as_ref();
-    say(if previous.is_some() {
-        "fleetd init: checking your setup. It keeps what works and repairs the rest."
-    } else {
-        "fleetd init: sets up fleetd on this machine, step by step. Enter takes the default."
-    });
+/// What the summary at the end shows.
+#[derive(Default)]
+struct Summary {
+    hub: Option<String>,
+    workers: Vec<String>,
+    project: Option<String>,
+    pairing: Option<String>,
+}
 
+async fn steps(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, Stopped> {
+    let previous = opts.previous.as_ref();
     let joined = machine::joined_here();
     let role = super::init_role(
         previous.is_some(),
@@ -202,32 +277,59 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
     );
     match (role, joined) {
         (super::InitRole::RepairWorker, Some(joined)) => {
-            return repair_worker(opts, ui, &mut list, joined).await;
+            list.set_sections(1);
+            return repair_worker(opts, ui, list, joined).await;
         }
-        (super::InitRole::Join, _) => return join_hub(opts, ui, &mut list).await,
-        (super::InitRole::Ask, _)
-            if !ui.confirm(
-                "Is this machine the hub (the always-on machine that runs your fleet)?",
-                true,
-            )? =>
-        {
-            return join_hub(opts, ui, &mut list).await;
+        (super::InitRole::Join, _) => {
+            list.set_sections(2);
+            return join_hub(opts, ui, list).await;
         }
         _ => {}
     }
 
-    // Reachability.
+    list.set_sections(6);
+    list.section("This machine");
+    if role == super::InitRole::Ask {
+        if let Some(code) = offer_app(ui, list)? {
+            return Ok(code);
+        }
+        let hub = ui.select(
+            list,
+            "What is this machine?",
+            &[
+                (
+                    true,
+                    "The hub".to_owned(),
+                    "always on; your fleet and the app connect to it".to_owned(),
+                ),
+                (
+                    false,
+                    "A worker for a hub I already have".to_owned(),
+                    "joins it with a one-time code".to_owned(),
+                ),
+            ],
+            true,
+        )?;
+        if !hub {
+            list.set_sections(2);
+            return join_hub(opts, ui, list).await;
+        }
+    }
     let net = tailnet().await;
     let lan = detect::lan_ipv4();
-    let (listen, url) = reachability(opts, ui, &mut list, net.as_ref(), lan.as_deref()).await?;
+    let (listen, url) = reachability(opts, ui, list, net.as_ref(), lan.as_deref()).await?;
+    let mut summary = Summary {
+        hub: Some(url.clone()),
+        ..Summary::default()
+    };
 
-    // Logins on the hub, as its service will run them.
-    let (_, env_changed) = hub_claude(ui, &mut list).await?;
-    let gh_ok = login_check(ui, &mut list, Tool::Gh).await?;
-    let identity = commit_identity(opts, ui, &mut list, gh_ok).await?;
+    list.section("Logins");
+    let claude = hub_claude(ui, list).await?;
+    let gh_ok = gh_check(ui, list).await?;
+    let identity = commit_identity(opts, ui, list, gh_ok).await?;
 
-    // The hub.
-    list.start("hub");
+    list.section("Hub");
+    list.start("Starting the hub");
     let plan = HubPlan {
         home: &opts.home,
         listen: listen.clone(),
@@ -235,19 +337,24 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
         suffix: opts.suffix.clone(),
         identity,
         with_service: opts.with_service,
-        restart: env_changed,
+        restart: false,
     };
-    let indent = |line: &str| say(&format!("    {}", line.trim_start()));
-    let hub_up = match install_hub(&plan, &indent).await {
+    let hub_up = match install_hub(&plan, &|_| {}).await {
+        Ok(how) if how.starts_with("not started") => {
+            list.todo(
+                "hub",
+                "not started (--no-service)",
+                "start the hub, then run fleetd init again",
+                &format!(
+                    "fleetd hub start --home {} --listen {listen}",
+                    q(&opts.home.to_string_lossy())
+                ),
+            );
+            false
+        }
         Ok(how) => {
-            let running = !how.starts_with("not started");
-            let how = format!("{how} (home {})", tilde(&opts.home));
-            if running {
-                list.done("hub", &how);
-            } else {
-                list.skipped("hub", &how);
-            }
-            running
+            list.done("hub", &how.replace(" and answers at ", " · "));
+            true
         }
         Err(failure) => {
             list.failed("hub", &failure.message, &failure.fix);
@@ -255,76 +362,164 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
         }
     };
 
-    let mut added = Vec::new();
+    let (mut added, mut idle) = (Vec::new(), Vec::new());
+    list.section("Workers");
     if hub_up {
-        let (local, ids) = workers(opts, ui, &mut list, net.as_ref()).await?;
-        added = ids;
-        first_project(opts, ui, &mut list, local.as_deref(), gh_ok).await?;
+        let (local, ids, by_hand) = workers(opts, ui, list, net.as_ref(), claude.as_ref()).await?;
+        summary.workers = ids.iter().chain(&by_hand).cloned().collect();
+        (added, idle) = (ids, by_hand);
+        list.section("Project");
+        summary.project = first_project(opts, ui, list, local.as_deref(), gh_ok).await?;
     } else {
-        list.skipped(
-            "workers, first project and doctor",
-            "they need the hub running",
-        );
+        list.skipped("workers", "need the hub running");
+        list.section("Project");
+        list.skipped("project", "needs the hub running");
     }
-    let paired = app(opts, ui, &mut list)?;
+
+    list.section("App & check");
+    let paired = app(opts, ui, list, &mut summary)?;
     if hub_up {
-        await_runner_checks(opts, &mut list, &added).await;
-        doctor(opts, &mut list).await;
+        await_runner_checks(opts, list, &added).await;
+        doctor(opts, list, &idle).await;
     }
-    finish(&list, paired);
+    finish(list, &summary, paired);
     Ok(u8::from(list.failures().next().is_some()))
+}
+
+/// On a desktop with the fleetd app: "Continue in the desktop app" opens its onboarding (`fleetd://setup`).
+fn offer_app(ui: &Ui, list: &mut Checklist) -> Result<Option<u8>, Stopped> {
+    let (installed, _) = app_hint();
+    if !ui.interactive || !installed || !has_display() {
+        return Ok(None);
+    }
+    let in_app = ui.select(
+        list,
+        "Where would you like to set up?",
+        &[
+            (false, "Here in the terminal".to_owned(), String::new()),
+            (
+                true,
+                "Continue in the desktop app".to_owned(),
+                "the fleetd app walks you through it".to_owned(),
+            ),
+        ],
+        false,
+    )?;
+    if !in_app {
+        return Ok(None);
+    }
+    let link = setup_link();
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let opened = std::process::Command::new(opener)
+        .arg(&link)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    if opened {
+        list.outro(&[], "Opened the fleetd app; it takes it from here.");
+        Ok(Some(0))
+    } else {
+        list.failed("desktop app", "did not open", &format!("{opener} '{link}'"));
+        Ok(None)
+    }
+}
+
+/// `fleetd://setup?v=1&cli=<this fleetd>&home=<hub home>`: what the app needs to finish setup with this CLI.
+fn setup_link() -> String {
+    let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
+    let cli = super::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "fleetd".into());
+    let home = super::super::hub_key::resolve_home(None)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    format!("fleetd://setup?v=1&cli={}&home={}", enc(&cli), enc(&home))
 }
 
 /// Not the hub: join one as a worker with the one-time code `fleetd pair --worker` printed there.
 async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u8, Stopped> {
+    list.section("Join a hub");
     let (hub, code) = match &opts.join {
         Some(join) => join.clone(),
         None => {
-            say(
-                "On the hub, run `fleetd pair --worker <name for this machine>`; it prints the address and a code.",
-            );
-            (ui.input("Hub address", "")?, ui.input("One-time code", "")?)
+            list.note("On the hub, run: fleetd pair --worker <name for this machine>");
+            let hub = ui.input(
+                list,
+                "Hub address",
+                "",
+                "http://forge.tailnet.ts.net:4790",
+                |s| {
+                    reqwest::Url::parse(s)
+                        .map(|_| ())
+                        .map_err(|_| "a URL, as fleetd pair --worker prints it".to_owned())
+                },
+            )?;
+            let code = ui.input(list, "One-time code", "", "", needed)?;
+            (hub, code)
         }
     };
     let machine_id = match &opts.machine_id {
         Some(id) => id.clone(),
-        None if opts.join.is_some() => machine_id_from_host(&local_host_name()),
+        None if opts.join.is_some() || !ui.interactive => machine_id_from_host(&local_host_name()),
         None => ui.input(
-            "This machine's name on the hub (as given to fleetd pair --worker)",
+            list,
+            "This machine's name on the hub",
             &machine_id_from_host(&local_host_name()),
+            "",
+            |s| {
+                MachineId::new(s.to_owned())
+                    .map(|_| ())
+                    .map_err(|_| "lowercase letters, digits and dashes".to_owned())
+            },
         )?,
     };
     if hub.trim().is_empty() || code.trim().is_empty() {
         list.failed(
             "join",
             "needs the hub's address and a one-time code",
-            "on the hub, run fleetd pair --worker <name>, then run the command it prints here",
+            "on the hub, run fleetd pair --worker <name>, then the command it prints here",
         );
+        let needs = list.needs_you();
+        list.outro(&needs, AGAIN);
         return Ok(1);
     }
-    let title = format!("worker {machine_id}");
-    list.start(&title);
+    list.section("Worker");
+    let title = machine_id.clone();
+    list.start(&format!("Joining {}", hub.trim()));
+    super::capture();
     let joined = machine::join(
         hub.trim(),
         machine::Enroll::Token(code.trim().to_owned()),
-        Some(machine_id.clone()),
-        Vec::new(),
-        opts.identity.clone(),
-        &opts.suffix,
+        machine::AddArgs {
+            git_identity: opts.identity.clone(),
+            claude_config_dir: opts.claude_config_dir.clone(),
+            ..machine::AddArgs::local(machine_id.clone(), &opts.suffix, opts.with_service)
+        },
     )
     .await;
+    let said = super::release();
     match joined {
         Ok(added) => {
-            list.done(&title, &format!("joined {} and runs its node", hub.trim()));
-            worker_claude(ui, list, &added).await?;
+            node_line(list, &title, &added, &format!("joined {}", hub.trim()));
+            notes(list, &said);
+            worker_claude(ui, list, &added, None).await?;
         }
-        Err(_) => list.failed(
+        Err(_) => failed_with_log(
+            list,
             &title,
-            "joining stopped (see above)",
-            &format!("fix the cause it names (a used or expired code: fleetd pair --worker {machine_id} on the hub prints a new command), then run it"),
+            "could not join",
+            &said,
+            &format!(
+                "a used or expired code: on the hub, fleetd pair --worker {machine_id} prints a new command"
+            ),
         ),
     }
-    Ok(worker_summary(list, "This machine is a worker now."))
+    Ok(worker_end(list, "This machine is a worker now."))
 }
 
 /// A worker that joined by itself, run again: keeps its enrolment and only checks and repairs what it runs.
@@ -334,53 +529,113 @@ async fn repair_worker(
     list: &mut Checklist,
     joined: machine::Joined,
 ) -> Result<u8, Stopped> {
+    list.section("Worker");
     if opts.join.is_some() {
-        say(
-            "This machine's node is already enrolled with that hub, so the code is not used (--rejoin enrols again).",
+        list.note(
+            "Already enrolled with that hub, so the code is not used (--rejoin enrols again).",
         );
     }
-    let title = format!("worker {}", joined.machine_id);
-    list.start(&title);
+    let title = joined.machine_id.clone();
+    list.start(&format!("Checking {title}"));
+    super::capture();
     let repaired = machine::join(
         &joined.hub,
         machine::Enroll::Keep,
-        Some(joined.machine_id.clone()),
-        joined.tags.clone(),
-        opts.identity.clone().or(joined.identity.clone()),
-        &joined.suffix,
+        machine::AddArgs {
+            tags: joined.tags.clone(),
+            git_identity: opts.identity.clone().or(joined.identity.clone()),
+            claude_config_dir: opts.claude_config_dir.clone(),
+            ..machine::AddArgs::local(joined.machine_id.clone(), &joined.suffix, opts.with_service)
+        },
     )
     .await;
+    let said = super::release();
     match repaired {
         Ok(added) => {
-            list.done(
+            node_line(
+                list,
                 &title,
-                &format!("enrolled with {}; its node runs", joined.hub),
+                &added,
+                &format!("enrolled with {}", joined.hub),
             );
-            worker_claude(ui, list, &added).await?;
+            notes(list, &said);
+            worker_claude(ui, list, &added, None).await?;
         }
-        Err(_) => list.failed(
+        Err(_) => failed_with_log(
+            list,
             &title,
-            "the check stopped (see above)",
-            "fix the cause it names, then run fleetd init again",
+            "check stopped",
+            &said,
+            "fix the cause above, then run fleetd init again",
         ),
     }
-    Ok(worker_summary(list, "This machine is a worker."))
+    Ok(worker_end(list, "This machine is a worker."))
 }
 
-fn worker_summary(list: &Checklist, ok: &str) -> u8 {
-    let failed = list.failures().next().is_some();
-    if failed {
-        let items: Vec<String> = list.failures().map(|i| list.line(i)).collect();
-        say(&format!(
-            "\n{} step(s) need you:\n  {}",
-            items.len(),
-            items.join("\n  ")
-        ));
-    } else {
-        say(&format!(
-            "\n{ok} Its agents start from orders you send in the desktop app."
-        ));
+/// The tail of what a captured step printed, as a dim note, then its ✗ line.
+fn failed_with_log(list: &mut Checklist, title: &str, what: &str, said: &[String], fix: &str) {
+    let why = said
+        .iter()
+        .rev()
+        .find(|l| l.starts_with("fleetd: "))
+        .map(|l| l.trim_start_matches("fleetd: ").to_owned());
+    match why {
+        Some(why) => {
+            let (why, own_fix) = split_fix(&why);
+            let fix = if why == own_fix {
+                fix.to_owned()
+            } else {
+                own_fix
+            };
+            list.failed(title, &format!("{what}: {}", first_line(&why)), &fix);
+        }
+        None => list.failed(title, what, fix),
     }
+}
+
+fn first_line(text: &str) -> &str {
+    text.lines().next().unwrap_or("")
+}
+
+/// `machine add`'s notes (linger, an untested claude, …) as ! lines; the login note is the claude line's.
+fn notes(list: &mut Checklist, said: &[String]) {
+    for note in said.iter().filter_map(|l| l.strip_prefix("note: ")) {
+        if note.contains("not logged in") {
+            continue;
+        }
+        let (why, fix) = split_fix(note);
+        list.warn("note", &why, (why != fix).then_some(fix.as_str()));
+    }
+}
+
+/// A worker's line: done when its node runs as a service; with --no-service, left to the user with its command.
+fn node_line(list: &mut Checklist, title: &str, added: &Added, done: &str) {
+    match &added.run_by_hand {
+        None => list.done(title, done),
+        Some(cmd) => list.todo(
+            title,
+            "enrolled; its node isn't started (--no-service)",
+            &format!("start {}'s node", added.machine_id),
+            &if added.target.local {
+                cmd.clone()
+            } else {
+                format!("ssh {} {}", added.target.host, q(cmd))
+            },
+        ),
+    }
+}
+
+fn worker_end(list: &mut Checklist, ok: &str) -> u8 {
+    let failed = list.failures().next().is_some();
+    let needs = list.needs_you();
+    let next = if failed {
+        AGAIN.to_owned()
+    } else if !list.todos.is_empty() {
+        "Then run fleetd init again.".to_owned()
+    } else {
+        format!("{ok} Its agents start from orders you send in the fleetd app.")
+    };
+    list.outro(&needs, &next);
     u8::from(failed)
 }
 
@@ -396,225 +651,125 @@ async fn reachability(
             .url
             .clone()
             .unwrap_or_else(|| format!("http://{listen}"));
-        list.done(
-            "reachability",
-            &format!("the hub listens on {listen}, reached at {url}"),
-        );
+        list.done("reachable at", &url);
         return Ok((listen.clone(), url));
     }
     if let Some(previous) = &opts.previous {
         let url = opts.url.clone().unwrap_or_else(|| previous.url.clone());
-        list.done(
-            "reachability",
-            &format!(
-                "kept: the hub listens on {}, reached at {url}",
-                previous.listen
-            ),
-        );
+        list.done("reachable at", &url);
         return Ok((previous.listen.clone(), url));
     }
-    // (address to listen on, host in the URL, why), each on the first free port from 4790.
-    let mut hosts: Vec<(String, String, &str)> = Vec::new();
+    // (address to listen on, host in the URL, label, why), each on the first free port from 4790.
+    let mut hosts: Vec<(String, String, &str, &str)> = Vec::new();
     if let Some(ip) = net.and_then(|n| n.ipv4.as_deref()) {
         let name = net.and_then(|n| n.dns_name.as_deref()).unwrap_or(ip);
         hosts.push((
             ip.into(),
             name.into(),
-            "your tailnet: the app and your other machines reach it, nothing public",
+            "Your tailnet",
+            "your devices reach it, nothing public",
         ));
     }
     hosts.push((
         "127.0.0.1".into(),
         "127.0.0.1".into(),
-        "this machine only: workers on other machines can't reach it",
+        "This machine only",
+        "other machines can't reach it",
     ));
     if let Some(ip) = lan {
         hosts.push((
             ip.into(),
             ip.into(),
-            "your LAN: anyone on this network can reach it (plain HTTP)",
+            "Your LAN",
+            "anyone on this network, plain HTTP",
         ));
     }
-    let mut choices: Vec<(String, String, String)> = Vec::new();
-    for (ip, name, why) in hosts {
+    list.start("Looking for a free port");
+    let mut choices: Vec<(usize, String, String)> = Vec::new();
+    let mut addrs = Vec::new();
+    for (i, (ip, name, label, why)) in hosts.into_iter().enumerate() {
         let mut port = PORT;
         while port < PORT + 10 && probe_listen(&(ip.clone(), port)).await != Probe::Free {
             port += 1;
         }
-        choices.push((
-            format!("{ip}:{port}"),
-            format!("http://{name}:{port}"),
-            why.into(),
-        ));
+        let url = format!("http://{name}:{port}");
+        choices.push((i, label.to_owned(), format!("{url} · {why}")));
+        addrs.push((format!("{ip}:{port}"), url));
     }
-    let labels: Vec<String> = choices
-        .iter()
-        .map(|(_, url, why)| format!("{url}  {why}"))
-        .collect();
-    let picked = ui.select("Where should the hub listen?", &labels, 0)?;
-    let (listen, url, _) = choices.swap_remove(picked);
+    list.stop_spinner();
+    let picked = ui.select(list, "Where should the hub listen?", &choices, 0)?;
+    let (listen, url) = addrs.swap_remove(picked);
     let url = opts.url.clone().unwrap_or(url);
-    let later = match (listen.starts_with("127."), lan) {
-        (true, Some(ip)) => format!(
-            ". To open it to your LAN later: fleetd init --listen {ip}:{PORT} --url http://{ip}:{PORT}"
-        ),
-        (true, None) => ". To reach it from other machines later, install Tailscale and run fleetd init --listen <tailnet ip>:4790".into(),
-        _ => String::new(),
-    };
-    list.done(
-        "reachability",
-        &format!("the hub will answer at {url}{later}"),
-    );
+    list.done("reachable at", &url);
     Ok((listen, url))
 }
 
-#[derive(Clone, Copy)]
-enum Tool {
-    Gh,
+/// The environment a node session gets: what the node's own claude checks run with.
+fn session_env() -> Vec<(String, String)> {
+    crate::node::sessions::SessionConfig::for_node(&crate::node::config::default_node_home())
+        .runner_env()
 }
 
-/// What fleetd's services on this machine run claude with: HOME, PATH, USER and LANG (what their units set), then
-/// ~/.fleetd/claude.env (the hub's unit loads it; the node reads it per session). Nothing else of this shell.
-fn service_env() -> Vec<(String, String)> {
-    let mut env = crate::node::util::scrubbed_env();
-    if let Ok(text) = std::fs::read_to_string(home_dir().join(".fleetd/claude.env")) {
-        env.extend(crate::node::sessions::parse_env_file(&text));
-    }
-    env
-}
-
-/// Login variables this shell has, which fleetd's services never see unless they are in claude.env.
-fn shell_login() -> Vec<(String, String)> {
-    SHELL_LOGIN_VARS
-        .iter()
-        .filter_map(|key| {
-            std::env::var(key)
-                .ok()
-                .filter(|v| !v.is_empty())
-                .map(|v| ((*key).to_owned(), v))
-        })
-        .collect()
-}
-
-/// Asks to copy this shell's login variables into ~/.fleetd/claude.env (0600); true when they were written.
-fn offer_carry_over(ui: &Ui, shell: &[(String, String)]) -> Result<bool, Stopped> {
-    let names = shell
-        .iter()
-        .map(|(k, _)| k.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    if shell.is_empty()
-        || !ui.interactive
-        || !ui.confirm(
-            &format!(
-                "claude logs in through this shell's {names}, which fleetd's services don't get. Save {} to ~/.fleetd/claude.env (0600) so they use the same login?",
-                if shell.len() == 1 { "it" } else { "them" }
-            ),
-            true,
-        )?
-    {
-        return Ok(false);
-    }
-    let dir = home_dir().join(".fleetd");
-    let file = dir.join("claude.env");
-    let existing = std::fs::read_to_string(&file).unwrap_or_default();
-    let written = super::mkdir_private(&dir)
-        .and_then(|()| super::write_private(&file, &merge_env_file(&existing, shell)));
-    if let Err(message) = written {
-        say(&format!("  {message}"));
-        return Ok(false);
-    }
-    Ok(true)
-}
-
-/// The hub's claude, probed exactly as its service runs it: installed, in the supported range, logged in. Offers to
-/// carry this shell's login over, or to log in, and checks again. Returns (ok, claude.env changed).
-async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<(bool, bool), Stopped> {
-    let name = "claude";
+/// The user's own claude, as fleetd's sessions run it. Offers the login when it is logged out.
+async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>, Stopped> {
     let Some(binary) = which("claude") else {
         list.failed(
-            name,
-            "Claude Code is not installed; fleetd's agents and its router run through it",
-            &format!("{}, then claude auth login", install("claude")),
+            "claude",
+            "is not installed; fleetd's agents run through it",
+            &install("claude"),
         );
-        return Ok((false, false));
+        return Ok(None);
     };
-    let (mut carried, mut logged, mut changed) = (false, false, false);
+    let mut offered = false;
     loop {
-        let info = crate::node::runner::conformance::probe(&binary, &service_env()).await;
-        let printed = info.version.clone().unwrap_or_default();
-        if !info.version_ok {
-            let v = crate::node::runner::version::check(&printed);
-            list.failed(
-                name,
-                v.problem(&printed)
-                    .or(info.problem)
-                    .unwrap_or_default()
-                    .trim_end_matches('.'),
-                &v.fix().unwrap_or_else(|| install("claude")),
-            );
-            return Ok((false, changed));
-        }
-        let version = printed.split_whitespace().next().unwrap_or("");
-        if info.login == LoginStatus::LoggedIn {
-            let kind = info.login_kind.map_or(String::new(), |k| format!(" ({k})"));
-            list.done(
-                name,
-                &format!("{version}, logged in{kind} as fleetd's services run it"),
-            );
-            return Ok((true, changed));
-        }
-        let shell = shell_login();
-        if !carried {
-            carried = true;
-            if offer_carry_over(ui, &shell)? {
-                changed = true;
-                continue;
+        list.start("Checking claude");
+        let setup = describe(&binary, &session_env()).await;
+        let shown = setup.to_string();
+        let detail = shown.strip_prefix("claude ").unwrap_or(&shown).to_owned();
+        if setup.login_kind.is_some() && setup.problem.is_none() {
+            if setup.proxy_source.as_deref() == Some("environment") {
+                list.warn(
+                    "claude",
+                    &format!("{detail}; that proxy is only in this shell, so fleetd's services won't use it"),
+                    Some("put ANTHROPIC_BASE_URL in the env block of ~/.claude/settings.json"),
+                );
+            } else {
+                list.done("claude", &detail);
             }
+            return Ok(Some(setup));
         }
-        if !logged
-            && ui.interactive
-            && ui.confirm(
-                "claude is not logged in for fleetd's services. Log it in now (claude auth login)?",
-                true,
-            )?
+        if setup.login_kind.is_none()
+            && setup.version.is_some()
+            && !offered
+            && ui.offer_login(list, "claude isn't logged in. Log in now?")?
         {
-            logged = true;
-            attached("claude", &["auth", "login"]);
+            offered = true;
+            attached(list, "claude", &["auth", "login"]);
             continue;
         }
-        let fix = if shell.is_empty() {
-            "claude auth login".to_owned()
-        } else {
-            "run fleetd init in a terminal and let it save this shell's login to ~/.fleetd/claude.env, or run claude auth login".to_owned()
+        let (why, fix) = match &setup.problem {
+            Some(problem) => split_fix(problem),
+            None => (detail.clone(), "claude auth login".to_owned()),
         };
-        list.failed(
-            name,
-            "not logged in as fleetd's services run it (they don't get this shell's variables)",
-            &fix,
-        );
-        return Ok((false, changed));
+        list.failed("claude", why.strip_prefix("claude ").unwrap_or(&why), &fix);
+        return Ok(None);
     }
 }
 
-/// Installed and logged in, as the hub service will run it; offers the login right here when it isn't.
-async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, Stopped> {
-    let (name, login): (&str, &[&str]) = match tool {
-        Tool::Gh => ("gh", &["auth", "login"]),
-    };
-    let fix = format!("{name} {}", login.join(" "));
-    if which(name).is_none() {
-        let why = match tool {
-            Tool::Gh => "the GitHub CLI is not installed; the merge train and PR checks need it",
-        };
-        list.failed(name, why, &format!("{}, then {fix}", install(name)));
+/// gh installed and logged in, as the hub service runs it; offers `gh auth login` right here.
+async fn gh_check(ui: &Ui, list: &mut Checklist) -> Result<bool, Stopped> {
+    if which("gh").is_none() {
+        list.failed(
+            "gh",
+            "is not installed; the merge train and PR checks need it",
+            &format!("{}, then gh auth login", install("gh")),
+        );
         return Ok(false);
     }
     let mut offered = false;
     loop {
-        let entry = match tool {
-            Tool::Gh => checks::gh_auth(&hub_env_run("gh", &["auth", "status"]).await),
-        };
+        list.start("Checking gh");
+        let entry = checks::gh_auth(&hub_env_run("gh", &["auth", "status"]).await);
         if entry.check.status == DoctorStatus::Ok {
             let message = entry.check.message.replace(" on the hub", "");
             let message = message
@@ -622,23 +777,28 @@ async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, 
                 .next()
                 .unwrap_or("")
                 .trim_end_matches('.')
-                .trim_start_matches(&format!("{name} is "));
-            list.done(name, message);
+                .trim_start_matches("gh is ");
+            list.done("gh", message);
             return Ok(true);
         }
-        let message = match tool {
-            Tool::Gh => "not logged in; the merge train and PR checks need it",
-        };
-        if offered
-            || !ui.interactive
-            || !ui.confirm(&format!("{name} is {message}. Log it in now?"), true)?
-        {
-            list.failed(name, message, &fix);
-            return Ok(false);
+        if !offered && ui.offer_login(list, "gh isn't logged in. Log in now?")? {
+            offered = true;
+            attached(list, "gh", &["auth", "login"]);
+            continue;
         }
-        offered = true;
-        attached(name, login);
+        list.failed(
+            "gh",
+            "not logged in; the merge train and PR checks need it",
+            "gh auth login",
+        );
+        return Ok(false);
     }
+}
+
+fn identity_ok(s: &str) -> Result<(), String> {
+    parse_git_identity(s)
+        .map(|_| ())
+        .ok_or_else(|| "like: Name <id+user@users.noreply.github.com>".to_owned())
 }
 
 async fn commit_identity(
@@ -651,9 +811,11 @@ async fn commit_identity(
         .identity
         .clone()
         .or_else(|| opts.previous.as_ref().and_then(|p| p.git_identity.clone()));
+    let mut asked = false;
     let identity = match known {
         Some(identity) => Some(identity),
         None => {
+            asked = ui.interactive;
             let from_gh = if gh_ok {
                 let out = run_local("gh", &["api".into(), "user".into()], None).await;
                 detect::noreply_identity(&out.stdout)
@@ -672,162 +834,154 @@ async fn commit_identity(
                 Some(format!("{} <{}>", get("user.name")?, get("user.email")?))
             };
             let default = from_gh.or_else(from_git).unwrap_or_default();
-            loop {
-                let text = ui.input(
-                    "Commit author for your agents' commits (Name <email>)",
-                    &default,
-                )?;
-                match parse_git_identity(&text) {
-                    Some(identity) => break Some(identity),
-                    None if ui.interactive => {
-                        say("  that should look like: Name <id+user@users.noreply.github.com>")
-                    }
-                    None => break None,
-                }
-            }
+            let text = ui.input(
+                list,
+                "Commit author for your agents",
+                &default,
+                "Name <id+user@users.noreply.github.com>",
+                identity_ok,
+            )?;
+            parse_git_identity(&text)
         }
     };
     match &identity {
+        // Just answered above: no second line saying the same.
+        Some(id) if is_noreply(id) && asked => {}
         Some(id) if is_noreply(id) => {
             list.done("commit author", &format!("{} <{}>", id.name, id.email))
         }
         Some(id) => list.warn(
             "commit author",
             &format!(
-                "{} <{}> is not a GitHub noreply address, so public repos will show it",
+                "{} <{}> isn't a GitHub noreply address; public repos will show it",
                 id.name, id.email
             ),
             Some("fleetd init --git-identity \"Name <id+user@users.noreply.github.com>\""),
         ),
         None => list.failed(
             "commit author",
-            "none set; machines need one for their agents' commits",
+            "none set; agents need one to commit",
             "fleetd init --git-identity \"Name <id+user@users.noreply.github.com>\"",
         ),
     }
     Ok(identity)
 }
 
-struct Candidate {
-    id: String,
-    label: String,
-    /// The ssh host, or `None` for this machine.
-    host: Option<String>,
-    ssh_config: Option<String>,
-    picked: bool,
-}
-
-/// Picks the machines that run agents and runs `machine add` on each. Returns this machine's id when it is one.
+/// Picks the machines that run agents and runs `machine add` on each. Returns this machine's id when it is one,
+/// the machines whose node runs, and those whose node is left to the user (--no-service).
 async fn workers(
     opts: &InitOptions,
     ui: &Ui,
     list: &mut Checklist,
     net: Option<&Tailnet>,
-) -> Result<(Option<String>, Vec<String>), Stopped> {
+    claude: Option<&ClaudeSetup>,
+) -> Result<(Option<String>, Vec<String>, Vec<String>), Stopped> {
     let state = read_setup(&opts.home).ok().flatten();
     let recorded = state.map(|s| s.machines).unwrap_or_default();
     let local_id = recorded.iter().find(|(_, r)| r.local).map_or_else(
         || machine_id_from_host(&local_host_name()),
         |(id, _)| id.clone(),
     );
-    let mut candidates = vec![Candidate {
-        label: format!("{local_id} (this machine)"),
-        host: None,
-        ssh_config: None,
-        id: local_id.clone(),
-        picked: recorded.is_empty() || recorded.contains_key(&local_id),
-    }];
+    // (id, host (None: this machine), ssh config, hint)
+    let mut candidates: Vec<(String, Option<String>, Option<String>, String)> =
+        vec![(local_id.clone(), None, None, "this machine".into())];
+    let mut defaults = Vec::new();
+    if recorded.is_empty() || recorded.contains_key(&local_id) {
+        defaults.push(local_id.clone());
+    }
     for (id, record) in recorded.iter().filter(|(_, r)| !r.local) {
-        candidates.push(Candidate {
-            id: id.clone(),
-            label: format!("{id} (set up from here; {})", record.ssh_host),
-            host: Some(record.ssh_host.clone()),
-            ssh_config: record.ssh_config.clone(),
-            picked: true,
-        });
+        candidates.push((
+            id.clone(),
+            Some(record.ssh_host.clone()),
+            record.ssh_config.clone(),
+            format!("set up · {}", record.ssh_host),
+        ));
+        defaults.push(id.clone());
     }
     let hosts = std::fs::read_to_string(home_dir().join(".ssh/config"))
         .map(|text| detect::parse_ssh_hosts(&text))
         .unwrap_or_default();
-    let mut offer = |id: String, label: String, host: String| {
-        if MachineId::new(id.clone()).is_ok() && !candidates.iter().any(|c| c.id == id) {
-            candidates.push(Candidate {
-                id,
-                label,
-                host: Some(host),
-                ssh_config: None,
-                picked: false,
-            });
+    let mut offer = |id: String, host: String, hint: String| {
+        if MachineId::new(id.clone()).is_ok() && !candidates.iter().any(|c| c.0 == id) {
+            candidates.push((id, Some(host), None, hint));
         }
     };
     for host in hosts {
-        let id = machine_id_from_host(&host);
-        offer(id.clone(), format!("{id} (~/.ssh/config: {host})"), host);
+        offer(
+            machine_id_from_host(&host),
+            host.clone(),
+            format!("~/.ssh/config · {host}"),
+        );
     }
     for peer in net.map(|n| n.peers.as_slice()).unwrap_or_default() {
-        let id = machine_id_from_host(&peer.name);
         offer(
-            id.clone(),
-            format!("{id} (on your tailnet: {})", peer.dns_name),
+            machine_id_from_host(&peer.name),
             peer.dns_name.clone(),
+            "tailnet".into(),
         );
     }
-    let labels: Vec<String> = candidates.iter().map(|c| c.label.clone()).collect();
-    let picked = candidates.iter().map(|c| c.picked).collect::<Vec<_>>();
-    let chosen = ui.multi(
-        "Which machines should run agents? (space toggles, enter accepts)",
-        &labels,
-        &picked,
-    )?;
+    let items: Vec<(String, String, String)> = candidates
+        .iter()
+        .map(|(id, _, _, hint)| (id.clone(), id.clone(), hint.clone()))
+        .collect();
+    let chosen = ui.multi(list, "Which machines should run agents?", &items, defaults)?;
     if chosen.is_empty() {
-        list.skipped(
-            "workers",
-            "none picked; add one later with fleetd machine add <ssh-host>, or fleetd pair --worker <name> for a machine this one can't SSH to",
-        );
-        return Ok((None, Vec::new()));
+        list.skipped("workers", "none yet");
+        list.note("Add one later: fleetd machine add <ssh-host>, or fleetd pair --worker <name>");
+        return Ok((None, Vec::new(), Vec::new()));
     }
     let home = opts.home.to_string_lossy().into_owned();
     let mut local = None;
-    let mut ids = Vec::new();
-    for index in chosen {
-        let candidate = &candidates[index];
-        let title = format!("worker {}", candidate.id);
-        list.start(&title);
-        let again = match &candidate.host {
+    let (mut ids, mut by_hand) = (Vec::new(), Vec::new());
+    for (id, host, ssh_config, _) in candidates.iter().filter(|c| chosen.contains(&c.0)) {
+        let again = match host {
             None => "fleetd machine add --local".to_owned(),
             Some(host) => format!("fleetd machine add {host}"),
         };
+        list.start(&format!("Setting up {id}"));
+        super::capture();
         let added = machine::add(machine::AddArgs {
-            host: candidate.host.clone(),
-            machine_id: Some(candidate.id.clone()),
+            host: host.clone(),
+            machine_id: Some(id.clone()),
             tags: Vec::new(),
             dry_run: false,
             hub_url: None,
-            ssh_config: candidate.ssh_config.clone(),
+            ssh_config: ssh_config.clone(),
             home: Some(home.clone()),
             unit_suffix: None,
             enroll: machine::Enroll::Hub,
             git_identity: None,
+            no_service: !opts.with_service,
+            claude_config_dir: opts.claude_config_dir.clone(),
         })
         .await;
+        let said = super::release();
         match added {
             Ok(Some(added)) => {
-                list.done(&title, "online");
-                worker_claude(ui, list, &added).await?;
-                ids.push(added.machine_id.clone());
-                if candidate.host.is_none() {
+                node_line(list, id, &added, "online");
+                notes(list, &said);
+                let this_one = host.is_none().then_some(claude).flatten();
+                worker_claude(ui, list, &added, this_one).await?;
+                if added.run_by_hand.is_none() {
+                    ids.push(added.machine_id.clone());
+                } else {
+                    by_hand.push(added.machine_id.clone());
+                }
+                if host.is_none() {
                     local = Some(added.machine_id);
                 }
             }
             Ok(None) => {}
-            Err(_) => list.failed(
-                &title,
-                "machine add stopped (see above)",
-                &format!("fix the cause it names, then run {again}"),
+            Err(_) => failed_with_log(
+                list,
+                id,
+                "setup stopped",
+                &said,
+                &format!("fix the cause, then run {again}"),
             ),
         }
     }
-    Ok((local, ids))
+    Ok((local, ids, by_hand))
 }
 
 /// A node that just linked is "degraded: checking …" until its first claude check answers, about a second later.
@@ -840,8 +994,7 @@ async fn await_runner_checks(opts: &InitOptions, list: &mut Checklist, ids: &[St
         let Ok(machine) = MachineId::new(id.clone()) else {
             continue;
         };
-        let title = format!("waiting for {id}'s claude check");
-        list.start(&title);
+        list.start(&format!("Waiting for {id}'s claude check"));
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         let answered = loop {
             let checking = hub
@@ -862,67 +1015,71 @@ async fn await_runner_checks(opts: &InitOptions, list: &mut Checklist, ids: &[St
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         };
-        if answered {
-            list.done(&title, "answered");
-        } else {
+        list.stop_spinner();
+        if !answered {
             list.skipped(
-                &title,
-                "still checking after 30 s; run fleetd doctor in a minute for its result",
+                id,
+                "still checking its claude; run fleetd doctor in a minute",
             );
         }
     }
 }
 
-/// fleetd's Claude on a worker keeps a login of its own (its own config dir, or a token in claude.env).
-async fn worker_claude(ui: &Ui, list: &mut Checklist, added: &Added) -> Result<(), Stopped> {
+/// claude on a worker, as its node runs it. This machine's was checked above, so it isn't asked twice.
+async fn worker_claude(
+    ui: &Ui,
+    list: &mut Checklist,
+    added: &Added,
+    here: Option<&ClaudeSetup>,
+) -> Result<(), Stopped> {
     let title = format!("claude on {}", added.machine_id);
-    let login = login_command(&added.layout, &added.claude);
+    if added.target.local && here.is_some() {
+        return Ok(());
+    }
+    let config_dir = added.claude_config_dir.as_deref();
+    let login = login_command(&added.claude, config_dir);
     let fix = if added.target.local {
         login.clone()
     } else {
         format!("ssh -t {} {}", added.target.host, q(&login))
     };
     let mut logged_in = added.logged_in;
-    let (mut carried, mut offered) = (!added.target.local, false);
+    let mut offered = false;
     loop {
         if logged_in {
-            list.done(&title, "fleetd's Claude is logged in, as its node runs it");
+            list.done(&title, "logged in");
             return Ok(());
         }
-        let why = "fleetd's Claude there is not logged in, as its node runs it (its own config dir and claude.env)";
-        if !carried {
-            carried = true;
-            if offer_carry_over(ui, &shell_login())? {
-                logged_in = node_logged_in(added).await;
-                continue;
-            }
-        }
-        if offered || !ui.interactive || !ui.confirm(&format!("{why}. Log it in now?"), true)? {
-            list.failed(&title, why, &fix);
+        if offered
+            || !ui.offer_login(
+                list,
+                &format!(
+                    "claude on {} isn't logged in. Log in now?",
+                    added.machine_id
+                ),
+            )?
+        {
+            list.failed(&title, "not logged in", &fix);
             return Ok(());
         }
         offered = true;
+        list.stop_spinner();
         run_attached(&added.target, &login);
-        logged_in = node_logged_in(added).await;
+        let out = run_ssh(
+            &added.target,
+            &login_status_command(&added.layout, &added.claude, config_dir),
+            None,
+        )
+        .await;
+        logged_in = checks::claude_login(&CmdOutcome::Ran {
+            exit_code: out.code,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        })
+        .check
+        .status
+            == DoctorStatus::Ok;
     }
-}
-
-/// fleetd's Claude on the machine, asked with only the node's own environment.
-async fn node_logged_in(added: &Added) -> bool {
-    let out = run_ssh(
-        &added.target,
-        &login_status_command(&added.layout, &added.claude),
-        None,
-    )
-    .await;
-    checks::claude_login(&CmdOutcome::Ran {
-        exit_code: out.code,
-        stdout: out.stdout,
-        stderr: out.stderr,
-    })
-    .check
-    .status
-        == DoctorStatus::Ok
 }
 
 async fn first_project(
@@ -931,115 +1088,162 @@ async fn first_project(
     list: &mut Checklist,
     local: Option<&str>,
     gh_ok: bool,
-) -> Result<(), Stopped> {
-    let title = "first project";
+) -> Result<Option<String>, Stopped> {
+    let title = "project";
     let existing = open_hub(&opts.home)
         .ok()
         .and_then(|hub| hub.store.projects_list(None, None).ok())
         .unwrap_or_default();
     if let Some(project) = existing.first() {
+        let what = format!("{} on {}", project.title, project.machine_id.as_str());
         list.done(
             "projects",
-            &format!(
-                "{} on the hub, e.g. {} on {}",
-                existing.len(),
-                project.title,
-                project.machine_id.as_str()
-            ),
+            &if existing.len() > 1 {
+                format!("{what} and {} more", existing.len() - 1)
+            } else {
+                what.clone()
+            },
         );
-        return Ok(());
+        return Ok(Some(what));
     }
     let Some(machine_id) = local else {
-        list.skipped(title, "this machine runs no agents, so no project here yet");
-        return Ok(());
+        list.skipped(title, "none here: this machine runs no agents");
+        return Ok(None);
     };
     if !super::doctor::hub_has_tool(&opts.home, "project_add").await {
         list.skipped(
             title,
-            "this hub can't add projects yet; after fleetd update, run fleetd init again to pick one",
+            "this hub can't add projects yet; after fleetd update, run fleetd init again",
         );
-        return Ok(());
+        return Ok(None);
     }
     if !ui.interactive {
         list.skipped(
             title,
-            "--yes does not pick one; run fleetd init in a terminal to pick a repo",
+            "none picked (--yes); run fleetd init in a terminal to pick one",
         );
-        return Ok(());
+        return Ok(None);
     }
     let roots: Vec<PathBuf> = detect::REPO_ROOTS
         .iter()
         .map(|r| home_dir().join(r))
         .collect();
     let repos = detect::find_repos(&roots);
-    let mut labels: Vec<String> = repos
+    #[derive(Clone, PartialEq, Eq)]
+    enum Pick {
+        Repo(usize),
+        Clone,
+        Later,
+    }
+    let mut items: Vec<(Pick, String, String)> = repos
         .iter()
         .take(30)
-        .map(|r| match &r.remote {
-            Some(remote) => format!("{}  {}", tilde(&r.path), detect::short_remote(remote)),
-            None => tilde(&r.path),
+        .enumerate()
+        .map(|(i, r)| {
+            (
+                Pick::Repo(i),
+                tilde(&r.path),
+                r.remote
+                    .as_deref()
+                    .map(detect::short_remote)
+                    .unwrap_or_default(),
+            )
         })
         .collect();
-    let shown = labels.len();
-    labels.push("clone one from GitHub (paste its URL)".into());
-    labels.push("not now".into());
-    let picked = ui.select("Which repo should be your first project?", &labels, 0)?;
-    let path = if picked < shown {
-        repos[picked].path.clone()
-    } else if picked == shown {
-        let text = ui.input("GitHub repo (URL or owner/repo)", "")?;
-        let Some((owner, repo)) = detect::parse_github_repo(&text) else {
-            list.failed(
-                title,
-                &format!("'{text}' is not a GitHub repo"),
-                "run fleetd init again and paste https://github.com/<owner>/<repo>",
-            );
-            return Ok(());
-        };
-        let parent = ["src", "code", "projects"]
-            .iter()
-            .map(|d| home_dir().join(d))
-            .find(|d| d.is_dir())
-            .unwrap_or_else(|| home_dir().join("src"));
-        let dest = parent.join(&repo);
-        if !dest.join(".git").is_dir() {
-            let _ = std::fs::create_dir_all(&parent);
-            let dest_text = dest.to_string_lossy().into_owned();
-            let full = format!("{owner}/{repo}");
-            let cloned = if gh_ok {
-                attached("gh", &["repo", "clone", &full, &dest_text])
-            } else {
-                attached(
-                    "git",
-                    &["clone", &format!("https://github.com/{full}"), &dest_text],
-                )
-            };
-            if !cloned {
-                list.failed(
-                    title,
-                    &format!("cloning {full} failed (see above)"),
-                    &format!(
-                        "gh repo clone {full} {}, then run fleetd init again",
-                        tilde(&dest)
-                    ),
-                );
-                return Ok(());
-            }
-        }
-        dest
+    let default = if items.is_empty() {
+        Pick::Clone
     } else {
-        list.skipped(title, "none picked; run fleetd init again to add one");
-        return Ok(());
+        Pick::Repo(0)
     };
-    list.start(title);
+    items.push((
+        Pick::Clone,
+        "Clone one from GitHub".into(),
+        "paste its URL".into(),
+    ));
+    items.push((Pick::Later, "Not now".into(), String::new()));
+    let path = match ui.select(
+        list,
+        "Which repo should be your first project?",
+        &items,
+        default,
+    )? {
+        Pick::Repo(i) => repos[i].path.clone(),
+        Pick::Later => {
+            list.skipped(title, "none yet; run fleetd init again to add one");
+            return Ok(None);
+        }
+        Pick::Clone => {
+            let text = ui.input(
+                list,
+                "GitHub repo",
+                "",
+                "https://github.com/owner/repo",
+                |s| {
+                    detect::parse_github_repo(s)
+                        .map(|_| ())
+                        .ok_or_else(|| "a GitHub URL or owner/repo".to_owned())
+                },
+            )?;
+            let Some((owner, repo)) = detect::parse_github_repo(&text) else {
+                return Ok(None);
+            };
+            let parent = ["src", "code", "projects"]
+                .iter()
+                .map(|d| home_dir().join(d))
+                .find(|d| d.is_dir())
+                .unwrap_or_else(|| home_dir().join("src"));
+            let dest = parent.join(&repo);
+            if !dest.join(".git").is_dir() {
+                let _ = std::fs::create_dir_all(&parent);
+                let dest_text = dest.to_string_lossy().into_owned();
+                let full = format!("{owner}/{repo}");
+                let cloned = if gh_ok {
+                    attached(list, "gh", &["repo", "clone", &full, &dest_text])
+                } else {
+                    attached(
+                        list,
+                        "git",
+                        &["clone", &format!("https://github.com/{full}"), &dest_text],
+                    )
+                };
+                if !cloned {
+                    list.failed(
+                        title,
+                        &format!("cloning {full} failed"),
+                        &format!(
+                            "gh repo clone {full} {}, then run fleetd init again",
+                            tilde(&dest)
+                        ),
+                    );
+                    return Ok(None);
+                }
+            }
+            dest
+        }
+    };
+    list.start("Adding the project");
     match super::doctor::add_project(&opts.home, machine_id, &path).await {
-        Ok(()) => list.done(title, &format!("{} on {machine_id}", tilde(&path))),
-        Err(failure) => list.failed(title, &failure.message, &failure.fix),
+        Ok(()) => {
+            let what = format!("{} on {machine_id}", tilde(&path));
+            list.done(title, &what);
+            Ok(Some(what))
+        }
+        Err(failure) => {
+            list.failed(title, &failure.message, &failure.fix);
+            Ok(None)
+        }
     }
-    Ok(())
 }
 
-/// How to open the desktop app here, or how to install it.
+/// A desktop session the app could open in: always on macOS, an X or Wayland display on Linux.
+fn has_display() -> bool {
+    cfg!(target_os = "macos")
+        || ["DISPLAY", "WAYLAND_DISPLAY"]
+            .iter()
+            .any(|k| std::env::var_os(k).is_some_and(|v| !v.is_empty()))
+}
+
+/// Whether the desktop app is installed here, and how to open (or install) it.
 fn app_hint() -> (bool, String) {
     let home = home_dir();
     if cfg!(target_os = "macos") {
@@ -1058,10 +1262,7 @@ fn app_hint() -> (bool, String) {
         .unwrap_or_else(|| home.join(".local/share"));
     let bin = data.join("fleetd/app/fleetd-app");
     if bin.is_file() {
-        (
-            true,
-            format!("open “fleetd” from your app menu, or run {}", tilde(&bin)),
-        )
+        (true, "open fleetd from your app menu".into())
     } else {
         (
             false,
@@ -1070,10 +1271,14 @@ fn app_hint() -> (bool, String) {
     }
 }
 
-/// Pairs the desktop app: a one-time code the app on this machine picks up by itself. True when a device is or
-/// can now be paired.
-fn app(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<bool, Stopped> {
-    let title = "desktop app";
+/// Pairs the desktop app with a one-time code; the app on this machine picks it up by itself. True when a device
+/// is or can now be paired.
+fn app(
+    opts: &InitOptions,
+    ui: &Ui,
+    list: &mut Checklist,
+    summary: &mut Summary,
+) -> Result<bool, Stopped> {
     let devices: Vec<String> = open_hub(&opts.home)
         .ok()
         .and_then(|hub| hub.auth.list().ok())
@@ -1083,17 +1288,15 @@ fn app(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<bool, Stoppe
         .map(|k| k.name)
         .collect();
     let want = if devices.is_empty() {
-        ui.confirm("Pair the desktop app with this hub now?", true)?
+        ui.confirm(list, "Pair the fleetd app with this hub?", true)?
     } else {
-        list.done(title, &format!("paired: {}", devices.join(", ")));
-        ui.interactive && ui.confirm("Pair another device?", false)?
+        list.done("app", &format!("paired: {}", devices.join(", ")));
+        summary.pairing = Some(format!("paired: {}", devices.join(", ")));
+        ui.interactive && ui.confirm(list, "Pair another device?", false)?
     };
     if !want {
         if devices.is_empty() {
-            list.skipped(
-                title,
-                "not paired; fleetd pair prints a code whenever you want one",
-            );
+            list.skipped("app", "not paired; fleetd pair prints a code any time");
         }
         return Ok(!devices.is_empty());
     }
@@ -1101,18 +1304,20 @@ fn app(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<bool, Stoppe
     match pair::mint(Some(&home), None) {
         Ok(minted) => {
             let hub = minted.urls.first().cloned().unwrap_or_default();
+            let (installed, _) = app_hint();
             list.done(
                 "pairing code",
-                &format!(
-                    "{} for {hub} (one use, until {})",
-                    minted.code, minted.expires_at
-                ),
+                &format!("{} · one use, 15 min", minted.code),
             );
-            say(&format!(
-                "    The app on this machine pairs by itself ({}).\n    On another computer: open the app, enter {hub} and the code, or open {}",
-                tilde(&minted.app_pair_file),
-                minted.deep_link
-            ));
+            if installed && has_display() {
+                list.note("The app on this machine pairs by itself when you open it.");
+            } else {
+                list.note(&format!(
+                    "In the fleetd app, enter {hub} and the code, or open:"
+                ));
+                list.note(&minted.deep_link);
+            }
+            summary.pairing = Some(format!("code {}", minted.code));
             Ok(true)
         }
         Err(message) => {
@@ -1122,45 +1327,86 @@ fn app(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<bool, Stoppe
     }
 }
 
-async fn doctor(opts: &InitOptions, list: &mut Checklist) {
-    list.start("doctor");
+async fn doctor(opts: &InitOptions, list: &mut Checklist, idle: &[String]) {
+    list.start("Running the doctor");
     match super::doctor::run(&opts.home).await {
         Ok(checks) => {
-            let ok = super::doctor::show(list, &checks, &[]);
+            let ok = super::doctor::show(list, &checks, idle);
             list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
         }
         Err(failure) => list.failed("doctor", &failure.message, &failure.fix),
     }
 }
 
-fn finish(list: &Checklist, paired: bool) {
-    let failures: Vec<_> = list.failures().collect();
-    if !failures.is_empty() {
-        say(&format!("\n{} step(s) need you:", failures.len()));
-        for item in &failures {
-            say(&format!("  {}", list.line(item)));
-        }
-        say("Then run fleetd init again; it keeps what is done.");
-    } else {
-        say("\nfleetd is set up.");
-    }
-    if !failures.is_empty() {
+fn finish(list: &mut Checklist, summary: &Summary, paired: bool) {
+    let needs = list.needs_you();
+    if list.failures().next().is_some() {
+        list.outro(
+            &needs,
+            "Fix those, then run fleetd init again; it keeps what's done.",
+        );
         return;
     }
-    let (installed, open) = app_hint();
-    let next = match (installed, paired) {
-        (true, true) => format!(
-            "Next: open the desktop app ({open}); it connects by itself. Then type your first order in it, e.g. \"fix the typo in the README\"."
-        ),
-        (true, false) => format!("Next: run fleetd pair, then open the desktop app ({open})."),
-        (false, _) => format!(
-            "Next: install the desktop app on the computer you work from ({open}), open it and enter the pairing code; then type your first order in it."
-        ),
-    };
-    say(&next);
+    if !list.todos.is_empty() {
+        list.outro(&needs, "Then run fleetd init again; it keeps what's done.");
+        return;
+    }
+    let mut lines = Vec::new();
+    if let Some(hub) = &summary.hub {
+        lines.push(format!("hub       {hub}"));
+    }
+    if !summary.workers.is_empty() {
+        lines.push(format!("workers   {}", summary.workers.join(", ")));
+    }
+    if let Some(project) = &summary.project {
+        lines.push(format!("project   {project}"));
+    }
+    if let Some(pairing) = &summary.pairing {
+        lines.push(format!("app       {pairing}"));
+    }
     if which("fleetd").is_none() {
-        say(
-            "fleetd is not on your PATH: add export PATH=\"$HOME/.local/bin:$PATH\" to your shell profile.",
-        );
+        lines.push("PATH      add: export PATH=\"$HOME/.local/bin:$PATH\"".into());
+    }
+    if list.rich {
+        list.boxed("fleetd is ready", &lines.join("\n"));
+    } else {
+        eprintln!("\nfleetd is ready");
+        for line in &lines {
+            eprintln!("  {line}");
+        }
+    }
+    let (installed, _) = app_hint();
+    let next = match (installed, paired) {
+        (true, true) => {
+            "Next: open the fleetd app; it connects by itself, then send your first order."
+                .to_owned()
+        }
+        (true, false) => "Next: run fleetd pair, then open the fleetd app.".to_owned(),
+        (false, _) => {
+            "Next: get the fleetd app (curl -fsSL https://fleetd.sh | sh) and enter the code."
+                .to_owned()
+        }
+    };
+    list.outro(&[], &next);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// --yes, no terminal, a scripted --join: a logged-out claude or gh is reported, never logged in interactively.
+    #[test]
+    fn logins_are_offered_only_to_a_person_at_the_terminal() {
+        let mut list = Checklist::plain();
+        let unattended = Ui { interactive: false };
+        assert!(matches!(
+            unattended.offer_login(&mut list, "claude isn't logged in. Log in now?"),
+            Ok(false)
+        ));
+        // Other prompts still take their defaults unattended.
+        assert!(matches!(
+            unattended.confirm(&mut list, "Pair the fleetd app?", true),
+            Ok(true)
+        ));
     }
 }
