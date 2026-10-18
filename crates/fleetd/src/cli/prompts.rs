@@ -276,9 +276,9 @@ fn edit(
             detail.default.r#ref.to_string(),
         ),
     };
-    let file = std::env::temp_dir().join(format!("fleetd-{}-{}.md", e.id, std::process::id()));
-    std::fs::write(&file, &start)
-        .map_err(|err| format!("cannot write {}: {err}", file.display()))?;
+    let scratch = scratch_file(e.id, &start)
+        .map_err(|err| format!("cannot write a temporary file: {err}"))?;
+    let file = scratch.path();
     let editor = std::env::var("VISUAL")
         .or_else(|_| std::env::var("EDITOR"))
         .unwrap_or_else(|_| "vi".into());
@@ -287,10 +287,11 @@ fn edit(
         .arg("-c")
         .arg(format!("{editor} \"$1\""))
         .arg("sh")
-        .arg(&file)
+        .arg(file)
         .status();
-    let text = std::fs::read_to_string(&file);
-    let _ = std::fs::remove_file(&file);
+    // By path: an editor may replace the file rather than write through it.
+    let text = std::fs::read_to_string(file);
+    drop(scratch);
     match status {
         Ok(s) if s.success() => {}
         Ok(s) => return Err(format!("{editor} exited with {s}; nothing saved")),
@@ -324,6 +325,18 @@ fn edit(
     ))
 }
 
+/// The prompt goes to a file only this user can read, under a name another user can't guess or plant first. It is
+/// deleted when dropped.
+fn scratch_file(id: &str, text: &str) -> std::io::Result<tempfile::NamedTempFile> {
+    let mut file = tempfile::Builder::new()
+        .prefix(&format!("fleetd-{id}-"))
+        .suffix(".md")
+        .tempfile()?;
+    file.write_all(text.as_bytes())?;
+    file.flush()?;
+    Ok(file)
+}
+
 fn confirm(question: &str) -> bool {
     eprint!("{question}");
     let _ = std::io::stderr().flush();
@@ -332,4 +345,26 @@ fn confirm(question: &str) -> bool {
         return false;
     }
     !matches!(answer.trim(), "n" | "N" | "no" | "No")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scratch_file;
+
+    #[test]
+    fn the_edit_file_is_private_unguessable_and_removed() {
+        let a = scratch_file("lead.system", "text").unwrap();
+        let b = scratch_file("lead.system", "text").unwrap();
+        assert_ne!(a.path(), b.path());
+        assert_eq!(std::fs::read_to_string(a.path()).unwrap(), "text");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(a.path()).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        let path = a.path().to_owned();
+        drop(a);
+        assert!(!path.exists());
+    }
 }
