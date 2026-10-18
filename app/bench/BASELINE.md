@@ -213,7 +213,7 @@ Pending: run [MAC-RUN.md](MAC-RUN.md).
 ## Method
 
 - **Build**: `--release` with Zed's profile (thin LTO, 1 codegen unit), stripped. gpui's `profiler`
-  feature is on, as it is in Zed. Bench code is compiled in but only runs when `FLEETD_BENCH` is set.
+  feature is on, as it is in Zed. Bench code is compiled in but only runs when `FLEETD_BENCH` names a mode (see MAC-RUN.md).
 - **Timestamps**: gpui's profiler journal records an exact `Instant` for every newly drawn frame and
   its present (`present_end` = the platform's present call returned). The app maps those to wall-clock
   time and the driver compares against its own clock taken just before `spawn`.
