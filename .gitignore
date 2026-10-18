@@ -4,3 +4,12 @@ dist/
 .lab/
 *.log
 .DS_Store
+# Agent-instruction files stay out of this repo; contributor docs live in docs/CONTRIBUTING.md.
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursorrules
+.cursor/
+.windsurfrules
+.clinerules
+.github/copilot-instructions.md
