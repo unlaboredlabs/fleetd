@@ -1,14 +1,14 @@
 //! The stage: when the board has one active order, that order takes the board instead of sitting as one card
-//! above empty space. The title leads, the lead's line sits under it, then every agent's lane (`Density::Stage`,
-//! which also carries the line that counts what the fleet is doing and the order's clock), then its PRs moving
-//! along the train. Shared by the board and the fixture window, so screenshots show the real thing.
+//! above empty space. The title leads, the lead's line sits under it, then the fleet (`Density::Stage`: the line
+//! that counts what it is doing and the order's clock, the writers, each PR with its checkers, and the finish).
+//! Shared by the board and the fixture window, so screenshots show the real thing.
 
 use fleetd_contracts::live::{AgentLane, AgentRole, LaneStatus, LiveLane, OrderCard, OrderPhase, PrRef};
 use fleetd_contracts::prim::Text;
 use gpui::{AnyElement, App, ClickEvent, Div, Entity, SharedString, Window, div, prelude::*, px};
 
 use super::activity::{describe, render_at};
-use super::chips::{phase_chip, pr_label, pr_track, role_tag, stage_tone, tone_color};
+use super::chips::{phase_chip, pr_label, pr_review, pr_track, role_tag, stage_tone, tone_color};
 use super::lanes::FleetLanes;
 use crate::theme::{STRONG, Theme, size};
 
@@ -28,8 +28,6 @@ pub struct Stage<'a> {
     pub lead: Option<AgentLane>,
     /// The lead's state in words ("lead idle"), for when it has no live line.
     pub lead_state: Option<&'a str>,
-    /// The lanes' height, as `FleetLanes::height` says now (the caller reads it; a cached view needs it).
-    pub lanes_h: f32,
     /// Clicking the title opens the order.
     pub on_open: Option<OnOpen>,
 }
@@ -61,18 +59,21 @@ pub fn agents_at_work(lanes: &[AgentLane]) -> bool {
     lanes.iter().any(|l| l.role != AgentRole::Lead && !super::state::is_final(l.status))
 }
 
-/// The lead's "next" note, only while nothing else speaks for the order: no agent at work and no PR on its way
-/// through the train (their lanes and tracks are newer than the note).
+/// The lead's "next" note, only while nothing else speaks for the order: no agent at work and no PR yet. Once
+/// there are PRs, their groups and the finish say where the order is, and the note (written before them) lags.
 pub fn lead_note<'a>(next: Option<&'a str>, lanes: &[AgentLane], prs: &[PrRef]) -> Option<&'a str> {
-    let moving = prs.iter().any(|p| p.state != fleetd_contracts::train::ChangeState::Merged);
-    next.filter(|_| !agents_at_work(lanes) && !moving)
+    next.filter(|_| !agents_at_work(lanes) && prs.is_empty())
 }
 
 pub fn stage(t: &Theme, s: Stage) -> Div {
     let card = s.card;
     let busy = agents_at_work(s.agents);
-    // Working is what the fleet line says; anything else (needs you, merging, failed) is worth its chip.
-    let chip = (card.phase != OrderPhase::Working || !busy).then(|| phase_chip(t, card.phase, card.phase_detail.as_deref()));
+    // The fleet and its PR groups say where a working or merging order is; the chip speaks only for what they
+    // can't: it needs you, it failed or stopped, or nothing has started.
+    let quiet = matches!(card.phase, OrderPhase::Working | OrderPhase::Reviewing | OrderPhase::Merging | OrderPhase::Verifying | OrderPhase::Done)
+        || (busy && card.phase == OrderPhase::Idle)
+        || (!card.prs.is_empty() && card.phase == OrderPhase::Idle);
+    let chip = (!quiet).then(|| phase_chip(t, card.phase, card.phase_detail.as_deref()));
     let title = div()
         .id(SharedString::from(format!("stage-title-{}", card.workstream_id)))
         .when(s.on_open.is_some(), |d| d.cursor_pointer())
@@ -98,8 +99,7 @@ pub fn stage(t: &Theme, s: Stage) -> Div {
         None => title,
     };
     let lead = lead_line(t, s.lead.as_ref(), s.lead_state, lead_note(card.next.as_deref(), s.agents, &card.prs));
-    let prs = (!card.prs.is_empty())
-        .then(|| div().pt_2().px_2().flex().flex_wrap().items_center().gap_x_6().gap_y_1().children(card.prs.iter().map(|p| pr_progress(t, p))));
+    // The fleet lays itself out at its own height: no fixed box that could clip a row the header counts.
     div()
         .w_full()
         .flex()
@@ -107,8 +107,7 @@ pub fn stage(t: &Theme, s: Stage) -> Div {
         .child(div().px_2().child(title))
         .child(div().px_2().pt_1().child(lead))
         .child(div().mt_3().border_t_1().border_color(t.hairline))
-        .child(div().h(px(s.lanes_h)).flex_none().child(s.lanes.cached(gpui::StyleRefinement::default().size_full())))
-        .children(prs)
+        .child(s.lanes)
 }
 
 /// "lead  running fleetd brief freeze …", or its state in words; with the lead's next step only when no agent is
@@ -117,12 +116,14 @@ fn lead_line(t: &Theme, lead: Option<&AgentLane>, state: Option<&str>, next: Opt
     let said = lead.map(|l| (describe(l), matches!(l.status, LaneStatus::Working | LaneStatus::Starting)));
     div()
         .h(px(24.))
+        .w_full()
+        .overflow_hidden()
         .flex()
         .items_center()
         .gap_2()
         .child(role_tag(t, AgentRole::Lead, size::SM).w(px(40.)))
         .child(match said {
-            Some((line, working)) => render_at(t, &line, false, size::MD, working).min_w_0(),
+            Some((line, working)) => render_at(t, &line, false, size::MD, working).flex_1(),
             None => div().text_color(t.quiet).child(SharedString::from(state.unwrap_or("no lead").trim_start_matches("lead ").to_string())),
         })
         .when_some(next, |d, n| {
@@ -147,7 +148,7 @@ pub fn pr_progress(t: &Theme, pr: &PrRef) -> AnyElement {
         .gap_2()
         .whitespace_nowrap()
         .child(div().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.text).child(SharedString::from(format!("#{}", pr.number))))
-        .child(pr_track(t, pr.change_id.as_str(), pr.state))
+        .child(pr_track(t, pr.change_id.as_str(), pr.state, pr_review(pr)))
         .child(div().text_size(px(size::XS)).text_color(tone_color(t, stage_tone(pr.state))).child(SharedString::from(pr_label(pr))))
         .into_any_element()
 }
@@ -177,8 +178,8 @@ mod tests {
         let note = Some("merge after one clean review");
         assert_eq!(lead_note(note, &lanes, &prs), None, "agents at work");
         lanes.iter_mut().for_each(|l| l.status = LaneStatus::Done);
-        assert_eq!(lead_note(note, &lanes, &prs), None, "#212 is still reviewing");
-        prs.iter_mut().for_each(|p| p.state = fleetd_contracts::train::ChangeState::Merged);
-        assert_eq!(lead_note(note, &lanes, &prs), note);
+        assert_eq!(lead_note(note, &lanes, &prs), None, "its PRs speak for it");
+        prs.clear();
+        assert_eq!(lead_note(note, &lanes, &prs), note, "nothing else to say");
     }
 }

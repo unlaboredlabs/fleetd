@@ -273,7 +273,7 @@ impl TrainStrip {
                             .text_color(t.text)
                             .child(SharedString::from(format!("#{}", c.number))),
                     )
-                    .child(div().px_1().self_center().child(pr_track(t, &id, c.state)))
+                    .child(div().px_1().self_center().child(pr_track(t, &id, c.state, 0.)))
                     .child(div().text_color(tone).child(stage_word(c.state))),
             )
             .when(!last, |d| d.child(div().text_color(t.faint).child("▸")))

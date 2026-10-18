@@ -1,13 +1,14 @@
 //! One row per agent of an order: role, model, what it is doing now, elapsed, a sparkline of its work and its
 //! tokens, with the role's tint on the row's edge, its tag and its sparkline. Every agent gets a row: lists
-//! tighten when they are long and scroll past [`MAX_ROWS`]. `Density::Card` is a board card (one line per lane,
-//! finished lanes hold 8 s with a check, then leave); `Density::Stage` is the one active order given the whole
-//! board (larger rows under a line that counts what the fleet is doing, finished lanes as on a card);
+//! tighten when they are long (once, for good: see [`latch_compact`]) and scroll past [`MAX_ROWS`]. `Density::Card`
+//! is a board card (one line per lane, finished lanes hold 8 s with a check, then leave); `Density::Stage` is the
+//! one active order given the whole board, as structure (`fleet`): the writers still writing, then a group per PR
+//! with its checkers indented under it, a finished agent folding into its group's summary, and the order's finish;
 //! `Density::Full` is the order view (two or three lines per lane, a status header, finished lanes folded into
 //! "done (n)" as short reports).
 //!
-//! Rows enter and leave with `motion::enter_sized`/`exit_sized`, driven by a [`Presence`] diff of what the
-//! hub sent, so a row moves only when a lane arrived or went. The elapsed labels are the only thing that
+//! Rows enter with `motion::enter_sized` and leave with `motion::exit_fade` then `exit_collapse`, driven by a
+//! [`Presence`] diff of what the hub sent, so a row moves only when a lane arrived or went. The elapsed labels are the only thing that
 //! changes without an event: one app-wide 1 Hz ticker re-renders the lane lists that have a running clock and
 //! were drawn since the last tick, and stops when none has.
 
@@ -17,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::ThreadRef;
 use fleetd_contracts::ledger::WorkstreamId;
-use fleetd_contracts::live::{AgentLane, LaneId, LaneStatus};
+use fleetd_contracts::live::{AgentLane, LaneId, LaneStatus, OrderPhase, PrRef};
 use fleetd_contracts::train::GitHubPrUrl;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Div, EventEmitter, Global, Hsla, IntoElement, Render, SharedString, Task, WeakEntity, Window,
@@ -25,7 +26,8 @@ use gpui::{
 };
 
 use super::activity::{self, describe};
-use super::chips::{check, pr_chip, role_tag, role_tint};
+use super::chips::{check, pr_chip, pr_track, role_tag, role_tint, stage_tone, tone_color};
+use super::fleet::{Group, finished, fleet, latch_compact};
 use super::motion::{self, Presence, dur};
 use super::spark::sparkline;
 use super::state::{fleet_activity, fleet_summary, fmt_elapsed, fmt_tokens, is_final, is_running, parse_ms};
@@ -61,6 +63,10 @@ const MARK_W: f32 = 9.;
 const TWO_LINE_H: f32 = 40.;
 /// The task title's column on a one-line stage row.
 const STAGE_TITLE_W: f32 = 150.;
+/// How far a PR's checkers sit in from the writers, under their PR.
+const GROUP_INDENT: f32 = 24.;
+/// A PR group's header row.
+const GROUP_H: f32 = 30.;
 const CLOCK_W: f32 = 44.;
 const TOKENS_W: f32 = 40.;
 
@@ -74,12 +80,9 @@ struct Geom {
     edge: f32,
 }
 
-fn geom(density: Density, rows: usize) -> Geom {
-    let compact = rows > COMPACT_AFTER;
+fn geom(density: Density, compact: bool) -> Geom {
     match density {
-        Density::Stage => {
-            Geom { row_h: if compact { 30. } else { 54. }, spark_w: 120., spark_h: if compact { 16. } else { 20. }, words: size::MD, edge: 3. }
-        }
+        Density::Stage => Geom { row_h: if compact { 32. } else { 54. }, spark_w: 120., spark_h: 26., words: size::MD, edge: 3. },
         Density::Card => Geom { row_h: if compact { 22. } else { LANE_ROW_H }, spark_w: 72., spark_h: 14., words: size::XS, edge: 2. },
         Density::Full => Geom { row_h: LANE_ROW_H, spark_w: 72., spark_h: 14., words: size::XS, edge: 2. },
     }
@@ -109,6 +112,15 @@ pub struct FleetLanes {
     done_open: bool,
     /// The stage's order: when it started, for the header's clock.
     started_ms: Option<i64>,
+    /// The list went compact once and stays so (see [`latch_compact`]).
+    compact: bool,
+    /// Every lane this order has shown, at its latest: the stage's groups count finished agents from it.
+    seen: Vec<AgentLane>,
+    /// The order's PRs and phase, for the stage's groups and finish.
+    prs: Vec<PrRef>,
+    phase: Option<OrderPhase>,
+    /// When the stage first saw every PR merged (hub ms): the finish's clock stops there.
+    finished_at: Option<i64>,
     drawn_at: Instant,
     wake: Option<Task<()>>,
 }
@@ -130,6 +142,11 @@ impl FleetLanes {
             stale: false,
             done_open: false,
             started_ms: None,
+            compact: false,
+            seen: Vec::new(),
+            prs: Vec::new(),
+            phase: None,
+            finished_at: None,
             drawn_at: Instant::now(),
             wake: None,
         }
@@ -150,6 +167,25 @@ impl FleetLanes {
             Ticker::join(cx.entity().downgrade(), cx);
         }
         cx.notify();
+    }
+
+    /// The order's PRs and phase, which the stage groups its agents under.
+    pub fn set_order(&mut self, prs: Vec<PrRef>, phase: OrderPhase, cx: &mut Context<Self>) {
+        if self.prs == prs && self.phase == Some(phase) {
+            return;
+        }
+        self.prs = prs;
+        self.phase = Some(phase);
+        self.note_finish();
+        cx.notify();
+    }
+
+    fn note_finish(&mut self) {
+        if finished(&self.lanes, &self.prs) {
+            self.finished_at.get_or_insert(self.hub_now());
+        } else {
+            self.finished_at = None;
+        }
     }
 
     pub fn set(&mut self, lanes: Vec<AgentLane>, hub_now_ms: i64, stale: bool, cx: &mut Context<Self>) {
@@ -188,8 +224,17 @@ impl FleetLanes {
         self.was.retain(|id, _| shown.contains(id));
         self.ended.retain(|id, _| shown.contains(id));
         self.arrived.retain(|id| shown.contains(id));
+        for lane in &lanes {
+            match self.seen.iter_mut().find(|l| l.lane_id == lane.lane_id) {
+                Some(old) => *old = lane.clone(),
+                None => self.seen.push(lane.clone()),
+            }
+        }
+        let listed = lanes.iter().filter(|l| self.listed(l)).count();
+        self.compact = latch_compact(self.compact, listed, COMPACT_AFTER);
         self.lanes = lanes;
         self.stale = stale;
+        self.note_finish();
         self.schedule(cx);
         if self.has_clock() {
             Ticker::join(cx.entity().downgrade(), cx);
@@ -223,7 +268,7 @@ impl FleetLanes {
     fn schedule(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
         let starts = self.lanes.iter().filter_map(|l| self.exit_start(l)).chain(self.gone.iter().map(|g| g.exit_at));
-        let next = starts.flat_map(|s| [s, s + dur::EXIT]).filter(|&due| due > now).min();
+        let next = starts.flat_map(|s| [s, s + motion::EXIT_FADE, s + dur::EXIT]).filter(|&due| due > now).min();
         self.wake = next.map(|due| {
             cx.spawn(async move |this, cx| {
                 cx.background_executor().timer(due.saturating_duration_since(Instant::now()) + Duration::from_millis(5)).await;
@@ -279,7 +324,7 @@ impl FleetLanes {
             Density::Stage => {}
             Density::Card => {}
         }
-        let g = geom(self.density, rows.len());
+        let g = geom(self.density, self.compact);
         h += rows.iter().take(MAX_ROWS).map(|(l, _)| self.row_height(l, &g)).sum::<f32>();
         if self.density == Density::Full {
             let done = self.lanes.iter().filter(|l| is_final(l.status)).count();
@@ -300,7 +345,7 @@ impl FleetLanes {
         }
     }
 
-    fn row(&self, t: &Theme, lane: &AgentLane, g: &Geom, cx: &mut Context<Self>) -> Div {
+    fn row(&self, t: &Theme, lane: &AgentLane, g: &Geom, indent: f32, cx: &mut Context<Self>) -> Div {
         let id = lane.lane_id.to_string();
         let open = lane.lane_id.clone();
         let hover = t.hover;
@@ -318,11 +363,13 @@ impl FleetLanes {
             fmt_elapsed(end - start)
         });
         // How long the current step has run: the line ticks while a command or the model takes its time.
+        // Waiting on the model shows its time from the first second ("thinking 0:12"), the quiet state; a tool
+        // step shows it once it has taken a while.
         let step = (stage && working)
             .then(|| live.and_then(|l| l.activity.as_ref()).and_then(|a| parse_ms(a.since.as_str())))
             .flatten()
             .map(|since| now - since)
-            .filter(|ms| *ms >= 2000)
+            .filter(|ms| said.waiting || *ms >= 2000)
             .map(fmt_elapsed);
         let tokens = live.and_then(|l| l.tokens.as_ref()).map(|tk| fmt_tokens(tk.input + tk.output));
         let mono = |s: String, w: f32, color: Hsla| {
@@ -351,7 +398,10 @@ impl FleetLanes {
         let doing = || {
             let step_el =
                 step.clone().map(|s| div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.quiet).child(s));
-            div().flex_1().min_w_0().flex().items_center().gap_2().child(line()).children(step_el)
+            // A line with machine text takes the room and cuts it with "…" (a cut needs a width to cut at), its
+            // step time after; a short line keeps its time beside it ("thinking 0:12").
+            let long = said.machine.is_some();
+            div().flex_1().min_w_0().flex().items_center().gap_2().child(if long { line().flex_1() } else { line() }).children(step_el)
         };
         let title = |w: Option<f32>, text_size: f32, color: Hsla| {
             div()
@@ -432,7 +482,8 @@ impl FleetLanes {
             .child(edge)
             .child(head);
         if one_line {
-            return div().child(body);
+            // The indent is the wrapper's padding, so an indented row is narrower rather than pushed off the edge.
+            return div().pl(px(indent)).child(body);
         }
         let branch = lane.branch.as_ref().map(|b| b.to_string());
         let third = (branch.is_some() || lane.pr.is_some()).then(|| {
@@ -516,9 +567,20 @@ impl FleetLanes {
             .when(self.stale, |d| d.child(div().text_color(t.quiet).italic().child("live feed reconnecting")))
     }
 
-    /// What the fleet is doing, counted from its lanes, and how long the order has run.
-    fn stage_header(&self, t: &Theme) -> Div {
-        let doing = fleet_activity(&self.lanes);
+    /// What the fleet is doing, counted from the rows drawn under it, and how long the order has run.
+    fn stage_header(&self, t: &Theme, drawn: &[AgentLane]) -> Div {
+        let doing = match fleet_activity(drawn) {
+            d if !d.is_empty() => d,
+            // Nobody at work but PRs on their way: say so rather than leave the line blank.
+            _ => {
+                let moving = self.prs.iter().filter(|p| p.state != fleetd_contracts::train::ChangeState::Merged).count();
+                if moving == 0 {
+                    "agents done".into()
+                } else {
+                    format!("agents done · {moving} PR{} in the train", if moving == 1 { "" } else { "s" })
+                }
+            }
+        };
         let clock = self.started_ms.map(|s| fmt_elapsed(self.hub_now() - s));
         div()
             .h(px(STAGE_HEAD_H))
@@ -577,6 +639,140 @@ impl FleetLanes {
     }
 }
 
+impl FleetLanes {
+    /// A row at its place in the list: entering, steady, or leaving (fading, then its empty space closing).
+    fn placed_row(&self, t: &Theme, lane: &AgentLane, leaving: Option<Instant>, g: &Geom, indent: f32, cx: &mut Context<Self>) -> AnyElement {
+        let id = lane.lane_id.to_string();
+        let h = px(self.row_height(lane, g));
+        match leaving {
+            Some(start) if Instant::now() >= start + motion::EXIT_FADE => motion::exit_collapse(SharedString::from(format!("gap-{id}-{start:?}")), h),
+            Some(start) => motion::exit_fade(SharedString::from(format!("out-{id}-{start:?}")), self.row(t, lane, g, indent, cx), h),
+            None if self.arrived.contains(&id) => motion::enter_sized(SharedString::from(format!("in-{id}")), self.row(t, lane, g, indent, cx), h),
+            None => self.row(t, lane, g, indent, cx).into_any_element(),
+        }
+    }
+
+    /// The stage: what the fleet is doing, the writers still writing, then each PR with its checkers; or, once
+    /// every PR merged and nobody works, the finish.
+    fn stage_body(&self, t: &Theme, rows: &[(AgentLane, Option<Instant>)], cx: &mut Context<Self>) -> Div {
+        let drawn: Vec<AgentLane> = rows.iter().map(|(l, _)| l.clone()).collect();
+        let leaving = |l: &AgentLane| rows.iter().find(|(r, _)| r.lane_id == l.lane_id).and_then(|(_, s)| *s);
+        let mut body = div().flex().flex_col().w_full();
+        if self.finished_at.is_some() {
+            return body.child(self.finish(t));
+        }
+        let f = fleet(&drawn, &self.seen, &self.prs);
+        if drawn.is_empty() && f.groups.is_empty() {
+            return body;
+        }
+        body = body.child(self.stage_header(t, &drawn));
+        let g = geom(Density::Stage, self.compact);
+        for lane in &f.writers {
+            body = body.child(self.placed_row(t, lane, leaving(lane), &g, 0., cx));
+        }
+        for group in &f.groups {
+            body = body.child(self.group_header(t, group));
+            for lane in &group.rows {
+                body = body.child(self.placed_row(t, lane, leaving(lane), &g, GROUP_INDENT, cx));
+            }
+        }
+        for lane in &f.others {
+            body = body.child(self.placed_row(t, lane, leaving(lane), &g, 0., cx));
+        }
+        body
+    }
+
+    /// "#115  write alpha.md  ▰▱▱ review 1/3   ✓ written in 0:18"
+    fn group_header(&self, t: &Theme, group: &Group) -> Div {
+        let pr = &group.pr;
+        let written = group.writer.as_ref().filter(|w| w.status == LaneStatus::Done).and_then(|w| {
+            let (a, b) = (parse_ms(w.started_at.as_ref()?.as_str())?, parse_ms(w.ended_at.as_ref()?.as_str())?);
+            Some(format!("written in {}", fmt_elapsed(b - a)))
+        });
+        let title = group.writer.as_ref().map_or_else(|| format!("PR #{}", pr.number), |w| w.title.to_string());
+        let all_checked = group.checks_needed > 0 && group.checks_done >= group.checks_needed;
+        div()
+            .h(px(GROUP_H))
+            .mt_1()
+            .px_2()
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.text).child(format!("#{}", pr.number)))
+            .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(t.text).child(title))
+            .child(pr_track(t, pr.change_id.as_str(), pr.state, group.review_progress()))
+            .child(div().flex_none().text_size(px(size::XS)).text_color(tone_color(t, stage_tone(pr.state))).child(group.label()))
+            .child(div().flex_1())
+            .when_some(written, |d, w| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .text_size(px(size::XS))
+                        .text_color(t.quiet)
+                        .child(check(t.success, MARK_W))
+                        .child(w),
+                )
+            })
+            .when(all_checked && group.rows.is_empty(), |d| {
+                d.child(div().flex_none().text_size(px(size::XS)).text_color(t.quiet).child(format!(
+                    "{} check{}",
+                    group.checks_done,
+                    if group.checks_done == 1 { "" } else { "s" }
+                )))
+            })
+    }
+
+    /// "✓ 3 PRs merged · 1:52 · 12 agents", or "merged 3/3 · lead closing" while the lead still has to close the
+    /// order; then what landed, a line per PR.
+    fn finish(&self, t: &Theme) -> Div {
+        let n = self.prs.len();
+        let agents = self.seen.len();
+        let took = match (self.started_ms, self.finished_at) {
+            (Some(a), Some(b)) => Some(fmt_elapsed(b - a)),
+            _ => None,
+        };
+        let closed = self.phase == Some(OrderPhase::Done);
+        let mut head: Vec<String> =
+            vec![if closed { format!("{n} PR{} merged", if n == 1 { "" } else { "s" }) } else { format!("merged {n}/{n} · lead closing") }];
+        head.extend(took);
+        head.push(format!("{agents} agent{}", if agents == 1 { "" } else { "s" }));
+        let f = fleet(&[], &self.seen, &self.prs);
+        let lines = f.groups.into_iter().map(|g| {
+            let title = g.writer.as_ref().map_or_else(|| format!("PR #{}", g.pr.number), |w| w.title.to_string());
+            div()
+                .h(px(26.))
+                .pl(px(MARK_W + 8. + 8.))
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(
+                    div().flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).text_color(t.text).child(format!("#{}", g.pr.number)),
+                )
+                .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(t.text).child(title))
+                .child(div().flex_none().text_size(px(size::XS)).text_color(t.quiet).child(format!("{} checks", g.checks_done)))
+                .child(div().flex_none().text_size(px(size::XS)).text_color(t.success).child("merged"))
+        });
+        div()
+            .pt_2()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .h(px(STAGE_HEAD_H))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(check(t.success, MARK_W + 2.))
+                    .child(div().text_color(t.text).font_weight(STRONG).child(head.join(" · "))),
+            )
+            .children(lines)
+    }
+}
+
 impl Render for FleetLanes {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.drawn_at = Instant::now();
@@ -591,21 +787,13 @@ impl Render for FleetLanes {
                 );
             }
         }
-        // The fleet line heads the agents; with none listed, the title row's chip says where the order is.
-        if self.density == Density::Stage && !rows.is_empty() {
-            list = list.child(self.stage_header(&t));
+        if self.density == Density::Stage {
+            return list.child(self.stage_body(&t, &rows, cx));
         }
-        let g = geom(self.density, rows.len());
+        let g = geom(self.density, self.compact);
         let mut body = div().flex().flex_col().w_full();
         for (lane, leaving) in &rows {
-            let id = lane.lane_id.to_string();
-            let h = px(self.row_height(lane, &g));
-            let row = self.row(&t, lane, &g, cx);
-            body = body.child(match leaving {
-                Some(start) => motion::exit_sized(SharedString::from(format!("out-{id}-{start:?}")), row, h),
-                None if self.arrived.contains(&id) => motion::enter_sized(SharedString::from(format!("in-{id}")), row, h),
-                None => row.into_any_element(),
-            });
+            body = body.child(self.placed_row(&t, lane, *leaving, &g, 0., cx));
         }
         list = if rows.len() > MAX_ROWS {
             let h: f32 = rows.iter().take(MAX_ROWS).map(|(l, _)| self.row_height(l, &g)).sum();

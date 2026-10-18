@@ -25,15 +25,21 @@ pub struct Line {
     pub words: String,
     pub machine: Option<String>,
     pub tone: Tone,
+    /// Waiting on the model: true, but the quiet state. Tool work is what reads loud.
+    pub waiting: bool,
 }
 
 impl Line {
     fn say(words: impl Into<String>) -> Self {
-        Self { words: words.into(), machine: None, tone: Tone::Quiet }
+        Self { words: words.into(), machine: None, tone: Tone::Quiet, waiting: false }
     }
 
     fn with(words: impl Into<String>, machine: impl Into<String>) -> Self {
-        Self { words: words.into(), machine: Some(machine.into()), tone: Tone::Quiet }
+        Self { words: words.into(), machine: Some(machine.into()), tone: Tone::Quiet, waiting: false }
+    }
+
+    fn thinking() -> Self {
+        Self { waiting: true, ..Self::say("thinking") }
     }
 }
 
@@ -69,9 +75,9 @@ pub fn describe(lane: &AgentLane) -> Line {
             Some(Activity::Writing) => Line::say("writing"),
             Some(Activity::Compacting) => Line::say("compacting context"),
             Some(Activity::Retrying { attempt, of, reason }) => Line::say(format!("retrying ({attempt} of {of}): {reason}")),
-            Some(Activity::Thinking) => Line::say("waiting on the model"),
+            Some(Activity::Thinking) => Line::thinking(),
             None if lane.status == LaneStatus::Starting => Line::say("starting"),
-            None => Line::say("waiting on the model"),
+            None => Line::thinking(),
         },
     }
 }
@@ -91,7 +97,7 @@ pub fn render(t: &Theme, line: &Line, stale: bool) -> Div {
 pub fn render_at(t: &Theme, line: &Line, stale: bool, words: f32, live: bool) -> Div {
     let (color, weight): (Hsla, FontWeight) = match (stale, line.tone) {
         (true, _) => (t.quiet, REGULAR),
-        (false, Tone::Quiet) if live => (t.text, REGULAR),
+        (false, Tone::Quiet) if live && !line.waiting => (t.text, REGULAR),
         (false, Tone::Quiet) => (t.quiet, REGULAR),
         (false, Tone::Loud) => (t.text, STRONG),
         (false, Tone::Danger) => (t.danger, REGULAR),
@@ -111,7 +117,18 @@ pub fn render_at(t: &Theme, line: &Line, stale: bool, words: f32, live: bool) ->
         .when(stale, |d| d.italic())
         .child(div().flex_none().child(SharedString::from(line.words.clone())))
         .when_some(line.machine.clone(), |d, m| {
-            d.child(div().min_w_0().overflow_hidden().text_ellipsis().font_family(t.mono_font.clone()).text_size(px(mono)).child(m))
+            // flex_1 gives the machine text a width to cut at, so a long command ends in "…", not mid-word.
+            d.child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .font_family(t.mono_font.clone())
+                    .text_size(px(mono))
+                    .child(m),
+            )
         })
 }
 
@@ -169,10 +186,11 @@ mod tests {
         assert_eq!(w(Read { path: Some(Text::unchecked("a.rs")), pattern: None }), "reading a.rs");
         assert_eq!(w(Tool { name: Text::unchecked("WebFetch"), detail: Some(Text::unchecked("docs.rs")) }), "WebFetch docs.rs");
         assert_eq!(w(Retrying { attempt: 2, of: 5, reason: Text::unchecked("overloaded") }), "retrying (2 of 5): overloaded");
-        assert_eq!(w(Thinking), "waiting on the model");
+        assert_eq!(w(Thinking), "thinking");
         assert_eq!(w(Compacting), "compacting context");
         // Nothing open and no recent output: no more than the status says.
-        assert_eq!(words(&lane(LaneStatus::Working, None)), "waiting on the model");
+        assert_eq!(words(&lane(LaneStatus::Working, None)), "thinking");
+        assert!(describe(&lane(LaneStatus::Working, None)).waiting, "the quiet state");
         assert_eq!(words(&lane(LaneStatus::Starting, None)), "starting");
     }
 

@@ -160,19 +160,28 @@ pub fn enter_sized(id: impl Into<ElementId>, el: impl IntoElement, height: Pixel
         .into_any_element()
 }
 
-/// Fades out, then collapses from `height` to 0: opacity over the first 80 ms, height over the last 60. The
-/// caller keeps rendering the row until [`dur::EXIT`] has passed, then drops it.
-pub fn exit_sized(id: impl Into<ElementId>, el: impl IntoElement, height: Pixels) -> AnyElement {
-    let fade = Animation::new(Duration::from_millis(80)).with_easing(quadratic);
-    let collapse = Animation::new(dur::EXIT - Duration::from_millis(80)).with_easing(quadratic);
+/// How long a leaving row fades before its space closes.
+pub const EXIT_FADE: Duration = Duration::from_millis(80);
+
+/// A leaving row's first part: it fades out in place, at its full height. The caller swaps it for
+/// [`exit_collapse`] once [`EXIT_FADE`] has passed, so the row never shrinks over the one below it.
+pub fn exit_fade(id: impl Into<ElementId>, el: impl IntoElement, height: Pixels) -> AnyElement {
     div()
         .overflow_hidden()
         .h(height)
+        .flex_none()
         .child(el)
-        .with_animations(id, vec![fade, collapse], move |d, step, t| match step {
-            0 => d.opacity(1. - t),
-            _ => d.opacity(0.).h(height * (1. - t)),
-        })
+        .with_animation(id, Animation::new(EXIT_FADE).with_easing(quadratic), |d, t| d.opacity(1. - t))
+        .into_any_element()
+}
+
+/// A leaving row's second part: its space, empty, closing from `height` to 0 over the rest of [`dur::EXIT`]. Its
+/// content is gone already, so nothing is drawn while the rows below slide up.
+pub fn exit_collapse(id: impl Into<ElementId>, height: Pixels) -> AnyElement {
+    div()
+        .flex_none()
+        .h(height)
+        .with_animation(id, Animation::new(dur::EXIT - EXIT_FADE).with_easing(quadratic), move |d, t| d.h(height * (1. - t)))
         .into_any_element()
 }
 
