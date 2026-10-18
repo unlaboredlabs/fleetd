@@ -9,10 +9,10 @@ use serde_json::Value;
 
 use super::contract::GitHubRepo;
 use super::host::BoxFut;
-use crate::hub::projects::inspect::{self, GitHubAnswers};
-use fleetd_contracts::projects::CiInfo;
 use crate::clock::Clock;
+use crate::hub::projects::inspect::{self, GitHubAnswers};
 use crate::hub::status::fresh::{self, Fresh};
+use fleetd_contracts::projects::CiInfo;
 
 pub const TRAIN_CONTEXT: &str = "fleetd/train";
 pub const GH_AUTH_FIX: &str = "run `gh auth login` on the hub machine";

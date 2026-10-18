@@ -1017,7 +1017,7 @@ async fn merges_on_local_checks_when_the_repo_has_no_ci_and_says_so_on_the_merge
     assert_eq!(
         kit.host.events_of("pr.merged"),
         [
-            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks") })
+            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks"), "workstreamId": "W1" })
         ]
     );
 }
