@@ -287,9 +287,6 @@ fn table(rows: &[Vec<String>]) -> Vec<String> {
         .collect()
 }
 
-/// Labels with their time, for one row's detail.
-type Labels<'a> = Vec<(&'a str, i64)>;
-
 /// What `fleetd time` prints. `order` is order_get's `order` card, for an order.
 pub fn render(
     order: Option<&Value>,
@@ -325,48 +322,79 @@ pub fn render(
     if wall > 0 {
         head.push_str(&format!("  parallelism {:.1}x", agent as f64 / wall as f64));
     }
-    let gaps = breakdown.coverage.gaps.len();
-    head.push_str(&if breakdown.coverage.complete {
+    let coverage = &breakdown.coverage;
+    head.push_str(&if coverage.complete {
         "  coverage complete".to_owned()
     } else {
-        format!(
-            "  coverage incomplete ({gaps} gap{})",
-            if gaps == 1 { "" } else { "s" }
-        )
+        let mut why = Vec::new();
+        match coverage.gaps.len() {
+            0 => {}
+            1 => why.push("1 gap".to_owned()),
+            n => why.push(format!("{n} gaps")),
+        }
+        if coverage.capped == Some(true) {
+            why.push("newest spans only".into());
+        }
+        if let Some(since) = &coverage.detail_since {
+            why.push(format!(
+                "commands and findings from {}",
+                local(since.as_str(), zone)
+            ));
+        }
+        match why.is_empty() {
+            true => "  coverage incomplete".to_owned(),
+            false => format!("  coverage incomplete ({})", why.join("; ")),
+        }
     });
     out.push(head);
 
     if let Some(p) = path {
         let path_ms = p.end_ms.get() - p.start_ms.get();
-        // Rows by their time on the path, each naming its two longest labels.
-        let mut groups: Vec<(&str, i64, Labels)> = Vec::new();
-        for s in p.segments.iter() {
-            let group = path_group(s.kind, s.cat, s.span_id.is_none());
-            let d = s.end_ms.get() - s.start_ms.get();
-            let g = match groups.iter().position(|g| g.0 == group) {
-                Some(i) => &mut groups[i],
-                None => {
-                    groups.push((group, 0, Vec::new()));
-                    groups.last_mut().expect("just pushed")
+        // The rows come from the hub's totals, which cover the whole path; the segments, which the hub cuts to its
+        // longest 400, only name what each row was.
+        let mut groups: Vec<(&str, i64)> = Vec::new();
+        let mut add = |group: &'static str, ms: i64| match groups.iter_mut().find(|g| g.0 == group)
+        {
+            Some(g) => g.1 += ms,
+            None => groups.push((group, ms)),
+        };
+        for t in p.totals.iter() {
+            match (t.cat, &t.kinds) {
+                (Category::Pipeline, Some(kinds)) => {
+                    for k in kinds.iter() {
+                        add(path_group(k.kind, t.cat, false), k.ms.get());
+                    }
                 }
-            };
-            g.1 += d;
-            let label = s.label.as_deref().unwrap_or("");
-            if !label.is_empty() && !matches!(group, "model" | "nothing running") {
-                match g.2.iter_mut().find(|(l, _)| *l == label) {
-                    Some(l) => l.1 += d,
-                    None => g.2.push((label, d)),
-                }
+                (Category::Idle, _) => add("nothing running", t.ms.get()),
+                (cat, _) => add(category_word(cat), t.ms.get()),
             }
         }
+        groups.retain(|g| g.1 > 0);
         groups.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        let mut labels: Vec<(&str, &str, i64)> = Vec::new();
+        for s in p.segments.iter() {
+            let group = path_group(s.kind, s.cat, s.span_id.is_none());
+            let label = s.label.as_deref().unwrap_or("");
+            if label.is_empty() || matches!(group, "model" | "nothing running") {
+                continue;
+            }
+            let d = s.end_ms.get() - s.start_ms.get();
+            match labels
+                .iter_mut()
+                .find(|(g, l, _)| *g == group && *l == label)
+            {
+                Some(l) => l.2 += d,
+                None => labels.push((group, label, d)),
+            }
+        }
+        labels.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.cmp(b.1)));
         let mut rows = vec![vec!["critical path".to_owned(), dur(path_ms)]];
-        for (group, total, mut labels) in groups {
-            labels.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        for (group, total) in groups {
             let detail = labels
                 .iter()
+                .filter(|(g, _, _)| *g == group)
                 .take(2)
-                .map(|(l, d)| format!("{} {}", one_line(l, 40), dur(*d)))
+                .map(|(_, l, d)| format!("{} {}", one_line(l, 40), dur(*d)))
                 .collect::<Vec<_>>()
                 .join(", ");
             rows.push(vec![
@@ -376,13 +404,14 @@ pub fn render(
                 detail,
             ]);
         }
-        if p.segments_truncated {
-            rows.push(vec![
-                "  (longer than 400 segments; the totals above are complete)".into(),
-            ]);
-        }
         out.push(String::new());
         out.extend(table(&rows));
+        if p.segments_truncated {
+            out.push(format!(
+                "  (the path has more than {} steps: the rows cover all of it, the names only the longest)",
+                p.segments.len()
+            ));
+        }
     }
 
     let mut rows = vec![vec!["agent time".to_owned(), dur(agent)]];
@@ -796,7 +825,7 @@ mod tests {
     }
 
     #[test]
-    fn an_order_prints_its_path_agent_time_commands_and_findings() {
+    fn an_order_prints_its_path_from_the_totals_even_when_cut() {
         let args = parse_time_args(
             &argv(&["W41", "--hub", "h", "--key-file", "k"]),
             now(),
@@ -812,13 +841,19 @@ mod tests {
         let breakdown: TimeBreakdownOutput = serde_json::from_value(json!({
             "wallMs": 60 * min, "agentMs": 90 * min,
             "criticalPath": {
-                "startMs": 0, "endMs": 60 * min, "segmentsTruncated": false, "totals": [],
+                "startMs": 0, "endMs": 60 * min, "segmentsTruncated": true,
+                "totals": [
+                    { "cat": "model", "ms": 9 * min },
+                    { "cat": "idle", "ms": min },
+                    { "cat": "human", "ms": 30 * min },
+                    { "cat": "pipeline", "ms": 20 * min, "kinds": [
+                        { "kind": "change.ci", "ms": 15 * min, "n": 1 }, { "kind": "change.merge", "ms": 5 * min, "n": 1 } ] },
+                ],
                 "nothingRunningMs": min, "offPathMs": 30 * min,
                 "segments": [
                     seg(Some(1), "model", "model.output", None, 0, 9),
                     seg(None, "idle", "gap", None, 9, 10),
                     seg(Some(2), "human", "wait.ask", Some("deploy.region"), 10, 40),
-                    seg(Some(3), "pipeline", "ci.check", Some("rust (macos)"), 40, 55),
                     seg(Some(4), "pipeline", "change.merge", None, 55, 60),
                 ],
             },
@@ -832,7 +867,8 @@ mod tests {
                               "totalMs": 390_000, "p50Ms": 130_000, "maxMs": 140_000, "failed": 1 }],
             "repeated": [], "ciChecks": [], "humanWait": { "totalMs": 30 * min, "n": 1 },
             "retentionDays": 30, "storedBytes": 0,
-            "coverage": { "complete": false, "gaps": [{ "why": "nothing_running", "fromMs": 9 * min, "toMs": 10 * min }] },
+            "coverage": { "complete": false, "capped": true, "detailSince": "2026-10-17T00:00:00Z",
+                          "gaps": [{ "why": "nothing_running", "fromMs": 9 * min, "toMs": 10 * min }] },
         }))
         .unwrap();
         let insights: TimeInsightsOutput = serde_json::from_value(json!({ "insights": [{
@@ -842,14 +878,15 @@ mod tests {
         let text = render(Some(&order), &args, &breakdown, &insights, Tz::UTC);
         let expected = "\
 W41 Add three short pages  done
-wall 1h00m  critical path 1h00m  agent time 1h30m  parallelism 1.5x  coverage incomplete (1 gap)
+wall 1h00m  critical path 1h00m  agent time 1h30m  parallelism 1.5x  coverage incomplete (1 gap; newest spans only; commands and findings from 2026-10-17 00:00)
 
 critical path      1h00m
   you                30m  50%  deploy.region 30m
-  ci                 15m  25%  rust (macos) 15m
+  ci                 15m  25%
   model               9m  15%
   train               5m   8%
   nothing running     1m   2%
+  (the path has more than 4 steps: the rows cover all of it, the names only the longest)
 
 agent time  1h30m
   tools       30m  33%  Bash 25m (12)  Read 5m
