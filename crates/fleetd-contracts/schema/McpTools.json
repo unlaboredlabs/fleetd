@@ -1988,6 +1988,11 @@
           "const": "playbook.kept",
           "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
           "type": "string"
+        },
+        {
+          "const": "key.paired",
+          "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
+          "type": "string"
         }
       ]
     },

@@ -16,6 +16,7 @@ pub mod ledger;
 pub mod mcp;
 pub mod model;
 pub mod node_link;
+pub mod pair;
 pub mod playbooks;
 pub mod retro;
 pub mod schema;
