@@ -119,6 +119,20 @@ impl SessionConfig {
 
 /// `KEY=VALUE` lines; blank lines, `#` comments and an `export ` prefix are allowed, and one pair of matching quotes
 /// around a value is removed.
+/// What claude's login depends on, read fresh each time (the user may have just edited claude.env): the base env,
+/// claude.env, then fleetd's config dir. Every spawn starts from it, and the probe uses exactly it.
+fn claude_env(config: &SessionConfig) -> Vec<(String, String)> {
+    let mut env = config.base_env.clone();
+    if let Ok(text) = std::fs::read_to_string(&config.claude_env) {
+        env.extend(parse_env_file(&text));
+    }
+    env.push((
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.config_dir.to_string_lossy().into_owned(),
+    ));
+    env
+}
+
 pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
     text.lines()
         .map(str::trim)
@@ -527,7 +541,10 @@ impl SessionService {
                 }))
             }
             SessionCall::RunnerInfo => {
-                Ok(SessionOutput::RunnerInfo(self.inner.runner.probe().await))
+                let env = claude_env(&self.inner.config);
+                Ok(SessionOutput::RunnerInfo(
+                    self.inner.runner.probe(&env).await,
+                ))
             }
         }
     }
@@ -900,17 +917,10 @@ impl SessionService {
         let transcript = transcripts.join(format!("{id}.jsonl"));
         state::cap_transcript(&transcript, TRANSCRIPT_CAP)?;
 
-        let mut env = config.base_env.clone();
-        if let Ok(text) = std::fs::read_to_string(&config.claude_env) {
-            env.extend(parse_env_file(&text));
-        }
+        let mut env = claude_env(config);
         // After claude.env, so fleetd's own values win.
         let sock = super::lead::lead_socket_path(&config.home);
         env.extend([
-            (
-                "CLAUDE_CONFIG_DIR".to_owned(),
-                config.config_dir.to_string_lossy().into_owned(),
-            ),
             (
                 "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS".to_owned(),
                 "2".to_owned(),
