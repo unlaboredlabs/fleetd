@@ -731,7 +731,9 @@ pub enum ErrorCode {
     NotFound,
     Forbidden,
     Invalid,
-    T3Error,
+    // The hub or the machine's node failed the request; `message` says how, `fix` what to do. A plain comment, so the
+    // schema keeps one string enum.
+    Failed,
 }
 
 /// Sent as an MCP tool error result whose text is this JSON.

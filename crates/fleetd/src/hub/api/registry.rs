@@ -37,7 +37,7 @@ impl From<ToolError> for CallError {
     }
 }
 
-/// Store failures are defects: logged, and answered with the generic `t3_error`.
+/// Store failures are defects: logged, and answered with the generic `failed`.
 impl From<StoreError> for ToolError {
     fn from(error: StoreError) -> Self {
         tracing::error!(%error, "tool call failed");
@@ -137,7 +137,7 @@ impl Registry {
     }
 
     /// Runs one call for an already verified caller. `null` input (MCP `arguments` absent) decodes as `{}`. The
-    /// handler runs on its own task so a panic becomes the generic `t3_error` instead of dropping the connection;
+    /// handler runs on its own task so a panic becomes the generic `failed` instead of dropping the connection;
     /// dropping the returned future (the client went away) aborts it.
     pub async fn call(
         &self,

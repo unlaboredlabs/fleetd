@@ -69,6 +69,8 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         workspace,
         prompt: NonEmpty::unchecked("Reply with the word OK and nothing else."),
         run_id: NonEmpty::unchecked("r1"),
+        allowed_tools: vec!["Bash(npm test:*)".into()],
+        disallowed_tools: vec!["WebFetch".into()],
     })
 }
 
@@ -641,6 +643,13 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
         (spec.cwd.as_path(), spec.add_dirs.as_slice()),
         (path.as_path(), &[root.clone()][..])
     );
+    // The project's tool rules reach claude's argv, after the tools fleetd always denies.
+    assert_eq!(spec.allowed_tools, ["Bash(npm test:*)"]);
+    assert_eq!(
+        spec.disallowed_tools.last().map(String::as_str),
+        Some("WebFetch")
+    );
+    assert!(spec.disallowed_tools.iter().any(|t| t == "Task"));
 
     std::fs::write(path.join("work.txt"), "w\n").unwrap();
     git(&path, &["add", "."]);

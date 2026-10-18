@@ -1,51 +1,57 @@
-//! Per-machine T3 clients. Each attached machine gets one supervised connection that follows T3's shell stream into
-//! the store (thread/project caches) and the event log (derived events, on transitions only). Thread transcripts are
-//! read on demand (tail, actions, headlines) and dropped after 60 s unused.
+//! Per-machine clients of the node's session service over the node link. Each attached machine gets one supervisor
+//! that subscribes to the node's machine stream and folds it into the store (thread/project caches) and the event log
+//! (derived events, on transitions only). Thread transcripts are followed on demand (tail, actions, headlines) and
+//! released after 60 s unused.
 //!
-//! One `Executors` serves thread watching, workspace files and changes, the provider list, the usage source and T3
-//! settings.
-pub mod limit;
+//! One `Executors` serves thread watching, workspace files and changes, the runner's info and permission answers.
+//! Calls go out as `session_call` frames; the link server hands every `session_reply`, `machine_event` and
+//! `thread_event` frame to `handle_frame`.
 pub mod providers;
 pub mod shell_mapper;
-pub mod t3;
 pub mod thread_view;
 pub mod tools;
 
 pub use tools::register;
 
 #[cfg(test)]
+mod fake_node_tests;
+#[cfg(test)]
 mod shell_mapper_tests;
+#[cfg(test)]
+mod thread_view_tests;
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
+use fleetd_contracts::mcp::McpToolError;
 use fleetd_contracts::model::RuntimeMode;
+use fleetd_contracts::node_link::{HubToNode, NodeToHub};
+use fleetd_contracts::prim::NonEmpty;
+use fleetd_contracts::sessions::{
+    MachineEvent, MachineEventFrame, PermissionDecision, RunnerInfo, SessionCall, SessionCallFrame,
+    SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionWorkspace,
+    ThreadEventFrame,
+};
 use futures_util::StreamExt;
 use serde_json::json;
-use t3_wire::T3Client;
-use t3_wire::types::{
-    Command, CreatedBy, CreationSource, DeliveryIntent, DispatchMode, GetTurnItemInput,
-    InitialMessage, InteractionMode, LaunchThreadInput, ListRefsInput, MessageDispatch,
-    ModelOptionInput, ModelSelectionInput, ReadFileInput, RefKind, RootWorkspace, RunInterrupt,
-    ServerConfig, ServerSettings, ShellStreamItem, SubscribeShellInput, SubscribeThreadInput,
-    ThreadStreamItem, UpdateSettingsInput, WorkspaceStrategy,
-};
-use tokio::sync::watch;
+use sha2::{Digest, Sha256};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
 use crate::clock::Clock;
 use crate::hub::store::{EventLog, HubStore, iso_ms, now_ms};
 pub use providers::ProviderInstance;
-use shell_mapper::{ApplyContext, ShellState, StoredThread, Summary, TrackedThread, js_take};
+use shell_mapper::{
+    ApplyContext, ShellState, StoredThread, Summary, TrackedThread, js_len, js_take,
+};
 use thread_view::{Action, TailRow, ThreadView};
 
-/// Reconnect delay: doubles from 1 s to a 30 s cap, +-25 % jitter so machines don't reconnect in step.
+/// Resubscribe delay: doubles from 1 s to a 30 s cap, +-25 % jitter so machines don't retry in step.
 pub fn backoff_ms(attempt: u32, random: f64) -> u64 {
     let base = 1000.0 * 2f64.powi(attempt.min(5) as i32) * (0.75 + random * 0.5);
     (base.round() as u64).min(30_000)
@@ -53,59 +59,71 @@ pub fn backoff_ms(attempt: u32, random: f64) -> u64 {
 
 pub const WATCH_IDLE_MS: u64 = 60_000;
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
+/// A launch may create a worktree and spawn claude before the node answers.
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
+/// The node keeps the last 2000 characters of the assistant's text on the summary; a shorter tail is the whole text.
+const SUMMARY_TAIL_MAX: usize = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum T3Operation {
+pub enum NodeOperation {
     Launch,
     Send,
     Interrupt,
+    Answer,
     Read,
-    Configure,
+    Project,
 }
 
-impl T3Operation {
+impl NodeOperation {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Launch => "launch",
             Self::Send => "send",
             Self::Interrupt => "interrupt",
+            Self::Answer => "answer",
             Self::Read => "read",
-            Self::Configure => "configure",
+            Self::Project => "project",
         }
     }
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ExecutorError {
-    #[error("machine {machine_id} has no live T3 connection")]
+    #[error("machine {machine_id} has no live node link")]
     MachineNotConnected { machine_id: MachineId },
     #[error("thread {thread_id} is not known on machine {machine_id}")]
     ThreadNotFound {
         machine_id: MachineId,
         thread_id: ThreadId,
     },
-    /// `cause` is for logs only and never carries the bearer or a ws ticket.
-    #[error("T3 on {machine_id} refused or failed the {} request", operation.as_str())]
-    T3RequestFailed {
+    /// `message` is the node's own words (or why no answer came); safe to show.
+    #[error("the node on {machine_id} refused or failed the {} request: {message}", operation.as_str())]
+    NodeRequestFailed {
         machine_id: MachineId,
-        operation: T3Operation,
-        cause: String,
+        operation: NodeOperation,
+        message: String,
+        fix: Option<String>,
     },
 }
 
-fn failed(machine_id: &MachineId, operation: T3Operation, cause: impl ToString) -> ExecutorError {
-    ExecutorError::T3RequestFailed {
+fn failed(
+    machine_id: &MachineId,
+    operation: NodeOperation,
+    message: impl ToString,
+) -> ExecutorError {
+    ExecutorError::NodeRequestFailed {
         machine_id: machine_id.clone(),
         operation,
-        cause: cause.to_string(),
+        message: message.to_string(),
+        fix: None,
     }
 }
 
-/// The T3 session the node minted for the hub.
-#[derive(Clone, PartialEq, Eq)]
-pub struct T3Session {
-    pub t3_url: String,
-    pub bearer: String,
+/// A sender over one welcomed node link. `link_id` tells a newer link from the one it replaced.
+#[derive(Clone)]
+pub struct NodeSessions {
+    pub link_id: u64,
+    pub send: mpsc::UnboundedSender<HubToNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,19 +134,21 @@ pub struct LaunchInput {
     pub effort: Effort,
     pub runtime_mode: RuntimeMode,
     pub title: Option<String>,
-    /// T3 keeps a receipt per command id, so a retried launch returns the same thread.
+    /// The session and run ids derive from it, and the node's launch is idempotent on the session id, so a retried
+    /// launch returns the same thread.
     pub client_request_id: String,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct LaunchOptions {
     /// Default: the project root. Tasks launch writers in a new worktree on their own branch.
-    pub workspace: Option<WorkspaceStrategy>,
+    pub workspace: Option<SessionWorkspace>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendOutcome {
     pub run_id: Option<String>,
+    /// The message waits behind the thread's active run.
     pub queued: bool,
 }
 
@@ -138,6 +158,28 @@ pub struct WriteOutcome {
     pub run_id: Option<String>,
     pub queued: bool,
     pub queued_until: Option<String>,
+}
+
+/// (allow, deny) rules, in claude's syntax.
+pub type ToolRulesFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(Vec<String>, Vec<String>), McpToolError>> + Send + 'a>>;
+
+/// A project's tool rules (`tools.allow`, `tools.deny` in its policy file), read at every launch. The leases area's
+/// cached policy reader implements it; a file that does not decode refuses the launch rather than drop its denies.
+pub trait ToolPolicy: Send + Sync + 'static {
+    fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a>;
+}
+
+impl ToolPolicy for crate::hub::leases::Policies {
+    fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a> {
+        Box::pin(async move {
+            let tools = self.get(project).await?.tools.unwrap_or_default();
+            let rules = |l: &[fleetd_contracts::prim::Text<1, 200>]| {
+                l.iter().map(|t| t.as_str().to_owned()).collect::<Vec<_>>()
+            };
+            Ok((rules(&tools.allow), rules(&tools.deny)))
+        })
+    }
 }
 
 /// The queue area's hook: `thread_send` goes through it when set, so a message to an offline machine waits.
@@ -174,7 +216,7 @@ pub struct OpenTool {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Progress {
-    /// Epoch ms of the stream's last frame, or of its opening.
+    /// Epoch ms of the session's last machine or thread frame, or of the follow's opening.
     pub last_frame_ms: u64,
     pub tool: Option<OpenTool>,
 }
@@ -184,9 +226,9 @@ pub struct Progress {
 pub struct ThreadChanges {
     pub branch: Option<String>,
     pub worktree_path: Option<String>,
-    /// Repo-relative paths any of the thread's checkpoints touched, sorted and unique.
+    /// Repo-relative paths the session changed against its base (committed and not), sorted and unique.
     pub paths: Vec<String>,
-    /// Pull requests T3 linked to the thread.
+    /// Always empty with the native runner; the tasks area finds a PR in the thread's command output instead.
     pub pull_request_urls: Vec<String>,
 }
 
@@ -202,13 +244,13 @@ pub struct Tail {
 enum Ready {
     Pending,
     Open,
-    Failed(String),
+    Failed(ExecutorError),
 }
 
 struct WatchState {
     view: ThreadView,
     last_used_ms: u64,
-    /// Any frame but "synchronized" counts as progress; starts at the stream's opening.
+    /// Any machine or thread frame for the session counts as progress; starts at the follow's opening.
     last_frame_ms: u64,
     /// Followed by the watchdog: stays open however long nobody reads it.
     pinned: bool,
@@ -235,13 +277,16 @@ impl Watch {
 
 #[derive(Default)]
 struct Slot {
-    t3_url: String,
-    bearer: String,
+    link: Option<NodeSessions>,
     supervisor: Option<JoinHandle<()>>,
-    /// Set while a socket is open and the shell stream has delivered its first item.
-    live: Option<T3Client>,
+    /// The supervisor's inbox: machine events, applied in order.
+    events: Option<mpsc::UnboundedSender<MachineEventFrame>>,
+    /// Set once the node accepted the subscription on the current link.
+    live: bool,
     shell: ShellState,
     watches: HashMap<String, Arc<Watch>>,
+    /// Calls in flight on the current link, by frame id.
+    pending: HashMap<String, oneshot::Sender<SessionResult>>,
 }
 
 pub struct Executors {
@@ -252,6 +297,12 @@ pub struct Executors {
     /// Per machine: true while live. `await_live` waits on it.
     live: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
     offline_writer: Mutex<Option<Arc<dyn OfflineWriter>>>,
+    /// Per machine: true once the link server announced the machine online by its runner's verdict, false while
+    /// degraded or unlinked. Queued writes go out only while it is true.
+    ready: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
+    /// Per machine: the runner as the node last reported it, by a `runner_info` answer or a pushed event.
+    runners: Mutex<HashMap<MachineId, watch::Sender<Option<RunnerInfo>>>>,
+    tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
 }
@@ -281,9 +332,7 @@ fn from_stored(s: &StoredThread) -> Option<crate::hub::store::StoredThread> {
     })
 }
 
-/// A random v4-shaped UUID.
-pub(crate) fn new_uuid() -> String {
-    let b: [u8; 16] = rand::random();
+fn uuid_of(b: [u8; 16]) -> String {
     let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
     format!(
         "{}-{}-4{}-{}-{}",
@@ -295,7 +344,54 @@ pub(crate) fn new_uuid() -> String {
     )
 }
 
-/// Drops the slot's live client and its thread watches when a connection ends, however it ends.
+/// A random v4-shaped UUID.
+pub(crate) fn new_uuid() -> String {
+    uuid_of(rand::random())
+}
+
+/// A v4-shaped UUID derived from `seed`: the same request always names the same session or run, so the node's
+/// idempotent launch and send dedupe a retry.
+pub(crate) fn uuid_from(seed: &str) -> String {
+    let digest = Sha256::digest(seed.as_bytes());
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&digest[..16]);
+    uuid_of(b)
+}
+
+fn non_empty(
+    machine_id: &MachineId,
+    operation: NodeOperation,
+    what: &str,
+    value: &str,
+) -> Result<NonEmpty, ExecutorError> {
+    NonEmpty::new(value).map_err(|_| failed(machine_id, operation, format!("the {what} is empty")))
+}
+
+fn from_session_error(
+    machine_id: &MachineId,
+    operation: NodeOperation,
+    session: Option<&ThreadId>,
+    error: SessionError,
+) -> ExecutorError {
+    match (error.code, session) {
+        (SessionErrorCode::NotFound, Some(thread_id))
+            if operation != NodeOperation::Answer && operation != NodeOperation::Launch =>
+        {
+            ExecutorError::ThreadNotFound {
+                machine_id: machine_id.clone(),
+                thread_id: thread_id.clone(),
+            }
+        }
+        _ => ExecutorError::NodeRequestFailed {
+            machine_id: machine_id.clone(),
+            operation,
+            message: error.message.as_str().to_owned(),
+            fix: error.fix,
+        },
+    }
+}
+
+/// Clears the slot's live flag and its thread follows when a supervisor ends, however it ends.
 struct LiveGuard {
     executors: Arc<Executors>,
     machine_id: MachineId,
@@ -305,12 +401,14 @@ impl Drop for LiveGuard {
     fn drop(&mut self) {
         let mut machines = self.executors.machines.lock().unwrap();
         if let Some(slot) = machines.get_mut(&self.machine_id) {
-            slot.live = None;
+            slot.live = false;
             for (_, w) in slot.watches.drain() {
                 if let Some(task) = w.task.lock().unwrap().take() {
                     task.abort();
                 }
-                w.settle(Ready::Failed("the T3 connection closed".into()));
+                w.settle(Ready::Failed(ExecutorError::MachineNotConnected {
+                    machine_id: self.machine_id.clone(),
+                }));
             }
         }
         drop(machines);
@@ -327,6 +425,9 @@ impl Executors {
             machines: Mutex::default(),
             live: Mutex::default(),
             offline_writer: Mutex::default(),
+            runners: Mutex::default(),
+            ready: Mutex::default(),
+            tool_policy: Mutex::default(),
             hooks: tools::ToolHooks::default(),
         })
     }
@@ -338,6 +439,11 @@ impl Executors {
 
     pub fn offline_writer(&self) -> Option<Arc<dyn OfflineWriter>> {
         self.offline_writer.lock().unwrap().clone()
+    }
+
+    /// `hub/serve` sets this once the policy reader exists; until then launches carry no tool rules.
+    pub fn set_tool_policy(&self, policy: Arc<dyn ToolPolicy>) {
+        *self.tool_policy.lock().unwrap() = Some(policy);
     }
 
     fn now_ms(&self) -> u64 {
@@ -352,17 +458,6 @@ impl Executors {
             .send_replace(live);
     }
 
-    fn client(&self, machine_id: &MachineId) -> Result<T3Client, ExecutorError> {
-        self.machines
-            .lock()
-            .unwrap()
-            .get(machine_id)
-            .and_then(|s| s.live.clone())
-            .ok_or_else(|| ExecutorError::MachineNotConnected {
-                machine_id: machine_id.clone(),
-            })
-    }
-
     fn tracked(&self, r: &ThreadRef) -> Option<TrackedThread> {
         self.machines
             .lock()
@@ -374,19 +469,23 @@ impl Executors {
             .cloned()
     }
 
-    /// (Re)connects. Idempotent for the same URL and bearer; a new bearer reconnects with it.
-    pub async fn attach(self: &Arc<Self>, machine_id: &MachineId, session: T3Session) {
+    /// Takes over the machine's link and (re)subscribes. Idempotent for the same link.
+    pub async fn attach(self: &Arc<Self>, machine_id: &MachineId, sessions: NodeSessions) {
+        let (tx, rx) = mpsc::unbounded_channel();
         let old = {
             let mut machines = self.machines.lock().unwrap();
             let slot = machines.entry(machine_id.clone()).or_default();
-            if slot.supervisor.is_some()
-                && slot.t3_url == session.t3_url
-                && slot.bearer == session.bearer
+            if slot
+                .link
+                .as_ref()
+                .is_some_and(|l| l.link_id == sessions.link_id)
             {
                 return;
             }
-            slot.t3_url = session.t3_url;
-            slot.bearer = session.bearer;
+            slot.link = Some(sessions);
+            slot.events = Some(tx);
+            // Replies to calls on the old link never come; their senders drop, so the waiters fail.
+            slot.pending.clear();
             slot.supervisor.take()
         };
         if let Some(old) = old {
@@ -395,23 +494,42 @@ impl Executors {
         }
         let this = self.clone();
         let id = machine_id.clone();
-        let task = tokio::spawn(async move { this.supervise(id).await });
+        let task = tokio::spawn(async move { this.supervise(id, rx).await });
         if let Some(slot) = self.machines.lock().unwrap().get_mut(machine_id) {
             slot.supervisor = Some(task);
         }
     }
 
-    /// Drops the connection. The machine's shell state is kept, so a later attach resumes from its cursor.
+    /// Drops the link. The machine's shell state is kept, so a later attach resumes from its cursor.
     pub async fn detach(&self, machine_id: &MachineId) {
+        self.set_runner_ready(machine_id, false);
         let task = self
             .machines
             .lock()
             .unwrap()
             .get_mut(machine_id)
-            .and_then(|s| s.supervisor.take());
+            .and_then(|s| {
+                s.link = None;
+                s.events = None;
+                s.pending.clear();
+                s.supervisor.take()
+            });
         if let Some(task) = task {
             task.abort();
             let _ = task.await;
+        }
+    }
+
+    /// Drops the link only if it is still `link_id` (a newer link may have taken over).
+    pub async fn detach_link(&self, machine_id: &MachineId, link_id: u64) {
+        let current = self
+            .machines
+            .lock()
+            .unwrap()
+            .get(machine_id)
+            .and_then(|s| s.link.as_ref().map(|l| l.link_id));
+        if current == Some(link_id) {
+            self.detach(machine_id).await;
         }
     }
 
@@ -420,10 +538,10 @@ impl Executors {
             .lock()
             .unwrap()
             .get(machine_id)
-            .is_some_and(|s| s.live.is_some())
+            .is_some_and(|s| s.live && s.link.is_some())
     }
 
-    /// Returns once the machine has a live T3 connection, at once if it has one now.
+    /// Returns once the machine's node accepted the subscription, at once if it has.
     pub async fn await_live(&self, machine_id: &MachineId) {
         if self.is_connected(machine_id) {
             return;
@@ -438,96 +556,291 @@ impl Executors {
         let _ = rx.wait_for(|live| *live).await;
     }
 
-    async fn supervise(self: Arc<Self>, machine_id: MachineId) {
-        let attempt = Arc::new(AtomicU32::new(0));
-        loop {
-            let reason = match self
-                .clone()
-                .run_connection(&machine_id, attempt.clone())
-                .await
-            {
-                Ok(()) => "stream ended".to_owned(),
-                Err(e) => e,
-            };
-            let delay = backoff_ms(
-                attempt.fetch_add(1, Ordering::SeqCst),
-                rand::random::<f64>(),
-            );
-            // t3-wire's error texts never carry the bearer or the ws ticket.
-            tracing::warn!(machine_id = %machine_id, reason = %reason, retry_in_ms = delay, "T3 connection lost; reconnecting");
-            self.clock.sleep(Duration::from_millis(delay)).await;
+    fn ready_slot(&self, machine_id: &MachineId) -> watch::Sender<bool> {
+        self.ready
+            .lock()
+            .unwrap()
+            .entry(machine_id.clone())
+            .or_insert_with(|| watch::channel(false).0)
+            .clone()
+    }
+
+    /// The link server sets this after it announced the machine online, and clears it when the runner turns
+    /// unusable or the link drops.
+    pub fn set_runner_ready(&self, machine_id: &MachineId, ready: bool) {
+        self.ready_slot(machine_id).send_if_modified(|r| {
+            let changed = *r != ready;
+            *r = ready;
+            changed
+        });
+    }
+
+    /// Live, and announced online: what the offline queue waits for before it delivers anything.
+    pub fn is_ready(&self, machine_id: &MachineId) -> bool {
+        self.is_connected(machine_id) && *self.ready_slot(machine_id).borrow()
+    }
+
+    /// Returns once `is_ready`, at once if it is now.
+    pub async fn await_ready(&self, machine_id: &MachineId) {
+        let mut ready = self.ready_slot(machine_id).subscribe();
+        let mut live = self
+            .live
+            .lock()
+            .unwrap()
+            .entry(machine_id.clone())
+            .or_insert_with(|| watch::channel(false).0)
+            .subscribe();
+        while !self.is_ready(machine_id) {
+            tokio::select! {
+                _ = ready.changed() => {}
+                _ = live.changed() => {}
+            }
         }
     }
 
-    /// One socket's lifetime: connect, follow the shell stream until it fails or ends.
-    async fn run_connection(
-        self: Arc<Self>,
+    fn runner_slot(&self, machine_id: &MachineId) -> watch::Sender<Option<RunnerInfo>> {
+        self.runners
+            .lock()
+            .unwrap()
+            .entry(machine_id.clone())
+            .or_insert_with(|| watch::channel(None).0)
+            .clone()
+    }
+
+    /// The runner as last reported; it changes on every `runner_info` answer and every pushed runner event, which
+    /// the link server follows for the machine's online/degraded status.
+    pub fn runner_watch(&self, machine_id: &MachineId) -> watch::Receiver<Option<RunnerInfo>> {
+        self.runner_slot(machine_id).subscribe()
+    }
+
+    /// The runner as last reported, without asking the node.
+    pub fn cached_runner(&self, machine_id: &MachineId) -> Option<RunnerInfo> {
+        self.runner_slot(machine_id).borrow().clone()
+    }
+
+    /// The runner's last reported problem as a refusal of `operation`, with the fix to run on the machine. None when
+    /// it is usable or unknown.
+    pub fn runner_refusal(
+        &self,
         machine_id: &MachineId,
-        attempt: Arc<AtomicU32>,
-    ) -> Result<(), String> {
-        let (url, bearer, complete) = {
-            let machines = self.machines.lock().unwrap();
-            let slot = machines.get(machine_id).ok_or("detached")?;
-            (
-                slot.t3_url.clone(),
-                slot.bearer.clone(),
-                slot.shell.complete,
-            )
+        operation: NodeOperation,
+    ) -> Option<ExecutorError> {
+        let info = self.cached_runner(machine_id)?;
+        let problem = providers::runner_problem(&info)?;
+        Some(ExecutorError::NodeRequestFailed {
+            machine_id: machine_id.clone(),
+            operation,
+            message: problem,
+            fix: Some(providers::runner_fix(&info, machine_id.as_str())),
+        })
+    }
+
+    fn remember_runner(&self, machine_id: &MachineId, info: &RunnerInfo) {
+        self.runner_slot(machine_id).send_if_modified(|current| {
+            let changed = current.as_ref() != Some(info);
+            if changed {
+                *current = Some(info.clone());
+            }
+            changed
+        });
+    }
+
+    /// The link server hands over every session frame the node sends.
+    pub fn handle_frame(&self, machine_id: &MachineId, frame: NodeToHub) {
+        match frame {
+            NodeToHub::SessionReply(reply) => {
+                let done = self
+                    .machines
+                    .lock()
+                    .unwrap()
+                    .get_mut(machine_id)
+                    .and_then(|s| s.pending.remove(reply.id.as_str()));
+                if let Some(done) = done {
+                    let _ = done.send(reply.result);
+                }
+            }
+            NodeToHub::MachineEvent(frame) => {
+                if let MachineEvent::RunnerInfo(info) = &frame.event {
+                    self.remember_runner(machine_id, info);
+                }
+                let machines = self.machines.lock().unwrap();
+                let Some(slot) = machines.get(machine_id) else {
+                    return;
+                };
+                if let MachineEvent::SessionUpdated(s) = &frame.event
+                    && let Some(w) = slot.watches.get(s.session_id.as_str())
+                {
+                    w.state.lock().unwrap().last_frame_ms = self.now_ms();
+                }
+                if let Some(tx) = &slot.events {
+                    let _ = tx.send(frame);
+                }
+            }
+            NodeToHub::ThreadEvent(frame) => self.apply_thread_frame(machine_id, &frame),
+            _ => {}
+        }
+    }
+
+    fn apply_thread_frame(&self, machine_id: &MachineId, frame: &ThreadEventFrame) {
+        let w = self
+            .machines
+            .lock()
+            .unwrap()
+            .get(machine_id)
+            .and_then(|s| s.watches.get(frame.session_id.as_str()).cloned());
+        let Some(w) = w else { return };
+        let ready = {
+            let mut s = w.state.lock().unwrap();
+            s.last_frame_ms = self.now_ms();
+            thread_view::apply_thread_event(&mut s.view, &frame.event);
+            s.view.ready
         };
-        let client = T3Client::connect(&url, &bearer)
-            .await
-            .map_err(|e| e.to_string())?;
-        let cursor = self
-            .store
-            .cursor_get(machine_id)
-            .map_err(|e| e.to_string())?;
-        // A replay only carries changed rows, and project counts need every row, so the first stream in this
-        // process starts from a snapshot; it is diffed against the stored summaries, so nothing is missed.
-        let after_sequence = if complete {
+        if ready {
+            w.settle(Ready::Open);
+        }
+    }
+
+    /// One `session_call` and its `session_reply`, at most `wait`.
+    async fn call(
+        &self,
+        machine_id: &MachineId,
+        operation: NodeOperation,
+        call: SessionCall,
+        wait: Duration,
+    ) -> Result<SessionOutput, ExecutorError> {
+        let session = match &call {
+            SessionCall::Send { session_id, .. }
+            | SessionCall::Interrupt { session_id, .. }
+            | SessionCall::Answer { session_id, .. }
+            | SessionCall::Follow { session_id }
+            | SessionCall::ReadItem { session_id, .. }
+            | SessionCall::Changes { session_id } => Some(session_id.clone()),
+            _ => None,
+        };
+        let id = new_uuid();
+        let (tx, rx) = oneshot::channel();
+        let send = {
+            let mut machines = self.machines.lock().unwrap();
+            let slot = machines
+                .get_mut(machine_id)
+                .filter(|s| s.link.is_some())
+                .ok_or_else(|| ExecutorError::MachineNotConnected {
+                    machine_id: machine_id.clone(),
+                })?;
+            slot.pending.insert(id.clone(), tx);
+            slot.link.as_ref().expect("link").send.clone()
+        };
+        let frame = HubToNode::SessionCall(SessionCallFrame {
+            id: NonEmpty::unchecked(id.clone()),
+            call,
+        });
+        let forget = || {
+            if let Some(s) = self.machines.lock().unwrap().get_mut(machine_id) {
+                s.pending.remove(&id);
+            }
+        };
+        if send.send(frame).is_err() {
+            forget();
+            return Err(ExecutorError::MachineNotConnected {
+                machine_id: machine_id.clone(),
+            });
+        }
+        match tokio::time::timeout(wait, rx).await {
+            Err(_) => {
+                forget();
+                Err(failed(
+                    machine_id,
+                    operation,
+                    format!("no answer within {} s", wait.as_secs()),
+                ))
+            }
+            Ok(Err(_)) => Err(failed(
+                machine_id,
+                operation,
+                "the node link dropped before the node answered",
+            )),
+            Ok(Ok(SessionResult::Ok(output))) => Ok(output),
+            Ok(Ok(SessionResult::Err(e))) => Err(from_session_error(
+                machine_id,
+                operation,
+                session.as_ref(),
+                e,
+            )),
+        }
+    }
+
+    /// One link's lifetime: subscribe after the stored cursor, then apply the machine stream until detached.
+    async fn supervise(
+        self: Arc<Self>,
+        machine_id: MachineId,
+        mut events: mpsc::UnboundedReceiver<MachineEventFrame>,
+    ) {
+        let _guard = LiveGuard {
+            executors: self.clone(),
+            machine_id: machine_id.clone(),
+        };
+        let cursor = match self.store.cursor_get(&machine_id) {
+            Ok(c) => c,
+            Err(e) => return tracing::error!(error = %e, "executor: cursor read failed"),
+        };
+        let complete = self
+            .machines
+            .lock()
+            .unwrap()
+            .get(&machine_id)
+            .is_some_and(|s| s.shell.complete);
+        // A replay only carries changed rows, and project counts need every row, so the first stream in this process
+        // starts from a snapshot; it is diffed against the stored summaries, so nothing is missed. It also means a
+        // cursor stored before the native runner, from another sequence, is never sent to a node.
+        let after = if complete {
             cursor.map(|c| c.max(0) as u64)
         } else {
             None
         };
         let baseline = cursor.is_none();
-        let mut stream = client.subscribe_shell(&SubscribeShellInput {
-            after_sequence,
-            ..Default::default()
-        });
-        let _guard = LiveGuard {
-            executors: self.clone(),
-            machine_id: machine_id.clone(),
-        };
-        while let Some(item) = stream.next().await {
-            let item = item.map_err(|e| e.to_string())?;
-            let went_live = {
-                let mut machines = self.machines.lock().unwrap();
-                let slot = machines.get_mut(machine_id).ok_or("detached")?;
-                let fresh = slot.live.is_none();
-                if fresh {
-                    slot.live = Some(client.clone());
+        let mut attempt = 0;
+        loop {
+            match self
+                .call(
+                    &machine_id,
+                    NodeOperation::Read,
+                    SessionCall::Subscribe { after },
+                    READ_TIMEOUT,
+                )
+                .await
+            {
+                Ok(_) => break,
+                Err(ExecutorError::MachineNotConnected { .. }) => return,
+                Err(e) => {
+                    let delay = backoff_ms(attempt, rand::random::<f64>());
+                    attempt += 1;
+                    tracing::warn!(machine_id = %machine_id, error = %e, retry_in_ms = delay, "node refused the session subscription; retrying");
+                    self.clock.sleep(Duration::from_millis(delay)).await;
                 }
-                fresh
-            };
-            if went_live {
-                attempt.store(0, Ordering::SeqCst);
-                self.set_live(machine_id, true);
             }
-            self.handle_shell_item(machine_id, &item, baseline).await;
         }
-        Ok(())
+        if let Some(slot) = self.machines.lock().unwrap().get_mut(&machine_id) {
+            slot.live = true;
+        }
+        self.set_live(&machine_id, true);
+        while let Some(frame) = events.recv().await {
+            self.handle_machine_event(&machine_id, Some(frame.seq), &frame.event, baseline)
+                .await;
+        }
     }
 
-    async fn handle_shell_item(
+    async fn handle_machine_event(
         self: &Arc<Self>,
         machine_id: &MachineId,
-        item: &ShellStreamItem,
+        seq: Option<u64>,
+        event: &MachineEvent,
         baseline: bool,
     ) {
-        let ids: Vec<String> = match item {
-            ShellStreamItem::Snapshot(s) => {
-                s.snapshot.threads.iter().map(|t| t.id.clone()).collect()
+        let ids: Vec<String> = match event {
+            MachineEvent::Snapshot { sessions, .. } => {
+                sessions.iter().map(|s| s.session_id.to_string()).collect()
             }
-            ShellStreamItem::ThreadUpdated(u) => vec![u.thread.id.clone()],
+            MachineEvent::SessionUpdated(s) => vec![s.session_id.to_string()],
             _ => vec![],
         };
         let unknown: Vec<String> = {
@@ -559,7 +872,7 @@ impl Executors {
                 stored: &stored,
                 baseline,
             };
-            shell_mapper::apply_shell_item(&mut slot.shell, item, &ctx)
+            shell_mapper::apply_machine_event(&mut slot.shell, seq, event, &ctx)
         };
         let mut upserts: Vec<StoredThread> = vec![];
         for t in applied.threads {
@@ -571,9 +884,13 @@ impl Executors {
                 None => upserts.push(t),
             }
         }
-        // Shell rows carry no assistant text, so a run that ended or paused gets its headline from a thread read.
+        // The summary keeps only the end of a long reply, so a run that ended or paused on one gets its headline
+        // from a thread read.
         for t in &applied.transitions {
-            if t.kind == shell_mapper::EventType::Started {
+            let cut = self
+                .tracked(&thread_ref(machine_id, &t.thread_id))
+                .is_some_and(|k| js_len(&k.summary.latest_message_tail) >= SUMMARY_TAIL_MAX);
+            if t.kind == shell_mapper::EventType::Started || !cut {
                 continue;
             }
             let Ok(watch) = self.view(&thread_ref(machine_id, &t.thread_id)).await else {
@@ -592,7 +909,7 @@ impl Executors {
                 continue;
             }
             tracked.summary = summary.clone();
-            // Keeps the row's lastSequence and run fields, if this item set them.
+            // Keeps the row's lastSequence and run fields, if this event set them.
             match upserts
                 .iter_mut()
                 .find(|u| u.summary.thread_id == t.thread_id)
@@ -628,11 +945,21 @@ impl Executors {
                 tracing::error!(error = %e, "executor: project write failed");
             }
         }
+        if let Some(present) = &applied.present {
+            // Rows the node has no session for, such as threads from before the native runner, never resume.
+            match self.store.threads_mark_stale(machine_id, present, &now) {
+                Ok(0) => {}
+                Ok(n) => {
+                    tracing::info!(machine_id = %machine_id, threads = n, "executor: threads the node does not have marked stale")
+                }
+                Err(e) => tracing::error!(error = %e, "executor: stale marking failed"),
+            }
+        }
         if matches!(
-            item,
-            ShellStreamItem::ProjectRemoved(_) | ShellStreamItem::Snapshot(_)
+            event,
+            MachineEvent::ProjectRemoved { .. } | MachineEvent::Snapshot { .. }
         ) {
-            self.prune_projects(machine_id, item, &now);
+            self.prune_projects(machine_id, event, &now);
         }
         for t in &applied.transitions {
             let Some(tracked) = self.tracked(&thread_ref(machine_id, &t.thread_id)) else {
@@ -654,8 +981,8 @@ impl Executors {
         }
     }
 
-    /// Projects T3 deleted: dropped from the cache, each with a project.removed event.
-    fn prune_projects(&self, machine_id: &MachineId, item: &ShellStreamItem, now: &str) {
+    /// Projects the node removed: dropped from the cache, each with a project.removed event.
+    fn prune_projects(&self, machine_id: &MachineId, event: &MachineEvent, now: &str) {
         let cached = match self.store.projects_list(Some(machine_id), None) {
             Ok(c) => c,
             Err(e) => return tracing::error!(error = %e, "executor: project list failed"),
@@ -666,7 +993,7 @@ impl Executors {
             let Some(slot) = machines.get(machine_id) else {
                 return;
             };
-            shell_mapper::removed_projects(&slot.shell, item, &ids)
+            shell_mapper::removed_projects(&slot.shell, event, &ids)
         };
         for project_id in removed {
             let title = cached
@@ -680,7 +1007,7 @@ impl Executors {
             if let Err(e) = self.store.project_remove(&r) {
                 tracing::error!(error = %e, "executor: project remove failed");
             }
-            let summary = format!("Project \"{title}\" on {machine_id} was deleted in T3");
+            let summary = format!("Project \"{title}\" on {machine_id} was removed");
             self.append(Some(json!({
                 "at": now,
                 "type": "project.removed",
@@ -704,7 +1031,7 @@ impl Executors {
         }
     }
 
-    /// The thread's live view, opening a bounded `subscribeThread` if none is open.
+    /// The thread's live view, following the session if nobody does yet.
     async fn view(self: &Arc<Self>, r: &ThreadRef) -> Result<Arc<Watch>, ExecutorError> {
         let machine_id = &r.machine_id;
         let now = self.now_ms();
@@ -712,11 +1039,10 @@ impl Executors {
             let mut machines = self.machines.lock().unwrap();
             let slot = machines
                 .get_mut(machine_id)
-                .filter(|s| s.live.is_some())
+                .filter(|s| s.live && s.link.is_some())
                 .ok_or_else(|| ExecutorError::MachineNotConnected {
                     machine_id: machine_id.clone(),
                 })?;
-            let client = slot.live.clone().expect("live");
             let watch = match slot.watches.get(r.thread_id.as_str()) {
                 Some(w) => w.clone(),
                 None => {
@@ -731,8 +1057,7 @@ impl Executors {
                         task: Mutex::new(None),
                     });
                     slot.watches.insert(r.thread_id.to_string(), w.clone());
-                    let task =
-                        tokio::spawn(self.clone().follow_thread(client, r.clone(), w.clone()));
+                    let task = tokio::spawn(self.clone().follow_thread(r.clone(), w.clone()));
                     *w.task.lock().unwrap() = Some(task);
                     w
                 }
@@ -743,69 +1068,70 @@ impl Executors {
         let mut rx = watch.ready.subscribe();
         let outcome =
             match tokio::time::timeout(READ_TIMEOUT, rx.wait_for(|r| *r != Ready::Pending)).await {
-                Err(_) => Err("timeout".to_owned()),
-                Ok(Err(_)) => Err("closed".to_owned()),
+                Err(_) => Err(failed(
+                    machine_id,
+                    NodeOperation::Read,
+                    "no thread snapshot within 15 s",
+                )),
+                Ok(Err(_)) => Err(failed(machine_id, NodeOperation::Read, "the follow closed")),
                 Ok(Ok(state)) => match &*state {
                     Ready::Failed(e) => Err(e.clone()),
                     _ => Ok(()),
                 },
             };
-        outcome
-            .map(|()| watch.clone())
-            .map_err(|e| failed(machine_id, T3Operation::Read, e))
+        outcome.map(|()| watch.clone())
     }
 
-    /// Follows one thread's stream until it fails, or until it is unpinned and nobody read it for WATCH_IDLE_MS.
-    async fn follow_thread(self: Arc<Self>, client: T3Client, r: ThreadRef, w: Arc<Watch>) {
-        let input = SubscribeThreadInput {
-            thread_id: r.thread_id.to_string(),
-            accept_bounded_snapshot: Some(true),
-            ..Default::default()
-        };
-        let mut stream = client.subscribe_thread(&input);
-        let idle = {
-            let this = self.clone();
-            let w = w.clone();
-            async move {
+    /// Follows one session until the follow fails, or until it is unpinned and nobody read it for WATCH_IDLE_MS.
+    async fn follow_thread(self: Arc<Self>, r: ThreadRef, w: Arc<Watch>) {
+        let follow = self
+            .call(
+                &r.machine_id,
+                NodeOperation::Read,
+                SessionCall::Follow {
+                    session_id: r.thread_id.clone(),
+                },
+                READ_TIMEOUT,
+            )
+            .await;
+        let end = match follow {
+            Err(e) => e,
+            Ok(output) => {
+                if let SessionOutput::Snapshot(snapshot) = output {
+                    let mut s = w.state.lock().unwrap();
+                    thread_view::apply_thread_event(
+                        &mut s.view,
+                        &fleetd_contracts::sessions::ThreadEvent::Snapshot(snapshot),
+                    );
+                    drop(s);
+                    w.settle(Ready::Open);
+                }
                 loop {
                     let (idle, pinned) = {
                         let s = w.state.lock().unwrap();
-                        (this.now_ms().saturating_sub(s.last_used_ms), s.pinned)
+                        (self.now_ms().saturating_sub(s.last_used_ms), s.pinned)
                     };
                     if idle >= WATCH_IDLE_MS && !pinned {
-                        return;
+                        break;
                     }
                     let wait = if pinned {
                         WATCH_IDLE_MS
                     } else {
                         WATCH_IDLE_MS - idle
                     };
-                    this.clock.sleep(Duration::from_millis(wait)).await;
+                    self.clock.sleep(Duration::from_millis(wait)).await;
                 }
-            }
-        };
-        tokio::pin!(idle);
-        let end = loop {
-            tokio::select! {
-                item = stream.next() => match item {
-                    Some(Ok(item)) => {
-                        let now = self.now_ms();
-                        let ready = {
-                            let mut s = w.state.lock().unwrap();
-                            if !matches!(item, ThreadStreamItem::Synchronized) {
-                                s.last_frame_ms = now;
-                            }
-                            thread_view::apply_thread_item(&mut s.view, &item);
-                            s.view.ready
-                        };
-                        if ready {
-                            w.settle(Ready::Open);
-                        }
-                    }
-                    Some(Err(e)) => break e.to_string(),
-                    None => break "stream ended".to_owned(),
-                },
-                () = &mut idle => break "idle".to_owned(),
+                let _ = self
+                    .call(
+                        &r.machine_id,
+                        NodeOperation::Read,
+                        SessionCall::Release {
+                            session_id: r.thread_id.clone(),
+                        },
+                        READ_TIMEOUT,
+                    )
+                    .await;
+                failed(&r.machine_id, NodeOperation::Read, "the follow went idle")
             }
         };
         {
@@ -822,38 +1148,33 @@ impl Executors {
         w.settle(Ready::Failed(end));
     }
 
-    /// Fills in command output the bounded snapshot withheld, for the items about to be returned.
+    /// Fills in the outputs the bounded snapshot cut, for the items about to be returned.
     async fn fill_outputs(
         &self,
         r: &ThreadRef,
         w: &Watch,
         ids: &[String],
     ) -> Result<(), ExecutorError> {
-        let client = self.client(&r.machine_id)?;
         let omitted = thread_view::omitted_outputs(&w.state.lock().unwrap().view, ids);
         let fetches = omitted.into_iter().map(|item_id| {
-            let client = client.clone();
-            let input = GetTurnItemInput {
-                thread_id: r.thread_id.to_string(),
-                item_id,
+            let call = SessionCall::ReadItem {
+                session_id: r.thread_id.clone(),
+                item_id: NonEmpty::unchecked(item_id),
             };
-            async move { client.get_turn_item(&input).await }
+            self.call(&r.machine_id, NodeOperation::Read, call, READ_TIMEOUT)
         });
         let results: Vec<_> = futures_util::stream::iter(fetches)
             .buffer_unordered(4)
             .collect()
             .await;
         for result in results {
-            let item = result
-                .map_err(|e| failed(&r.machine_id, T3Operation::Read, e))?
-                .item;
-            if let Some(item) = item {
+            if let SessionOutput::Item { item } = result? {
                 w.state
                     .lock()
                     .unwrap()
                     .view
                     .items
-                    .insert(item.id.clone(), item);
+                    .insert(item.id.to_string(), item);
             }
         }
         Ok(())
@@ -878,68 +1199,71 @@ impl Executors {
             })
     }
 
-    /// Claude models go straight to the fleetd instance; anything else looks at the provider list, falling back to
-    /// fleetd.
-    async fn route_of(&self, machine_id: &MachineId, model: &str) -> providers::Route {
-        if model.starts_with("claude") {
-            return providers::route_model(&[], model);
-        }
-        match self.provider_instances(machine_id).await {
-            Ok(list) => providers::route_model(&list, model),
-            Err(_) => providers::route_model(&[], model),
-        }
-    }
-
     pub async fn launch(
         &self,
         machine_id: &MachineId,
         input: &LaunchInput,
         options: LaunchOptions,
     ) -> Result<ThreadId, ExecutorError> {
-        let client = self.client(machine_id)?;
-        let route = self.route_of(machine_id, &input.model).await;
+        let op = NodeOperation::Launch;
+        let runner = providers::route_model(&input.model).map_err(|message| {
+            ExecutorError::NodeRequestFailed {
+                machine_id: machine_id.clone(),
+                operation: op,
+                message,
+                fix: Some("Launch it with a claude-* model.".into()),
+            }
+        })?;
+        // No new session goes to a runner the node says can't run it (spec §3.6): an expired login or a claude
+        // outside the supported range. Unknown (the node can't say) leaves it to the node.
+        if self.cached_runner(machine_id).is_none() {
+            let _ = self.runner_info(machine_id).await;
+        }
+        if let Some(refused) = self.runner_refusal(machine_id, op) {
+            return Err(refused);
+        }
         let title = match input.title.as_deref().map(str::trim) {
             Some(t) if !t.is_empty() => t.to_owned(),
             _ => js_take(input.prompt.trim().split('\n').next().unwrap_or(""), 80).to_owned(),
         };
-        let effort = serde_json::to_value(input.effort)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        let (option_id, option_value) = providers::effort_option(&route.driver, &effort);
-        let runtime_mode =
-            serde_json::from_value(serde_json::to_value(input.runtime_mode).unwrap_or_default())
-                .map_err(|e| failed(machine_id, T3Operation::Launch, e))?;
-        let launch = LaunchThreadInput {
-            command_id: input.client_request_id.clone(),
-            project_id: input.project_id.to_string(),
-            title,
-            generate_title: Some(false),
-            // The "fleetd" instance (its launch args deny T3's own spawn tools) unless only Codex has the model;
-            // explicit effort.
-            model_selection: ModelSelectionInput {
-                instance_id: route.instance_id,
-                model: input.model.clone(),
-                options: vec![ModelOptionInput {
-                    id: option_id.to_owned(),
-                    value: option_value,
-                }],
-            },
-            runtime_mode,
-            interaction_mode: InteractionMode::Default,
-            workspace_strategy: options
-                .workspace
-                .unwrap_or(WorkspaceStrategy::Root(RootWorkspace::default())),
-            initial_message: Some(InitialMessage {
-                text: input.prompt.clone(),
-                attachments: vec![],
-            }),
+        let policy = self.tool_policy.lock().unwrap().clone();
+        let (allowed_tools, disallowed_tools) = match policy {
+            None => (vec![], vec![]),
+            Some(policy) => {
+                let project = ProjectRef {
+                    machine_id: machine_id.clone(),
+                    project_id: input.project_id.clone(),
+                };
+                policy
+                    .tools(&project)
+                    .await
+                    .map_err(|e| ExecutorError::NodeRequestFailed {
+                        machine_id: machine_id.clone(),
+                        operation: op,
+                        message: format!("the project's policy file was not read: {}", e.message),
+                        fix: e.fix,
+                    })?
+            }
         };
-        let result = client
-            .launch_thread(&launch)
-            .await
-            .map_err(|e| failed(machine_id, T3Operation::Launch, e))?;
-        Ok(ThreadId::unchecked(result.thread_id))
+        let seed = format!("{machine_id}\n{}", input.client_request_id);
+        let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
+        let launch = SessionLaunch {
+            session_id: session_id.clone(),
+            project_id: input.project_id.clone(),
+            title: Some(title),
+            runner,
+            model: non_empty(machine_id, op, "model", &input.model)?,
+            effort: input.effort,
+            runtime_mode: input.runtime_mode,
+            workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
+            prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
+            run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
+            allowed_tools,
+            disallowed_tools,
+        };
+        self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
+            .await?;
+        Ok(session_id)
     }
 
     pub async fn send(
@@ -948,37 +1272,24 @@ impl Executors {
         message: &str,
         client_request_id: &str,
     ) -> Result<SendOutcome, ExecutorError> {
-        let client = self.client(&r.machine_id)?;
-        let tracked = self.tracked(r);
-        let command = Command::MessageDispatch(MessageDispatch {
-            created_by: CreatedBy::User,
-            creation_source: CreationSource::Web,
-            command_id: client_request_id.to_owned(),
-            thread_id: r.thread_id.to_string(),
-            message_id: new_uuid(),
-            text: message.to_owned(),
-            attachments: vec![],
-            // T3 picks: start a run if idle, steer a running one, queue behind one still starting.
-            delivery_intent: Some(DeliveryIntent::Auto),
-            dispatch_mode: DispatchMode::StartImmediately,
-        });
-        client
-            .dispatch_command(&command)
-            .await
-            .map_err(|e| failed(&r.machine_id, T3Operation::Send, e))?;
+        let op = NodeOperation::Send;
+        let run_id = uuid_from(&format!(
+            "send\n{}\n{}\n{client_request_id}",
+            r.machine_id, r.thread_id
+        ));
+        let call = SessionCall::Send {
+            session_id: r.thread_id.clone(),
+            run_id: NonEmpty::unchecked(run_id.clone()),
+            text: non_empty(&r.machine_id, op, "message", message)?,
+        };
         Ok(
-            match tracked.and_then(|t| t.active_run_id.clone().map(|a| (a, t.active_run_starting)))
-            {
-                None => SendOutcome {
-                    run_id: None,
-                    queued: false,
+            match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
+                SessionOutput::Sent(sent) => SendOutcome {
+                    run_id: Some(sent.run_id.to_string()),
+                    queued: sent.queued,
                 },
-                Some((_, true)) => SendOutcome {
-                    run_id: None,
-                    queued: true,
-                },
-                Some((active, false)) => SendOutcome {
-                    run_id: Some(active),
+                _ => SendOutcome {
+                    run_id: Some(run_id),
                     queued: false,
                 },
             },
@@ -988,27 +1299,39 @@ impl Executors {
     pub async fn interrupt(
         self: &Arc<Self>,
         r: &ThreadRef,
-        client_request_id: &str,
+        _client_request_id: &str,
     ) -> Result<(), ExecutorError> {
-        let client = self.client(&r.machine_id)?;
-        let run_id = match self.tracked(r).and_then(|t| t.active_run_id) {
-            Some(run) => Some(run),
-            None => {
-                let w = self.view(r).await?;
-                thread_view::active_run_id(&w.state.lock().unwrap().view)
-            }
-        };
-        let Some(run_id) = run_id else { return Ok(()) };
-        let command = Command::RunInterrupt(RunInterrupt {
-            command_id: client_request_id.to_owned(),
-            thread_id: r.thread_id.to_string(),
-            run_id,
+        let tracked = self.tracked(r);
+        // Known idle: nothing to interrupt. Unknown: let the node decide.
+        if tracked.as_ref().is_some_and(|t| t.active_run_id.is_none()) {
+            return Ok(());
+        }
+        let call = SessionCall::Interrupt {
+            session_id: r.thread_id.clone(),
+            run_id: tracked
+                .and_then(|t| t.active_run_id)
+                .map(NonEmpty::unchecked),
             reason: Some("interrupted through fleetd".into()),
-        });
-        client
-            .dispatch_command(&command)
-            .await
-            .map_err(|e| failed(&r.machine_id, T3Operation::Interrupt, e))?;
+        };
+        self.call(&r.machine_id, NodeOperation::Interrupt, call, READ_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
+    /// Answers the permission prompt the thread's run waits on.
+    pub async fn answer(
+        &self,
+        r: &ThreadRef,
+        request_id: &str,
+        decision: PermissionDecision,
+    ) -> Result<(), ExecutorError> {
+        let op = NodeOperation::Answer;
+        let call = SessionCall::Answer {
+            session_id: r.thread_id.clone(),
+            request_id: non_empty(&r.machine_id, op, "request id", request_id)?,
+            decision,
+        };
+        self.call(&r.machine_id, op, call, READ_TIMEOUT).await?;
         Ok(())
     }
 
@@ -1083,12 +1406,12 @@ impl Executors {
 
     // ThreadWatch (watchdog)
 
-    /// Threads whose shell row says running, on machines with a live T3 connection.
+    /// Threads whose summary says running, on machines whose node is live.
     pub fn running(&self) -> Vec<RunningThread> {
         let machines = self.machines.lock().unwrap();
         machines
             .iter()
-            .filter(|(_, s)| s.live.is_some())
+            .filter(|(_, s)| s.live && s.link.is_some())
             .flat_map(|(machine_id, s)| {
                 s.shell.threads.iter().filter_map(move |(thread_id, t)| {
                     let run = t
@@ -1104,7 +1427,7 @@ impl Executors {
             .collect()
     }
 
-    /// T3's latest run on the thread as last seen; None for an unknown thread.
+    /// The session's latest run as last seen; None for an unknown thread.
     pub fn latest_run(&self, r: &ThreadRef) -> Option<LatestRun> {
         let t = self.tracked(r)?;
         Some(LatestRun {
@@ -1116,14 +1439,14 @@ impl Executors {
         })
     }
 
-    /// Opens the thread's stream if needed and keeps it open until `release`.
+    /// Follows the session if needed and keeps following until `release`.
     pub async fn follow(self: &Arc<Self>, r: &ThreadRef) -> Result<(), ExecutorError> {
         let w = self.view(r).await?;
         w.state.lock().unwrap().pinned = true;
         Ok(())
     }
 
-    /// The stream then closes 60 s from now unless something reads it.
+    /// The follow then ends 60 s from now unless something reads it.
     pub fn release(&self, r: &ThreadRef) {
         let w = self
             .machines
@@ -1138,7 +1461,7 @@ impl Executors {
         }
     }
 
-    /// None when no stream is open (never followed, or its connection dropped).
+    /// None when the session is not followed (never followed, or its link dropped).
     pub fn progress(&self, r: &ThreadRef) -> Option<Progress> {
         let (w, active) = {
             let machines = self.machines.lock().unwrap();
@@ -1162,18 +1485,28 @@ impl Executors {
         })
     }
 
-    // ProviderList, UsageSource, T3Settings (usage, reviews and the doctor)
+    // Runner and projects (usage, reviews, the doctor, project_add)
 
-    /// T3's `server.getConfig`.
-    pub async fn server_config(
-        &self,
-        machine_id: &MachineId,
-    ) -> Result<ServerConfig, ExecutorError> {
-        let client = self.client(machine_id)?;
-        match tokio::time::timeout(READ_TIMEOUT, client.get_config()).await {
-            Ok(Ok(config)) => Ok(config),
-            Ok(Err(e)) => Err(failed(machine_id, T3Operation::Read, e)),
-            Err(_) => Err(failed(machine_id, T3Operation::Read, "timeout")),
+    /// The node's runner: version, login and conformance.
+    pub async fn runner_info(&self, machine_id: &MachineId) -> Result<RunnerInfo, ExecutorError> {
+        match self
+            .call(
+                machine_id,
+                NodeOperation::Read,
+                SessionCall::RunnerInfo,
+                READ_TIMEOUT,
+            )
+            .await?
+        {
+            SessionOutput::RunnerInfo(info) => {
+                self.remember_runner(machine_id, &info);
+                Ok(info)
+            }
+            _ => Err(failed(
+                machine_id,
+                NodeOperation::Read,
+                "the node sent no runner info",
+            )),
         }
     }
 
@@ -1181,154 +1514,144 @@ impl Executors {
         &self,
         machine_id: &MachineId,
     ) -> Result<Vec<ProviderInstance>, ExecutorError> {
-        Ok(self
-            .server_config(machine_id)
-            .await?
-            .providers
-            .iter()
-            .map(providers::to_instance)
-            .collect())
+        Ok(vec![providers::to_instance(
+            &self.runner_info(machine_id).await?,
+        )])
     }
 
-    /// The T3 URL the machine is attached with, if any (usage's `local` check).
-    pub fn t3_url(&self, machine_id: &MachineId) -> Option<String> {
-        self.machines
-            .lock()
-            .unwrap()
-            .get(machine_id)
-            .map(|s| s.t3_url.clone())
+    /// The project already registered at `workspace_root`, if any.
+    pub fn project_at(&self, machine_id: &MachineId, workspace_root: &str) -> Option<ProjectId> {
+        let machines = self.machines.lock().unwrap();
+        let from_shell = machines.get(machine_id).and_then(|s| {
+            s.shell
+                .projects
+                .iter()
+                .find(|(_, p)| p.workspace_root == workspace_root)
+                .map(|(id, _)| ProjectId::unchecked(id.as_str()))
+        });
+        drop(machines);
+        from_shell.or_else(|| {
+            self.store
+                .projects_list(Some(machine_id), None)
+                .ok()?
+                .into_iter()
+                .find(|p| p.workspace_root == workspace_root)
+                .map(|p| p.project_id)
+        })
     }
 
-    pub async fn settings_read(
+    /// Registers (or renames) a project on the node; the machine stream then carries it into the cache.
+    pub async fn project_upsert(
+        self: &Arc<Self>,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+        title: &str,
+        workspace_root: &str,
+    ) -> Result<(), ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::ProjectUpsert {
+            project_id: project_id.clone(),
+            title: non_empty(machine_id, op, "title", title)?,
+            workspace_root: non_empty(machine_id, op, "path", workspace_root)?,
+        };
+        self.call(machine_id, op, call, READ_TIMEOUT).await?;
+        Ok(())
+    }
+
+    pub async fn project_remove(
         &self,
         machine_id: &MachineId,
-    ) -> Result<ServerSettings, ExecutorError> {
-        let client = self.client(machine_id)?;
-        match tokio::time::timeout(READ_TIMEOUT, client.get_settings()).await {
-            Ok(Ok(s)) => Ok(s),
-            Ok(Err(e)) => Err(failed(machine_id, T3Operation::Read, e)),
-            Err(_) => Err(failed(machine_id, T3Operation::Read, "timeout")),
-        }
-    }
-
-    pub async fn settings_update(
-        &self,
-        machine_id: &MachineId,
-        update: &UpdateSettingsInput,
-    ) -> Result<ServerSettings, ExecutorError> {
-        let client = self.client(machine_id)?;
-        match tokio::time::timeout(READ_TIMEOUT, client.update_settings(update)).await {
-            Ok(Ok(s)) => Ok(s),
-            Ok(Err(e)) => Err(failed(machine_id, T3Operation::Configure, e)),
-            Err(_) => Err(failed(machine_id, T3Operation::Configure, "timeout")),
-        }
+        project_id: &ProjectId,
+    ) -> Result<(), ExecutorError> {
+        let call = SessionCall::ProjectRemove {
+            project_id: project_id.clone(),
+        };
+        self.call(machine_id, NodeOperation::Project, call, READ_TIMEOUT)
+            .await?;
+        Ok(())
     }
 
     // WorkspaceFiles, ThreadWorkspace (leads, tasks)
 
-    /// None when the file does not exist. `cwd` must be a T3 workspace root.
+    fn project_for_root(
+        &self,
+        machine_id: &MachineId,
+        cwd: &str,
+    ) -> Result<ProjectId, ExecutorError> {
+        self.project_at(machine_id, cwd).ok_or_else(|| {
+            failed(
+                machine_id,
+                NodeOperation::Read,
+                format!("no project on {machine_id} has its workspace root at {cwd}"),
+            )
+        })
+    }
+
+    /// None when the file does not exist. `cwd` must be a project's workspace root.
     pub async fn read_file(
         &self,
         machine_id: &MachineId,
         cwd: &str,
         relative_path: &str,
     ) -> Result<Option<String>, ExecutorError> {
-        let client = self.client(machine_id)?;
-        let input = ReadFileInput {
-            cwd: cwd.to_owned(),
-            relative_path: relative_path.to_owned(),
+        let op = NodeOperation::Read;
+        let call = SessionCall::ReadFile {
+            project_id: self.project_for_root(machine_id, cwd)?,
+            path: non_empty(machine_id, op, "path", relative_path)?,
         };
-        match client.read_file(&input).await {
-            Ok(r) => Ok(Some(r.contents)),
-            // T3 resolves the target's real path first, so a missing file fails there.
-            Err(t3_wire::Error::Rpc { error, .. })
-                if error.tag == "ProjectReadFileError"
-                    && error.operation.as_deref() == Some("realpath-target") =>
-            {
-                Ok(None)
-            }
-            Err(e) => Err(failed(machine_id, T3Operation::Read, e)),
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::File { contents } => Ok(contents),
+            _ => Err(failed(machine_id, op, "the node sent no file")),
         }
     }
 
-    /// The repo's default local branch at `cwd`, else its current branch.
+    /// The repo's default branch at `cwd`, else its current branch.
     pub async fn default_branch(
         &self,
         machine_id: &MachineId,
         cwd: &str,
     ) -> Result<String, ExecutorError> {
-        let client = self.client(machine_id)?;
-        let input = ListRefsInput {
-            cwd: cwd.to_owned(),
-            ref_kind: Some(RefKind::Local),
-            limit: Some(200),
+        let op = NodeOperation::Read;
+        let call = SessionCall::DefaultBranch {
+            project_id: self.project_for_root(machine_id, cwd)?,
         };
-        let refs = client
-            .list_refs(&input)
-            .await
-            .map_err(|e| failed(machine_id, T3Operation::Read, e))?
-            .refs;
-        let local: Vec<_> = refs.iter().filter(|r| r.is_remote != Some(true)).collect();
-        local
-            .iter()
-            .find(|r| r.is_default)
-            .or_else(|| local.iter().find(|r| r.current))
-            .map(|r| r.name.clone())
-            .ok_or_else(|| {
-                failed(
-                    machine_id,
-                    T3Operation::Read,
-                    format!("no local branch at {cwd}"),
-                )
-            })
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::DefaultBranch {
+                branch: Some(branch),
+            } => Ok(branch),
+            _ => Err(failed(machine_id, op, format!("no local branch at {cwd}"))),
+        }
     }
 
     pub async fn changes(&self, r: &ThreadRef) -> Result<ThreadChanges, ExecutorError> {
-        let client = self.client(&r.machine_id)?;
-        let p = client
-            .get_thread_projection(r.thread_id.as_str())
-            .await
-            .map_err(|e| failed(&r.machine_id, T3Operation::Read, e))?;
-        let paths = thread_view::checkpoint_paths(
-            p.checkpoints
-                .iter()
-                .flat_map(|c| c.files.iter().map(|f| f.path.as_str())),
-        );
-        let mut urls: Vec<String> = p
-            .thread
-            .pull_requests
-            .iter()
-            .flatten()
-            .filter(|l| l.source != "stack-dismissed")
-            .map(|l| l.url.clone())
-            .collect();
-        if let Some(linked) = &p.thread.linked_pull_request {
-            urls.push(linked.url.clone());
+        let op = NodeOperation::Read;
+        let call = SessionCall::Changes {
+            session_id: r.thread_id.clone(),
+        };
+        match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::Changes(c) => Ok(ThreadChanges {
+                branch: c.branch,
+                worktree_path: c.worktree_path,
+                paths: c.paths,
+                pull_request_urls: vec![],
+            }),
+            _ => Err(failed(&r.machine_id, op, "the node sent no changes")),
         }
-        let mut unique: Vec<String> = vec![];
-        for u in urls {
-            if !unique.contains(&u) {
-                unique.push(u);
-            }
-        }
-        Ok(ThreadChanges {
-            branch: p.thread.branch,
-            worktree_path: p.thread.worktree_path,
-            paths,
-            pull_request_urls: unique,
-        })
     }
 
-    /// What the thread is waiting on a human for, if anything: a question or an approval prompt.
+    /// What the thread is waiting on a human for, if anything: its open permission prompt.
     pub async fn pending_question(&self, r: &ThreadRef) -> Result<Option<String>, ExecutorError> {
-        let client = self.client(&r.machine_id)?;
-        let p = client
-            .get_thread_projection(r.thread_id.as_str())
-            .await
-            .map_err(|e| failed(&r.machine_id, T3Operation::Read, e))?;
-        Ok(thread_view::pending_question_text(
-            &p.runtime_requests,
-            &p.turn_items,
-        ))
+        Ok(self
+            .tracked(r)
+            .and_then(|t| t.pending)
+            .map(|p| thread_view::pending_question_text(&p)))
+    }
+
+    /// The prompt the thread's run waits on: (request id, tool, summary).
+    pub fn pending_permission(
+        &self,
+        r: &ThreadRef,
+    ) -> Option<fleetd_contracts::sessions::PendingPermission> {
+        self.tracked(r)?.pending
     }
 }

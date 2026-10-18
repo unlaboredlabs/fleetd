@@ -32,7 +32,7 @@ impl PortError {
             .with_fix(
                 "Wait for the machine to come back online (fleetd_status shows it), then retry.",
             ),
-            Self::Failed(message) => McpToolError::new(ErrorCode::T3Error, message.clone())
+            Self::Failed(message) => McpToolError::new(ErrorCode::Failed, message.clone())
                 .with_fix("Retry; if it keeps failing, check the machine's T3 with fleetd_status."),
         }
     }

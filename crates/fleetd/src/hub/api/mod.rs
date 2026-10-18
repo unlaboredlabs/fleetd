@@ -11,7 +11,7 @@
 //!    filters fleet-wide results with [`readable`] / [`can_read`], and trims lists with
 //!    [`cap`] and texts with [`clip`] to [`limits`]. Every refusal is a [`ToolError`] with a `fix`; every result
 //!    carries a `next` hint where there is a next step. Store failures can be returned with `?` (they become the
-//!    `t3_error` "The hub failed to answer that request." result and are logged), and a panic in a handler is
+//!    `failed` "The hub failed to answer that request." result and are logged), and a panic in a handler is
 //!    turned into the same result, so one failed request never takes a connection down.
 //! 4. Registering a tool that is already registered replaces it, so an area can take over one of the
 //!    "not wired" stubs in `m1.rs` by registering after it (delete the stub when you do).

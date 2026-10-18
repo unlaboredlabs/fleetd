@@ -80,6 +80,8 @@ pub struct FakeWriter {
     live: watch::Sender<u64>,
     sends: Mutex<Vec<(ThreadRef, String, String)>>,
     refused: Mutex<HashSet<String>>,
+    behind_run: Mutex<HashSet<String>>,
+    degraded: Mutex<HashMap<MachineId, String>>,
 }
 
 impl FakeWriter {
@@ -92,6 +94,20 @@ impl FakeWriter {
     }
     pub fn refuse(&self, client_request_id: &str) {
         self.refused
+            .lock()
+            .unwrap()
+            .insert(client_request_id.into());
+    }
+    /// The machine stays linked, but its runner can't run: sends are refused with `why`.
+    pub fn degrade(&self, machine: &str, why: &str) {
+        self.degraded
+            .lock()
+            .unwrap()
+            .insert(MachineId::unchecked(machine), why.into());
+    }
+    /// The node takes this send behind the thread's active run.
+    pub fn behind_run(&self, client_request_id: &str) {
+        self.behind_run
             .lock()
             .unwrap()
             .insert(client_request_id.into());
@@ -122,22 +138,38 @@ impl ThreadWriter for FakeWriter {
         target: &ThreadRef,
         message: &str,
         client_request_id: &str,
-    ) -> BoxFuture<'_, Result<Option<String>, ExecutorError>> {
+    ) -> BoxFuture<'_, Result<Sent, ExecutorError>> {
         let result = if !self.is_connected(&target.machine_id) {
             Err(ExecutorError::MachineNotConnected {
                 machine_id: target.machine_id.clone(),
             })
         } else if self.refused.lock().unwrap().contains(client_request_id) {
-            Err(ExecutorError::T3RequestFailed {
+            Err(ExecutorError::NodeRequestFailed {
                 machine_id: target.machine_id.clone(),
                 operation: "send",
+                message: "claude is not logged in for fleetd on this machine".into(),
+                fix: Some("On lab-a: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login".into()),
             })
         } else {
             let mut sends = self.sends.lock().unwrap();
             sends.push((target.clone(), message.into(), client_request_id.into()));
-            Ok(Some(format!("run-{}", sends.len())))
+            Ok(Sent {
+                run_id: Some(format!("run-{}", sends.len())),
+                behind_run: self.behind_run.lock().unwrap().contains(client_request_id),
+            })
         };
         Box::pin(async move { result })
+    }
+    fn refusal(&self, machine_id: &MachineId) -> Option<ExecutorError> {
+        let why = self.degraded.lock().unwrap().get(machine_id)?.clone();
+        Some(ExecutorError::NodeRequestFailed {
+            machine_id: machine_id.clone(),
+            operation: "send",
+            message: why,
+            fix: Some(format!(
+                "On {machine_id}: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login"
+            )),
+        })
     }
 }
 

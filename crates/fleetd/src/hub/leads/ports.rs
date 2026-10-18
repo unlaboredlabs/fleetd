@@ -28,7 +28,7 @@ pub struct RouteAsk {
 
 pub trait LeadPorts: Send + Sync {
     /// `Executors.launch(machineId, input)`. Map `MachineNotConnected` with `LeadError::machine_offline`, anything
-    /// else with `LeadError::t3_error`.
+    /// else with `LeadError::failed`.
     fn launch(
         &self,
         machine_id: &MachineId,
@@ -85,7 +85,7 @@ pub struct Unwired;
 
 fn unwired(what: &str) -> LeadError {
     LeadError::bare(
-        ErrorCode::T3Error,
+        ErrorCode::Failed,
         format!("{what} is not wired in this hub yet."),
     )
 }

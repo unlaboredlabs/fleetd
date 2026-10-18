@@ -1,6 +1,7 @@
 //! One node link per machine: challenge, hello (signature, enroll token or enrolled key), welcome, then heartbeats,
-//! T3 state and sessions, lead calls and command replies until the socket ends. 45 s of silence takes the machine
-//! offline.
+//! session frames, lead calls and command replies until the socket ends. 45 s of silence takes the machine offline.
+//! A linked machine is online while its node's runner is usable (`runner_info`: a supported version, logged in) and
+//! degraded with the runner's problem otherwise.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,10 +14,8 @@ use fleetd_contracts::hello::{PROTOCOL_VERSION, ProtocolVersion};
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::model::{Machine, MachineStatus, MachineT3};
-use fleetd_contracts::node_link::{
-    HubToNode, NodeHello, NodeT3Endpoint, NodeToHub, T3RunState, close,
-};
+use fleetd_contracts::model::{Machine, MachineStatus};
+use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeToHub, close};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -28,12 +27,15 @@ use super::lead_calls::{
 };
 use crate::clock::Clock;
 use crate::hub::auth::{Auth, AuthError};
-use crate::hub::executor::{Executors, T3Session};
+use crate::hub::executor::providers::runner_problem;
+use crate::hub::executor::{Executors, NodeSessions};
 use crate::hub::store::{EventLog, HubStore, NewEvent, iso_ms, now_ms};
 
 pub const HEARTBEAT_EVERY: Duration = Duration::from_secs(15);
 pub const SILENCE_TIMEOUT: Duration = Duration::from_secs(45);
 pub const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
+/// How many heartbeats apart the hub re-reads the runner's state, so a fixed or expired login shows within a minute.
+const RUNNER_CHECK_EVERY: u32 = 4;
 
 pub struct LinkDeps {
     pub hub_id: String,
@@ -217,14 +219,13 @@ impl NodeLinkServer {
         }
     }
 
-    /// Rewrites the stored machine's status (and T3 info, when given); `degraded_reason` is kept only while degraded.
+    /// Rewrites the stored machine's status; `degraded_reason` is kept only while degraded.
     fn write_status(
         &self,
         machine_id: &MachineId,
         at: &str,
         status: MachineStatus,
         reason: Option<&str>,
-        t3: Option<&NodeT3Endpoint>,
     ) {
         let stored = match self.deps.store.machine_get(machine_id) {
             Ok(Some(m)) => m,
@@ -238,18 +239,12 @@ impl NodeLinkServer {
             degraded_reason: None,
             ..stored
         };
-        if let Some(t3) = t3 {
-            machine.t3 = Some(MachineT3 {
-                version: t3.version.clone(),
-                protocol: t3.protocol,
-            });
-        }
         if status == MachineStatus::Degraded {
             machine.degraded_reason = Some(
                 reason
                     .map(str::to_owned)
                     .or(previous)
-                    .unwrap_or_else(|| "T3 is down".into()),
+                    .unwrap_or_else(|| "its node's runner is unavailable".into()),
             );
         }
         if let Err(e) = self.deps.store.machine_upsert(&machine, None) {
@@ -296,7 +291,7 @@ impl NodeLinkServer {
         };
         let at = self.now_iso();
         let seconds = self.silence_timeout.as_secs();
-        self.write_status(machine_id, &at, MachineStatus::Offline, None, None);
+        self.write_status(machine_id, &at, MachineStatus::Offline, None);
         // It needs the human only while runs were going there: nobody is watching them now.
         let running = match self.deps.store.threads_running() {
             Ok(threads) => threads.iter().any(|t| &t.machine_id == machine_id),
@@ -341,11 +336,8 @@ impl NodeLinkServer {
                 .store
                 .projects_list(Some(machine_id), None)
                 .map_err(|_| {
-                    McpToolError::new(
-                        ErrorCode::T3Error,
-                        "the hub failed while handling this call",
-                    )
-                    .with_fix("try again shortly")
+                    McpToolError::new(ErrorCode::Failed, "the hub failed while handling this call")
+                        .with_fix("try again shortly")
                 })?;
             let cwd = frame.cwd.as_str();
             let Some(project) = project_for_cwd(&projects, cwd) else {
@@ -461,23 +453,54 @@ impl NodeLinkServer {
         }
     }
 
-    async fn attach_executor(
-        &self,
-        machine_id: &MachineId,
-        t3: &Option<NodeT3Endpoint>,
-        bearer: &Option<String>,
-    ) {
-        if let (Some(t3), Some(bearer)) = (t3, bearer) {
-            self.deps
-                .executors
-                .attach(
-                    machine_id,
-                    T3Session {
-                        t3_url: t3.url.clone(),
-                        bearer: bearer.clone(),
-                    },
-                )
-                .await;
+    /// Asks the node how its runner is, and announces the machine online or degraded by the answer.
+    fn check_runner(self: &Arc<Self>, machine_id: &MachineId) {
+        let this = self.clone();
+        let machine_id = machine_id.clone();
+        tokio::spawn(async move {
+            let problem = match this.deps.executors.runner_info(&machine_id).await {
+                Ok(info) => runner_problem(&info),
+                Err(e) => Some(e.to_string()),
+            };
+            this.apply_runner(&machine_id, problem);
+        });
+    }
+
+    /// Follows the runner the node pushes (a probe, a login that expired or came back) while the link lives.
+    fn follow_runner(self: &Arc<Self>, machine_id: &MachineId) -> JoinHandle<()> {
+        let this = self.clone();
+        let machine_id = machine_id.clone();
+        let mut runner = self.deps.executors.runner_watch(&machine_id);
+        tokio::spawn(async move {
+            while runner.changed().await.is_ok() {
+                let problem = runner.borrow_and_update().as_ref().map(runner_problem);
+                if let Some(problem) = problem {
+                    this.apply_runner(&machine_id, problem);
+                }
+            }
+        })
+    }
+
+    /// Online when `problem` is None, else degraded with it.
+    fn apply_runner(&self, machine_id: &MachineId, problem: Option<String>) {
+        // A link that went away meanwhile must not announce anything.
+        if !self.state.lock().unwrap().links.contains_key(machine_id) {
+            return;
+        }
+        let at = self.now_iso();
+        match problem {
+            None => {
+                self.write_status(machine_id, &at, MachineStatus::Online, None);
+                self.announce(machine_id, &at, Announced::Online, None);
+                // After machine.online is logged, so no queued write reaches the machine before it.
+                self.deps.executors.set_runner_ready(machine_id, true);
+            }
+            Some(reason) => {
+                self.deps.executors.set_runner_ready(machine_id, false);
+                let status = MachineStatus::Degraded;
+                self.write_status(machine_id, &at, status, Some(&reason));
+                self.announce(machine_id, &at, Announced::Degraded, Some(&reason));
+            }
         }
     }
 
@@ -503,28 +526,19 @@ impl NodeLinkServer {
             id,
         };
 
-        // The T3 to attach while the node reports it up; None while it is down.
-        let mut t3 = hello.t3.clone();
-        let mut bearer: Option<String> = None;
-
         let at = self.now_iso();
-        let stored = self.deps.store.machine_get(&machine_id).ok().flatten();
-        let hello_reason = "its node cannot reach T3";
+        let hello_reason = "checking the node's claude runner";
         let machine: Machine = serde_json::from_value(json!({
             "machineId": machine_id,
             "name": hello.name,
             "tags": hello.tags,
-            "status": if t3.is_none() { "degraded" } else { "online" },
+            // Until the runner check answers.
+            "status": "degraded",
             "lastSeenAt": at,
-            // A machine whose T3 is down keeps the version it last reported.
-            "t3": match &t3 {
-                Some(t3) => json!({ "version": t3.version, "protocol": t3.protocol }),
-                None => json!(stored.and_then(|m| m.t3)),
-            },
             "nodeVersion": hello.node_version,
             // Browsers seal this machine's secrets to it; a node from before M8 sends none and takes none.
             "boxPubKey": hello.box_pub_key,
-            "degradedReason": if t3.is_none() { Some(hello_reason) } else { None },
+            "degradedReason": hello_reason,
         }))
         .map_err(|e| Refused {
             code: close::BAD_FRAME,
@@ -553,13 +567,25 @@ impl NodeLinkServer {
             })
         };
         let _forward = AbortOnDrop(forward);
+        self.deps
+            .executors
+            .attach(
+                &machine_id,
+                NodeSessions {
+                    link_id: id,
+                    send: cmd_tx.clone(),
+                },
+            )
+            .await;
+        let _sessions = DetachSessions {
+            executors: self.deps.executors.clone(),
+            machine_id: machine_id.clone(),
+            link_id: id,
+        };
         let _commands = self.deps.commands.attach(&machine_id, cmd_tx);
-        // After the attach, so whoever acts on the announcement can already run commands on the machine.
-        if t3.is_none() {
-            self.announce(&machine_id, &at, Announced::Degraded, Some(hello_reason));
-        } else {
-            self.announce(&machine_id, &at, Announced::Online, None);
-        }
+        // After the attaches, so whoever acts on the announcement can already run commands and sessions there.
+        let _runner = AbortOnDrop(self.follow_runner(&machine_id));
+        self.check_runner(&machine_id);
         tracing::info!(machine_id = %machine_id, link_id = id, "node link: welcomed");
 
         let heartbeat = {
@@ -578,6 +604,7 @@ impl NodeLinkServer {
             })
         };
         let _heartbeat = AbortOnDrop(heartbeat);
+        let mut beats: u32 = 0;
 
         loop {
             let Some(text) = next_text(ws).await else {
@@ -610,51 +637,14 @@ impl NodeLinkServer {
                     if let Err(e) = self.deps.store.machine_set_status(&machine_id, status, &at) {
                         tracing::error!(error = %e, "node link: status write failed");
                     }
-                }
-                NodeToHub::T3Session(session) => {
-                    bearer = Some(session.bearer.as_str().to_owned());
-                    // Kept for when T3 is back if it is down now.
-                    if t3.is_none() {
-                        continue;
+                    beats = beats.wrapping_add(1);
+                    if beats.is_multiple_of(RUNNER_CHECK_EVERY) {
+                        self.check_runner(&machine_id);
                     }
-                    self.attach_executor(&machine_id, &t3, &bearer).await;
-                    tracing::info!(machine_id = %machine_id, expires_at = %session.expires_at.0, "node link: t3 session attached");
                 }
-                NodeToHub::T3State(state) => {
-                    let at = self.now_iso();
-                    if state.state == T3RunState::Up {
-                        t3 = state.t3.clone().or_else(|| hello.t3.clone());
-                        self.write_status(
-                            &machine_id,
-                            &at,
-                            MachineStatus::Online,
-                            None,
-                            t3.as_ref(),
-                        );
-                        self.announce(&machine_id, &at, Announced::Online, None);
-                        // The node re-mints right after this, and that session reattaches; the last one may still work.
-                        self.attach_executor(&machine_id, &t3, &bearer).await;
-                    } else {
-                        t3 = None;
-                        let reason = state.reason.clone().unwrap_or_else(|| {
-                            if state.state == T3RunState::Restarting {
-                                "T3 is restarting"
-                            } else {
-                                "T3 is down"
-                            }
-                            .into()
-                        });
-                        self.write_status(
-                            &machine_id,
-                            &at,
-                            MachineStatus::Degraded,
-                            Some(&reason),
-                            None,
-                        );
-                        self.announce(&machine_id, &at, Announced::Degraded, Some(&reason));
-                        self.deps.executors.detach(&machine_id).await;
-                    }
-                    tracing::info!(machine_id = %machine_id, state = ?state.state, "node link: t3 state");
+                // From nodes older than the native runner, which replaced both.
+                NodeToHub::T3Session(_) | NodeToHub::T3State(_) => {
+                    tracing::debug!(machine_id = %machine_id, "node link: pre-runner session frame ignored");
                 }
                 NodeToHub::LeadCall(call) => {
                     // Off the frame loop: a slow call must not hold up heartbeats or other calls.
@@ -670,11 +660,10 @@ impl NodeLinkServer {
                 | NodeToHub::SecretResult(_)
                 | NodeToHub::GatedResult(_)
                 | NodeToHub::NodeActionResult(_)) => self.deps.commands.resolve(&machine_id, reply),
-                // The native runner's session frames; the hub executor port consumes them.
-                NodeToHub::SessionReply(_)
+                frame @ (NodeToHub::SessionReply(_)
                 | NodeToHub::MachineEvent(_)
-                | NodeToHub::ThreadEvent(_) => {
-                    tracing::debug!(machine_id = %machine_id, "node link: session frame ignored");
+                | NodeToHub::ThreadEvent(_)) => {
+                    self.deps.executors.handle_frame(&machine_id, frame)
                 }
                 NodeToHub::Hello(_) => return refuse(close::BAD_FRAME, "hello after welcome"),
             }
@@ -748,6 +737,21 @@ impl Drop for Unlink {
         if state.links.get(&self.machine_id).map(|l| l.0) == Some(self.id) {
             state.links.remove(&self.machine_id);
         }
+    }
+}
+
+/// Hands the executor's hold on this link back when the link ends, however it ends.
+struct DetachSessions {
+    executors: Arc<Executors>,
+    machine_id: MachineId,
+    link_id: u64,
+}
+
+impl Drop for DetachSessions {
+    fn drop(&mut self) {
+        let executors = self.executors.clone();
+        let (machine_id, link_id) = (self.machine_id.clone(), self.link_id);
+        tokio::spawn(async move { executors.detach_link(&machine_id, link_id).await });
     }
 }
 

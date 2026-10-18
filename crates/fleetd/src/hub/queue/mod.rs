@@ -1,4 +1,4 @@
-//! The offline write queue. Additive writes (thread_send, wake firings) to a machine without a live T3 connection
+//! The offline write queue. Additive writes (thread_send, wake firings) to a machine without a live node link
 //! wait here, in order, and go out when it comes back; each ends as one write.delivered or write.expired event.
 //! Interrupts and launches are not additive, so they never come through here and still fail when offline.
 pub mod ports;
@@ -33,10 +33,13 @@ const RETRY_DELAY: Duration = Duration::from_secs(5);
 pub struct SendResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
-    /// True when the message waits in this queue rather than having reached T3.
+    /// True when the message waits in this queue rather than having reached the node.
     pub queued: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queued_until: Option<String>,
+    /// The node took it, and it waits behind the thread's active run.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub behind_run: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -176,8 +179,9 @@ impl WriteQueue {
     }
 
     /// Sends now when the machine is connected and nothing is queued for it; otherwise queues the message until it
-    /// is. `client_request_id` is the T3 command id, so a retried or re-queued send is delivered once. The error is
-    /// ThreadNotFound or T3RequestFailed, never MachineNotConnected.
+    /// is. `client_request_id` names the node's run, so a retried or re-queued send is delivered once. The error is
+    /// ThreadNotFound or NodeRequestFailed (also for a linked machine whose runner can't run), never
+    /// MachineNotConnected.
     pub async fn send(
         self: &Arc<Self>,
         target: &ThreadRef,
@@ -185,6 +189,11 @@ impl WriteQueue {
         client_request_id: &str,
         wake_id: Option<&str>,
     ) -> Result<SendResult, ExecutorError> {
+        // Linked but unusable (logged out, claude out of range): fail now in the runner's words. Only a machine
+        // that is truly away waits in the queue.
+        if let Some(refused) = self.writer.refusal(&target.machine_id) {
+            return Err(refused);
+        }
         let behind: i64 = self.db.run(|db| {
             db.query_row(
                 "SELECT COUNT(*) FROM queued_writes WHERE machine_id = ?",
@@ -206,10 +215,11 @@ impl WriteQueue {
                 Ok(self.enqueue(target, message, client_request_id, wake_id))
             }
             Ok(Err(e)) => Err(e),
-            Ok(Ok(run_id)) => Ok(SendResult {
-                run_id,
+            Ok(Ok(sent)) => Ok(SendResult {
+                run_id: sent.run_id,
                 queued: false,
                 queued_until: None,
+                behind_run: sent.behind_run,
             }),
         }
     }
@@ -248,6 +258,7 @@ impl WriteQueue {
             run_id: None,
             queued: true,
             queued_until: Some(iso(expires_ms)),
+            behind_run: false,
         }
     }
 
@@ -329,7 +340,7 @@ impl WriteQueue {
                 "ttl",
             ),
             Expiry::Refused => (
-                format!("Queued message to thread {t} on {m} dropped: T3 refused it"),
+                format!("Queued message to thread {t} on {m} dropped: the node refused it"),
                 "refused",
             ),
         };
@@ -396,13 +407,13 @@ impl WriteQueue {
             .await;
             self.in_flight.lock().expect("lock").remove(&row.write_id);
             match result {
-                Ok(Ok(run_id)) => self.delivered(&row, run_id),
+                Ok(Ok(sent)) => self.delivered(&row, sent.run_id),
                 Err(_) => self.clock.sleep(RETRY_DELAY).await,
                 // Lost the connection mid-send: wait for it again. Refused on a live connection: retrying won't help.
                 Ok(Err(ExecutorError::MachineNotConnected { .. })) => {}
                 Ok(Err(_)) if !self.writer.is_connected(&machine_id) => {}
                 Ok(Err(error)) => {
-                    tracing::warn!(machine_id = %machine_id, thread_id = %row.target.thread_id, error = error.tag(), "write queue: T3 refused a queued message");
+                    tracing::warn!(machine_id = %machine_id, thread_id = %row.target.thread_id, error = error.tag(), "write queue: the node refused a queued message");
                     self.expired(&row, Expiry::Refused);
                 }
             }
@@ -512,7 +523,8 @@ mod tests {
             SendResult {
                 run_id: Some("run-1".into()),
                 queued: false,
-                queued_until: None
+                queued_until: None,
+                behind_run: false
             }
         );
         assert_eq!(kit.writer.messages(), vec!["hi"]);
@@ -528,7 +540,8 @@ mod tests {
             SendResult {
                 run_id: None,
                 queued: true,
-                queued_until: Some(iso(NOW + 86_400_000))
+                queued_until: Some(iso(NOW + 86_400_000)),
+                behind_run: false
             }
         );
         q.send(&t2(), "two", "r2", None).await.unwrap();
@@ -627,7 +640,83 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn drops_a_write_t3_refuses_and_goes_on() {
+    async fn a_refusal_reaches_thread_send_in_the_nodes_own_words() {
+        use crate::hub::executor::{ExecutorError as Executor, OfflineWriter};
+        let kit = Kit::new();
+        kit.writer.go_live("lab-a");
+        kit.writer.refuse("r1");
+        let q = kit.queue(DEFAULT_TTL);
+        match ports::QueueWriter(q).send(&t1(), "hi", "r1").await {
+            Err(Executor::NodeRequestFailed { message, fix, .. }) => {
+                assert_eq!(
+                    message,
+                    "claude is not logged in for fleetd on this machine"
+                );
+                assert!(fix.unwrap().contains("claude auth login"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_linked_machine_with_an_unusable_runner_refuses_instead_of_queueing() {
+        let kit = Kit::new();
+        kit.writer.go_live("lab-a");
+        kit.writer
+            .degrade("lab-a", "claude is not logged in for fleetd on lab-a");
+        let q = kit.queue(DEFAULT_TTL);
+        match q.send(&t1(), "hi", "r1", None).await {
+            Err(ExecutorError::NodeRequestFailed { message, fix, .. }) => {
+                assert_eq!(message, "claude is not logged in for fleetd on lab-a");
+                assert!(fix.unwrap().contains("claude auth login"));
+            }
+            other => panic!("{other:?}"),
+        }
+        // Nothing waits, nothing was sent, nothing was logged.
+        assert!(kit.writer.messages().is_empty());
+        assert!(kit.events.all().is_empty());
+        let queued: i64 = q.db.run(|db| {
+            db.query_row("SELECT COUNT(*) FROM queued_writes", [], |r| r.get(0))
+                .unwrap()
+        });
+        assert_eq!(queued, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_send_behind_the_active_run_reads_as_queued_without_an_expiry() {
+        use crate::hub::executor::{OfflineWriter, WriteOutcome};
+        let kit = Kit::new();
+        kit.writer.go_live("lab-a");
+        kit.writer.behind_run("r1");
+        let q = kit.queue(DEFAULT_TTL);
+        assert_eq!(
+            ports::QueueWriter(q.clone())
+                .send(&t1(), "next", "r1")
+                .await
+                .unwrap(),
+            WriteOutcome {
+                run_id: Some("run-1".into()),
+                queued: true,
+                queued_until: None,
+            }
+        );
+        // Not in the offline queue: the node has it.
+        assert_eq!(
+            ports::QueueWriter(q)
+                .send(&t1(), "after", "r2")
+                .await
+                .unwrap(),
+            WriteOutcome {
+                run_id: Some("run-2".into()),
+                queued: false,
+                queued_until: None,
+            }
+        );
+        assert_eq!(kit.writer.messages(), vec!["next", "after"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn drops_a_write_the_node_refuses_and_goes_on() {
         let kit = Kit::new();
         kit.writer.refuse("r1");
         let q = kit.queue(DEFAULT_TTL);

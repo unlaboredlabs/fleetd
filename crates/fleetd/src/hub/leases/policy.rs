@@ -211,7 +211,7 @@ impl PolicySource for T3PolicySource {
         Box::pin(async move {
             let project = self.store.project_get(project_ref).map_err(|e| {
                 tracing::error!(error = %e, "policy: project not read");
-                LeadError::new(ErrorCode::T3Error, "The hub failed to answer that request.")
+                LeadError::new(ErrorCode::Failed, "The hub failed to answer that request.")
             })?;
             let Some(project) = project else {
                 return Err(LeadError::new(

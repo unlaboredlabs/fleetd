@@ -126,7 +126,7 @@
         "not_found",
         "forbidden",
         "invalid",
-        "t3_error"
+        "failed"
       ],
       "type": "string"
     },
