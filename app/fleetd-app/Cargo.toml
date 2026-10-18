@@ -52,6 +52,8 @@ keyring = "4.2"
 unicode-segmentation = "1"
 # Query strings of fleetd://pair links.
 url.workspace = true
+# Line diffs for the prompt editor: default vs yours, and the two sides of an update (the hub uses the same crate).
+diffy = "0.5"
 
 # main.rs turns off AppKit's window restoration. Already in the graph through gpui_macos.
 [target.'cfg(target_os = "macos")'.dependencies]

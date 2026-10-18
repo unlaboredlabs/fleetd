@@ -30,9 +30,13 @@ use serde::de::DeserializeOwned;
 use crate::client::Incoming;
 use crate::live::state::LiveState;
 use crate::notify::{Notification, Notifier, Policy};
+use fleetd_contracts::mcp::{
+    PromptGetInput, PromptGetOutput, PromptResetInput, PromptResetOutput, PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput,
+    SessionPromptGetInput, SessionPromptGetOutput,
+};
 
 /// A tool the app calls: its input type, wire name and output type.
-trait Tool: Serialize {
+pub(crate) trait Tool: Serialize {
     const NAME: &'static str;
     type Output: DeserializeOwned;
 }
@@ -63,6 +67,11 @@ tools! {
     IntakePreviewInput => IntakePreviewOutput, "intake_preview";
     AttachmentPutInput => AttachmentPutOutput, "attachment_put";
     ProjectFilesInput => ProjectFilesOutput, "project_files";
+    PromptsListInput => PromptsListOutput, "prompts_list";
+    PromptGetInput => PromptGetOutput, "prompt_get";
+    PromptSetInput => PromptSetOutput, "prompt_set";
+    PromptResetInput => PromptResetOutput, "prompt_reset";
+    SessionPromptGetInput => SessionPromptGetOutput, "session_prompt_get";
 }
 
 /// (machineId, projectId)
@@ -72,7 +81,7 @@ pub type ProjectKey = (String, String);
 pub const TAIL_N: i64 = 50;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum Purpose {
+pub(crate) enum Purpose {
     Asks,
     Project(ProjectKey),
     Tail(ProjectKey),
@@ -107,6 +116,8 @@ enum Purpose {
     Files {
         query: String,
     },
+    /// Settings → Prompts and Instructions, and the "what this agent was told" sheet.
+    Prompt(crate::prompts::Call),
 }
 
 impl Purpose {
@@ -124,6 +135,7 @@ impl Purpose {
                 | Purpose::Preview
                 | Purpose::Attach(_)
                 | Purpose::Files { .. }
+                | Purpose::Prompt(_)
         )
     }
 }
@@ -297,6 +309,7 @@ pub struct State {
     pub last_project: Option<ProjectKey>,
     /// Notes steered into a running lead turn, so the conversation can mark them.
     pub steered: VecDeque<String>,
+    pub prompts: crate::prompts::Prompts,
     order_events: HashMap<String, VecDeque<HubEvent>>,
     /// The live subscription last sent on this connection, and whether this hub streams live frames at all.
     live_sub: Option<(bool, Option<String>)>,
@@ -338,6 +351,7 @@ impl Default for State {
             files: None,
             last_project: None,
             steered: VecDeque::new(),
+            prompts: crate::prompts::Prompts::default(),
             order_events: HashMap::new(),
             live_sub: None,
             live_frames: false,
@@ -355,7 +369,7 @@ impl Default for State {
     }
 }
 
-type Out = Vec<AppClientMessage>;
+pub(crate) type Out = Vec<AppClientMessage>;
 
 impl State {
     pub fn apply(&mut self, incoming: Incoming) -> Out {
@@ -731,6 +745,7 @@ impl State {
     }
 
     fn reset_calls(&mut self) {
+        self.prompts.reset_calls();
         self.live_sub = None;
         self.streaming = false;
         self.snapshot_pending = false;
@@ -739,7 +754,7 @@ impl State {
         self.dirty.clear();
     }
 
-    fn call<I: Tool>(&mut self, purpose: Purpose, input: &I) -> AppClientMessage {
+    pub(crate) fn call<I: Tool>(&mut self, purpose: Purpose, input: &I) -> AppClientMessage {
         self.next_id += 1;
         let id = format!("c{}", self.next_id);
         self.pending.insert(id.clone(), purpose.clone());
@@ -895,6 +910,7 @@ impl State {
         if self.doctor.is_some() {
             out.extend(self.request_doctor());
         }
+        out.extend(self.prompts_reconnected());
         out
     }
 
@@ -918,6 +934,9 @@ impl State {
         // A fetch sent just now for this event can say whether its ask was answered; one already in flight can't.
         self.notifier.push(event, asks_before);
         out.extend(self.on_order_event(event));
+        if matches!(event.r#type, HubEventType::PromptChanged | HubEventType::PromptDefaultChanged) {
+            out.extend(self.on_prompt_event());
+        }
         let project_scoped = ["workstream.", "lead.", "thread."].iter().any(|p| kind.starts_with(p));
         if let (true, Some(machine_id), Some(project_id)) = (project_scoped, &event.machine_id, &event.project_id) {
             let key = (machine_id.to_string(), project_id.to_string());
@@ -974,6 +993,7 @@ impl State {
 
     fn on_result(&mut self, purpose: &Purpose, output: serde_json::Value) -> Out {
         match purpose {
+            Purpose::Prompt(call) => return self.on_prompt_result(call, output),
             Purpose::Asks => match parse::<AsksListOutput>(output) {
                 Ok(list) => {
                     self.asks_seen = self.asks_sent;
@@ -1172,6 +1192,7 @@ impl State {
 
     fn on_call_error(&mut self, purpose: &Purpose, text: String) {
         match purpose {
+            Purpose::Prompt(call) => self.on_prompt_error(call, text),
             Purpose::Asks => self.asks_error = Some(text),
             Purpose::Project(key) => {
                 if let Some(row) = self.projects.iter_mut().find(|r| &r.key() == key) {
@@ -1230,7 +1251,7 @@ impl State {
     }
 }
 
-fn parse<T: DeserializeOwned>(output: serde_json::Value) -> Result<T, String> {
+pub(crate) fn parse<T: DeserializeOwned>(output: serde_json::Value) -> Result<T, String> {
     serde_json::from_value(output).map_err(|e| format!("Unexpected answer from the hub: {e}"))
 }
 

@@ -6,6 +6,12 @@ use crate::state::ProjectKey;
 
 use serde_json::{Value, json};
 
+use fleetd_contracts::app::{AppClientMessage, AppServerMessage};
+use fleetd_contracts::prompts::{
+    Enforcement, Placeholder, PromptDetail, PromptGroup, PromptId, PromptKind, PromptOverride, PromptRef, PromptScope, PromptVersion, PromptWarning,
+    PromptWarningCode, SafetyRule, SessionPrompt, SessionPromptRef, StalePrompt,
+};
+
 use crate::state::{Conn, Detail, Doctor, ProjectRow, State};
 
 /// The order the bench and screenshots open: the contracts' coherent fixture board (W14 in storefront).
@@ -438,4 +444,508 @@ pub fn diff_text() -> String {
         }
     }
     out
+}
+
+// ---- prompts --------------------------------------------------------------------------------------
+
+/// The bench's stand-in for the hub's prompt tools (`prompts_list`, `prompt_get`, `prompt_set`, `prompt_reset`,
+/// `session_prompt_get`): a few real default texts, one stale hub-wide edit of the lead prompt, one project edit, and
+/// custom instructions, so Settings → Prompts, Instructions and the "what this agent was told" sheet work offline.
+pub struct PromptHub {
+    prompts: Vec<FakePrompt>,
+}
+
+struct FakePrompt {
+    id: &'static str,
+    title: &'static str,
+    kind: PromptKind,
+    group: PromptGroup,
+    sent_when: &'static str,
+    per_project: bool,
+    default: String,
+    placeholders: Vec<(&'static str, bool, &'static str)>,
+    rules: Vec<(&'static str, &'static str, &'static str, Enforcement)>,
+    global: Option<Edit>,
+    projects: Vec<((String, String), Edit)>,
+}
+
+/// An override and the default text it was edited from.
+struct Edit {
+    text: String,
+    base: Option<String>,
+}
+
+const LEAD_START: &str = include_str!("../fixtures/prompts/lead.start.md");
+const TASK_BRIEF_WRITE: &str = include_str!("../fixtures/prompts/task.brief.write.md");
+const REVIEWER: &str = include_str!("../fixtures/prompts/review.reviewer.md");
+const WAKE_INTENT: &str = include_str!("../fixtures/prompts/wake.intent.md");
+const WAKE_TASK_RESULT: &str = include_str!("../fixtures/prompts/wake.task_result.md");
+const NUDGE: &str = include_str!("../fixtures/prompts/watchdog.nudge.md");
+const ROUTER: &str = include_str!("../fixtures/prompts/router.md");
+const BUGFIX: &str = "Bugfix. First a repro: a test or cmd check that fails on main today, in the brief's doneWhen. The fix is done when \
+it passes. One writer per area, a worktree per task. Review by tier: S none, M one reviewer, L plan first. Every PR carries Source: \
+done:<n>. Never merge; the train does. Fix this bug only: no refactors, no polish loops. When the repro passes, claim done. Idle is success.";
+const STATUS_LINE: &str =
+    "- Report a one-line status per workstream with `fleetd status set`. Your status shows as \"lead says\"; only passed checks show as ✓.\n";
+const SECRETS: &str = "Secrets come through `fleetd ask --kind secret`; ";
+/// Where the fixture's soft length budget sits; the hub's budgets are per prompt.
+const TOO_LONG: usize = 12_000;
+
+fn storefront() -> (String, String) {
+    ("devbox".into(), "storefront".into())
+}
+
+/// A stand-in for git's blob SHA: FNV-1a, which is stable and needs no crate.
+fn fnv(text: &str, seed: u64) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325 ^ seed, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
+}
+
+fn fake_ref(id: &str, text: &str) -> PromptRef {
+    PromptRef::unchecked(format!("{id}@{:010x}", fnv(text, 0) & 0xff_ffff_ffff))
+}
+
+impl PromptHub {
+    pub fn new() -> Self {
+        use Enforcement::{Code, Prompt};
+        let lead_rules = vec![
+            ("never-write-code", "The lead never writes code", "never write code", Prompt),
+            ("tasks-only", "Agents start only as fleetd tasks", "only fleetd tasks count", Prompt),
+            ("secrets-via-ask", "Secrets come only through ask --kind secret", "secrets come through", Code),
+            ("gated-run", "Prod writes, spends and deletes only through gated run", "gated run", Code),
+            ("train-merges", "Only the merge train merges", "only fleetd's merge train merges", Code),
+            ("no-re-ask", "Never re-ask a key the digest lists", "never re-ask", Prompt),
+        ];
+        // The release before this one shipped the lead prompt without the status line; the human edited that text.
+        let old_default = LEAD_START.replacen(STATUS_LINE, "", 1);
+        let yours = old_default.replacen(SECRETS, "", 1).replacen(
+            "How you work:\n",
+            "How you work:\n- Prefer one writer per pull request; split anything bigger into several tasks.\n",
+            1,
+        );
+        let task_rules = vec![
+            ("areas-only", "Writers change only their areas", "only change files in these areas", Code),
+            ("never-merge", "Never merge; the train does", "never merge", Code),
+            ("no-subagents", "No subagents", "do not hand it to subagents", Prompt),
+        ];
+        let prompts = vec![
+            FakePrompt {
+                id: "lead.start",
+                title: "Lead: role and commands",
+                kind: PromptKind::Start,
+                group: PromptGroup::Lead,
+                sent_when: "at each lead start and every lead restart, followed by the project digest",
+                per_project: true,
+                default: LEAD_START.to_string(),
+                placeholders: vec![("project", true, "The project's name."), ("projectRef", true, "machine/project, as the CLI takes it.")],
+                rules: lead_rules,
+                global: Some(Edit { text: yours, base: Some(old_default) }),
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: "task.brief.write",
+                title: "Writer task brief",
+                kind: PromptKind::Start,
+                group: PromptGroup::Tasks,
+                sent_when: "at every writer task start and every retry of it",
+                per_project: true,
+                default: TASK_BRIEF_WRITE.to_string(),
+                placeholders: vec![
+                    ("taskId", true, "T31"),
+                    ("kind", false, "write"),
+                    ("workstreamId", false, "W14"),
+                    ("project", false, "The project's name."),
+                    ("title", false, "The task's title."),
+                    ("task", true, "The lead's text for this task."),
+                    ("workstream", false, "The goal, done-when and serves block."),
+                    ("areas", true, "The areas it may change, with their globs."),
+                    ("branch", true, "Its own branch."),
+                    ("baseBranch", false, "The project's default branch."),
+                    ("serves", true, "What it serves, for the PR's Source: line."),
+                ],
+                rules: task_rules,
+                global: None,
+                projects: vec![(
+                    storefront(),
+                    Edit {
+                        text: TASK_BRIEF_WRITE.replacen("## Rules\n", "## Rules\n- Use pnpm, never npm: the lockfile is pnpm-lock.yaml.\n", 1),
+                        base: Some(TASK_BRIEF_WRITE.to_string()),
+                    },
+                )],
+            },
+            FakePrompt {
+                id: "review.reviewer",
+                title: "Independent PR review",
+                kind: PromptKind::Start,
+                group: PromptGroup::ReviewsAndChecks,
+                sent_when: "per PR head per round, by the train's tier rules, to Claude or Codex",
+                per_project: true,
+                default: REVIEWER.to_string(),
+                placeholders: vec![
+                    ("prUrl", true, "The PR's URL."),
+                    ("repo", false, "owner/name"),
+                    ("prNumber", true, "The PR number."),
+                    ("tier", false, "S, M or L."),
+                    ("headSha", true, "The head commit reviewed."),
+                    ("serves", false, "The done-when it serves."),
+                ],
+                rules: vec![("independent", "The reviewer does not read the PR description", "do not read the pr description", Prompt)],
+                global: None,
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: "wake.intent",
+                title: "New order",
+                kind: PromptKind::Wake,
+                group: PromptGroup::WakesAndMessages,
+                sent_when: "in a lead wake, per new order",
+                per_project: true,
+                default: WAKE_INTENT.to_string(),
+                placeholders: vec![("workstreamId", true, "W14"), ("text", true, "The order's text.")],
+                rules: Vec::new(),
+                global: None,
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: "wake.task_result",
+                title: "A task's result",
+                kind: PromptKind::Wake,
+                group: PromptGroup::WakesAndMessages,
+                sent_when: "in a lead wake, per task end",
+                per_project: true,
+                default: WAKE_TASK_RESULT.to_string(),
+                placeholders: ["taskId", "verb", "title", "where", "receipts", "result"].iter().map(|n| (*n, true, "")).collect(),
+                rules: Vec::new(),
+                global: None,
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: "watchdog.nudge",
+                title: "Stall nudge",
+                kind: PromptKind::Msg,
+                group: PromptGroup::WakesAndMessages,
+                sent_when: "once per stalled run",
+                per_project: true,
+                default: NUDGE.to_string(),
+                placeholders: Vec::new(),
+                rules: Vec::new(),
+                global: Some(Edit {
+                    text: "You seem stalled. Say in one line what you are waiting for, then continue.\n".into(),
+                    base: Some(NUDGE.to_string()),
+                }),
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: "router",
+                title: "Order router",
+                kind: PromptKind::Oneshot,
+                group: PromptGroup::OneShots,
+                sent_when: "for each order without @project or a template prefix",
+                per_project: false,
+                default: ROUTER.to_string(),
+                placeholders: vec![("projects", true, "Every project, one per line."), ("intent", true, "The order's text.")],
+                rules: vec![("json-only", "Answer JSON only", "json", Prompt)],
+                global: None,
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: "playbook.bugfix",
+                title: "Bugfix playbook",
+                kind: PromptKind::Playbook,
+                group: PromptGroup::Playbooks,
+                sent_when: "in the digest and the order's wake while a workstream pins the bugfix playbook",
+                per_project: false,
+                default: BUGFIX.to_string(),
+                placeholders: Vec::new(),
+                rules: vec![("never-merge", "Never merge", "never merge", Code)],
+                global: None,
+                projects: Vec::new(),
+            },
+            FakePrompt {
+                id: crate::prompts::INSTRUCTIONS,
+                title: "Custom instructions",
+                kind: PromptKind::Instructions,
+                group: PromptGroup::Instructions,
+                sent_when: "appended to every lead and task first message",
+                per_project: true,
+                default: String::new(),
+                placeholders: Vec::new(),
+                rules: Vec::new(),
+                global: Some(Edit {
+                    text: "Keep pull requests under 400 changed lines; split bigger work.\nWrite commit messages in plain language.\n".into(),
+                    base: Some(String::new()),
+                }),
+                projects: vec![(
+                    storefront(),
+                    Edit { text: "Use pnpm, not npm. The staging site is https://staging.storefront.test.\n".into(), base: Some(String::new()) },
+                )],
+            },
+        ];
+        Self { prompts }
+    }
+
+    /// The hub's answer to one app call, or `None` for a call this fake doesn't serve.
+    pub fn answer(&mut self, message: &AppClientMessage) -> Option<AppServerMessage> {
+        let AppClientMessage::Call { id, tool, input } = message else { return None };
+        let project = input.get("projectRef").map(|p| (str_at(p, "machineId"), str_at(p, "projectId")));
+        let output = match tool.as_str() {
+            "prompts_list" => Ok(json!({ "prompts": self.prompts.iter().map(|p| p.summary(project.as_ref())).collect::<Vec<_>>() })),
+            "prompt_get" => self.find(input).map(|p| serde_json::to_value(p.detail(project.as_ref())).unwrap()),
+            "prompt_set" => self.set(input, project),
+            "prompt_reset" => self.find_mut(input).map(|p| {
+                match input.get("scope").and_then(Value::as_str) {
+                    Some("project") => p.projects.retain(|(k, _)| Some(k) != project.as_ref()),
+                    _ => p.global = None,
+                }
+                let (text, scope) = p.effective(project.as_ref());
+                json!({ "effective": p.version(&text), "scope": scope })
+            }),
+            "session_prompt_get" => Ok(json!({ "session": self.session(&str_at(input, "machineId"), &str_at(input, "threadId")) })),
+            _ => return None,
+        };
+        Some(match output {
+            Ok(output) => AppServerMessage::Result { id: id.clone(), output },
+            Err(message) => AppServerMessage::Error(from(json!({ "id": id, "code": "not_found", "message": message }))),
+        })
+    }
+
+    fn find(&self, input: &Value) -> Result<&FakePrompt, String> {
+        let id = str_at(input, "id");
+        self.prompts.iter().find(|p| p.id == id).ok_or(format!("No prompt {id}."))
+    }
+
+    fn find_mut(&mut self, input: &Value) -> Result<&mut FakePrompt, String> {
+        let id = str_at(input, "id");
+        self.prompts.iter_mut().find(|p| p.id == id).ok_or(format!("No prompt {id}."))
+    }
+
+    fn set(&mut self, input: &Value, project: Option<(String, String)>) -> Result<Value, String> {
+        let text = str_at(input, "text");
+        let p = self.find_mut(input)?;
+        if text.is_empty() && p.id != crate::prompts::INSTRUCTIONS {
+            return Err("A prompt can't be empty.".into());
+        }
+        let warnings = p.warnings(&text);
+        let r = fake_ref(p.id, &text);
+        if input.get("dryRun").and_then(Value::as_bool) != Some(true) {
+            let edit = Edit { text, base: Some(p.default.clone()) };
+            match (input.get("scope").and_then(Value::as_str), project) {
+                (Some("project"), Some(key)) if p.per_project => {
+                    p.projects.retain(|(k, _)| *k != key);
+                    p.projects.push((key, edit));
+                }
+                _ => p.global = Some(edit),
+            }
+        }
+        Ok(json!({ "ref": r, "warnings": warnings }))
+    }
+
+    /// What a session of the fixture was sent at its start: the lead's prompt as pinned before the human's latest
+    /// edit, or a writer's brief, each with the custom instructions appended.
+    fn session(&self, machine: &str, thread: &str) -> SessionPrompt {
+        let get = |id: &str| self.prompts.iter().find(|p| p.id == id).unwrap();
+        let key = storefront();
+        let instructions = get(crate::prompts::INSTRUCTIONS);
+        let mut refs = Vec::new();
+        let (main, vars): (&FakePrompt, Vec<(&str, String)>) = if thread.starts_with("lead") || thread == "s-lead" {
+            (get("lead.start"), vec![("project", "storefront".into()), ("projectRef", "devbox/storefront".into())])
+        } else {
+            let task = format!("T{}", thread.trim_start_matches("s-"));
+            (
+                get("task.brief.write"),
+                vec![
+                    ("taskId", task),
+                    ("kind", "write".into()),
+                    ("workstreamId", "W14".into()),
+                    ("project", "storefront".into()),
+                    ("title", "Cart total rounds per line".into()),
+                    ("task", "Round each line before summing in src/cart/total.ts, and add a test for 3 × 0.10.".into()),
+                    ("workstream", "\n\n## Workstream W14\nGoal: cart totals match the receipt to the cent.\nDone when: ci_green acme/storefront; pr_merged acme/storefront.".into()),
+                    ("areas", "cart (src/cart/**)".into()),
+                    ("branch", "fleetd/t31-cart-rounding".into()),
+                    ("baseBranch", "main".into()),
+                    ("serves", "done:0".into()),
+                ],
+            )
+        };
+        let (text, scope) = main.effective(Some(&key));
+        refs.push(SessionPromptRef { id: PromptId::unchecked(main.id), r#ref: fake_ref(main.id, &text), scope });
+        let mut out = text;
+        for (name, value) in vars {
+            out = out.replacen(&format!("{{{{{name}}}}}"), &value, 1);
+        }
+        let global = instructions.global.as_ref().map(|e| e.text.trim_end()).unwrap_or_default();
+        let project = instructions.projects.iter().find(|(k, _)| *k == key).map(|(_, e)| e.text.trim_end()).unwrap_or_default();
+        out.push_str(&format!("\n\n## Custom instructions from the human\n{global}\n{project}\n"));
+        for (scope, text) in [(PromptScope::Global, global), (PromptScope::Project, project)] {
+            refs.push(SessionPromptRef { id: PromptId::unchecked(crate::prompts::INSTRUCTIONS), r#ref: fake_ref("instructions", text), scope });
+        }
+        if main.id == "lead.start" {
+            out.push_str("\n# storefront: current truth, trust it over your memory\nWorkstreams:\n- W14 running: Cart total off by a cent\n");
+            for id in ["wake.intent", "wake.task_result", "watchdog.nudge"] {
+                let (text, scope) = get(id).effective(Some(&key));
+                refs.push(SessionPromptRef { id: PromptId::unchecked(id), r#ref: fake_ref(id, &text), scope });
+            }
+        }
+        SessionPrompt {
+            machine_id: fleetd_contracts::ids::MachineId::unchecked(machine),
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread),
+            project_ref: Some(crate::prompts::project_ref(&key)),
+            started_at: fleetd_contracts::ids::Timestamp("2026-10-18T09:12:40.000Z".into()),
+            text_sha: format!("{:016x}{:016x}{:08x}", fnv(&out, 0), fnv(&out, 1), fnv(&out, 2) as u32),
+            text: out,
+            refs,
+            disallowed_tools: [
+                "Task",
+                "Workflow",
+                "AskUserQuestion",
+                "EnterPlanMode",
+                "ExitPlanMode",
+                "CronCreate",
+                "CronDelete",
+                "CronList",
+                "ScheduleWakeup",
+                "EnterWorktree",
+                "ExitWorktree",
+            ]
+            .iter()
+            .map(|t| t.to_string())
+            .collect(),
+        }
+    }
+}
+
+impl FakePrompt {
+    /// The text in effect for `project` (or hub-wide) and its level.
+    fn effective(&self, project: Option<&(String, String)>) -> (String, PromptScope) {
+        if let Some((_, e)) = self.projects.iter().find(|(k, _)| Some(k) == project).filter(|_| self.per_project) {
+            return (e.text.clone(), PromptScope::Project);
+        }
+        match &self.global {
+            Some(e) => (e.text.clone(), PromptScope::Global),
+            None => (self.default.clone(), PromptScope::Default),
+        }
+    }
+
+    fn effective_edit(&self, project: Option<&(String, String)>) -> Option<(&Edit, PromptScope)> {
+        match self.effective(project).1 {
+            PromptScope::Project => self.projects.iter().find(|(k, _)| Some(k) == project).map(|(_, e)| (e, PromptScope::Project)),
+            PromptScope::Global => self.global.as_ref().map(|e| (e, PromptScope::Global)),
+            PromptScope::Default => None,
+        }
+    }
+
+    fn summary(&self, project: Option<&(String, String)>) -> Value {
+        let (text, scope) = self.effective(project);
+        let stale = self.stale(project).is_some();
+        json!({ "id": self.id, "title": self.title, "kind": self.kind, "group": self.group, "sentWhen": self.sent_when, "scope": scope,
+            "defaultRef": fake_ref(self.id, &self.default),
+            "overrideRef": (scope != PromptScope::Default).then(|| fake_ref(self.id, &text)), "stale": stale })
+    }
+
+    fn version(&self, text: &str) -> PromptVersion {
+        PromptVersion { r#ref: fake_ref(self.id, text), text: text.to_string() }
+    }
+
+    fn edit(&self, e: &Edit) -> PromptOverride {
+        PromptOverride { r#ref: fake_ref(self.id, &e.text), text: e.text.clone(), base: e.base.as_ref().map(|b| fake_ref(self.id, b)) }
+    }
+
+    fn stale(&self, project: Option<&(String, String)>) -> Option<StalePrompt> {
+        let (edit, scope) = self.effective_edit(project)?;
+        if edit.base.as_deref() == Some(self.default.as_str()) {
+            return None;
+        }
+        let base = edit.base.as_deref().unwrap_or(&self.default);
+        let (merged, conflicts) = match diffy::merge(base, &self.default, &edit.text) {
+            Ok(m) => (m, false),
+            Err(m) => (m, true),
+        };
+        Some(StalePrompt {
+            scope,
+            base: edit.base.as_ref().map(|b| self.version(b)),
+            current: self.version(&self.default),
+            yours: self.version(&edit.text),
+            merged,
+            conflicts,
+        })
+    }
+
+    fn detail(&self, project: Option<&(String, String)>) -> PromptDetail {
+        let (text, scope) = self.effective(project);
+        let lower = text.to_lowercase();
+        PromptDetail {
+            id: PromptId::unchecked(self.id),
+            title: self.title.into(),
+            kind: self.kind,
+            group: self.group,
+            sent_when: self.sent_when.into(),
+            per_project: self.per_project,
+            default: self.version(&self.default),
+            global: self.global.as_ref().map(|e| self.edit(e)),
+            project: self.projects.iter().find(|(k, _)| Some(k) == project).filter(|_| self.per_project).map(|(_, e)| self.edit(e)),
+            scope,
+            effective: self.version(&text),
+            placeholders: self
+                .placeholders
+                .iter()
+                .map(|(name, required, description)| Placeholder {
+                    name: name.to_string(),
+                    required: *required,
+                    description: description.to_string(),
+                })
+                .collect(),
+            safety_rules: self
+                .rules
+                .iter()
+                .map(|(id, label, needle, enforced)| SafetyRule {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    needle: needle.to_string(),
+                    enforced: *enforced,
+                    present: Some(lower.contains(needle)),
+                })
+                .collect(),
+            warnings: self.warnings(&text),
+            stale: self.stale(project),
+        }
+    }
+
+    fn warnings(&self, text: &str) -> Vec<PromptWarning> {
+        let warn = |code, message: String| PromptWarning { code, message, placeholder: None, rule: None, enforced: None };
+        let mut out = Vec::new();
+        for (name, required, _) in &self.placeholders {
+            if *required && !text.contains(&format!("{{{{{name}}}}}")) {
+                out.push(PromptWarning {
+                    placeholder: Some(name.to_string()),
+                    ..warn(PromptWarningCode::PlaceholderMissing, format!("{{{{{name}}}}} is gone, so agents won't be told it."))
+                });
+            }
+        }
+        for name in text.split("{{").skip(1).filter_map(|rest| rest.split_once("}}").map(|(n, _)| n)) {
+            if !self.placeholders.iter().any(|(p, _, _)| *p == name) {
+                out.push(PromptWarning {
+                    placeholder: Some(name.to_string()),
+                    ..warn(PromptWarningCode::PlaceholderUnknown, format!("{{{{{name}}}}} isn't filled in for this prompt; it is sent as written."))
+                });
+            }
+        }
+        let lower = text.to_lowercase();
+        for (id, label, needle, enforced) in &self.rules {
+            if !lower.contains(needle) {
+                out.push(PromptWarning {
+                    rule: Some(id.to_string()),
+                    enforced: Some(*enforced),
+                    ..warn(PromptWarningCode::SafetyRuleMissing, format!("The text no longer says: {label}."))
+                });
+            }
+        }
+        if text.len() > TOO_LONG {
+            out.push(warn(PromptWarningCode::TooLong, format!("{} characters; past {TOO_LONG}, agents read it less closely.", text.len())));
+        }
+        out
+    }
+}
+
+fn str_at(v: &Value, key: &str) -> String {
+    v.get(key).and_then(Value::as_str).unwrap_or_default().to_string()
 }

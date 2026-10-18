@@ -2178,6 +2178,7 @@ dependencies = [
  "async-tungstenite",
  "base64 0.22.1",
  "crypto_box",
+ "diffy",
  "fleetd-contracts",
  "futures",
  "futures-rustls",
