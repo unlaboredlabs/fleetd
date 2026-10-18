@@ -39,9 +39,10 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
              hub (default http://<listen>); --git-identity is the commit author for every
              machine (the GitHub noreply address for public repos); --no-service prepares
              everything but leaves starting the hub to you
-  init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"]
+  init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
              make this machine a worker of that hub, without SSH from the hub: the command
-             fleetd pair --worker prints on the hub
+             fleetd pair --worker prints on the hub. Run again, it keeps the node's enrolment
+             and repairs the rest; --rejoin enrols again with a new code
   doctor [--home <dir>]
              run every setup check on the hub now and print each problem with its fix
   uninstall [--home <dir>] [--purge]
@@ -288,7 +289,8 @@ pub fn hub_service_spec(
             ("PATH".into(), path.into()),
             ("LANG".into(), "C.UTF-8".into()),
         ],
-        env_file: None,
+        // The same login file the node reads, so the router and the node log in alike.
+        env_file: Some(format!("{user_home}/.fleetd/claude.env")),
         working_directory: home.into(),
         log_path: format!("{home}/hub.log"),
     }
@@ -314,6 +316,43 @@ pub struct InitOptions {
     /// `--join <hub url> --code <code>`: this machine becomes a worker of that hub (`fleetd pair --worker`).
     pub join: Option<(String, String)>,
     pub machine_id: Option<String>,
+    /// `--rejoin`: enrol again with the code even though this machine's node is enrolled with that hub.
+    pub rejoin: bool,
+}
+
+/// What `fleetd init` sets up on this machine.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InitRole {
+    /// This machine is the hub (its setup.json exists).
+    Hub,
+    /// Nothing here yet: ask (`--yes`: the hub).
+    Ask,
+    /// `--join` with a code: enrol this machine's node.
+    Join,
+    /// This machine's node is already enrolled with a hub: keep it, check and repair. Never re-enrol with a spent
+    /// code, never turn it into a hub unasked.
+    RepairWorker,
+}
+
+/// `joined`: (hub URL, machine id) of an enrolled node here; `join`: what `--join`/`--machine-id` name.
+pub fn init_role(
+    hub_setup: bool,
+    joined: Option<(&str, &str)>,
+    join: Option<(&str, Option<&str>)>,
+    rejoin: bool,
+) -> InitRole {
+    let same = |a: &str, b: &str| a.trim_end_matches('/') == b.trim_end_matches('/');
+    match (join, joined) {
+        (Some((hub, id)), Some((joined_hub, joined_id)))
+            if !rejoin && same(hub, joined_hub) && id.is_none_or(|id| id == joined_id) =>
+        {
+            InitRole::RepairWorker
+        }
+        (Some(_), _) => InitRole::Join,
+        _ if hub_setup => InitRole::Hub,
+        (None, Some(_)) => InitRole::RepairWorker,
+        (None, None) => InitRole::Ask,
+    }
 }
 
 /// Everything `install_hub` writes and starts.
@@ -324,6 +363,8 @@ pub struct HubPlan<'a> {
     pub suffix: String,
     pub identity: Option<GitIdentity>,
     pub with_service: bool,
+    /// claude.env changed: a kept service restarts to read it.
+    pub restart: bool,
 }
 
 /// A failed step: what is wrong, and the exact command or action that fixes it.
@@ -465,9 +506,11 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
         &plan.listen,
         &home_text,
     );
-    if let HubAction::Refuse { message, fix } = action {
-        return Err(Failure { message, fix });
-    }
+    let action = match action {
+        HubAction::Refuse { message, fix } => return Err(Failure { message, fix }),
+        HubAction::Keep if plan.restart => HubAction::Install,
+        other => other,
+    };
 
     mkdir_private(plan.home).map_err(fail)?;
     let state = state::SetupState {
@@ -550,6 +593,7 @@ const INIT_OPTIONS: &[(&str, Kind)] = &[
     ("join", Kind::Str),
     ("code", Kind::Str),
     ("machine-id", Kind::Str),
+    ("rejoin", Kind::Bool),
 ];
 
 fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
@@ -608,6 +652,7 @@ fn init_options(argv: &[String]) -> Result<InitOptions, u8> {
     Ok(InitOptions {
         join,
         machine_id: v.string("machine-id"),
+        rejoin: v.flag("rejoin"),
         home,
         previous,
         listen: v.string("listen"),
@@ -658,6 +703,7 @@ async fn init_plain(opts: InitOptions) -> u8 {
         suffix: opts.suffix.clone(),
         identity,
         with_service: opts.with_service,
+        restart: false,
     };
     match install_hub(&plan, &say).await {
         Ok(how) => say(&format!("the hub {how}")),
@@ -675,7 +721,9 @@ async fn init_command(argv: &[String]) -> u8 {
         Err(code) => return code,
     };
     let terminal = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
-    if opts.yes || terminal || opts.join.is_some() {
+    // A worker that joined by itself is repaired, even from a script; only a fresh machine gets the plain hub setup.
+    let joined_worker = opts.previous.is_none() && machine::joined_here().is_some();
+    if opts.yes || terminal || opts.join.is_some() || joined_worker {
         let interactive = terminal && !opts.yes;
         wizard::run(opts, interactive).await
     } else {
@@ -853,6 +901,55 @@ mod tests {
             action(false, Unit::Missing, &[], Probe::Free),
             HubAction::NotRunning
         );
+    }
+
+    #[test]
+    fn a_joined_worker_is_repaired_not_re_enrolled_or_made_a_hub() {
+        let joined = Some(("http://hub:4790", "mac"));
+        // The same join command again: keep the enrolment, the spent code is not used.
+        assert_eq!(
+            init_role(
+                false,
+                joined,
+                Some(("http://hub:4790/", Some("mac"))),
+                false
+            ),
+            InitRole::RepairWorker
+        );
+        assert_eq!(
+            init_role(false, joined, Some(("http://hub:4790", None)), false),
+            InitRole::RepairWorker
+        );
+        // Plain init, or --yes, on that worker: repair it, never install a hub.
+        assert_eq!(
+            init_role(false, joined, None, false),
+            InitRole::RepairWorker
+        );
+        // A new code for another hub or name, or --rejoin: enrol.
+        assert_eq!(
+            init_role(false, joined, Some(("http://other:4790", None)), false),
+            InitRole::Join
+        );
+        assert_eq!(
+            init_role(
+                false,
+                joined,
+                Some(("http://hub:4790", Some("mini"))),
+                false
+            ),
+            InitRole::Join
+        );
+        assert_eq!(
+            init_role(false, joined, Some(("http://hub:4790", Some("mac"))), true),
+            InitRole::Join
+        );
+        assert_eq!(
+            init_role(false, None, Some(("http://hub:4790", None)), false),
+            InitRole::Join
+        );
+        // The hub (also a worker of itself) stays the hub; a fresh machine is asked.
+        assert_eq!(init_role(true, joined, None, false), InitRole::Hub);
+        assert_eq!(init_role(false, None, None, false), InitRole::Ask);
     }
 
     #[test]

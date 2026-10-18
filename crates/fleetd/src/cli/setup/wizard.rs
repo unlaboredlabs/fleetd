@@ -12,13 +12,14 @@ use fleetd_contracts::ids::MachineId;
 use super::checklist::Checklist;
 use super::detect::{self, Tailnet};
 use super::machine::{self, Added, local_host_name, machine_id_from_host};
-use super::machine_plan::{login_command, login_status_command};
+use super::machine_plan::{SHELL_LOGIN_VARS, login_command, login_status_command, merge_env_file};
 use super::ssh::{run_attached, run_local, run_ssh};
 use super::state::{GitIdentity, is_noreply, parse_git_identity, read_setup};
 use super::units::q;
 use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen, say};
 use crate::cli::hub_key::open_hub;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
+use fleetd_contracts::sessions::LoginStatus;
 
 use crate::cli::pair;
 
@@ -188,14 +189,31 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
         "fleetd init: sets up fleetd on this machine, step by step. Enter takes the default."
     });
 
-    if opts.join.is_some()
-        || previous.is_none()
-            && !ui.confirm(
+    let joined = machine::joined_here();
+    let role = super::init_role(
+        previous.is_some(),
+        joined
+            .as_ref()
+            .map(|j| (j.hub.as_str(), j.machine_id.as_str())),
+        opts.join
+            .as_ref()
+            .map(|(hub, _)| (hub.as_str(), opts.machine_id.as_deref())),
+        opts.rejoin,
+    );
+    match (role, joined) {
+        (super::InitRole::RepairWorker, Some(joined)) => {
+            return repair_worker(opts, ui, &mut list, joined).await;
+        }
+        (super::InitRole::Join, _) => return join_hub(opts, ui, &mut list).await,
+        (super::InitRole::Ask, _)
+            if !ui.confirm(
                 "Is this machine the hub (the always-on machine that runs your fleet)?",
                 true,
-            )?
-    {
-        return join_hub(opts, ui, &mut list).await;
+            )? =>
+        {
+            return join_hub(opts, ui, &mut list).await;
+        }
+        _ => {}
     }
 
     // Reachability.
@@ -203,8 +221,8 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
     let lan = detect::lan_ipv4();
     let (listen, url) = reachability(opts, ui, &mut list, net.as_ref(), lan.as_deref()).await?;
 
-    // Logins on the hub.
-    login_check(ui, &mut list, Tool::Claude).await?;
+    // Logins on the hub, as its service will run them.
+    let (_, env_changed) = hub_claude(ui, &mut list).await?;
     let gh_ok = login_check(ui, &mut list, Tool::Gh).await?;
     let identity = commit_identity(opts, ui, &mut list, gh_ok).await?;
 
@@ -217,6 +235,7 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
         suffix: opts.suffix.clone(),
         identity,
         with_service: opts.with_service,
+        restart: env_changed,
     };
     let indent = |line: &str| say(&format!("    {}", line.trim_start()));
     let hub_up = match install_hub(&plan, &indent).await {
@@ -282,15 +301,16 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
     }
     let title = format!("worker {machine_id}");
     list.start(&title);
-    match machine::join(
+    let joined = machine::join(
         hub.trim(),
-        code.trim(),
-        Some(machine_id),
+        machine::Enroll::Token(code.trim().to_owned()),
+        Some(machine_id.clone()),
+        Vec::new(),
         opts.identity.clone(),
         &opts.suffix,
     )
-    .await
-    {
+    .await;
+    match joined {
         Ok(added) => {
             list.done(&title, &format!("joined {} and runs its node", hub.trim()));
             worker_claude(ui, list, &added).await?;
@@ -298,9 +318,53 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
         Err(_) => list.failed(
             &title,
             "joining stopped (see above)",
-            "fix the cause it names, then run the same fleetd init again",
+            &format!("fix the cause it names (a used or expired code: fleetd pair --worker {machine_id} on the hub prints a new command), then run it"),
         ),
     }
+    Ok(worker_summary(list, "This machine is a worker now."))
+}
+
+/// A worker that joined by itself, run again: keeps its enrolment and only checks and repairs what it runs.
+async fn repair_worker(
+    opts: &InitOptions,
+    ui: &Ui,
+    list: &mut Checklist,
+    joined: machine::Joined,
+) -> Result<u8, Stopped> {
+    if opts.join.is_some() {
+        say(
+            "This machine's node is already enrolled with that hub, so the code is not used (--rejoin enrols again).",
+        );
+    }
+    let title = format!("worker {}", joined.machine_id);
+    list.start(&title);
+    let repaired = machine::join(
+        &joined.hub,
+        machine::Enroll::Keep,
+        Some(joined.machine_id.clone()),
+        joined.tags.clone(),
+        opts.identity.clone().or(joined.identity.clone()),
+        &joined.suffix,
+    )
+    .await;
+    match repaired {
+        Ok(added) => {
+            list.done(
+                &title,
+                &format!("enrolled with {}; its node runs", joined.hub),
+            );
+            worker_claude(ui, list, &added).await?;
+        }
+        Err(_) => list.failed(
+            &title,
+            "the check stopped (see above)",
+            "fix the cause it names, then run fleetd init again",
+        ),
+    }
+    Ok(worker_summary(list, "This machine is a worker."))
+}
+
+fn worker_summary(list: &Checklist, ok: &str) -> u8 {
     let failed = list.failures().next().is_some();
     if failed {
         let items: Vec<String> = list.failures().map(|i| list.line(i)).collect();
@@ -310,11 +374,11 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
             items.join("\n  ")
         ));
     } else {
-        say(
-            "\nThis machine is a worker now. Its agents start from orders you send in the desktop app.",
-        );
+        say(&format!(
+            "\n{ok} Its agents start from orders you send in the desktop app."
+        ));
     }
-    Ok(u8::from(failed))
+    u8::from(failed)
 }
 
 async fn reachability(
@@ -403,22 +467,141 @@ async fn reachability(
 
 #[derive(Clone, Copy)]
 enum Tool {
-    Claude,
     Gh,
+}
+
+/// What fleetd's services on this machine run claude with: HOME, PATH, USER and LANG (what their units set), then
+/// ~/.fleetd/claude.env (the hub's unit loads it; the node reads it per session). Nothing else of this shell.
+fn service_env() -> Vec<(String, String)> {
+    let mut env = crate::node::util::scrubbed_env();
+    if let Ok(text) = std::fs::read_to_string(home_dir().join(".fleetd/claude.env")) {
+        env.extend(crate::node::sessions::parse_env_file(&text));
+    }
+    env
+}
+
+/// Login variables this shell has, which fleetd's services never see unless they are in claude.env.
+fn shell_login() -> Vec<(String, String)> {
+    SHELL_LOGIN_VARS
+        .iter()
+        .filter_map(|key| {
+            std::env::var(key)
+                .ok()
+                .filter(|v| !v.is_empty())
+                .map(|v| ((*key).to_owned(), v))
+        })
+        .collect()
+}
+
+/// Asks to copy this shell's login variables into ~/.fleetd/claude.env (0600); true when they were written.
+fn offer_carry_over(ui: &Ui, shell: &[(String, String)]) -> Result<bool, Stopped> {
+    let names = shell
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    if shell.is_empty()
+        || !ui.interactive
+        || !ui.confirm(
+            &format!(
+                "claude logs in through this shell's {names}, which fleetd's services don't get. Save {} to ~/.fleetd/claude.env (0600) so they use the same login?",
+                if shell.len() == 1 { "it" } else { "them" }
+            ),
+            true,
+        )?
+    {
+        return Ok(false);
+    }
+    let dir = home_dir().join(".fleetd");
+    let file = dir.join("claude.env");
+    let existing = std::fs::read_to_string(&file).unwrap_or_default();
+    let written = super::mkdir_private(&dir)
+        .and_then(|()| super::write_private(&file, &merge_env_file(&existing, shell)));
+    if let Err(message) = written {
+        say(&format!("  {message}"));
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// The hub's claude, probed exactly as its service runs it: installed, in the supported range, logged in. Offers to
+/// carry this shell's login over, or to log in, and checks again. Returns (ok, claude.env changed).
+async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<(bool, bool), Stopped> {
+    let name = "claude";
+    let Some(binary) = which("claude") else {
+        list.failed(
+            name,
+            "Claude Code is not installed; fleetd's agents and its router run through it",
+            &format!("{}, then claude auth login", install("claude")),
+        );
+        return Ok((false, false));
+    };
+    let (mut carried, mut logged, mut changed) = (false, false, false);
+    loop {
+        let info = crate::node::runner::conformance::probe(&binary, &service_env()).await;
+        let printed = info.version.clone().unwrap_or_default();
+        if !info.version_ok {
+            let v = crate::node::runner::version::check(&printed);
+            list.failed(
+                name,
+                v.problem(&printed)
+                    .or(info.problem)
+                    .unwrap_or_default()
+                    .trim_end_matches('.'),
+                &v.fix().unwrap_or_else(|| install("claude")),
+            );
+            return Ok((false, changed));
+        }
+        let version = printed.split_whitespace().next().unwrap_or("");
+        if info.login == LoginStatus::LoggedIn {
+            let kind = info.login_kind.map_or(String::new(), |k| format!(" ({k})"));
+            list.done(
+                name,
+                &format!("{version}, logged in{kind} as fleetd's services run it"),
+            );
+            return Ok((true, changed));
+        }
+        let shell = shell_login();
+        if !carried {
+            carried = true;
+            if offer_carry_over(ui, &shell)? {
+                changed = true;
+                continue;
+            }
+        }
+        if !logged
+            && ui.interactive
+            && ui.confirm(
+                "claude is not logged in for fleetd's services. Log it in now (claude auth login)?",
+                true,
+            )?
+        {
+            logged = true;
+            attached("claude", &["auth", "login"]);
+            continue;
+        }
+        let fix = if shell.is_empty() {
+            "claude auth login".to_owned()
+        } else {
+            "run fleetd init in a terminal and let it save this shell's login to ~/.fleetd/claude.env, or run claude auth login".to_owned()
+        };
+        list.failed(
+            name,
+            "not logged in as fleetd's services run it (they don't get this shell's variables)",
+            &fix,
+        );
+        return Ok((false, changed));
+    }
 }
 
 /// Installed and logged in, as the hub service will run it; offers the login right here when it isn't.
 async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, Stopped> {
     let (name, login): (&str, &[&str]) = match tool {
-        Tool::Claude => ("claude", &["auth", "login"]),
         Tool::Gh => ("gh", &["auth", "login"]),
     };
     let fix = format!("{name} {}", login.join(" "));
     if which(name).is_none() {
         let why = match tool {
-            Tool::Claude => {
-                "Claude Code is not installed; fleetd's agents and its router run through it"
-            }
             Tool::Gh => "the GitHub CLI is not installed; the merge train and PR checks need it",
         };
         list.failed(name, why, &format!("{}, then {fix}", install(name)));
@@ -427,9 +610,6 @@ async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, 
     let mut offered = false;
     loop {
         let entry = match tool {
-            Tool::Claude => {
-                checks::claude_login(&hub_env_run("claude", &["auth", "status", "--json"]).await)
-            }
             Tool::Gh => checks::gh_auth(&hub_env_run("gh", &["auth", "status"]).await),
         };
         if entry.check.status == DoctorStatus::Ok {
@@ -440,32 +620,10 @@ async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, 
                 .unwrap_or("")
                 .trim_end_matches('.')
                 .trim_start_matches(&format!("{name} is "));
-            if let Tool::Claude = tool {
-                let out = hub_env_run("claude", &["--version"]).await;
-                let printed = match &out {
-                    CmdOutcome::Ran { stdout, .. } => stdout.trim().to_owned(),
-                    CmdOutcome::SpawnError(_) => String::new(),
-                };
-                let v = crate::node::runner::version::check(&printed);
-                if !v.runs() {
-                    list.failed(
-                        name,
-                        v.problem(&printed)
-                            .unwrap_or_default()
-                            .trim_end_matches('.'),
-                        &v.fix().unwrap_or_default(),
-                    );
-                    return Ok(false);
-                }
-                let version = printed.split_whitespace().next().unwrap_or("");
-                list.done(name, &format!("{version}, {message}"));
-                return Ok(true);
-            }
             list.done(name, message);
             return Ok(true);
         }
         let message = match tool {
-            Tool::Claude => "not logged in; the hub's router and every agent need it",
             Tool::Gh => "not logged in; the merge train and PR checks need it",
         };
         if offered
@@ -677,34 +835,46 @@ async fn worker_claude(ui: &Ui, list: &mut Checklist, added: &Added) -> Result<(
         format!("ssh -t {} {}", added.target.host, q(&login))
     };
     let mut logged_in = added.logged_in;
-    let mut offered = false;
+    let (mut carried, mut offered) = (!added.target.local, false);
     loop {
         if logged_in {
-            list.done(&title, "fleetd's Claude is logged in");
+            list.done(&title, "fleetd's Claude is logged in, as its node runs it");
             return Ok(());
         }
-        let why = "fleetd's Claude there is not logged in (it keeps a login of its own)";
+        let why = "fleetd's Claude there is not logged in, as its node runs it (its own config dir and claude.env)";
+        if !carried {
+            carried = true;
+            if offer_carry_over(ui, &shell_login())? {
+                logged_in = node_logged_in(added).await;
+                continue;
+            }
+        }
         if offered || !ui.interactive || !ui.confirm(&format!("{why}. Log it in now?"), true)? {
             list.failed(&title, why, &fix);
             return Ok(());
         }
         offered = true;
         run_attached(&added.target, &login);
-        let out = run_ssh(
-            &added.target,
-            &login_status_command(&added.layout, &added.claude),
-            None,
-        )
-        .await;
-        logged_in = checks::claude_login(&CmdOutcome::Ran {
-            exit_code: out.code,
-            stdout: out.stdout,
-            stderr: out.stderr,
-        })
-        .check
-        .status
-            == DoctorStatus::Ok;
+        logged_in = node_logged_in(added).await;
     }
+}
+
+/// fleetd's Claude on the machine, asked with only the node's own environment.
+async fn node_logged_in(added: &Added) -> bool {
+    let out = run_ssh(
+        &added.target,
+        &login_status_command(&added.layout, &added.claude),
+        None,
+    )
+    .await;
+    checks::claude_login(&CmdOutcome::Ran {
+        exit_code: out.code,
+        stdout: out.stdout,
+        stderr: out.stderr,
+    })
+    .check
+    .status
+        == DoctorStatus::Ok
 }
 
 async fn first_project(
@@ -901,9 +1071,7 @@ async fn doctor(opts: &InitOptions, list: &mut Checklist) {
     list.start("doctor");
     match super::doctor::run(&opts.home).await {
         Ok(checks) => {
-            // The wizard checked these logins itself, with the same commands.
-            let shown = ["hub/claude_login", "hub/gh_auth", "hub/claude_version"];
-            let ok = super::doctor::show(list, &checks, &shown);
+            let ok = super::doctor::show(list, &checks, &[]);
             list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
         }
         Err(failure) => list.failed("doctor", &failure.message, &failure.fix),

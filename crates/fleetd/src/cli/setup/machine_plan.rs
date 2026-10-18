@@ -533,15 +533,54 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     })
 }
 
-/// The command that tells whether fleetd's Claude is logged in on the machine: a login token in claude.env, or
-/// `claude auth status` in fleetd's own config dir. Prints `claude auth status --json`'s shape.
+/// Whether fleetd's Claude is logged in on the machine, asked exactly as the node will run it: an environment built
+/// from scratch (HOME, PATH, USER, LANG), then claude.env, then fleetd's own config dir. Nothing from the shell that
+/// runs setup leaks in. Prints `claude auth status --json`.
 pub fn login_status_command(l: &MachineLayout, claude: &str) -> String {
-    format!(
-        "if grep -qE '^(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN)=.' {env} 2>/dev/null; then echo '{{\"loggedIn\":true,\"authMethod\":\"claude.env\"}}'; else CLAUDE_CONFIG_DIR={dir} {claude} auth status --json; fi",
+    let inner = format!(
+        "set -a; [ -f {env} ] && . {env}; set +a; CLAUDE_CONFIG_DIR={dir} exec {claude} auth status --json",
         env = q(&l.env_file),
         dir = q(&l.claude_dir),
         claude = q(claude)
+    );
+    format!(
+        "env -i HOME=\"$HOME\" PATH=\"$PATH\" USER=\"$USER\" LANG=C.UTF-8 /bin/sh -c {}",
+        q(&inner)
     )
+}
+
+/// Login variables a shell may carry that fleetd's services never see unless they are in claude.env.
+pub const SHELL_LOGIN_VARS: [&str; 4] = [
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+];
+
+/// claude.env with `vars` set: each key replaces its line in place, new keys go at the end, every other line stays.
+pub fn merge_env_file(existing: &str, vars: &[(String, String)]) -> String {
+    let key_of = |line: &str| {
+        let line = line.trim();
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        line.split_once('=').map(|(k, _)| k.trim().to_owned())
+    };
+    let mut lines: Vec<String> = Vec::new();
+    let mut done: Vec<&str> = Vec::new();
+    for line in existing.lines() {
+        match key_of(line).and_then(|k| vars.iter().find(|(key, _)| *key == k)) {
+            Some((key, value)) => {
+                lines.push(format!("{key}={value}"));
+                done.push(key);
+            }
+            None => lines.push(line.to_owned()),
+        }
+    }
+    for (key, value) in vars {
+        if !done.contains(&key.as_str()) {
+            lines.push(format!("{key}={value}"));
+        }
+    }
+    format!("{}\n", lines.join("\n"))
 }
 
 /// The login a person runs on the machine, in fleetd's own config dir.
@@ -805,6 +844,51 @@ mod tests {
                 .err()
                 .unwrap()
                 .ends_with("Fix: on the machine, run claude update (or claude install 2.1.302)")
+        );
+    }
+
+    #[test]
+    fn carrying_a_shell_login_into_claude_env_keeps_the_rest() {
+        let existing = "# fleetd's Claude login\nexport ANTHROPIC_BASE_URL=https://old\nHTTPS_PROXY=http://p\n";
+        let merged = merge_env_file(
+            existing,
+            &[
+                ("ANTHROPIC_BASE_URL".into(), "https://gw".into()),
+                ("ANTHROPIC_AUTH_TOKEN".into(), "t".into()),
+            ],
+        );
+        assert_eq!(
+            merged,
+            "# fleetd's Claude login\nANTHROPIC_BASE_URL=https://gw\nHTTPS_PROXY=http://p\nANTHROPIC_AUTH_TOKEN=t\n"
+        );
+        assert_eq!(merge_env_file("", &[("A".into(), "1".into())]), "A=1\n");
+    }
+
+    /// The login check sees claude.env and fleetd's config dir, and nothing of the shell that runs it.
+    #[test]
+    fn the_login_check_runs_with_only_the_nodes_environment() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        let l = machine_layout(h);
+        std::fs::create_dir_all(&l.fleetd).unwrap();
+        std::fs::write(&l.env_file, "ANTHROPIC_BASE_URL=https://gw\n").unwrap();
+        let fake = format!("{h}/claude");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\necho \"$CLAUDE_CONFIG_DIR|$ANTHROPIC_BASE_URL|${ANTHROPIC_AUTH_TOKEN:-none}\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let out = std::process::Command::new("/bin/sh")
+            .args(["-c", &login_status_command(&l, &fake)])
+            .env("HOME", h)
+            .env("ANTHROPIC_AUTH_TOKEN", "from-the-shell")
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            format!("{h}/.fleetd/claude|https://gw|none")
         );
     }
 

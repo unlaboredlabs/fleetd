@@ -168,11 +168,106 @@ pub struct Added {
     pub logged_in: bool,
 }
 
-/// Where the one-time enrollment token comes from: the hub's database (on the hub), or `fleetd pair --worker`
-/// (on a worker joining by itself).
+/// Where the one-time enrollment token comes from: the hub's database (on the hub), `fleetd pair --worker` (on a
+/// worker joining by itself), or nowhere: a joined worker being repaired keeps its enrolment.
 pub enum Enroll {
     Hub,
     Token(String),
+    Keep,
+}
+
+/// This machine's node, enrolled with a hub by itself (`fleetd init --join`): what a re-run repairs.
+#[derive(Debug, PartialEq)]
+pub struct Joined {
+    pub hub: String,
+    pub machine_id: String,
+    pub tags: Vec<String>,
+    pub suffix: String,
+    pub identity: Option<GitIdentity>,
+}
+
+/// The unit suffix and commit identity in a node unit `machine add` wrote (systemd or launchd).
+pub fn node_unit_facts(file_name: &str, text: &str) -> Option<(String, Option<GitIdentity>)> {
+    let suffix = file_name
+        .strip_prefix("fleetd-node")
+        .and_then(|rest| rest.strip_suffix(".service"))
+        .or_else(|| {
+            file_name
+                .strip_prefix("sh.fleetd.node")
+                .and_then(|rest| rest.strip_suffix(".plist"))
+        })?;
+    let value = |key: &str| {
+        let systemd = text.lines().find_map(|line| {
+            let line = line.strip_prefix("Environment=")?.trim_matches('"');
+            line.strip_prefix(&format!("{key}="))
+                .map(|v| v.replace("\\\"", "\"").replace("%%", "%"))
+        });
+        systemd.or_else(|| {
+            let mut lines = text.lines();
+            lines.find(|l| l.trim() == format!("<key>{key}</key>"))?;
+            let next = lines.next()?.trim();
+            next.strip_prefix("<string>")?
+                .strip_suffix("</string>")
+                .map(|v| {
+                    v.replace("&lt;", "<")
+                        .replace("&gt;", ">")
+                        .replace("&amp;", "&")
+                })
+        })
+    };
+    let identity = match (value("GIT_AUTHOR_NAME"), value("GIT_AUTHOR_EMAIL")) {
+        (Some(name), Some(email)) => Some(GitIdentity { name, email }),
+        _ => None,
+    };
+    Some((suffix.to_owned(), identity))
+}
+
+/// The node `fleetd init --join` set up here, if it is enrolled: from its node.json and its unit.
+pub fn joined_here() -> Option<Joined> {
+    let dirs = super::local_dirs();
+    let layout = super::machine_plan::machine_layout(&dirs.home);
+    let node: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&layout.node_config).ok()?).ok()?;
+    if node.get("enrolled") != Some(&serde_json::Value::Bool(true)) {
+        return None;
+    }
+    let text = |key: &str| {
+        node.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    let units = [
+        format!("{}/systemd/user", dirs.config_home.trim_end_matches('/')),
+        format!("{}/Library/LaunchAgents", dirs.home.trim_end_matches('/')),
+    ];
+    let (suffix, identity) = units
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
+        .flatten()
+        .find_map(|entry| {
+            let unit = std::fs::read_to_string(entry.path()).ok()?;
+            if !unit.contains(&layout.node_home) {
+                return None;
+            }
+            node_unit_facts(&entry.file_name().to_string_lossy(), &unit)
+        })
+        .unwrap_or_default();
+    Some(Joined {
+        hub: text("hub")?,
+        machine_id: text("machineId")?,
+        tags: node
+            .get("tags")
+            .and_then(serde_json::Value::as_array)
+            .map(|tags| {
+                tags.iter()
+                    .filter_map(|t| t.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        suffix,
+        identity,
+    })
 }
 
 pub struct AddArgs {
@@ -268,7 +363,7 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
             "'{machine_id}' is not a machine id ([a-z0-9-]{{1,32}}); pass --machine-id"
         ));
     };
-    let joining = matches!(a.enroll, Enroll::Token(_));
+    let joining = !matches!(a.enroll, Enroll::Hub);
     let home = match resolve_home(a.home.as_deref()) {
         Ok(home) => home,
         Err(message) => return fail(&message),
@@ -431,11 +526,13 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         }
     };
 
-    let has_key = hub.as_ref().is_some_and(|hub| {
-        hub.auth
-            .node_pub_key(&machine)
-            .is_ok_and(|key| key.is_some())
-    });
+    // A joined worker being repaired: the hub holds its key as long as its node.json says enrolled.
+    let has_key = matches!(a.enroll, Enroll::Keep)
+        || hub.as_ref().is_some_and(|hub| {
+            hub.auth
+                .node_pub_key(&machine)
+                .is_ok_and(|key| key.is_some())
+        });
     let input = MachineAddInput {
         hub_has_node_key: has_key,
         ..input
@@ -444,6 +541,17 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         Ok(plan) => plan,
         Err(message) => return fail(&format!("{message}, then run {again}")),
     };
+    // Never stop or re-enrol a joined node without a fresh code: that is what --join with --rejoin is for.
+    if matches!(a.enroll, Enroll::Keep)
+        && plan
+            .steps
+            .iter()
+            .any(|s| s.stdin == Some(Stdin::EnrollToken))
+    {
+        return fail(&format!(
+            "this machine's node is no longer enrolled with {hub_url} as {machine_id}. Fix: on the hub, run fleetd pair --worker {machine_id}, then run what it prints here with --rejoin"
+        ));
+    }
     // Recorded before anything changes, so `machine remove` can undo a run that stopped half way.
     if let Some(state) = &state {
         let mut recorded = state.clone();
@@ -479,7 +587,9 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
                     Ok(token) => Some(format!("{}\n", token.token).into_bytes()),
                     Err(error) => return fail(&error.to_string()),
                 },
-                (Enroll::Hub, None) => unreachable!("a hub enrollment has the hub"),
+                (Enroll::Hub, None) | (Enroll::Keep, _) => {
+                    unreachable!("only a hub or a code enrolls")
+                }
             },
         };
         let result = run_ssh(&target, &step.command, stdin.as_deref()).await;
@@ -680,24 +790,25 @@ pub async fn machine_command(argv: &[String]) -> u8 {
     }
 }
 
-/// A worker joining by itself: `fleetd init --join <hub url> --code <token> [--machine-id <id>]`.
+/// A worker joining by itself (`fleetd init --join <hub url> --code <token>`), or repaired after it did.
 pub async fn join(
     hub_url: &str,
-    token: &str,
+    enroll: Enroll,
     machine_id: Option<String>,
+    tags: Vec<String>,
     identity: Option<GitIdentity>,
     unit_suffix: &str,
 ) -> Result<Added, u8> {
     add(AddArgs {
         host: None,
         machine_id,
-        tags: Vec::new(),
+        tags,
         dry_run: false,
         hub_url: Some(hub_url.to_owned()),
         ssh_config: None,
         home: None,
         unit_suffix: Some(unit_suffix.to_owned()),
-        enroll: Enroll::Token(token.to_owned()),
+        enroll,
         git_identity: identity,
     })
     .await
@@ -716,6 +827,28 @@ mod tests {
         );
         assert_eq!(machine_id_from_host("forge"), "forge");
         assert_eq!(machine_id_from_host("build_box_2"), "build-box-2");
+    }
+
+    #[test]
+    fn reads_a_joined_nodes_unit() {
+        let systemd = "[Service]\nEnvironment=\"HOME=/home/a\"\nEnvironment=\"GIT_AUTHOR_NAME=Ada Lovelace\"\nEnvironment=GIT_AUTHOR_EMAIL=1+ada@users.noreply.github.com\n";
+        assert_eq!(
+            node_unit_facts("fleetd-node-lab.service", systemd),
+            Some((
+                "-lab".into(),
+                Some(GitIdentity {
+                    name: "Ada Lovelace".into(),
+                    email: "1+ada@users.noreply.github.com".into()
+                })
+            ))
+        );
+        let plist = "    <key>GIT_AUTHOR_NAME</key>\n    <string>Ada &amp; Co</string>\n    <key>GIT_AUTHOR_EMAIL</key>\n    <string>a@b</string>\n";
+        assert_eq!(
+            node_unit_facts("sh.fleetd.node.plist", plist).map(|(s, i)| (s, i.map(|i| i.name))),
+            Some((String::new(), Some("Ada & Co".into())))
+        );
+        assert_eq!(node_unit_facts("fleetd-hub.service", systemd), None);
+        assert_eq!(node_unit_facts("fleetd-node.service", "").unwrap().1, None);
     }
 
     #[test]
