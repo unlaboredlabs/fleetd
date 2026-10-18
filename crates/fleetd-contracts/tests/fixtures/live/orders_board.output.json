@@ -3,10 +3,10 @@
     {
       "workstreamId": "W14",
       "projectRef": {
-        "machineId": "forge",
-        "projectId": "fleetd"
+        "machineId": "devbox",
+        "projectId": "storefront"
       },
-      "title": "Harden lead digest",
+      "title": "Fix cart total rounding",
       "state": "running",
       "template": "feature",
       "phase": "waiting_on_you",
@@ -19,22 +19,22 @@
         {
           "laneId": "T31",
           "role": "implementer",
-          "title": "harden-digest",
+          "title": "fix-cart-rounding",
           "status": "working",
           "taskId": "T31",
           "threadRef": {
-            "machineId": "forge",
+            "machineId": "devbox",
             "threadId": "s-31"
           },
           "model": "claude-haiku-5-5",
           "effort": "low",
           "startedAt": "2026-10-18T10:06:00.000Z",
-          "branch": "fleetd/T31-harden-digest",
+          "branch": "fleetd/T31-fix-cart-rounding",
           "pr": {
             "changeId": "X12",
-            "repo": "wynn-dev/fleetd",
+            "repo": "acme/storefront",
             "number": 212,
-            "url": "https://github.com/wynn-dev/fleetd/pull/212",
+            "url": "https://github.com/acme/storefront/pull/212",
             "state": "reviewing",
             "reviewsDone": 1,
             "reviewsNeeded": 2
@@ -45,7 +45,7 @@
             "activity": {
               "activity": {
                 "kind": "edit",
-                "path": "crates/fleetd/src/hub/leads/digest.rs"
+                "path": "src/cart/total.ts"
               },
               "since": "2026-10-18T10:07:01.000Z"
             },
@@ -99,7 +99,7 @@
           "status": "working",
           "taskId": "T33",
           "threadRef": {
-            "machineId": "forge",
+            "machineId": "devbox",
             "threadId": "s-33"
           },
           "model": "claude-haiku-5-5",
@@ -111,7 +111,7 @@
             "activity": {
               "activity": {
                 "kind": "command",
-                "text": "cargo test -p fleetd hub::leads"
+                "text": "npm test -- cart"
               },
               "since": "2026-10-18T10:06:32.000Z"
             },
@@ -172,18 +172,18 @@
       "prs": [
         {
           "changeId": "X11",
-          "repo": "wynn-dev/fleetd",
+          "repo": "acme/storefront",
           "number": 211,
-          "url": "https://github.com/wynn-dev/fleetd/pull/211",
+          "url": "https://github.com/acme/storefront/pull/211",
           "state": "merged",
           "reviewsDone": 2,
           "reviewsNeeded": 2
         },
         {
           "changeId": "X12",
-          "repo": "wynn-dev/fleetd",
+          "repo": "acme/storefront",
           "number": 212,
-          "url": "https://github.com/wynn-dev/fleetd/pull/212",
+          "url": "https://github.com/acme/storefront/pull/212",
           "state": "reviewing",
           "reviewsDone": 1,
           "reviewsNeeded": 2
@@ -195,10 +195,10 @@
     {
       "workstreamId": "W12",
       "projectRef": {
-        "machineId": "forge",
-        "projectId": "fleetd"
+        "machineId": "devbox",
+        "projectId": "storefront"
       },
-      "title": "Test ask batching",
+      "title": "Faster product search",
       "state": "running",
       "template": "bugfix",
       "phase": "merging",
@@ -210,9 +210,9 @@
       "prs": [
         {
           "changeId": "X8",
-          "repo": "wynn-dev/fleetd",
+          "repo": "acme/storefront",
           "number": 208,
-          "url": "https://github.com/wynn-dev/fleetd/pull/208",
+          "url": "https://github.com/acme/storefront/pull/208",
           "state": "ci",
           "reviewsDone": 2,
           "reviewsNeeded": 2
@@ -224,20 +224,20 @@
   ],
   "trains": [
     {
-      "repo": "wynn-dev/fleetd",
+      "repo": "acme/storefront",
       "frozen": false,
       "chips": [
         {
           "changeId": "X8",
           "number": 208,
-          "url": "https://github.com/wynn-dev/fleetd/pull/208",
+          "url": "https://github.com/acme/storefront/pull/208",
           "workstreamId": "W12",
           "state": "ci"
         },
         {
           "changeId": "X12",
           "number": 212,
-          "url": "https://github.com/wynn-dev/fleetd/pull/212",
+          "url": "https://github.com/acme/storefront/pull/212",
           "workstreamId": "W14",
           "state": "reviewing",
           "position": 0
@@ -245,7 +245,7 @@
         {
           "changeId": "X11",
           "number": 211,
-          "url": "https://github.com/wynn-dev/fleetd/pull/211",
+          "url": "https://github.com/acme/storefront/pull/211",
           "workstreamId": "W14",
           "state": "merged"
         }

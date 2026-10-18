@@ -1,6 +1,6 @@
 {
-  "machineId": "forge",
-  "projectId": "fleetd",
-  "query": "digest",
+  "machineId": "devbox",
+  "projectId": "storefront",
+  "query": "cart",
   "limit": 20
 }

@@ -4,7 +4,7 @@
   "full": true,
   "lanes": [
     {
-      "laneId": "lead:forge/fleetd",
+      "laneId": "lead:devbox/storefront",
       "status": "working",
       "activity": {
         "activity": {
@@ -60,7 +60,7 @@
       "activity": {
         "activity": {
           "kind": "edit",
-          "path": "crates/fleetd/src/hub/leads/digest.rs"
+          "path": "src/cart/total.ts"
         },
         "since": "2026-10-18T10:07:01.000Z"
       },
@@ -112,7 +112,7 @@
       "activity": {
         "activity": {
           "kind": "command",
-          "text": "cargo test -p fleetd hub::leads"
+          "text": "npm test -- cart"
         },
         "since": "2026-10-18T10:06:32.000Z"
       },
@@ -166,8 +166,8 @@
   "text": [],
   "machines": [
     {
-      "machineId": "forge",
-      "name": "forge",
+      "machineId": "devbox",
+      "name": "devbox",
       "status": "online",
       "load": {
         "cpus": 32,
@@ -191,8 +191,8 @@
       "asOf": "2026-10-18T10:07:00.000Z"
     },
     {
-      "machineId": "lab-a",
-      "name": "lab-a",
+      "machineId": "buildbox",
+      "name": "buildbox",
       "status": "offline",
       "running": 0,
       "asOf": "2026-10-18T09:55:00.000Z"
@@ -206,8 +206,8 @@
     "perProject": [
       {
         "projectRef": {
-          "machineId": "forge",
-          "projectId": "fleetd"
+          "machineId": "devbox",
+          "projectId": "storefront"
         },
         "share": 20,
         "used": 4
