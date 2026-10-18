@@ -7,7 +7,10 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use super::contract::GitHubRepo;
 use super::host::BoxFut;
+use crate::hub::projects::inspect::{self, GitHubAnswers};
+use fleetd_contracts::projects::CiInfo;
 
 pub const TRAIN_CONTEXT: &str = "fleetd/train";
 pub const GH_AUTH_FIX: &str = "run `gh auth login` on the hub machine";
@@ -389,5 +392,50 @@ impl TrainGitHub {
                 })
             })
             .collect())
+    }
+
+    /// Commit status contexts on `sha` other than the train's own.
+    pub async fn status_contexts(&self, repo: &str, sha: &str) -> Result<Vec<String>, GhError> {
+        let combined: Value = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/commits/{sha}/status?per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(combined["statuses"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|s| s["context"].as_str())
+            .filter(|c| *c != TRAIN_CONTEXT)
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// The repo's workflows and the checks `branch` requires, read as adding a project reads them; any read failing
+    /// is an error, never "no CI".
+    pub async fn ci_config(&self, repo: &str, branch: &str) -> Result<CiInfo, GhError> {
+        let workflows: Value = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/actions/workflows?per_page=100"),
+                &[],
+            )
+            .await?;
+        let protection: Value = self
+            .json("GET", &format!("repos/{repo}/branches/{branch}"), &[])
+            .await?;
+        let rules: Value = self
+            .json("GET", &format!("repos/{repo}/rules/branches/{branch}"), &[])
+            .await?;
+        let answers = GitHubAnswers {
+            workflows: Some(workflows),
+            branch: Some(protection),
+            rules: Some(rules),
+            ..GitHubAnswers::default()
+        };
+        let repo = GitHubRepo::unchecked(repo);
+        Ok(inspect::build(Some(&repo), &answers, None, vec![], true).ci)
     }
 }

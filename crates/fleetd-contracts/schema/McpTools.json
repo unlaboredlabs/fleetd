@@ -2793,7 +2793,7 @@
         },
         {
           "const": "pr.merged",
-          "description": "`data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`.",
+          "description": "`data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`; `data.ci` when the repo had no CI and the\ntrain merged on fleetd's own checks.",
           "type": "string"
         },
         {

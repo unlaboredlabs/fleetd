@@ -127,7 +127,8 @@ pub enum HubEventType {
     /// `data.changeId`, `data.checks` (failing check names), `data.logUrl`.
     #[serde(rename = "change.ci_failed")]
     ChangeCiFailed,
-    /// `data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`.
+    /// `data.changeId`, `data.repo`, `data.prNumber`, `data.mergedSha`; `data.ci` when the repo had no CI and the
+    /// train merged on fleetd's own checks.
     #[serde(rename = "pr.merged")]
     PrMerged,
     /// `data.repo`, `data.reason`.
