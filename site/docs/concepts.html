@@ -61,8 +61,8 @@ It runs one <code>claude</code> process per live session, each writer in its own
 login of its own in <code>~/.fleetd/claude</code>, separate from yours in <code>~/.claude</code>. The hub machine is usually a worker too.</p>
 <h2 id="leads">Leads<a class="anchor" href="#leads" aria-label="Link to this section">#</a></h2>
 <p>Each project has one lead: a long-running <code>claude</code> session that turns orders into briefs, splits them into tasks
-for writer and reviewer sessions, and never writes code itself. Leads run on <code>claude-opus-5-5</code> by default. Orders
-for a project without a lead wait as drafts.</p>
+for writer and reviewer sessions, and never writes code itself. Leads run on <code>claude-opus-5-5</code> by default. A
+project's first order starts its lead.</p>
 <h2 id="orders">Orders<a class="anchor" href="#orders" aria-label="Link to this section">#</a></h2>
 <p>An order is one line of intent, such as <code>fix the typo in the README</code>, sent from the app or with <code>intake_submit</code>
 over MCP. The hub picks the project (a leading <code>@project</code> names it), opens a workstream and wakes the lead. The lead
