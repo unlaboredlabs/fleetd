@@ -361,7 +361,7 @@ mod tests {
     fn a_machine_says_only_what_it_reports() {
         let now = parse_ms("2026-10-18T10:07:12Z").unwrap();
         let build = machine(serde_json::json!({
-            "machineId": "build-1", "name": "build-1", "status": "online", "running": 6, "asOf": "2026-10-18T10:07:00Z",
+            "machineId": "devbox", "name": "devbox", "status": "online", "running": 6, "asOf": "2026-10-18T10:07:00Z",
             "load": {"cpus": 32, "load1": 3.06, "memUsedPct": 41, "limits": [
                 {"limitType": "five_hour", "utilization": 0.58, "status": "allowed"},
                 {"limitType": "seven_day", "utilization": 0.41, "status": "allowed_warning"},

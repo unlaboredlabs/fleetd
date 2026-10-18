@@ -81,15 +81,15 @@ fn shifted<T: serde::de::DeserializeOwned>(json: &str, by_ms: i64) -> T {
 }
 
 const ACTIVITIES: &[(&str, &str)] = &[
-    ("edit", "src/checkout/cart.rs"),
-    ("command", "cargo test -p storefront checkout"),
-    ("search", "fn apply_discount"),
+    ("edit", "src/cart/total.ts"),
+    ("command", "npm test -- cart"),
+    ("search", "fn roundTotal"),
     ("writing", ""),
-    ("read", "src/checkout/pricing.rs"),
-    ("command", "cargo clippy -p storefront -- -D warnings"),
-    ("edit", "src/checkout/mod.rs"),
+    ("read", "src/cart/discounts.ts"),
+    ("command", "npm run lint"),
+    ("edit", "src/cart/index.ts"),
     ("thinking", ""),
-    ("tool", "docs.rs"),
+    ("tool", "developer.mozilla.org"),
     ("command", "git diff --stat"),
 ];
 
@@ -195,7 +195,7 @@ impl Feed {
                 cards.push(c);
             }
             let out = serde_json::json!({"orders": cards, "trains": if p == 0 { base["trains"].clone() } else { Value::Array(vec![]) }, "at": fmt_iso(now_ms)});
-            boards.push((("build-1".into(), project), serde_json::from_value(out).unwrap()));
+            boards.push((("devbox".into(), project), serde_json::from_value(out).unwrap()));
         }
         let mut feed = Self::from_boards(boards, true, now_ms);
         feed.next_task = task + 1;
