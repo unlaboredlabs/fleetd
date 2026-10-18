@@ -55,7 +55,7 @@ pub fn start(window: u32, dir: PathBuf, fps: u32) -> std::io::Result<()> {
         libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
     }
     std::thread::Builder::new().name("fleetd-record".into()).spawn(move || {
-        // A default-QoS thread's sleeps overshot by ~40 ms on a CI Mac (timer coalescing), halving the frame rate.
+        // A frame is due every few tens of ms; don't let the scheduler treat this thread as background work.
         // SAFETY: sets this thread's own QoS class.
         unsafe { libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0) };
         let signalled = run(window, &dir, fps);
