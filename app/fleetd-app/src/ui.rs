@@ -59,9 +59,14 @@ pub fn button(t: &Theme, id: impl Into<ElementId>, label: impl Into<SharedString
     })
 }
 
-/// A 7 px status dot. A drawn circle, not a "●" glyph, so it centres the same in every font.
+/// A 7 px status dot, for before or after a label in a flex row.
 pub fn dot(color: Hsla) -> Div {
-    div().size(px(7.)).flex_none().rounded_full().bg(color)
+    mark(div().size(px(7.)).bg(color))
+}
+
+/// An open item: a 7 px hollow circle, the dot's outline.
+pub fn ring(color: Hsla) -> Div {
+    mark(div().size(px(7.)).border_1().border_color(color))
 }
 
 /// A count after a row label. Loud counts (open asks: something needs you) are a filled pill in the text
@@ -77,7 +82,15 @@ pub fn count(t: &Theme, n: usize, loud: bool) -> Div {
 
 /// The unread mark: a small accent dot before a row's label.
 pub fn unread(t: &Theme) -> Div {
-    div().size(px(6.)).flex_none().rounded_full().bg(t.accent)
+    mark(div().size(px(6.)).bg(t.accent))
+}
+
+/// A drawn circle (a "●" glyph sits differently in every font) in a box exactly one line of the inherited
+/// text tall, so it lines up with the label's first line in any row, at any text size, and when the label
+/// wraps. The zero-width strut is what makes the box one line tall. The line box's centre sits about 1.5 px
+/// above the x-height's centre in IBM Plex Sans; 1 px down splits the difference between lowercase and capitals.
+fn mark(circle: Div) -> Div {
+    div().flex_none().flex().items_center().child(div().w_0().overflow_hidden().child("\u{200B}")).child(circle.relative().top(px(1.)).rounded_full())
 }
 
 /// A keyboard shortcut hint, e.g. "⌘K".
@@ -152,15 +165,7 @@ pub fn error(t: &Theme, message: impl Into<SharedString>, fix: Option<SharedStri
         .flex()
         .flex_col()
         .gap_1()
-        .child(
-            div()
-                .flex()
-                .items_start()
-                .gap_2()
-                .child(div().pt(px(5.)).child(dot(t.danger)))
-                .child(div().flex_1().min_w_0().whitespace_normal().child(message))
-                .child(copy),
-        )
+        .child(div().flex().items_start().gap_2().child(dot(t.danger)).child(div().flex_1().min_w_0().whitespace_normal().child(message)).child(copy))
         .when_some(fix, |d, fix| d.child(div().pl(px(15.)).text_color(t.quiet).whitespace_normal().child(fix)))
 }
 
