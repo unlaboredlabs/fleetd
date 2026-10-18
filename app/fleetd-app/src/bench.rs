@@ -3,11 +3,16 @@
 //! Present timestamps come from gpui's profiler journal (the `profiler` feature Zed ships with): each
 //! newly drawn frame records a Draw event followed by its Present, with exact `Instant`s, so how late we
 //! poll the journal never biases a measurement. Results go to stdout as `FLEETD_BENCH key=value ...`.
+//!
+//! Startup progress goes to stderr as `FLEETD_BENCH stage=<name> t_ms=<since main> ...`, and a watchdog
+//! thread ends a run that hasn't presented a frame in time, naming the last stage reached. That is what
+//! tells an unattended run on a machine nobody can see (a Mac reached over chat) where startup stopped.
 
 use std::io::Write;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use gpui::{FrameEvent, FrameTimingCollector};
+use gpui::{App, Bounds, Context, FrameEvent, FrameTimingCollector, Pixels, Window};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -50,6 +55,94 @@ impl Mode {
             }
         })
     }
+}
+
+/// Set first thing in `main`; stage times count from it.
+static START: OnceLock<Instant> = OnceLock::new();
+/// (last stage reached, whether a frame has been presented).
+static PROGRESS: Mutex<(&str, bool)> = Mutex::new(("none", false));
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
+
+pub fn mark_start() {
+    START.get_or_init(Instant::now);
+}
+
+/// One startup milestone on stderr (stdout carries only results, for the driver).
+pub fn stage(name: &'static str, detail: &str) {
+    let t_ms = START.get().map_or(0., |s| s.elapsed().as_secs_f64() * 1000.);
+    let mut progress = PROGRESS.lock().unwrap_or_else(|e| e.into_inner());
+    progress.0 = name;
+    progress.1 |= name == "first_present";
+    let sep = if detail.is_empty() { "" } else { " " };
+    let _ = writeln!(std::io::stderr(), "FLEETD_BENCH stage={name} t_ms={t_ms:.1}{sep}{detail}");
+}
+
+/// `FLEETD_BENCH_TIMEOUT_MS`: how long a run may go without presenting a frame. 0 turns the watchdog off.
+pub fn timeout_from(value: Option<&str>) -> Option<Duration> {
+    match value.map(str::trim).filter(|v| !v.is_empty()).map(str::parse::<u64>) {
+        Some(Ok(0)) => None,
+        Some(Ok(ms)) => Some(Duration::from_millis(ms)),
+        _ => Some(DEFAULT_TIMEOUT),
+    }
+}
+
+/// A plain thread, so it fires even when the main thread is stuck inside AppKit or never reaches our code.
+pub fn start_watchdog() {
+    let Some(timeout) = timeout_from(std::env::var("FLEETD_BENCH_TIMEOUT_MS").ok().as_deref()) else { return };
+    std::thread::spawn(move || {
+        std::thread::sleep(timeout);
+        let (last, presented) = *PROGRESS.lock().unwrap_or_else(|e| e.into_inner());
+        if !presented {
+            let t_ms = START.get().map_or(0., |s| s.elapsed().as_secs_f64() * 1000.);
+            let _ = writeln!(std::io::stderr(), "FLEETD_BENCH stage=timeout t_ms={t_ms:.1} last={last} timeout_ms={}", timeout.as_millis());
+            std::process::exit(3);
+        }
+    });
+}
+
+/// Logs the window's state now and as it changes, and its first drawn and first presented frames (from a
+/// journal cursor of its own, so the shell's measurements are untouched). Call while building the root view,
+/// before the window's first frame.
+pub fn watch_window<T: 'static>(window: &mut Window, cx: &mut Context<T>) {
+    stage("window_created", &window_state(window));
+    window.observe_window_visibility(|_, window, _| stage("visibility", &window_state(window))).detach();
+    cx.observe_window_activation(window, |_, window, _| stage("activation", &window_state(window))).detach();
+    gpui::set_trace_enabled(true);
+    let mut frames = FrameTimingCollector::new();
+    cx.spawn_in(window, async move |_, cx| {
+        let mut drawn = false;
+        loop {
+            for event in frames.collect_unseen() {
+                match event {
+                    FrameEvent::Draw(_) if !drawn => {
+                        drawn = true;
+                        stage("first_draw", "");
+                    }
+                    FrameEvent::Present(_) => {
+                        let state = cx.update(|window, _| window_state(window)).unwrap_or_default();
+                        return stage("first_present", &state);
+                    }
+                    FrameEvent::Draw(_) => {}
+                }
+            }
+            cx.background_executor().timer(Duration::from_millis(5)).await;
+        }
+    })
+    .detach();
+}
+
+fn window_state(window: &Window) -> String {
+    format!("active={} visible={} bounds={} scale={}", window.is_window_active(), window.is_visible(), rect(window.bounds()), window.scale_factor())
+}
+
+/// The displays gpui sees and the bounds the window asks for: a window placed off every display never presents.
+pub fn displays_and(bounds: Bounds<Pixels>, cx: &App) -> String {
+    let displays: Vec<String> = cx.displays().iter().map(|d| rect(d.bounds())).collect();
+    format!("displays={} bounds={}", displays.join(";"), rect(bounds))
+}
+
+fn rect(b: Bounds<Pixels>) -> String {
+    format!("{}x{}@{},{}", f32::from(b.size.width), f32::from(b.size.height), f32::from(b.origin.x), f32::from(b.origin.y))
 }
 
 pub const KEYSTROKES: usize = 200;
@@ -171,6 +264,14 @@ pub fn scroll_stats(presents: &[Instant], start: Instant, end: Instant) -> (f64,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timeout_defaults_to_15_s_and_0_turns_it_off() {
+        assert_eq!(timeout_from(None), Some(Duration::from_secs(15)));
+        assert_eq!(timeout_from(Some("2500")), Some(Duration::from_millis(2500)));
+        assert_eq!(timeout_from(Some("0")), None);
+        assert_eq!(timeout_from(Some("soon")), Some(Duration::from_secs(15)));
+    }
 
     #[test]
     fn bench_mode_names() {
