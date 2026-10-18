@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projects &amp; orders · fleetd docs</title>
+<meta name="description" content="Add a project, start its lead, send an order, follow it, and see how &quot;done&quot; is checked.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders" aria-current="page">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Using fleetd</p>
+<h1>Projects &amp; orders</h1>
+<h2 id="add-a-project">Add a project<a class="anchor" href="#add-a-project" aria-label="Link to this section">#</a></h2>
+<p>Run <code>fleetd init</code> again and pick a repo: a checkout it finds on a worker, or a GitHub URL, which it clones. The rest
+of your setup stays as it is.</p>
+<p>From an MCP client, <code>project_add {machineId, path, title}</code> adds one and <code>project_remove {machineId, projectId}</code>
+forgets it (its files, branches and worktrees stay).</p>
+<h2 id="start-its-lead">Start its lead<a class="anchor" href="#start-its-lead" aria-label="Link to this section">#</a></h2>
+<p>Each project has one lead. Until it has one, orders for it wait as drafts. Start it from an MCP client:</p>
+<pre class="code text"><code>lead_start {machineId, projectId}</code></pre>
+<p><code>model</code> and <code>effort</code> are optional and saved for the project (default <code>claude-opus-5-5</code>, high).</p>
+<h2 id="connect-an-mcp-client">Connect an MCP client<a class="anchor" href="#connect-an-mcp-client" aria-label="Link to this section">#</a></h2>
+<p>The hub's MCP endpoint is <code>&lt;hub url&gt;/mcp</code>. Give the client an agent key, shown once:</p>
+<pre class="code console" data-copy><code><span class="c">$ fleetd hub key create --name ci-bot --role operate --machines '*'</span>
+<span class="o">fld_&lt;key&gt;
+created key_tjw34bxe (fld_mwrgw4, operate:*). The key above is shown only once.</span></code></pre>
+<p>For Claude Code:</p>
+<pre class="code sh" data-copy><code><span class="l">claude mcp add --transport http fleetd http://hub.your-tailnet.ts.net:4790/mcp --header &quot;Authorization: Bearer fld_&lt;key&gt;&quot;</span></code></pre>
+<p>Roles are <code>read</code>, <code>operate</code> and <code>admin</code>, on every machine (<code>'*'</code>) or a list. <code>fleetd hub key list</code> shows keys and
+<code>fleetd hub key revoke &lt;keyId&gt;</code> ends one at once.</p>
+<h2 id="send-an-order">Send an order<a class="anchor" href="#send-an-order" aria-label="Link to this section">#</a></h2>
+<p>In the app, press ⌘N (Ctrl+N), type one line and press Enter. Aim it at a project, or leave it to the hub, which
+reads a leading <code>@project</code>, else asks a quick router, else asks you. A prefix picks the playbook: <code>fix:</code> or <code>bug:</code>,
+<code>research:</code>, <code>finish:</code>.</p>
+<p>From an MCP client: <code>intake_submit {text}</code>.</p>
+<h2 id="follow-it">Follow it<a class="anchor" href="#follow-it" aria-label="Link to this section">#</a></h2>
+<p>The lead freezes a brief, runs writer and reviewer tasks on your workers, and puts each PR on the merge train. Follow
+it on the app's Projects screen (⌘2), or with <code>workstream_list</code>, <code>workstream_get</code>, <code>thread_tail</code> and <code>fleetd_status</code>.
+<code>events_wait</code> long-polls for changes instead of polling.</p>
+<h2 id="answer-its-questions">Answer its questions<a class="anchor" href="#answer-its-questions" aria-label="Link to this section">#</a></h2>
+<p>Questions land in the inbox (⌘1), numbered. Reply in one line, such as <code>1 go 2 nvm 3 b</code>: see
+<a href="/docs/desktop-app#reply">the reply grammar</a>. Commands and secrets have their own flow:
+<a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a>.</p>
+<h2 id="done-checked">Done, checked<a class="anchor" href="#done-checked" aria-label="Link to this section">#</a></h2>
+<p>The lead reports done with <code>fleetd claim done</code>. The hub then runs the brief's done-when checks itself, and only all of
+them passing makes the workstream done. A failure wakes the lead with the exit code and output. <code>claims_list</code> shows
+every claim with its evidence.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/machines"><span>Previous</span>Machines</a>
+<a class="next" href="/docs/approvals-and-secrets"><span>Next</span>Approvals &amp; secrets</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/projects-and-orders.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#add-a-project">Add a project</a></li>
+<li><a href="#start-its-lead">Start its lead</a></li>
+<li><a href="#connect-an-mcp-client">Connect an MCP client</a></li>
+<li><a href="#send-an-order">Send an order</a></li>
+<li><a href="#follow-it">Follow it</a></li>
+<li><a href="#answer-its-questions">Answer its questions</a></li>
+<li><a href="#done-checked">Done, checked</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

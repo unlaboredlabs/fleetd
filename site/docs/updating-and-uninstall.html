@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Updating &amp; uninstall · fleetd docs</title>
+<meta name="description" content="Update fleetd and its app, pick a release channel, and remove fleetd from a machine.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall" aria-current="page">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Reference</p>
+<h1>Updating &amp; uninstall</h1>
+<h2 id="update">Update<a class="anchor" href="#update" aria-label="Link to this section">#</a></h2>
+<pre class="code console" data-copy><code><span class="c">$ fleetd update --check</span>
+<span class="o">fleetd 0.0.0-nightly.20261018.832ba8f is up to date (nightly)</span></code></pre>
+<pre class="code sh" data-copy><code><span class="l">fleetd update</span></code></pre>
+<p>It replaces the CLI, and the desktop app when the installer put it in its usual place, then restarts the hub and node
+services that run this binary. Every file is checked against the release's <code>SHA256SUMS</code>.</p>
+<p>Workers don't update themselves. Update the hub first, then each worker: run <code>fleetd update</code> there, or
+<code>fleetd machine add &lt;ssh-host&gt;</code> on the hub, which copies the hub's binary over. fleetd pins claude separately: see
+<a href="/docs/troubleshooting#claude_version">claude version</a>.</p>
+<h2 id="channels">Channels<a class="anchor" href="#channels" aria-label="Link to this section">#</a></h2>
+<p><code>fleetd update</code> stays on the channel you installed from. Releases are nightly builds for now; a stable channel comes
+with the first release.</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd update --channel stable</span>
+<span class="l">curl -fsSL https://fleetd.sh | FLEETD_CHANNEL=stable sh</span></code></pre>
+<h2 id="remove-a-machine">Remove a machine<a class="anchor" href="#remove-a-machine" aria-label="Link to this section">#</a></h2>
+<p>From the hub: <code>fleetd machine remove &lt;id&gt;</code>, with <code>--purge</code> to delete its data too. See
+<a href="/docs/machines#remove">Machines</a>.</p>
+<h2 id="uninstall-the-hub">Uninstall the hub<a class="anchor" href="#uninstall-the-hub" aria-label="Link to this section">#</a></h2>
+<pre class="code console" data-copy data-capture="uninstall"><code><span class="c">$ fleetd uninstall</span>
+<span class="o">no hub service at ~/.config/systemd/user/fleetd-hub.service
+kept the hub's data in ~/.fleetd/hub; fleetd init starts it again, --purge deletes it</span></code></pre>
+<p>It stops and removes the hub's service (here there was none) and keeps its data. <code>--purge</code> also deletes
+<code>~/.fleetd/hub</code>; stop a hub you run yourself first. Remove each worker before you purge the hub.</p>
+<h2 id="remove-the-cli-and-app">Remove the CLI and app<a class="anchor" href="#remove-the-cli-and-app" aria-label="Link to this section">#</a></h2>
+<pre class="code console" data-copy><code><span class="c">$ curl -fsSL https://fleetd.sh | sh -s -- --uninstall</span>
+<span class="o">no hub service at ~/.config/systemd/user/fleetd-hub.service
+kept the hub's data in ~/.fleetd/hub; fleetd init starts it again, --purge deletes it
+fleetd: removed the fleetd CLI and app. Your data in ~/.fleetd is still there; delete it yourself if you want it gone.</span></code></pre>
+<p>It runs <code>fleetd uninstall</code> first, then removes the CLI and the app. <code>~/.fleetd</code> stays.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/troubleshooting"><span>Previous</span>Troubleshooting</a>
+<span></span>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/updating-and-uninstall.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#update">Update</a></li>
+<li><a href="#channels">Channels</a></li>
+<li><a href="#remove-a-machine">Remove a machine</a></li>
+<li><a href="#uninstall-the-hub">Uninstall the hub</a></li>
+<li><a href="#remove-the-cli-and-app">Remove the CLI and app</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

@@ -16,3 +16,8 @@ Things a daily user will notice that the design pass left for later. Remove a li
   to it yet.
 - **Unverified on a Mac.** The system font, SF Mono with its Menlo fallback, and Match system following the OS live
   were all checked on Linux only.
+
+# Hub and CLI follow-ups
+
+- **One fix per doctor finding.** A degraded machine's finding prints two "Fix:" clauses (the claude login, then
+  restart the node); merge them into one ordered fix.
