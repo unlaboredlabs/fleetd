@@ -90,6 +90,9 @@ img{max-width:100%;height:auto;border-radius:6px;box-shadow:0 0 0 1px var(--rule
 pre.code{font-size:13.5px;line-height:1.6;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);padding:11px 0;overflow-x:auto;white-space:pre}
 pre.code code{font-size:inherit}
 pre.sh .l::before{content:"$ ";color:var(--faint)}
+/* Transcripts wrap instead of scrolling, so long output stays readable on a phone; the float keeps the first line clear of Copy. */
+pre.console{white-space:pre-wrap;overflow-wrap:anywhere}
+pre.console[data-copy]::before{content:"";float:right;width:66px;height:1.6em}
 pre.console .c{font-weight:500}
 pre.console .o{color:var(--grey)}
 pre.text,pre.yaml,pre.toml,pre.json,pre.ini{color:var(--ink)}
@@ -156,6 +159,7 @@ dl.idx dd{color:var(--grey)}
   pre.syn{white-space:pre-wrap}
 }
 @media (max-width:480px){
+  :not(pre)>code{white-space:normal;overflow-wrap:anywhere}
   pre.code,pre.syn{font-size:12.5px}
   .top{gap:12px}
 }
