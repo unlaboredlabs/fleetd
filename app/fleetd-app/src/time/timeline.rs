@@ -691,13 +691,13 @@ pub fn render(v: &mut TimeView, t: &Theme, _window: &mut Window, cx: &mut Contex
     let path_row = path_row(v, t, &paint, cx);
     let banner = v.highlight.clone().map(|h| highlight_banner(t, &h, cx));
     // What the hub knows is missing, said above the bars it affects; the rows mark where.
-    let coverage = v.coverage.clone().filter(|c| !c.complete || c.capped == Some(true)).map(|c| {
+    let coverage = v.coverage.clone().filter(|c| !c.complete || c.capped == Some(true) || c.detail_since.is_some()).map(|c| {
         let mut reasons: Vec<String> = c.gaps.iter().map(super::breakdown::gap_text).collect();
         if c.capped == Some(true) {
-            reasons.push("the order has more spans than one read returns, so only the newest are drawn".into());
+            reasons.push("capped: the order has more spans than the hub reads at once (200k), so only the newest are drawn".into());
         }
         if let Some(since) = &c.detail_since {
-            reasons.push(format!("spans before {} were past retention and are gone", since.as_str().get(..16).unwrap_or("").replace('T', " ")));
+            reasons.push(format!("detail since {}; totals before that come from daily roll-ups", since.as_str().get(..10).unwrap_or("")));
         }
         let text = if reasons.is_empty() { "the hub reports missing data for this order".to_string() } else { reasons.join("; ") };
         div()
@@ -710,14 +710,9 @@ pub fn render(v: &mut TimeView, t: &Theme, _window: &mut Window, cx: &mut Contex
             .border_color(t.hairline)
             .text_size(px(tsize::XS))
             .child(ui::dot(t.warning))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .whitespace_normal()
-                    .text_color(t.text)
-                    .child(format!("Timeline incomplete: {text}. Marked under the rows; those stretches have no bars, not idle time.")),
-            )
+            .child(div().flex_1().min_w_0().whitespace_normal().text_color(t.text).child(format!(
+                "Timeline not complete: {text}. Missing stretches are marked under their rows; they have no bars and are not idle time."
+            )))
     });
     let loading = (!v.spans_done)
         .then(|| div().px_4().py_1().text_size(px(tsize::XS)).text_color(t.quiet).child(format!("Loading spans… {} so far", m.spans.len())));

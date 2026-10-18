@@ -370,6 +370,15 @@ fn notes(t: &Theme, b: &TimeBreakdownOutput) -> Div {
     for g in b.coverage.gaps.iter() {
         lines.push(format!("Missing: {}.", gap_text(g)));
     }
+    if let Some(since) = &b.coverage.detail_since {
+        lines.push(format!(
+            "Detail since {}: commands, CI checks and findings start there (retention); totals before that come from daily roll-ups.",
+            since.as_str().get(..10).unwrap_or("")
+        ));
+    }
+    if b.coverage.capped == Some(true) {
+        lines.push("Capped at 200k spans: the hub read the newest ones.".into());
+    }
     lines.extend(
         [
             "≈ First token includes claude's own work before the request, the network, API queueing and prefill; they can't be told apart. Thinking and output are split as streamed; each message's total is exact.",

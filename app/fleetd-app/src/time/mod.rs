@@ -481,8 +481,18 @@ impl TimeView {
             .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().font_weight(STRONG).child(title))
             .child(div().flex_1())
             .child(div().flex_none().text_size(px(size::XS)).text_color(t.quiet).whitespace_nowrap().child(figures.join(" · ")))
-            .when_some(self.coverage.as_ref().filter(|c| !c.complete), |d, c| {
-                let n = c.gaps.len().max(1);
+            .when_some(self.coverage.as_ref().filter(|c| !c.complete || c.capped == Some(true) || c.detail_since.is_some()), |d, c| {
+                let mut said = Vec::new();
+                if !c.complete {
+                    let n = c.gaps.len().max(1);
+                    said.push(format!("{n} gap{} in the data", if n == 1 { "" } else { "s" }));
+                }
+                if c.capped == Some(true) {
+                    said.push("capped at 200k spans".into());
+                }
+                if let Some(since) = &c.detail_since {
+                    said.push(format!("detail since {}", since.as_str().get(..10).unwrap_or("")));
+                }
                 d.child(
                     div()
                         .flex_none()
@@ -492,7 +502,7 @@ impl TimeView {
                         .text_size(px(size::XS))
                         .text_color(t.warning)
                         .child(ui::dot(t.warning))
-                        .child(format!("{n} gap{} in the data", if n == 1 { "" } else { "s" })),
+                        .child(said.join(" · ")),
                 )
             })
             .child(
