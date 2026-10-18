@@ -156,12 +156,12 @@ pub fn hub_start(argv: &[String]) -> ExitCode {
     }
 }
 
-/// Runs the hub until SIGTERM/SIGINT. Refuses a home inside ~/.t3.
+/// Runs the hub until SIGTERM/SIGINT.
 pub async fn run(options: HubOptions) -> anyhow::Result<()> {
     let user_home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();
-    let home = resolve_hub_home(options.home.as_deref(), &user_home)?;
+    let home = resolve_hub_home(options.home.as_deref(), &user_home);
     let config = HubConfig {
         home,
         listen: options.listen.clone(),

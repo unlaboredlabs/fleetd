@@ -642,10 +642,6 @@ impl NodeLinkServer {
                         self.check_runner(&machine_id);
                     }
                 }
-                // From nodes older than the native runner, which replaced both.
-                NodeToHub::T3Session(_) | NodeToHub::T3State(_) => {
-                    tracing::debug!(machine_id = %machine_id, "node link: pre-runner session frame ignored");
-                }
                 NodeToHub::LeadCall(call) => {
                     // Off the frame loop: a slow call must not hold up heartbeats or other calls.
                     let this = self.clone();

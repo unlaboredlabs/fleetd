@@ -295,7 +295,7 @@ impl NodeCommands {
         }
     }
 
-    /// The doctor's node actions. Each action's wait: the node caps its restart command at 3 min and its re-mint at 30 s.
+    /// The doctor's node actions.
     pub async fn run_action(
         &self,
         machine_id: &MachineId,
@@ -303,8 +303,6 @@ impl NodeCommands {
     ) -> Result<NodeActionResult, NodeCommandError> {
         let wait = match action {
             NodeActionKind::Probe => 30,
-            NodeActionKind::RemintSession => 45,
-            NodeActionKind::RestartT3 => 210,
         };
         let request = json!({ "t": "node_action", "action": action });
         match self

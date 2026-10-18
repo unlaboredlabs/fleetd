@@ -262,7 +262,6 @@ pub struct HubEvent {
 #[serde(rename_all = "snake_case")]
 pub enum ThreadEventReason {
     Stalled,
-    T3,
     UsageLimit,
     Interrupted,
 }

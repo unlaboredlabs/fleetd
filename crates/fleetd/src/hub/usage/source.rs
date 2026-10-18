@@ -16,10 +16,6 @@ pub enum LoginKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UsageReading {
     pub login: LoginKind,
-    /// Where a probe trace file could be read; the native runner keeps none, so always None.
-    pub logs_dir: Option<String>,
-    /// Whether that directory is on the hub's machine; always false with the native runner.
-    pub local: bool,
 }
 
 /// Fails (with the executor's message) when the machine is offline.

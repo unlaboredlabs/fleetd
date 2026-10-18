@@ -1,8 +1,9 @@
 //! Small helpers shared by the node's modules: the scrubbed child environment, errno names as Node prints them,
 //! UTF-16 length rules the contracts check, and ISO timestamps.
 use std::path::PathBuf;
+use std::time::Duration;
 
-/// Children get only these variables, so the `CLAUDE*` ones of whatever started the node never leak into T3.
+/// Children get only these variables, so the `CLAUDE*` ones of whatever started the node never leak into the commands it runs.
 pub fn scrubbed_env() -> Vec<(String, String)> {
     ["HOME", "PATH", "USER", "LANG"]
         .into_iter()
@@ -100,5 +101,62 @@ pub struct AbortOnDrop(pub tokio::task::JoinHandle<()>);
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+/// What Node's `execFile` callback sees: stdout, stderr, the exit code when there is one, and an error message for
+/// anything but a clean exit 0.
+pub struct Exec {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+}
+
+/// `execFile(argv[0], argv[1..], { env: scrubbedEnv(), timeout })`: no shell, killed with SIGTERM at the timeout.
+pub async fn exec(argv: &[String], timeout: Duration) -> Exec {
+    let (command, args) = argv
+        .split_first()
+        .map_or(("", &[][..]), |(c, a)| (c.as_str(), a));
+    let mut cmd = tokio::process::Command::new(command);
+    cmd.args(args)
+        .env_clear()
+        .envs(scrubbed_env())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    let child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let code = errno_name(&error).unwrap_or_else(|| error.to_string());
+            return Exec {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: None,
+                error: Some(format!("spawn {command} {code}")),
+            };
+        }
+    };
+    let output = tokio::time::timeout(timeout, child.wait_with_output()).await;
+    // At the timeout the dropped child is killed (kill_on_drop).
+    let Ok(Ok(output)) = output else {
+        return Exec {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            error: Some(format!("Command failed: {}", argv.join(" "))),
+        };
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let exit_code = output.status.code();
+    let error =
+        (!output.status.success()).then(|| format!("Command failed: {}\n{stderr}", argv.join(" ")));
+    Exec {
+        stdout,
+        stderr,
+        exit_code,
+        error,
     }
 }

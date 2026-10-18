@@ -1,5 +1,4 @@
-//! The per-machine node: hub link, T3 supervision, the session service that runs claude itself, the lead socket,
-//! cmd checks, sealed secrets, gated runs and node actions.
+//! The per-machine node: hub link, the session service that runs claude itself, the lead socket, cmd checks, sealed secrets, gated runs and node actions.
 //!
 //! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run` / `node serve`. Both run until
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
@@ -13,7 +12,6 @@ pub mod runner;
 pub mod secrets;
 pub mod sessions;
 pub mod store;
-pub mod supervisor;
 pub mod util;
 pub mod wire;
 pub mod worktree;
@@ -27,13 +25,11 @@ use zeroize::Zeroizing;
 use config::{NodeConfig, default_node_home, read_config, write_config};
 
 /// `fleetd node …` usage.
-pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> [--t3-home <dir>]
-            [--t3-url <url>] [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>]
-            [--home <dir>] [--enroll-only]
+pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> [--tags a,b]
+            [--name <name>] [--home <dir>] [--enroll-only]
              enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
-             --t3-restart-cmd (e.g. \"t3 service restart\") runs when T3 fails 3 health checks, else T3 is
-             only reported down; --token-file - reads the token from stdin; --enroll-only exits once
-             the hub has accepted this node
+             --token-file - reads the token from stdin; --enroll-only exits once the hub has accepted this
+             node
   node run [--home <dir>]
              keep the link up for a machine that has joined
 ";
@@ -44,13 +40,6 @@ pub struct JoinArgs {
     pub hub: String,
     pub token: String,
     pub machine: String,
-    /// Empty without T3: sessions run on the node's own runner.
-    pub t3_home: String,
-    pub t3_url: String,
-    /// `--t3-cmd`: the command that runs T3's CLI, split on whitespace. Default `t3`.
-    pub t3_cmd: Option<String>,
-    /// `--t3-restart-cmd`, split on whitespace. No default: without it the node never restarts T3.
-    pub t3_restart_cmd: Option<String>,
     /// `--tags a,b`, already split; see [`parse_tags`].
     pub tags: Option<Vec<String>>,
     pub name: Option<String>,
@@ -98,10 +87,6 @@ pub fn parse_tags(tags: &str) -> Vec<String> {
         .collect()
 }
 
-fn split_argv(command: &str) -> Vec<String> {
-    command.split_whitespace().map(str::to_owned).collect()
-}
-
 /// Creates the node key and config, enrolls with the one-time token, then keeps the link up.
 pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
     if !config::is_machine_id(&args.machine) {
@@ -116,10 +101,6 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         machine_id: args.machine.clone(),
         name: args.name.unwrap_or(args.machine),
         tags: args.tags.unwrap_or_default(),
-        t3_home: args.t3_home,
-        t3_url: args.t3_url,
-        t3_cmd: split_argv(args.t3_cmd.as_deref().unwrap_or("t3")),
-        t3_restart_cmd: args.t3_restart_cmd.as_deref().map(split_argv),
         cmd_roots: None,
         enrolled: false,
     };
@@ -185,7 +166,7 @@ async fn run_node(
     let box_key = identity::load_or_create_box_key(home).map_err(|_| {
         NodeError::Setup(format!("cannot read or create the node box key in {shown}"))
     })?;
-    tracing::info!(machine_id = %config.machine_id, hub = %config.hub, t3_url = %config.t3_url, "fleetd node starting");
+    tracing::info!(machine_id = %config.machine_id, hub = %config.hub, "fleetd node starting");
     let store = store::NodeStore::open(&home.join("sessions.sqlite"))
         .map_err(|e| NodeError::Setup(format!("cannot open the session store in {shown}: {e}")))?;
     let session_config = sessions::SessionConfig::for_node(home);
@@ -220,23 +201,10 @@ async fn run_node(
             name: config.name.clone(),
             tags: config.tags.clone(),
             node_version: env!("CARGO_PKG_VERSION").to_owned(),
-            t3_url: config.t3_url.clone(),
         },
         identity,
-        t3_info: link::t3_info_probe(
-            config.t3_url.clone(),
-            link::t3_source_commit(&config.t3_cmd),
-        ),
-        t3_restart: config
-            .t3_restart_cmd
-            .clone()
-            .map(supervisor::restart_command),
         enroll_token,
         on_enrolled,
-        sessions: Arc::new(sessions::CliSessions {
-            t3_cmd: config.t3_cmd.clone(),
-            t3_home: config.t3_home.clone(),
-        }),
         node_sessions: node_sessions.clone(),
         lead_calls: relay,
         cmd_roots: config

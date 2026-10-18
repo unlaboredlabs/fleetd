@@ -17,12 +17,6 @@ pub enum MachineStatus {
     Degraded,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct MachineT3 {
-    pub version: String,
-    pub protocol: AnyInt,
-}
-
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -32,10 +26,6 @@ pub struct Machine {
     pub tags: Vec<String>,
     pub status: MachineStatus,
     pub last_seen_at: Timestamp,
-    /// Null until the node has reported a reachable T3.
-    #[serialize_always]
-    #[schemars(with = "crate::prim::NullOr<MachineT3>")]
-    pub t3: Option<MachineT3>,
     pub node_version: String,
     /// Plain language, set while status is "degraded".
     pub degraded_reason: Option<String>,

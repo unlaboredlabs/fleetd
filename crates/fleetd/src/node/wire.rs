@@ -5,8 +5,8 @@ pub use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame, LeadSocke
 pub use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 pub use fleetd_contracts::node_link::{
     CmdCheck, CmdResult, GatedResult, GatedRun, GitEmailFrom, Heartbeat, HubToNode, NodeAction,
-    NodeActionKind, NodeActionResult, NodeHello, NodeProbe, NodeT3Endpoint, NodeT3Session,
-    NodeT3State, NodeToHub, SecretDeliver, SecretResult, T3RunState, close,
+    NodeActionKind, NodeActionResult, NodeHello, NodeProbe, NodeToHub, SecretDeliver, SecretResult,
+    close,
 };
 pub use fleetd_contracts::prim::{AnyInt, Text};
 pub use fleetd_contracts::secrets::{

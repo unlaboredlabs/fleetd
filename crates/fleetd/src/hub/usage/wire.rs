@@ -136,8 +136,6 @@ impl UsageSource for OpsPorts {
                 .map_err(|e| e.to_string())?;
             Ok(UsageReading {
                 login: super::source::login_kind_of(info.login_kind.as_deref()),
-                logs_dir: None,
-                local: false,
             })
         })
     }

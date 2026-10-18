@@ -34,10 +34,12 @@ pub struct HubAccess {
     pub store: HubStore,
 }
 
-/// `--home` resolved (default `~/.fleetd/hub`), refusing anything inside `~/.t3`.
+/// `--home` resolved (default `~/.fleetd/hub`).
 pub fn resolve_home(home: Option<&str>) -> Result<PathBuf, String> {
-    super::pending::store::resolve_hub_home(home, &super::home_dir())
-        .map_err(|error| error.to_string())
+    Ok(super::pending::store::resolve_hub_home(
+        home,
+        &super::home_dir(),
+    ))
 }
 
 pub fn open_hub(home: &Path) -> Result<HubAccess, String> {
@@ -265,7 +267,7 @@ pub fn hub_token(argv: &[String]) -> CliResult {
                 code: 0,
                 stdout: format!("{}\n", token.token),
                 stderr: format!(
-                    "one-time token for {machine}, valid until {}. On {machine}, run:\n  fleetd node join --hub <hub url> --token <token> --machine {machine} --t3-home <t3 home> --t3-url <t3 url>\n",
+                    "one-time token for {machine}, valid until {}. On {machine}, run:\n  fleetd node join --hub <hub url> --token <token> --machine {machine}\n",
                     token.expires_at
                 ),
             },

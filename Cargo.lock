@@ -6425,20 +6425,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "t3-wire"
-version = "0.0.0"
-dependencies = [
- "futures-util",
- "reqwest",
- "schemars",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite 0.28.0",
-]
-
-[[package]]
 name = "taffy"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8210,16 +8196,6 @@ name = "xmlwriter"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
-
-[[package]]
-name = "xtask"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "t3-wire",
-]
 
 [[package]]
 name = "y4m"

@@ -479,7 +479,7 @@ fn current_uid() -> u32 {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        std::fs::metadata(crate::hub::usage::probes::user_home())
+        std::fs::metadata(crate::cli::home_dir())
             .map(|m| m.uid())
             .unwrap_or(0)
     }

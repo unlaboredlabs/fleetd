@@ -62,7 +62,7 @@ impl std::fmt::Display for Listen {
 /// The hub's settings from `fleetd hub start`.
 #[derive(Clone, Debug)]
 pub struct HubConfig {
-    /// Resolved by `store::resolve_hub_home` (never inside ~/.t3).
+    /// Resolved by `store::resolve_hub_home`.
     pub home: PathBuf,
     pub listen: Listen,
     /// The hub's public URL when one is configured (`fleetd init --url`); absent means `http://<listen>`.

@@ -9,7 +9,6 @@
 mod health;
 mod proc;
 pub mod state;
-pub mod t3;
 
 #[cfg(test)]
 mod fake;
@@ -32,8 +31,6 @@ use fleetd_contracts::sessions::{
 };
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
-
-pub use t3::{CliSessions, SessionKeeper, T3Sessions};
 
 use super::runner::claude::ALWAYS_DISALLOWED;
 use super::runner::{

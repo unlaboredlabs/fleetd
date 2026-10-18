@@ -43,15 +43,6 @@ pub struct HubChallenge {
     pub nonce: NonEmpty,
 }
 
-/// Where and which T3 the node supervises.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct NodeT3Endpoint {
-    /// Loopback or tailnet URL the hub can reach.
-    pub url: String,
-    pub version: String,
-    pub protocol: AnyInt,
-}
-
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -61,8 +52,6 @@ pub struct NodeHello {
     pub tags: Vec<String>,
     pub node_version: String,
     pub protocol: ProtocolVersion,
-    /// Absent when T3 is down at node start; the hub shows the machine as degraded.
-    pub t3: Option<NodeT3Endpoint>,
     /// ed25519 public key, base64.
     pub pub_key: NonEmpty,
     /// Signature over the hub's challenge nonce (its UTF-8 bytes), base64.
@@ -80,33 +69,6 @@ pub struct HubWelcome {
     pub hub_id: String,
     pub protocol: ProtocolVersion,
     pub nonce: Option<String>,
-}
-
-/// Sent on connect and on each re-mint.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct NodeT3Session {
-    pub bearer: NonEmpty,
-    pub expires_at: Timestamp,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum T3RunState {
-    Up,
-    Down,
-    Restarting,
-}
-
-/// The node's view of its local T3, sent when it changes.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct NodeT3State {
-    pub state: T3RunState,
-    pub reason: Option<String>,
-    /// Sent with "up", so the hub can attach a machine whose T3 was down when the node said hello.
-    pub t3: Option<NodeT3Endpoint>,
-    pub at: Timestamp,
 }
 
 /// Both directions every 15 s; a link silent for 45 s is offline.
@@ -208,14 +170,11 @@ pub struct GatedResult {
     pub error: Option<FrameError>,
 }
 
-/// `remint_session` mints a fresh T3 session for the hub now; `restart_t3` runs the node's own T3 restart command
-/// (none configured: refused); `probe` reads the commit email the node's services use and the free space on the
-/// filesystem holding its home directory.
+/// `probe` reads the commit email the node's service uses and the free space on the filesystem holding its home
+/// directory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeActionKind {
-    RemintSession,
-    RestartT3,
     Probe,
 }
 
@@ -237,7 +196,7 @@ pub enum GitEmailFrom {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeProbe {
-    /// The node's GIT_AUTHOR_EMAIL (setup puts the identity in the T3 and node units), else `git config --global
+    /// The node's GIT_AUTHOR_EMAIL (setup puts the identity in the node unit), else `git config --global
     /// user.email`; absent when neither is set.
     pub git_email: Option<Text<0, 320>>,
     pub git_email_from: Option<GitEmailFrom>,
@@ -262,10 +221,6 @@ pub struct NodeActionResult {
 #[allow(clippy::large_enum_variant)]
 pub enum NodeToHub {
     Hello(NodeHello),
-    #[serde(rename = "t3session")]
-    T3Session(NodeT3Session),
-    #[serde(rename = "t3state")]
-    T3State(NodeT3State),
     #[serde(rename = "hb")]
     Heartbeat(Heartbeat),
     LeadCall(LeadCallFrame),
