@@ -10,7 +10,7 @@ use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
 use fleetd_contracts::tasks::POLICY_FILE_PATH;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// A prompt still open this long after its ask was filed is raised again as attention, then every REMIND_EVERY_MS.
@@ -195,6 +195,85 @@ impl OpenPrompt {
     }
 }
 
+/// A prompt the hub saw open and nobody has answered yet. It is kept apart from its ask, which a lead may withdraw or
+/// the ledger may fail to file: as long as the prompt waits, the hub answers or reminds.
+#[derive(Clone, Debug)]
+struct Tracked {
+    ask_id: Option<String>,
+    project: ProjectRef,
+    thread_id: String,
+    request_id: String,
+    tool_name: String,
+    summary: String,
+    since_ms: i64,
+    last_reminded_ms: Option<i64>,
+    /// Answered before a hub restart with no record that the answer reached the node.
+    redeliver: bool,
+}
+
+type PromptKey = (String, String, String);
+
+#[derive(Default)]
+pub(super) struct Prompts(Mutex<HashMap<PromptKey, Tracked>>);
+
+impl Prompts {
+    fn track(&self, t: Tracked) {
+        let key = (
+            t.project.machine_id.clone(),
+            t.thread_id.clone(),
+            t.request_id.clone(),
+        );
+        self.0.lock().unwrap().entry(key).or_insert(t);
+    }
+    fn forget(&self, machine_id: &str, thread_id: &str, request_id: &str) {
+        let key = (
+            machine_id.to_string(),
+            thread_id.to_string(),
+            request_id.to_string(),
+        );
+        self.0.lock().unwrap().remove(&key);
+    }
+    /// Forgets the thread's prompts other than `keep`.
+    fn forget_thread(&self, machine_id: &str, thread_id: &str, keep: Option<&str>) {
+        self.0.lock().unwrap().retain(|(m, t, r), _| {
+            !(m == machine_id && t == thread_id && keep != Some(r.as_str()))
+        });
+    }
+    fn reminded(&self, t: &Tracked, at: i64) {
+        let key = (
+            t.project.machine_id.clone(),
+            t.thread_id.clone(),
+            t.request_id.clone(),
+        );
+        if let Some(entry) = self.0.lock().unwrap().get_mut(&key) {
+            entry.last_reminded_ms = Some(at);
+        }
+    }
+    fn all(&self) -> Vec<Tracked> {
+        self.0.lock().unwrap().values().cloned().collect()
+    }
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.0.lock().unwrap().len()
+    }
+}
+
+impl Tracked {
+    fn of(o: OpenPrompt, redeliver: bool) -> Self {
+        Self {
+            ask_id: Some(o.ask_id),
+            project: o.project,
+            thread_id: o.thread_id,
+            request_id: o.request_id,
+            tool_name: o.tool_name,
+            summary: o.summary,
+            since_ms: o.filed_ms,
+            last_reminded_ms: None,
+            redeliver,
+        }
+    }
+}
+
 /// `thread_answer`'s call, decoded.
 #[derive(Clone, Debug)]
 pub struct ThreadAnswer {
@@ -284,6 +363,11 @@ impl Approvals {
         } else {
             "expired: the run ended"
         };
+        self.prompts.forget_thread(
+            machine_id,
+            thread_id,
+            current.as_ref().map(|c| c.request_id.as_str()),
+        );
         let mut filed = false;
         for open in self.open_prompts().await {
             if !open.is_on(machine_id, thread_id) {
@@ -294,6 +378,7 @@ impl Approvals {
                 .is_some_and(|c| c.request_id.as_str() == open.request_id)
             {
                 filed = true;
+                self.prompts.track(Tracked::of(open, false));
             } else if let Err(e) = self.deps.asks.withdraw(&open.ask_id, why).await {
                 tracing::warn!(
                     ask = open.ask_id,
@@ -372,7 +457,23 @@ impl Approvals {
             "blocks": clip(&format!("the run's {tool} call"), 200),
             "proceededOnRec": false,
         });
-        if let Err(e) = self.deps.asks.create(input, FILED_BY).await {
+        let created = self.deps.asks.create(input, FILED_BY).await;
+        self.prompts.track(Tracked {
+            ask_id: created
+                .as_ref()
+                .ok()
+                .and_then(|a| s(a, "askId"))
+                .map(str::to_string),
+            project: project.clone(),
+            thread_id: thread_id.to_string(),
+            request_id: prompt.request_id.to_string(),
+            tool_name: tool.to_string(),
+            summary: summary.to_string(),
+            since_ms: system_ms(self.deps.clock.now()),
+            last_reminded_ms: None,
+            redeliver: false,
+        });
+        if let Err(e) = created {
             // The run still waits: say so loudly rather than leave it silent.
             tracing::error!(
                 error = e.message,
@@ -420,40 +521,141 @@ impl Approvals {
             .await;
     }
 
-    /// Raises every open prompt again once it has waited REMIND_AFTER_MS, then every REMIND_EVERY_MS.
-    pub(super) async fn remind(self: Arc<Self>) {
-        let mut last: HashMap<String, i64> = HashMap::new();
-        loop {
-            self.deps.clock.sleep(SWEEP_EVERY).await;
-            let now = system_ms(self.deps.clock.now());
-            let open = self.open_prompts().await;
-            last.retain(|id, _| open.iter().any(|o| &o.ask_id == id));
-            for o in &open {
-                if !reminder_due(o.filed_ms, now, last.get(&o.ask_id).copied()) {
-                    continue;
-                }
-                last.insert(o.ask_id.clone(), now);
-                let minutes = (now - o.filed_ms) / 60_000;
-                let summary = format!(
-                    "{}: {}/{} has waited {minutes} min for permission to run {} {}; reply \"go\" or \"no\"",
-                    o.ask_id, o.project.machine_id, o.thread_id, o.tool_name, o.summary
-                );
-                let prompt = PendingPermission {
-                    request_id: fleetd_contracts::prim::NonEmpty::unchecked(o.request_id.clone()),
-                    tool_name: fleetd_contracts::prim::NonEmpty::unchecked(o.tool_name.clone()),
-                    summary: fleetd_contracts::prim::Text::unchecked(o.summary.clone()),
-                };
-                self.attention(
-                    &o.project,
-                    &o.thread_id,
-                    &prompt,
-                    Some(&o.ask_id),
-                    summary,
-                    (now - o.filed_ms) / 1000,
-                )
-                .await;
+    /// Puts back what a hub restart dropped: every open tool_permission ask, and every answered one with no record
+    /// that its answer reached the node, or withdrawn one that no one answered for.
+    pub(super) async fn seed_prompts(&self) {
+        for ask in self.deps.asks.list_open().await {
+            if let Some(o) = OpenPrompt::of(&ask) {
+                self.prompts.track(Tracked::of(o, false));
             }
         }
+        for ask in self.deps.asks.list_closed_permissions().await {
+            let hub_closed = ask.pointer("/answer/by").and_then(Value::as_str) == Some("hub");
+            if ask.get("evidence").is_some() || hub_closed {
+                continue;
+            }
+            if let Some(o) = OpenPrompt::of(&ask) {
+                self.prompts.track(Tracked::of(o, true));
+            }
+        }
+    }
+
+    /// Every minute: answers prompts whose ask was withdrawn or answered without delivery, and raises the rest
+    /// again once they have waited REMIND_AFTER_MS, then every REMIND_EVERY_MS.
+    pub(super) async fn watch_prompts(self: Arc<Self>) {
+        self.seed_prompts().await;
+        loop {
+            self.deps.clock.sleep(SWEEP_EVERY).await;
+            self.sweep_prompts(system_ms(self.deps.clock.now())).await;
+        }
+    }
+
+    pub(super) async fn sweep_prompts(&self, now: i64) {
+        for t in self.prompts.all() {
+            let ask = match &t.ask_id {
+                Some(id) => self.deps.asks.get(id).await,
+                None => None,
+            };
+            let state = ask.as_ref().and_then(|a| s(a, "state")).unwrap_or("");
+            if let Some(ask) = &ask {
+                // Until the deny reaches the node, the prompt is still reminded about below.
+                if state == "withdrawn" && self.deny_withdrawn(&t, ask).await {
+                    continue;
+                }
+                if state == "answered" && t.redeliver {
+                    self.answer_from_ask(ask).await;
+                    continue;
+                }
+                if state == "answered" {
+                    // follow_answers is delivering it.
+                    continue;
+                }
+            }
+            if !reminder_due(t.since_ms, now, t.last_reminded_ms) {
+                continue;
+            }
+            self.prompts.reminded(&t, now);
+            let minutes = (now - t.since_ms) / 60_000;
+            let ask_part = t
+                .ask_id
+                .as_deref()
+                .map_or_else(|| "no ask".to_string(), str::to_string);
+            let how = if state == "open" {
+                "reply \"go\" or \"no\""
+            } else {
+                "answer it with thread_answer"
+            };
+            let summary = format!(
+                "{ask_part}: {}/{} has waited {minutes} min for permission to run {} {}; {how}",
+                t.project.machine_id, t.thread_id, t.tool_name, t.summary
+            );
+            let prompt = PendingPermission {
+                request_id: fleetd_contracts::prim::NonEmpty::unchecked(t.request_id.clone()),
+                tool_name: fleetd_contracts::prim::NonEmpty::unchecked(t.tool_name.clone()),
+                summary: fleetd_contracts::prim::Text::unchecked(t.summary.clone()),
+            };
+            self.attention(
+                &t.project,
+                &t.thread_id,
+                &prompt,
+                t.ask_id.as_deref(),
+                summary,
+                (now - t.since_ms) / 1000,
+            )
+            .await;
+        }
+    }
+
+    /// A lead withdrew the ask of a prompt that still waits: nobody approved it, so it is denied, and the ask says so.
+    /// True once the prompt is settled: denied, or gone from the node.
+    async fn deny_withdrawn(&self, t: &Tracked, ask: &Value) -> bool {
+        let ask_id = t.ask_id.as_deref().unwrap_or("");
+        let by = ask
+            .pointer("/answer/by")
+            .and_then(Value::as_str)
+            .unwrap_or("its lead");
+        let message = format!(
+            "Not approved: {ask_id} was withdrawn by {by} before anyone answered it. Don't retry this call; ask for another way."
+        );
+        let machine = &t.project.machine_id;
+        let sent = self
+            .deps
+            .nodes
+            .answer_permission(
+                machine,
+                &t.thread_id,
+                &t.request_id,
+                PermissionDecision::Deny {
+                    message: fleetd_contracts::prim::Text::unchecked(message),
+                },
+            )
+            .await;
+        let evidence = match sent {
+            Ok(()) => format!("denied on {machine}: withdrawn before anyone approved it"),
+            Err(e) if e.reason == "offline" => return false,
+            Err(e) => {
+                let still_open = self
+                    .deps
+                    .nodes
+                    .pending_permission(machine, &t.thread_id)
+                    .await
+                    .is_some_and(|p| p.request_id.as_str() == t.request_id);
+                if still_open {
+                    tracing::warn!(
+                        ask = ask_id,
+                        error = e.message,
+                        "approvals: withdrawn prompt not denied yet"
+                    );
+                    return false;
+                }
+                format!("expired: the prompt was no longer open on {machine}")
+            }
+        };
+        self.prompts.forget(machine, &t.thread_id, &t.request_id);
+        let mut patch = Map::new();
+        patch.insert("evidence".into(), json!(evidence));
+        let _ = self.deps.asks.update(ask_id, patch).await;
+        true
     }
 
     /// A person answered a tool_permission ask: "go" allows the tool, anything else denies it with their words.
@@ -510,11 +712,16 @@ impl Approvals {
                         e.message
                     );
                     let _ = self.deps.asks.reopen(&open.ask_id, &why).await;
+                    self.prompts
+                        .forget(machine, &open.thread_id, &open.request_id);
+                    self.prompts.track(Tracked::of(open.clone(), false));
                     return;
                 }
                 format!("expired: the prompt was no longer open on {machine}")
             }
         };
+        self.prompts
+            .forget(machine, &open.thread_id, &open.request_id);
         let mut patch = Map::new();
         patch.insert("evidence".into(), json!(evidence));
         let done = self
@@ -597,6 +804,7 @@ impl Approvals {
             .answer_permission(m, t, &request_id, decision)
             .await
             .map_err(|e| refused_by_node(e, m))?;
+        self.prompts.forget(m, t, &request_id);
         let (value, verb) = if input.allow {
             ("go", "allowed")
         } else {

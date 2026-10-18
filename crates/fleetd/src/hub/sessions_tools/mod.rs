@@ -7,6 +7,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId};
 use fleetd_contracts::mcp::{
     ErrorCode, PermissionAnswer, ProjectAddInput, ProjectRemoveInput, ThreadAnswerInput,
 };
+use fleetd_contracts::model::{ThreadStatus, ThreadSummary};
 use serde_json::{Value, json};
 
 use crate::hub::api::{
@@ -99,29 +100,23 @@ async fn project_remove(
     let m = &input.machine_id;
     require(&caller, Role::Operate, Some(m))?;
     connected(&hub, m)?;
-    let running = hub
-        .executors
-        .running()
-        .into_iter()
-        .filter(|r| &r.thread_ref.machine_id == m)
-        .filter(|r| {
-            hub.store
-                .thread_get(&r.thread_ref)
-                .ok()
-                .flatten()
-                .is_some_and(|t| t.thread.project_id == input.project_id)
-        })
-        .count();
-    if running > 0 {
+    let r = fleetd_contracts::ids::ProjectRef {
+        machine_id: m.clone(),
+        project_id: input.project_id.clone(),
+    };
+    let active = active_threads(&hub.store.threads_by_project(&r, i64::MAX)?);
+    if !active.is_empty() {
+        let n = active.len();
         return Err(ToolError::new(
             ErrorCode::Invalid,
             format!(
-                "Project {} on {m} has {running} running thread{}.",
+                "Project {} on {m} has {n} active thread{} (running or waiting on a permission prompt): {}.",
                 input.project_id,
-                if running == 1 { "" } else { "s" }
+                if n == 1 { "" } else { "s" },
+                active.join(", ")
             ),
         )
-        .with_fix("Interrupt them with thread_interrupt (or let them finish), then remove it."));
+        .with_fix("Answer or interrupt them (thread_answer, thread_interrupt) or let them finish, then remove it."));
     }
     hub.executors
         .project_remove(m, &input.project_id)
@@ -133,9 +128,19 @@ async fn project_remove(
     }))
 }
 
+/// Threads whose run is still active: running (queued and starting included) or waiting on a prompt. Stale rows
+/// never run again.
+fn active_threads(threads: &[ThreadSummary]) -> Vec<String> {
+    threads
+        .iter()
+        .filter(|t| !t.stale && matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting))
+        .map(|t| t.thread_id.to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::normalized;
+    use super::{active_threads, normalized};
     use fleetd_contracts::mcp::{ProjectAddInput, ThreadAnswerInput};
     use serde_json::json;
 
@@ -183,5 +188,26 @@ mod tests {
         assert!(answer(json!({ "decision": "maybe" })).is_err());
         assert!(answer(json!({ "decision": "deny", "requestId": "" })).is_err());
         assert!(answer(json!({})).is_err(), "a decision is required");
+    }
+
+    #[test]
+    fn a_project_with_a_running_or_waiting_thread_is_not_removed() {
+        let thread = |id: &str, status: &str, stale: bool| {
+            serde_json::from_value::<fleetd_contracts::model::ThreadSummary>(json!({
+                "machineId": "forge", "threadId": id, "projectId": "p1", "title": "t", "status": status,
+                "headline": "", "latestMessageTail": "", "lastProgressAt": "2026-10-18T10:00:00.000Z",
+                "stale": stale, "asOf": "2026-10-18T10:00:00.000Z",
+            }))
+            .unwrap()
+        };
+        let threads = [
+            thread("a", "running", false),
+            thread("b", "waiting", false),
+            thread("c", "completed", false),
+            thread("d", "idle", false),
+            thread("e", "running", true),
+        ];
+        assert_eq!(active_threads(&threads), ["a", "b"]);
+        assert!(active_threads(&threads[2..]).is_empty());
     }
 }

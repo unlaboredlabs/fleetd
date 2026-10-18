@@ -193,6 +193,17 @@ impl ApprovalAsks for Fake {
             .collect();
         Box::pin(async move { open })
     }
+    fn list_closed_permissions(&self) -> BoxFut<'_, Vec<Value>> {
+        let closed = self
+            .asks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|a| a["state"] == "answered" || a["state"] == "withdrawn")
+            .cloned()
+            .collect();
+        Box::pin(async move { closed })
+    }
     fn withdraw(&self, id: &str, reason: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
         let mut asks = self.asks.lock().unwrap();
         let a = find(&mut asks, id);
@@ -618,5 +629,111 @@ async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
             .unwrap_err()
             .code,
         "not_found"
+    );
+}
+
+fn now_ms() -> i64 {
+    crate::hub::usage::time::system_ms(std::time::SystemTime::now())
+}
+
+#[tokio::test]
+async fn a_withdrawn_ask_denies_its_prompt_and_reminders_go_on_until_it_is_answered() {
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    a.on_thread_event(&event(
+        "thread.waiting",
+        Some(prompt("q1", "Bash", "rm -rf build")),
+    ))
+    .await;
+    // The lead runs `fleetd ask withdraw A1`: the ledger closes the ask and records no answer.
+    fake.asks.lock().unwrap()[0]["state"] = json!("withdrawn");
+    *fake.pending.lock().unwrap() = Some(pending("q1"));
+    *fake.answer_fails.lock().unwrap() = Some(NodeCommandError {
+        reason: "offline".into(),
+        message: "lab-a's node is not linked to the hub".into(),
+        fix: None,
+    });
+    let t0 = now_ms();
+    a.sweep_prompts(t0).await;
+    assert_eq!(
+        a.prompts.len(),
+        1,
+        "an undelivered deny keeps the prompt watched"
+    );
+    a.sweep_prompts(t0 + REMIND_AFTER_MS + 1000).await;
+    let reminders = fake.events.lock().unwrap().clone();
+    assert_eq!(reminders.len(), 1);
+    assert_eq!(
+        (
+            reminders[0].kind.as_str(),
+            reminders[0].attention.as_deref()
+        ),
+        ("thread.waiting", Some("loud"))
+    );
+
+    *fake.answer_fails.lock().unwrap() = None;
+    a.sweep_prompts(t0 + REMIND_AFTER_MS + 2000).await;
+    let (_, _, request, decision) = fake.answers.lock().unwrap()[0].clone();
+    assert_eq!(request, "q1");
+    let PermissionDecision::Deny { message } = decision else {
+        panic!("a withdrawn ask never allows")
+    };
+    assert!(
+        message
+            .as_str()
+            .starts_with("Not approved: A1 was withdrawn by its lead"),
+        "{}",
+        message.as_str()
+    );
+    assert_eq!(
+        fake.asks.lock().unwrap()[0]["evidence"],
+        "denied on lab-a: withdrawn before anyone approved it"
+    );
+    assert_eq!(a.prompts.len(), 0);
+    a.sweep_prompts(t0 + 10 * REMIND_EVERY_MS).await;
+    assert_eq!(
+        fake.events.lock().unwrap().len(),
+        1,
+        "nothing left to remind about"
+    );
+    assert_eq!(fake.answers.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn after_a_restart_an_answer_with_no_delivery_record_is_delivered() {
+    let fake = Arc::new(Fake::default());
+    let ask = |id: &str, request: &str, evidence: Option<&str>| {
+        let mut a = json!({
+            "askId": id, "kind": "approve", "state": "answered", "createdAt": "2026-10-18T10:00:00.000Z",
+            "projectRef": { "machineId": "lab-a", "projectId": "p1" },
+            "permission": { "threadId": "t1", "requestId": request, "toolName": "Bash", "summary": "ls" },
+            "answer": { "value": "go", "by": "human:desk" },
+        });
+        if let Some(e) = evidence {
+            a["evidence"] = json!(e);
+        }
+        a
+    };
+    fake.asks.lock().unwrap().extend([
+        ask("A1", "q1", None),
+        ask("A2", "q2", Some("allowed on lab-a, answered by human:desk")),
+    ]);
+    let a = approvals(&fake);
+    a.seed_prompts().await;
+    a.sweep_prompts(now_ms()).await;
+    let answers = fake.answers.lock().unwrap().clone();
+    assert_eq!(answers.len(), 1, "a delivered answer is never sent twice");
+    assert_eq!(
+        (answers[0].2.as_str(), &answers[0].3),
+        (
+            "q1",
+            &PermissionDecision::Allow {
+                updated_input: None
+            }
+        )
+    );
+    assert_eq!(
+        fake.asks.lock().unwrap()[0]["evidence"],
+        "allowed on lab-a, answered by human:desk"
     );
 }

@@ -121,11 +121,36 @@ impl ApprovalAsks for OpsPorts {
                     limit: Some(i64::MAX),
                     ..Default::default()
                 })
-                .map(|asks| asks.iter().map(ask_json).collect())
+                .map(|asks| {
+                    asks.iter()
+                        .filter(|a| a.permission.is_some())
+                        .map(ask_json)
+                        .collect()
+                })
                 .unwrap_or_else(|error| {
                     tracing::warn!(%error, "approvals: open asks not listed");
                     Vec::new()
                 })
+        })
+    }
+
+    fn list_closed_permissions(&self) -> BoxFut<'_, Vec<Value>> {
+        Box::pin(async move {
+            let mut out = Vec::new();
+            for state in [AskState::Answered, AskState::Withdrawn] {
+                let asks = self.hub().asks.list(&AskFilter {
+                    state: Some(state),
+                    limit: Some(i64::MAX),
+                    ..Default::default()
+                });
+                match asks {
+                    Ok(asks) => {
+                        out.extend(asks.iter().filter(|a| a.permission.is_some()).map(ask_json))
+                    }
+                    Err(error) => tracing::warn!(%error, "approvals: closed asks not listed"),
+                }
+            }
+            out
         })
     }
 

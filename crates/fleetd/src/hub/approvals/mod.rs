@@ -174,7 +174,10 @@ pub trait ApprovalAsks: Send + Sync {
         patch: Map<String, Value>,
     ) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
     fn reopen(&self, ask_id: &str, evidence: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
+    /// Open tool_permission asks.
     fn list_open(&self) -> BoxFut<'_, Vec<Value>>;
+    /// Answered and withdrawn tool_permission asks.
+    fn list_closed_permissions(&self) -> BoxFut<'_, Vec<Value>>;
     /// Closes an open ask nobody needs to answer any more, recording `reason` as the hub's answer.
     fn withdraw(&self, ask_id: &str, reason: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
 }
@@ -261,13 +264,18 @@ fn project_of(ask: &Value) -> Option<ProjectRef> {
 
 pub struct Approvals {
     deps: ApprovalsDeps,
+    /// Tool prompts still waiting on an answer, whatever became of their asks.
+    prompts: permissions::Prompts,
 }
 
 impl Approvals {
     /// Reopens approvals the hub accepted but never finished before it stopped (never run late, never silently
     /// lost); `serve` then acts on answers recorded from now on.
     pub fn new(deps: ApprovalsDeps) -> Arc<Self> {
-        Arc::new(Approvals { deps })
+        Arc::new(Approvals {
+            deps,
+            prompts: Default::default(),
+        })
     }
 
     /// Runs until the hub stops: the restart sweep, then the answers' and threads' followers and the prompt reminders.
@@ -293,7 +301,7 @@ impl Approvals {
         tokio::join!(
             approvals.clone().follow_answers(),
             approvals.clone().follow_threads(),
-            approvals.remind(),
+            approvals.watch_prompts(),
         );
     }
 
@@ -773,6 +781,9 @@ mod tests {
         fn list_open(&self) -> BoxFut<'_, Vec<Value>> {
             unreachable!()
         }
+        fn list_closed_permissions(&self) -> BoxFut<'_, Vec<Value>> {
+            unreachable!()
+        }
         fn withdraw(&self, _: &str, _: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>> {
             unreachable!()
         }
@@ -872,6 +883,7 @@ mod tests {
             "sink": "env:lab-a:/w/p1/.env", "projectRef": { "machineId": "lab-a", "projectId": "p1" },
         }));
         let approvals = Approvals {
+            prompts: Default::default(),
             deps: ApprovalsDeps {
                 asks: fake.clone(),
                 nodes: fake.clone(),
