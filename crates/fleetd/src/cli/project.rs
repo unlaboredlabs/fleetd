@@ -502,14 +502,20 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
             if v.flag("use-existing") {
                 input["useExisting"] = json!(true);
             } else if same && v.str("dest").is_none() {
-                let use_it = !out.tty
-                    || cliclack::confirm(format!(
-                        "{machine} already has it at {}. Add that checkout?",
-                        tilde(&dest)
-                    ))
-                    .initial_value(true)
-                    .interact()
-                    .unwrap_or(false);
+                if !out.tty {
+                    return Err(Stop(
+                        3,
+                        format!("{machine} already has it at {dest}"),
+                        Some("Pass --use-existing to add that checkout, or --dest <dir> to clone elsewhere".into()),
+                    ));
+                }
+                let use_it = cliclack::confirm(format!(
+                    "{machine} already has it at {}. Add that checkout?",
+                    tilde(&dest)
+                ))
+                .initial_value(true)
+                .interact()
+                .unwrap_or(false);
                 if !use_it {
                     return Err(Stop(
                         1,
@@ -517,9 +523,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
                         Some("Clone somewhere else with --dest <dir>".into()),
                     ));
                 }
-                if out.tty {
-                    input["useExisting"] = json!(true);
-                }
+                input["useExisting"] = json!(true);
             } else if out.tty && !dest.is_empty() {
                 let go = cliclack::confirm(format!("Clone into {} on {machine}?", tilde(&dest)))
                     .initial_value(true)

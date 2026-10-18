@@ -341,6 +341,12 @@ pub fn build_on(
             estimates: &checks.estimates,
         },
     );
+    // Before the hub takes calls: no clone the previous process started is reported as running.
+    if let Err(e) =
+        crate::hub::projects::fail_interrupted(&events, crate::hub::checks::now_ts(clock.as_ref()))
+    {
+        tracing::warn!(error = %e, "projects: interrupted clones not closed");
+    }
     let hub = Arc::new(Hub {
         config,
         clock,

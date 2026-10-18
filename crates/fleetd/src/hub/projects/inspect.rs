@@ -287,7 +287,7 @@ pub fn clone_problem(
         (
             ProjectProblemCode::DestExists,
             format!(
-                "Add the existing checkout with `fleetd project add {dest} --machine {machine}`, or pick another --dest"
+                "Add the existing checkout at {dest} on {machine} instead, or clone into another folder"
             ),
         )
     } else if m.contains("no space left") {

@@ -584,10 +584,7 @@ pub async fn add(
             problem(
                 ProjectProblemCode::DestExists,
                 format!("{m} already has a checkout of {repo} at {}", target.path),
-                format!(
-                    "Add it as it is: fleetd project add {} --machine {m} (useExisting: true)",
-                    target.path
-                ),
+                "Add that checkout instead (useExisting), or clone into another folder (dest)",
             )
         } else {
             problem(
@@ -596,7 +593,7 @@ pub async fn add(
                     "{} already exists on {m} and is not a checkout of {repo}",
                     target.path
                 ),
-                "Clone somewhere else with --dest <path> (dest), or move that directory",
+                "Clone into another folder (dest), or move that one away",
             )
         };
         return Err(problem_error(&p));
@@ -624,6 +621,79 @@ pub async fn add(
         inspect: None,
         truncated: None,
     })
+}
+
+/// Clones a previous hub process started and never finished: their progress is in the event log but no
+/// `project.added` or `project.add_failed` follows. Each gets its `project.add_failed`, so nothing reads as running
+/// forever. Run once at startup, before any new clone starts.
+pub fn fail_interrupted(
+    events: &crate::hub::store::EventLog,
+    at: fleetd_contracts::ids::Timestamp,
+) -> Result<usize, crate::hub::store::StoreError> {
+    use std::collections::BTreeMap;
+    let types = [
+        HubEventType::ProjectCloneProgress,
+        HubEventType::ProjectAdded,
+        HubEventType::ProjectAddFailed,
+    ];
+    let mut open: BTreeMap<String, (Option<MachineId>, CloneProgressData)> = BTreeMap::new();
+    let mut after = 0;
+    loop {
+        let page = events.page(after, Some(&types), None)?;
+        for e in &page.events {
+            let Some(id) = e
+                .data
+                .as_ref()
+                .and_then(|d| d.get("addId"))
+                .and_then(|v| v.as_str())
+            else {
+                continue;
+            };
+            if e.r#type == HubEventType::ProjectCloneProgress {
+                if let Some(d) = e
+                    .data
+                    .clone()
+                    .and_then(|d| serde_json::from_value::<CloneProgressData>(d).ok())
+                {
+                    open.insert(id.to_owned(), (e.machine_id.clone(), d));
+                }
+            } else {
+                open.remove(id);
+            }
+        }
+        if !page.more {
+            break;
+        }
+        after = page.cursor;
+    }
+    let n = open.len();
+    for (_, (machine_id, d)) in open {
+        let what = d
+            .repo
+            .as_ref()
+            .map_or_else(|| d.path.clone(), |r| r.to_string());
+        let data = ProjectAddFailedData {
+            add_id: d.add_id,
+            repo: d.repo,
+            path: d.path,
+            problem: problem(
+                ProjectProblemCode::CloneFailed,
+                format!("the hub restarted while cloning {what}"),
+                "Add it again; a clone that finished on the machine is offered for reuse",
+            ),
+        };
+        events.append(NewEvent {
+            at: at.clone(),
+            r#type: HubEventType::ProjectAddFailed,
+            machine_id,
+            project_id: None,
+            thread_id: None,
+            summary: data.problem.message.clone(),
+            data: serde_json::to_value(&data).ok(),
+            attention: None,
+        })?;
+    }
+    Ok(n)
 }
 
 /// Progress events: on each phase change and its 100 %, else every 5 percent at most once a second.
@@ -752,7 +822,7 @@ async fn clone_and_register(
                 "{repo} was cloned to {path} on {m}, but adding it failed: {}",
                 e.message
             ),
-            format!("Add the checkout: fleetd project add {path} --machine {m}"),
+            format!("Add the checkout at {path} on {m} as a project"),
         ));
     }
 }
@@ -760,6 +830,51 @@ async fn clone_and_register(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hub::store::test_clock::ManualClock;
+    use crate::hub::store::{EventLog, HubDb};
+
+    #[test]
+    fn a_clone_cut_off_by_a_hub_restart_fails_once() {
+        let clock = ManualClock::at(1_792_000_000_000);
+        let events = EventLog::new(HubDb::open_memory().unwrap(), clock.clone()).unwrap();
+        let at = || fleetd_contracts::ids::Timestamp::from("2026-10-18T20:00:00.000Z".to_owned());
+        let progress = |add_id: &str| NewEvent {
+            at: at(),
+            r#type: HubEventType::ProjectCloneProgress,
+            machine_id: Some(MachineId::new("devbox").unwrap()),
+            project_id: None,
+            thread_id: None,
+            summary: "cloning".into(),
+            data: Some(
+                serde_json::json!({ "addId": add_id, "repo": "acme/storefront", "path": "/home/me/src/storefront", "phase": "receiving", "percent": 40 }),
+            ),
+            attention: None,
+        };
+        events.append(progress("cut-off")).unwrap();
+        events.append(progress("finished")).unwrap();
+        events
+            .append(NewEvent {
+                r#type: HubEventType::ProjectAdded,
+                data: Some(serde_json::json!({ "addId": "finished" })),
+                ..progress("finished")
+            })
+            .unwrap();
+        assert_eq!(fail_interrupted(&events, at()).unwrap(), 1);
+        let failed = events
+            .page(0, Some(&[HubEventType::ProjectAddFailed]), None)
+            .unwrap()
+            .events;
+        assert_eq!(failed.len(), 1);
+        let data = failed[0].data.as_ref().unwrap();
+        assert_eq!(data["addId"], "cut-off");
+        assert_eq!(data["code"], "clone_failed");
+        assert_eq!(
+            failed[0].machine_id.as_ref().map(MachineId::as_str),
+            Some("devbox")
+        );
+        // The next start finds nothing open.
+        assert_eq!(fail_interrupted(&events, at()).unwrap(), 0);
+    }
 
     #[test]
     fn progress_events_are_throttled() {
