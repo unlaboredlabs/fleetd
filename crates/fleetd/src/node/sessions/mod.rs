@@ -690,6 +690,8 @@ impl SessionService {
                 started: false,
                 pid: None,
                 pid_start: None,
+                allowed_tools: launch.allowed_tools.clone(),
+                disallowed_tools: launch.disallowed_tools.clone(),
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -940,8 +942,12 @@ impl SessionService {
             model: row.summary.model.clone(),
             effort: row.summary.effort,
             runtime_mode: row.summary.runtime_mode,
-            allowed_tools: Vec::new(),
-            disallowed_tools: ALWAYS_DISALLOWED.iter().map(|t| (*t).to_owned()).collect(),
+            allowed_tools: row.local.allowed_tools.clone(),
+            disallowed_tools: ALWAYS_DISALLOWED
+                .iter()
+                .map(|t| (*t).to_owned())
+                .chain(row.local.disallowed_tools.iter().cloned())
+                .collect(),
             mcp_config: Some(mcp),
             env,
             transcript: Some(transcript),

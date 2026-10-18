@@ -61,6 +61,12 @@ pub struct SessionLaunch {
     pub prompt: NonEmpty,
     /// Minted by the hub (a UUID); the first run's id and the claude user-message uuid.
     pub run_id: NonEmpty,
+    /// `--allowedTools` rules from the project's policy (`tools.allow`), in claude's own syntax: these never prompt.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    /// `--disallowedTools` rules from the project's policy (`tools.deny`), on top of the tools fleetd always denies.
+    #[serde(default)]
+    pub disallowed_tools: Vec<String>,
 }
 
 /// A person's or policy's answer to a tool permission prompt.

@@ -29,6 +29,7 @@ use std::time::Duration;
 
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
+use fleetd_contracts::mcp::McpToolError;
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::node_link::{HubToNode, NodeToHub};
 use fleetd_contracts::prim::NonEmpty;
@@ -160,6 +161,28 @@ pub struct WriteOutcome {
     pub queued_until: Option<String>,
 }
 
+/// (allow, deny) rules, in claude's syntax.
+pub type ToolRulesFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(Vec<String>, Vec<String>), McpToolError>> + Send + 'a>>;
+
+/// A project's tool rules (`tools.allow`, `tools.deny` in its policy file), read at every launch. The leases area's
+/// cached policy reader implements it; a file that does not decode refuses the launch rather than drop its denies.
+pub trait ToolPolicy: Send + Sync + 'static {
+    fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a>;
+}
+
+impl ToolPolicy for crate::hub::leases::Policies {
+    fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a> {
+        Box::pin(async move {
+            let tools = self.get(project).await?.tools.unwrap_or_default();
+            let rules = |l: &[fleetd_contracts::prim::Text<1, 200>]| {
+                l.iter().map(|t| t.as_str().to_owned()).collect::<Vec<_>>()
+            };
+            Ok((rules(&tools.allow), rules(&tools.deny)))
+        })
+    }
+}
+
 /// The queue area's hook: `thread_send` goes through it when set, so a message to an offline machine waits.
 pub trait OfflineWriter: Send + Sync + 'static {
     fn send<'a>(
@@ -275,6 +298,7 @@ pub struct Executors {
     /// Per machine: true while live. `await_live` waits on it.
     live: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
     offline_writer: Mutex<Option<Arc<dyn OfflineWriter>>>,
+    tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
 }
@@ -397,6 +421,7 @@ impl Executors {
             machines: Mutex::default(),
             live: Mutex::default(),
             offline_writer: Mutex::default(),
+            tool_policy: Mutex::default(),
             hooks: tools::ToolHooks::default(),
         })
     }
@@ -408,6 +433,11 @@ impl Executors {
 
     pub fn offline_writer(&self) -> Option<Arc<dyn OfflineWriter>> {
         self.offline_writer.lock().unwrap().clone()
+    }
+
+    /// `hub/serve` sets this once the policy reader exists; until then launches carry no tool rules.
+    pub fn set_tool_policy(&self, policy: Arc<dyn ToolPolicy>) {
+        *self.tool_policy.lock().unwrap() = Some(policy);
     }
 
     fn now_ms(&self) -> u64 {
@@ -1089,6 +1119,25 @@ impl Executors {
             Some(t) if !t.is_empty() => t.to_owned(),
             _ => js_take(input.prompt.trim().split('\n').next().unwrap_or(""), 80).to_owned(),
         };
+        let policy = self.tool_policy.lock().unwrap().clone();
+        let (allowed_tools, disallowed_tools) = match policy {
+            None => (vec![], vec![]),
+            Some(policy) => {
+                let project = ProjectRef {
+                    machine_id: machine_id.clone(),
+                    project_id: input.project_id.clone(),
+                };
+                policy
+                    .tools(&project)
+                    .await
+                    .map_err(|e| ExecutorError::NodeRequestFailed {
+                        machine_id: machine_id.clone(),
+                        operation: op,
+                        message: format!("the project's policy file was not read: {}", e.message),
+                        fix: e.fix,
+                    })?
+            }
+        };
         let seed = format!("{machine_id}\n{}", input.client_request_id);
         let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
         let launch = SessionLaunch {
@@ -1102,6 +1151,8 @@ impl Executors {
             workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
             prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
             run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
+            allowed_tools,
+            disallowed_tools,
         };
         self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
             .await?;

@@ -65,6 +65,11 @@ pub struct SessionLocal {
     /// The live process, so a node that crashed can kill it on start (and never a reused pid).
     pub pid: Option<u32>,
     pub pid_start: Option<String>,
+    /// The launch's tool rules from the project's policy, kept so every respawn passes the same ones.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
+    #[serde(default)]
+    pub disallowed_tools: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

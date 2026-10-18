@@ -130,6 +130,15 @@ fn session(id: &str, extra: Value) -> Value {
     s
 }
 
+/// A project policy with `tools.allow: [Bash(npm test:*)]` and `tools.deny: [WebFetch]`.
+struct Rules;
+
+impl ToolPolicy for Rules {
+    fn tools<'a>(&'a self, _: &'a ProjectRef) -> ToolRulesFuture<'a> {
+        Box::pin(async { Ok((vec!["Bash(npm test:*)".into()], vec!["WebFetch".into()])) })
+    }
+}
+
 fn launch_input(request: &str) -> LaunchInput {
     LaunchInput {
         project_id: ProjectId::unchecked("p1"),
@@ -163,7 +172,9 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     node.subscribe(json!([])).await;
     assert!(node.executors.is_connected(&node.machine));
 
-    // Launch: one call, ids derived from the request id so a retry lands on the same session.
+    // Launch: one call, ids derived from the request id so a retry lands on the same session, with the project's
+    // tool rules.
+    node.executors.set_tool_policy(Arc::new(Rules));
     let executors = node.executors.clone();
     let machine = node.machine.clone();
     let launched = tokio::spawn(async move {
@@ -180,6 +191,13 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     assert_eq!(l.title.as_deref(), Some("reply with the word OK"));
     assert_eq!(l.workspace, SessionWorkspace::Root);
     assert_eq!(l.runtime_mode, RuntimeMode::ApprovalRequired);
+    assert_eq!(
+        (l.allowed_tools.as_slice(), l.disallowed_tools.as_slice()),
+        (
+            &["Bash(npm test:*)".to_owned()][..],
+            &["WebFetch".to_owned()][..]
+        )
+    );
     let (session_id, run_id) = (l.session_id.to_string(), l.run_id.to_string());
     node.reply(
         &id,
