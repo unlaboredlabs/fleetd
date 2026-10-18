@@ -22,36 +22,57 @@ pub enum Link {
 
 /// Finds links in `text`; ranges are byte offsets.
 pub fn find(text: &str) -> Vec<(Range<usize>, Link)> {
-    let mut out = Vec::new();
-    let mut start = None;
-    for (i, ch) in text.char_indices().chain(std::iter::once((text.len(), ' '))) {
-        let delimiter = ch.is_whitespace() || matches!(ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '"' | '\'' | '`' | ',');
-        match (delimiter, start) {
-            (false, None) => start = Some(i),
-            (true, Some(s)) => {
-                if let Some((range, link)) = classify(text, s, i) {
-                    out.push((range, link));
-                }
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    out
+    tokens(text)
+        .filter_map(|(start, end)| link_at(text, start, end))
+        .map(|(range, url)| {
+            let token = &text[range.clone()];
+            let link = if url {
+                Link::Url(token.to_string())
+            } else {
+                let (path, line) = split_line(token);
+                Link::Path { path: path.to_string(), line }
+            };
+            (range, link)
+        })
+        .collect()
 }
 
-fn classify(text: &str, start: usize, end: usize) -> Option<(Range<usize>, Link)> {
+/// Whether `text` has any link, without allocating (the log asks this of every line it holds).
+pub fn has_link(text: &str) -> bool {
+    tokens(text).any(|(start, end)| link_at(text, start, end).is_some())
+}
+
+/// Runs of text between whitespace, brackets, quotes and commas.
+fn tokens(text: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
+    let mut start = None;
+    text.char_indices().chain(std::iter::once((text.len(), ' '))).filter_map(move |(i, ch)| {
+        let delimiter = ch.is_whitespace() || matches!(ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '"' | '\'' | '`' | ',');
+        match (delimiter, start) {
+            (false, None) => {
+                start = Some(i);
+                None
+            }
+            (true, Some(s)) => {
+                start = None;
+                Some((s, i))
+            }
+            _ => None,
+        }
+    })
+}
+
+/// The link in a token, without trailing punctuation, and whether it is a URL (else a path).
+fn link_at(text: &str, start: usize, end: usize) -> Option<(Range<usize>, bool)> {
     let token = text[start..end].trim_end_matches(['.', ';', '!', '?']);
     let token = token.strip_suffix(':').unwrap_or(token);
     let range = start..start + token.len();
     if token.starts_with("https://") || token.starts_with("http://") {
-        return (token.len() > "https://".len()).then(|| (range, Link::Url(token.to_string())));
+        return (token.len() > "https://".len()).then_some((range, true));
     }
     if token.contains("://") {
         return None;
     }
-    let (path, line) = split_line(token);
-    looks_like_path(path).then(|| (range, Link::Path { path: path.to_string(), line }))
+    looks_like_path(split_line(token).0).then_some((range, false))
 }
 
 /// `src/a.rs:12:4` -> ("src/a.rs", Some(12)).
@@ -76,11 +97,14 @@ fn looks_like_path(s: &str) -> bool {
     if !s.contains('/') || s.contains("//") || !s.chars().all(|c| c.is_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '~' | '+' | '@')) {
         return false;
     }
-    let parts: Vec<&str> = s.split('/').filter(|p| !p.is_empty() && *p != "." && *p != ".." && *p != "~").collect();
+    let (mut parts, mut last) = (0, "");
+    for part in s.split('/').filter(|p| !p.is_empty() && *p != "." && *p != ".." && *p != "~") {
+        parts += 1;
+        last = part;
+    }
     let anchored = s.starts_with('/') || s.starts_with("./") || s.starts_with("../") || s.starts_with("~/");
-    let last = parts.last().copied().unwrap_or_default();
     let has_ext = last.rsplit_once('.').is_some_and(|(stem, ext)| !stem.is_empty() && !ext.is_empty() && ext.chars().all(char::is_alphanumeric));
-    (anchored && (parts.len() >= 2 || has_ext)) || (parts.len() >= 2 && has_ext)
+    (anchored && (parts >= 2 || has_ext)) || (parts >= 2 && has_ext)
 }
 
 /// Where a path from `machine`'s project at `workspace_root` would be on this computer, if it is here.

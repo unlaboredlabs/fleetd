@@ -74,18 +74,28 @@ struct ConnectForm {
     error: Option<Failure>,
 }
 
+/// One line of the lead log. A long log holds tens of thousands of these, so it keeps one string plus offsets.
 struct LogRow {
     kind: LogKind,
-    stamp: SharedString,
-    body: SharedString,
-    /// The body has a URL or path to click, worked out once here rather than every frame.
-    linked: bool,
+    text: SharedString,
+    /// `text[..stamp]` is the timestamp, `text[body..]` the line.
+    stamp: u8,
+    body: u16,
 }
 
 impl LogRow {
     fn new(kind: LogKind, text: &str) -> Self {
         let (stamp, body) = split_stamp(text);
-        Self { kind, stamp: stamp.to_string().into(), linked: !links::find(body).is_empty(), body: body.to_string().into() }
+        let body_at = (text.len() - body.len()).min(u16::MAX as usize);
+        Self { kind, stamp: stamp.len() as u8, body: body_at as u16, text: text.to_string().into() }
+    }
+
+    fn stamp(&self) -> &str {
+        &self.text[..self.stamp as usize]
+    }
+
+    fn body(&self) -> &str {
+        &self.text[self.body as usize..]
     }
 }
 
@@ -2063,13 +2073,14 @@ fn log_row(t: &Theme, ix: usize, line: &LogRow, on_open: &links::OnOpen) -> Div 
         LogKind::DiffDel => Some(t.diff_del),
         _ => None,
     };
+    let text = SharedString::from(line.body().to_string());
     let body = div().min_w_0().text_color(log_color(t, line.kind));
-    let body = if line.linked {
-        body.child(links::text(t, format!("log-{ix}"), line.body.clone(), false, on_open.clone()))
-    } else {
-        body.child(line.body.clone())
-    };
-    text_row().when_some(bg, |d, bg| d.bg(bg)).child(div().w(px(96.)).flex_none().text_color(t.faint).child(line.stamp.clone())).child(body)
+    // Checked per visible row as it's drawn, so a 20k-line log costs nothing up front.
+    let body = if links::has_link(&text) { body.child(links::text(t, format!("log-{ix}"), text, false, on_open.clone())) } else { body.child(text) };
+    text_row()
+        .when_some(bg, |d, bg| d.bg(bg))
+        .child(div().w(px(96.)).flex_none().text_color(t.faint).child(SharedString::from(line.stamp().to_string())))
+        .child(body)
 }
 
 /// Quiet work, loud failures: output and passing checks are grey, errors red, your own words in the accent.
@@ -2106,7 +2117,8 @@ mod tests {
               "status": "failed", "summary": "pnpm test", "outputTail": "1 failed", "exitCode": 1, "failed": true } },
         ]))
         .unwrap();
-        let rows: Vec<(LogKind, String, String)> = tail_rows(&items).into_iter().map(|r| (r.kind, r.stamp.to_string(), r.body.to_string())).collect();
+        let rows: Vec<(LogKind, String, String)> =
+            tail_rows(&items).into_iter().map(|r| (r.kind, r.stamp().to_string(), r.body().to_string())).collect();
         assert_eq!(rows[0], (LogKind::Thought, "10:04:05".into(), "assistant: Plan:".into()));
         assert_eq!((rows[1].1.as_str(), rows[1].2.as_str()), ("", "1. read"));
         assert_eq!(rows[2], (LogKind::Error, "10:04:06".into(), "● pnpm test [failed]".into()));
@@ -2124,6 +2136,6 @@ mod tests {
         let kinds: Vec<LogKind> = rows.iter().map(|r| r.kind).collect();
         use LogKind::*;
         assert_eq!(kinds, [Tool, Output, Output, Output, DiffDel, DiffAdd]);
-        assert!(rows[0].linked, "the edited file is a link");
+        assert!(links::has_link(rows[0].body()), "the edited file is a link");
     }
 }
