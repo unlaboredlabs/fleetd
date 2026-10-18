@@ -10,22 +10,24 @@ over the user-agent rewrite at `/`.
 
 ## Refreshing the captures
 
-The screenshots and the `<!-- capture:NAME -->` blocks in `home.html` and `fleetd.txt` come from one command, run
-from the repo root on a Linux machine with the lab set up (see "Lab suite" in `docs/CONTRIBUTING.md`) and the
-headless display sysroot (`app/bench/linux-sysroot.sh`):
+The screenshots, the `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by
+the shape of fleetd's output, so the twin carries no markers) come from one command, run from the repo root on a Linux
+machine with the lab set up (see "Lab suite" in `docs/CONTRIBUTING.md`) and the headless display sysroot
+(`app/bench/linux-sysroot.sh`):
 
 ```sh
 cargo build --release --locked -p fleetd -p fleetd-app -p fleetd-bench && npm ci --prefix tests/lab
 FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts
 ```
 
-It stands up a hub and a node on that lab slot, has a haiku lead file three numbered asks (three tiny turns), runs
-the desktop app under a private Xvfb at the page's image size, shoots the inbox, types the reply and shoots the lead's
+It stands up a hub and a node on that lab slot, has a haiku lead file three numbered asks (three tiny turns), runs the
+desktop app under a private Xvfb at the page's image size, shoots the inbox, types the reply and shoots the lead's
 view; then it runs `fleetd init` and `fleetd machine add builder-1 --dry-run` in a throwaway HOME and reads the merge
-train from the newest lab m7 run, if there is one. It refuses to write text that names this machine, its home or lab
-paths, a non-loopback address or a key. Review the result with `git diff site/`. The callout positions (`--x`, `--y`)
-and the hand-written callout text are not generated: the script lists quotes and ids on the page that its run didn't
-produce, and you re-aim the callouts if the app's layout moved.
+train from the newest lab m7 run, if there is one: the whole path of its first two merged changes and the first of
+each refusal, freeze, red CI and conflict, at most 16 lines. It refuses to write text that names this machine, its
+home or lab paths, a non-loopback address or a key. Review the result with `git diff site/`. The callout positions
+(`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and ids on the page that
+its run didn't produce, and you re-aim the callouts if the app's layout moved.
 
 ## Vercel project settings
 

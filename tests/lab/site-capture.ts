@@ -1,8 +1,8 @@
 // `FLEETD_LAB_SLOT=<n> node tests/lab/site-capture.ts`: re-shoots the fleetd.sh landing page from the real product.
 // A lab hub and node, a haiku lead that files three numbered asks, the desktop app under a private Xvfb answering
 // them, and the setup CLI in a throwaway HOME. Writes site/capture-*.png and rewrites the `<!-- capture:NAME -->`
-// blocks in site/home.html and site/fleetd.txt. Costs three tiny claude-haiku turns. Every process it starts is
-// stopped by the PID captured at spawn; it never touches a T3 or hub it didn't start.
+// blocks in site/home.html and the same blocks in site/fleetd.txt. Costs three tiny claude-haiku turns. Every process
+// it starts is stopped by the PID captured at spawn; it never touches a T3 or hub it didn't start.
 //
 // Everything that knows the lab runs T3 is in stageLab(); the rest drives only the fleetd CLI, MCP tools and the app.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -280,12 +280,14 @@ interface TrainLine {
   readonly ms: number;
   readonly type: string;
   readonly summary: string;
+  /** The Change (X<n>) the line is about, when it is about one. */
+  readonly change?: string;
   readonly statusOn?: string;
 }
 
 /** The merge train from the newest lab m7 run on this box (any slot), with the `fleetd/train` commit status the
  * train posted on GitHub before each merge. Undefined when no run has merged anything. */
-function trainLines(): { lines: Array<TrainLine>; from: string } | undefined {
+export function trainLines(): { lines: Array<TrainLine>; from: string } | undefined {
   const root = SLOT === 0 ? LAB : path.dirname(LAB);
   const runs = [root, ...fs.readdirSync(root).filter((d) => /^slot-\d$/u.test(d)).map((d) => path.join(root, d))].flatMap((dir) =>
     fs.readdirSync(dir).filter((d) => d.startsWith("e2e-")).map((d) => path.join(dir, d, "hub", "hub.sqlite")),
@@ -306,19 +308,47 @@ function trainLines(): { lines: Array<TrainLine>; from: string } | undefined {
     .prepare("SELECT created_ms, type, data FROM events WHERE type LIKE 'change.%' OR type LIKE 'train.%' OR type IN ('review.verdict', 'pr.merged') ORDER BY seq")
     .all() as Array<{ created_ms: number; type: string; data: string }>;
   const lines: Array<TrainLine> = [];
+  const changeOfPr = new Map<number, string>();
   for (const row of rows) {
     const event = JSON.parse(row.data) as Body;
-    lines.push({ ms: row.created_ms, type: row.type, summary: String(event.summary).replace(/\(log: https?:\/\/[^)]+\)/u, "(log: …)") });
+    if (row.type === "change.queued") changeOfPr.set(Number(event.data.prNumber), String(event.data.changeId));
+    // A verdict names the PR, not the Change.
+    const reviewed = row.type === "review.verdict" ? changeOfPr.get(Number(/\/pull\/(\d+)$/u.exec(String(event.data?.pr))?.[1])) : undefined;
+    const change = typeof event.data?.changeId === "string" ? (event.data.changeId as string) : reviewed;
+    const summary = String(event.summary).replace(/\(log: https?:\/\/[^)]+\)/u, "(log: …)");
+    lines.push({ ms: row.created_ms, type: row.type, summary, ...(change === undefined ? {} : { change }) });
     if (row.type !== "pr.merged") continue;
     const { repo, prNumber } = event.data as { repo: string; prNumber: number };
     const gh = (route: string): unknown => JSON.parse(execFileSync("gh", ["api", route], { env: scrubbedEnv(), encoding: "utf8" }));
     const head = String((gh(`repos/${repo}/pulls/${prNumber}`) as Body).head.sha);
     // Newest first: the last status the train set before merging.
     const status = (gh(`repos/${repo}/commits/${head}/statuses`) as Array<Body>).find((s) => s.context === "fleetd/train");
-    if (status !== undefined) lines.push({ ms: Date.parse(status.created_at), type: "fleetd/train", summary: String(status.description), statusOn: head.slice(0, 7) });
+    if (status !== undefined) {
+      lines.push({ ms: Date.parse(status.created_at), type: "fleetd/train", summary: String(status.description), change: String(event.data.changeId), statusOn: head.slice(0, 7) });
+    }
   }
-  // The run ends at its last merge; a later review verdict belongs to other work.
-  return { lines: lines.filter((l) => l.ms <= best.at).toSorted((a, b) => a.ms - b.ms), from: best.from };
+  return { lines: pickTrain(lines.toSorted((a, b) => a.ms - b.ms)), from: best.from };
+}
+
+const LIFECYCLE = ["change.queued", "review.verdict", "change.ready", "fleetd/train", "pr.merged"];
+const SETBACKS = ["change.refused", "train.frozen", "change.ci_failed", "change.needs_rebase"];
+
+/** What the page shows of a run, in time order: the whole path of the first two Changes that merged, and the first
+ * of each way the train turns a change away or holds it (a freeze with the resume that ends it). At most 16 lines. */
+export function pickTrain(lines: ReadonlyArray<TrainLine>) {
+  const merged = new Set(lines.filter((l) => l.type === "pr.merged").map((l) => l.change));
+  const followed = lines.filter((l) => l.type === "change.queued" && merged.has(l.change)).map((l) => l.change).slice(0, 2);
+  const picked = new Set(lines.filter((l) => followed.includes(l.change) && LIFECYCLE.includes(l.type)));
+  for (const type of SETBACKS) {
+    const first = lines.find((l) => l.type === type);
+    if (first !== undefined) picked.add(first);
+  }
+  const frozen = lines.find((l) => l.type === "train.frozen");
+  const resumed = frozen && lines.find((l) => l.type === "train.resumed" && l.ms >= frozen.ms);
+  if (resumed) picked.add(resumed);
+  const shown = lines.filter((l) => picked.has(l));
+  check(shown.length <= 16, `the train rule picked ${shown.length} lines, more than the page's 16`);
+  return shown;
 }
 
 // ---- The page's capture blocks ----
@@ -348,7 +378,8 @@ const trainBlocks = (lines: ReadonlyArray<TrainLine>) => {
   };
 };
 
-/** Replaces what is between `<!-- capture:NAME -->` and `<!-- /capture:NAME -->`; each block gets the opening marker's indentation. */
+/** In home.html: replaces what is between `<!-- capture:NAME -->` and `<!-- /capture:NAME -->`; each block gets the
+ * opening marker's indentation. */
 function fill(file: string, blocks: Blocks) {
   let text = fs.readFileSync(file, "utf8");
   for (const [name, make] of Object.entries(blocks)) {
@@ -357,6 +388,33 @@ function fill(file: string, blocks: Blocks) {
     text = text.replace(re, (_all, indent: string, close: string) => `${indent}<!-- capture:${name} -->\n${make(indent)}\n${close}`);
   }
   fs.writeFileSync(file, text);
+}
+
+/** Where each block sits in fleetd.txt, found by the shape of fleetd's own output, so its readers never see markers. */
+const TWIN: Record<string, RegExp> = {
+  init: /^\$ fleetd init .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
+  "machine-add": /^\$ fleetd machine add .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
+  digest: /^ {2}fleetd digest · .*(?:\n {2}\S.*)*/gmu,
+  // From the first "## " heading through the indented and blank lines after it.
+  wake: /^ {2}## .*(?:\n(?: {2}.*)?)*/gmu,
+  train: /^\d\d:\d\d:\d\d {2}.*(?:\n\d\d:\d\d:\d\d {2}.*)*/gmu,
+};
+
+/** Replaces each block in the plain-text twin; each must be found exactly once, before and after. */
+export function fillTwin(text: string, blocks: Blocks) {
+  const find = (name: string, within: string) => {
+    const found = [...within.matchAll(TWIN[name]!)];
+    check(found.length === 1, `fleetd.txt has one capture:${name} block, found ${found.length}`);
+    const [m] = found;
+    return { at: m!.index, length: m![0].replace(/\n+$/u, "").length };
+  };
+  for (const [name, make] of Object.entries(blocks)) {
+    const { at, length } = find(name, text);
+    const body = make("");
+    text = text.slice(0, at) + body + text.slice(at + length);
+    check(find(name, text).length === body.length, `capture:${name} reads back from fleetd.txt as written`);
+  }
+  return text;
 }
 
 /** Nothing on a public page may name this machine, its paths or its network, or carry a key. */
@@ -500,14 +558,14 @@ async function main() {
   // Everything checked: now the site changes.
   for (const shot of ["capture-inbox.png", "capture-lead.png"]) fs.copyFileSync(path.join(shots, shot), path.join(SITE, shot));
   fill(path.join(SITE, "home.html"), htmlBlocks);
-  fill(path.join(SITE, "fleetd.txt"), txtBlocks);
+  fs.writeFileSync(path.join(SITE, "fleetd.txt"), fillTwin(fs.readFileSync(path.join(SITE, "fleetd.txt"), "utf8"), txtBlocks));
   const stale = staleQuotes([...strings(tail), ...strings(answered), wake, digest, init.out, add.out].join("\n"));
   log(`wrote site/capture-inbox.png, site/capture-lead.png and the capture blocks in site/home.html and site/fleetd.txt`);
   if (stale.length > 0) log(`check by hand: the page says these, this run's output doesn't:\n${stale.map((s) => `  - ${s}`).join("\n")}`);
   log("callouts are placed by hand: if the app's layout moved, re-aim --x/--y in home.html (see the comment above Fig. 1)");
 }
 
-main()
+if (import.meta.main) main()
   .catch((error: unknown) => {
     log(`FAIL ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
     log(`logs: ${path.join(RUN, "logs")}`);
