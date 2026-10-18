@@ -1622,7 +1622,8 @@ impl SessionService {
             return info;
         }
         let login = self.inner.config.login_fingerprint();
-        let info = self.inner.runner.probe().await;
+        let env = self.inner.config.runner_env();
+        let info = self.inner.runner.probe(&env).await;
         let shown = info.clone();
         self.health_changed(|h| h.probed(info, login, Instant::now()));
         self.health().info().unwrap_or(shown)
@@ -1673,6 +1674,11 @@ impl SessionService {
             problem = info.problem.as_deref().unwrap_or(""),
             "runner_info changed"
         );
+        let st = self.st();
+        match self.store().runner_info(&info) {
+            Ok(frame) => st.machine(frame),
+            Err(e) => tracing::warn!(error = %e, "cannot log the runner's state"),
+        }
     }
 
     fn spawn_reaper(&self) {

@@ -189,10 +189,7 @@ async fn run_node(
     let store = store::NodeStore::open(&home.join("sessions.sqlite"))
         .map_err(|e| NodeError::Setup(format!("cannot open the session store in {shown}: {e}")))?;
     let session_config = sessions::SessionConfig::for_node(home);
-    let runner = Arc::new(runner::claude::ClaudeRunner::new(
-        claude_binary(),
-        session_config.runner_env(),
-    ));
+    let runner = Arc::new(runner::claude::ClaudeRunner::new(claude_binary()));
     let node_sessions = sessions::SessionService::start(store, runner, session_config)
         .await
         .map_err(|e| NodeError::Setup(format!("cannot settle the stored sessions: {e}")))?;

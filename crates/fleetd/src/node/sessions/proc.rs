@@ -38,16 +38,59 @@ fn gone(proc: &Proc) -> bool {
     }
 }
 
-/// Session `session`'s processes: claude's descendants while claude (`root`) is still the recorded process, and
-/// on Linux every process carrying the session's marker, which also finds tool children orphaned when claude died.
+/// What session `session` left: claude's descendants while claude (`root`) is still the recorded process, and on
+/// Linux every process carrying a marker of any of the session's spawns, which also finds tool children orphaned
+/// when claude died. The node runs this before it spawns anything for the session, so every such marker is the dead
+/// node's.
 async fn sweep(root: Option<i32>, session: &str) -> Vec<Proc> {
     let session = session.to_owned();
-    tokio::task::spawn_blocking(move || match root {
-        Some(root) => process::sweep(root, &session),
-        None => process::marked(&process::table(), &session),
+    tokio::task::spawn_blocking(move || {
+        let table = process::table();
+        let mut found = root.map_or_else(Vec::new, |root| process::descendants(&table, root));
+        found.extend(
+            spawned_for(&table, &session)
+                .into_iter()
+                .filter(|p| Some(p.pid) != root),
+        );
+        process::dedupe(&mut found);
+        found
     })
     .await
     .unwrap_or_default()
+}
+
+/// The live processes whose [`process::SESSION_MARKER`] names `session`.
+#[cfg(target_os = "linux")]
+fn spawned_for(table: &[Proc], session: &str) -> Vec<Proc> {
+    let own = nix::unistd::getpid().as_raw();
+    let prefix = format!("{}=", process::SESSION_MARKER);
+    table
+        .iter()
+        .filter(|p| p.pid != own && !p.zombie)
+        .filter(|p| {
+            let Ok(env) = std::fs::read(format!("/proc/{}/environ", p.pid)) else {
+                return false;
+            };
+            env.split(|b| *b == 0)
+                .find_map(|var| var.strip_prefix(prefix.as_bytes()))
+                .is_some_and(|marker| {
+                    marker_session(&String::from_utf8_lossy(marker)) == Some(session)
+                })
+        })
+        .copied()
+        .collect()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn spawned_for(_table: &[Proc], _session: &str) -> Vec<Proc> {
+    Vec::new()
+}
+
+/// The session id in a spawn's marker, `<session>.<node pid>.<nanos>.<n>` ([`process::marker`]). Session ids may
+/// hold dots themselves, so it is everything before the last three fields.
+fn marker_session(marker: &str) -> Option<&str> {
+    let mut fields = marker.rsplitn(4, '.');
+    fields.nth(3)
 }
 
 /// Stops what session `session` left running when the node went away: SIGTERM to claude's process group (claude
@@ -97,12 +140,14 @@ mod tests {
     async fn claude_with_tool(session: &str) -> (tokio::process::Child, u32) {
         let mut child = tokio::process::Command::new("sh")
             .args(["-c", "setsid sleep 30 & echo $!; wait"])
-            .env(process::SESSION_MARKER, session)
+            .env(process::SESSION_MARKER, process::marker(session))
             .stdout(std::process::Stdio::piped())
             .process_group(0)
             .kill_on_drop(true)
             .spawn()
             .unwrap();
+        // It carries a marker, so the node's orphan reaper would otherwise take tokio's exit status.
+        process::track(child.id().unwrap() as i32);
         let mut lines = tokio::io::BufReader::new(child.stdout.take().unwrap()).lines();
         let tool: u32 = lines.next_line().await.unwrap().unwrap().parse().unwrap();
         (child, tool)
@@ -138,5 +183,11 @@ mod tests {
 
         kill_recorded(pid, &started, "restart-b", Duration::from_secs(5)).await;
         assert_eq!(start_time(tool), None);
+    }
+
+    #[test]
+    fn a_marker_names_its_session_even_when_the_id_has_dots() {
+        assert_eq!(marker_session(&process::marker("a.b")), Some("a.b"));
+        assert_eq!(marker_session("a.1.2"), None);
     }
 }
