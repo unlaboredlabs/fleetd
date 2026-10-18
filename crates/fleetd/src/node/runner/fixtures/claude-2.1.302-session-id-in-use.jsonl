@@ -1,0 +1,4 @@
+{"dir": "meta", "ms": 0, "msg": {"claude": "2.1.302", "source": "observed", "scenario": "session-id-in-use", "args": ["-p", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--include-partial-messages", "--thinking", "adaptive", "--thinking-display", "summarized", "--effort", "low", "--strict-mcp-config", "--setting-sources", "", "--model", "claude-haiku-5-5", "--session-id", "289edad3-c10d-43bc-9a66-699588cecfc8"]}}
+{"dir": "in", "ms": 2, "msg": {"type": "user", "message": {"role": "user", "content": "Reply OK."}, "parent_tool_use_id": null, "session_id": "", "uuid": "3062cd33-c454-4fa9-8b14-92e5a204fa1f"}}
+{"dir": "stderr", "ms": 82, "raw": "Error: Session ID 289edad3-c10d-43bc-9a66-699588cecfc8 is already in use.\n"}
+{"dir": "meta", "ms": 87, "msg": {"exit": 1, "signal": null}}
