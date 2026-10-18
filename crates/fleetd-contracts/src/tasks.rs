@@ -153,6 +153,9 @@ pub struct Task {
     pub qa: Option<bool>,
     /// The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.
     pub pr: Option<PrUrl>,
+    /// The plan item it was spawned for (`--item`).
+    #[serde(default)]
+    pub item_id: Option<crate::plan::PlanItemId>,
     pub state: TaskState,
     /// Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use".
     pub queued_reason: Option<Text<1, 200>>,

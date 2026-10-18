@@ -306,6 +306,41 @@
           "const": "prompt.default_changed",
           "description": "This release changed the default of a prompt you overrode; yours stays in effect until you save it again or\nreset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.",
           "type": "string"
+        },
+        {
+          "const": "plan.changed",
+          "description": "A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).",
+          "type": "string"
+        },
+        {
+          "const": "plan.verified",
+          "description": "The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.",
+          "type": "string"
+        },
+        {
+          "const": "change.state",
+          "description": "A merge-train Change moved between states; `data.changeId`, `data.workstreamId`, `data.repo`, `data.prNumber`,\n`data.from`, `data.to`.",
+          "type": "string"
+        },
+        {
+          "const": "ci.main",
+          "description": "Main-branch CI of a train repo changed state; `data.repo`, `data.sha`, `data.state`, `data.failing`.",
+          "type": "string"
+        },
+        {
+          "const": "github.drift",
+          "description": "Reconciliation found GitHub moved without fleetd; `data.repo`, `data.kind`, `data.what`, `data.lagMs`.",
+          "type": "string"
+        },
+        {
+          "const": "source.stale",
+          "description": "A status source went quiet past its cadence; `data.source`, `data.sinceMs`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "source.fresh",
+          "description": "A stale source answered again; `data.source`, `data.staleMs`.",
+          "type": "string"
         }
       ]
     },

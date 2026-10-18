@@ -1470,6 +1470,23 @@
       ],
       "type": "object"
     },
+    "CiState": {
+      "oneOf": [
+        {
+          "enum": [
+            "green",
+            "red",
+            "pending"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Not fetched since the hub started.",
+          "type": "string"
+        }
+      ]
+    },
     "Claim": {
       "properties": {
         "at": {
@@ -2176,6 +2193,39 @@
       ],
       "type": "string"
     },
+    "DoneRow": {
+      "properties": {
+        "doneAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "evidence": {
+          "description": "\"#208 merged by the train 13:12 · check 2 passed C7\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId",
+          "description": "Absent for an order with no plan items, which counts as one item."
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "title",
+        "doneAt",
+        "evidence"
+      ],
+      "type": "object"
+    },
     "Effort": {
       "enum": [
         "low",
@@ -2258,6 +2308,51 @@
         "calibratedMinutes",
         "ratio",
         "samples"
+      ],
+      "type": "object"
+    },
+    "EtaBasis": {
+      "oneOf": [
+        {
+          "enum": [
+            "fleet"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "order",
+          "description": "The scope's own measured rate.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "Too few samples in the order: the project's rate shared among its running orders.",
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "Too few samples anywhere: no ETA (\"measuring: 2 of 5 verified\").",
+          "type": "string"
+        }
+      ]
+    },
+    "EtaSlip": {
+      "description": "`current − original`, split into what scope added and what speed lost.",
+      "properties": {
+        "scopeMinutes": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "speedMinutes": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "scopeMinutes",
+        "speedMinutes"
       ],
       "type": "object"
     },
@@ -2470,6 +2565,59 @@
         }
       ]
     },
+    "Gate": {
+      "description": "What the scope is waiting on.",
+      "properties": {
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId"
+        },
+        "kind": {
+          "$ref": "#/$defs/GateKind"
+        },
+        "label": {
+          "description": "\"P12 full lab run\", \"CI on #212\", \"your answer on `api.path`\".",
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "serial": {
+          "description": "It blocks every in-progress item of its order.",
+          "type": "boolean"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "kind",
+        "label",
+        "serial"
+      ],
+      "type": "object"
+    },
+    "GateKind": {
+      "oneOf": [
+        {
+          "const": "plan",
+          "description": "An in-progress item with open items `after` it.",
+          "type": "string"
+        },
+        {
+          "const": "live",
+          "description": "An open time span on the scope's tasks or changes.",
+          "type": "string"
+        },
+        {
+          "const": "phase",
+          "description": "The order's phase, when no span says more.",
+          "type": "string"
+        }
+      ]
+    },
     "GatedClass": {
       "enum": [
         "irreversible",
@@ -2594,6 +2742,283 @@
       "required": [
         "owners",
         "repos"
+      ],
+      "type": "object"
+    },
+    "GithubHook": {
+      "properties": {
+        "hookId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "hookId"
+      ],
+      "type": "object"
+    },
+    "GithubWebhookSetInput": {
+      "properties": {
+        "url": {
+          "$ref": "#/$defs/WebhookUrl",
+          "description": "A public URL GitHub can reach, ending in /github; fleetd never creates one."
+        }
+      },
+      "type": "object"
+    },
+    "GithubWebhookSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "repos": {
+          "description": "The hooks now in place; empty when turned off.",
+          "items": {
+            "$ref": "#/$defs/GithubHook"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "type": "object"
+    },
+    "Headline": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "promptRef": {
+          "$ref": "#/$defs/PromptRef",
+          "description": "The prompt version that wrote a generated line, `status.headline@<sha10>`."
+        },
+        "reason": {
+          "description": "Why the template shows: \"facts changed, rewriting\", \"claude unavailable: …\", \"daily limit\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/HeadlineSource"
+        },
+        "text": {
+          "description": "Starts with \"Not live: …\" when a source the scope depends on is stale; the hub writes that clause.",
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "source",
+        "at"
+      ],
+      "type": "object"
+    },
+    "HeadlineSource": {
+      "oneOf": [
+        {
+          "const": "generated",
+          "description": "Phrased by the `status.headline` prompt from the current facts.",
+          "type": "string"
+        },
+        {
+          "const": "template",
+          "description": "The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit.",
+          "type": "string"
+        }
+      ]
+    },
+    "Health": {
+      "properties": {
+        "ci": {
+          "items": {
+            "$ref": "#/$defs/HealthCi"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/HealthMachine"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "slots": {
+          "$ref": "#/$defs/HealthSlots"
+        },
+        "usage": {
+          "items": {
+            "$ref": "#/$defs/HealthUsage"
+          },
+          "maxItems": 4,
+          "type": "array"
+        }
+      },
+      "required": [
+        "ci",
+        "machines",
+        "usage",
+        "slots"
+      ],
+      "type": "object"
+    },
+    "HealthCi": {
+      "description": "Main-branch CI of one repo.",
+      "properties": {
+        "asOf": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The last GitHub answer for the repo."
+        },
+        "failing": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "sha": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the state last changed."
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleMark"
+        },
+        "state": {
+          "$ref": "#/$defs/CiState"
+        }
+      },
+      "required": [
+        "repo",
+        "state",
+        "failing"
+      ],
+      "type": "object"
+    },
+    "HealthMachine": {
+      "properties": {
+        "dropsToday": {
+          "description": "Times it went offline or slept in the last 24 h.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastSeenAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "slept": {
+          "$ref": "#/$defs/SleptAt",
+          "description": "Its latest sleep, for 24 h after it woke."
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleMark"
+        },
+        "status": {
+          "$ref": "#/$defs/MachineStatus"
+        }
+      },
+      "required": [
+        "machineId",
+        "status",
+        "dropsToday"
+      ],
+      "type": "object"
+    },
+    "HealthSlots": {
+      "description": "\"8 running · slots 8/40 · 1 queued\". Hub-local, never stale.",
+      "properties": {
+        "cap": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "queued": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "used": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "running",
+        "used",
+        "cap",
+        "queued"
+      ],
+      "type": "object"
+    },
+    "HealthUsage": {
+      "description": "One claude usage window: the highest utilization of that type across machines.",
+      "properties": {
+        "limitType": {
+          "description": "claude's name, e.g. \"five_hour\", \"seven_day\".",
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "resetsAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleMark"
+        },
+        "status": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "utilization": {
+          "description": "0 to 1.",
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "limitType",
+        "machineId",
+        "status"
       ],
       "type": "object"
     },
@@ -2890,6 +3315,41 @@
           "const": "prompt.default_changed",
           "description": "This release changed the default of a prompt you overrode; yours stays in effect until you save it again or\nreset it: `data.id`, `data.scope`, `data.projectRef`, `data.base`, `data.current`.",
           "type": "string"
+        },
+        {
+          "const": "plan.changed",
+          "description": "A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).",
+          "type": "string"
+        },
+        {
+          "const": "plan.verified",
+          "description": "The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.",
+          "type": "string"
+        },
+        {
+          "const": "change.state",
+          "description": "A merge-train Change moved between states; `data.changeId`, `data.workstreamId`, `data.repo`, `data.prNumber`,\n`data.from`, `data.to`.",
+          "type": "string"
+        },
+        {
+          "const": "ci.main",
+          "description": "Main-branch CI of a train repo changed state; `data.repo`, `data.sha`, `data.state`, `data.failing`.",
+          "type": "string"
+        },
+        {
+          "const": "github.drift",
+          "description": "Reconciliation found GitHub moved without fleetd; `data.repo`, `data.kind`, `data.what`, `data.lagMs`.",
+          "type": "string"
+        },
+        {
+          "const": "source.stale",
+          "description": "A status source went quiet past its cadence; `data.source`, `data.sinceMs`, `data.reason`.",
+          "type": "string"
+        },
+        {
+          "const": "source.fresh",
+          "description": "A stale source answered again; `data.source`, `data.staleMs`.",
+          "type": "string"
         }
       ]
     },
@@ -2912,6 +3372,63 @@
       "required": [
         "totalMs",
         "n"
+      ],
+      "type": "object"
+    },
+    "InProgressRow": {
+      "properties": {
+        "changeIds": {
+          "items": {
+            "$ref": "#/$defs/ChangeId"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "eta": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "started + the median duration of done items of its size."
+        },
+        "gate": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId"
+        },
+        "overdueMinutes": {
+          "description": "Minutes past `eta`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleMark"
+        },
+        "taskIds": {
+          "description": "Join to the live feed's lanes for what each agent is doing now.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "title",
+        "taskIds",
+        "changeIds"
       ],
       "type": "object"
     },
@@ -3794,6 +4311,42 @@
       ],
       "type": "string"
     },
+    "Marker": {
+      "description": "A change to a figure's denominator, shown next to it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "deltaItems": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "pctAfter": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pctBefore": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "\"+3 items: time inspector added\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "text",
+        "deltaItems"
+      ],
+      "type": "object"
+    },
     "McpTools": {
       "properties": {
         "actions_list.input": {
@@ -3880,6 +4433,12 @@
         "fleetd_status.output": {
           "$ref": "#/$defs/FleetdStatusOutput"
         },
+        "github_webhook_set.input": {
+          "$ref": "#/$defs/GithubWebhookSetInput"
+        },
+        "github_webhook_set.output": {
+          "$ref": "#/$defs/GithubWebhookSetOutput"
+        },
         "inbox_reply.input": {
           "$ref": "#/$defs/InboxReplyInput"
         },
@@ -3945,6 +4504,12 @@
         },
         "orders_board.output": {
           "$ref": "#/$defs/OrdersBoardOutput"
+        },
+        "plan_get.input": {
+          "$ref": "#/$defs/PlanGetInput"
+        },
+        "plan_get.output": {
+          "$ref": "#/$defs/PlanGetOutput"
         },
         "project_add.input": {
           "$ref": "#/$defs/ProjectAddInput"
@@ -4035,6 +4600,24 @@
         },
         "session_prompt_get.output": {
           "$ref": "#/$defs/SessionPromptGetOutput"
+        },
+        "status_get.input": {
+          "$ref": "#/$defs/StatusGetInput"
+        },
+        "status_get.output": {
+          "$ref": "#/$defs/StatusGetOutput"
+        },
+        "status_seen.input": {
+          "$ref": "#/$defs/StatusSeenInput"
+        },
+        "status_seen.output": {
+          "$ref": "#/$defs/StatusSeenOutput"
+        },
+        "status_wait.input": {
+          "$ref": "#/$defs/StatusWaitInput"
+        },
+        "status_wait.output": {
+          "$ref": "#/$defs/StatusWaitOutput"
         },
         "subscription_delete.input": {
           "$ref": "#/$defs/SubscriptionDeleteInput"
@@ -4216,6 +4799,8 @@
         "events_wait.output",
         "fleetd_status.input",
         "fleetd_status.output",
+        "github_webhook_set.input",
+        "github_webhook_set.output",
         "inbox_reply.input",
         "inbox_reply.output",
         "incidents_list.input",
@@ -4238,6 +4823,8 @@
         "order_stop.output",
         "orders_board.input",
         "orders_board.output",
+        "plan_get.input",
+        "plan_get.output",
         "project_add.input",
         "project_add.output",
         "project_discover.input",
@@ -4268,6 +4855,12 @@
         "secret_submit.output",
         "session_prompt_get.input",
         "session_prompt_get.output",
+        "status_get.input",
+        "status_get.output",
+        "status_seen.input",
+        "status_seen.output",
+        "status_wait.input",
+        "status_wait.output",
         "subscription_delete.input",
         "subscription_delete.output",
         "subscription_list.input",
@@ -4369,6 +4962,172 @@
       "required": [
         "baseline",
         "candidate"
+      ],
+      "type": "object"
+    },
+    "MilestoneId": {
+      "pattern": "^M[1-9][0-9]*$",
+      "type": "string"
+    },
+    "MilestoneState": {
+      "oneOf": [
+        {
+          "enum": [
+            "open"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "Derived: at least one item done and every item done or dropped.",
+          "type": "string"
+        }
+      ]
+    },
+    "MilestoneView": {
+      "description": "A milestone with its derived figure.",
+      "properties": {
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "doneAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "eta": {
+          "$ref": "#/$defs/StatusEta"
+        },
+        "firstItemAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The first item's time; scope changes within 10 minutes of it carry no marker."
+        },
+        "milestoneId": {
+          "$ref": "#/$defs/MilestoneId"
+        },
+        "position": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "state": {
+          "$ref": "#/$defs/MilestoneState"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "milestoneId",
+        "projectRef",
+        "title",
+        "position",
+        "state",
+        "createdAt",
+        "progress"
+      ],
+      "type": "object"
+    },
+    "MoreCounts": {
+      "description": "How many rows each capped list left out.",
+      "properties": {
+        "done": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "inProgress": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parts": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "risks": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stale": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "done",
+        "inProgress",
+        "next",
+        "risks",
+        "parts",
+        "stale"
+      ],
+      "type": "object"
+    },
+    "NeedsYou": {
+      "properties": {
+        "askIds": {
+          "description": "Render with the inbox's one-tap answers.",
+          "items": {
+            "$ref": "#/$defs/AskId"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "count",
+        "askIds"
+      ],
+      "type": "object"
+    },
+    "NextRow": {
+      "properties": {
+        "after": {
+          "description": "Open items it waits on.",
+          "items": {
+            "$ref": "#/$defs/PlanItemId"
+          },
+          "maxItems": 5,
+          "type": "array"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "itemId",
+        "title",
+        "after"
       ],
       "type": "object"
     },
@@ -4911,6 +5670,306 @@
       ],
       "type": "object"
     },
+    "PlanChange": {
+      "description": "One marker: a recorded change to a figure's denominator, never a silent jump.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "`lead:<projectRef>`, a key id, or `hub`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "deltaItems": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "deltaSize": {
+          "description": "In points.",
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/PlanChangeKind"
+        },
+        "milestoneId": {
+          "$ref": "#/$defs/MilestoneId"
+        },
+        "note": {
+          "description": "\"+3 items: time inspector added\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "pctAfter": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pctBefore": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "kind",
+        "milestoneId",
+        "at",
+        "by",
+        "deltaItems",
+        "deltaSize",
+        "note"
+      ],
+      "type": "object"
+    },
+    "PlanChangeKind": {
+      "oneOf": [
+        {
+          "const": "scope",
+          "description": "A lead's add, edit or drop that moved an open milestone's total after its planning window.",
+          "type": "string"
+        },
+        {
+          "const": "reopened",
+          "description": "A later claim failed a check a done item listed.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "Items dropped by the hub when their order finished, stopped or failed.",
+          "type": "string"
+        },
+        {
+          "const": "milestone_done",
+          "description": "A milestone finished and left the project's figure.",
+          "type": "string"
+        },
+        {
+          "const": "milestone_reopened",
+          "description": "An item was added to a done milestone.",
+          "type": "string"
+        }
+      ]
+    },
+    "PlanGetInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "PlanGetOutput": {
+      "description": "A plan as `plan show` and `plan_get` return it: derived state, figures and markers.",
+      "properties": {
+        "eta": {
+          "$ref": "#/$defs/StatusEta"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PlanItem"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "markers": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/PlanChange"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "milestones": {
+          "items": {
+            "$ref": "#/$defs/MilestoneView"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "Set when the view is one order's items."
+        }
+      },
+      "required": [
+        "projectRef",
+        "progress",
+        "milestones",
+        "items",
+        "markers"
+      ],
+      "type": "object"
+    },
+    "PlanItem": {
+      "properties": {
+        "after": {
+          "default": [],
+          "description": "Items that must be done before this one starts: serial gates.",
+          "items": {
+            "$ref": "#/$defs/PlanItemId"
+          },
+          "maxItems": 20,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "doneAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "dropReason": {
+          "description": "Why it was dropped.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "What verified it, e.g. \"#212 merged by the train · check 2 passed C9\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId"
+        },
+        "links": {
+          "$ref": "#/$defs/PlanLinks",
+          "default": {
+            "checks": [],
+            "prs": [],
+            "tasks": []
+          }
+        },
+        "milestoneId": {
+          "$ref": "#/$defs/MilestoneId"
+        },
+        "position": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "size": {
+          "$ref": "#/$defs/Size"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The first linked `task.started`."
+        },
+        "state": {
+          "$ref": "#/$defs/PlanItemState"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "itemId",
+        "projectRef",
+        "milestoneId",
+        "title",
+        "weight",
+        "size",
+        "position",
+        "state"
+      ],
+      "type": "object"
+    },
+    "PlanItemId": {
+      "pattern": "^P[1-9][0-9]*$",
+      "type": "string"
+    },
+    "PlanItemState": {
+      "oneOf": [
+        {
+          "enum": [
+            "open",
+            "dropped"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "Set only by the hub, from verification.",
+          "type": "string"
+        }
+      ]
+    },
+    "PlanLinks": {
+      "description": "What ties work to an item. An item with no links never counts done.",
+      "properties": {
+        "checks": {
+          "default": [],
+          "description": "Done-when indices of the item's order that must pass in its latest claim.",
+          "items": {
+            "maximum": 19,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 20,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "prs": {
+          "default": [],
+          "description": "PRs listed on the item (`--pr`, or `change enqueue --item`).",
+          "items": {
+            "$ref": "#/$defs/GitHubPrUrl"
+          },
+          "maxItems": 20,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tasks": {
+          "default": [],
+          "description": "Tasks spawned with `--item`; their Changes count through `Change.task_id`.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 50,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
+    },
     "PlaybookChangeKind": {
       "enum": [
         "wording",
@@ -5016,6 +6075,63 @@
         "state",
         "reviewsDone",
         "reviewsNeeded"
+      ],
+      "type": "object"
+    },
+    "Progress": {
+      "description": "A figure. `pct` counts verified must items by size only; polish shows beside it.",
+      "properties": {
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "done": {
+          "description": "Must items done and in the figure.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "marker": {
+          "$ref": "#/$defs/Marker",
+          "description": "The latest scope change, e.g. \"↓ from 80% · +3 items: time inspector added\"."
+        },
+        "pct": {
+          "description": "floor(100 · must points done / must points open or done); the polish figure when there are no must items.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "polishDone": {
+          "description": "Polish items done and in the figure (\"polish 2/5\").",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "polishPct": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "polishTotal": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleMark"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pct",
+        "done",
+        "total",
+        "polishDone",
+        "polishTotal",
+        "asOf"
       ],
       "type": "object"
     },
@@ -6463,6 +7579,52 @@
       ],
       "type": "string"
     },
+    "Risk": {
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "message": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "rule": {
+          "$ref": "#/$defs/RiskRule"
+        }
+      },
+      "required": [
+        "rule",
+        "level",
+        "message"
+      ],
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "warning",
+        "danger"
+      ],
+      "type": "string"
+    },
+    "RiskRule": {
+      "enum": [
+        "ci_red_main",
+        "machine_offline",
+        "blocked_on_you",
+        "slipping",
+        "estimate_drift",
+        "riskiest_item",
+        "ci_red_repeat",
+        "machine_flaky",
+        "usage_high",
+        "slots_full",
+        "github_drift",
+        "no_plan"
+      ],
+      "type": "string"
+    },
     "RuntimeMode": {
       "enum": [
         "full-access",
@@ -6496,6 +7658,35 @@
         "label",
         "needle",
         "enforced"
+      ],
+      "type": "object"
+    },
+    "ScopePart": {
+      "description": "A child figure: the fleet's projects, a project's milestones, an order's milestones.",
+      "properties": {
+        "eta": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "milestoneId": {
+          "$ref": "#/$defs/MilestoneId"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "scope": {
+          "$ref": "#/$defs/StatusScope",
+          "description": "Open it as its own scope (projects and orders)."
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "progress"
       ],
       "type": "object"
     },
@@ -6662,6 +7853,90 @@
         "id",
         "ref",
         "scope"
+      ],
+      "type": "object"
+    },
+    "Since": {
+      "description": "Counts since the reading key last looked at this scope. Zero counts are hidden by clients.",
+      "properties": {
+        "asked": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "merged": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pruned": {
+          "description": "The mark is older than the event log keeps (\"since more than 30 days\").",
+          "type": "boolean"
+        },
+        "scopeItems": {
+          "description": "Net items added (negative: dropped) by scope changes.",
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "seenAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent: never looked (or not a human key)."
+        },
+        "seenSeq": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "started": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verified": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "merged",
+        "verified",
+        "started",
+        "failed",
+        "asked",
+        "scopeItems"
+      ],
+      "type": "object"
+    },
+    "Size": {
+      "enum": [
+        "s",
+        "m",
+        "l"
+      ],
+      "type": "string"
+    },
+    "SleptAt": {
+      "description": "A sleep a machine's node reported on waking, epoch milliseconds (the same fields as `machine.slept`).",
+      "properties": {
+        "fromMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fromMs",
+        "toMs"
       ],
       "type": "object"
     },
@@ -7154,6 +8429,26 @@
       ],
       "type": "object"
     },
+    "StaleMark": {
+      "description": "Why a part is not live: its source went quiet past its cadence.",
+      "properties": {
+        "reason": {
+          "description": "\"no heartbeat from forge for 4m\", \"GitHub not reached for 4m: …\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "since",
+        "reason"
+      ],
+      "type": "object"
+    },
     "StalePrompt": {
       "description": "An override edited from an older default than the one this release ships. It stays in effect until the human\nsaves it again with `base` = `current.ref`, or resets it.",
       "properties": {
@@ -7187,12 +8482,493 @@
       ],
       "type": "object"
     },
+    "StaleSource": {
+      "description": "A source that is stale now. `source` is `machine:<m>`, `usage:<m>`, `github:<repo>`, `train:<repo>` or\n`webhook:<repo>`.",
+      "properties": {
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "source": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "since",
+        "reason"
+      ],
+      "type": "object"
+    },
     "Star": {
       "description": "`\"*\"`: every event type or machine.",
       "enum": [
         "*"
       ],
       "type": "string"
+    },
+    "StatusDoc": {
+      "properties": {
+        "done": {
+          "items": {
+            "$ref": "#/$defs/DoneRow"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "eta": {
+          "$ref": "#/$defs/StatusEta"
+        },
+        "gates": {
+          "items": {
+            "$ref": "#/$defs/Gate"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "headline": {
+          "$ref": "#/$defs/Headline"
+        },
+        "health": {
+          "$ref": "#/$defs/Health"
+        },
+        "inProgress": {
+          "items": {
+            "$ref": "#/$defs/InProgressRow"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "markers": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Marker"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "more": {
+          "$ref": "#/$defs/MoreCounts"
+        },
+        "needsYou": {
+          "$ref": "#/$defs/NeedsYou"
+        },
+        "next": {
+          "items": {
+            "$ref": "#/$defs/NextRow"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "now": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The hub clock when the doc was rendered."
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/ScopePart"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "risks": {
+          "items": {
+            "$ref": "#/$defs/Risk"
+          },
+          "maxItems": 5,
+          "type": "array"
+        },
+        "scope": {
+          "$ref": "#/$defs/StatusScope"
+        },
+        "seq": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "The event log's head the doc reflects; `status_seen` records it."
+        },
+        "since": {
+          "$ref": "#/$defs/Since"
+        },
+        "stale": {
+          "items": {
+            "$ref": "#/$defs/StaleSource"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "title": {
+          "description": "\"Fleet\", the project's title or the order's.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "version": {
+          "description": "Bumps whenever the doc's content changes; `status_wait` waits past it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "virtualTier": {
+          "$ref": "#/$defs/Tier",
+          "description": "The order's tier when the scope is an order with no plan items."
+        }
+      },
+      "required": [
+        "scope",
+        "title",
+        "version",
+        "seq",
+        "now",
+        "progress",
+        "markers",
+        "eta",
+        "gates",
+        "headline",
+        "since",
+        "parts",
+        "done",
+        "inProgress",
+        "next",
+        "needsYou",
+        "risks",
+        "health",
+        "stale",
+        "more"
+      ],
+      "type": "object"
+    },
+    "StatusEta": {
+      "description": "ETA from measured throughput; the lead's own estimate only as a comparison.",
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/EtaBasis"
+        },
+        "chain": {
+          "description": "The serial chain that sets `current` when it is later than throughput says, e.g. \"P12 full lab run\".",
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "current": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "max(throughput ETA, chain ETA)."
+        },
+        "lead": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The lead's calibrated estimate, present when it differs from `current` by more than max(1 h, 50%)."
+        },
+        "original": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The first ETA with enough samples, stored once (orders and milestones only)."
+        },
+        "rate": {
+          "description": "Points verified per busy hour.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "samples": {
+          "description": "Items verified in the 7-day window behind `rate`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "slip": {
+          "$ref": "#/$defs/EtaSlip"
+        }
+      },
+      "required": [
+        "samples",
+        "basis"
+      ],
+      "type": "object"
+    },
+    "StatusGetInput": {
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/StatusScope"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "type": "object"
+    },
+    "StatusGetOutput": {
+      "properties": {
+        "done": {
+          "items": {
+            "$ref": "#/$defs/DoneRow"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "eta": {
+          "$ref": "#/$defs/StatusEta"
+        },
+        "gates": {
+          "items": {
+            "$ref": "#/$defs/Gate"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "headline": {
+          "$ref": "#/$defs/Headline"
+        },
+        "health": {
+          "$ref": "#/$defs/Health"
+        },
+        "inProgress": {
+          "items": {
+            "$ref": "#/$defs/InProgressRow"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "markers": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/Marker"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "more": {
+          "$ref": "#/$defs/MoreCounts"
+        },
+        "needsYou": {
+          "$ref": "#/$defs/NeedsYou"
+        },
+        "next": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "now": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The hub clock when the doc was rendered."
+        },
+        "parts": {
+          "items": {
+            "$ref": "#/$defs/ScopePart"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "risks": {
+          "items": {
+            "$ref": "#/$defs/Risk"
+          },
+          "maxItems": 5,
+          "type": "array"
+        },
+        "scope": {
+          "$ref": "#/$defs/StatusScope"
+        },
+        "seq": {
+          "$ref": "#/$defs/EventSeq",
+          "description": "The event log's head the doc reflects; `status_seen` records it."
+        },
+        "since": {
+          "$ref": "#/$defs/Since"
+        },
+        "stale": {
+          "items": {
+            "$ref": "#/$defs/StaleSource"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "title": {
+          "description": "\"Fleet\", the project's title or the order's.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "version": {
+          "description": "Bumps whenever the doc's content changes; `status_wait` waits past it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "virtualTier": {
+          "$ref": "#/$defs/Tier",
+          "description": "The order's tier when the scope is an order with no plan items."
+        }
+      },
+      "required": [
+        "scope",
+        "title",
+        "version",
+        "seq",
+        "now",
+        "progress",
+        "markers",
+        "eta",
+        "gates",
+        "headline",
+        "since",
+        "parts",
+        "done",
+        "inProgress",
+        "next",
+        "needsYou",
+        "risks",
+        "health",
+        "stale",
+        "more"
+      ],
+      "type": "object"
+    },
+    "StatusScope": {
+      "description": "What a status doc covers. `key()` is the form stored per human key (\"fleet\", \"project:forge/p1\", \"order:W41\").",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "fleet",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "project",
+              "type": "string"
+            },
+            "projectRef": {
+              "$ref": "#/$defs/ProjectRef"
+            }
+          },
+          "required": [
+            "kind",
+            "projectRef"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "order",
+              "type": "string"
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "StatusSeenInput": {
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/StatusScope"
+        },
+        "seq": {
+          "$ref": "#/$defs/EventSeq"
+        }
+      },
+      "required": [
+        "scope",
+        "seq"
+      ],
+      "type": "object"
+    },
+    "StatusSeenOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "recorded": {
+          "description": "False for agent keys: only a person's look moves the mark.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "recorded"
+      ],
+      "type": "object"
+    },
+    "StatusWaitInput": {
+      "properties": {
+        "after": {
+          "description": "The version the caller has; absent waits for none (answers at once).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/StatusScope"
+        },
+        "timeoutSec": {
+          "default": 50,
+          "maximum": 50,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "type": "object"
+    },
+    "StatusWaitOutput": {
+      "properties": {
+        "doc": {
+          "$ref": "#/$defs/StatusDoc"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "unchanged": {
+          "type": "boolean"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "type": "object"
     },
     "Step": {
       "properties": {
@@ -7532,6 +9308,10 @@
         "estimateMinutes": {
           "minimum": 0,
           "type": "number"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId",
+          "description": "The plan item it was spawned for (`--item`)."
         },
         "kind": {
           "$ref": "#/$defs/TaskKind"
@@ -9293,6 +11073,20 @@
     },
     "WebhookUrl": {
       "type": "string"
+    },
+    "Weight": {
+      "oneOf": [
+        {
+          "const": "must",
+          "description": "Counts toward the headline number.",
+          "type": "string"
+        },
+        {
+          "const": "polish",
+          "description": "Shown beside the number, never in it.",
+          "type": "string"
+        }
+      ]
     },
     "Workstream": {
       "properties": {

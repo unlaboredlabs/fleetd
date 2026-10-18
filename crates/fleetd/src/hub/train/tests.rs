@@ -747,6 +747,7 @@ fn enqueue_call(pr_url: String, serves: Option<&str>) -> ChangeEnqueueCall {
         workstream_id: Some(ws()),
         serves: serves.map(Serves::unchecked),
         tier: None,
+        item: None,
     }
 }
 

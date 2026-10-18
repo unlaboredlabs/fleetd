@@ -119,6 +119,9 @@ pub struct LoginLimit {
     pub resets_at: Option<Timestamp>,
     /// allowed, allowed_warning or rejected.
     pub status: Text<1, 40>,
+    /// When claude reported it; absent from older nodes. Without it a reading's age is unknown.
+    #[serde(default)]
+    pub observed_at: Option<Timestamp>,
 }
 
 /// Hub -> node: run a `cmd` check. argv only, never through a shell.

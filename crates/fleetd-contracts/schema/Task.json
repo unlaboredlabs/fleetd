@@ -19,6 +19,10 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "PlanItemId": {
+      "pattern": "^P[1-9][0-9]*$",
+      "type": "string"
+    },
     "ProjectId": {
       "type": "string"
     },
@@ -106,6 +110,10 @@
         "estimateMinutes": {
           "minimum": 0,
           "type": "number"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId",
+          "description": "The plan item it was spawned for (`--item`)."
         },
         "kind": {
           "$ref": "#/$defs/TaskKind"

@@ -1626,6 +1626,7 @@ impl Train {
             workstream_id: None,
             serves: None,
             tier: None,
+            item: None,
         };
         if let Err(e) = self.enqueue(&task.project_ref, input).await {
             let fix = e

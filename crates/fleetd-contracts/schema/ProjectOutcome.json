@@ -405,6 +405,10 @@
       ],
       "type": "object"
     },
+    "PlanItemId": {
+      "pattern": "^P[1-9][0-9]*$",
+      "type": "string"
+    },
     "PlaybookRef": {
       "description": "<playbook name>@<full lowercase hex git blob SHA>",
       "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
@@ -631,6 +635,10 @@
         "estimateMinutes": {
           "minimum": 0,
           "type": "number"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId",
+          "description": "The plan item it was spawned for (`--item`)."
         },
         "kind": {
           "$ref": "#/$defs/TaskKind"

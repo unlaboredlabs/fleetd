@@ -19,6 +19,7 @@ use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{
     ActionItem, Machine, ProjectOutcome, ProjectSummary, RuntimeMode, ThreadSummary,
 };
+use crate::plan::PlanView;
 use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
@@ -30,6 +31,7 @@ use crate::prompts::{
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
+use crate::status::{StatusDoc, StatusScope};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
@@ -1033,6 +1035,69 @@ output!(SessionPromptGetOutput {
     session: SessionPrompt
 });
 
+// status_get, status_wait, status_seen: the status view of the fleet, a project or an order.
+input!(StatusGetInput { scope: StatusScope });
+output!(StatusGetOutput {
+    #[serde(flatten)]
+    doc: StatusDoc,
+});
+input!(StatusWaitInput {
+    scope: StatusScope,
+    /// The version the caller has; absent waits for none (answers at once).
+    after: Option<Count>,
+    #[serde(default)]
+    timeout_sec: IntOr<0, 50, 50>,
+});
+// `doc` once its version is past `after`; otherwise `unchanged` with the current version.
+output!(StatusWaitOutput {
+    doc: Option<StatusDoc>,
+    unchanged: Option<bool>,
+    version: Count,
+});
+input!(StatusSeenInput {
+    scope: StatusScope,
+    seq: EventSeq
+});
+output!(StatusSeenOutput {
+    /// False for agent keys: only a person's look moves the mark.
+    recorded: bool,
+});
+
+// plan_get: one project's plan, or one order's items.
+input!(
+    #[serde(remote = "Self")]
+    PlanGetInput {
+        project_ref: Option<ProjectRef>,
+        workstream_id: Option<WorkstreamId>,
+    }
+);
+checked!(PlanGetInput, |input| {
+    if input.project_ref.is_some() == input.workstream_id.is_some() {
+        return Err("give projectRef or workstreamId".into());
+    }
+    Ok(())
+});
+output!(PlanGetOutput {
+    #[serde(flatten)]
+    plan: PlanView,
+});
+
+// github_webhook_set: opt-in GitHub webhooks on every train repo; no url turns them off.
+input!(GithubWebhookSetInput {
+    /// A public URL GitHub can reach, ending in /github; fleetd never creates one.
+    url: Option<WebhookUrl>,
+});
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubHook {
+    pub repo: GitHubRepo,
+    pub hook_id: Positive,
+}
+output!(GithubWebhookSetOutput {
+    /// The hooks now in place; empty when turned off.
+    repos: List<GithubHook, 0, 100>,
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -1161,6 +1226,11 @@ tools! {
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;
     time_retention_set => TimeRetentionSet, Admin, TimeRetentionSetInput, TimeRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
+    status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
+    status_wait => StatusWait, Read, StatusWaitInput, StatusWaitOutput;
+    status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
+    plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
+    github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1293,6 +1363,7 @@ mod tests {
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
         assert_eq!(McpToolName::ALL.len(), 65);
+        assert_eq!(McpToolName::ALL.len(), 68);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());

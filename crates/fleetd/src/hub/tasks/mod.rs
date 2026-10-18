@@ -1066,6 +1066,7 @@ impl Tasks {
             serves: input.serves.clone(),
             qa: input.qa,
             pr: input.pr.clone(),
+            item_id: input.item.clone(),
             state: TaskState::Queued,
             queued_reason: None,
             thread_ref: None,
