@@ -75,6 +75,7 @@ impl Fake {
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),
             mcp_config: None,
+            settings: None,
             env: vec![
                 ("PATH".into(), std::env::var("PATH").unwrap()),
                 ("CLAUDE_CONFIG_DIR".into(), path("config")),
@@ -324,6 +325,7 @@ async fn real_claude_without_a_login_fails_loudly_at_no_cost() {
         allowed_tools: vec!["Bash(echo:*)".into()],
         disallowed_tools: Vec::new(),
         mcp_config: None,
+        settings: None,
         env: vec![
             ("HOME".into(), dir.path().display().to_string()),
             ("PATH".into(), std::env::var("PATH").unwrap()),

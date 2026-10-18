@@ -249,6 +249,14 @@ pub struct RunnerInfo {
     /// The last zero-cost conformance probe passed against the installed binary.
     pub conformance_ok: Option<bool>,
     pub problem: Option<String>,
+    /// A person's name for the login: "Max", "API key", "gateway token", ….
+    pub login_label: Option<String>,
+    /// The `ANTHROPIC_BASE_URL` sessions go through, when it is not Anthropic's own.
+    pub proxy: Option<String>,
+    /// Where `proxy` is set, e.g. "~/.claude/settings.json".
+    pub proxy_source: Option<String>,
+    /// The claude config dir sessions use: the user's own `~/.claude` unless the machine was given another.
+    pub config_dir: Option<String>,
 }
 
 #[skip_serializing_none]

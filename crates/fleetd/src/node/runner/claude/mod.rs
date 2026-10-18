@@ -16,8 +16,8 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{RunnerInfo, RunnerKind};
 
 use super::{
-    BoxFut, ExitInfo, Runner, RunnerError, SessionHandle, SessionSpec, conformance, failure,
-    process,
+    BoxFut, ExitInfo, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance,
+    failure, process,
 };
 use mapper::{Classify, StreamMapper};
 
@@ -42,9 +42,6 @@ pub const ALWAYS_DISALLOWED: &[&str] = &[
     "EnterWorktree",
     "ExitWorktree",
 ];
-
-/// `--mcp-config` when the node wrote none: with `--strict-mcp-config`, no user or repo MCP server loads.
-const NO_MCP_SERVERS: &str = r#"{"mcpServers":{}}"#;
 
 /// Variables never passed on even if the caller's env has them: claude sets them for its own children and treats a
 /// process that has them as nested inside another session.
@@ -118,13 +115,16 @@ impl ClaudeRunner {
             }
         }
         args.extend(disallowed);
-        args.push("--strict-mcp-config".into());
-        args.push("--mcp-config".into());
-        args.push(
-            spec.mcp_config
-                .as_ref()
-                .map_or(NO_MCP_SERVERS.into(), |p| p.display().to_string()),
-        );
+        // No `--strict-mcp-config`: sessions run with the user's own claude setup, MCP servers included, and fleetd's
+        // servers are added to them.
+        if let Some(mcp) = &spec.mcp_config {
+            args.push("--mcp-config".into());
+            args.push(mcp.display().to_string());
+        }
+        if let Some(settings) = &spec.settings {
+            args.push("--settings".into());
+            args.push(settings.display().to_string());
+        }
         args.push("--setting-sources".into());
         args.push("user,project,local".into());
         for dir in &spec.add_dirs {
@@ -153,17 +153,7 @@ impl Runner for ClaudeRunner {
         if spec.model.trim().is_empty() {
             return Err(refuse("no model: fleetd always names one".into()));
         }
-        // Without it claude would read and write the user's own ~/.claude: their login, settings, hooks, sessions.
-        let Some(config_dir) = spec
-            .env
-            .iter()
-            .find(|(k, v)| k == "CLAUDE_CONFIG_DIR" && !v.is_empty())
-            .map(|(_, v)| PathBuf::from(v))
-        else {
-            return Err(refuse(
-                "CLAUDE_CONFIG_DIR is not set for the session".into(),
-            ));
-        };
+        let config_dir = claude_setup::config_dir(&spec.env);
         if let Some(file) = session_file(&config_dir, &spec.cwd, &spec.session_id) {
             // The session file decides, so a crash between spawn and the node's own record can't make claude refuse
             // ("Session ID … is already in use" / "No conversation found").
@@ -182,6 +172,7 @@ impl Runner for ClaudeRunner {
                     .filter(|(k, _)| {
                         !NESTING_VARS.contains(&k.as_str())
                             && k != process::SESSION_MARKER
+                            && k != claude_setup::FLEETD_ENV_SOURCE
                             && k != "CLAUDE_CODE_STARTUP_FAILURE_RESULTS"
                     })
                     .map(|(k, v)| (k, v)),
@@ -266,6 +257,7 @@ mod tests {
             ],
             disallowed_tools: vec!["Task".into(), "WebFetch".into()],
             mcp_config: None,
+            settings: None,
             env: Vec::new(),
             transcript: None,
         }
@@ -283,8 +275,7 @@ mod tests {
              --allowedTools Bash(npm test:*) Bash(git commit -m \"a, b\") \
              --disallowedTools Task Workflow AskUserQuestion EnterPlanMode ExitPlanMode CronCreate CronDelete \
              CronList ScheduleWakeup EnterWorktree ExitWorktree WebFetch \
-             --strict-mcp-config --mcp-config {\"mcpServers\":{}} --setting-sources user,project,local \
-             --add-dir /work/root"
+             --setting-sources user,project,local --add-dir /work/root"
         );
 
         let resumed = SessionSpec {
@@ -292,12 +283,15 @@ mod tests {
             runtime_mode: RuntimeMode::FullAccess,
             allowed_tools: Vec::new(),
             mcp_config: Some("/n/mcp.json".into()),
+            settings: Some("/n/settings.json".into()),
             ..spec()
         };
         let args = runner.args(&resumed).join(" ");
         assert!(args.contains("--resume 7f0c0000-0000-4000-8000-000000000001 "));
         assert!(args.contains("--permission-mode bypassPermissions --disallowedTools"));
-        assert!(args.contains("--mcp-config /n/mcp.json "));
+        // fleetd's servers and settings are added to the user's own, never in place of them.
+        assert!(args.contains("--mcp-config /n/mcp.json --settings /n/settings.json "));
+        assert!(!args.contains("--strict-mcp-config"));
     }
 
     #[test]
@@ -310,15 +304,5 @@ mod tests {
         );
         let long = format!("/nonexistent/{}", "x".repeat(200));
         assert_eq!(session_file(config, Path::new(&long), "s1"), None);
-    }
-
-    #[tokio::test]
-    async fn spawn_refuses_without_an_isolated_config_dir() {
-        let runner = ClaudeRunner::new("/bin/true".into());
-        let refused = runner.spawn(spec()).err().map(|e| e.to_string());
-        assert_eq!(
-            refused.as_deref(),
-            Some("could not start /bin/true: CLAUDE_CONFIG_DIR is not set for the session")
-        );
     }
 }

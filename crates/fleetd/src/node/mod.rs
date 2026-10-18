@@ -26,10 +26,11 @@ use config::{NodeConfig, default_node_home, read_config, write_config};
 
 /// `fleetd node …` usage.
 pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> [--tags a,b]
-            [--name <name>] [--home <dir>] [--enroll-only]
+            [--name <name>] [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
              enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
              --token-file - reads the token from stdin; --enroll-only exits once the hub has accepted this
-             node
+             node; sessions use your own claude setup (~/.claude) unless --claude-config-dir names a
+             dedicated one
   node run [--home <dir>]
              keep the link up for a machine that has joined
 ";
@@ -46,6 +47,8 @@ pub struct JoinArgs {
     pub home: Option<PathBuf>,
     /// `--enroll-only`: stop once the hub has accepted the node's key instead of keeping the link up.
     pub enroll_only: bool,
+    /// `--claude-config-dir`: a dedicated claude profile for this machine's sessions instead of the user's own.
+    pub claude_config_dir: Option<String>,
 }
 
 /// `fleetd node run` / `node serve`.
@@ -102,6 +105,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         name: args.name.unwrap_or(args.machine),
         tags: args.tags.unwrap_or_default(),
         cmd_roots: None,
+        claude_config_dir: args.claude_config_dir,
         enrolled: false,
     };
     write_config(&home, &config).map_err(|_| {

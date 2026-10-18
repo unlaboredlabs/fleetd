@@ -54,7 +54,8 @@ pub struct SessionLocal {
     /// claude files sessions by cwd, so this never changes once `started`.
     pub cwd: PathBuf,
     pub add_dirs: Vec<PathBuf>,
-    /// The `CLAUDE_CONFIG_DIR` the session was started with; resuming needs the same one.
+    /// The claude config dir the session was started with (the user's `~/.claude`, their own `CLAUDE_CONFIG_DIR`, or
+    /// the machine's dedicated one); resuming needs the same one.
     pub config_dir: PathBuf,
     pub workspace_root: PathBuf,
     /// Set for worktree sessions.

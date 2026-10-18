@@ -392,9 +392,18 @@ pub fn retry_delay_with(attempt: u32, unit: f64) -> Option<u64> {
     Some((base as f64 * factor).round() as u64)
 }
 
-/// How to log claude in for fleetd, run on the machine.
-pub const LOGIN_FIX: &str = "CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login (or run `claude setup-token` and put \
-                             CLAUDE_CODE_OAUTH_TOKEN=<token> in ~/.fleetd/claude.env)";
+/// How to log claude in, run on the machine. Sessions use the user's own claude setup, so it is the same login as
+/// their own `claude`; when that goes through a proxy, the proxy holds the login.
+pub const LOGIN_FIX: &str = "claude auth login (or, when claude goes through your proxy, log in with your proxy as you normally do)";
+
+/// [`LOGIN_FIX`] for a machine whose sessions do or don't go through a proxy.
+pub fn login_fix(proxy: bool) -> &'static str {
+    if proxy {
+        "log in with your proxy as you normally do"
+    } else {
+        "claude auth login"
+    }
+}
 
 /// The fix for an Auth failure on `machine`.
 pub fn auth_fix(machine: &str) -> String {
@@ -690,8 +699,8 @@ mod tests {
         assert!(!retryable(Auth));
         assert_eq!(
             auth_fix("forge"),
-            "On forge: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login (or run `claude setup-token` and put \
-             CLAUDE_CODE_OAUTH_TOKEN=<token> in ~/.fleetd/claude.env)"
+            "On forge: claude auth login (or, when claude goes through your proxy, log in with your proxy as you \
+             normally do)"
         );
     }
 

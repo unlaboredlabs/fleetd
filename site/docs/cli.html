@@ -97,8 +97,8 @@ that did not pass), 2 usage, 3 refused, 4 hub or node unreachable, 78 (<code>lis
 <dt id="hub-token-create"><a class="anchor" href="#hub-token-create" aria-label="Link to fleetd hub token create">#</a><pre class="syn"><code>fleetd hub token create --machine &lt;id&gt; [--home &lt;dir&gt;]</code></pre></dt>
 <dd>print a one-time enrollment token (15 min) for <code>fleetd node join</code></dd>
 <dt id="node-join"><a class="anchor" href="#node-join" aria-label="Link to fleetd node join">#</a><pre class="syn"><code>fleetd node join --hub &lt;url&gt; (--token &lt;token&gt; | --token-file &lt;file|-&gt;) --machine &lt;id&gt; [--tags a,b]
-    [--name &lt;name&gt;] [--home &lt;dir&gt;] [--enroll-only]</code></pre></dt>
-<dd>enroll this machine with the hub, then keep its link up (node home default <code>~/.fleetd/node</code>); <code>--token-file</code> - reads the token from stdin; <code>--enroll-only</code> exits once the hub has accepted this node</dd>
+    [--name &lt;name&gt;] [--home &lt;dir&gt;] [--enroll-only] [--claude-config-dir &lt;dir&gt;]</code></pre></dt>
+<dd>enroll this machine with the hub, then keep its link up (node home default <code>~/.fleetd/node</code>); <code>--token-file</code> - reads the token from stdin; <code>--enroll-only</code> exits once the hub has accepted this node; sessions use your own claude setup (<code>~/.claude</code>) unless <code>--claude-config-dir</code> names a dedicated one</dd>
 <dt id="node-run"><a class="anchor" href="#node-run" aria-label="Link to fleetd node run">#</a><pre class="syn"><code>fleetd node run [--home &lt;dir&gt;]</code></pre></dt>
 <dd>keep the link up for a machine that has joined</dd>
 <dt id="listen"><a class="anchor" href="#listen" aria-label="Link to fleetd listen">#</a><pre class="syn"><code>fleetd listen --hub &lt;url&gt; --key-file &lt;path&gt; (--exec '&lt;cmd&gt;' | --post &lt;url&gt;)

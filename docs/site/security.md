@@ -39,8 +39,8 @@ fleetd is built for one person or a small team running their own fleet.
 
 - **Installs are checksummed.** The installer and `fleetd update` refuse any release file whose SHA-256 doesn't match
   the release's `SHA256SUMS`. `fleetd machine add` copies the hub's own binary to a worker over SSH.
-- **Models only through the `claude` CLI**, with a Claude login of fleetd's own on each machine. fleetd never calls
-  a model or usage API itself.
+- **Models only through the `claude` CLI**, with the machine user's own claude setup (their login, settings and MCP
+  servers), so agents get the same Claude access as that user. fleetd never calls a model or usage API itself.
 
 ## Report a vulnerability
 

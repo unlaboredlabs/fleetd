@@ -44,7 +44,8 @@ const flag = (name: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const sessionId = flag("--session-id") ?? flag("--resume") ?? randomUUID();
-const configDir = process.env.CLAUDE_CONFIG_DIR;
+// Sessions use the machine user's own setup: their CLAUDE_CONFIG_DIR if any, else ~/.claude.
+const configDir = process.env.CLAUDE_CONFIG_DIR ?? (process.env.HOME ? path.join(process.env.HOME, ".claude") : undefined);
 const resumeId = flag("--resume");
 if (resumeId !== undefined && configDir !== undefined) {
   const projects = path.join(configDir, "projects");

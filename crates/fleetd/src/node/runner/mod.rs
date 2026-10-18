@@ -10,6 +10,7 @@
 //! `{"dir":"in"|"out"|"stderr"|"meta","ms":<since start>,"msg":{…}}` (`raw` instead of `msg` for non-JSON lines).
 //! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
 pub mod claude;
+pub mod claude_setup;
 pub mod conformance;
 pub mod failure;
 pub mod process;
@@ -47,8 +48,10 @@ pub struct SessionSpec {
     pub allowed_tools: Vec<String>,
     /// `--disallowedTools`, always including the tools fleetd keeps from agents.
     pub disallowed_tools: Vec<String>,
-    /// Written by the node; passed with `--strict-mcp-config` so only fleetd's servers load.
+    /// fleetd's MCP servers, written by the node; the user's own servers load too.
     pub mcp_config: Option<PathBuf>,
+    /// fleetd's settings overlay (`--settings`), which claude merges over the user's own settings.
+    pub settings: Option<PathBuf>,
     /// The whole child environment. Nothing is inherited: no CLAUDE* variable of the node's own parent leaks in.
     pub env: Vec<(String, String)>,
     /// Raw stdout and stderr lines are appended here for debugging and conformance.
@@ -178,7 +181,7 @@ pub enum RunnerError {
 pub trait Runner: Send + Sync + 'static {
     fn kind(&self) -> RunnerKind;
     /// Version, login and a zero-cost conformance check (an `initialize` control request, no model call).
-    /// `env` is the environment a session would get now (`CLAUDE_CONFIG_DIR`, `claude.env`, …): the login it reports
+    /// `env` is the environment a session would get now (the user's own setup, plus `claude.env`): the login it reports
     /// depends on exactly that, and the node re-reads it per spawn.
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo>;
     /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.

@@ -61,17 +61,18 @@ The code works once, until 2026-10-18T13:35:46.366Z. laptop needs claude install
 The code lasts 15 minutes. The machine must reach the hub's address. Run the command again later to repair the
 worker; `--rejoin` enrolls it again with a new code.
 
-## Log in fleetd's Claude on a worker
+## Claude on a worker
 
-The node runs `claude` with its own config dir, so your own login doesn't carry over. On the worker:
+Sessions use the worker's own claude setup (`~/.claude`), so if `claude` works in your shell there, it works for
+fleetd: your login, a proxy set in `~/.claude/settings.json` and your MCP servers included. If it is not logged in,
+log in as you normally do:
 
 ```sh
-CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login
+claude auth login
 ```
 
-Or run `claude setup-token` and put `CLAUDE_CODE_OAUTH_TOKEN=<token>` in `~/.fleetd/claude.env`. When `fleetd init`
-sets a machine up, it offers to run the login for you. On the hub machine, it also offers to copy a token or gateway
-variables that your shell has into `claude.env`.
+Behind a proxy, log in with your proxy instead. `fleetd doctor` shows each worker's claude, login and proxy. See
+[The Claude login](config-and-files.md#claude) for a dedicated profile per machine.
 
 ## Remove a machine {#remove}
 
@@ -80,7 +81,7 @@ fleetd machine remove homeserver
 ```
 
 It stops and removes the node's service there and revokes its key on the hub. `--purge` also deletes
-`~/.fleetd/node`, `~/.fleetd/claude` and `~/.fleetd/claude.env` on that machine. For a machine that joined with
+`~/.fleetd/node` and `~/.fleetd/claude.env` on that machine; your own `~/.claude` stays. For a machine that joined with
 `pair --worker`, only the key is revoked; stop its node there yourself:
 
 ```console

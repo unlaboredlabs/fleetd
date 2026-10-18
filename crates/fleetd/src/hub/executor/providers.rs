@@ -51,7 +51,8 @@ pub fn runner_problem(info: &RunnerInfo) -> Option<String> {
 pub fn runner_fix(info: &RunnerInfo, machine_id: &str) -> String {
     if info.version_ok {
         format!(
-            "On {machine_id}: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login (or claude setup-token, then put the token in ~/.fleetd/claude.env)."
+            "On {machine_id}: {}.",
+            crate::node::runner::failure::login_fix(info.proxy.is_some())
         )
     } else {
         format!(

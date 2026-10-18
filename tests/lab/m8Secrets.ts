@@ -107,7 +107,7 @@ async function main() {
     "--token", token,
     "--machine", MACHINE,
     "--home", NODE_HOME,
-    // Its own HOME, so its ~/.fleetd/claude is not the user's; nobody is logged in there, which secrets and approved
+    // Its own HOME, so its ~/.claude is not the user's; nobody is logged in there, which secrets and approved
     // commands do not mind.
   ], { HOME: path.join(DIR, "home") });
 

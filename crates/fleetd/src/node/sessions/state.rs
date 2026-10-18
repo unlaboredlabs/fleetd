@@ -100,7 +100,7 @@ fn describe_exit(exit: &ExitInfo) -> String {
     }
 }
 
-/// `$CLAUDE_CONFIG_DIR/projects/<cwd, every non-alphanumeric character as ->/<session id>.jsonl`: where claude
+/// `<claude config dir>/projects/<cwd, every non-alphanumeric character as ->/<session id>.jsonl`: where claude
 /// keeps the session `--resume` needs.
 pub fn claude_session_file(config_dir: &Path, cwd: &Path, session_id: &str) -> PathBuf {
     let key: String = cwd
@@ -129,10 +129,12 @@ pub fn start_mode(
         && claude_session_file(&local.config_dir, &local.cwd, session_id).exists()
     {
         return Err(format!(
-            "session {session_id} was started with CLAUDE_CONFIG_DIR={} and cannot resume under {}; \
-             point the node back at the old config dir",
+            "session {session_id} was started with the claude config dir {} and cannot resume under {}: claude \
+             keeps the conversation there. Point the machine back at it (\"claudeConfigDir\": \"{}\" in the node's \
+             node.json, then restart the node), or start a new session",
             local.config_dir.display(),
-            config_dir.display()
+            config_dir.display(),
+            local.config_dir.display()
         ));
     }
     Ok(true)

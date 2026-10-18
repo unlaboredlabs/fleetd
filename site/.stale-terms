@@ -24,3 +24,7 @@ install(ed|s|ing)? (fleetd )?(via|with|through|using) npm
 \bt3code\b
 T3 Code
 from npm
+
+# Sessions use the user's own claude setup (~/.claude); fleetd keeps no claude profile of its own.
+\.fleetd/claude\b(?!\.env)
+CLAUDE_CONFIG_DIR=~/\.fleetd

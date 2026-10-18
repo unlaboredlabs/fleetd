@@ -6,12 +6,14 @@ import { expiredLogin } from "./expiredLogin.ts";
 import { idleResume } from "./idleResume.ts";
 import { killMidTurn } from "./killMidTurn.ts";
 import { overloaded } from "./overloaded.ts";
+import { ownProxy } from "./ownProxy.ts";
 import { usageLimit } from "./usageLimit.ts";
 
 export const FAILURE_SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void> }> = [
   { name: "kill-mid-turn", run: killMidTurn },
   { name: "resume", run: idleResume },
   { name: "overloaded", run: overloaded },
+  { name: "own-proxy", run: ownProxy },
   { name: "expired-login", run: expiredLogin },
   { name: "usage-limit", run: usageLimit },
 ];
