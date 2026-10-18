@@ -35,6 +35,40 @@ const SLOTS_EVERY: u64 = 4;
 const MACHINES_EVERY: u64 = 20;
 /// Bytes per connection per second, worst case.
 pub const MAX_BYTES_PER_SEC: usize = 32 * 1024;
+
+/// One connection's bytes per second, shared by the live pump and status answers, so the two together stay within
+/// [`MAX_BYTES_PER_SEC`].
+#[derive(Default)]
+pub struct ConnBudget(std::sync::Mutex<(i64, usize)>);
+
+impl ConnBudget {
+    /// Whether this second still has room.
+    pub fn room(&self, now_ms: i64) -> bool {
+        let mut w = self.0.lock().unwrap();
+        if now_ms - w.0 >= 1000 {
+            *w = (now_ms, 0);
+        }
+        w.1 < MAX_BYTES_PER_SEC
+    }
+
+    pub fn spend(&self, now_ms: i64, bytes: usize) {
+        let mut w = self.0.lock().unwrap();
+        if now_ms - w.0 >= 1000 {
+            *w = (now_ms, 0);
+        }
+        w.1 += bytes;
+    }
+
+    /// Milliseconds until a frame of `bytes` fits: 0 when it fits now, otherwise the start of the next second.
+    pub fn wait_ms(&self, now_ms: i64, bytes: usize) -> u64 {
+        let w = self.0.lock().unwrap();
+        if now_ms - w.0 >= 1000 || w.1 + bytes <= MAX_BYTES_PER_SEC {
+            0
+        } else {
+            (w.0 + 1000 - now_ms).max(0) as u64
+        }
+    }
+}
 /// A focused order's lanes stay in scope this long after they end, so the app sees them settle.
 const ENDED_GRACE_MS: i64 = 60_000;
 /// A board's lanes stay in scope this long after they end: a few board ticks, so the app sees how each one settled
@@ -426,13 +460,12 @@ pub fn slots(hub: &Hub, caller: &Caller) -> SlotState {
 }
 
 /// Runs one subscription until it is replaced or the connection ends.
-pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>) {
+pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>, budget: Arc<ConnBudget>) {
     if !scope.board && scope.focus.is_none() {
         return;
     }
     let mut pump = Pump::default();
     let mut tick: u64 = 0;
-    let mut window = (0i64, 0usize);
     let mut interval = tokio::time::interval(TICK);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -441,11 +474,8 @@ pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>) {
             return;
         }
         let now = now_ms(hub.clock.as_ref());
-        if now - window.0 >= 1000 {
-            window = (now, 0);
-        }
         // Latest wins: the socket has not taken the last frame, so skip this tick rather than queue behind it.
-        if slot.pending() || window.1 >= MAX_BYTES_PER_SEC {
+        if slot.pending() || !budget.room(now) {
             continue;
         }
         let first = tick == 0;
@@ -481,7 +511,7 @@ pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>) {
             out.extend(body);
         }
         let text = json.to_string();
-        window.1 += text.len();
+        budget.spend(now, text.len());
         slot.offer(text);
     }
 }

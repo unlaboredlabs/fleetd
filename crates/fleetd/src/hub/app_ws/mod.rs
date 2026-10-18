@@ -7,6 +7,7 @@ pub mod live;
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};
 use crate::hub::auth::AuthError;
 use crate::hub::mcp::invalid_input;
+use crate::hub::store::now_ms;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use fleetd_contracts::app::AppClientMessage;
 use fleetd_contracts::hello::PROTOCOL_VERSION;
@@ -131,6 +132,7 @@ struct Session {
     /// The live subscription's pump, and the one-frame slot it writes to.
     live: Option<tokio::task::JoinHandle<()>>,
     live_slot: Arc<live::LiveSlot>,
+    budget: Arc<live::ConnBudget>,
 }
 
 /// What to do with the socket after a frame.
@@ -189,11 +191,23 @@ impl Session {
                     return After::Continue;
                 }
                 let (hub, tools, out) = (self.hub.clone(), self.tools.clone(), self.out.clone());
+                let budget = self.budget.clone();
                 self.calls.spawn(async move {
                     let frame = match call(&hub, &tools, &key, tool.as_str(), input).await {
                         Ok(output) => json!({ "t": "result", "id": id.as_str(), "output": output }),
                         Err(error) => error_frame(&error, Some(id.as_str())),
                     };
+                    // Status answers share the live feed's per-connection budget: one over it waits for the next second.
+                    if tool.as_str().starts_with("status_") {
+                        let bytes = frame.to_string().len();
+                        let wait = budget.wait_ms(now_ms(hub.clock.as_ref()), bytes);
+                        if wait > 0 {
+                            hub.clock
+                                .sleep(std::time::Duration::from_millis(wait))
+                                .await;
+                        }
+                        budget.spend(now_ms(hub.clock.as_ref()), bytes);
+                    }
                     let _ = out.send(frame);
                 });
             }
@@ -242,6 +256,7 @@ impl Session {
                     self.hub.clone(),
                     scope,
                     self.live_slot.clone(),
+                    self.budget.clone(),
                 )));
             }
         }
@@ -262,6 +277,7 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         calls: JoinSet::new(),
         live: None,
         live_slot: Arc::default(),
+        budget: Arc::default(),
     };
     let live_slot = session.live_slot.clone();
     let close = loop {
