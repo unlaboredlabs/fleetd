@@ -113,7 +113,7 @@ pub fn probe_command(suffix: &str) -> String {
         r#"L=unknown; if command -v loginctl >/dev/null 2>&1; then L=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true); fi; echo "linger ${L:-unknown}""#.into(),
         format!(r#"for f in {}; do if [ -f "$f" ]; then printf 'file %s ' "$f"; base64 < "$f" | tr -d '\n'; echo; fi; done"#, quoted(&reads)),
         format!(r#"for f in {}; do if [ -e "$f" ]; then echo "size $f $(wc -c < "$f" | tr -d ' ')"; fi; done"#, quoted(&[l.env_file.clone(), l.legacy_env_file.clone()])),
-        format!(r#"for f in {}; do if [ -f "$f" ]; then echo "digest $f $( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d ' ' -f 1)"; fi; done"#, quoted(&[l.bin.clone()])),
+        format!(r#"for f in {}; do if [ -f "$f" ]; then echo "digest $f $( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d ' ' -f 1)"; fi; done"#, quoted(std::slice::from_ref(&l.bin))),
     ]
     .join("\n")
 }
