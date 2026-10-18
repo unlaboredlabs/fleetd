@@ -1,7 +1,8 @@
 //! The composer (spec 2.3): one component, three placements. Docked at the top of the board for new orders
 //! (focused on launch and by ⌘N), floating over the order view for a new order without losing your place, and
-//! the order view's follow-up box. Where above the box (project, type), what inside, how below (attach,
-//! mention, keys). Enter sends and keeps focus; Shift+Enter adds a line; in the follow-up, ⌘Enter steers.
+//! the order view's follow-up box, plus the agent sheet's steer box. Where above the box (project, type), what
+//! inside, how below (attach, mention, keys). Enter sends and keeps focus; Shift+Enter adds a line. A steer box has
+//! two labelled modes: Enter adds to the agent's queue (it lands at its next step), ⌘Enter interrupts and redirects.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use gpui::{
 
 use crate::input::{InputEvent, TextInput};
 use crate::state::{ProjectKey, Upload};
+use crate::steer::{SteerMode, mode_for};
 use crate::theme::{STRONG, Theme, metric, size, theme};
 use crate::ui::{self, Variant};
 use fleetd_contracts::mcp::IntakeRef;
@@ -62,8 +64,16 @@ pub enum Placement {
     Docked,
     /// New orders, over the order view.
     Floating,
-    /// Notes to one order, at the bottom of its view.
+    /// Steers to one order's lead, at the bottom of its view.
     FollowUp,
+    /// Steers to one agent, in its sheet.
+    Agent,
+}
+
+impl Placement {
+    fn steers(self) -> bool {
+        matches!(self, Placement::FollowUp | Placement::Agent)
+    }
 }
 
 /// What a send carries.
@@ -78,9 +88,9 @@ pub struct Draft {
 
 pub enum ComposerEvent {
     Send(Draft),
-    Note {
+    Steer {
         draft: Draft,
-        urgent: bool,
+        mode: SteerMode,
     },
     /// Esc with nothing open: the docked box blurs, the floating one closes.
     Dismiss,
@@ -290,7 +300,8 @@ pub struct Composer {
     refs: Vec<(IntakeRef, String)>,
     error: Option<String>,
     steer_held: bool,
-    /// The follow-up's order id, for its placeholder.
+    /// Who a steer box steers ("the lead", "T31") and the order, for its labels.
+    who: SharedString,
     order: Option<SharedString>,
     next_local: u64,
     last_preview: String,
@@ -311,8 +322,8 @@ impl Focusable for Composer {
 impl Composer {
     pub fn new(placement: Placement, cx: &mut Context<Self>) -> Self {
         let placeholder = match placement {
-            Placement::FollowUp => "Add to this order: the lead reads it at its next wake.",
-            _ => "What should the fleet do?",
+            Placement::FollowUp | Placement::Agent => format!("Steer: Enter lands at its next step; {} stops its current step.", steer_keys()),
+            _ => "What should the fleet do?".to_string(),
         };
         let input = cx.new(|cx| TextInput::new(cx).placeholder(placeholder).multi_line(8).borderless());
         let sub = cx.subscribe(&input, |this, _, event: &InputEvent, cx| match event {
@@ -336,6 +347,7 @@ impl Composer {
             refs: Vec::new(),
             error: None,
             steer_held: false,
+            who: "the lead".into(),
             order: None,
             next_local: 0,
             last_preview: String::new(),
@@ -346,13 +358,24 @@ impl Composer {
         }
     }
 
-    /// Aims a follow-up composer at an order: its placeholder names it.
+    /// Aims a follow-up composer at an order's lead: its placeholder names it.
     pub fn set_order(&mut self, workstream_id: &str, cx: &mut Context<Self>) {
         if self.order.as_deref() == Some(workstream_id) {
             return;
         }
         self.order = Some(workstream_id.to_string().into());
-        let placeholder = format!("Add to {workstream_id}: the lead reads it at its next wake. {} to interrupt it now.", steer_keys());
+        let placeholder = format!("Steer {workstream_id}: Enter lands at the lead's next step; {} stops its current step.", steer_keys());
+        self.set_placeholder(placeholder, cx);
+    }
+
+    /// Aims a steer box at one agent ("T31", or "the lead").
+    pub fn set_agent(&mut self, who: &str, cx: &mut Context<Self>) {
+        self.who = who.to_string().into();
+        let placeholder = format!("Steer {who}: Enter lands at its next step; {} stops its current step.", steer_keys());
+        self.set_placeholder(placeholder, cx);
+    }
+
+    fn set_placeholder(&mut self, placeholder: String, cx: &mut Context<Self>) {
         self.input.update(cx, |i, cx| {
             *i = std::mem::replace(i, TextInput::new(cx)).placeholder(placeholder);
             cx.notify();
@@ -423,7 +446,7 @@ impl Composer {
 
     /// Asks for the router's guess after a pause, only while the picker is on a guess.
     fn maybe_preview(&mut self, text: &str, cx: &mut Context<Self>) {
-        if self.placement == Placement::FollowUp || self.chosen.is_some() || self.sync.selected.is_some() {
+        if self.placement.steers() || self.chosen.is_some() || self.sync.selected.is_some() {
             return;
         }
         let trimmed = text.trim();
@@ -542,7 +565,7 @@ impl Composer {
         cx.notify();
     }
 
-    fn send(&mut self, urgent: bool, cx: &mut Context<Self>) {
+    fn send(&mut self, interrupt: bool, cx: &mut Context<Self>) {
         if self.sync.offline.is_some() {
             return;
         }
@@ -584,9 +607,9 @@ impl Composer {
         self.template = None;
         self.menu = None;
         self.last_preview.clear();
-        cx.emit(match self.placement {
-            Placement::FollowUp => ComposerEvent::Note { draft, urgent },
-            _ => ComposerEvent::Send(draft),
+        cx.emit(match self.placement.steers() {
+            true => ComposerEvent::Steer { draft, mode: mode_for(interrupt) },
+            false => ComposerEvent::Send(draft),
         });
         cx.notify();
     }
@@ -836,27 +859,23 @@ impl Composer {
     }
 
     fn footer(&self, t: &Theme, can_send: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        let follow_up = self.placement == Placement::FollowUp;
-        let keys = if follow_up {
-            format!("Enter add · {} steer now · {} new order", steer_keys(), ui::shortcut("N"))
-        } else {
-            "Enter send · ⇧Enter newline".to_string()
-        };
-        let label = match (follow_up, self.steer_held) {
-            (true, true) => "Steer",
-            (true, false) => "Add",
+        let steers = self.placement.steers();
+        let keys = if steers { steer_hint(&self.who) } else { "Enter send · ⇧Enter newline".to_string() };
+        let label = match (steers, self.steer_held) {
+            (true, true) => "Interrupt",
+            (true, false) => "Add to queue",
             (false, _) => "Send",
         };
-        // Steering by mouse too: the lead reads it now instead of at its next wake.
-        let steer = follow_up.then(|| {
-            let b = ui::button(t, "composer-steer", "Steer now", Variant::Secondary, can_send);
+        // Both modes by mouse too: the primary button queues (⌘-click interrupts), the secondary interrupts.
+        let steer = steers.then(|| {
+            let b = ui::button(t, "composer-steer", "Interrupt and redirect", Variant::Secondary, can_send);
             if can_send { b.on_click(cx.listener(|this, _, _, cx| this.send(true, cx))) } else { b }
         });
         let send = ui::button(t, "composer-send", label, Variant::Primary, can_send);
         let send = if can_send {
             send.on_click(cx.listener(|this, e: &gpui::ClickEvent, _, cx| {
-                let urgent = e.modifiers().secondary();
-                this.send(urgent, cx)
+                let interrupt = e.modifiers().secondary();
+                this.send(interrupt, cx)
             }))
         } else {
             send
@@ -892,7 +911,7 @@ impl Render for Composer {
             .then(|| format!("Orders are at most {MAX_BYTES} bytes; this one is {}. Attach the detail as a file.", text.trim().len()));
         let can_send = !text.trim().is_empty() && self.sync.offline.is_none() && too_long.is_none();
         let docked = self.placement == Placement::Docked;
-        let follow_up = self.placement == Placement::FollowUp;
+        let follow_up = self.placement.steers();
         let notice = self.error.clone().or(too_long).map(|e| (e, t.danger)).or_else(|| self.sync.offline.clone().map(|o| (o, t.warning)));
         let menu_open = self.menu.is_some();
         let body = div()
@@ -919,7 +938,7 @@ impl Render for Composer {
             })
             .on_modifiers_changed(cx.listener(|this, e: &ModifiersChangedEvent, _, cx| {
                 let held = e.modifiers.secondary() && e.modifiers == Modifiers::secondary_key();
-                if held != this.steer_held && this.placement == Placement::FollowUp {
+                if held != this.steer_held && this.placement.steers() {
                     this.steer_held = held;
                     cx.notify();
                 }
@@ -946,6 +965,11 @@ impl Render for Composer {
 /// "⌘Enter" on macOS, "Ctrl+Enter" elsewhere.
 pub fn steer_keys() -> String {
     ui::shortcut("Enter")
+}
+
+/// The steer box's key hint: what each key does, in words.
+pub fn steer_hint(who: &str) -> String {
+    format!("Enter add to {who}'s queue · {} interrupt and redirect now", steer_keys())
 }
 
 /// A picker label: quiet text that underlines on hover, a button for clicks and Tab.

@@ -17,8 +17,8 @@ use fleetd_contracts::live::OrderCard;
 use fleetd_contracts::mcp::{
     AsksListInput, AsksListOutput, AttachmentId, AttachmentMime, AttachmentPutInput, AttachmentPutOutput, AttentionPolicyInput,
     AttentionPolicyOutput, DoctorFixInput, DoctorFixOutput, DoctorListInput, DoctorListOutput, FleetStatus, InboxReplyInput, InboxReplyOutput,
-    IntakePreviewInput, IntakePreviewOutput, IntakeRef, IntakeSubmitInput, IntakeSubmitOutput, OrderGetInput, OrderGetOutput, OrderNoteInput,
-    OrderNoteOutput, OrderStopInput, OrderStopOutput, OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput, ProjectGetInput,
+    IntakePreviewInput, IntakePreviewOutput, IntakeRef, IntakeSubmitInput, IntakeSubmitOutput, OrderGetInput, OrderGetOutput,
+    OrderStopInput, OrderStopOutput, OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput, ProjectGetInput,
     ProjectGetOutput, SecretSubmitInput, SecretSubmitOutput, TailItem, ThreadTailInput, ThreadTailOutput, ThreadWindowInput, ThreadWindowOutput,
     TimeBreakdownInput, TimeBreakdownOutput, TimeInsightsInput, TimeInsightsOutput, TimeRetentionSetInput, TimeRetentionSetOutput, TimeSpansInput,
     TimeSpansOutput,
@@ -33,6 +33,10 @@ use serde::de::DeserializeOwned;
 use crate::client::Incoming;
 use crate::live::state::LiveState;
 use crate::notify::{Notification, Notifier, Policy};
+use crate::steer::{
+    Sending, Steer, SteerMode, SteerSendInput, SteerSendOutput, SteerTarget, SteerWithdrawInput, SteerWithdrawOutput, SteersListInput,
+    SteersListOutput,
+};
 use fleetd_contracts::mcp::{
     EventsWaitInput, EventsWaitOutput, ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput, ProjectInspectInput,
     ProjectInspectOutput,
@@ -70,7 +74,9 @@ tools! {
     IntakeSubmitInput => IntakeSubmitOutput, "intake_submit";
     OrdersBoardInput => OrdersBoardOutput, "orders_board";
     OrderGetInput => OrderGetOutput, "order_get";
-    OrderNoteInput => OrderNoteOutput, "order_note";
+    SteerSendInput => SteerSendOutput, "steer_send";
+    SteerWithdrawInput => SteerWithdrawOutput, "steer_withdraw";
+    SteersListInput => SteersListOutput, "steers_list";
     OrderStopInput => OrderStopOutput, "order_stop";
     IntakePreviewInput => IntakePreviewOutput, "intake_preview";
     AttachmentPutInput => AttachmentPutOutput, "attachment_put";
@@ -123,10 +129,15 @@ pub(crate) enum Purpose {
     Board(ProjectKey),
     /// The open order's detail.
     OrderGet(String),
-    /// A follow-up note to an order, keyed by its clientRequestId.
-    OrderNote {
+    /// A steer to the open order's lead or one of its agents, keyed by its clientRequestId.
+    SteerSend {
         request_id: String,
     },
+    SteerWithdraw(String),
+    /// One order's steers and their receipts.
+    Steers(String),
+    /// The agent sheet's recent items: (machineId, threadId).
+    AgentTail(ProjectKey),
     OrderStop(String),
     /// The router's guess for the composer's text.
     Preview,
@@ -176,7 +187,8 @@ impl Purpose {
                 | Purpose::DoctorFix(_)
                 | Purpose::Secret { .. }
                 | Purpose::Order { .. }
-                | Purpose::OrderNote { .. }
+                | Purpose::SteerSend { .. }
+                | Purpose::SteerWithdraw(_)
                 | Purpose::OrderStop(_)
                 | Purpose::Preview
                 | Purpose::Attach(_)
@@ -231,23 +243,6 @@ impl SentOrder {
     }
 }
 
-/// A follow-up note, shown above the follow-up composer until the lead wakes for it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Note {
-    pub request_id: String,
-    pub text: String,
-    pub urgent: bool,
-    pub status: NoteStatus,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum NoteStatus {
-    Sending,
-    /// Recorded; waits for the lead's next wake (or was steered in, `urgent`).
-    Queued,
-    Failed(String),
-}
-
 /// The order view's own data, next to the lanes kept in [`LiveState`].
 pub struct OrderView {
     pub workstream_id: String,
@@ -256,7 +251,6 @@ pub struct OrderView {
     pub claims: Vec<fleetd_contracts::verification::Claim>,
     pub loaded: bool,
     pub error: Option<String>,
-    pub notes: Vec<Note>,
     pub stopping: bool,
 }
 
@@ -299,6 +293,17 @@ impl ProjectRow {
         self.outcome.as_ref().and_then(|o| o.workstreams.as_ref()).map_or(&[], |w| w.as_slice())
     }
 }
+
+/// The agent sheet's recent items, oldest first.
+pub struct AgentTail {
+    pub thread: fleetd_contracts::ids::ThreadRef,
+    pub items: Vec<TailItem>,
+    pub error: Option<String>,
+    pub loaded: bool,
+}
+
+/// Items the agent sheet shows.
+pub const AGENT_TAIL_N: i64 = 20;
 
 pub struct Detail {
     pub key: ProjectKey,
@@ -417,8 +422,11 @@ pub struct State {
     pub files: Option<(String, Vec<String>)>,
     /// The project the last order went to, the composer's last-resort default.
     pub last_project: Option<ProjectKey>,
-    /// Notes steered into a running lead turn, so the conversation can mark them.
-    pub steered: VecDeque<String>,
+    /// The open order's steers (to its lead and its agents), oldest first, and those still on their way to the hub.
+    pub steers: Vec<Steer>,
+    pub steer_sends: Vec<Sending>,
+    /// The agent sheet's recent items.
+    pub agent_tail: Option<AgentTail>,
     pub prompts: crate::prompts::Prompts,
     /// The time inspector's last answers, for the query it has open.
     pub time: TimeState,
@@ -465,7 +473,9 @@ impl Default for State {
             uploads: HashMap::new(),
             files: None,
             last_project: None,
-            steered: VecDeque::new(),
+            steers: Vec::new(),
+            steer_sends: Vec::new(),
+            agent_tail: None,
             prompts: crate::prompts::Prompts::default(),
             time: TimeState::default(),
             add: crate::project_add::Feed::default(),
@@ -620,7 +630,9 @@ impl State {
     /// Opens an order: its detail, and its project's lead conversation.
     pub fn open_order(&mut self, workstream_id: &str) -> Out {
         let key = self.project_of(workstream_id);
-        let notes = self.order.take().filter(|o| o.workstream_id == workstream_id).map(|o| o.notes).unwrap_or_default();
+        self.order = None;
+        self.steers.retain(|s| s.workstream_id == workstream_id);
+        self.steer_sends.retain(|s| s.workstream_id == workstream_id);
         self.order = Some(OrderView {
             workstream_id: workstream_id.to_string(),
             key: key.clone(),
@@ -628,10 +640,10 @@ impl State {
             claims: Vec::new(),
             loaded: false,
             error: None,
-            notes,
             stopping: false,
         });
         let mut out: Out = self.request_order().into_iter().collect();
+        out.extend(self.request_steers());
         // The lead log belongs to the order's project: a fresh one, never the previous order's.
         match key {
             Some(key) => out.extend(self.open_project(key)),
@@ -643,6 +655,7 @@ impl State {
     pub fn close_order(&mut self) {
         self.order = None;
         self.detail = None;
+        self.agent_tail = None;
     }
 
     /// The project an order belongs to, from the board or the project outcomes.
@@ -678,29 +691,81 @@ impl State {
         self.inbox().into_iter().filter(|i| i.ask.workstream_id.as_ref().is_some_and(|w| w == workstream_id)).collect()
     }
 
-    /// A follow-up to the open order: Enter adds it for the lead's next wake, `urgent` (⌘Enter) steers it in now.
-    pub fn note(&mut self, text: &str, urgent: bool, attachments_in: Vec<String>, refs: Vec<IntakeRef>, request_id: &str) -> Out {
+    /// A steer to the open order's lead or one of its agents: Enter (`Queue`) lands at its next step, ⌘Enter
+    /// (`Now`) stops the current one. It shows as "sending…" where its receipt will be.
+    pub fn steer(
+        &mut self,
+        target: SteerTarget,
+        text: &str,
+        mode: SteerMode,
+        attachments_in: Vec<String>,
+        refs: Vec<IntakeRef>,
+        request_id: &str,
+    ) -> Out {
         let Some(workstream_id) = self.order.as_ref().map(|o| o.workstream_id.clone()) else { return Vec::new() };
-        if !self.live_or_echo("Not connected to the hub; the note was not sent.") {
+        if !self.live_or_echo("Not connected to the hub; the steer was not sent.") {
             return Vec::new();
         }
         let (body, id) = match (Text::new(text), fleetd_contracts::mcp::RequestId::new(request_id)) {
             (Ok(body), Ok(id)) => (body, id),
-            (Err(e), _) | (_, Err(e)) => return self.refuse(format!("The note was not sent: {e}.")),
+            (Err(e), _) | (_, Err(e)) => return self.refuse(format!("The steer was not sent: {e}.")),
         };
-        let input = OrderNoteInput {
-            workstream_id: WorkstreamId::unchecked(&workstream_id),
+        let input = SteerSendInput {
+            target: target.clone(),
             text: body,
-            attachments: attachments(&attachments_in),
+            mode,
             refs: (!refs.is_empty()).then(|| List::unchecked(refs)),
-            urgent,
+            attachments: attachments(&attachments_in),
             client_request_id: id,
         };
-        let call = self.call(Purpose::OrderNote { request_id: request_id.to_string() }, &input);
-        if let Some(order) = self.order.as_mut() {
-            order.notes.push(Note { request_id: request_id.to_string(), text: text.to_string(), urgent, status: NoteStatus::Sending });
-        }
+        let call = self.call(Purpose::SteerSend { request_id: request_id.to_string() }, &input);
+        let at = crate::live::state::fmt_iso(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64));
+        self.steer_sends.push(Sending { request_id: request_id.to_string(), target, workstream_id, text: text.to_string(), mode, at, error: None });
         vec![call]
+    }
+
+    /// Drops a queued steer before the agent takes it in.
+    pub fn withdraw_steer(&mut self, steer_id: &str) -> Out {
+        if !self.live_or_echo("Not connected to the hub; the steer was not withdrawn.") {
+            return Vec::new();
+        }
+        let Ok(id) = fleetd_contracts::steer::SteerId::new(steer_id) else { return Vec::new() };
+        vec![self.call(Purpose::SteerWithdraw(steer_id.to_string()), &SteerWithdrawInput { steer_id: id })]
+    }
+
+    /// A steer that was not acknowledged, sent again as "interrupt and redirect now".
+    pub fn redirect_steer(&mut self, steer_id: &str, request_id: &str) -> Out {
+        let Some(s) = self.steers.iter().find(|s| s.id == steer_id).cloned() else { return Vec::new() };
+        self.steer(s.target, s.text.as_str(), SteerMode::Now, Vec::new(), Vec::new(), request_id)
+    }
+
+    /// The agent sheet opened on this thread: fetch its recent items.
+    pub fn open_agent_tail(&mut self, thread: Option<fleetd_contracts::ids::ThreadRef>) -> Out {
+        self.agent_tail = thread.map(|thread| AgentTail { thread, items: Vec::new(), error: None, loaded: false });
+        self.request_agent_tail().into_iter().collect()
+    }
+
+    /// A `steer.*` event: the open order's receipts moved, so refetch them (events only mark things to refetch).
+    fn on_steer_event(&mut self, workstream_id: Option<&str>) -> Out {
+        if workstream_id.is_none() || self.order.as_ref().map(|o| o.workstream_id.as_str()) != workstream_id {
+            return Vec::new();
+        }
+        self.request_steers().into_iter().collect()
+    }
+
+    fn request_steers(&mut self) -> Option<AppClientMessage> {
+        let w = self.order.as_ref()?.workstream_id.clone();
+        let input =
+            SteersListInput { workstream_id: Some(WorkstreamId::unchecked(&w)), task_id: None, after_n: None, limit: IntOr(Int::unchecked(100)) };
+        self.refetch(Purpose::Steers(w), &input)
+    }
+
+    fn request_agent_tail(&mut self) -> Option<AppClientMessage> {
+        let thread = self.agent_tail.as_ref()?.thread.clone();
+        let key = (thread.machine_id.to_string(), thread.thread_id.to_string());
+        let input =
+            ThreadTailInput { machine_id: thread.machine_id, thread_id: thread.thread_id, n: IntOr(Int::unchecked(AGENT_TAIL_N)), kinds: None };
+        self.refetch(Purpose::AgentTail(key), &input)
     }
 
     /// Stops the open order (after the confirm popover): its agents are cancelled, merged PRs stay.
@@ -1155,6 +1220,8 @@ impl State {
                 let purpose = Purpose::Time(call, g);
                 if call == TimeCall::Breakdown { self.refetch(purpose, &q.breakdown) } else { self.refetch(purpose, &q.insights) }
             }
+            Purpose::Steers(_) => self.request_steers(),
+            Purpose::AgentTail(_) => self.request_agent_tail(),
             _ => None,
         }
     }
@@ -1284,6 +1351,9 @@ impl State {
             if lead_thread.is_some() && lead_thread == event.thread_id.as_ref().map(|t| t.as_str()) {
                 out.extend(self.request_tail());
             }
+            if self.agent_tail.as_ref().is_some_and(|t| Some(&t.thread.thread_id) == event.thread_id.as_ref()) {
+                out.extend(self.request_agent_tail());
+            }
         }
         out
     }
@@ -1293,6 +1363,10 @@ impl State {
         let kind = event.r#type.as_str();
         let mut out = Vec::new();
         let workstream_id = event.data.as_ref().and_then(|d| d.get("workstreamId")).and_then(|v| v.as_str()).map(str::to_string);
+        // Receipts show under your message, not in the merged event lines.
+        if kind.starts_with("steer.") {
+            return self.on_steer_event(workstream_id.as_deref());
+        }
         if let Some(w) = &workstream_id {
             let ring = self.order_events.entry(w.clone()).or_default();
             ring.push_back(event.clone());
@@ -1313,13 +1387,6 @@ impl State {
             if workstream_id.is_some() && self.order.as_ref().map(|o| &o.workstream_id) == workstream_id.as_ref() {
                 out.extend(self.request_order());
             }
-        }
-        // The lead woke: notes it was waiting for are in its thread now, so the conversation shows them as yours.
-        if event.r#type == HubEventType::LeadWoken
-            && let (Some(m), Some(p), Some(order)) = (&event.machine_id, &event.project_id, self.order.as_mut())
-            && order.key.as_ref().is_some_and(|k| k.0 == m.as_str() && k.1 == p.as_str())
-        {
-            order.notes.retain(|n| n.status != NoteStatus::Queued);
         }
         out
     }
@@ -1459,20 +1526,40 @@ impl State {
                     }
                 }
             }
-            Purpose::OrderNote { request_id } => {
-                let status = match parse::<OrderNoteOutput>(output) {
-                    Ok(_) => NoteStatus::Queued,
-                    Err(e) => NoteStatus::Failed(e),
-                };
-                let steered =
-                    self.order.as_ref().and_then(|o| o.notes.iter().find(|n| &n.request_id == request_id && n.urgent)).map(|n| n.text.clone());
-                if let (NoteStatus::Queued, Some(text)) = (&status, steered) {
-                    self.steered.push_back(text);
-                    if self.steered.len() > 20 {
-                        self.steered.pop_front();
+            Purpose::SteerSend { request_id } => match parse::<SteerSendOutput>(output) {
+                Ok(out) => {
+                    self.steer_sends.retain(|s| &s.request_id != request_id);
+                    crate::steer::receipts::merge(&mut self.steers, out.steer);
+                }
+                Err(e) => self.steer_failed(request_id, e),
+            },
+            Purpose::SteerWithdraw(_) => match parse::<SteerWithdrawOutput>(output) {
+                Ok(out) => crate::steer::receipts::merge(&mut self.steers, out.steer),
+                Err(e) => self.echo = Some(Echo { text: e, ok: false }),
+            },
+            Purpose::Steers(w) => {
+                if let Ok(list) = parse::<SteersListOutput>(output)
+                    && self.order.as_ref().is_some_and(|o| &o.workstream_id == w)
+                {
+                    for steer in list.steers {
+                        crate::steer::receipts::merge(&mut self.steers, steer);
                     }
                 }
-                self.set_note(request_id, status);
+            }
+            Purpose::AgentTail(key) => {
+                let parsed = parse::<ThreadTailOutput>(output);
+                if let Some(tail) = self.agent_tail.as_mut().filter(|t| t.thread.machine_id == key.0.as_str() && t.thread.thread_id == key.1.as_str())
+                {
+                    tail.loaded = true;
+                    match parsed {
+                        Ok(out) => {
+                            tail.items = out.items.into_iter().collect();
+                            tail.items.reverse();
+                            tail.error = None;
+                        }
+                        Err(e) => tail.error = Some(e),
+                    }
+                }
             }
             Purpose::OrderStop(id) => {
                 if let Some(order) = self.order.as_mut().filter(|o| &o.workstream_id == id) {
@@ -1559,7 +1646,16 @@ impl State {
                     order.error = Some(text);
                 }
             }
-            Purpose::OrderNote { request_id } => self.set_note(request_id, NoteStatus::Failed(text)),
+            Purpose::SteerSend { request_id } => self.steer_failed(request_id, text),
+            Purpose::SteerWithdraw(_) => self.echo = Some(Echo { text, ok: false }),
+            // A hub without steers_list: no receipts beyond what steer_send answered.
+            Purpose::Steers(_) => {}
+            Purpose::AgentTail(_) => {
+                if let Some(tail) = self.agent_tail.as_mut() {
+                    tail.loaded = true;
+                    tail.error = Some(text);
+                }
+            }
             Purpose::OrderStop(id) => {
                 if let Some(order) = self.order.as_mut().filter(|o| &o.workstream_id == id) {
                     order.stopping = false;
@@ -1583,9 +1679,9 @@ fn attachments(ids: &[String]) -> Option<fleetd_contracts::mcp::Attachments> {
 }
 
 impl State {
-    fn set_note(&mut self, request_id: &str, status: NoteStatus) {
-        if let Some(note) = self.order.as_mut().and_then(|o| o.notes.iter_mut().find(|n| n.request_id == request_id)) {
-            note.status = status;
+    fn steer_failed(&mut self, request_id: &str, error: String) {
+        if let Some(s) = self.steer_sends.iter_mut().find(|s| s.request_id == request_id) {
+            s.error = Some(error);
         }
     }
 }
@@ -1890,7 +1986,6 @@ mod tests {
             claims: Vec::new(),
             loaded: true,
             error: None,
-            notes: Vec::new(),
             stopping: false,
         });
         e["type"] = json!("review.verdict");
@@ -1898,35 +1993,55 @@ mod tests {
     }
 
     #[test]
-    fn notes_wait_for_the_leads_wake_and_steered_ones_are_remembered() {
+    fn a_steer_goes_straight_to_steer_send_and_its_receipt_follows_the_events() {
         let mut s = synced();
-        let key: ProjectKey = ("lab-a".into(), "p1".into());
-        s.order = Some(OrderView {
-            workstream_id: "W7".into(),
-            key: Some(key),
-            card: None,
-            claims: Vec::new(),
-            loaded: true,
-            error: None,
-            notes: Vec::new(),
-            stopping: false,
-        });
-        let AppClientMessage::Call { id, tool, input } = &s.note("also cover the stalled case", false, Vec::new(), Vec::new(), "n-1")[0] else {
+        let out = s.open_order("W7");
+        assert!(tools_of(&out).contains(&"steers_list".to_string()));
+        for (id, _) in calls(&out) {
+            s.pending.remove(&id);
+        }
+        s.inflight.clear();
+        let target = SteerTarget::Lead { workstream_id: WorkstreamId::unchecked("W7") };
+        let AppClientMessage::Call { id, tool, input } = &s.steer(target, "skip the docs page", SteerMode::Now, Vec::new(), Vec::new(), "n-1")[0]
+        else {
             panic!()
         };
-        assert_eq!(tool.as_str(), "order_note");
-        assert_eq!(input, &json!({ "workstreamId": "W7", "text": "also cover the stalled case", "urgent": false, "clientRequestId": "n-1" }));
-        s.apply(result(id, json!({ "noteId": "N1", "wakesAt": AT })));
-        let AppClientMessage::Call { id, .. } = &s.note("stop editing digest.rs", true, Vec::new(), Vec::new(), "n-2")[0] else { panic!() };
-        s.apply(result(id, json!({ "noteId": "N2", "wakesAt": AT })));
-        let notes = &s.order.as_ref().unwrap().notes;
-        assert!(notes.iter().all(|n| n.status == NoteStatus::Queued));
-        assert_eq!(s.steered.iter().collect::<Vec<_>>(), ["stop editing digest.rs"]);
+        assert_eq!(tool.as_str(), "steer_send");
+        assert_eq!(input, &json!({ "target": { "workstreamId": "W7" }, "text": "skip the docs page", "mode": "now", "clientRequestId": "n-1" }));
+        assert_eq!(s.steer_sends.len(), 1, "shown as sending at once");
+        let steer = json!({ "id": "S12", "target": { "workstreamId": "W7" }, "workstreamId": "W7", "runId": "r1", "by": { "kind": "human", "keyName": "app" },
+            "thread": { "machineId": "lab-a", "threadId": "t-lead" }, "mode": "now", "text": "skip the docs page", "stage": "queued", "queuedAt": AT });
+        s.apply(result(id, steer.clone()));
+        assert!(s.steer_sends.is_empty());
+        assert_eq!(s.steers[0].id, "S12");
+        // A receipt event for this order refetches its steers; another order's does nothing.
+        assert!(s.on_steer_event(Some("W8")).is_empty());
+        assert_eq!(tools_of(&s.on_steer_event(Some("W7"))), ["steers_list"]);
+        let AppClientMessage::Call { id, tool, .. } = &s.withdraw_steer("S12")[0] else { panic!() };
+        assert_eq!(tool.as_str(), "steer_withdraw");
+        let mut withdrawn = steer;
+        withdrawn["stage"] = json!("withdrawn");
+        s.apply(result(id, withdrawn));
+        assert_eq!(s.steers[0].stage, crate::steer::SteerStage::Withdrawn);
+    }
 
-        s.apply(event("lead.woken", Some("p2"), None));
-        assert_eq!(s.order.as_ref().unwrap().notes.len(), 2, "another project's lead waking changes nothing");
-        s.apply(event("lead.woken", Some("p1"), None));
-        assert!(s.order.as_ref().unwrap().notes.is_empty(), "the lead has them now");
+    #[test]
+    fn a_refused_steer_says_why_where_its_receipt_would_be() {
+        let mut s = synced();
+        s.open_order("W7");
+        let AppClientMessage::Call { id, .. } = &s.steer(
+            SteerTarget::Task { task_id: fleetd_contracts::tasks::TaskId::unchecked("T88") },
+            "stop",
+            SteerMode::Queue,
+            Vec::new(),
+            Vec::new(),
+            "n-2",
+        )[0] else {
+            panic!()
+        };
+        let id = id.to_string();
+        s.apply(error(&id, ErrorCode::Invalid, "T88 has ended.", None));
+        assert_eq!(s.steer_sends[0].error.as_deref(), Some("T88 has ended."));
     }
 
     #[test]
@@ -1937,7 +2052,7 @@ mod tests {
         s.detail.as_mut().unwrap().version = 3;
         // An order the app can't place yet: no lead log until its detail names the project.
         let out = s.open_order("W99");
-        assert_eq!(tools_of(&out), ["order_get"]);
+        assert_eq!(tools_of(&out), ["order_get", "steers_list"]);
         assert!(s.detail.is_none());
         let mut detail: Value =
             serde_json::from_str(include_str!("../../../crates/fleetd-contracts/tests/fixtures/live/order_get.output.json")).unwrap();
