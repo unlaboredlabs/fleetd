@@ -1,9 +1,7 @@
 //! The doctor (M11): every setup check, live. Runs on demand (doctor_list with rerun) and from the sweep every 15
 //! min; emits one doctor.changed per machine (and one for the hub) whose checks changed status since the last run.
-//! doctor_fix runs only the three safe automatic fixes and refuses the rest with the command a person runs.
-use super::checks::{
-    self, AutoAction, CmdOutcome, DoctorCheck, Entry, HostProbe, MachineView, Probe,
-};
+//! Every fix is a command for a person to run; doctor_fix answers with it.
+use super::checks::{self, CmdOutcome, DoctorCheck, Entry, HostProbe, MachineView, Probe};
 use super::config::{HubConfig, MachineSetup, Platform, restart_command};
 use crate::clock::Clock;
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
@@ -17,8 +15,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub const DOCTOR_EVERY_MS: i64 = 15 * 60_000;
-/// How long a fix waits for the machine's T3 connection to come back before checking again.
-const RECONNECT_WAIT: Duration = Duration::from_secs(20);
 
 /// A refusal in the tools' `{ code, message, fix }` shape.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -66,7 +62,7 @@ pub trait DoctorFleet: Send + Sync {
     fn await_live(&self, machine_id: &str) -> BoxFut<'_, ()>;
     /// Usage::status with the machine's UsageSource reading.
     fn usage(&self, machine_id: &str) -> BoxFut<'_, UsageStatus>;
-    /// NodeActions::run: `remint_session`, `restart_t3` or `probe`; `Err` is the link's message.
+    /// NodeActions::run: `probe`; `Err` is the link's message.
     fn node_action(
         &self,
         machine_id: &str,
@@ -210,10 +206,12 @@ impl Doctor {
             .url
             .clone()
             .filter(|u| u.starts_with("https://") && problem.is_none());
-        let (reachable, gh, claude, https) = tokio::join!(
+        let env: Vec<(String, String)> = router_env().into_iter().collect();
+        let (reachable, gh, claude, runner, https) = tokio::join!(
             self.health(&own),
             run_cmd("gh", &["auth", "status"], None),
             run_cmd("claude", &["auth", "status", "--json"], Some(router_env())),
+            crate::cli::setup::claude_check::probe(std::path::Path::new("claude"), &env),
             async {
                 match &public {
                     Some(u) => Some(self.health(u.trim_end_matches('/')).await),
@@ -239,6 +237,7 @@ impl Doctor {
             ),
             checks::gh_auth(&gh),
             checks::claude_login(&claude),
+            checks::hub_claude_version(&runner),
             checks::https_reachable(
                 &config,
                 problem.as_deref(),
@@ -253,27 +252,18 @@ impl Doctor {
         let (config, _) = self.config();
         let setup = config.machines.get(id);
         let fleet = &self.deps.fleet;
-        let connected = fleet.connected(id).await;
-        let t3_reason = match machine.status.as_str() {
-            "offline" => format!("{id} is offline."),
-            "degraded" => format!("T3 on {id} is down."),
-            _ => format!("The hub has no T3 connection to {id}."),
-        };
-        let (settings, usage, probe) = tokio::join!(
+        let online = machine.status != "offline";
+        let (runner, usage, probe) = tokio::join!(
             async {
-                if connected && machine.status == "online" {
-                    self.deps
-                        .settings
-                        .read(id)
-                        .await
-                        .map_err(|e| format!("Could not read T3's settings on {id}: {e}"))
+                if online {
+                    fleet.runner_info(id).await
                 } else {
-                    Err(t3_reason.clone())
+                    None
                 }
             },
             fleet.usage(id),
             async {
-                if machine.status == "offline" {
+                if !online {
                     return Err(format!("{id} is offline."));
                 }
                 match fleet.node_action(id, "probe").await {
@@ -283,16 +273,10 @@ impl Doctor {
                 }
             }
         );
-        let mut out = vec![
-            checks::machine_online(machine, connected, setup),
-            checks::t3_version(machine, setup),
-        ];
-        out.extend(checks::instance_checks(
-            id,
-            settings.as_ref().map_err(String::as_str),
-            setup,
-        ));
-        out.push(checks::probe_counter(id, &usage.probes));
+        let mut out = vec![checks::machine_online(machine, setup)];
+        if let Some(info) = &runner {
+            out.extend(checks::runner_checks(id, info));
+        }
         out.push(checks::commit_identity(
             id,
             probe.as_ref().map_err(String::as_str),
@@ -437,68 +421,9 @@ impl Doctor {
         }
     }
 
-    /// Re-applies the fleetd instance (launch args with every required deny) and turns auto-resume off.
-    async fn reapply(&self, machine_id: &str) -> Result<String, String> {
-        let settings = self.deps.settings.read(machine_id).await?;
-        let mutation = checks::reapplicable(&settings).map(|instance| {
-            let mut instance = instance.clone();
-            let args = instance.get("config").and_then(|c| c.get("launchArgs")).and_then(Value::as_str).unwrap_or("").to_string();
-            if let Some(config) = instance.get_mut("config").and_then(Value::as_object_mut) {
-                config.insert("launchArgs".into(), json!(checks::with_required_args(&args)));
-            }
-            json!({ "operation": "upsert", "instanceId": checks::FLEETD_INSTANCE, "instance": instance })
-        });
-        let reapplied = mutation.is_some();
-        self.deps
-            .settings
-            .update(
-                machine_id,
-                json!({ "autoResumeLimitedThreads": false }),
-                mutation,
-            )
-            .await?;
-        Ok(if reapplied {
-            format!(
-                "re-applied the fleetd instance config on {machine_id} (launch args and auto-resume off)"
-            )
-        } else {
-            format!("turned off auto-resume of usage-limited threads on {machine_id}")
-        })
-    }
-
-    async fn run_action(
-        &self,
-        machine_id: &str,
-        action: AutoAction,
-    ) -> Result<String, DoctorRefused> {
-        if action == AutoAction::ReapplyInstance {
-            return self.reapply(machine_id).await.map_err(|e| {
-                Self::refused(
-                    format!("Re-applying the config on {machine_id} failed: {e}"),
-                    None,
-                )
-            });
-        }
-        let outcome = self
-            .deps
-            .fleet
-            .node_action(machine_id, action.node_action())
-            .await
-            .map_err(|e| Self::refused(e, None))?;
-        if !outcome.ok {
-            return Err(Self::refused(
-                format!("{machine_id}'s node could not do it: {}", outcome.message),
-                None,
-            ));
-        }
-        // The node sends the new session or reports T3 up; wait briefly for the hub's T3 connection before re-checking.
-        let _ = tokio::time::timeout(RECONNECT_WAIT, self.deps.fleet.await_live(machine_id)).await;
-        Ok(format!("{machine_id}'s node {}", outcome.message))
-    }
-
-    /// Runs a check's automatic fix, then that check's group again.
+    /// Re-runs a check and answers with the command that fixes it: every fix needs a person.
     pub async fn fix(&self, check_id: &str) -> Result<(String, DoctorCheck), DoctorRefused> {
-        let mut state = self.state.lock().await;
+        let _state = self.state.lock().await;
         let machine_id = machine_of(check_id).map(str::to_string);
         let machines = self.deps.fleet.machines().await;
         let machine = machines
@@ -509,53 +434,29 @@ impl Doctor {
         if let (Some(id), None) = (&machine_id, &machine) {
             return Err(Self::refused(format!("No machine {id}."), list_fix()));
         }
-        // The check as it stands now, so the fix matches the current state, not the last sweep's.
-        let before = match &machine {
+        let now = match &machine {
             None => self.hub_checks().await,
             Some(m) => self.machine_checks(m).await,
         };
-        let Some(entry) = before.into_iter().find(|e| e.check.id == check_id) else {
+        let Some(entry) = now.into_iter().find(|e| e.check.id == check_id) else {
             return Err(Self::refused(
                 format!("No doctor check {check_id}."),
                 list_fix(),
             ));
         };
-        let (Some(fix), Some(action), Some(machine_id), Some(machine)) =
-            (&entry.check.fix, entry.action, &machine_id, &machine)
-        else {
-            return Err(match &entry.check.fix {
-                None => Self::refused(
-                    format!(
-                        "{check_id} has nothing to fix ({}).",
-                        entry.check.status.as_str()
-                    ),
-                    None,
+        Err(match &entry.check.fix {
+            None => Self::refused(
+                format!(
+                    "{check_id} has nothing to fix ({}).",
+                    entry.check.status.as_str()
                 ),
-                Some(f) => Self::refused(
-                    format!("{check_id} needs a person: {}.", f.label),
-                    f.command.clone(),
-                ),
-            });
-        };
-        let _ = fix;
-        let ran = self.run_action(machine_id, action).await?;
-        let now = self
-            .deps
-            .fleet
-            .machines()
-            .await
-            .into_iter()
-            .find(|m| &m.machine_id == machine_id)
-            .unwrap_or_else(|| machine.clone());
-        let after = self.machine_checks(&now).await;
-        let check = after
-            .iter()
-            .find(|e| e.check.id == check_id)
-            .map(|e| e.check.clone())
-            .unwrap_or(entry.check);
-        self.record(&mut state, after, Some(std::slice::from_ref(machine_id)))
-            .await;
-        Ok((ran, check))
+                None,
+            ),
+            Some(f) => Self::refused(
+                format!("{check_id} needs a person: {}.", f.label),
+                f.command.clone(),
+            ),
+        })
     }
 }
 

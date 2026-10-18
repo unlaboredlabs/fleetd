@@ -43,9 +43,8 @@ pub const SETUP_USAGE: &str = r#"  init [--yes] [--home <dir>] [--listen <host:p
   init --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"]
              make this machine a worker of that hub, without SSH from the hub: the command
              fleetd pair --worker prints on the hub
-  doctor [--fix] [--home <dir>]
-             run every setup check on the hub now and print each problem with its fix;
-             --fix also applies the fixes the hub can make by itself
+  doctor [--home <dir>]
+             run every setup check on the hub now and print each problem with its fix
   uninstall [--home <dir>] [--purge]
              stop and remove the hub's service; its data stays unless --purge
 "#;

@@ -247,7 +247,7 @@ async fn steps(opts: &InitOptions, ui: &Ui) -> Result<u8, Stopped> {
     }
     let paired = app(opts, ui, &mut list)?;
     if hub_up {
-        doctor(opts, ui, &mut list).await?;
+        doctor(opts, &mut list).await;
     }
     finish(&list, paired);
     Ok(u8::from(list.failures().next().is_some()))
@@ -438,6 +438,25 @@ async fn login_check(ui: &Ui, list: &mut Checklist, tool: Tool) -> Result<bool, 
                 .next()
                 .unwrap_or("")
                 .trim_end_matches('.');
+            if let Tool::Claude = tool {
+                let out = hub_env_run("claude", &["--version"]).await;
+                let printed = match &out {
+                    CmdOutcome::Ran { stdout, .. } => stdout.trim().to_owned(),
+                    CmdOutcome::SpawnError(_) => String::new(),
+                };
+                let v = super::claude_check::verdict(&printed);
+                if !v.runs {
+                    list.failed(
+                        name,
+                        &v.problem.unwrap_or_default(),
+                        &v.fix.unwrap_or_default(),
+                    );
+                    return Ok(false);
+                }
+                let version = printed.split_whitespace().next().unwrap_or("");
+                list.done(name, &format!("{version}, {message}"));
+                return Ok(true);
+            }
             list.done(name, message);
             return Ok(true);
         }
@@ -874,39 +893,17 @@ fn app(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<bool, Stoppe
     }
 }
 
-async fn doctor(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<(), Stopped> {
+async fn doctor(opts: &InitOptions, list: &mut Checklist) {
     list.start("doctor");
-    let mut checks = match super::doctor::run(&opts.home, false).await {
-        Ok(checks) => checks,
-        Err(failure) => {
-            list.failed("doctor", &failure.message, &failure.fix);
-            return Ok(());
+    match super::doctor::run(&opts.home).await {
+        Ok(checks) => {
+            // The wizard checked these logins itself, with the same commands.
+            let shown = ["hub/claude_login", "hub/gh_auth", "hub/claude_version"];
+            let ok = super::doctor::show(list, &checks, &shown);
+            list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
         }
-    };
-    let autos = checks
-        .iter()
-        .filter(|c| {
-            c.status != DoctorStatus::Ok && c.fix.as_ref().is_some_and(|f| f.kind == "auto")
-        })
-        .count();
-    if autos > 0
-        && ui.confirm(
-            &format!("The doctor can fix {autos} problem(s) by itself. Fix now?"),
-            true,
-        )?
-    {
-        match super::doctor::run(&opts.home, true).await {
-            Ok(fixed) => checks = fixed,
-            Err(failure) => {
-                list.failed("doctor", &failure.message, &failure.fix);
-                return Ok(());
-            }
-        }
+        Err(failure) => list.failed("doctor", &failure.message, &failure.fix),
     }
-    // The wizard checked these two logins itself, with the same commands.
-    let ok = super::doctor::show(list, &checks, &["hub/claude_login", "hub/gh_auth"]);
-    list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
-    Ok(())
 }
 
 fn finish(list: &Checklist, paired: bool) {

@@ -1,5 +1,5 @@
-//! `fleetd doctor [--fix]`: every setup check on the hub, run now over its MCP endpoint (doctor_list), each problem
-//! with its fix; `--fix` also applies the automatic ones (doctor_fix). `fleetd init` ends with the same run.
+//! `fleetd doctor`: every setup check on the hub, run now over its MCP endpoint (doctor_list), each problem with the
+//! command that fixes it. `fleetd init` ends with the same run.
 
 use std::path::Path;
 use std::time::Duration;
@@ -88,32 +88,9 @@ async fn list(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
     )
 }
 
-/// Runs every check; with `fix`, applies each automatic fix of a failing check first and runs them again.
-pub async fn run(home: &Path, fix: bool) -> Result<Vec<DoctorCheck>, Failure> {
+/// Runs every check now.
+pub async fn run(home: &Path) -> Result<Vec<DoctorCheck>, Failure> {
     let mut client = connect(home).await?;
-    let checks = list(&mut client).await?;
-    let auto: Vec<&DoctorCheck> = checks
-        .iter()
-        .filter(|c| c.status != DoctorStatus::Ok)
-        .filter(|c| c.fix.as_ref().is_some_and(|f| f.kind == "auto"))
-        .collect();
-    if !fix || auto.is_empty() {
-        return Ok(checks);
-    }
-    for check in auto {
-        super::say(&format!(
-            "  fixing {}: {}",
-            check.id,
-            check.fix.as_ref().map_or("", |f| &f.label)
-        ));
-        let _ = client
-            .call_tool(
-                "doctor_fix",
-                json!({ "checkId": check.id }),
-                Duration::from_secs(240),
-            )
-            .await;
-    }
     list(&mut client).await
 }
 
@@ -193,7 +170,7 @@ pub async fn doctor_command(argv: &[String]) -> u8 {
     let v = match args::parse(
         argv,
         &Spec {
-            options: &[("home", Kind::Str), ("fix", Kind::Bool)],
+            options: &[("home", Kind::Str)],
             positionals: false,
         },
     ) {
@@ -214,7 +191,7 @@ pub async fn doctor_command(argv: &[String]) -> u8 {
         }
     };
     let mut list = Checklist::new();
-    match run(&home, v.flag("fix")).await {
+    match run(&home).await {
         Ok(checks) => {
             let ok = show(&mut list, &checks, &[]);
             list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));

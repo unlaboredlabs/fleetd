@@ -1,36 +1,21 @@
-//! Each doctor check as a pure function of what the hub read: a status, a plain message, and at most one fix. Only
-//! three fixes are automatic (restart T3 with the node's own command, re-mint the hub's T3 session, re-apply the
-//! fleetd instance config); every other fix is a command for a person to run.
+//! Each doctor check as a pure function of what the hub read: a status, a plain message, and at most one fix, a
+//! command for a person to run.
 use super::config::{HubConfig, MachineSetup, restart_command};
-use crate::hub::usage::probes::ProbeCounter;
 use crate::hub::usage::service::UsageBreaker;
 use crate::hub::usage::time::clip;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::sync::LazyLock;
+
+use crate::cli::setup::claude_check::{INSTALL as CLAUDE_INSTALL, TESTED as CLAUDE_TESTED};
+use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
+
+/// The login a person runs on a worker: fleetd's Claude keeps its own config dir there.
+pub const MACHINE_LOGIN_FIX: &str = "CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login";
 
 /// The fleetd provider instance in T3's settings.
 pub const FLEETD_INSTANCE: &str = "fleetd";
-
-#[derive(Deserialize)]
-struct Pin {
-    commit: String,
-    npm: String,
-}
-static PIN: LazyLock<Pin> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../../../vendor/t3/pin.json"))
-        .expect("vendor/t3/pin.json")
-});
-
-/// T3 commit the vendored wire client comes from.
-pub fn t3_pin() -> &'static str {
-    &PIN.commit
-}
-/// npm `t3` release built from the pin: what `fleetd machine add` installs and the doctor holds each machine to.
-pub fn t3_npm_version() -> &'static str {
-    &PIN.npm
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -76,51 +61,19 @@ pub struct DoctorCheck {
     pub fix: Option<DoctorFix>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AutoAction {
-    RestartT3,
-    RemintSession,
-    ReapplyInstance,
-}
-
-impl AutoAction {
-    /// The node action name (node-link `node_action`), for the two the node runs.
-    pub fn node_action(self) -> &'static str {
-        match self {
-            Self::RestartT3 => "restart_t3",
-            Self::RemintSession => "remint_session",
-            Self::ReapplyInstance => "reapply_instance",
-        }
-    }
-}
-
-/// A check with the automatic fix behind its `auto` fix, if it has one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub check: DoctorCheck,
-    pub action: Option<AutoAction>,
 }
 
 /// The disk floor: below this a machine cannot hold more worktrees.
 pub const MIN_FREE_BYTES: f64 = 5e9;
-/// Every tool the fleetd instance must deny: T3's own (they spawn and schedule outside fleetd's slots) and Claude's
-/// subagents.
-pub const REQUIRED_DISALLOWED: [&str; 3] = ["mcp__t3-code__*", "Task", "Workflow"];
-const DISALLOWED_FLAGS: [&str; 2] = ["--disallowedTools", "--disallowed-tools"];
 
 fn manual(label: &str, command: Option<String>) -> DoctorFix {
     DoctorFix {
         kind: "manual".into(),
         label: clip(label, 200),
         command,
-    }
-}
-
-fn auto(label: String) -> DoctorFix {
-    DoctorFix {
-        kind: "auto".into(),
-        label,
-        command: None,
     }
 }
 
@@ -134,7 +87,6 @@ fn hub_entry(name: &str, status: DoctorStatus, message: &str, fix: Option<Doctor
             message: clip(message, 500),
             fix,
         },
-        action: None,
     }
 }
 
@@ -144,7 +96,6 @@ fn machine_entry(
     status: DoctorStatus,
     message: &str,
     fix: Option<DoctorFix>,
-    action: Option<AutoAction>,
 ) -> Entry {
     Entry {
         check: DoctorCheck {
@@ -155,19 +106,7 @@ fn machine_entry(
             message: clip(message, 500),
             fix,
         },
-        action,
     }
-}
-
-fn setup_again(machine_id: &str, setup: Option<&MachineSetup>) -> DoctorFix {
-    let host = setup.map_or_else(
-        || format!("<ssh host of {machine_id}>"),
-        |s| s.ssh_host.clone(),
-    );
-    manual(
-        "Run machine setup again from the hub; it is idempotent",
-        Some(format!("fleetd machine add {host}")),
-    )
 }
 
 use DoctorStatus::{Fail, Ok as Pass, Unknown, Warn};
@@ -262,7 +201,7 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
 
 pub fn claude_login_fix() -> DoctorFix {
     manual(
-        "Log the hub user's claude in (or put ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json)",
+        "Log claude in as the hub's user (a gateway instead: ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in the env block of ~/.claude/settings.json)",
         Some("claude auth login".into()),
     )
 }
@@ -327,6 +266,31 @@ pub fn claude_login(outcome: &CmdOutcome) -> Entry {
     )
 }
 
+/// Why plain HTTP to `url` is safe, if it is: loopback never leaves the machine, and a tailnet address (100.64.0.0/10,
+/// fd7a:115c:a1e0::/48 or a *.ts.net name) travels inside Tailscale's WireGuard tunnel.
+pub fn sealed_http(url: &str) -> Option<&'static str> {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split('/').next().unwrap_or_default();
+    let host = match authority.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|b| b.is_ascii_digit()) => host,
+        _ => authority,
+    };
+    let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    let tailnet = "it stays inside your tailnet's encrypted tunnel";
+    match host.parse::<std::net::IpAddr>() {
+        Ok(ip) if ip.is_loopback() => Some("it never leaves this machine"),
+        Ok(std::net::IpAddr::V4(v4)) => {
+            let [a, b, ..] = v4.octets();
+            (a == 100 && (64..128).contains(&b)).then_some(tailnet)
+        }
+        Ok(std::net::IpAddr::V6(v6)) => {
+            (v6.segments()[..3] == [0xfd7a, 0x115c, 0xa1e0]).then_some(tailnet)
+        }
+        Err(_) if host == "localhost" => Some("it never leaves this machine"),
+        Err(_) => host.ends_with(".ts.net").then_some(tailnet),
+    }
+}
+
 pub fn https_reachable(
     config: &HubConfig,
     problem: Option<&str>,
@@ -351,6 +315,14 @@ pub fn https_reachable(
         );
     };
     if !url.starts_with("https://") {
+        if let Some(why) = sealed_http(url) {
+            return hub_entry(
+                "https",
+                Pass,
+                &format!("The hub's address {url} is plain HTTP, which is fine: {why}."),
+                None,
+            );
+        }
         return hub_entry(
             "https",
             Warn,
@@ -399,359 +371,169 @@ pub struct T3Info {
     pub version: String,
 }
 
-pub fn machine_online(
-    machine: &MachineView,
-    connected: bool,
-    setup: Option<&MachineSetup>,
-) -> Entry {
+/// The node's link to the hub; what it runs is checked by the claude checks.
+pub fn machine_online(machine: &MachineView, setup: Option<&MachineSetup>) -> Entry {
     let id = machine.machine_id.as_str();
+    let restart = || {
+        Some(manual(
+            &format!("Restart the fleetd node on {id}"),
+            Some(restart_command("node", setup)),
+        ))
+    };
     match machine.status.as_str() {
         "offline" => machine_entry(
             id,
             "online",
             Fail,
             &format!("{id} is offline (last seen {}).", machine.last_seen_at),
-            Some(manual(
-                &format!("Start the fleetd node on {id}"),
-                Some(restart_command("node", setup)),
-            )),
-            None,
+            restart(),
         ),
         "degraded" => machine_entry(
             id,
             "online",
-            Fail,
+            Warn,
             &format!(
                 "{id} is degraded: {}.",
-                machine.degraded_reason.as_deref().unwrap_or("T3 is down")
+                machine
+                    .degraded_reason
+                    .as_deref()
+                    .unwrap_or("its node reports a problem")
             ),
-            Some(auto(format!(
-                "Restart T3 on {id} with its node's restart command"
-            ))),
-            Some(AutoAction::RestartT3),
+            restart(),
         ),
-        _ if connected => {
-            machine_entry(id, "online", Pass, &format!("{id} is online."), None, None)
-        }
-        _ => machine_entry(
-            id,
-            "online",
-            Fail,
-            &format!(
-                "{id}'s node is linked, but the hub has no T3 connection there (its session may be revoked or expired)."
-            ),
-            Some(auto(format!("Re-mint the hub's T3 session on {id}"))),
-            Some(AutoAction::RemintSession),
-        ),
+        _ => machine_entry(id, "online", Pass, &format!("{id} is online."), None),
     }
 }
 
-pub fn t3_version(machine: &MachineView, setup: Option<&MachineSetup>) -> Entry {
-    let id = machine.machine_id.as_str();
-    let Some(t3) = &machine.t3 else {
-        return machine_entry(
-            id,
-            "t3_version",
-            Unknown,
-            &format!("T3 on {id} has not reported its version yet."),
-            None,
-            None,
-        );
-    };
-    let (npm, pin) = (t3_npm_version(), t3_pin());
-    if t3.version == npm {
-        return machine_entry(
-            id,
-            "t3_version",
-            Pass,
-            &format!("T3 {npm}, the version setup installs."),
-            None,
-            None,
-        );
-    }
-    // The node reports T3 run from a source checkout as `<package version>+<commit>`.
-    if t3.version.ends_with(&format!("+{pin}")) {
-        return machine_entry(
-            id,
-            "t3_version",
-            Pass,
-            &format!(
-                "T3 from source at {}, the commit setup's {npm} is built from.",
-                &pin[..pin.len().min(10)]
-            ),
-            None,
-            None,
-        );
-    }
-    machine_entry(
-        id,
-        "t3_version",
-        Fail,
-        &format!("T3 {} runs on {id}; setup installs {npm}.", t3.version),
-        Some(setup_again(id, setup)),
-        None,
-    )
-}
-
-fn tokens(args: &str) -> impl Iterator<Item = &str> {
-    args.split_whitespace()
-}
-
-fn split_flag(token: &str) -> (&str, Option<&str>) {
-    match token.find('=') {
-        Some(i) => (&token[..i], Some(&token[i + 1..])),
-        None => (token, None),
-    }
-}
-
-/// The tools a launch-args string denies, from every `--disallowedTools` (or `=`) flag, comma or space separated.
-pub fn disallowed_tools(launch_args: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut in_flag = false;
-    for token in tokens(launch_args) {
-        let (flag, inline) = split_flag(token);
-        if DISALLOWED_FLAGS.contains(&flag) {
-            in_flag = inline.is_none();
-            if let Some(list) = inline {
-                out.extend(list.split(',').map(str::to_string));
-            }
-            continue;
-        }
-        if token.starts_with('-') {
-            in_flag = false;
-        } else if in_flag {
-            out.extend(token.split(',').map(str::to_string));
-        }
-    }
-    out.retain(|t| !t.is_empty());
-    out
-}
-
-/// The launch args with one `--disallowedTools` flag that denies everything required plus whatever it denied before.
-pub fn with_required_args(launch_args: &str) -> String {
-    let mut kept: Vec<&str> = Vec::new();
-    let mut in_flag = false;
-    for token in tokens(launch_args) {
-        let (flag, _) = split_flag(token);
-        if DISALLOWED_FLAGS.contains(&flag) {
-            in_flag = !token.contains('=');
-            continue;
-        }
-        if token.starts_with('-') {
-            in_flag = false;
-        }
-        if !in_flag {
-            kept.push(token);
-        }
-    }
-    let mut denied: Vec<String> = Vec::new();
-    for t in REQUIRED_DISALLOWED
-        .iter()
-        .map(|s| s.to_string())
-        .chain(disallowed_tools(launch_args))
-    {
-        if !denied.contains(&t) {
-            denied.push(t);
-        }
-    }
-    let joined = denied.join(",");
-    let mut all = kept;
-    all.push("--disallowedTools");
-    all.push(&joined);
-    all.join(" ")
-}
-
-fn config_of(instance: &Value) -> Map<String, Value> {
-    instance
-        .get("config")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default()
-}
-
-static OWN_CLAUDE_DIR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"/\.claude/?$").unwrap());
-
-fn fleetd_instance(settings: &Value) -> Option<&Value> {
-    settings.get("providerInstances")?.get(FLEETD_INSTANCE)
-}
-
-/// The fleetd instance, when it is one fleetd can re-apply: a Claude instance with its own config dir. `settings` is
-/// T3's `ServerSettings` as JSON.
-pub fn reapplicable(settings: &Value) -> Option<&Value> {
-    let instance = fleetd_instance(settings)?;
-    if instance.get("driver").and_then(Value::as_str) != Some("claudeAgent") {
-        return None;
-    }
-    let config = config_of(instance);
-    let home = config.get("homePath").and_then(Value::as_str)?;
-    (!home.trim().is_empty() && !OWN_CLAUDE_DIR.is_match(home)).then_some(instance)
-}
-
-/// `instance_args` and `auto_resume`, from the machine's T3 settings, or why they could not be read.
-pub fn instance_checks(
-    machine_id: &str,
-    settings: Result<&Value, &str>,
-    setup: Option<&MachineSetup>,
-) -> Vec<Entry> {
-    let settings = match settings {
-        Err(why) => {
-            return ["instance_args", "auto_resume"]
-                .iter()
-                .map(|n| machine_entry(machine_id, n, Unknown, why, None, None))
-                .collect();
-        }
-        Ok(s) => s,
-    };
-    let reapply = || {
-        auto(format!(
-            "Re-apply the fleetd instance config on {machine_id}"
-        ))
-    };
-    let instance = fleetd_instance(settings);
-    let config = instance.map(config_of).unwrap_or_default();
-    let home = config
-        .get("homePath")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("");
-    let args = config
-        .get("launchArgs")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let denied = disallowed_tools(args);
-    let missing: Vec<&str> = REQUIRED_DISALLOWED
-        .iter()
-        .copied()
-        .filter(|t| !denied.iter().any(|d| d == t))
-        .collect();
-    let driver = instance
-        .and_then(|i| i.get("driver"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let fail = |message: String| {
-        machine_entry(
-            machine_id,
-            "instance_args",
-            Fail,
-            &message,
-            Some(setup_again(machine_id, setup)),
-            None,
-        )
-    };
-    let instance_args = if instance.is_none() {
-        fail(format!(
-            "T3 on {machine_id} has no \"{FLEETD_INSTANCE}\" Claude instance."
-        ))
-    } else if driver != "claudeAgent" {
-        fail(format!(
-            "The \"{FLEETD_INSTANCE}\" instance on {machine_id} runs {driver}, not Claude."
-        ))
-    } else if home.is_empty() {
-        fail(format!(
-            "The fleetd instance on {machine_id} has no config dir of its own (CLAUDE_CONFIG_DIR)."
-        ))
-    } else if reapplicable(settings).is_none() {
-        fail(format!(
-            "The fleetd instance on {machine_id} shares your own Claude config dir ({home})."
-        ))
-    } else if !missing.is_empty() {
-        let shown = if args.trim().is_empty() {
-            "none"
-        } else {
-            args.trim()
-        };
-        machine_entry(
-            machine_id,
-            "instance_args",
-            Fail,
-            &format!(
-                "The fleetd instance on {machine_id} does not deny {} (launch args: {shown}).",
-                missing.join(", ")
-            ),
-            Some(reapply()),
-            Some(AutoAction::ReapplyInstance),
-        )
-    } else {
-        machine_entry(
-            machine_id,
-            "instance_args",
-            Pass,
-            &format!(
-                "The fleetd instance denies {} and uses its own config dir {home}.",
-                REQUIRED_DISALLOWED.join(", ")
-            ),
-            None,
-            None,
-        )
-    };
-    let auto_resume = if settings
-        .get("autoResumeLimitedThreads")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        machine_entry(
-            machine_id,
-            "auto_resume",
-            Fail,
-            &format!(
-                "T3 on {machine_id} auto-resumes usage-limited threads, which bypasses fleetd's usage pacing."
-            ),
-            Some(reapply()),
-            Some(AutoAction::ReapplyInstance),
-        )
-    } else {
-        machine_entry(
-            machine_id,
-            "auto_resume",
-            Pass,
-            "T3 does not auto-resume usage-limited threads.",
-            None,
-            None,
-        )
-    };
-    vec![instance_args, auto_resume]
-}
-
-pub fn probe_counter(machine_id: &str, probes: &ProbeCounter) -> Entry {
-    if !probes.observable {
-        return machine_entry(
-            machine_id,
-            "probes",
-            Unknown,
-            &format!(
-                "Probe counter not observable: {}.",
-                probes.reason.as_deref().unwrap_or("no trace to read")
-            ),
-            None,
-            None,
-        );
-    }
-    let count = probes.count.unwrap_or(0);
-    if count == 0 {
-        return machine_entry(
-            machine_id,
-            "probes",
-            Pass,
-            "T3 made no direct usage API calls (probe counter 0).",
-            None,
-            None,
-        );
-    }
-    machine_entry(
-        machine_id,
-        "probes",
-        Fail,
-        &format!(
-            "T3 on {machine_id} made {count} direct usage or reset-credit call{} (seen in {}).",
-            if count == 1 { "" } else { "s" },
-            probes.source.as_deref().unwrap_or("its trace")
-        ),
+/// `claude_version`, `claude_login` and `runner_conformance` from what the node's runner reports (`runner_info`).
+pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
+    let login_fix = || {
         Some(manual(
-            "Remove stored Claude credentials from the fleetd instance's config dir and any cliproxy usage source in T3's settings",
+            &format!("Log fleetd's Claude in on {machine_id} (its own config dir)"),
+            Some(MACHINE_LOGIN_FIX.into()),
+        ))
+    };
+    let version = match &info.version {
+        None => machine_entry(
+            machine_id,
+            "claude_version",
+            Fail,
+            &format!("claude is not installed on {machine_id}; its sessions can't start."),
+            Some(manual(
+                &format!("Install Claude Code on {machine_id}"),
+                Some(CLAUDE_INSTALL.into()),
+            )),
+        ),
+        Some(found) => version_entry(found, |status, message, fix| {
+            machine_entry(machine_id, "claude_version", status, message, fix)
+        }),
+    };
+    let login = match info.login {
+        LoginStatus::LoggedIn => machine_entry(
+            machine_id,
+            "claude_login",
+            Pass,
+            &format!(
+                "fleetd's Claude on {machine_id} is logged in{}.",
+                info.login_kind
+                    .as_deref()
+                    .map_or(String::new(), |k| format!(" ({k})"))
+            ),
             None,
-        )),
-        None,
-    )
+        ),
+        LoginStatus::LoggedOut => machine_entry(
+            machine_id,
+            "claude_login",
+            Fail,
+            &format!(
+                "fleetd's Claude on {machine_id} is not logged in, so its sessions can't start."
+            ),
+            login_fix(),
+        ),
+        LoginStatus::Unknown => machine_entry(
+            machine_id,
+            "claude_login",
+            Unknown,
+            &format!("{machine_id}'s node could not tell whether its claude is logged in."),
+            None,
+        ),
+    };
+    let conformance = match info.conformance_ok {
+        Some(true) => machine_entry(
+            machine_id,
+            "runner_conformance",
+            Pass,
+            "claude speaks the stream-json protocol fleetd expects.",
+            None,
+        ),
+        Some(false) => machine_entry(
+            machine_id,
+            "runner_conformance",
+            Fail,
+            &info.problem.clone().unwrap_or_else(|| {
+                format!(
+                    "claude on {machine_id} did not answer fleetd's protocol probe as expected."
+                )
+            }),
+            Some(manual(
+                &format!("Put the tested claude on {machine_id}"),
+                Some(format!("claude install {CLAUDE_TESTED}")),
+            )),
+        ),
+        None => machine_entry(
+            machine_id,
+            "runner_conformance",
+            Unknown,
+            &format!("{machine_id}'s node has not probed its claude yet."),
+            None,
+        ),
+    };
+    vec![version, login, conformance]
+}
+
+/// The version verdict as a check: refused outside the supported range, a warning past the tested version.
+fn version_entry(
+    found: &str,
+    entry: impl Fn(DoctorStatus, &str, Option<DoctorFix>) -> Entry,
+) -> Entry {
+    let v = crate::cli::setup::claude_check::verdict(found);
+    let fix = v
+        .fix
+        .map(|command| manual("Change the installed claude", Some(command)));
+    match (v.runs, v.untested) {
+        (true, false) => entry(
+            Pass,
+            &format!("claude {} is supported.", found.trim()),
+            None,
+        ),
+        (true, true) => entry(Warn, &format!("{}.", v.problem.unwrap_or_default()), fix),
+        _ => entry(
+            Fail,
+            &format!(
+                "{}; sessions there are refused.",
+                v.problem.unwrap_or_default()
+            ),
+            fix,
+        ),
+    }
+}
+
+/// The hub's own claude (the intake router and the retro run it): version and protocol, from the probe.
+pub fn hub_claude_version(info: &RunnerInfo) -> Entry {
+    match &info.version {
+        None => hub_entry(
+            "claude_version",
+            Fail,
+            "Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run.",
+            Some(manual(
+                "Install Claude Code on the hub machine, then log in",
+                Some(CLAUDE_INSTALL.into()),
+            )),
+        ),
+        Some(found) => version_entry(found, |status, message, fix| {
+            hub_entry("claude_version", status, message, fix)
+        }),
+    }
 }
 
 pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
@@ -761,7 +543,6 @@ pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
             "usage_breaker",
             Pass,
             "The usage breaker is closed.",
-            None,
             None,
         );
     }
@@ -782,7 +563,6 @@ pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
             ),
             None,
         )),
-        None,
     )
 }
 
@@ -808,7 +588,7 @@ pub fn commit_identity(
     config: &HubConfig,
 ) -> Entry {
     let probe = match probe {
-        Err(why) => return machine_entry(machine_id, "commit_identity", Unknown, why, None, None),
+        Err(why) => return machine_entry(machine_id, "commit_identity", Unknown, why, None),
         Ok(p) => p,
     };
     let want = config.git_identity.as_ref().map(|g| g.email.as_str());
@@ -838,7 +618,6 @@ pub fn commit_identity(
             Fail,
             &format!("No git commit identity is set on {machine_id}."),
             Some(set()),
-            None,
         );
     };
     let from = if probe.git_email_from.as_deref() == Some("env") {
@@ -857,7 +636,6 @@ pub fn commit_identity(
                 "Commits on {machine_id} use {email} (from {from}); the hub's identity is {want}."
             ),
             Some(set()),
-            None,
         );
     }
     let noreply = if NOREPLY.is_match(email) {
@@ -871,7 +649,6 @@ pub fn commit_identity(
         Pass,
         &format!("Commits on {machine_id} use {email} (from {from}{noreply})."),
         None,
-        None,
     )
 }
 
@@ -881,7 +658,7 @@ fn gb(bytes: f64) -> String {
 
 pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
     let probe = match probe {
-        Err(why) => return machine_entry(machine_id, "disk", Unknown, why, None, None),
+        Err(why) => return machine_entry(machine_id, "disk", Unknown, why, None),
         Ok(p) => p,
     };
     if probe.disk_free_bytes < 0.0 {
@@ -893,7 +670,6 @@ pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
                 "Could not read the free space under {} on {machine_id}.",
                 probe.disk_path
             ),
-            None,
             None,
         );
     }
@@ -912,7 +688,6 @@ pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
                 &format!("Free disk space on {machine_id}"),
                 Some(format!("df -h {}", probe.disk_path)),
             )),
-            None,
         );
     }
     machine_entry(
@@ -925,6 +700,92 @@ pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
             probe.disk_path
         ),
         None,
-        None,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_http_is_fine_only_on_loopback_and_the_tailnet() {
+        for url in [
+            "http://127.0.0.1:4790",
+            "http://localhost:4790/",
+            "http://[::1]:4790",
+            "http://100.104.249.49:4790",
+            "http://forge.tailb10092.ts.net:4790",
+            "http://[fd7a:115c:a1e0::b430:f932]:4790",
+        ] {
+            assert!(sealed_http(url).is_some(), "{url}");
+        }
+        for url in [
+            "http://192.168.8.227:4790",
+            "http://100.128.0.1:4790",
+            "http://forge.example.com",
+            "http://10.0.0.2:4790",
+        ] {
+            assert_eq!(sealed_http(url), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn claude_checks_from_runner_info() {
+        let info = |version: Option<&str>, login, conformance| RunnerInfo {
+            runner: fleetd_contracts::sessions::RunnerKind::Claude,
+            version: version.map(str::to_owned),
+            supported: ">=2.1.300, <2.2.0".into(),
+            version_ok: true,
+            login,
+            login_kind: Some("subscription".into()),
+            conformance_ok: conformance,
+            problem: None,
+        };
+        let statuses = |i: &RunnerInfo| {
+            runner_checks("mac", i)
+                .into_iter()
+                .map(|e| (e.check.id, e.check.status))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            statuses(&info(
+                Some("2.1.302 (Claude Code)"),
+                LoginStatus::LoggedIn,
+                Some(true)
+            )),
+            [
+                ("mac/claude_version".to_owned(), Pass),
+                ("mac/claude_login".to_owned(), Pass),
+                ("mac/runner_conformance".to_owned(), Pass)
+            ]
+        );
+        let bad = runner_checks(
+            "mac",
+            &info(Some("2.0.1"), LoginStatus::LoggedOut, Some(false)),
+        );
+        assert_eq!(bad[0].check.status, Fail);
+        assert_eq!(
+            bad[0].check.fix.as_ref().and_then(|f| f.command.as_deref()),
+            Some("claude update (or claude install 2.1.302)")
+        );
+        assert_eq!(
+            bad[1].check.fix.as_ref().and_then(|f| f.command.as_deref()),
+            Some(MACHINE_LOGIN_FIX)
+        );
+        assert_eq!(bad[2].check.status, Fail);
+        let newer = runner_checks(
+            "mac",
+            &info(Some("2.1.399"), LoginStatus::LoggedIn, Some(true)),
+        );
+        assert_eq!(newer[0].check.status, Warn);
+        let missing = runner_checks("mac", &info(None, LoginStatus::Unknown, None));
+        assert_eq!(
+            missing[0]
+                .check
+                .fix
+                .as_ref()
+                .and_then(|f| f.command.as_deref()),
+            Some("curl -fsSL https://claude.ai/install.sh | bash")
+        );
+    }
 }
