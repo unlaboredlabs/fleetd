@@ -479,7 +479,7 @@ impl Shell {
         self.state = State::default();
         self.state.add = add;
         self.state.status.digest_on = crate::prefs::load().digest;
-        self.screen = Screen::Board;
+        self.set_screen(Screen::Board);
         self.selected = 0;
         self.pending_focus = Some(self.docked.focus_handle(cx));
     }
@@ -488,7 +488,7 @@ impl Shell {
     /// [`Self::listen_for_links`]), the `app-pair.json` that `fleetd init` leaves on the hub machine, and a hub
     /// answering on this computer.
     fn first_run(&mut self, cx: &mut Context<Self>) {
-        self.screen = Screen::Connect;
+        self.set_screen(Screen::Connect);
         self.pending_focus = Some(self.form.code.focus_handle(cx));
         cx.spawn(async move |this, cx| {
             let file = pair::app_pair_file();
@@ -575,7 +575,7 @@ impl Shell {
         self.form.error = None;
         self.form.status = Some(format!("Pairing with {hub}…"));
         if self.hub.is_none() {
-            self.screen = Screen::Connect;
+            self.set_screen(Screen::Connect);
         }
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -656,7 +656,7 @@ impl Shell {
         self.hub = None;
         self.secrets.clear();
         self.state = State::default();
-        self.screen = Screen::Connect;
+        self.set_screen(Screen::Connect);
         self.note = None;
         self.form.status = None;
         self.pending_focus = Some(self.form.code.focus_handle(cx));
@@ -689,7 +689,7 @@ impl Shell {
             });
             self.hub = None;
             self.secrets.clear();
-            self.screen = Screen::Connect;
+            self.set_screen(Screen::Connect);
             self.pending_focus = Some(self.form.code.focus_handle(cx));
         }
         // An ask answered or withdrawn elsewhere drops (and wipes) what was typed for it; a new one gets a field.
@@ -852,13 +852,22 @@ impl Shell {
 
     /// Subscribes to what's on screen: the board's lanes while it shows, the open order's in focus; nothing while
     /// the window is in the background. `force` after the window comes back, for a fresh full frame.
-    fn update_live(&mut self, force: bool, cx: &mut Context<Self>) {
+    pub(crate) fn update_live(&mut self, force: bool, cx: &mut Context<Self>) {
         if self.bench.is_some() {
             return;
         }
         let active = self.window_active;
-        let board = active && self.screen == Screen::Board;
-        let focus = if active && self.screen == Screen::Order { self.state.order.as_ref().map(|o| o.workstream_id.clone()) } else { None };
+        // Status joins its in-progress rows to the lanes: the board's for the fleet or a project, the order's for one.
+        let status_order = match (&self.screen, &self.state.status.scope) {
+            (Screen::Status, Some(fleetd_contracts::status::StatusScope::Order { workstream_id })) => Some(workstream_id.to_string()),
+            _ => None,
+        };
+        let board = active && (self.screen == Screen::Board || (self.screen == Screen::Status && status_order.is_none()));
+        let focus = match self.screen {
+            Screen::Order if active => self.state.order.as_ref().map(|o| o.workstream_id.clone()),
+            Screen::Status if active => status_order,
+            _ => None,
+        };
         let out = self.state.subscribe_live(board, focus.as_deref(), force && active);
         self.send(out);
         cx.notify();
@@ -883,9 +892,6 @@ impl Shell {
             let out = self.state.open_doctor();
             self.send(out);
         }
-        if screen != Screen::Status && self.screen == Screen::Status {
-            self.leave_status();
-        }
         if screen != Screen::Time && self.screen == Screen::Time {
             self.state.time_close();
         }
@@ -898,9 +904,8 @@ impl Shell {
                 self.send(out);
             }
         }
-        self.screen = screen;
+        self.set_screen(screen);
         self.selected = 0;
-        self.status_seen_tick();
     }
 
     pub(crate) fn window_is_active(&self) -> bool {
@@ -1016,7 +1021,7 @@ impl Shell {
             self.selected_project = Some(key);
         }
         self.selected_card = Some(workstream_id.to_string());
-        self.screen = Screen::Order;
+        self.set_screen(Screen::Order);
         self.pending_focus = Some(self.follow.focus_handle(cx));
         self.after_state_change(cx);
         cx.notify();
@@ -1351,7 +1356,7 @@ impl Shell {
     }
 
     pub(crate) fn close_settings(&mut self, cx: &mut Context<Self>) {
-        self.screen = self.before_settings;
+        self.set_screen(self.before_settings);
         self.prompts_ui.picker = None;
         self.focus_composer(cx);
         cx.notify();
@@ -2006,7 +2011,7 @@ impl Shell {
         let screen = std::env::var("FLEETD_SCREEN").unwrap_or_default();
         let (base, extra) = screen.split_once('+').unwrap_or((screen.as_str(), ""));
         match base {
-            "board" => self.screen = Screen::Board,
+            "board" => self.set_screen(Screen::Board),
             "machines" => self.go(Screen::Machines),
             "settings" => self.go(Screen::Settings),
             // status, status-project, status-order; +stale, +skeleton (no answer yet), +offline (the link dropped), +lists

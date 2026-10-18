@@ -1037,6 +1037,7 @@ impl State {
             row.lead().is_some_and(|l| l.state == LeadState::Working) || row.lead_thread().is_some_and(|t| t.status == ThreadStatus::Running)
         });
         let mut out: Out = if busy && self.conn == Conn::Live { self.request_tail().into_iter().collect() } else { Vec::new() };
+        out.extend(self.status_check_deadline(now_ms));
         if self.policy.as_ref().is_some_and(|p| p.stale(now_ms)) {
             out.extend(self.request_policy());
         }

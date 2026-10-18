@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{AnyElement, Context, Task, div, prelude::*, px};
 
-use crate::shell::{Shell, now_ms};
+use crate::shell::{Screen, Shell, now_ms};
 use crate::state::{Conn, Echo, Out, Purpose, State, parse};
 use crate::theme::{STRONG, metric, size, theme};
 use crate::ui::{self, Variant};
@@ -27,8 +27,11 @@ use fleetd_contracts::model::MachineStatus;
 use fleetd_contracts::prim::{Int, IntOr};
 use fleetd_contracts::status::{StaleMark, StatusDoc, StatusScope};
 
-/// How long `status_wait` holds on the hub before answering "unchanged" (the tool's cap).
-pub const WAIT_SEC: u64 = 50;
+/// How long `status_wait` holds on the hub before answering "unchanged". Short enough that a wait the hub keeps
+/// after the view moved on doesn't linger long.
+pub const WAIT_SEC: u64 = 25;
+/// A wait not answered by `WAIT_SEC` plus this has been lost (a half-open link after sleep or a network switch).
+pub const WAIT_GRACE_MS: i64 = 10_000;
 /// A look counts for since-you-last-looked after this long on screen with the window focused.
 pub const LOOK: Duration = Duration::from_secs(3);
 
@@ -54,8 +57,12 @@ pub struct StatusState {
     /// Bumped each time the view goes back to a skeleton or changes scope: the number never tweens across one.
     pub session: u64,
     generation: u64,
-    /// Settings → Notifications: post the digest notification on the hub's `digest.ready`.
+    /// When the outstanding `status_wait` must have answered by (local ms).
+    pub wait_deadline: Option<i64>,
+    /// Settings → Digest: post the digest notification on the hub's `digest.ready`.
     pub digest_on: bool,
+    /// The seq the last digest was built at, so the next one counts from that slot: a notification is not a look.
+    pub digest_seq: Option<fleetd_contracts::ids::EventSeq>,
     /// A digest notification to post.
     pub digest: Option<crate::notify::Notification>,
 }
@@ -89,12 +96,14 @@ impl StatusState {
 
     pub(crate) fn disconnected(&mut self) {
         self.fresh = false;
+        self.wait_deadline = None;
     }
 
     fn reset(&mut self) {
         self.doc = None;
         self.fresh = false;
         self.error = None;
+        self.wait_deadline = None;
         self.session += 1;
         self.generation += 1;
     }
@@ -130,7 +139,27 @@ impl State {
     pub fn status_retry(&mut self) -> Out {
         self.status.error = None;
         self.status.generation += 1;
+        // Not live in between: the number must not tween across the gap.
+        self.status.session += 1;
         self.status_get()
+    }
+
+    /// Called from the shell's 3 s tick: a wait past its deadline was lost, so the view stops claiming to be live
+    /// and asks for the doc again.
+    pub(crate) fn status_check_deadline(&mut self, now_ms: i64) -> Out {
+        match self.status.wait_deadline {
+            Some(at) if now_ms > at => {
+                let secs = (WAIT_SEC as i64 * 1000 + WAIT_GRACE_MS) / 1000;
+                self.status.fresh = false;
+                self.status.wait_deadline = None;
+                self.status.generation += 1;
+                self.status.session += 1;
+                // The error stays until a doc arrives; Retry asks again by hand.
+                self.status.error = Some(format!("the hub hasn't answered for {secs}s"));
+                self.status_get()
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Reconnected: back to a skeleton until the hub answers, never the old doc as if live.
@@ -161,6 +190,7 @@ impl State {
                     after: Some(Int::unchecked(after as i64)),
                     timeout_sec: IntOr(Int::unchecked(WAIT_SEC as i64)),
                 };
+                self.status.wait_deadline = Some(now_ms() + WAIT_SEC as i64 * 1000 + WAIT_GRACE_MS);
                 vec![self.call(Purpose::Status(Call::Wait, self.status.generation), &input)]
             }
             _ => Vec::new(),
@@ -173,7 +203,7 @@ impl State {
         if !self.status.digest_on || self.conn != Conn::Live {
             return Vec::new();
         }
-        let input = StatusGetInput { scope: StatusScope::Fleet, since_seq: None };
+        let input = StatusGetInput { scope: StatusScope::Fleet, since_seq: self.status.digest_seq };
         vec![self.call(Purpose::Status(Call::Digest, 0), &input)]
     }
 
@@ -182,6 +212,7 @@ impl State {
             let now = now_ms();
             let quiet = self.policy.as_ref().is_some_and(|p| p.quiet_at(now));
             if let (Ok(out), false) = (parse::<StatusGetOutput>(output), quiet) {
+                self.status.digest_seq = Some(out.doc.seq);
                 let (title, body) = digest_text(&out.doc);
                 self.status.digest = Some(crate::notify::Notification { title, body, target: crate::notify::Target::Status });
             }
@@ -189,6 +220,9 @@ impl State {
         }
         if call == Call::Seen || generation != self.status.generation {
             return Vec::new();
+        }
+        if call == Call::Wait {
+            self.status.wait_deadline = None;
         }
         let next = match call {
             Call::Get => parse::<StatusGetOutput>(output).map(|o| Some(o.doc)),
@@ -203,7 +237,10 @@ impl State {
                 self.status.error = None;
                 self.status_wait(version)
             }
-            Ok(Some(_)) => Vec::new(),
+            Ok(Some(_)) => {
+                self.on_status_error(call, generation, "the hub answered for another scope".into());
+                Vec::new()
+            }
             Ok(None) => {
                 let version = self.status.doc.as_ref().map_or(0, |d| d.version.get() as u64);
                 self.status_wait(version)
@@ -224,6 +261,7 @@ impl State {
             _ => {
                 self.status.error = Some(text);
                 self.status.fresh = false;
+                self.status.wait_deadline = None;
             }
         }
     }
@@ -287,6 +325,20 @@ impl Looked {
     }
 }
 
+/// What a screen change does to the Status view: leave it (stop waiting, record the look), and on coming back,
+/// reopen the scope it showed.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Transition {
+    pub leave: bool,
+    pub reopen: Option<StatusScope>,
+}
+
+pub fn transition(from: Screen, to: Screen, open: Option<&StatusScope>, resume: Option<&StatusScope>) -> Transition {
+    let leave = from == Screen::Status && to != Screen::Status;
+    let reopen = (to == Screen::Status && open.is_none()).then(|| resume.cloned()).flatten();
+    Transition { leave, reopen }
+}
+
 /// The view's own state on the shell: the number's tween, the look timer, and the one timer that redraws ages.
 #[derive(Default)]
 pub struct Ui {
@@ -296,6 +348,8 @@ pub struct Ui {
     pub looked: Looked,
     /// Screen to go back to when ⌘. closes the view.
     pub before: Option<crate::shell::Screen>,
+    /// The scope it showed when it was left, reopened on coming back (Settings' Done).
+    pub resume: Option<StatusScope>,
     ages: Option<Task<()>>,
     ages_due: Option<i64>,
 }
@@ -403,12 +457,7 @@ impl Shell {
                 let session = self.state.status.session;
                 let live = phase == Phase::Live;
                 let hero = self.status_hero(&doc, session, live, now, cx);
-                let rest = div()
-                    .flex()
-                    .flex_col()
-                    .child(self.status_health(&doc, now, cx))
-                    .child(self.status_sections(&doc, now, cx))
-                    .when(!live, |d| d.opacity(0.55));
+                let rest = div().flex().flex_col().child(self.status_health(&doc, now, cx)).child(self.status_sections(&doc, now, cx));
                 self.schedule_ages(&doc, now, cx);
                 div().flex().flex_col().child(hero).child(rest).into_any_element()
             }
@@ -554,14 +603,31 @@ impl Shell {
         if !self.connected() {
             return;
         }
-        if self.screen != crate::shell::Screen::Status {
+        self.status_ui.resume = Some(scope.clone());
+        if self.screen != Screen::Status {
             self.status_ui.before = Some(self.screen);
-            self.go(crate::shell::Screen::Status);
+            self.go(Screen::Status);
         }
         let out = self.state.status_open(scope);
         self.status_send(out);
-        self.status_seen_tick();
+        self.update_live(false, cx);
         cx.notify();
+    }
+
+    /// Every screen change goes through here, so leaving Status always stops its wait and records the look, and
+    /// coming back always reopens it.
+    pub(crate) fn set_screen(&mut self, to: Screen) {
+        let open = self.state.status.scope.clone();
+        let tr = transition(self.screen, to, open.as_ref(), self.status_ui.resume.as_ref());
+        if tr.leave {
+            self.leave_status();
+        }
+        self.screen = to;
+        if let Some(scope) = tr.reopen {
+            let out = self.state.status_open(scope);
+            self.status_send(out);
+        }
+        self.status_seen_tick();
     }
 
     /// Tracks whether the view is being looked at (on screen, window focused).
@@ -571,7 +637,10 @@ impl Shell {
     }
 
     /// The view leaves: record the look if it counted, and stop the wait loop.
-    pub(crate) fn leave_status(&mut self) {
+    fn leave_status(&mut self) {
+        if self.state.status.scope.is_some() {
+            self.status_ui.resume = self.state.status.scope.clone();
+        }
         let looked = self.status_ui.looked.take(Instant::now());
         let out = self.state.status_close(looked);
         if self.bench.is_none() {
@@ -761,6 +830,39 @@ mod tests {
         stale.headline.text = fleetd_contracts::prim::Line::unchecked("Nothing running.");
         let (_, body) = digest_text(&stale);
         assert!(body.starts_with("Not live: machine:buildbox, usage:buildbox, github:acme/storefront stale. Nothing running."), "{body}");
+    }
+
+    #[test]
+    fn leaving_stops_the_view_and_coming_back_reopens_it() {
+        let fleet = StatusScope::Fleet;
+        let w14 = order_scope("W14");
+        // Status → an order (⌘. back, a row click, ⌘1): leave.
+        assert_eq!(transition(Screen::Status, Screen::Order, Some(&w14), None), Transition { leave: true, reopen: None });
+        // Back from Settings: reopen what it showed.
+        assert_eq!(transition(Screen::Settings, Screen::Status, None, Some(&w14)), Transition { leave: false, reopen: Some(w14.clone()) });
+        // Opening fresh: the scope open_status set.
+        assert_eq!(transition(Screen::Board, Screen::Status, None, Some(&fleet)), Transition { leave: false, reopen: Some(fleet.clone()) });
+        // Status to Status, already open: nothing.
+        assert_eq!(transition(Screen::Status, Screen::Status, Some(&fleet), Some(&fleet)), Transition { leave: false, reopen: None });
+        // Elsewhere to elsewhere: nothing.
+        assert_eq!(transition(Screen::Board, Screen::Machines, None, Some(&fleet)), Transition { leave: false, reopen: None });
+    }
+
+    #[test]
+    fn a_wait_past_its_deadline_is_not_live_and_asks_again() {
+        let mut s = live();
+        let out = s.status_open(StatusScope::Fleet);
+        answer(&mut s, &tool(&out[0]).0, serde_json::json!({ "doc": doc(4, 72) }));
+        let deadline = s.status.wait_deadline.expect("a wait is out with a deadline");
+        assert!(deadline - now_ms() <= WAIT_SEC as i64 * 1000 + WAIT_GRACE_MS);
+        assert!(s.status_check_deadline(deadline - 1).is_empty());
+        assert_eq!(s.status.phase(), Phase::Live);
+        let out = s.status_check_deadline(deadline + 1);
+        assert_eq!(s.status.phase(), Phase::NotLive);
+        assert!(s.status.error.as_deref().unwrap().contains("hasn't answered"));
+        assert_eq!(tool_name(&out[0]), "status_get");
+        assert_eq!(s.status.wait_deadline, None);
+        assert!(s.status_check_deadline(deadline + 60_000).is_empty(), "one miss, one resync");
     }
 
     #[test]

@@ -92,6 +92,8 @@ impl Shell {
         if doc.in_progress.is_empty() {
             col = col.child(none(t, "Nothing running."));
         }
+        // The activity comes from the live feed, not the doc: shown as the lanes show it when that feed stalls.
+        let live_stale = self.state.live_stale() && self.bench.is_none();
         for (i, r) in doc.in_progress.iter().enumerate() {
             let lanes = self.state.live.lanes(&r.workstream_id);
             let lane = r.task_ids.iter().find_map(|task| lanes.iter().find(|l| l.task_id.as_ref() == Some(task))).cloned();
@@ -113,7 +115,7 @@ impl Shell {
                         .text_color(t.text)
                         .child(SharedString::from(r.title.to_string())),
                 )
-                .child(activity(t, lane.as_ref(), &r.task_ids.iter().map(|t| t.to_string()).collect::<Vec<_>>()))
+                .child(activity(t, lane.as_ref(), &r.task_ids.iter().map(|t| t.to_string()).collect::<Vec<_>>(), live_stale))
                 .children(
                     r.gate.as_ref().map(|g| div().flex_none().text_size(px(size::XS)).text_color(t.quiet).child(format!("waiting on {}", &**g))),
                 )
@@ -311,15 +313,13 @@ fn item_id(t: &Theme, id: &str) -> Div {
 
 /// What the item's agent is doing now, from the live lanes: its role and activity, or its task ids when no lane
 /// is on screen.
-fn activity(t: &Theme, lane: Option<&AgentLane>, tasks: &[String]) -> Div {
+fn activity(t: &Theme, lane: Option<&AgentLane>, tasks: &[String], stale: bool) -> Div {
     let inner = match lane {
-        Some(l) => div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .min_w_0()
-            .child(crate::live::chips::role_tag(t, l.role))
-            .child(crate::live::activity::activity_line(t, l)),
+        Some(l) => div().flex().items_center().gap_2().min_w_0().child(crate::live::chips::role_tag(t, l.role)).child(crate::live::activity::render(
+            t,
+            &crate::live::activity::describe(l),
+            stale,
+        )),
         None if !tasks.is_empty() => div().text_size(px(size::XS)).text_color(t.quiet).child(tasks.join(", ")),
         None => div(),
     };

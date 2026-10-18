@@ -26,6 +26,20 @@ impl Shell {
                 .items_center()
                 .gap_4()
                 .child(number::figure(t, pct, tween))
+                .when(!live, |d| {
+                    // Not live: said in words at full contrast, beside the last figure, never by fading it.
+                    d.child(
+                        div()
+                            .flex_none()
+                            .px_1p5()
+                            .rounded(px(radius::SM))
+                            .border_1()
+                            .border_color(t.warning)
+                            .text_size(px(size::XS))
+                            .text_color(t.warning)
+                            .child(format!("not live · from {}", clock(doc.now.as_str()))),
+                    )
+                })
                 .child(div().flex_1().child(number::bar(t, pct, tween, 6.)))
                 .child(
                     div()
@@ -68,7 +82,6 @@ impl Shell {
             .children(marker_lines)
             .child(self.status_headline(doc, now, cx))
             .children(stale_block(t, doc, now))
-            .when(!live, |d| d.opacity(0.55))
             .child(eta_block(t, doc, now))
             .child(since_line(t, doc))
             .into_any_element()
