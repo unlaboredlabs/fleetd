@@ -1,7 +1,7 @@
 //! Where a new intent goes. The caller's project, or a leading `@<project>`, decides the project; otherwise the router
 //! picks it, and when the router cannot, an unrouted ask lets the human pick. A template prefix (`fix:`) or the
 //! caller's template beats the router's; with the project known and no template given, it is `feature`. The
-//! workstream pins the chosen template's playbook. TS spec: apps/hub/src/intake/**.
+//! workstream pins the chosen template's playbook.
 pub mod prefix;
 pub mod router;
 

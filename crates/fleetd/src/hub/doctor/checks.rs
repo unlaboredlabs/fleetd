@@ -1,7 +1,6 @@
 //! Each doctor check as a pure function of what the hub read: a status, a plain message, and at most one fix. Only
 //! three fixes are automatic (restart T3 with the node's own command, re-mint the hub's T3 session, re-apply the
-//! fleetd instance config); every other fix is a command for a person to run. TS: apps/hub/src/doctor/checks.ts
-//! (after the phone app's removal: no push check).
+//! fleetd instance config); every other fix is a command for a person to run.
 use super::config::{HubConfig, MachineSetup, restart_command};
 use crate::hub::usage::probes::ProbeCounter;
 use crate::hub::usage::service::UsageBreaker;
@@ -11,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::sync::LazyLock;
 
-/// The fleetd provider instance in T3's settings (executor/ProviderList.ts).
+/// The fleetd provider instance in T3's settings.
 pub const FLEETD_INSTANCE: &str = "fleetd";
 
 #[derive(Deserialize)]

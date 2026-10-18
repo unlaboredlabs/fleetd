@@ -248,7 +248,7 @@ impl TaskPorts for HubTaskPorts {
     }
 }
 
-/// The lead's `fleetd task spawn|list|status|message|cancel` (TS LeadCallHandler's task cases).
+/// The lead's `fleetd task spawn|list|status|message|cancel`.
 struct Calls(Arc<Tasks>);
 
 impl LeadCallHandler for Calls {
@@ -279,7 +279,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     }
 }
 
-/// TS Usage.gate and usage/classify.ts parkedOf.
 struct UsageFromArea(Arc<crate::hub::usage::Usage>);
 
 impl UsageGate for UsageFromArea {
@@ -296,7 +295,6 @@ impl UsageGate for UsageFromArea {
     }
 }
 
-/// TS ValueBar.checkSpawn.
 struct ValueBarCheck(Arc<crate::hub::valuebar::ValueBar>);
 
 impl SpawnCheck for ValueBarCheck {
@@ -323,7 +321,6 @@ impl SpawnCheck for ValueBarCheck {
     }
 }
 
-/// TS Receipts.attach and receiptsLine.
 struct ReceiptsFromArea(Arc<crate::hub::receipts::Receipts>);
 
 impl ResultReceipts for ReceiptsFromArea {
@@ -335,7 +332,7 @@ impl ResultReceipts for ReceiptsFromArea {
     }
 }
 
-/// TS TaskRecords.forDigest + taskDigestLines, Tasks.list/cancel for removed projects.
+/// Digest lines, and listing and cancelling the tasks of removed projects.
 struct TasksForLeads(Arc<Tasks>);
 
 impl TasksHook for TasksForLeads {
@@ -361,7 +358,7 @@ impl TasksHook for TasksForLeads {
     }
 }
 
-/// TS FinishAll's `policies.get(ref).finishAll?.maxChildren`.
+/// Finish-all's max children from the project's policy.
 struct PolicyFromLeases(Arc<crate::hub::leases::Policies>);
 
 impl PolicyHook for PolicyFromLeases {

@@ -1,5 +1,5 @@
 //! The per-machine node: hub link, T3 supervision and sessions, the lead socket, cmd checks, sealed secrets,
-//! gated runs and node actions (TS: apps/node).
+//! gated runs and node actions.
 //!
 //! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run` / `node serve`. Both run until
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
@@ -23,7 +23,7 @@ use zeroize::Zeroizing;
 
 use config::{NodeConfig, default_node_home, read_config, write_config};
 
-/// `fleetd node …` usage, as the TS CLI prints it.
+/// `fleetd node …` usage.
 pub const NODE_USAGE: &str = "  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id> --t3-home <dir>
             --t3-url <url> [--t3-cmd <cmd>] [--t3-restart-cmd <cmd>] [--tags a,b] [--name <name>]
             [--home <dir>] [--enroll-only]
@@ -170,7 +170,7 @@ async fn run_node(
     enroll_token: Option<Zeroizing<String>>,
     exit_when_enrolled: bool,
 ) -> Result<(), NodeError> {
-    // The node logs to stdout like the TS node; a subscriber the CLI installed first wins.
+    // The node logs to stdout; a subscriber the CLI installed first wins.
     let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stdout)
         .with_ansi(false)

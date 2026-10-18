@@ -1,7 +1,7 @@
 //! Repo-relative path globs for policy areas. `**` spans any number of directories (including none), `*` and `?`
 //! stay within one path segment, `{a,b}` is alternation and `[...]` a character class (`[!...]` negated). A glob
 //! without wildcards names a file or a directory, so "docs" covers everything under docs/. Dotfiles are not
-//! special: an area check is about where a change lands, not about hiding files. TS spec: apps/hub/src/tasks/glob.ts.
+//! special: an area check is about where a change lands, not about hiding files.
 use regex::Regex;
 
 fn strip(p: &str) -> &str {

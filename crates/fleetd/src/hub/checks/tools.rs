@@ -1,6 +1,4 @@
 //! The MCP tools `claims_list` and `incidents_list`, and the lead calls `claim_done` and `review_verdict`.
-//! TS spec: apps/hub/src/api/FleetApi.ts (claims_list, incidents_list) and apps/hub/src/leads/LeadCallHandler.ts
-//! (claim_done, review_verdict).
 use super::ports::Refusal;
 use super::records::ClaimFilter;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, cap, readable, require};

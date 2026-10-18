@@ -2,7 +2,6 @@
 //! slot or queues with the reason, and launches a T3 thread (writers in a new worktree on `fleetd/<taskId>-<slug>`).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot and leases are released and the queue is tried again.
-//! TS spec: apps/hub/src/tasks/Tasks.ts.
 pub mod branch_diff;
 pub mod glob;
 pub mod hooks;
@@ -99,7 +98,7 @@ fn lead_error(code: ErrorCode, message: impl Into<String>, fix: Option<&str>) ->
     }
 }
 
-/// Store failures are defects in TS (Effect.sync throwing); here they refuse the call plainly and are logged.
+/// Store failures refuse the call plainly and are logged.
 fn store_error(error: StoreError) -> TaskError {
     tracing::error!(%error, "tasks: store failed");
     lead_error(
@@ -467,7 +466,7 @@ impl Tasks {
             let _guard = tasks.lock.lock().await;
             // The slot board follows thread events on its own, so it can free a slot before this area's follower has
             // ended the task whose thread stopped. Apply those events first, so `task.completed` precedes the next
-            // start, as in the TS hub (whose single-threaded followers ran in that order).
+            // start, the order older hubs emitted them in.
             tasks.catch_up().await;
             tasks.retry_queue().await;
         });

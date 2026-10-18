@@ -1,6 +1,6 @@
 //! One node link per machine: challenge, hello (signature, enroll token or enrolled key), welcome, then heartbeats,
 //! T3 state and sessions, lead calls and command replies until the socket ends. 45 s of silence takes the machine
-//! offline. TS spec: apps/hub/src/link/NodeLinkServer.ts.
+//! offline.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -753,7 +753,7 @@ impl Drop for AbortOnDrop {
     }
 }
 
-/// `fleetd-<hostname>`, as the TS hub names itself in its welcome.
+/// `fleetd-<hostname>`, the name the hub gives itself in its welcome.
 pub fn hub_id() -> String {
     let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
         .or_else(|_| std::fs::read_to_string("/etc/hostname"))

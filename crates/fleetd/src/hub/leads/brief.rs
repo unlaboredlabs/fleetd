@@ -1,5 +1,5 @@
-//! The brief freeze hash: sha256 of canonical JSON, byte-identical to the TS hub's `canonicalJson`, so a brief frozen
-//! by either hub hashes the same.
+//! The brief freeze hash: sha256 of canonical JSON, byte-identical to older hubs' `canonicalJson`, so a brief frozen
+//! by an older hub hashes the same.
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn matches_the_ts_hub_byte_for_byte() {
-        // Printed by the TS hub: canonicalJson(brief) and briefHash(brief) for this brief.
+        // Printed by an older hub: canonicalJson(brief) and briefHash(brief) for this brief.
         assert_eq!(
             canonical_json(&brief()),
             r#"{"budget":{"agentHours":2},"constraints":[],"decisionRule":{"better":"higher","goAtLeast":0.1,"stopBelow":0.02},"doneWhen":[{"status":200,"type":"http","url":"http://localhost:3000/health"}],"goal":"Add /health","pointers":["src/server.ts"],"tier":"S","why":"the deploy checks it"}"#

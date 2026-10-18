@@ -1,5 +1,5 @@
-//! Node's `util.parseArgs` in strict mode, which the TS CLI used everywhere: the same tokens, the same errors in the
-//! same words, so scripts and leads that drove the TS CLI see no difference. clap would change both.
+//! Node's `util.parseArgs` in strict mode, which older releases of the CLI used everywhere: the same tokens, the same
+//! errors in the same words, so scripts and leads written against them see no difference. clap would change both.
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {

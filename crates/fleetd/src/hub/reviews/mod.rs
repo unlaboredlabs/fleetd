@@ -1,4 +1,4 @@
-//! Review tiers and the train's review gate (TS: apps/hub/src/reviews).
+//! Review tiers and the train's review gate.
 pub mod patch_ids;
 pub mod rules;
 pub mod service;

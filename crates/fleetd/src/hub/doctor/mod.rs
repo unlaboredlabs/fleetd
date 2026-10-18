@@ -1,4 +1,4 @@
-//! The doctor (M11): live setup checks with safe automatic fixes. TS spec: apps/hub/src/doctor.
+//! The doctor (M11): live setup checks with safe automatic fixes.
 pub mod checks;
 pub mod config;
 pub mod service;

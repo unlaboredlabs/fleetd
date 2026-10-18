@@ -1,6 +1,5 @@
 //! Runs one done-when check and says pass, fail or error (could not run), with evidence. `cmd` runs on the node,
 //! `http` and the GitHub checks on the hub, `judge` through a review task, `human` through a do-ask.
-//! TS spec: apps/hub/src/checks/CheckRunner.ts.
 use super::github::{GhError, GitHub};
 use super::judges::{JudgeInput, Judges};
 use super::ports::{HumanAsk, Ports};
@@ -624,7 +623,7 @@ impl CheckRunner {
     }
 }
 
-/// The useful part of a transport error, like TS's fetch `cause` message.
+/// The useful part of a transport error: its innermost cause.
 fn describe_fetch_error(e: &reqwest::Error) -> String {
     let mut source: &dyn std::error::Error = e;
     while let Some(next) = source.source() {

@@ -1,6 +1,5 @@
 //! The probe counter: how many direct usage or reset-credit calls a T3 made, counted from its trace file. fleetd
 //! configures T3 so it never makes one (no stored OAuth credentials, no cliproxy usage source), so this must read 0.
-//! TS: apps/hub/src/usage/probes.ts.
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

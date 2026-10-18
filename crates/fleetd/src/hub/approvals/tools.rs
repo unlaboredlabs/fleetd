@@ -1,4 +1,4 @@
-//! secret_submit (MCP) and the `gated_run` lead call. TS: api/FleetApi.ts and leads/LeadCallHandler.ts.
+//! secret_submit (MCP) and the `gated_run` lead call.
 use super::{ApprovalRefused, Caller as ApprovalCaller};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, is_human};
 use crate::hub::usage::wire::convert;
@@ -41,7 +41,7 @@ async fn secret_submit(
         .map_err(refusal)
 }
 
-/// The `gated_run` lead call (leads/LeadCallHandler.ts): files the approve ask holding exactly the lead's command. A
+/// The `gated_run` lead call: files the approve ask holding exactly the lead's command. A
 /// workstream named in the call must be one of the caller's own (`ownWorkstream`), checked before this runs.
 pub async fn gated_run_call(
     hub: &Hub,

@@ -1,4 +1,4 @@
-//! The human digest's lines for advise-only retro proposals. Pure. TS: apps/hub/src/retro/digest.ts.
+//! The human digest's lines for advise-only retro proposals. Pure.
 use super::types::RetroProposal;
 
 const SHOWN: usize = 3;

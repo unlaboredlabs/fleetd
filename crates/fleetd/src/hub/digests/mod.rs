@@ -1,5 +1,5 @@
-//! The human digest at 09:00 and 18:00 in `policy.tz`, announced by `digest.ready`, and on demand for digest_get
-//! (TS `digests/HumanDigests.ts`). The event carries no project content: one hub-wide event can't be filtered per
+//! The human digest at 09:00 and 18:00 in `policy.tz`, announced by `digest.ready`, and on demand for digest_get.
+//! The event carries no project content: one hub-wide event can't be filtered per
 //! key, so each reader fetches its own view with digest_get, which keeps to the key's machines.
 
 use std::collections::HashMap;
@@ -51,7 +51,7 @@ pub fn next_slot(after_ms: i64, tz: Tz) -> i64 {
     best.unwrap_or(after_ms + 12 * HOUR_MS)
 }
 
-/// Local `hour:00` on `day`; a time skipped by a DST change moves forward by the gap, as the TS cron does.
+/// Local `hour:00` on `day`; a time skipped by a DST change moves forward by the gap.
 fn slot_on(day: NaiveDate, hour: u32, tz: Tz) -> Option<i64> {
     let local = day.and_hms_opt(hour, 0, 0)?;
     match tz.from_local_datetime(&local) {

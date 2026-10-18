@@ -1,5 +1,5 @@
-//! fleetd's wire types, shared by the binary and the app. They were ported from the TypeScript contracts with the same
-//! JSON on the wire and the same decode checks, so data a TS hub stored still reads back.
+//! fleetd's wire types, shared by the binary and the app. They keep the wire JSON and decode checks of older hubs,
+//! so data an older hub stored still reads back.
 //! `schema::render_json_schemas` writes the JSON Schemas committed in `schema/`.
 
 pub mod prim;

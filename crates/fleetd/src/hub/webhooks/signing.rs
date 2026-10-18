@@ -1,5 +1,5 @@
 //! Standard Webhooks signing (https://www.standardwebhooks.com): HMAC-SHA256 over `id.timestamp.body`, with a
-//! `whsec_`-prefixed base64 secret. TS spec: apps/hub/src/webhooks/Signing.ts.
+//! `whsec_`-prefixed base64 secret.
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use hmac::{Hmac, Mac};

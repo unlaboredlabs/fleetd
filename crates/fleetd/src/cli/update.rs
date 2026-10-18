@@ -287,8 +287,8 @@ fn app_version(binary: &Path) -> Option<String> {
     text.trim().strip_prefix("fleetd-app ").map(str::to_string)
 }
 
-/// Restarts the hub and node services `fleetd init` created for this binary: the unit files (named as in TS
-/// apps/cli/src/setup/units.ts, any `--unit-suffix`) whose command line names `exe`. A lab's units, which run
+/// Restarts the hub and node services `fleetd init` created for this binary: the unit files (its usual
+/// unit names, any `--unit-suffix`) whose command line names `exe`. A lab's units, which run
 /// another binary, are left alone.
 fn restart_services(exe: &Path) {
     let exe = exe.to_string_lossy();

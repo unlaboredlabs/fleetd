@@ -1,6 +1,5 @@
 //! MCP tools `tasks_list`, `task_get`, `cap_set` and the lead calls `task_spawn|task_list|task_status|task_message|
-//! task_cancel`. TS spec: apps/hub/src/api/FleetApi.ts (those three tools) and apps/hub/src/leads/LeadCallHandler.ts
-//! (the task cases).
+//! task_cancel`.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -104,7 +103,7 @@ fn internal(error: StoreError) -> TaskError {
     internal_error()
 }
 
-/// The task cases of TS LeadCallHandler: `wire::register_lead_calls` routes `task_spawn`, `task_list`,
+/// The task lead calls: `wire::register_lead_calls` routes `task_spawn`, `task_list`,
 /// `task_status`, `task_message` and `task_cancel` here with the caller link attributed.
 pub async fn lead_call(
     tasks: &Arc<Tasks>,

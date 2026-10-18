@@ -1,7 +1,7 @@
 //! Usage-limit classification from what T3 reports about a failed thread: its failure class and reset time, plus the
 //! error text the `claude` CLI or a proxy in front of it produced. Pure; the executor uses it to tell a limit from a
-//! failure, and the usage area to park and pace. fleetd never asks a usage API. TS spec: apps/hub/src/usage/classify.ts
-//! (the executor needs it at G1, so it lives here; usage imports it).
+//! failure, and the usage area to park and pace. fleetd never asks a usage API.
+//! It lives here because the executor needs it; usage imports it.
 use std::sync::LazyLock;
 
 use regex::Regex;

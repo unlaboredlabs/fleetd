@@ -1,4 +1,4 @@
-//! The stall ladder, over a port so it runs on a test clock. TS spec: apps/hub/src/watchdog/Watchdog.ts.
+//! The stall ladder, over a port so it runs on a test clock.
 use std::collections::HashMap;
 use std::future::Future;
 

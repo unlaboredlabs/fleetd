@@ -36,7 +36,7 @@ impl LeadError {
         Self::new(ErrorCode::Invalid, message, fix)
     }
 
-    /// TS `fromExecutor` for `MachineNotConnected`.
+    /// The executor could not reach the machine.
     pub fn machine_offline(machine_id: &fleetd_contracts::ids::MachineId) -> Self {
         Self::new(
             ErrorCode::MachineOffline,
@@ -45,7 +45,7 @@ impl LeadError {
         )
     }
 
-    /// TS `fromExecutor` for any other executor failure.
+    /// Any other executor failure.
     pub fn t3_error(message: impl Into<String>) -> Self {
         Self::new(
             ErrorCode::T3Error,
@@ -62,7 +62,7 @@ impl LeadError {
     }
 }
 
-/// The TS hub died on a database failure; here it refuses the one call, as the framework does for tools.
+/// A database failure refuses the one call, as the framework does for tools.
 impl From<StoreError> for LeadError {
     fn from(error: StoreError) -> Self {
         tracing::error!(%error, "hub database failure in leads");

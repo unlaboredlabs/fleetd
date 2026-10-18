@@ -1,4 +1,4 @@
-//! SQLite (same migrations as apps/hub/src/store/HubDb.ts), hub store and event log.
+//! SQLite (same migrations as older hubs), hub store and event log.
 //!
 //! One `HubDb` per hub, shared by `Arc`: `HubStore`, `EventLog`, `Auth` and every area that owns tables (their
 //! queries live in their own modules, against `HubDb::with` / `HubDb::transaction`).

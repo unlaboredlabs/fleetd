@@ -57,7 +57,7 @@ fn event_type(name: &str) -> Option<HubEventType> {
     serde_json::from_value(Value::String(name.into())).ok()
 }
 
-/// A wire string as its contract type (a brand or enum), checked as the TS schema decode did.
+/// A wire string as its contract type (a brand or enum), checked as the contracts decode it.
 fn parse<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
     serde_json::from_value(Value::String(s.into())).ok()
 }

@@ -32,7 +32,7 @@ pub struct ThreadRef {
     pub thread_id: ThreadId,
 }
 
-/// ISO 8601 UTC timestamp string. Not checked on decode, as in TS.
+/// ISO 8601 UTC timestamp string. Not checked on decode.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Timestamp(pub String);

@@ -36,7 +36,7 @@ const PROJECTS: &[&str] = &[
     "forge-infra",
     "dotfiles",
     "zed-notes",
-    "pwa-push",
+    "desktop-notify",
     "merge-train",
     "lab-harness",
     "billing-site",
@@ -61,7 +61,7 @@ const NOUNS: &[&str] = &[
     "diff endpoint",
     "event cursor",
     "usage parking",
-    "PWA push",
+    "desktop notifications",
     "doctor checks",
     "policy leases",
     "brief freezer",
@@ -152,13 +152,13 @@ pub struct LogLine {
 }
 
 const FILES: &[&str] = &[
-    "apps/hub/src/train.ts",
-    "apps/hub/src/wake.ts",
-    "apps/hub/src/lead/digest.ts",
-    "apps/node/src/handshake.ts",
-    "packages/contracts/src/events.ts",
-    "apps/hub/src/slots.ts",
-    "apps/cli/src/cli.ts",
+    "crates/fleetd/src/hub/train/mod.rs",
+    "crates/fleetd/src/hub/wakes/mod.rs",
+    "crates/fleetd/src/hub/leads/digest.rs",
+    "crates/fleetd/src/node/link.rs",
+    "crates/fleetd-contracts/src/events.rs",
+    "crates/fleetd/src/hub/slots/mod.rs",
+    "crates/fleetd/src/cli/mod.rs",
     "app/fleetd-app/src/shell.rs",
 ];
 const THOUGHTS: &[&str] = &[
@@ -170,14 +170,14 @@ const THOUGHTS: &[&str] = &[
     "Checking whether the node already scrubs secrets from command output before adding it.",
 ];
 const TESTS: &[&str] = &[
-    "train rebases before merge",
-    "train parks on red CI",
-    "wake fires once at T",
-    "digest renders open asks",
-    "lease blocks second writer",
-    "cursor resumes after reconnect",
-    "node restarts dead t3",
-    "ask batches by key",
+    "train_rebases_before_merge",
+    "train_parks_on_red_ci",
+    "wake_fires_once_at_t",
+    "digest_renders_open_asks",
+    "lease_blocks_second_writer",
+    "cursor_resumes_after_reconnect",
+    "node_restarts_dead_t3",
+    "ask_batches_by_key",
 ];
 
 /// Produces realistic agent transcript lines, endlessly.
@@ -225,20 +225,23 @@ impl LogStream {
                 self.push(LogKind::Output, format!("  └  Updated {file} with {a} additions and {r} removals"));
             }
             3 => {
-                self.push(LogKind::Tool, "● Bash(pnpm vitest run apps/hub)".to_string());
-                self.push(LogKind::Output, " RUN  v4.1.2 /home/wynn/src/fleetd".to_string());
-                for _ in 0..(3 + self.rng.below(6)) {
+                self.push(LogKind::Tool, "● Bash(cargo test -p fleetd hub::train)".to_string());
+                let n = 3 + self.rng.below(6);
+                self.push(LogKind::Output, format!("running {n} tests"));
+                let mut failed = 0;
+                for _ in 0..n {
                     let t = self.rng.pick(TESTS);
-                    let ms = 1 + self.rng.below(90);
                     if self.rng.below(12) == 0 {
-                        self.push(LogKind::Error, format!(" × apps/hub/src/train.test.ts > {t} {ms}ms"));
-                        self.push(LogKind::Error, "   AssertionError: expected 'parked' to be 'merged'".to_string());
+                        failed += 1;
+                        self.push(LogKind::Error, format!("test hub::train::tests::{t} ... FAILED"));
+                        self.push(LogKind::Error, "   assertion `left == right` failed: left: \"parked\", right: \"merged\"".to_string());
                     } else {
-                        self.push(LogKind::Ok, format!(" ✓ apps/hub/src/train.test.ts > {t} {ms}ms"));
+                        self.push(LogKind::Ok, format!("test hub::train::tests::{t} ... ok"));
                     }
                 }
-                let n = 20 + self.rng.below(40);
-                self.push(LogKind::Output, format!(" Test Files  {} passed ({})", n / 4, n / 4));
+                let ms = 1 + self.rng.below(900);
+                let (result, passed) = if failed == 0 { ("ok", n) } else { ("FAILED", n - failed) };
+                self.push(LogKind::Output, format!("test result: {result}. {passed} passed; {failed} failed; finished in 0.{ms:03}s"));
             }
             _ => {
                 self.push(LogKind::Tool, "● Bash(cargo build --release)".to_string());
@@ -256,20 +259,20 @@ impl LogStream {
 }
 
 const CODE: &[&str] = &[
-    "const lease = await leases.acquire(task.areas, task.id);",
-    "if (lease._tag === \"Conflict\") return yield* Effect.fail(new LeaseHeld({ area }));",
-    "yield* git.fetch(repo, { ref: change.base });",
-    "const head = yield* git.revParse(repo, \"HEAD\");",
-    "for (const change of queue) {",
-    "  yield* Effect.logInfo(\"train: rebasing\", { pr: change.pr });",
+    "let lease = leases.acquire(&task.areas, &task.id)?;",
+    "let Lease::Granted(lease) = lease else { return Err(TaskError::lease_held(area)) };",
+    "git.fetch(&repo, &change.base).await?;",
+    "let head = git.rev_parse(&repo, \"HEAD\").await?;",
+    "for change in &queue {",
+    "    tracing::info!(pr = change.pr, \"train: rebasing\");",
     "}",
-    "return { position, head, checks: summary.checks };",
-    "export const TrainEntry = Schema.Struct({ pr: Schema.Number, head: Schema.String });",
-    "const result = yield* ci.waitForChecks(change.pr, { timeout: \"30 minutes\" });",
-    "if (!result.green) yield* train.park(change, result.failing);",
+    "Ok(Position { position, head, checks: summary.checks })",
+    "pub struct TrainEntry { pub pr: u64, pub head: String }",
+    "let result = ci.wait_for_checks(change.pr, Duration::from_secs(30 * 60)).await?;",
+    "if !result.green { train.park(&change, &result.failing)?; }",
     "// The merge must use the exact head CI tested, not the branch tip.",
-    "yield* gh.merge(change.pr, { sha: head, method: \"squash\" });",
-    "const digest = renderDigest(project, { since: lead.lastWake });",
+    "gh.merge(change.pr, &head, MergeMethod::Squash).await?;",
+    "let digest = render_digest(&project, lead.last_wake);",
     "",
 ];
 
@@ -278,7 +281,12 @@ const CODE: &[&str] = &[
 pub fn diff_text() -> String {
     let mut rng = Rng::new(42);
     let mut out = String::new();
-    for file in ["apps/hub/src/train.ts", "apps/hub/src/leases.ts", "apps/hub/src/lead/digest.ts", "packages/contracts/src/train.ts"] {
+    for file in [
+        "crates/fleetd/src/hub/train/mod.rs",
+        "crates/fleetd/src/hub/leases/mod.rs",
+        "crates/fleetd/src/hub/leads/digest.rs",
+        "crates/fleetd-contracts/src/train.rs",
+    ] {
         let _ = writeln!(out, "diff --git a/{file} b/{file}");
         let _ = writeln!(out, "index {:07x}..{:07x} 100644", rng.next() & 0xfffffff, rng.next() & 0xfffffff);
         let _ = writeln!(out, "--- a/{file}\n+++ b/{file}");
@@ -306,7 +314,7 @@ pub fn diff_text() -> String {
                     }
                 }
             }
-            let _ = writeln!(out, "@@ -{old},{oc} +{new},{nc} @@ export const Train = Layer.effect(");
+            let _ = writeln!(out, "@@ -{old},{oc} +{new},{nc} @@ impl Train {{");
             for l in body {
                 let _ = writeln!(out, "{l}");
             }

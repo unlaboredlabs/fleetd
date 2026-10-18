@@ -1,5 +1,4 @@
 //! A pull request's current head commit, from GitHub through the `gh` CLI on the hub machine.
-//! TS spec: apps/hub/src/valuebar/PrHeads.ts.
 use crate::hub::checks::GhRunner;
 use crate::hub::checks::ports::BoxFuture;
 use regex::Regex;

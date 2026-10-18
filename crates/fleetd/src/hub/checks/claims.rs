@@ -1,6 +1,6 @@
 //! `claim done`: the lead only claims; the hub moves the workstream to verifying, runs its frozen done-when checks in
 //! index order, and only all of them passing makes it done. A failure wakes the lead with each failing check's
-//! evidence; the third failed claim on a workstream is a false-claim incident. TS spec: apps/hub/src/checks/Claims.ts.
+//! evidence; the third failed claim on a workstream is a false-claim incident.
 use super::now_ts;
 use super::ports::{ClaimWake, Ports, Refusal, invalid, not_found};
 use super::records::{ClaimFilter, ClaimRecords};
@@ -27,7 +27,7 @@ use tokio::task::{AbortHandle, JoinHandle};
 /// Under the node's 30 s answer timeout for lead calls; slower claims report through a wake.
 pub const INLINE_WAIT: Duration = Duration::from_secs(20);
 pub const FALSE_CLAIM_AT: usize = 3;
-/// Same text as playbooks/finishAllRules.ts.
+/// Same text as `playbooks::finish_all_rules::FINISH_ALL_IDLE`.
 const FINISH_ALL_IDLE: &str = "finish-all: nothing left with a value source";
 
 /// `claim_done`'s answer; the lead-call result is this with `op: "claim_done"`.

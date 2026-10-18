@@ -1,7 +1,7 @@
 //! Webhook subscriptions and their delivery. One task per active subscription walks the event log from the
 //! subscription's cursor and posts each matching event in seq order, retrying the same event until it gets a 2xx
 //! (at least once, never skipping ahead). The cursor is persisted after every acknowledged event, so a hub restart
-//! resumes where delivery stopped. TS spec: apps/hub/src/webhooks/Webhooks.ts.
+//! resumes where delivery stopped.
 pub mod secret_box;
 pub mod signing;
 pub mod tools;
@@ -395,7 +395,7 @@ impl Webhooks {
     async fn deliver(&self, row: &Row, secret: &str, event: &HubEvent) {
         let body = serde_json::to_string(event).expect("event encodes");
         let id = format!("{}_{}", row.subscription_id, event.seq.get());
-        // From the row as loaded when delivery started, as the TS hub does (see the PR notes).
+        // From the row as loaded when delivery started.
         let mut failing_since = row.failing_since_ms;
         let mut attempt = 0usize;
         loop {

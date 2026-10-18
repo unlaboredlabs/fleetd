@@ -1,5 +1,5 @@
 //! The framework over a real HTTP server on an ephemeral port: per-request bearer checks, the role and per-machine
-//! grant checks, the TS error shapes on /mcp and /app, and a prompt stop with sockets open.
+//! grant checks, the error shapes on /mcp and /app, and a prompt stop with sockets open.
 use super::build_on;
 use crate::clock::SystemClock;
 use crate::hub::api::{self, Hub, HubConfig, Listen, Registry};

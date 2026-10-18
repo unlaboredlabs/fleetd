@@ -1,6 +1,6 @@
 //! Webhook secrets at rest: AES-256-GCM under a key that lives in its own 0600 file in the hub home, so a copy of
-//! hub.sqlite alone does not reveal them. Sealed form: base64(iv 12 || tag 16 || ciphertext), as the TS hub writes,
-//! so its subscriptions keep working. TS spec: apps/hub/src/webhooks/SecretBox.ts.
+//! hub.sqlite alone does not reveal them. Sealed form: base64(iv 12 || tag 16 || ciphertext), as older hubs wrote it,
+//! so their subscriptions keep working.
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
@@ -120,7 +120,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// Sealed by the TS hub's SecretBox (node:crypto aes-256-gcm) under the all-0x01 key.
+    /// Sealed by an older hub's SecretBox (node:crypto aes-256-gcm) under the all-0x01 key.
     #[test]
     fn opens_a_secret_the_ts_hub_sealed() {
         let sealed = "fGGbV1rLl/0XkEex8MCs/D9kx2cBl70tsZDOecEvZI6ZeGuFsTBNObo=";

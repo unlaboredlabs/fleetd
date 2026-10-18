@@ -299,7 +299,7 @@ impl SqlRunner for OpsPorts {
     }
 }
 
-/// Wakes wait while usage holds the thread (TS Wakes over Usage.hold / whenClear).
+/// Wakes wait while usage holds the thread.
 impl crate::hub::queue::ports::UsageHold for super::Usage {
     fn hold(
         &self,
@@ -376,7 +376,7 @@ pub fn build(config: &crate::hub::api::HubConfig, clock: Arc<dyn crate::clock::C
 /// and the doctor's 15-minute run.
 pub fn start(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
     hub.ops.bind(hub);
-    // TS FleetApi: no new turn goes into a login fleetd knows is exhausted.
+    // No new turn goes into a login fleetd knows is exhausted.
     hub.executors.hooks.gate_launch(Arc::new(|hub, machine_id| {
         Box::pin(async move { hub.usage.gate(machine_id.as_str()) })
     }));

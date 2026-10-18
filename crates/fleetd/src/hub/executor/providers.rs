@@ -1,7 +1,7 @@
 //! The provider instances a machine's T3 runs (its `server.getConfig` provider list), and which instance a launch
 //! goes to. Every launch goes to the "fleetd" Claude instance, whose launch args deny T3's own spawn tools, except a
 //! model only a usable fleetd Codex instance offers: that runs there, so L-tier reviews can get a Codex reviewer. A
-//! Codex instance counts only when its id starts with "fleetd". TS spec: apps/hub/src/executor/ProviderList.ts.
+//! Codex instance counts only when its id starts with "fleetd".
 use t3_wire::types::ServerProvider;
 
 pub const FLEETD_INSTANCE: &str = "fleetd";

@@ -1,6 +1,6 @@
 //! The value bar's spawn rules: writers say what they serve, a done workstream takes no more writes, and review stops
 //! after one clean pass per commit. Pure; mod.rs feeds them the workstream, the PR head and its verdicts.
-//! TS spec: apps/hub/src/valuebar/rules.ts. The train's review gate (reviews area) reuses `review_refusal` and `pr_key`.
+//! The train's review gate (reviews area) reuses `review_refusal` and `pr_key`.
 use fleetd_contracts::ledger::{SERVES_FIX, Workstream, WorkstreamId, WorkstreamState, is_serves};
 use fleetd_contracts::tasks::TaskKind;
 use std::collections::HashSet;

@@ -1,5 +1,5 @@
 //! Pure mapping from T3 shell stream items to the hub's thread/project caches and derived events. The executor feeds
-//! every item through `apply_shell_item`; nothing here does I/O. TS spec: apps/hub/src/executor/ShellMapper.ts.
+//! every item through `apply_shell_item`; nothing here does I/O.
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -401,7 +401,7 @@ struct Applier<'s, 'c> {
     ctx: &'c ApplyContext<'c>,
     threads: Vec<StoredThread>,
     transitions: Vec<Transition>,
-    /// Insertion-ordered, as the TS Set.
+    /// Insertion-ordered.
     touched: Vec<String>,
     cursor: Option<u64>,
 }
@@ -472,7 +472,7 @@ impl Applier<'_, '_> {
         });
         let prev_run_differs = match &prev {
             None => true,
-            // TS compares `undefined` (unknown) to null/a string strictly, so an unknown run always differs.
+            // An unknown run always differs, even from a known absent one.
             Some((_, run)) => run.as_ref().map(|r| r.as_deref()) != Some(next_run),
         };
         if prev.is_none()

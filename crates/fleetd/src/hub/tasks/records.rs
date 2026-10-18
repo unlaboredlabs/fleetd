@@ -1,4 +1,4 @@
-//! Task rows: the Task as JSON in `data`, plus the columns queries filter on. TS spec: apps/hub/src/tasks/TaskRecords.ts.
+//! Task rows: the Task as JSON in `data`, plus the columns queries filter on.
 use std::collections::HashSet;
 
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};

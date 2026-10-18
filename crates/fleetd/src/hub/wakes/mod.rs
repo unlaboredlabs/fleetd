@@ -1,7 +1,6 @@
 //! Hub-owned wakes: stored in SQLite, scheduled on the hub clock, delivered through the write queue so a wake for an
 //! offline machine waits for it. One scheduler task sleeps until the earliest active wake is due. A firing is a
 //! turn, so one whose thread the usage layer holds (paused login, parked thread) stays due until the hold clears.
-//! TS spec: apps/hub/src/wakes/Wakes.ts.
 pub mod schedule;
 pub mod tools;
 

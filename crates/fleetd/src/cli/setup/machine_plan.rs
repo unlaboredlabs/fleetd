@@ -38,7 +38,7 @@ pub struct MachineLayout {
     /// The fleetd instance's Claude login (e.g. CLAUDE_CODE_OAUTH_TOKEN=…), 0600, filled in by the user.
     pub env_file: String,
     pub logs: String,
-    /// Where the TS CLI bundle lived; deleted when the binary replaces it.
+    /// Where older releases installed the CLI bundle; deleted when the binary replaces it.
     pub legacy_cli_dir: String,
     pub bin_dir: String,
     /// The fleetd binary itself: the node service runs it and leads find it on T3's PATH.

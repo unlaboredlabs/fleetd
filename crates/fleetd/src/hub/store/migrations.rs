@@ -1,5 +1,5 @@
-//! The hub schema: the same numbered migrations, in the same order and with the same SQL, as
-//! apps/hub/src/store/HubDb.ts, so a TS hub's database opens unchanged. Index + 1 is the `user_version` after each one
+//! The hub schema: the same numbered migrations, in the same order and with the same SQL, as older hubs ran, so
+//! an older hub's database opens unchanged. Index + 1 is the `user_version` after each one
 //! runs. Append only, never edit a shipped entry.
 
 pub(crate) const MIGRATIONS: &[&str] = &[

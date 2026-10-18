@@ -1,7 +1,7 @@
-//! Agent and human keys, grants, node enrollment tokens and node keys (TS: apps/hub/src/auth/Auth.ts).
+//! Agent and human keys, grants, node enrollment tokens and node keys.
 //!
-//! Device pairing tokens (`flp_`, `fleetd hub device add`) belonged to the phone app and are not ported; their
-//! table still comes from the migrations so a TS hub's database opens unchanged.
+//! Device pairing tokens (`flp_`, `fleetd hub device add`) belonged to a client that no longer exists and are
+//! gone; their table still comes from the migrations so an older hub's database opens unchanged.
 #[cfg(test)]
 mod tests;
 

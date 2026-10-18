@@ -1,6 +1,5 @@
 //! The usage layer's state as a pure fold over the event log: parked threads, recent limit hits per machine and the
-//! breaker. The service (`service.rs`) feeds it events and acts on what it returns. TS: the `apply`, `maybeTrip`,
-//! `tick`, `gate` and `hold` parts of apps/hub/src/usage/Usage.ts.
+//! breaker. The service (`service.rs`) feeds it events and acts on what it returns.
 use super::classify::{UsageClass, UsageParked, limit_of_event, parked_of};
 use super::ports::{HubEvent, NewEvent, ThreadRef};
 use super::time::{parse_ms, plural};

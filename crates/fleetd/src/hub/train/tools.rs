@@ -1,4 +1,4 @@
-//! `changes_list`, `train_get` and `train_freeze` (api/FleetApi.ts).
+//! `changes_list`, `train_get` and `train_freeze`.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;

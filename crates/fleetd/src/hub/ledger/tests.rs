@@ -1,4 +1,4 @@
-//! Supersede, scope precedence and dedupe (TS Ledger.test.ts, the cases that guard real logic).
+//! Supersede, scope precedence and dedupe.
 use std::sync::Arc;
 
 use fleetd_contracts::ids::ProjectRef;

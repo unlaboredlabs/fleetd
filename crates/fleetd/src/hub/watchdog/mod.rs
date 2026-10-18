@@ -1,7 +1,7 @@
 //! The stall watchdog. Every running thread gets a persistent thread stream; a run with no frame for longer than its
 //! threshold is stalled. The ladder per chain: emit thread.stalled and interrupt; once the run has ended, send one
 //! "continue"; a second stall in the chain emits thread.failed{reason:"stalled"} and interrupts again, with no more
-//! retries. Deterministic, no LLM. TS spec: apps/hub/src/watchdog/Watchdog.ts.
+//! retries. Deterministic, no LLM.
 pub mod ladder;
 #[cfg(test)]
 mod ladder_tests;

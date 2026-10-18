@@ -1,5 +1,4 @@
 //! Leads, workstreams, briefs, lead wakes and digest, lead calls; with intake and playbooks, one area.
-//! TS spec: apps/hub/src/leads/**.
 //!
 //! `Area` owns every service of leads, intake and playbooks. `hub/serve` builds it with `Area::new`, sets the hooks of
 //! later areas as they come up (`ctx.hooks`), registers tools and lead calls, and spawns `Area::run`.

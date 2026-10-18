@@ -1,7 +1,6 @@
 //! The doctor (M11): every setup check, live. Runs on demand (doctor_list with rerun) and from the sweep every 15
 //! min; emits one doctor.changed per machine (and one for the hub) whose checks changed status since the last run.
 //! doctor_fix runs only the three safe automatic fixes and refuses the rest with the command a person runs.
-//! TS: apps/hub/src/doctor/Doctor.ts.
 use super::checks::{
     self, AutoAction, CmdOutcome, DoctorCheck, Entry, HostProbe, MachineView, Probe,
 };
@@ -46,7 +45,7 @@ pub struct ActionOutcome {
 
 /// A machine's T3 server settings over T3's own RPC (`server.getSettings` / `server.updateSettings`) with the hub's
 /// node-minted session. T3 redacts secret values when it reads them out and keeps the stored value when a redacted
-/// one is written back, so re-applying an instance read this way never loses its credentials. TS: T3Settings.ts.
+/// one is written back, so re-applying an instance read this way never loses its credentials.
 pub trait T3Settings: Send + Sync {
     fn read(&self, machine_id: &str) -> BoxFut<'_, Result<Value, String>>;
     /// `patch` is a `ServerSettingsPatch`; `provider_instance_mutation` a `ProviderInstanceMutation`.
@@ -115,7 +114,7 @@ struct State {
 
 pub struct Doctor {
     deps: DoctorDeps,
-    /// Held by every run and fix, like the TS semaphore.
+    /// Held by every run and fix, so they never overlap.
     state: tokio::sync::Mutex<State>,
     http: reqwest::Client,
 }
@@ -143,7 +142,7 @@ async fn run_cmd(cmd: &str, args: &[&str], env: Option<HashMap<String, String>>)
     }
 }
 
-/// The intake router's environment allowlist (intake/Router.ts `routerEnv`): the hub's own `CLAUDE*` variables never
+/// The intake router's environment allowlist: the hub's own `CLAUDE*` variables never
 /// reach the child, and without `CLAUDE_CONFIG_DIR` claude reads the user's login from `$HOME/.claude`.
 pub fn router_env() -> HashMap<String, String> {
     [
@@ -385,7 +384,7 @@ impl Doctor {
         let hub = self.hub_checks();
         let per_machine = async {
             let mut out = Vec::new();
-            // At most 8 machines at once, as the TS run does.
+            // At most 8 machines at once.
             for chunk in machines.chunks(8) {
                 for entries in futures_join_all(chunk.iter().map(|m| self.machine_checks(m))).await
                 {

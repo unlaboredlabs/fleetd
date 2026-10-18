@@ -5,7 +5,7 @@
 //!   bytes and the exit code and output tail go to the lead as evidence.
 //! - do with verify: once ticked done, the hub runs the check; a failure reopens the ask with the evidence.
 //!
-//! TS spec: apps/hub/src/approvals/Approvals.ts. Asks travel as their wire JSON (`Ask` in contracts/ledger).
+//! Asks travel as their wire JSON (`Ask` in contracts/ledger).
 pub mod tools;
 
 use crate::clock::Clock;
@@ -56,7 +56,7 @@ pub struct Caller<'a> {
     pub allows_operate: &'a (dyn Fn(&str) -> bool + Sync),
 }
 
-/// The sink's kind and machine (contracts/secrets.ts `parseSecretSink`).
+/// The sink's kind and machine.
 pub struct ParsedSink {
     pub kind: String,
     pub machine_id: String,
@@ -130,7 +130,7 @@ pub fn restart_reopen_reason(evidence: Option<&str>, machine_id: &str) -> Option
     })
 }
 
-/// A node command's failure (checks/NodeCommands.ts `NodeCommandError`).
+/// A node command's failure.
 #[derive(Clone, Debug)]
 pub struct NodeCommandError {
     /// "offline", "lost", "no_reply" or "invalid".
@@ -152,7 +152,7 @@ pub struct GatedOutcome {
     pub error: Option<String>,
 }
 
-/// The ledger's asks (ledger/Asks.ts). `update` merges `patch`'s fields into the stored ask.
+/// The ledger's asks. `update` merges `patch`'s fields into the stored ask.
 pub trait ApprovalAsks: Send + Sync {
     fn get(&self, ask_id: &str) -> BoxFut<'_, Option<Value>>;
     fn list_answered(&self) -> BoxFut<'_, Vec<Value>>;
@@ -166,7 +166,7 @@ pub trait ApprovalAsks: Send + Sync {
     fn reopen(&self, ask_id: &str, evidence: &str) -> BoxFut<'_, Result<Value, ApprovalRefused>>;
 }
 
-/// The node link's request/reply commands (checks/NodeCommands.ts).
+/// The node link's request/reply commands.
 pub trait ApprovalNodes: Send + Sync {
     /// `secret_deliver`: `{ sink, sealed, secretKey, envName? }`.
     fn deliver_secret(

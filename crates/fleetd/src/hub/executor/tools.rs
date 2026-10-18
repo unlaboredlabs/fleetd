@@ -1,6 +1,6 @@
 //! The M1 MCP tools over the executor and the caches it fills: fleetd_status, projects_list, project_get,
-//! thread_tail, actions_list, thread_launch, thread_send and thread_interrupt. TS spec: their handlers in
-//! apps/hub/src/api/FleetApi.ts. Later areas add to fleetd_status and project_get through `ToolHooks` (slots, lead,
+//! thread_tail, actions_list, thread_launch, thread_send and thread_interrupt.
+//! Later areas add to fleetd_status and project_get through `ToolHooks` (slots, lead,
 //! workstreams, tasks, trains), gate launches (usage), and route thread_send through the offline write queue.
 use std::collections::HashSet;
 use std::future::Future;
@@ -459,7 +459,7 @@ async fn thread_send(
             }),
     }
     .map_err(from_executor)?;
-    // As TS: a message queued behind a run T3 is still starting also reads "offline … until undefined".
+    // As in older hubs: a message queued behind a run T3 is still starting also reads "offline … until undefined".
     let next = if sent.queued {
         format!(
             "{} is offline: the message is queued until {}. Wait for write.delivered or write.expired with events_wait.",

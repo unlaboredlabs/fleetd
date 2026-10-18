@@ -15,7 +15,7 @@ pub use fleetd_contracts::secrets::{
 
 use super::util::{head_utf16, tail_utf16};
 
-/// A hub frame, or `None` for anything the TS decoder would refuse too.
+/// A hub frame, or `None` for anything the contracts would refuse.
 pub fn decode_hub_frame(raw: &str) -> Option<HubToNode> {
     serde_json::from_str(raw).ok()
 }

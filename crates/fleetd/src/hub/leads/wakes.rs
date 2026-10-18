@@ -52,7 +52,7 @@ pub enum Trigger {
     /// A decision the human recorded that touches the lead's project.
     Decision(Decision),
     /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
-    /// that raises it renders its own "why" line(s), as the TS render helpers did.
+    /// that raises it renders its own "why" line(s).
     Line {
         kind: LineKind,
         text: String,

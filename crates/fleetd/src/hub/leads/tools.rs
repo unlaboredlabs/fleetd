@@ -1,5 +1,5 @@
 //! MCP tools this area serves: lead_start, lead_restart, intake_submit, workstream_list, workstream_get,
-//! workstream_spawn, inventory. Same grant checks, limits and `next` texts as TS FleetApi.
+//! workstream_spawn, inventory. Same grant checks, limits and `next` texts as older hubs.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;

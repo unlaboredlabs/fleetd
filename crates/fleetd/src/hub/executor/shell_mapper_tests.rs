@@ -1,4 +1,4 @@
-//! Shell rows to events, replaying the S0 lab recordings (fixtures/, from apps/hub/test/record-fixtures.ts).
+//! Shell rows to events, replaying the S0 lab recordings (fixtures/).
 use std::collections::HashMap;
 
 use serde_json::Value;

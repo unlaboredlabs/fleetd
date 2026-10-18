@@ -1,6 +1,6 @@
 //! What the doctor reads from `<hub home>/setup.json`, which `fleetd init` and `fleetd machine add` write: the hub's
 //! address, the commit identity, and how each machine was set up. Only the fields the doctor needs; the file may be
-//! absent (a lab or hand-joined fleet). TS: apps/hub/src/doctor/config.ts.
+//! absent (a lab or hand-joined fleet).
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;

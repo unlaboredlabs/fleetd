@@ -1,4 +1,4 @@
-//! The contract types this area uses, from `fleetd-contracts`, plus the string forms TS prints them in.
+//! The contract types this area uses, from `fleetd-contracts`, plus the string forms the hub prints them in.
 pub use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 pub use fleetd_contracts::lead_calls::ChangeEnqueueCall;
 pub use fleetd_contracts::ledger::{Serves, Tier, WorkstreamId, is_serves};

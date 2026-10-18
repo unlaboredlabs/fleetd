@@ -1,4 +1,4 @@
-//! The `fleetd` command line: the same subcommands, arguments, output and exit codes as the TS CLI (apps/cli).
+//! The `fleetd` command line: the same subcommands, arguments, output and exit codes as older releases.
 //! Exit codes: 0 ok, 1 failed (a claim that did not pass), 2 usage, 3 refused, 4 hub or node unreachable,
 //! 78 (`listen`) the hub refused the key.
 

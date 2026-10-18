@@ -1,6 +1,6 @@
 //! The fixed metrics a retro change is judged by. They are code, not something the retro can edit. Counts are over
 //! one playbook: incidents on workstreams that pinned it (any version), plus incidents on no workstream at all,
-//! which no playbook owns and every playbook's leads can cause. TS: apps/hub/src/retro/metrics.ts.
+//! which no playbook owns and every playbook's leads can cause.
 use super::types::RetroSnapshot;
 use crate::hub::usage::ports::BoxFut;
 use crate::hub::usage::time::parse_ms;

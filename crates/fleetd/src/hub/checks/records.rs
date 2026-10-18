@@ -1,6 +1,5 @@
 //! The `claims` table. A row is numbered when the claim starts; `outcome` and `data` (the Claim) are set when its checks
 //! end, so a claim superseded or cut off by a restart stays NULL and is never listed.
-//! TS spec: apps/hub/src/checks/ClaimRecords.ts.
 use crate::hub::store::{HubDb, StoreError};
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::WorkstreamId;

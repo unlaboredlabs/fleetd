@@ -1,5 +1,5 @@
 //! Everything tasks, slots and leases call in the executor, node link and leads. `wire::HubTaskPorts` implements it
-//! over those areas; tests use a fake. Each method mirrors one TS cross-service call, named in its doc.
+//! over those areas; tests use a fake. Each method is one cross-area call.
 use std::future::Future;
 use std::pin::Pin;
 
@@ -15,7 +15,7 @@ pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// A refusal in the `{ code, message, fix }` shape: leads' LeadError and the MCP tool error are the same shape.
 pub type TaskError = McpToolError;
 
-/// How an executor call failed. TS ExecutorError: MachineNotConnected, or ThreadNotFound / T3RequestFailed.
+/// How an executor call failed: the machine is not connected, or anything else.
 #[derive(Clone, Debug)]
 pub enum PortError {
     Offline,
@@ -23,7 +23,6 @@ pub enum PortError {
 }
 
 impl PortError {
-    /// TS leads/LeadError.ts `fromExecutor`.
     pub fn to_task_error(&self, machine_id: &MachineId) -> TaskError {
         match self {
             Self::Offline => McpToolError::new(
@@ -39,7 +38,7 @@ impl PortError {
     }
 }
 
-/// A task's T3 thread launch (TS Executors.launch with ThreadLaunchInput, runtimeMode full-access).
+/// A task's T3 thread launch (runtime mode full-access).
 #[derive(Clone, Debug)]
 pub struct LaunchRequest {
     pub project_id: ProjectId,
@@ -58,7 +57,7 @@ pub struct Worktree {
     pub branch: String,
 }
 
-/// What a finished task thread changed (TS ThreadWorkspace.changes).
+/// What a finished task thread changed.
 #[derive(Clone, Debug, Default)]
 pub struct ThreadChanges {
     pub branch: Option<String>,
@@ -67,14 +66,14 @@ pub struct ThreadChanges {
     pub pull_request_urls: Vec<String>,
 }
 
-/// A node command's result (TS NodeCommands.run → cmd_result).
+/// A node command's result (`cmd_result`).
 #[derive(Clone, Debug)]
 pub struct CmdOutput {
     pub exit_code: Option<i64>,
     pub output_tail: String,
 }
 
-/// Which "why you are woken" entry a task trigger is (TS LeadWakes triggers task_result, task_waiting).
+/// Which "why you are woken" entry a task trigger is (`task_result`, `task_waiting`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WakeKind {
     TaskResult,
@@ -144,6 +143,7 @@ pub trait TaskPorts: Send + Sync {
     fn wake(&self, project_ref: &ProjectRef, kind: WakeKind, text: String);
     /// LeadRecords.leads.list: the project whose lead runs in this thread now (the slot board counts it).
     fn lead_of(&self, machine_id: &MachineId, thread_id: &ThreadId) -> Option<ProjectRef>;
-    /// leads/digest.ts doneWhenText(brief.doneWhen, undefined, 200), for the task prompt's "Done when:".
+    /// `leads::digest::done_when_text` of the brief's checks, none marked passed, at most 200 units, for the task
+    /// prompt's "Done when:".
     fn done_when_text(&self, brief: &Brief) -> String;
 }

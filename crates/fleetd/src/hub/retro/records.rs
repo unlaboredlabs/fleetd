@@ -1,5 +1,5 @@
-//! Retro runs and proposals in the hub database (`retro_runs`, `retro_proposals`, migration 0013 of
-//! store/HubDb.ts). No logic beyond storage. TS: apps/hub/src/retro/RetroRecords.ts.
+//! Retro runs and proposals in the hub database (`retro_runs`, `retro_proposals`, migration 0013).
+//! No logic beyond storage.
 use super::types::{RetroProposal, RetroRun};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 

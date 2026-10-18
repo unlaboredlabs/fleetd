@@ -1,7 +1,7 @@
 //! The repo policy file `.fleetd/policy.yaml`, read from the project's workspace through T3's file RPC. Cached
 //! per project for 60 s; `invalidate` drops an entry at once (say, after a merge that touched the file). No file
 //! means DEFAULT_POLICY, one area "all" = ["**"]. A broken file is an error with a fix, never a silent fallback, so
-//! a typo can't widen what a writer may touch. TS spec: apps/hub/src/leases/Policy.ts.
+//! a typo can't widen what a writer may touch.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
@@ -196,7 +196,7 @@ pub trait PolicySource: Send + Sync {
     ) -> BoxFut<'a, Result<Option<String>, LeadError>>;
 }
 
-/// Reads the file from the project's workspace root through the machine's T3 (TS layerSourceT3).
+/// Reads the file from the project's workspace root through the machine's T3.
 pub struct T3PolicySource {
     pub store: Arc<crate::hub::store::HubStore>,
     /// WorkspaceFiles.read, over the executor.

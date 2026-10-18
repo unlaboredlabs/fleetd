@@ -1,4 +1,4 @@
-//! The hub: one area per module, one owner per area. TS spec: apps/hub/src/<same area>.
+//! The hub: one area per module, one owner per area.
 pub mod api;
 pub mod app_ws;
 pub mod approvals;

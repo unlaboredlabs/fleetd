@@ -1,4 +1,4 @@
-//! Validated building blocks that mirror Effect Schema's checks, so decoding refuses what the TS decoder refuses.
+//! Validated building blocks that mirror Effect Schema's checks, so decoding refuses what older hubs refused.
 //!
 //! Lengths count UTF-16 code units, like JavaScript's `string.length`, which Effect's `isMaxLength` uses.
 

@@ -1,4 +1,4 @@
-//! retro_proposals and retro_run. TS: their handlers in api/FleetApi.ts.
+//! retro_proposals and retro_run.
 use super::service::{APPLY_KEY, RunInput};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, cap, readable};
 use crate::hub::usage::wire::convert;

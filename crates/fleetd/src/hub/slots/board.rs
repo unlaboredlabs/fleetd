@@ -1,5 +1,5 @@
 //! The slot board's rules, without I/O: the service in `mod.rs` persists what `take_ops` hands it and feeds it
-//! thread events. TS spec: apps/hub/src/slots/Slots.ts.
+//! thread events.
 use fleetd_contracts::ids::{ProjectRef, ThreadId};
 
 /// Queue order: lead turns, then reviews, then write and read tasks.
@@ -149,7 +149,7 @@ fn same(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
 }
 
-/// Claims and shares keep insertion order, as the TS Maps do, since `state` lists projects in that order.
+/// Claims and shares keep insertion order, since `state` lists projects in that order.
 pub struct Board {
     cap: i64,
     shares: Vec<(ProjectRef, i64)>,

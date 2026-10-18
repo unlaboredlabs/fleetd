@@ -1,4 +1,4 @@
-//! The human digest's text (TS `ledger/HumanDigest.ts`): plain text, phone width (DESIGN §4). Facts only from
+//! The human digest's text: plain text, short lines (DESIGN §4). Facts only from
 //! state: ✓ marks checks fleetd ran and saw pass, and a workstream's own status line is marked "lead says", since
 //! nothing backs it.
 use std::collections::HashMap;
@@ -12,7 +12,7 @@ use super::repo::batch_n;
 use super::{js_prefix, project_key};
 
 const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
-/// TS `playbooks/finishAllRules.ts` FINISH_ALL_IDLE.
+/// Same text as `playbooks::finish_all_rules::FINISH_ALL_IDLE`.
 pub const FINISH_ALL_IDLE: &str = "finish-all: nothing left with a value source";
 
 /// What backs a workstream's status beyond the lead's word: the checks its latest claim passed and its ETA.
@@ -87,7 +87,7 @@ fn is_running(state: &WorkstreamState) -> bool {
     )
 }
 
-/// TS `isFinishAll`.
+/// Same rule as `playbooks::finish_all_rules::is_finish_all`.
 fn is_finish_all(w: &Workstream) -> bool {
     w.playbook
         .as_deref()

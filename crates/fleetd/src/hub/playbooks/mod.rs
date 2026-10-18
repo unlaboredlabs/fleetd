@@ -1,7 +1,7 @@
 //! The playbooks a workstream can follow: fleetd's bundled ones with the user's overrides in `<hub home>/playbooks/`,
 //! read at start and again when the retro writes an override. A workstream pins `name@sha` at creation and the pinned
 //! text is kept (table `playbook_versions`), so a later edit of the file never changes the rules of a workstream
-//! already under way. TS spec: apps/hub/src/playbooks/**.
+//! already under way.
 pub mod finish_all;
 pub mod finish_all_rules;
 pub mod floor;

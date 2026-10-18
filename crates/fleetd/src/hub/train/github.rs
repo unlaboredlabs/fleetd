@@ -270,7 +270,7 @@ impl TrainGitHub {
                 &[],
             )
             .await?;
-        // A re-run adds a newer run with the same name; only the newest counts. Map order is first-seen, as in TS.
+        // A re-run adds a newer run with the same name; only the newest counts. Map order is first-seen.
         let mut order: Vec<String> = Vec::new();
         let mut latest: HashMap<String, CheckRun> = HashMap::new();
         for r in runs.check_runs {
