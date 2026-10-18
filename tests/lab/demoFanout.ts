@@ -16,11 +16,14 @@
 // FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD, macOS) from before the order until the merges; then it stops
 // the app by its PID, which finishes the MP4. scripts/demo-mac.sh runs it so on a Mac.
 //
-// Only this run's PRs are closed afterwards, so a run on another machine against the same testbed is left alone.
+// It closes and deletes only the PRs and branches it made, so a run on another machine against the same testbed is
+// left alone. Task ids, and so branch names, restart at T1 with every run, so they are written to LAB/demo-testbed.ledger
+// as they appear, and a run reclaims whatever an interrupted one left listed there before it starts (and Ctrl-C runs
+// the same cleanup, through onCleanup).
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, cli, HUB_PORT, LAB, type Lab, MODEL, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
+import { type Body, cli, detached, HUB_PORT, LAB, type Lab, MODEL, onCleanup, recordPid, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
 import { git, prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
@@ -73,6 +76,62 @@ const appSession = async (key: string) => {
   return { call, live, frames, close: () => ws.close() };
 };
 
+/** `hub/tasks/render.rs` slug_of: a task's branch is `fleetd/<taskId>-<slug of its title>`. */
+const slugOf = (title: string) => {
+  const words = title.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().split(/[^a-z0-9]+/u).filter(Boolean);
+  let slug = "";
+  for (const w of words) {
+    if ((slug === "" ? w.length : slug.length + 1 + w.length) > 40) break;
+    slug += `${slug === "" ? "" : "-"}${w}`;
+  }
+  return slug !== "" ? slug : (words[0]?.slice(0, 40) ?? "task");
+};
+
+/** One line per PR (`pr <n>`) and branch (`branch <name>`) this lab made on the testbed; scripts/demo-mac.sh reads it too. */
+const LEDGER = path.join(LAB, "demo-testbed.ledger");
+const note = (line: string) => fs.appendFileSync(LEDGER, `${line}\n`);
+
+/** Closes and deletes everything the ledger lists, then empties it. Gone already is fine. */
+const reclaimTestbed = (lab: Pick<Lab, "log">) => {
+  if (!fs.existsSync(LEDGER)) return;
+  const gh = (...args: Array<string>) => spawnSync("gh", args, { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
+  const lines = [...new Set(fs.readFileSync(LEDGER, "utf8").split("\n").filter(Boolean))];
+  for (const line of lines) {
+    const [kind, value] = line.split(" ") as [string, string];
+    if (kind === "pr" && gh("pr", "view", value, "-R", REPO, "--json", "state", "--jq", ".state").stdout.trim() === "OPEN") {
+      gh("pr", "close", value, "-R", REPO, "--delete-branch");
+    }
+    if (kind === "branch") gh("api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${value}`);
+  }
+  fs.rmSync(LEDGER, { force: true });
+  lab.log(`reclaimed ${lines.length} testbed PRs and branches from ${LEDGER}`);
+};
+
+/** Notes every task's branch and every queued or refused PR in the ledger as the hub reports them, until stopped. */
+const watchLedger = (lab: Lab, from: number) => {
+  let stopping = false;
+  const done = (async () => {
+    for (let cursor = from; !stopping; ) {
+      const page = (await lab.callTool("events_wait", { cursor, types: ["task.started", "change.queued", "change.refused"], timeoutSec: 5 })).body;
+      for (const e of page.events as Array<Body>) {
+        if (e.type === "task.started") {
+          // A write task's event names its branch; else it is derived, as the hub derives it.
+          const task = e.data?.branch === undefined ? ((await lab.callTool("task_get", { taskId: e.data.taskId })).body.task as Body) : undefined;
+          note(`branch ${e.data?.branch ?? `fleetd/${task!.taskId}-${slugOf(task!.title as string)}`}`);
+        } else {
+          const n = e.data?.prNumber ?? Number(/\/pull\/(\d+)$/u.exec(String(e.data?.prUrl ?? ""))?.[1]);
+          if (Number.isInteger(n) && n > 0) note(`pr ${n}`);
+        }
+      }
+      cursor = page.cursor;
+    }
+  })().catch((error: unknown) => lab.log(`ledger watch ended: ${String(error)}`));
+  return async () => {
+    stopping = true;
+    await done;
+  };
+};
+
 /** The app on the hub with the human key, recording itself; resolves once the recorder has a window. */
 const startApp = async (lab: Lab, bin: string, key: string, out: string) => {
   fs.mkdirSync(out, { recursive: true });
@@ -80,7 +139,9 @@ const startApp = async (lab: Lab, bin: string, key: string, out: string) => {
   const child = spawn(bin, [], {
     env: { ...scrubbedEnv(), FLEETD_HUB_URL: lab.hubUrl, FLEETD_AGENT_KEY: key, FLEETD_RECORD: out },
     stdio: ["ignore", fs.openSync(logFile, "a"), fs.openSync(logFile, "a")],
+    ...detached(),
   });
+  recordPid(child.pid, bin);
   lab.log(`started app pid=${child.pid}, recording into ${out}`);
   await lab.until("the app's recorder starts (app.log)", 60_000, async () => {
     const text = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
@@ -101,20 +162,6 @@ const stopApp = async (lab: Lab, child: ChildProcess) => {
   await exited;
   clearTimeout(timer);
   lab.log(`stopped app pid=${child.pid} (${child.signalCode ?? `exit ${child.exitCode}`})`);
-};
-
-/** This hub's PRs on the testbed: every change it queued or refused since `from`. */
-const ownPrs = async (lab: Lab, from: number) => {
-  const prs = new Set<number>();
-  for (let at = from; ; ) {
-    const page = (await lab.callTool("events_wait", { cursor: at, types: ["change.queued", "change.refused"], timeoutSec: 0 })).body;
-    for (const e of page.events as Array<Body>) {
-      const n = e.data?.prNumber ?? Number(/\/pull\/(\d+)$/u.exec(String(e.data?.prUrl ?? ""))?.[1]);
-      if (Number.isInteger(n) && n > 0) prs.add(n);
-    }
-    if (!page.more) return prs;
-    at = page.cursor;
-  }
 };
 
 /**
@@ -152,6 +199,7 @@ export async function demoFanout(lab: Lab) {
   await lab.waitLive(MACHINE);
   requireGhLogin();
   check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (git clone https://github.com/${REPO} ${TESTBED})`);
+  reclaimTestbed(lab);
   prepareCheckout(POLICY);
   ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked policy with areas ${PAGES.join(", ")} under ${DIR}`);
   fs.rmSync(lab.dir, { recursive: true, force: true });
@@ -166,6 +214,14 @@ export async function demoFanout(lab: Lab) {
   let app: Awaited<ReturnType<typeof appSession>> | undefined;
   let desktop: ChildProcess | undefined;
   const record = process.env.FLEETD_DEMO_RECORD ?? path.join(lab.dir, "rec");
+  const stopWatch = watchLedger(lab, scenarioStart);
+  // Also run by the driver on Ctrl-C, while the hub still answers.
+  const cleanup = onCleanup(async () => {
+    app?.close();
+    if (desktop !== undefined) await stopApp(lab, desktop);
+    await stopWatch();
+    reclaimTestbed(lab);
+  });
   try {
     const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
     const ref = { machineId: MACHINE, projectId };
@@ -330,12 +386,7 @@ export async function demoFanout(lab: Lab) {
     }
     mark("turns", { lead: leadTurns, tasks: taskTurns, byTask: tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`) });
   } finally {
-    app?.close();
-    if (desktop !== undefined) await stopApp(lab, desktop);
-    const ours = await ownPrs(lab, scenarioStart).catch(() => new Set<number>());
-    for (const pr of JSON.parse(spawnSync("gh", ["pr", "list", "-R", REPO, "--state", "open", "--json", "number"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" }).stdout || "[]") as Array<Body>) {
-      if (ours.has(pr.number as number)) spawnSync("gh", ["pr", "close", String(pr.number), "-R", REPO, "--delete-branch"], { cwd: LAB, env: scrubbedEnv(), stdio: "ignore" });
-    }
+    await cleanup();
     await quiesceAndRemove(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
     fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
   }

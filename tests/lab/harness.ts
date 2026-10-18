@@ -350,12 +350,22 @@ export const cli = (...args: Array<string>) =>
 
 const LOCK = path.join(LAB, "test-lab.lock");
 
+/** Whether a process exists (signal 0); no /proc, so it works on macOS too. */
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
 /** One lab run per slot at a time (test:lab, site-capture): they share the slot's test repos and run dir. */
 export const takeLabLock = () => {
   fs.mkdirSync(LAB, { recursive: true });
   try {
     const holder = Number(fs.readFileSync(LOCK, "utf8").trim());
-    if (holder > 0 && fs.existsSync(`/proc/${holder}`)) throw new Error(`another lab run (pid ${holder}) holds ${LOCK}`);
+    if (holder > 0 && alive(holder)) throw new Error(`another lab run (pid ${holder}) holds ${LOCK}`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
@@ -365,12 +375,66 @@ export const takeLabLock = () => {
 
 const started: Array<{ name: string; child: ChildProcess }> = [];
 
+let interruptible = false;
+let interrupt: (error: Error) => void = () => undefined;
+/** Rejects on the first SIGINT, SIGTERM or SIGHUP once `handleInterrupts` is on; never resolves. */
+export const interrupted = new Promise<never>((_, reject) => {
+  interrupt = reject;
+});
+interrupted.catch(() => undefined);
+
+/**
+ * For a driver that stops what it started itself: a signal rejects `interrupted` instead of killing this process,
+ * and children start in their own process group, so the terminal's Ctrl-C reaches only this process and the lab's
+ * processes are stopped by their PIDs, after the cleanups (`onCleanup`).
+ */
+export const handleInterrupts = () => {
+  interruptible = true;
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.on(signal, () => {
+      log(`${signal}: stopping what this run started`);
+      interrupt(new Error(`interrupted by ${signal}`));
+    });
+  }
+};
+
+const cleanups: Array<() => Promise<void>> = [];
+/** Registers `fn` to run once: when the returned function is called, or by `runCleanups` before the lab stops. */
+export const onCleanup = (fn: () => Promise<void>) => {
+  let ran = false;
+  const once = async () => {
+    if (ran) return;
+    ran = true;
+    await fn();
+  };
+  cleanups.push(once);
+  return once;
+};
+export const runCleanups = async () => {
+  for (const fn of cleanups.splice(0).toReversed()) await fn().catch((error: unknown) => log(`cleanup failed: ${String(error)}`));
+};
+
+/**
+ * Every process the lab starts, as `<pid> <binary>` in RUN/pids: scripts/demo-mac.sh stops whatever is still running
+ * from it if this driver itself was killed.
+ */
+export const recordPid = (pid: number | undefined, bin: string) => {
+  if (pid === undefined) return;
+  fs.mkdirSync(RUN, { recursive: true });
+  fs.appendFileSync(path.join(RUN, "pids"), `${pid} ${bin}\n`);
+};
+
+/** Spawn options for a lab process: its own process group while interrupts are handled (see `handleInterrupts`). */
+export const detached = () => ({ detached: interruptible });
+
 /** Starts `fleetd <args>` with `env` (default: the scrubbed environment), logging to RUN/logs/<name>.log. */
 export const startCli = (name: string, args: Array<string>, env: Record<string, string> = {}, fullEnv?: Record<string, string>) => {
   fs.mkdirSync(path.join(RUN, "logs"), { recursive: true });
   const out = fs.openSync(path.join(RUN, "logs", `${name}.log`), "a");
-  const child = spawn(...fleetdCommand(args), { env: fullEnv ?? { ...scrubbedEnv(), ...env }, stdio: ["ignore", out, out] });
+  const [bin, argv] = fleetdCommand(args);
+  const child = spawn(bin, argv, { env: fullEnv ?? { ...scrubbedEnv(), ...env }, stdio: ["ignore", out, out], ...detached() });
   started.push({ name, child });
+  recordPid(child.pid, bin);
   log(`started ${name} pid=${child.pid}`);
   return child;
 };

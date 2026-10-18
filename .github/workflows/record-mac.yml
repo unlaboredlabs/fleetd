@@ -27,6 +27,10 @@ jobs:
           save-if: false
       # Debug: objc2 then checks every Objective-C message's argument and return types against the runtime.
       - run: cargo build --locked -p fleetd-app
+      - name: AVFoundation is loaded only when recording
+        run: |
+          otool -L target/debug/fleetd-app
+          if otool -L target/debug/fleetd-app | grep -F AVFoundation; then echo "::error::fleetd-app links AVFoundation"; exit 1; fi
       - name: Record the live fixture board
         env:
           SECONDS_TO_RECORD: ${{ inputs.seconds || '25' }}

@@ -64,6 +64,16 @@ pub fn start(window: u32, dir: PathBuf, fps: u32) -> std::io::Result<()> {
         if signalled {
             std::process::exit(0);
         }
+        // Recording failed: SIGINT and SIGTERM end the app again, as they do without FLEETD_RECORD, and one that
+        // arrived meanwhile ends it now.
+        // SAFETY: restores the default dispositions.
+        unsafe {
+            libc::signal(libc::SIGTERM, libc::SIG_DFL);
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+        }
+        if STOP.load(Ordering::SeqCst) && !QUITTING.load(Ordering::SeqCst) {
+            std::process::exit(1);
+        }
     })?;
     Ok(())
 }
@@ -129,7 +139,7 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
                 next_png += PNG_EVERY;
             }
             if writer.is_none() {
-                match Writer::new(&mp4, image.width(), image.height(), fps) {
+                match av().and_then(|av| Writer::new(av, &mp4, image.width(), image.height(), fps)) {
                     Ok(w) => writer = Some(w),
                     Err(e) => {
                         eprintln!("FLEETD_RECORD error={e}");
@@ -321,7 +331,7 @@ fn write_png(image: &Image, path: &Path) {
     }
 }
 
-// ---- AVFoundation / CoreVideo ----
+// ---- AVFoundation (loaded at runtime) / CoreVideo ----
 
 /// CMTime, passed by value to AVFoundation.
 #[repr(C)]
@@ -363,19 +373,49 @@ unsafe impl RefEncode for Pool {
     const ENCODING_REF: Encoding = Encoding::Pointer(&<Self as Encode>::ENCODING);
 }
 
-#[link(name = "AVFoundation", kind = "framework")]
-unsafe extern "C" {
-    static AVFileTypeMPEG4: *const AnyObject;
-    static AVMediaTypeVideo: *const AnyObject;
-    static AVVideoCodecKey: *const AnyObject;
-    static AVVideoCodecTypeH264: *const AnyObject;
-    static AVVideoWidthKey: *const AnyObject;
-    static AVVideoHeightKey: *const AnyObject;
-    static AVVideoCompressionPropertiesKey: *const AnyObject;
-    static AVVideoAverageBitRateKey: *const AnyObject;
-    static AVVideoProfileLevelKey: *const AnyObject;
-    static AVVideoProfileLevelH264HighAutoLevel: *const AnyObject;
-    static AVVideoExpectedSourceFrameRateKey: *const AnyObject;
+/// AVFoundation's constants, looked up once the first frame is in. Linking AVFoundation would load it on every
+/// launch, recording or not; nothing else in the app uses it.
+struct Av {
+    file_type_mp4: *const AnyObject,
+    media_video: *const AnyObject,
+    codec_key: *const AnyObject,
+    codec_h264: *const AnyObject,
+    width_key: *const AnyObject,
+    height_key: *const AnyObject,
+    compression_key: *const AnyObject,
+    bitrate_key: *const AnyObject,
+    profile_key: *const AnyObject,
+    profile_h264_high_auto: *const AnyObject,
+    frame_rate_key: *const AnyObject,
+}
+
+fn av() -> Result<Av, String> {
+    // SAFETY: dlopen/dlsym of a system framework; each symbol is an `NSString *const`, read through its address.
+    unsafe {
+        let handle = libc::dlopen(c"/System/Library/Frameworks/AVFoundation.framework/AVFoundation".as_ptr(), libc::RTLD_LAZY);
+        if handle.is_null() {
+            let why = libc::dlerror();
+            let why = if why.is_null() { "unknown".into() } else { std::ffi::CStr::from_ptr(why).to_string_lossy() };
+            return Err(format!("cannot load AVFoundation: {why}"));
+        }
+        let sym = |name: &std::ffi::CStr| {
+            let at = libc::dlsym(handle, name.as_ptr()).cast::<*const AnyObject>();
+            if at.is_null() { Err(format!("AVFoundation has no {}", name.to_string_lossy())) } else { Ok(*at) }
+        };
+        Ok(Av {
+            file_type_mp4: sym(c"AVFileTypeMPEG4")?,
+            media_video: sym(c"AVMediaTypeVideo")?,
+            codec_key: sym(c"AVVideoCodecKey")?,
+            codec_h264: sym(c"AVVideoCodecTypeH264")?,
+            width_key: sym(c"AVVideoWidthKey")?,
+            height_key: sym(c"AVVideoHeightKey")?,
+            compression_key: sym(c"AVVideoCompressionPropertiesKey")?,
+            bitrate_key: sym(c"AVVideoAverageBitRateKey")?,
+            profile_key: sym(c"AVVideoProfileLevelKey")?,
+            profile_h264_high_auto: sym(c"AVVideoProfileLevelH264HighAutoLevel")?,
+            frame_rate_key: sym(c"AVVideoExpectedSourceFrameRateKey")?,
+        })
+    }
 }
 
 #[link(name = "CoreVideo", kind = "framework")]
@@ -428,7 +468,7 @@ fn description(object: *mut AnyObject) -> String {
 }
 
 impl Writer {
-    fn new(path: &Path, width: usize, height: usize, fps: u32) -> Result<Self, String> {
+    fn new(av: Av, path: &Path, width: usize, height: usize, fps: u32) -> Result<Self, String> {
         // H.264 wants even dimensions.
         let (width, height) = (width & !1, height & !1);
         let c_path = CString::new(path.as_os_str().as_encoded_bytes()).map_err(|_| "a NUL in the path")?;
@@ -439,7 +479,7 @@ impl Writer {
             let url: *mut AnyObject = msg_send![class!(NSURL), fileURLWithPath: ns_path];
             let mut error: *mut AnyObject = std::ptr::null_mut();
             let writer: *mut AnyObject = msg_send![class!(AVAssetWriter), alloc];
-            let writer: *mut AnyObject = msg_send![writer, initWithURL: url, fileType: AVFileTypeMPEG4, error: &mut error];
+            let writer: *mut AnyObject = msg_send![writer, initWithURL: url, fileType: av.file_type_mp4, error: &mut error];
             if writer.is_null() {
                 return Err(format!("AVAssetWriter: {}", description(error)));
             }
@@ -449,18 +489,18 @@ impl Writer {
             // 15-minute master stays near 1.5 GB.
             let bitrate = ((width * height) as i64 * i64::from(fps) / 12).clamp(4_000_000, 24_000_000);
             let compression = dictionary(&[
-                (AVVideoAverageBitRateKey, number(bitrate)),
-                (AVVideoProfileLevelKey, AVVideoProfileLevelH264HighAutoLevel.cast_mut()),
-                (AVVideoExpectedSourceFrameRateKey, number(i64::from(fps))),
+                (av.bitrate_key, number(bitrate)),
+                (av.profile_key, av.profile_h264_high_auto.cast_mut()),
+                (av.frame_rate_key, number(i64::from(fps))),
             ]);
             let settings = dictionary(&[
-                (AVVideoCodecKey, AVVideoCodecTypeH264.cast_mut()),
-                (AVVideoWidthKey, number(width as i64)),
-                (AVVideoHeightKey, number(height as i64)),
-                (AVVideoCompressionPropertiesKey, compression),
+                (av.codec_key, av.codec_h264.cast_mut()),
+                (av.width_key, number(width as i64)),
+                (av.height_key, number(height as i64)),
+                (av.compression_key, compression),
             ]);
             let input: *mut AnyObject = msg_send![class!(AVAssetWriterInput), alloc];
-            let input: *mut AnyObject = msg_send![input, initWithMediaType: AVMediaTypeVideo, outputSettings: settings];
+            let input: *mut AnyObject = msg_send![input, initWithMediaType: av.media_video, outputSettings: settings];
             let _: () = msg_send![input, setExpectsMediaDataInRealTime: true];
             let attributes = dictionary(&[
                 (kCVPixelBufferPixelFormatTypeKey, number(PIXEL_FORMAT_BGRA)),
