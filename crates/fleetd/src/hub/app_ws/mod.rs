@@ -242,13 +242,15 @@ impl Session {
                     // Status answers share the live feed's per-connection budget: one over it waits for the next second.
                     if tool.as_str().starts_with("status_") {
                         let bytes = frame.to_string().len();
-                        let wait = budget.wait_ms(now_ms(hub.clock.as_ref()), bytes);
-                        if wait > 0 {
+                        loop {
+                            let wait = budget.reserve(now_ms(hub.clock.as_ref()), bytes);
+                            if wait == 0 {
+                                break;
+                            }
                             hub.clock
                                 .sleep(std::time::Duration::from_millis(wait))
                                 .await;
                         }
-                        budget.spend(now_ms(hub.clock.as_ref()), bytes);
                     }
                     if is_wait && !PendingWait::claim(&claim) {
                         return;

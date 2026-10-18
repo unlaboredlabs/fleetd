@@ -121,8 +121,19 @@ impl Fresh {
         let Some(s) = sources.get_mut(source) else {
             return;
         };
+        let first = s.as_of_ms.is_none();
         s.as_of_ms = Some(s.as_of_ms.map_or(at_ms, |a| a.max(at_ms)));
         s.last_error = None;
+        if first {
+            // "Not checked since the hub started" ends here: a flip like any other, so docs re-render.
+            self.pending.lock().unwrap().push(Flip::Fresh {
+                source: source.to_owned(),
+                stale_ms: (at_ms - s.expected_ms).max(0),
+            });
+            drop(sources);
+            self.notify.notify_one();
+            return;
+        }
         if s.held_until_ms.is_some_and(|h| at_ms < h) {
             return;
         }
@@ -293,6 +304,14 @@ mod tests {
             "no deadline before the first answer"
         );
         f.touch("github:acme/storefront", 10_000);
+        assert_eq!(
+            f.check(10_000),
+            vec![Flip::Fresh {
+                source: "github:acme/storefront".into(),
+                stale_ms: 10_000
+            }],
+            "the first answer after a start turns the source live"
+        );
         assert_eq!(f.next_deadline(), Some(190_000));
         assert!(f.check(190_000).is_empty(), "due only past the deadline");
         f.touch("github:acme/storefront", 100_000);
@@ -334,6 +353,7 @@ mod tests {
         let f = Fresh::default();
         f.expect("webhook:acme/storefront", 600_000, 0);
         f.touch("webhook:acme/storefront", 0);
+        f.check(0);
         f.hold_stale(
             "webhook:acme/storefront",
             "webhooks missed 1 change",

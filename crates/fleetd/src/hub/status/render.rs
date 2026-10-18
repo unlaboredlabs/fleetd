@@ -804,6 +804,7 @@ pub fn stale_clause(doc: &StatusDoc, tz: Tz) -> String {
             "github" => format!("GitHub unchecked{since}"),
             "train" => format!("the {name} train stopped{since}"),
             "webhook" => format!("{name} webhooks missed{since}"),
+            "ci" => format!("main CI of {name} unread{since}"),
             "usage" => format!("{name}'s usage reading is old"),
             _ => continue,
         };
@@ -896,9 +897,36 @@ pub fn render(
             github_stale.insert(repo.clone(), m.clone());
         }
         let main = hub.train.main_ci(repo);
-        let as_of = fresh
-            .view(&fresh::github(repo), now)
-            .and_then(|v| v.as_of_ms);
+        // The CI entry is as old as its own read, not as any GitHub answer for the repo.
+        let as_of = main.as_ref().map(|m| m.as_of_ms);
+        let due = hub.train.main_ci_every_ms(repo, now) + fresh::github_stale_ms();
+        match as_of {
+            Some(a) if now - a > due => {
+                let m = StaleMark {
+                    since: ts(a + due),
+                    reason: line(&format!(
+                        "main CI of {repo} last read {}",
+                        clock(a, now, tz)
+                    )),
+                };
+                stale.push(StaleSource {
+                    source: line(&format!("ci:{repo}")),
+                    since: m.since.clone(),
+                    reason: m.reason.clone(),
+                });
+                mark.get_or_insert(m);
+            }
+            Some(a) => wake.at(a + due + 1),
+            None => {
+                // A stable time, so an unread repo doesn't bump the doc's version on every render.
+                static FIRST: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+                let since = *FIRST.get_or_init(|| now);
+                mark.get_or_insert(StaleMark {
+                    since: ts(since),
+                    reason: line("main CI not read since the hub started"),
+                });
+            }
+        }
         let failing: Vec<Text<1, 120>> = main
             .as_ref()
             .map(|m| {

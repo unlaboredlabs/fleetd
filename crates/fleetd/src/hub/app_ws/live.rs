@@ -59,13 +59,19 @@ impl ConnBudget {
         w.1 += bytes;
     }
 
-    /// Milliseconds until a frame of `bytes` fits: 0 when it fits now, otherwise the start of the next second.
-    pub fn wait_ms(&self, now_ms: i64, bytes: usize) -> u64 {
-        let w = self.0.lock().unwrap();
-        if now_ms - w.0 >= 1000 || w.1 + bytes <= MAX_BYTES_PER_SEC {
+    /// Reserves `bytes` in this second when they fit (or the second is still empty, so one large frame can pass),
+    /// returning 0; otherwise reserves nothing and returns the milliseconds until the next second. Check and spend
+    /// happen under one lock, so answers waiting together can't all pass at once.
+    pub fn reserve(&self, now_ms: i64, bytes: usize) -> u64 {
+        let mut w = self.0.lock().unwrap();
+        if now_ms - w.0 >= 1000 {
+            *w = (now_ms, 0);
+        }
+        if w.1 == 0 || w.1 + bytes <= MAX_BYTES_PER_SEC {
+            w.1 += bytes;
             0
         } else {
-            (w.0 + 1000 - now_ms).max(0) as u64
+            (w.0 + 1000 - now_ms).max(1) as u64
         }
     }
 }
@@ -518,3 +524,30 @@ pub async fn run(hub: Arc<Hub>, scope: Scope, slot: Arc<LiveSlot>, budget: Arc<C
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn answers_waiting_together_pass_one_window_at_a_time() {
+        let b = ConnBudget::default();
+        let frame = 16 * 1024;
+        assert_eq!(b.reserve(1_000, frame), 0);
+        assert_eq!(b.reserve(1_000, frame), 0, "32 KB fit in one second");
+        let waits: Vec<u64> = (0..3).map(|_| b.reserve(1_200, frame)).collect();
+        assert_eq!(waits, vec![800, 800, 800], "none of the rest is reserved");
+        assert_eq!(b.reserve(2_000, frame), 0);
+        assert_eq!(b.reserve(2_000, frame), 0);
+        assert_eq!(
+            b.reserve(2_000, frame),
+            1000,
+            "the third waits another second"
+        );
+        assert_eq!(
+            b.reserve(3_000, 40 * 1024),
+            0,
+            "an empty second takes one oversize frame"
+        );
+    }
+}

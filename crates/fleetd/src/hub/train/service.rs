@@ -1572,6 +1572,11 @@ impl Train {
         self.sync.main_ci(&repo.to_lowercase())
     }
 
+    /// How often main CI of `repo` is read now (slower with webhooks on, faster after a missed one).
+    pub fn main_ci_every_ms(&self, repo: &str, now_ms: i64) -> i64 {
+        self.sync.every_ms(&repo.to_lowercase(), now_ms)
+    }
+
     /// Every repo with a train, and the project it belongs to.
     pub fn repos(&self) -> Vec<(String, ProjectRef)> {
         self.records

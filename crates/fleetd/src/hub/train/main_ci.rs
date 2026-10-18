@@ -100,7 +100,7 @@ impl GithubSync {
         self.webhooks_on.store(on, Ordering::Relaxed);
     }
 
-    fn every_ms(&self, repo: &str, now_ms: i64) -> i64 {
+    pub fn every_ms(&self, repo: &str, now_ms: i64) -> i64 {
         let fallback = self
             .fallback_until
             .lock()

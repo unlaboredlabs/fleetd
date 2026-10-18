@@ -83,18 +83,17 @@ pub fn check_reply(reply: &str, facts_json: &str) -> Result<String, &'static str
     {
         return Err("quotes or a preamble");
     }
-    let mut digits = String::new();
-    for c in line.chars().chain(std::iter::once(' ')) {
-        if c.is_ascii_digit() {
-            digits.push(c);
-        } else if !digits.is_empty() {
-            if !facts_json.contains(&digits) {
-                return Err("a number not in the facts");
-            }
-            digits.clear();
-        }
+    let allowed: std::collections::HashSet<&str> = digit_runs(facts_json).collect();
+    if digit_runs(line).any(|n| !allowed.contains(n)) {
+        return Err("a number not in the facts");
     }
     Ok(line.to_owned())
+}
+
+/// Every maximal run of ASCII digits: "Thu 14:00, 72%" gives "14", "00", "72".
+fn digit_runs(s: &str) -> impl Iterator<Item = &str> {
+    s.split(|c: char| !c.is_ascii_digit())
+        .filter(|r| !r.is_empty())
 }
 
 /// A scope whose facts changed and wants phrasing.
