@@ -163,13 +163,14 @@ impl Fresh {
         };
         s.held_until_ms = Some(until_ms);
         if s.stale.is_none() {
+            let since_ms = s.as_of_ms.unwrap_or(now_ms);
             s.stale = Some(Stale {
-                since_ms: now_ms,
+                since_ms,
                 reason: reason.to_owned(),
             });
             self.pending.lock().unwrap().push(Flip::Stale {
                 source: source.to_owned(),
-                since_ms: now_ms,
+                since_ms,
                 reason: reason.to_owned(),
             });
         }

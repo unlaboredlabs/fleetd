@@ -999,7 +999,10 @@ impl Plans {
             if items.is_empty() {
                 return Ok(false);
             }
-            let latest = latest_checks(c, ws)?;
+            let order_latest = latest_checks(c, ws)?;
+            // An item with no order is verified by its own PR links only: an order's done-when checks never mark it
+            // done or reopen it, and the checks it lists can't be read until it has an order.
+            let no_checks = HashMap::new();
             let mut changed = false;
             let mut touched = HashSet::new();
             for mut item in items {
@@ -1010,12 +1013,19 @@ impl Plans {
                     item.started_ms = Some(t);
                     dirty = true;
                 }
+                let own_order = item.workstream_id.as_deref() == Some(ws);
+                let latest = if own_order { &order_latest } else { &no_checks };
+                let unreadable = !own_order && !item.data.links.checks.is_empty();
                 let checks: Vec<i64> = item.data.links.checks.iter().map(|i| i.get()).collect();
-                match item.state {
+                match if unreadable {
+                    PlanItemState::Dropped
+                } else {
+                    item.state
+                } {
                     PlanItemState::Open => {
                         let linked = linked_changes(c, &item)?;
                         if let Some(evidence) =
-                            progress::verified(item.has_work_links(), &linked, &checks, &latest)
+                            progress::verified(item.has_work_links(), &linked, &checks, latest)
                         {
                             item.state = PlanItemState::Done;
                             item.done_ms = Some(now);
@@ -1026,7 +1036,7 @@ impl Plans {
                         }
                     }
                     PlanItemState::Done => {
-                        if let Some(i) = progress::reopened(&checks, &latest) {
+                        if let Some(i) = progress::reopened(&checks, latest) {
                             let before = figure_of(&store::items_of_milestone(c, item.milestone)?);
                             item.state = PlanItemState::Open;
                             item.done_ms = None;

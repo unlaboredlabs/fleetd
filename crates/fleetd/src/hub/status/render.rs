@@ -1041,7 +1041,7 @@ pub fn render(
                 (Some(r), _) if now > r => {
                     let read = l.observed_at.as_ref().and_then(|o| parse_ms(o.as_str()));
                     Some(StaleMark {
-                        since: ts(r),
+                        since: ts(read.unwrap_or(r)),
                         reason: line(&format!(
                             "{} reading from {}, before the {} reset",
                             usage_label(&l.limit_type),
