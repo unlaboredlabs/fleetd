@@ -106,7 +106,7 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(bench: Option<Mode>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let log_scroll = UniformListScrollHandle::new();
@@ -130,7 +130,7 @@ impl Shell {
             bench: None,
             update: None,
         };
-        match Mode::from_env() {
+        match bench {
             Some(mode) => shell.start_bench(mode, window, cx),
             None => {
                 shell.on_notification_click(window, cx);
@@ -145,15 +145,18 @@ impl Shell {
     fn on_notification_click(&self, window: &mut Window, cx: &mut Context<Self>) {
         let shell = cx.entity().downgrade();
         let handle = window.window_handle();
+        // Called from the notification center's delegate, which can't unwind.
         cx.on_system_notification_response(move |_, cx| {
-            cx.activate(true);
-            handle.update(cx, |_, window, _| window.activate_window()).ok();
-            shell
-                .update(cx, |this, cx| {
-                    this.go(Screen::Inbox);
-                    cx.notify();
-                })
-                .ok();
+            crate::crash::guard("notification click", || {
+                cx.activate(true);
+                handle.update(cx, |_, window, _| window.activate_window()).ok();
+                shell
+                    .update(cx, |this, cx| {
+                        this.go(Screen::Inbox);
+                        cx.notify();
+                    })
+                    .ok();
+            })
         });
     }
 
@@ -1237,6 +1240,7 @@ impl Render for Shell {
             .font_family(UI_FONT)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
+            .child(crate::titlebar::TitleBar::new())
             .child(
                 div()
                     .flex_1()

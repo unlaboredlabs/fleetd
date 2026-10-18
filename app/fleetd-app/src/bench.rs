@@ -4,6 +4,7 @@
 //! newly drawn frame records a Draw event followed by its Present, with exact `Instant`s, so how late we
 //! poll the journal never biases a measurement. Results go to stdout as `FLEETD_BENCH key=value ...`.
 
+use std::io::Write;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui::{FrameEvent, FrameTimingCollector};
@@ -23,14 +24,30 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub fn from_env() -> Option<Self> {
-        Some(match std::env::var("FLEETD_BENCH").ok()?.as_str() {
+    const NAMES: &str = "cold, idle, keys-internal, keys-external or scroll";
+
+    /// `FLEETD_BENCH`, unset or empty meaning no bench. Read before gpui starts, so a bad value is an error
+    /// message instead of a panic inside AppKit's launch callback.
+    pub fn from_env() -> Result<Option<Self>, String> {
+        match std::env::var("FLEETD_BENCH") {
+            Ok(v) if !v.is_empty() => Self::parse(&v).map(Some),
+            _ => Ok(None),
+        }
+    }
+
+    fn parse(name: &str) -> Result<Self, String> {
+        Ok(match name {
             "cold" => Mode::Cold,
             "idle" => Mode::Idle,
             "keys-internal" => Mode::KeysInternal,
             "keys-external" => Mode::KeysExternal,
             "scroll" => Mode::Scroll,
-            other => panic!("unknown FLEETD_BENCH mode {other:?}"),
+            other => {
+                return Err(format!(
+                    "FLEETD_BENCH={other:?} is not a bench mode; use {}. The fleetd-bench driver sets it for you (app/bench/MAC-RUN.md).",
+                    Self::NAMES
+                ));
+            }
         })
     }
 }
@@ -115,8 +132,9 @@ impl Probe {
         match_keys(&mut self.pending_keys, &mut self.last_draw, &frames)
     }
 
+    /// Ignores write errors: `println!` would panic once a reader closes the pipe (`| head`), aborting the app.
     pub fn emit(&self, fields: &str) {
-        println!("FLEETD_BENCH {fields}");
+        let _ = writeln!(std::io::stdout(), "FLEETD_BENCH {fields}");
     }
 }
 
@@ -153,6 +171,13 @@ pub fn scroll_stats(presents: &[Instant], start: Instant, end: Instant) -> (f64,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bench_mode_names() {
+        assert_eq!(Mode::parse("keys-internal"), Ok(Mode::KeysInternal));
+        // What the first Mac run used: an error to print, not a panic.
+        assert!(Mode::parse("1").unwrap_err().contains("cold, idle"));
+    }
 
     fn ms(base: Instant, n: u64) -> Instant {
         base + Duration::from_millis(n)
