@@ -30,7 +30,7 @@ defaults:
   model: ${MODEL}
   effort: low
 `;
-export const ORDER = `Tier L. Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel.`;
+export const ORDER = `Tier L. Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when check and its own PR.`;
 
 /** One /app session: auth, calls, and the live frames it receives. */
 const appSession = async (key: string) => {
@@ -151,6 +151,7 @@ export async function demoFanout(lab: Lab) {
     await lab.waitEvent("the lead's wake", 60_000, { cursor: orderCursor, types: ["lead.woken"], match: (e) => e.threadId === leadThread });
     mark("lead woken");
     const writers = new Map<string, Body>();
+    const startedAt = new Map<string, number>();
     let cursor = orderCursor;
     const fanout = Date.now();
     while (writers.size < 3) {
@@ -161,6 +162,7 @@ export async function demoFanout(lab: Lab) {
       const task = (await callTool("task_get", { taskId: next.event.data.taskId })).body.task as Body;
       if (task.kind !== "write") continue;
       writers.set(task.taskId as string, task);
+      startedAt.set(task.taskId as string, Date.parse(next.event.at as string));
       mark(`writer ${writers.size} started`, { taskId: task.taskId, title: task.title, areas: task.areas });
     }
 
@@ -191,10 +193,11 @@ export async function demoFanout(lab: Lab) {
         mark(`PR ${merged.size} of 3 merged`, { pr: next.event.data.prNumber });
       }
     }
-    check(merged.size > 0, "the train merged at least one of the order's PRs");
+    check(merged.size === 3, `the train merged all three pages (${merged.size})`);
     const board = await app.call("orders_board", { projectRef: ref, includeDoneSince: new Date(Date.now() - 3_600_000).toISOString() });
     const trains = board.trains as Array<Body>;
-    mark("board", { orders: (board.orders as Array<Body>).map((o) => `${o.workstreamId} ${o.phase} ${o.settled}/${o.total}`), mergedToday: trains[0]?.mergedToday });
+    mark("board", { orders: (board.orders as Array<Body>).map((o) => `${o.workstreamId} ${o.phase} ${o.settled}/${o.total} "${o.title}"`), mergedToday: trains[0]?.mergedToday });
+    for (const o of board.orders as Array<Body>) check((o.title as string).length <= 60, `card title is short: "${o.title}"`);
 
     // What came over the live feed, against its bounds.
     const frames = app.frames;
@@ -214,6 +217,43 @@ export async function demoFanout(lab: Lab) {
     const bytes = frames.reduce((n, f) => n + f.bytes, 0);
     const span = (frames.at(-1)!.at - frames[0]!.at) / 1000;
     mark("live feed", { frames: frames.length, kb: Math.round(bytes / 1024), avgBytesPerSec: Math.round(bytes / Math.max(span, 1)), maxFrameBytes: maxBytes, busiestSecond: busiest, activityKinds: [...kinds], lanesWithTokens: withTokens.length, lanesWithWork: sparked.length, textAppends: texts });
+
+    // Per writer lane, from the frames as they came: what it showed, and how soon after the hub saw it.
+    fs.writeFileSync(path.join(lab.dir, "live-frames.jsonl"), frames.map((f) => JSON.stringify({ receivedAt: f.at, ...f.frame })).join("\n") + "\n");
+    const lags: Array<number> = [];
+    for (const [taskId, start] of startedAt) {
+      const seen = frames.flatMap((f) => (f.frame.lanes as Array<Body>).filter((l) => l.laneId === taskId).map((l) => ({ at: Date.parse(f.frame.at as string), l })));
+      const laneKinds = new Set(seen.flatMap((x) => (x.l.activity === undefined ? [] : [x.l.activity.activity.kind as string])));
+      // Each activity once, at the first frame that carried it.
+      const shown = new Set<string>();
+      for (const x of seen) {
+        if (x.l.activity === undefined) continue;
+        const key = JSON.stringify(x.l.activity);
+        if (shown.has(key)) continue;
+        shown.add(key);
+        lags.push(x.at - Date.parse(x.l.activity.since as string));
+      }
+      const first = (p: (l: Body) => boolean) => {
+        const hit = seen.find((x) => p(x.l));
+        return hit === undefined ? null : hit.at - start;
+      };
+      const tokenValues = new Set(seen.flatMap((x) => (x.l.tokens === undefined ? [] : [`${x.l.tokens.input}/${x.l.tokens.output}`])));
+      const lane = {
+        kinds: [...laneKinds],
+        firstWorkMs: first((l) => l.activity !== undefined && l.activity.activity.kind !== "thinking"),
+        firstTokensMs: first((l) => l.tokens !== undefined),
+        liveTokenFrames: seen.filter((x) => x.l.tokens?.live === true).length,
+        tokenValues: tokenValues.size,
+        firstSparkMs: first((l) => (l.spark?.samples as Array<number> | undefined)?.some((v) => v > 0) === true),
+      };
+      mark(`lane ${taskId}`, lane);
+      check(laneKinds.size > 0 && [...laneKinds].some((k) => k !== "thinking"), `${taskId} showed real work, not only thinking: ${[...laneKinds].join(",")}`);
+      check(lane.firstSparkMs !== null, `${taskId}'s sparkline gained a sample`);
+      check(lane.liveTokenFrames > 0, `${taskId} streamed live tokens`);
+    }
+    lags.sort((a, b) => a - b);
+    const p = (q: number) => lags[Math.min(lags.length - 1, Math.floor(q * lags.length))];
+    mark("activity lag (frame at minus activity since, ms)", { samples: lags.length, p50: p(0.5), p90: p(0.9), max: lags.at(-1) });
 
     // The turns this cost.
     const tasks = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.workstreamId === workstreamId);
