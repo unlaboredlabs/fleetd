@@ -4,7 +4,7 @@
 // hub must emit thread.usage_limited and park the thread, and the parker must send its continue at the reset, which
 // the real claude then runs.
 import path from "node:path";
-import type { Body, Lab } from "../harness.ts";
+import { type Body, type Lab, userMessages } from "../harness.ts";
 import { installShim, launch, MACHINE, projectOf, runEnd, withNode } from "./kit.ts";
 
 const RESETS_IN_SEC = 90;
@@ -44,8 +44,8 @@ export async function usageLimit(lab: Lab) {
 
     const { event: done } = await runEnd(lab, MACHINE, threadId, resumed.seq, 240_000);
     check(done.type === "thread.completed", `the continued run ended ${done.type}: ${done.summary}`);
-    const items = (await lab.callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body.items as Array<Body>;
-    check(items.some((i) => i.role === "user" && i.text.includes(CONTINUE_MESSAGE)), `the parker's continue reached the thread: ${JSON.stringify(items)}`);
+    const said = userMessages(MACHINE, threadId);
+    check(said.some((m) => m.includes(CONTINUE_MESSAGE)), `the parker's continue reached claude: ${JSON.stringify(said)}`);
     check(shim.replays() === 1, "the continue ran on the real claude");
     ok("the parker's continue ran on the real claude and the thread completed");
   });
