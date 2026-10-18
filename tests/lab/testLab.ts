@@ -55,6 +55,7 @@ import { m8Desktop } from "./m8Desktop.ts";
 import { m9Playbooks } from "./m9Playbooks.ts";
 import { offlineQueue } from "./offlineQueue.ts";
 import { scenarioPush } from "./scenarioPush.ts";
+import { statusFresh } from "./statusFresh.ts";
 import { timeInspector } from "./timeInspector.ts";
 import { wakeOnTime } from "./wakeOnTime.ts";
 import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
@@ -76,6 +77,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m6", run: m6Verify },
   // It adds the testbed as a second project on lab-a for its run, and removes it.
   { name: "m7", run: m7Train },
+  // After m7, whose train row it reads: kills lab-b's node and cuts GitHub, then restarts the hub as it was.
+  { name: "status", run: statusFresh },
   // It reuses the lead when there is one, and waits for the wake it causes to end.
   { name: "m8", run: m8Desktop },
   // After m7, which leaves no testbed project: its router must choose among the lab projects only.
