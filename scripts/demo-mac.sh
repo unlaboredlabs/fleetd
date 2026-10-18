@@ -184,8 +184,11 @@ git -C "$repo" cat-file -e "$app_commit:app/record/src/lib.rs" 2>/dev/null ||
 grep -q FLEETD_DEMO_APP "$repo/tests/lab/demoFanout.ts" ||
   die "the lab driver at ${cli_commit:0:7} predates the demo recorder (#136); wait for a nightly with it"
 if [ "${FLEETD_DEMO_ANY_COMMIT:-}" != 1 ]; then
-  merged="$(gh pr view "$BOARD_PASS_PR" -R "$REPO" --json mergeCommit --jq '.mergeCommit.oid // ""')"
-  [ -n "$merged" ] || die "the board pass (#$BOARD_PASS_PR) isn't merged yet; run this again once it is and a nightly has it"
+  # The commit that landed it on main, whatever became of the PR: its own squash or a train batch's, whose subject
+  # lists every PR it carries.
+  git -C "$repo" fetch -q origin main
+  merged="$(git -C "$repo" log --fixed-strings --grep "(#$BOARD_PASS_PR)" -1 --format=%H origin/main)"
+  [ -n "$merged" ] || die "the board pass (#$BOARD_PASS_PR) isn't on main yet; run this again once it is and a nightly has it"
   for part in "CLI $cli_commit" "app $app_commit"; do
     git -C "$repo" merge-base --is-ancestor "$merged" "${part#* }" ||
       die "the nightly's ${part% *} (${part#* }) predates the board pass (#$BOARD_PASS_PR); wait for the next nightly, or set FLEETD_DEMO_BUILD=1 to build main"
