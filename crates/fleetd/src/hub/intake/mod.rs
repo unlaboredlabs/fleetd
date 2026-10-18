@@ -2,7 +2,9 @@
 //! picks it, and when the router cannot, an unrouted ask lets the human pick. A template prefix (`fix:`) or the
 //! caller's template beats the router's; with the project known and no template given, it is `feature`. The
 //! workstream pins the chosen template's playbook.
+pub mod attachments;
 pub mod prefix;
+pub mod preview;
 pub mod router;
 
 #[cfg(test)]
@@ -144,6 +146,8 @@ pub struct Intake {
     workstreams: Arc<Workstreams>,
     leads: Arc<Leads>,
     router: Arc<IntakeRouter>,
+    /// intake_preview answers by text and the caller's projects, for 10 minutes.
+    previews: preview::PreviewCache,
 }
 
 /// The intent being placed and who submitted it.
@@ -174,6 +178,7 @@ impl Intake {
         router: Arc<IntakeRouter>,
     ) -> Arc<Self> {
         Arc::new(Self {
+            previews: preview::PreviewCache::default(),
             ctx,
             workstreams,
             leads,

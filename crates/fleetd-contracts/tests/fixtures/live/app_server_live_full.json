@@ -1,0 +1,217 @@
+{
+  "t": "live",
+  "at": "2026-10-18T10:07:12.000Z",
+  "full": true,
+  "lanes": [
+    {
+      "laneId": "lead:devbox/storefront",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "writing"
+        },
+        "since": "2026-10-18T10:07:10.000Z"
+      },
+      "tokens": {
+        "input": 18200,
+        "output": 2410,
+        "cacheRead": 96000,
+        "live": true
+      },
+      "spark": {
+        "endAt": "2026-10-18T10:07:12.000Z",
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          8,
+          12,
+          20,
+          9,
+          14
+        ]
+      }
+    },
+    {
+      "laneId": "T31",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "edit",
+          "path": "src/cart/total.ts"
+        },
+        "since": "2026-10-18T10:07:01.000Z"
+      },
+      "tokens": {
+        "input": 2400,
+        "output": 712,
+        "cacheRead": 31000,
+        "live": true
+      },
+      "spark": {
+        "endAt": "2026-10-18T10:07:12.000Z",
+        "samples": [
+          0,
+          0,
+          4,
+          16,
+          16,
+          32,
+          20,
+          8,
+          0,
+          16,
+          40,
+          52,
+          33,
+          16,
+          16,
+          0,
+          0,
+          4,
+          18,
+          30,
+          41,
+          60,
+          48,
+          32,
+          16,
+          16,
+          32,
+          49,
+          52,
+          33
+        ]
+      }
+    },
+    {
+      "laneId": "T33",
+      "status": "working",
+      "activity": {
+        "activity": {
+          "kind": "command",
+          "text": "npm test -- cart"
+        },
+        "since": "2026-10-18T10:06:32.000Z"
+      },
+      "tokens": {
+        "input": 980,
+        "output": 221,
+        "cacheRead": 12000,
+        "live": false
+      },
+      "spark": {
+        "endAt": "2026-10-18T10:07:12.000Z",
+        "samples": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          16,
+          16,
+          2,
+          0,
+          0,
+          16,
+          32,
+          40
+        ]
+      }
+    },
+    {
+      "laneId": "T34",
+      "status": "queued"
+    }
+  ],
+  "text": [],
+  "machines": [
+    {
+      "machineId": "devbox",
+      "name": "devbox",
+      "status": "online",
+      "load": {
+        "cpus": 32,
+        "load1": 3.1,
+        "memUsedPct": 41,
+        "limits": [
+          {
+            "limitType": "five_hour",
+            "utilization": 0.58,
+            "resetsAt": "2026-10-18T14:05:00.000Z",
+            "status": "allowed"
+          },
+          {
+            "limitType": "seven_day",
+            "utilization": 0.41,
+            "status": "allowed"
+          }
+        ]
+      },
+      "running": 6,
+      "asOf": "2026-10-18T10:07:00.000Z"
+    },
+    {
+      "machineId": "buildbox",
+      "name": "buildbox",
+      "status": "offline",
+      "running": 0,
+      "asOf": "2026-10-18T09:55:00.000Z"
+    }
+  ],
+  "slots": {
+    "cap": 40,
+    "used": 8,
+    "queued": 1,
+    "reservedBand": 2,
+    "perProject": [
+      {
+        "projectRef": {
+          "machineId": "devbox",
+          "projectId": "storefront"
+        },
+        "share": 20,
+        "used": 4
+      }
+    ]
+  }
+}

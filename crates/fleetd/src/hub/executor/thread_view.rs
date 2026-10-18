@@ -89,7 +89,7 @@ pub fn apply_thread_event(view: &mut ThreadView, event: &ThreadEvent) {
         ThreadEvent::Run(r) => {
             view.runs.insert(r.id.to_string(), r.clone());
         }
-        ThreadEvent::Delta { .. } => {}
+        ThreadEvent::Delta { .. } | ThreadEvent::Usage { .. } => {}
     }
 }
 

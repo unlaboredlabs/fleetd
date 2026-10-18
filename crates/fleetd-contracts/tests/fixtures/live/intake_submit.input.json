@@ -1,0 +1,20 @@
+{
+  "machineId": "devbox",
+  "projectId": "storefront",
+  "text": "Fix the flaky `checkout completes` test. See `src/checkout/flow.test.ts`, same area as W12.",
+  "template": "bugfix",
+  "attachments": [
+    "F3"
+  ],
+  "refs": [
+    {
+      "kind": "file",
+      "path": "src/checkout/flow.test.ts"
+    },
+    {
+      "kind": "order",
+      "workstreamId": "W12"
+    }
+  ],
+  "clientRequestId": "order-1"
+}

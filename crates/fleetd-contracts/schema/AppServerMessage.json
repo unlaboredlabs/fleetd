@@ -1,5 +1,171 @@
 {
   "$defs": {
+    "Activity": {
+      "description": "What a lane is doing now, literally.",
+      "oneOf": [
+        {
+          "description": "The command's first line, `cd x &&` stripped.",
+          "properties": {
+            "kind": {
+              "const": "command",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 160,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Repo-relative.",
+          "properties": {
+            "kind": {
+              "const": "edit",
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file read, or a search when `pattern` is set.",
+          "properties": {
+            "kind": {
+              "const": "read",
+              "type": "string"
+            },
+            "path": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "pattern": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "detail": {
+              "maxLength": 120,
+              "type": "string"
+            },
+            "kind": {
+              "const": "tool",
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Assistant text streamed in the last 3 s.",
+          "properties": {
+            "kind": {
+              "const": "writing",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A run is active with nothing open and no text for 3 s: waiting on the model.",
+          "properties": {
+            "kind": {
+              "const": "thinking",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "compacting",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "attempt": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "retrying",
+              "type": "string"
+            },
+            "of": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "reason": {
+              "maxLength": 80,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "attempt",
+            "of",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ActivityNow": {
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/Activity"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "activity",
+        "since"
+      ],
+      "type": "object"
+    },
     "AppError": {
       "description": "A `call` failed, or (without `id`) the session did.",
       "properties": {
@@ -99,6 +265,20 @@
           "properties": {
             "t": {
               "const": "error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/LiveFrame",
+          "description": "On the live subscription only. Ephemeral: a slow link drops intermediate frames.",
+          "properties": {
+            "t": {
+              "const": "live",
               "type": "string"
             }
           },
@@ -427,8 +607,170 @@
           "const": "key.paired",
           "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
           "type": "string"
+        },
+        {
+          "const": "workstream.note",
+          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
+          "type": "string"
         }
       ]
+    },
+    "LaneStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "queued",
+            "starting",
+            "working",
+            "stalled",
+            "idle",
+            "done",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "waiting",
+          "description": "A permission prompt waits on a person.",
+          "type": "string"
+        },
+        {
+          "const": "parked",
+          "description": "Usage limit: resumes at the reset.",
+          "type": "string"
+        }
+      ]
+    },
+    "LiveFrame": {
+      "description": "Hub -> app on the live subscription. Board lanes at most 1/s, focus lanes and text at most 4/s; machines at most\nevery 5 s and slots at most 1/s, each only when changed. A slow link skips frames (latest wins), never queues them.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The hub's clock; the app derives its skew from it."
+        },
+        "full": {
+          "description": "The first frame after a (re)subscribe: every lane in scope. Lanes not in a full frame are gone.",
+          "type": "boolean"
+        },
+        "lanes": {
+          "items": {
+            "$ref": "#/$defs/LiveLane"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "machines": {
+          "description": "Present when any machine changed (always in a full frame).",
+          "items": {
+            "$ref": "#/$defs/MachineLive"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "slots": {
+          "$ref": "#/$defs/SlotState",
+          "description": "Present when the slot board changed (always in a full frame, once the hub runs slots)."
+        },
+        "text": {
+          "default": [],
+          "description": "Focus only.",
+          "items": {
+            "$ref": "#/$defs/LiveText"
+          },
+          "maxItems": 4,
+          "type": "array"
+        }
+      },
+      "required": [
+        "at",
+        "full",
+        "lanes"
+      ],
+      "type": "object"
+    },
+    "LiveLane": {
+      "description": "One lane's live values. In a frame that is not `full`, only lanes that changed are sent.",
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/ActivityNow",
+          "description": "Absent: nothing to say (no run active, or no recent model output; the UI says no more than the status)."
+        },
+        "laneId": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "spark": {
+          "$ref": "#/$defs/Spark",
+          "description": "Absent: unchanged since the last frame (always present in a `full` frame for lanes that have one)."
+        },
+        "status": {
+          "$ref": "#/$defs/LaneStatus"
+        },
+        "tokens": {
+          "$ref": "#/$defs/Tokens"
+        }
+      },
+      "required": [
+        "laneId",
+        "status"
+      ],
+      "type": "object"
+    },
+    "LiveText": {
+      "description": "Streamed assistant text of the focused order's lanes and lead: append to `message_id`'s text. The complete\nmessage replaces it when the thread tail is refetched.",
+      "properties": {
+        "append": {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "laneId": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "messageId": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "laneId",
+        "messageId",
+        "append"
+      ],
+      "type": "object"
+    },
+    "LoginLimit": {
+      "description": "One claude.ai usage window, as claude's `rate_limit_event` last reported it.",
+      "properties": {
+        "limitType": {
+          "description": "claude's own name for the window, e.g. \"five_hour\", \"seven_day\".",
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "resetsAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "status": {
+          "description": "allowed, allowed_warning or rejected.",
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "utilization": {
+          "description": "0 to 1 as claude sends it; absent when it sent none.",
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "limitType",
+        "status"
+      ],
+      "type": "object"
     },
     "Machine": {
       "properties": {
@@ -477,6 +819,42 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "MachineLive": {
+      "description": "A machine's load and running agents, from its heartbeat (every 15 s) and the hub's executors.",
+      "properties": {
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "load": {
+          "$ref": "#/$defs/NodeLoad",
+          "description": "Absent: the node does not report load (older node, or the read failed). Show no load then."
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "running": {
+          "description": "Agent turns running there now.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/MachineStatus"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "status",
+        "running",
+        "asOf"
+      ],
+      "type": "object"
+    },
     "MachineStatus": {
       "enum": [
         "online",
@@ -484,6 +862,42 @@
         "degraded"
       ],
       "type": "string"
+    },
+    "NodeLoad": {
+      "description": "What a machine reports about itself with each heartbeat.",
+      "properties": {
+        "cpus": {
+          "description": "Logical CPUs.",
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "limits": {
+          "default": [],
+          "description": "The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,\nwhich send none.",
+          "items": {
+            "$ref": "#/$defs/LoginLimit"
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
+        "load1": {
+          "description": "The 1-minute load average.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "memUsedPct": {
+          "description": "Memory in use (total minus available), percent.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cpus",
+        "load1"
+      ],
+      "type": "object"
     },
     "ProjectId": {
       "type": "string"
@@ -598,6 +1012,29 @@
       ],
       "type": "object"
     },
+    "Spark": {
+      "description": "Work per 2 s bucket, oldest first, ending with the bucket that ends at `end_at`. A sample is\n`min(255, 16 × items started + streamed chars / 32)`; a bucket with no frames is 0.",
+      "properties": {
+        "endAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "samples": {
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 30,
+          "type": "array"
+        }
+      },
+      "required": [
+        "endAt",
+        "samples"
+      ],
+      "type": "object"
+    },
     "ThreadCounts": {
       "properties": {
         "failed": {
@@ -635,6 +1072,36 @@
     "Timestamp": {
       "format": "date-time",
       "type": "string"
+    },
+    "Tokens": {
+      "description": "Summed over the lane's runs. `live`: the running run's usage is streaming in (else it updates at each run's end).",
+      "properties": {
+        "cacheRead": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "input": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "output": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "cacheRead",
+        "live"
+      ],
+      "type": "object"
     }
   },
   "$ref": "#/$defs/AppServerMessage",

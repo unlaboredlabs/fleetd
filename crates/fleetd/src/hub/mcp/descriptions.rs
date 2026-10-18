@@ -172,4 +172,32 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "doctor_fix",
         "Run a check's automatic fix, then the check again. Manual fixes are refused with the exact command to run. Admin keys, or a person's device (a human key).",
     ),
+    (
+        "orders_board",
+        "Open orders (workstreams) joined with their agents: each card has its phase (needs you, working, reviewing, merging, ...), active lanes (role, model, status, branch, PR), PRs with review counts, open asks and the lead's headline; plus the merge trains of their repos. Filter by projectRef; includeDoneSince adds orders done since then.",
+    ),
+    (
+        "order_get",
+        "One order as orders_board shows it, plus its project's lead, its finished agents with their receipts, its open asks and its claims.",
+    ),
+    (
+        "order_note",
+        "Add to an order for its lead, with optional references (files, orders, PRs) and attachments from attachment_put. The lead reads it at its next wake; urgent wakes it now. A person's device (a human key) only.",
+    ),
+    (
+        "order_stop",
+        "Stop an order: cancels its queued and running tasks, withdraws its asks, sets it stopped and tells its lead. Merged PRs stay. Idempotent. A person's device (a human key) only.",
+    ),
+    (
+        "intake_preview",
+        "Where intake_submit would send this text (an @project prefix, else the router), without creating anything. Cached for 10 minutes.",
+    ),
+    (
+        "attachment_put",
+        "Upload one file (png, jpeg, webp, gif, text or PDF; at most 5 MiB, base64) for a later intake_submit or order_note. Unused uploads are deleted after 24 h.",
+    ),
+    (
+        "project_files",
+        "A project's files (tracked and untracked, not ignored) best matching a fuzzy query, for @-mentions. limit defaults to 20, max 50.",
+    ),
 ];

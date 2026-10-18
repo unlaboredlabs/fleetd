@@ -7,6 +7,8 @@ use serde_with::skip_serializing_none;
 use crate::events::HubEvent;
 use crate::hello::ProtocolVersion;
 use crate::ids::EventSeq;
+use crate::ledger::WorkstreamId;
+use crate::live::LiveFrame;
 use crate::mcp::{ErrorCode, FleetStatus};
 use crate::prim::{NonEmpty, Text};
 
@@ -30,6 +32,14 @@ pub enum AppClientMessage {
         id: AppCallId,
         tool: NonEmpty,
         input: serde_json::Value,
+    },
+    /// Subscribe to `live` frames, replacing any earlier subscription: every open order's lanes when `board`, and
+    /// the focused order's lanes, its project's lead and their streamed text when `focus` is set. Neither: stop.
+    /// Send it again on window activation; the first frame after each one is `full`.
+    Live {
+        board: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        focus: Option<WorkstreamId>,
     },
 }
 
@@ -60,4 +70,6 @@ pub enum AppServerMessage {
         output: serde_json::Value,
     },
     Error(AppError),
+    /// On the live subscription only. Ephemeral: a slow link drops intermediate frames.
+    Live(LiveFrame),
 }

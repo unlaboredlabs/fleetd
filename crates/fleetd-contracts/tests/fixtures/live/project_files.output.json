@@ -1,0 +1,7 @@
+{
+  "paths": [
+    "src/cart/total.ts",
+    "src/cart/total.test.ts",
+    "docs/cart-totals.md"
+  ]
+}

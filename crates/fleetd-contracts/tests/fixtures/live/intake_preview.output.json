@@ -1,0 +1,10 @@
+{
+  "echo": {
+    "projectRef": {
+      "machineId": "devbox",
+      "projectId": "storefront"
+    },
+    "template": "feature",
+    "reason": "The cart total lives in storefront's src/cart."
+  }
+}

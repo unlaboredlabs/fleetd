@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { degradedMachine } from "./degradedMachine.ts";
+import { demoFanout } from "./demoFanout.ts";
 import { FAILURE_SCENARIOS } from "./failure/index.ts";
 import {
   type Body,
@@ -55,7 +56,7 @@ import { wakeOnTime } from "./wakeOnTime.ts";
 import { missedCompletion, stallNudgeFail } from "./watchdogScenarios.ts";
 
 /** In run order. Later ones may stop or restart nodes, so they come after the ones that need both machines up. */
-const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void> }> = [
+const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab) => Promise<void>; readonly only?: boolean }> = [
   { name: "m1", run: m1Fleet },
   { name: "wake", run: wakeOnTime },
   { name: "push", run: scenarioPush },
@@ -75,6 +76,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "m8", run: m8Desktop },
   // After m7, which leaves no testbed project: its router must choose among the lab projects only.
   { name: "m9", run: m9Playbooks },
+  // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.
+  { name: "demo", run: demoFanout, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
   ...FAILURE_SCENARIOS,
 ];
@@ -106,7 +109,7 @@ async function main() {
   const wanted = process.argv.slice(2);
   const unknown = wanted.filter((w) => !SCENARIOS.some((s) => s.name === w));
   if (unknown.length > 0) throw new Error(`unknown scenario ${unknown.join(", ")}; known: ${SCENARIOS.map((s) => s.name).join(", ")}`);
-  const scenarios = wanted.length === 0 ? SCENARIOS : SCENARIOS.filter((s) => wanted.includes(s.name));
+  const scenarios = wanted.length === 0 ? SCENARIOS.filter((s) => s.only !== true) : SCENARIOS.filter((s) => wanted.includes(s.name));
   takeLabLock();
 
   let client: Client | undefined;

@@ -1,0 +1,22 @@
+{
+  "t": "hb",
+  "at": "2026-10-18T10:07:12.000Z",
+  "load": {
+    "cpus": 32,
+    "load1": 3.1,
+    "memUsedPct": 41,
+    "limits": [
+      {
+        "limitType": "five_hour",
+        "utilization": 0.58,
+        "resetsAt": "2026-10-18T14:05:00.000Z",
+        "status": "allowed"
+      },
+      {
+        "limitType": "seven_day",
+        "utilization": 0.41,
+        "status": "allowed"
+      }
+    ]
+  }
+}

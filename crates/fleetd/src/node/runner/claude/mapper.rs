@@ -93,6 +93,10 @@ pub struct StreamMapper {
     streaming: Option<String>,
     stream_text_blocks: HashMap<u64, String>,
     stream_text_count: usize,
+    /// The active run's usage: the messages it finished, and the one streaming now (claude reports each message's
+    /// usage on `message_start`, then cumulative output on `message_delta`).
+    usage_done: RunUsage,
+    usage_now: RunUsage,
     /// Text blocks already emitted per complete message id: claude sends one `assistant` line per block.
     text_blocks: Option<(String, usize)>,
     assistant_error: Option<AssistantError>,
@@ -121,6 +125,8 @@ impl StreamMapper {
             streaming: None,
             stream_text_blocks: HashMap::new(),
             stream_text_count: 0,
+            usage_done: RunUsage::default(),
+            usage_now: RunUsage::default(),
             text_blocks: None,
             assistant_error: None,
             rate_limit: None,
@@ -368,6 +374,8 @@ impl StreamMapper {
                 self.active_run = Some(run_id.clone());
                 self.run_stderr.clear();
                 self.assistant_error = None;
+                self.usage_done = RunUsage::default();
+                self.usage_now = RunUsage::default();
                 events.push(RunnerEvent::RunStarted { run_id });
             }
             // After a `result` these are bookkeeping; without one the message never ran to a result.
@@ -398,7 +406,11 @@ impl StreamMapper {
                     .or(event.api_message_id);
                 self.stream_text_blocks.clear();
                 self.stream_text_count = 0;
+                let done = std::mem::take(&mut self.usage_now);
+                add_usage(&mut self.usage_done, &done);
+                self.stream_usage(&ev["message"]["usage"], events);
             }
+            "message_delta" => self.stream_usage(&ev["usage"], events),
             "content_block_start" if ev["content_block"]["type"] == "text" => {
                 let message = self.streaming.clone().or(event.api_message_id);
                 if let (Some(message), Some(index)) = (message, ev["index"].as_u64()) {
@@ -425,6 +437,36 @@ impl StreamMapper {
             }
             _ => {}
         }
+    }
+
+    /// Folds a streamed usage object into the current message's and reports the run's total so far.
+    fn stream_usage(&mut self, usage: &serde_json::Value, events: &mut Vec<RunnerEvent>) {
+        let Some(usage) = usage.as_object() else {
+            return;
+        };
+        let now = &mut self.usage_now;
+        for (key, field) in [
+            ("input_tokens", &mut now.input_tokens),
+            ("output_tokens", &mut now.output_tokens),
+            ("cache_read_input_tokens", &mut now.cache_read_input_tokens),
+            (
+                "cache_creation_input_tokens",
+                &mut now.cache_creation_input_tokens,
+            ),
+        ] {
+            if let Some(n) = usage.get(key).and_then(serde_json::Value::as_u64) {
+                *field = n;
+            }
+        }
+        let Some(run_id) = self.active_run.clone() else {
+            return;
+        };
+        let mut total = self.usage_done.clone();
+        add_usage(&mut total, &self.usage_now);
+        events.push(RunnerEvent::Usage {
+            run_id,
+            usage: total,
+        });
     }
 
     fn assistant(&mut self, assistant: Assistant, now: &Now, events: &mut Vec<RunnerEvent>) {
@@ -890,3 +932,10 @@ fn permission_summary(
 
 #[cfg(test)]
 mod tests;
+
+fn add_usage(total: &mut RunUsage, more: &RunUsage) {
+    total.input_tokens += more.input_tokens;
+    total.output_tokens += more.output_tokens;
+    total.cache_read_input_tokens += more.cache_read_input_tokens;
+    total.cache_creation_input_tokens += more.cache_creation_input_tokens;
+}

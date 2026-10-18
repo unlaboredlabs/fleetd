@@ -1,0 +1,12 @@
+{
+  "id": "c9",
+  "result": {
+    "ok": {
+      "kind": "files",
+      "paths": [
+        "src/cart/total.ts"
+      ],
+      "truncated": false
+    }
+  }
+}

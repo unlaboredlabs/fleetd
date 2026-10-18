@@ -399,6 +399,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     ));
     hub.link.start();
     loops.push(hub.watchdog.start());
+    loops.push(tokio::spawn(crate::hub::orders::idle::run(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::checks::start_loops(hub));
