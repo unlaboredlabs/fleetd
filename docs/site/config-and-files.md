@@ -16,6 +16,7 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
     hub.log              the hub service's log
     cli.key              the admin key the CLI on this machine uses
     webhook.key          seals webhook secrets
+    playbooks/<name>.md  your version of a playbook (the retro writes here too); delete it for fleetd's
   node/                  the node's home (every worker)
     node.json            the hub it belongs to, its machine id and an optional claudeConfigDir
     node-key.pem         proves the node to the hub

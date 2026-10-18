@@ -94,8 +94,10 @@ open ~/Applications/fleetd.app                    # macOS
 ```
 
 Enter the hub address and the pairing code `fleetd init` printed. Codes last 15 minutes; `fleetd pair` on the hub
-prints a new one. Then press ⌘N (Ctrl+N on Linux) and type an order, such as `fix the typo in the README`.
+prints a new one. The app opens on the board, ready to type: enter an order, such as `fix the typo in the README`,
+and press Enter.
 
-The order starts the project's lead, which answers with a brief and starts work. Its questions land in the inbox.
+The order starts the project's lead, which answers with a brief and starts work. Its questions land in the inbox
+(⌘I, Ctrl+I on Linux).
 
 Next: [Concepts](concepts.md), or [more machines](machines.md).
