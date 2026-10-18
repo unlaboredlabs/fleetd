@@ -32,8 +32,10 @@ export const HUB_PORT = Number(process.env.FLEETD_LAB_HUB_PORT ?? slotPort(4795)
 export const HUB_URL = `http://127.0.0.1:${HUB_PORT}`;
 /** Per hub port, so two runs on different ports never delete each other's state. */
 export const RUN = process.env.FLEETD_LAB_RUN ?? path.join(LAB, `e2e-${HUB_PORT}`);
+/** Cargo's release output, honouring CARGO_TARGET_DIR as cargo does. */
+export const RELEASE = path.join(process.env.CARGO_TARGET_DIR ?? path.join(REPO, "target"), "release");
 /** The release build of the binary (`cargo build --release -p fleetd`), so the lab exercises what ships. */
-export const CLI = path.join(REPO, "target/release/fleetd");
+export const CLI = path.join(RELEASE, "fleetd");
 /**
  * The command for one fleetd invocation. FLEETD_BIN (default the release build) is the fleetd under test; FLEETD_HUB_BIN,
  * FLEETD_NODE_BIN and FLEETD_CLI_BIN override it for `hub …`, `node …` and everything else, for mixed runs such as
@@ -126,6 +128,21 @@ export const labEnv = (): Record<string, string> =>
 
 export const lab = (command: "up" | "down", instance: string) =>
   execFileSync(process.execPath, [LAB_SCRIPT, command, instance], { env: { ...scrubbedEnv(), ...labEnv() }, encoding: "utf8" });
+
+const LOCK = path.join(LAB, "test-lab.lock");
+
+/** One lab run per slot at a time (test:lab, site-capture): they share the slot's T3 instances, and one run's cleanup stops them. */
+export const takeLabLock = () => {
+  fs.mkdirSync(LAB, { recursive: true });
+  try {
+    const holder = Number(fs.readFileSync(LOCK, "utf8").trim());
+    if (holder > 0 && fs.existsSync(`/proc/${holder}`)) throw new Error(`another lab run (pid ${holder}) holds ${LOCK}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  fs.writeFileSync(LOCK, `${process.pid}\n`);
+  process.once("exit", () => fs.rmSync(LOCK, { force: true }));
+};
 
 const started: Array<{ name: string; child: ChildProcess }> = [];
 

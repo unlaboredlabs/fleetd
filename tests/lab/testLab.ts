@@ -32,6 +32,7 @@ import {
   stopAll,
   stopCli,
   T3_SRC,
+  takeLabLock,
   until,
   waitEventWith,
 } from "./harness.ts";
@@ -77,20 +78,6 @@ const NODE_FLAGS: Record<LabMachine, ReadonlyArray<string>> = {
 };
 
 const hubHome = path.join(RUN, "hub");
-const LOCK = path.join(LAB, "test-lab.lock");
-
-/** One test:lab run at a time: they share the lab's T3 instances, and one run's cleanup stops them. */
-const takeLabLock = () => {
-  fs.mkdirSync(LAB, { recursive: true });
-  try {
-    const holder = Number(fs.readFileSync(LOCK, "utf8").trim());
-    if (holder > 0 && fs.existsSync(`/proc/${holder}`)) throw new Error(`another test:lab run (pid ${holder}) holds ${LOCK}`);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  fs.writeFileSync(LOCK, `${process.pid}\n`);
-  process.once("exit", () => fs.rmSync(LOCK, { force: true }));
-};
 const nodeHome = (id: LabMachine) => path.join(RUN, `node-${id}`);
 
 /**

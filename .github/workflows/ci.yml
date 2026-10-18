@@ -30,6 +30,30 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --exclude fleetd-app --exclude fleetd-bench --all-targets -- -D warnings
       - run: cargo test --locked --workspace --exclude fleetd-app --exclude fleetd-bench
+      # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
+      - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fleetd-help
+          path: ${{ runner.temp }}/fleetd-help.txt
+          retention-days: 1
+
+  site:
+    # fleetd.sh may only mention what fleetd has: no index.* in site/ (Vercel would serve it at / instead of the
+    # installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists.
+    needs: rust-crates
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: fleetd-help
+          path: ${{ runner.temp }}
+      - run: node .github/site-check.mjs "$RUNNER_TEMP/fleetd-help.txt"
 
   t3-conformance:
     # t3-wire against T3's own contracts at the pin (vendor/t3/pin.json), and the recorded T3 streams through its

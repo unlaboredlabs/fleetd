@@ -62,6 +62,7 @@ hub's wake carrying D1 and D2, and the lead's answer. Image: capture-lead.png
 
 The wake, verbatim:
 
+<!-- capture:wake -->
   ## Answers since your last wake
   - A1 site.pricing.headline → Pay for machines, not seats (D1)
   - A2 deps.moment: dropped by the human; do not pursue it
@@ -76,6 +77,7 @@ The wake, verbatim:
 
   ## Why you are woken
   - The human settled 3 of your asks; see "Answers since your last wake" above.
+<!-- /capture:wake -->
 
 
 WHAT THE LEAD DOES WITHOUT ASKING YOU
@@ -91,8 +93,10 @@ WHAT THE LEAD DOES WITHOUT ASKING YOU
     have decided itself.
 
 What you get at 09:00 and 18:00 when that's all there is:
+<!-- capture:digest -->
   fleetd digest · Sun 18 Oct, 10:30
   Nothing needs you · 0 running · 0 done
+<!-- /capture:digest -->
 
 
 "DONE" IS CHECKED BY FLEETD
@@ -101,6 +105,7 @@ Merge-train events from a lab run against the public fleetd-testbed repo
 own summaries (one log link shortened), with the commit status the train posts
 before each merge.
 
+<!-- capture:train -->
 00:37:45  change.refused       Refused https://github.com/unlaboredlabs/fleetd-testbed/pull/74: The PR body has no 'Source:' line.
 00:38:05  change.queued        X1 queued: unlaboredlabs/fleetd-testbed#76 (tier M, done:0)
 00:38:06  train.frozen         Train for unlaboredlabs/fleetd-testbed frozen: M7 lab: hold until every PR is ready
@@ -117,6 +122,7 @@ before each merge.
 00:39:43  change.ready         X4 ready for the train: unlaboredlabs/fleetd-testbed#78
 00:39:59  fleetd/train         X4: rebased onto main, CI green   [commit status on f330188]
 00:40:03  pr.merged            X4 merged: unlaboredlabs/fleetd-testbed#78 as 7dbe340fb72a
+<!-- /capture:train -->
 
 
 SETUP IS A HUB AND YOUR MACHINES
@@ -125,6 +131,7 @@ machine you can reach over SSH into one that runs agents. Both outputs are real.
 
 The hub, on the machine you installed on:
 
+<!-- capture:init -->
 $ fleetd init --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service
 hub home ~/.fleetd/hub
 commit identity Demo <demo@users.noreply.github.com>
@@ -133,10 +140,12 @@ not installing a service; run the hub yourself with:
 next: fleetd hub key create --human --name <device> prints the key the desktop app connects to http://127.0.0.1:4778 with
 then: fleetd machine add <ssh-host> for each machine that runs agents
 [exit 0]
+<!-- /capture:init -->
 
 A worker. --dry-run prints the plan and runs nothing; the shell command under
 each step is left out here:
 
+<!-- capture:machine-add -->
 $ fleetd machine add builder-1 --dry-run
 dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state over SSH and leaves out what is already done:
 [probe] read the machine's state (read-only)
@@ -153,6 +162,7 @@ dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /hom
 [11/11] (re)start the node
 [hub] wait until builder-1 is online
 [exit 0]
+<!-- /capture:machine-add -->
 
 
 fleetd · MIT
