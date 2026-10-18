@@ -2,7 +2,7 @@
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
 fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page; its app captures
-(`capture-*.png`) and transcripts are real fleetd output, `index.txt` is its plain-text twin for agents, and `fonts/`
+(`capture-*.png`) and transcripts are real fleetd output, `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
 
 There is deliberately no `index.html`: Vercel serves files before applying rewrites, so an `index.html` would win
