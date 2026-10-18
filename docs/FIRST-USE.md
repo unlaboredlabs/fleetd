@@ -149,7 +149,7 @@ other agent, so only do it while fleetd is the one working on this repo.
 Prerequisite: **Tailscale** on the Mac, logged in to the same tailnet.
 
 ```sh
-curl -fsSL https://fleetd.sh | sh                 # the app into ~/Applications/fleetd.app, plus the fleetd CLI
+curl -fsSL https://fleetd.sh | sh -s -- --app    # only the app, into ~/Applications/fleetd.app
 ssh forge '~/.local/bin/fleetd pair --name mac'   # a one-time code, valid 15 minutes, and a fleetd://pair link
 open ~/Applications/fleetd.app
 ```
@@ -197,7 +197,7 @@ systemctl --user is-active t3code.service                     # still active, ne
 
 Elsewhere:
 - **Mac:** the Keychain item via the app's "Disconnect and forget key", then
-  `curl -fsSL https://fleetd.sh | sh -s -- --uninstall` (removes the app and the CLI).
+  `curl -fsSL https://fleetd.sh | sh -s -- --uninstall` (removes the app).
 - **GitHub:** delete the cliproxyapi-console ruleset if you added one. PRs fleetd opened stay as normal PRs.
 
 ## What to watch in the first days
