@@ -1447,6 +1447,24 @@ mod tests {
     }
 
     #[test]
+    fn steer_outputs_round_trip_with_every_field_set() {
+        let steer = json!({
+            "id": "S12", "target": { "taskId": "T88" }, "workstreamId": "W41",
+            "thread": { "machineId": "forge", "threadId": "t1" }, "runId": "r1",
+            "by": { "kind": "human", "keyName": "wynn-mac" }, "mode": "now", "text": "skip the docs page",
+            "stage": "acknowledged", "queuedAt": "2026-10-18T14:02:07.120Z",
+            "deliveredAt": "2026-10-18T14:02:07.143Z", "how": "stopped", "stoppedTool": "cargo test",
+            "seenAt": "2026-10-18T14:02:07.150Z", "ackedAt": "2026-10-18T14:02:08.910Z",
+            "ackExcerpt": "S12: dropping the docs page", "planChange": "-1 item", "detail": "sent",
+            "next": "steers_list", "truncated": false,
+        });
+        let send: SteerSendOutput = decode(steer.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&send).unwrap(), steer);
+        let withdraw: SteerWithdrawOutput = decode(steer.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&withdraw).unwrap(), steer);
+    }
+
+    #[test]
     fn results_flatten_their_record() {
         let output = json!({ "machines": [], "projects": [], "attention": [], "cursor": 3, "next": "events_wait" });
         let status: FleetdStatusOutput = decode(output.clone()).unwrap();
