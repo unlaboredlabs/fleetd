@@ -31,19 +31,30 @@ jobs:
         env:
           SECONDS_TO_RECORD: ${{ inputs.seconds || '25' }}
         run: |
-          out="$RUNNER_TEMP/rec"
-          FLEETD_BENCH=live FLEETD_LIVE=demo FLEETD_BENCH_TIMEOUT_MS=0 FLEETD_RECORD="$out,30" \
-            target/debug/fleetd-app >"$RUNNER_TEMP/app.log" 2>&1 &
-          pid=$!
-          sleep "$SECONDS_TO_RECORD"
-          # SIGTERM is how scripts/demo-mac.sh stops the app: the recorder finishes the file, then exits.
-          kill -TERM "$pid"
-          for _ in $(seq 150); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
-          if kill -0 "$pid" 2>/dev/null; then echo "::error::the app did not exit after SIGTERM"; kill -9 "$pid"; fi
-          wait "$pid" || echo "exit status $?"
-          cat "$RUNNER_TEMP/app.log"
-          grep -q 'FLEETD_RECORD done' "$RUNNER_TEMP/app.log" || { echo "::error::no finished recording"; exit 1; }
-          ls -la "$out" "$out/frames"
+          sw_vers
+          # $1: output dir, $2: seconds. SIGTERM is how scripts/demo-mac.sh stops the app: the recorder finishes
+          # the file, then exits.
+          record() {
+            FLEETD_BENCH=live FLEETD_LIVE=demo FLEETD_BENCH_TIMEOUT_MS=0 FLEETD_RECORD="$1,30" \
+              target/debug/fleetd-app >"$1.log" 2>&1 &
+            local pid=$!
+            sleep "$2"
+            kill -TERM "$pid"
+            for _ in $(seq 150); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+            if kill -0 "$pid" 2>/dev/null; then echo "::error::the app did not exit after SIGTERM"; kill -9 "$pid"; fi
+            wait "$pid" || echo "exit status $?"
+            grep FLEETD_RECORD "$1.log"
+            grep -q 'FLEETD_RECORD done' "$1.log" || { cat "$1.log"; echo "::error::no finished recording in $1"; exit 1; }
+            mv "$1.log" "$1/app.log"
+            ls -la "$1" "$1/frames"
+          }
+          record "$RUNNER_TEMP/rec" "$SECONDS_TO_RECORD"
+          # The runner image grants Screen Recording to its shell, so that run proves nothing about the permission.
+          # Revoke it, and record again: the app's own window must still come through.
+          sudo tccutil reset ScreenCapture
+          record "$RUNNER_TEMP/rec/no-permission" 8
+          grep -q 'screen_capture_access=false' "$RUNNER_TEMP/rec/no-permission/app.log" ||
+            { echo "::error::Screen Recording is still granted after tccutil reset"; exit 1; }
       - name: Check the MP4
         run: |
           brew install --quiet ffmpeg
@@ -68,7 +79,10 @@ jobs:
           EOF
           mkdir -p "$out/from-mp4"
           for t in 2 8 14 20; do ffmpeg -v error -ss "$t" -i "$out/fleetd.mp4" -frames:v 1 "$out/from-mp4/at-${t}s.png"; done
-          cp "$RUNNER_TEMP/app.log" "$out/"
+          ffmpeg -v error -ss 4 -i "$out/no-permission/fleetd.mp4" -frames:v 1 "$out/from-mp4/no-permission-at-4s.png"
+          for f in "$out"/*.sb-* "$out"/no-permission/*.sb-*; do
+            [ -e "$f" ] && { echo "::error::a writer temporary was left behind: $f"; exit 1; }
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:

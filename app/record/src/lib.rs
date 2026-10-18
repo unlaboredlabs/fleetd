@@ -90,11 +90,15 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
     let mut writer: Option<Writer> = None;
     let mut failed = false;
     let (mut frames, mut skipped, mut pngs) = (0u64, 0u64, 0u32);
+    // Time spent in the window server's capture and in drawing + appending, to tell which one limits the rate.
+    let (mut grab, mut encode) = (Duration::ZERO, Duration::ZERO);
     let mut next_png = Duration::ZERO;
     let mut tick = started;
     while !STOP.load(Ordering::SeqCst) && !failed {
         autoreleasepool(|_| {
+            let t = Instant::now();
             let Some(image) = capture(window) else { return };
+            grab += t.elapsed();
             let at = started.elapsed();
             if at >= next_png {
                 write_png(&image, &dir.join("frames").join(format!("frame-{:06.1}s.png", at.as_secs_f64())));
@@ -112,7 +116,10 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
                 }
             }
             if let Some(w) = &writer {
-                if w.append(&image, at) {
+                let t = Instant::now();
+                let appended = w.append(&image, at);
+                encode += t.elapsed();
+                if appended {
                     frames += 1;
                 } else {
                     skipped += 1;
@@ -129,7 +136,15 @@ fn run(window: u32, dir: &Path, fps: u32) -> bool {
     let signalled = STOP.load(Ordering::SeqCst) && !QUITTING.load(Ordering::SeqCst);
     let seconds = started.elapsed().as_secs_f64();
     match writer.map(Writer::finish) {
-        Some(Ok(())) => eprintln!("FLEETD_RECORD done mp4={} frames={frames} skipped={skipped} pngs={pngs} seconds={seconds:.1}", mp4.display()),
+        Some(Ok(())) => {
+            let per_frame = |d: Duration| d.as_secs_f64() * 1000. / (frames + skipped).max(1) as f64;
+            eprintln!(
+                "FLEETD_RECORD done mp4={} frames={frames} skipped={skipped} pngs={pngs} seconds={seconds:.1} grab_ms={:.1} encode_ms={:.1}",
+                mp4.display(),
+                per_frame(grab),
+                per_frame(encode)
+            );
+        }
         Some(Err(e)) => eprintln!("FLEETD_RECORD error={e}"),
         None if failed => {}
         None => eprintln!("FLEETD_RECORD error=no frame captured (window {window} never came back from CGWindowListCreateImage)"),
@@ -333,7 +348,6 @@ unsafe extern "C" {
 }
 
 const PIXEL_FORMAT_BGRA: i64 = 0x4247_5241;
-const WRITER_WRITING: isize = 1;
 const WRITER_COMPLETED: isize = 2;
 
 struct Writer {
@@ -387,8 +401,9 @@ impl Writer {
             }
             // Puts the moov atom first, like ffmpeg's +faststart.
             let _: () = msg_send![writer, setShouldOptimizeForNetworkUse: true];
-            // Text stays crisp at about 6 bits per pixel-second; the encoder spends far less on still frames.
-            let bitrate = ((width * height) as i64 * i64::from(fps) / 6).clamp(4_000_000, 40_000_000);
+            // About 0.08 bits per pixel per frame: text stays crisp (a Retina window at 30 fps gets ~12 Mbit/s), and a
+            // 15-minute master stays near 1.5 GB.
+            let bitrate = ((width * height) as i64 * i64::from(fps) / 12).clamp(4_000_000, 24_000_000);
             let compression = dictionary(&[
                 (AVVideoAverageBitRateKey, number(bitrate)),
                 (AVVideoProfileLevelKey, AVVideoProfileLevelH264HighAutoLevel.cast_mut()),
@@ -472,23 +487,27 @@ impl Writer {
     }
 
     fn finish(self) -> Result<(), String> {
-        // SAFETY: AVAssetWriter calls on the live writer; the completion block only has to exist.
+        // The status turns Completed before the writer has moved the faststart copy into place, so wait for the
+        // completion handler: exiting earlier leaves a `fleetd.mp4.sb-*` temporary beside the file.
+        let finished = std::sync::Arc::new(AtomicBool::new(false));
+        let flag = finished.clone();
+        let block = block2::RcBlock::new(move || flag.store(true, Ordering::SeqCst));
+        // SAFETY: AVAssetWriter calls on the live writer; it copies the block.
         unsafe {
             let _: () = msg_send![self.input, markAsFinished];
-            let block = block2::RcBlock::new(|| {});
             let _: () = msg_send![self.writer, finishWritingWithCompletionHandler: &*block];
-            let deadline = Instant::now() + Duration::from_secs(10);
-            loop {
-                let status: isize = msg_send![self.writer, status];
-                if status == WRITER_COMPLETED {
-                    return Ok(());
-                }
-                if status != WRITER_WRITING || Instant::now() > deadline {
-                    let error: *mut AnyObject = msg_send![self.writer, error];
-                    return Err(format!("finishWriting (status {status}): {}", description(error)));
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
         }
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !finished.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // SAFETY: as above.
+        let status: isize = unsafe { msg_send![self.writer, status] };
+        if finished.load(Ordering::SeqCst) && status == WRITER_COMPLETED {
+            return Ok(());
+        }
+        // SAFETY: as above.
+        let error: *mut AnyObject = unsafe { msg_send![self.writer, error] };
+        Err(format!("finishWriting (status {status}): {}", description(error)))
     }
 }

@@ -214,6 +214,9 @@ export const nodeEnv = (id: string, opts: NodeOptions = {}): Record<string, stri
     ...base,
     HOME: machineHome(id),
     PATH: [...(opts.pathPrefix ?? []), path.join(RUN, "bin"), rest].filter(Boolean).join(":"),
+    // On macOS claude keys its Keychain login to CLAUDE_CONFIG_DIR only when the variable is set; without it a
+    // machine's claude would find, and refresh, the user's own login there instead of its copied one.
+    ...(process.platform === "darwin" ? { CLAUDE_CONFIG_DIR: claudeConfigDir(id) } : {}),
     ...gitIdentity(),
     ...opts.env,
   };

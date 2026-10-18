@@ -11,11 +11,17 @@
 // With FLEETD_DEMO_ORDER=app it writes RUN/demo/app.json ({ hubUrl, key, projectId, order }) as soon as the hub has a
 // human key, then waits up to 10 minutes for that order to arrive from the app. Either way RUN/demo/timeline.jsonl
 // gets one line per milestone with its wall-clock time, for cutting the recording. Costs about 15-25 haiku turns.
-import { spawnSync } from "node:child_process";
+//
+// FLEETD_DEMO_APP=<fleetd-app binary> also starts the app on the hub with the human key, recording its own window into
+// FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD, macOS) from before the order until the merges; then it stops
+// the app by its PID, which finishes the MP4. scripts/demo-mac.sh runs it so on a Mac.
+//
+// Only this run's PRs are closed afterwards, so a run on another machine against the same testbed is left alone.
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, cli, HUB_PORT, LAB, type Lab, MODEL, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { cleanTestbed, git, prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
+import { type Body, cli, HUB_PORT, LAB, type Lab, MODEL, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
+import { git, prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -24,6 +30,8 @@ const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const PAGES = ["alpha", "beta", "gamma"] as const;
+/** On screen before the order goes in, and after the last merge: the board settled, for the cut. */
+const APP_HOLD_MS = 6_000;
 const POLICY = `areas:
 ${PAGES.map((p) => `  ${p}: ["${DIR}/${p}.md"]`).join("\n")}
 defaults:
@@ -65,6 +73,50 @@ const appSession = async (key: string) => {
   return { call, live, frames, close: () => ws.close() };
 };
 
+/** The app on the hub with the human key, recording itself; resolves once the recorder has a window. */
+const startApp = async (lab: Lab, bin: string, key: string, out: string) => {
+  fs.mkdirSync(out, { recursive: true });
+  const logFile = path.join(lab.dir, "app.log");
+  const child = spawn(bin, [], {
+    env: { ...scrubbedEnv(), FLEETD_HUB_URL: lab.hubUrl, FLEETD_AGENT_KEY: key, FLEETD_RECORD: out },
+    stdio: ["ignore", fs.openSync(logFile, "a"), fs.openSync(logFile, "a")],
+  });
+  lab.log(`started app pid=${child.pid}, recording into ${out}`);
+  await lab.until("the app's recorder starts (app.log)", 60_000, async () => {
+    const text = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
+    if (/FLEETD_RECORD error=|panicked/u.test(text) || child.exitCode !== null) throw new Error(`the app did not start recording; see ${logFile}`);
+    if (text.includes("FLEETD_RECORD start")) return true;
+    await sleep(250);
+    return undefined;
+  });
+  return child;
+};
+
+/** SIGTERM by the spawn PID: the recorder finishes the MP4, then the app exits. */
+const stopApp = async (lab: Lab, child: ChildProcess) => {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((r) => child.once("exit", r));
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
+  await exited;
+  clearTimeout(timer);
+  lab.log(`stopped app pid=${child.pid} (${child.signalCode ?? `exit ${child.exitCode}`})`);
+};
+
+/** This hub's PRs on the testbed: every change it queued or refused since `from`. */
+const ownPrs = async (lab: Lab, from: number) => {
+  const prs = new Set<number>();
+  for (let at = from; ; ) {
+    const page = (await lab.callTool("events_wait", { cursor: at, types: ["change.queued", "change.refused"], timeoutSec: 0 })).body;
+    for (const e of page.events as Array<Body>) {
+      const n = e.data?.prNumber ?? Number(/\/pull\/(\d+)$/u.exec(String(e.data?.prUrl ?? ""))?.[1]);
+      if (Number.isInteger(n) && n > 0) prs.add(n);
+    }
+    if (!page.more) return prs;
+    at = page.cursor;
+  }
+};
+
 /**
  * The node refuses to remove a project while one of its threads runs, and a late task result can wake the lead again,
  * so: interrupt every running or waiting thread of the testbed project, try the removal, and repeat for up to 2 min.
@@ -100,7 +152,6 @@ export async function demoFanout(lab: Lab) {
   await lab.waitLive(MACHINE);
   requireGhLogin();
   check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (git clone https://github.com/${REPO} ${TESTBED})`);
-  cleanTestbed();
   prepareCheckout(POLICY);
   ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked policy with areas ${PAGES.join(", ")} under ${DIR}`);
   fs.rmSync(lab.dir, { recursive: true, force: true });
@@ -113,6 +164,8 @@ export async function demoFanout(lab: Lab) {
 
   const scenarioStart = await lab.cursor();
   let app: Awaited<ReturnType<typeof appSession>> | undefined;
+  let desktop: ChildProcess | undefined;
+  const record = process.env.FLEETD_DEMO_RECORD ?? path.join(lab.dir, "rec");
   try {
     const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
     const ref = { machineId: MACHINE, projectId };
@@ -131,6 +184,11 @@ export async function demoFanout(lab: Lab) {
     check(key, "hub key create --human printed a key");
     app = await appSession(key!);
     app.live(true);
+    if (process.env.FLEETD_DEMO_APP) {
+      desktop = await startApp(lab, process.env.FLEETD_DEMO_APP, key!, record);
+      await sleep(APP_HOLD_MS);
+      mark("app recording", { record });
+    }
     const fromApp = process.env.FLEETD_DEMO_ORDER === "app";
     const orderCursor = await lab.cursor();
     let workstreamId: string;
@@ -198,6 +256,11 @@ export async function demoFanout(lab: Lab) {
     const trains = board.trains as Array<Body>;
     mark("board", { orders: (board.orders as Array<Body>).map((o) => `${o.workstreamId} ${o.phase} ${o.settled}/${o.total} "${o.title}"`), mergedToday: trains[0]?.mergedToday });
     for (const o of board.orders as Array<Body>) check((o.title as string).length <= 60, `card title is short: "${o.title}"`);
+    if (desktop !== undefined) {
+      await sleep(APP_HOLD_MS);
+      await stopApp(lab, desktop);
+      mark("app stopped", { mp4: path.join(record, "fleetd.mp4") });
+    }
 
     // What came over the live feed, against its bounds.
     const frames = app.frames;
@@ -268,10 +331,11 @@ export async function demoFanout(lab: Lab) {
     mark("turns", { lead: leadTurns, tasks: taskTurns, byTask: tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`) });
   } finally {
     app?.close();
-    for (const pr of JSON.parse(spawnSync("gh", ["pr", "list", "-R", REPO, "--state", "open", "--json", "number,headRefName"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" }).stdout || "[]") as Array<Body>) {
-      if ((pr.headRefName as string).startsWith("fleetd/")) spawnSync("gh", ["pr", "close", String(pr.number), "-R", REPO, "--delete-branch"], { cwd: LAB, env: scrubbedEnv(), stdio: "ignore" });
+    if (desktop !== undefined) await stopApp(lab, desktop);
+    const ours = await ownPrs(lab, scenarioStart).catch(() => new Set<number>());
+    for (const pr of JSON.parse(spawnSync("gh", ["pr", "list", "-R", REPO, "--state", "open", "--json", "number"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" }).stdout || "[]") as Array<Body>) {
+      if (ours.has(pr.number as number)) spawnSync("gh", ["pr", "close", String(pr.number), "-R", REPO, "--delete-branch"], { cwd: LAB, env: scrubbedEnv(), stdio: "ignore" });
     }
-    cleanTestbed();
     await quiesceAndRemove(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
     fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
   }
