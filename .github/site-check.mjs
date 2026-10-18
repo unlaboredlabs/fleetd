@@ -1,7 +1,7 @@
 // The fleetd.sh page may only promise what fleetd has. Run by CI's `site` job from the repo root:
 //   node .github/site-check.mjs <file holding `fleetd help` output>
 // Fails on an index.* in site/, on a line of site/.stale-terms in the page's text, and on a `fleetd <command>` written
-// as code in the hand-written text that `fleetd help` doesn't list. Capture blocks are fleetd's own output
+// as code in the hand-written text that `fleetd help` doesn't list. home.html's capture blocks are fleetd's own output
 // (tests/lab/site-capture.ts), so the command check skips them; the stale terms still apply there, since a block nobody
 // re-captured goes stale too.
 import fs from "node:fs";
@@ -9,6 +9,9 @@ import fs from "node:fs";
 const FILES = ["site/home.html", "site/fleetd.txt", "site/README.md"];
 const help = fs.readFileSync(process.argv[2], "utf8");
 const errors = [];
+
+// The twin's capture blocks are found by their shape; a marker there would be shown to its readers.
+if (fs.readFileSync("site/fleetd.txt", "utf8").includes("<!--")) errors.push("site/fleetd.txt: no <!-- markers in the plain-text twin");
 
 for (const name of fs.readdirSync("site")) {
   // Vercel serves index.* at / before applying rewrites, so curl -fsSL https://fleetd.sh would get it, not install.sh.
