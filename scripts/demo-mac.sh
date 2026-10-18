@@ -7,7 +7,13 @@
 # the public testbed unlaboredlabs/fleetd-testbed through the merge train) on a hub and node of its own, with the
 # app recording its own window (FLEETD_RECORD, no Screen Recording permission), and prints the MP4's path.
 #
-# Everything lives in FLEETD_DEMO_DIR (default ~/fleetd-demo): the fleetd checkout and build, a pinned Node if
+# The fleetd it runs is the nightly release: the CLI and fleetd.app from
+# https://github.com/unlaboredlabs/fleetd/releases/download/nightly/, each checked against the release's SHA256SUMS
+# as site/install.sh does, and the lab driver (tests/lab) checked out at the commit release.json names, so the two
+# match. It prints that commit and its date, and refuses a nightly without the board pass (#138). FLEETD_DEMO_BUILD=1,
+# or running it from a checkout, builds from source with cargo instead.
+#
+# Everything lives in FLEETD_DEMO_DIR (default ~/fleetd-demo): the binaries, the fleetd checkout, a pinned Node if
 # yours is older than 24, a sandbox HOME for the hub, node, agents and app, the lab, the recordings. Your own
 # ~/.fleetd and ~/.claude are never written; the hub and node run on lab ports (4795) and are stopped by PID.
 # Installs nothing system-wide.
@@ -19,17 +25,29 @@
 #   token (one browser approval, pasted once, kept 0600 in the sandbox for the next run). Your /login itself sits in
 #   the macOS Keychain, which a sandbox can't borrow without writing to it when claude refreshes it.
 #
-# Needs git, gh (logged in), claude, cargo (https://rustup.rs) and curl. Costs about 20 haiku turns and 15 minutes.
+# Needs git, gh (logged in), claude and curl (and cargo to build). Costs about 20 haiku turns and 15 minutes.
 # Ctrl-C stops everything it started; then run it again. Environment:
-#   FLEETD_DEMO_DIR  the sandbox (default ~/fleetd-demo)
-#   FLEETD_DEMO_REF  the fleetd branch or tag to build when not run from a checkout (default main)
+#   FLEETD_DEMO_DIR          the sandbox (default ~/fleetd-demo)
+#   FLEETD_DEMO_BUILD=1      build from source instead of using the nightly
+#   FLEETD_DEMO_REF          with FLEETD_DEMO_BUILD=1 and no checkout: the branch or tag to build (default main)
+#   FLEETD_DEMO_ANY_COMMIT=1 skip the board-pass check (for trying the script itself)
 set -euo pipefail
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
 die() { printf 'demo-mac: %s\n' "$*" >&2; exit 1; }
 
+REPO=unlaboredlabs/fleetd
+BOARD_PASS_PR=138
+
 [ "$(uname -s)" = Darwin ] || die "this records the macOS app; on Linux use app/bench/record.sh"
-for c in git gh claude cargo curl shasum; do
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P || true)"
+in_checkout=0
+if [ -n "$here" ] && [ -f "$here/tests/lab/demoFanout.ts" ] && [ -d "$here/app/record" ]; then in_checkout=1; fi
+build=0
+if [ "${FLEETD_DEMO_BUILD:-}" = 1 ] || [ "$in_checkout" = 1 ]; then build=1; fi
+needs="git gh claude curl shasum"
+[ "$build" = 1 ] && needs="$needs cargo"
+for c in $needs; do
   command -v "$c" >/dev/null || die "$c is missing$([ "$c" = cargo ] && echo ' (install Rust from https://rustup.rs)')"
 done
 gh auth status >/dev/null 2>&1 || die "gh is not logged in: gh auth login"
@@ -43,22 +61,63 @@ mkdir -p "$H/.claude" "$H/.config/gh" "$SANDBOX/recordings"
 # The GitHub token is only on disk while the demo runs.
 trap 'rm -f "$H/.config/gh/hosts.yml"' EXIT
 
-# The checkout: this one when run from it, else a clone of FLEETD_DEMO_REF in the sandbox.
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P || true)"
-if [ -n "$here" ] && [ -f "$here/tests/lab/demoFanout.ts" ] && [ -d "$here/app/record" ]; then
-  repo="$here"
-else
-  repo="$SANDBOX/fleetd"
-  ref="${FLEETD_DEMO_REF:-main}"
-  [ -d "$repo/.git" ] || git clone -q https://github.com/unlaboredlabs/fleetd "$repo"
-  git -C "$repo" fetch -q origin "$ref"
-  git -C "$repo" checkout -q --detach FETCH_HEAD
-fi
-say "fleetd $(git -C "$repo" rev-parse --short HEAD) in $repo"
+# fetch <asset> <dest>: one nightly asset, checked against SHA256SUMS exactly as site/install.sh checks it.
+base="https://github.com/$REPO/releases/download/nightly"
+fetch() {
+  expected="$(awk -v n="$1" '$2 == n || $2 == "*" n { print $1 }' "$nightly/SHA256SUMS")"
+  [ -n "$expected" ] || die "the nightly has no $1"
+  curl -fsSL --retry 3 -o "$2" "$base/$1" || die "download failed: $base/$1"
+  actual="$(shasum -a 256 "$2" | cut -d' ' -f1)"
+  [ "$actual" = "$expected" ] || { rm -f "$2"; die "checksum mismatch for $1 (expected $expected, got $actual)"; }
+}
 
-say "Building fleetd and the app (release; the first build takes a while)"
-(cd "$repo" && cargo build --release --locked -p fleetd -p fleetd-app)
-app="$repo/target/release/fleetd-app"
+# Also the checkout the lab driver runs from: at the nightly's commit, at FLEETD_DEMO_REF, or this one.
+clone_at() {
+  [ -d "$repo/.git" ] || git clone -q "https://github.com/$REPO" "$repo"
+  git -C "$repo" fetch -q origin "$1"
+  git -C "$repo" checkout -q --detach FETCH_HEAD
+}
+
+repo="$SANDBOX/fleetd"
+if [ "$build" = 0 ]; then
+  nightly="$SANDBOX/nightly"
+  rm -rf "$nightly" && mkdir -p "$nightly"
+  curl -fsSL --retry 3 -o "$nightly/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
+  curl -fsSL --retry 3 -o "$nightly/release.json" "$base/release.json" || die "could not download $base/release.json"
+  field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$nightly/release.json" | head -1; }
+  commit="$(field commit)"
+  app_commit="$(field appCommit)"
+  [ -n "$commit" ] || die "release.json names no commit"
+  [ -z "$app_commit" ] || [ "$app_commit" = "$commit" ] || die "the nightly's app ($app_commit) and CLI ($commit) come from different commits"
+  say "Nightly $(field version): commit $commit, built $(field date)"
+  clone_at "$commit"
+  case "$(uname -m)" in arm64) cli_asset=fleetd-darwin-arm64 ;; x86_64) cli_asset=fleetd-darwin-x64 ;; *) die "no fleetd for $(uname -m)" ;; esac
+  fetch "$cli_asset" "$nightly/fleetd"
+  chmod 755 "$nightly/fleetd"
+  fetch fleetd-app-macos-universal.zip "$nightly/app.zip"
+  ditto -x -k "$nightly/app.zip" "$nightly" && rm -f "$nightly/app.zip"
+  app="$nightly/fleetd.app/Contents/MacOS/fleetd-app"
+  [ -x "$app" ] || die "the app archive has no fleetd.app"
+  fleetd_bin="$nightly/fleetd"
+else
+  if [ "$in_checkout" = 1 ]; then repo="$here"; else clone_at "${FLEETD_DEMO_REF:-main}"; fi
+  commit="$(git -C "$repo" rev-parse HEAD)"
+  say "Building fleetd $(git -C "$repo" rev-parse --short HEAD) from $repo (release; the first build takes a while)"
+  (cd "$repo" && cargo build --release --locked -p fleetd -p fleetd-app)
+  app="$repo/target/release/fleetd-app"
+  fleetd_bin="$repo/target/release/fleetd"
+fi
+
+# The recording is only worth making with the board pass in; and the lab driver must know FLEETD_DEMO_APP (#136).
+grep -q FLEETD_DEMO_APP "$repo/tests/lab/demoFanout.ts" ||
+  die "fleetd $commit predates the demo recorder (#136); wait for a nightly that has it"
+if [ "${FLEETD_DEMO_ANY_COMMIT:-}" != 1 ]; then
+  merged="$(gh pr view "$BOARD_PASS_PR" -R "$REPO" --json mergeCommit --jq '.mergeCommit.oid // ""')"
+  [ -n "$merged" ] || die "the board pass (#$BOARD_PASS_PR) isn't merged yet, so fleetd $commit doesn't have it; run this again once it is and a nightly has been built"
+  git -C "$repo" cat-file -e "$merged^{commit}" 2>/dev/null || git -C "$repo" fetch -q origin main
+  git -C "$repo" merge-base --is-ancestor "$merged" "$commit" ||
+    die "fleetd $commit predates the board pass (#$BOARD_PASS_PR, $merged); wait for the next nightly, or set FLEETD_DEMO_BUILD=1 to build main"
+fi
 
 # Node 24 or newer for the lab driver; else a pinned build in the sandbox, checked against nodejs.org's SHASUMS256.
 NODE_VERSION=v24.22.0
@@ -132,7 +191,7 @@ rec="$SANDBOX/recordings/$(date +%Y%m%d-%H%M%S)"
 say "Running the demo order; the app opens and records itself. Leave the Mac awake and the window in view."
 set +e
 (cd "$repo/tests/lab" && env -i HOME="$H" PATH="$PATH" USER="$USER" LANG="${LANG:-en_US.UTF-8}" \
-  FLEETD_LAB="$lab" FLEETD_LAB_SLOT=0 FLEETD_DEMO_APP="$app" FLEETD_DEMO_RECORD="$rec" \
+  FLEETD_LAB="$lab" FLEETD_LAB_SLOT=0 FLEETD_BIN="$fleetd_bin" FLEETD_DEMO_APP="$app" FLEETD_DEMO_RECORD="$rec" \
   node testLab.ts demo)
 status=$?
 set -e
