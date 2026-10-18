@@ -52,10 +52,8 @@ pub trait DoctorFleet: Send + Sync {
         action: &str,
     ) -> BoxFut<'_, Result<ActionOutcome, String>>;
     /// The node's runner (`runner_info` over the link): claude's version, login and conformance. `None` while the
-    /// machine's node can't answer it; the claude checks then wait for it.
-    fn runner_info(&self, _machine_id: &str) -> BoxFut<'_, Option<RunnerInfo>> {
-        Box::pin(async { None })
-    }
+    /// machine's node can't answer it; its claude checks then wait for it.
+    fn runner_info(&self, machine_id: &str) -> BoxFut<'_, Option<RunnerInfo>>;
 }
 
 pub struct DoctorDeps {
