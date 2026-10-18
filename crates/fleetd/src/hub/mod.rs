@@ -29,6 +29,7 @@ pub mod reviews;
 pub mod serve;
 pub mod sessions_tools;
 pub mod slots;
+pub mod status;
 pub mod store;
 pub mod sweep;
 pub mod tasks;

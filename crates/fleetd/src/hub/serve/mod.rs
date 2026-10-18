@@ -279,6 +279,7 @@ pub fn build_on(
         auth.clone(),
         clock.clone(),
     )?;
+    let fresh = Arc::new(crate::hub::status::fresh::Fresh::default());
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let train_host =
         crate::hub::train::hub_host::HubHost::new(clock.clone(), events.clone(), store.clone());
@@ -387,6 +388,7 @@ pub fn build_on(
         tasks,
         leads,
         time,
+        status: crate::hub::status::Status::new(fresh),
     });
     checks.ports.bind(&hub);
     train_host.bind(&hub);
