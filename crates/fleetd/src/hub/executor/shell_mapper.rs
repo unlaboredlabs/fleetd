@@ -10,7 +10,28 @@ use fleetd_contracts::sessions::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use super::limit::{limit_data, limit_of_summary, normalize_iso};
+use crate::hub::usage::classify::{Limit, LimitInput, UsageClass, classify_limit, limit_data};
+use crate::hub::usage::time::{iso, parse_ms};
+
+/// A timestamp as fleetd formats it (`Date#toISOString`): UTC with milliseconds; left as is when it doesn't parse.
+pub fn normalize_iso(text: &str) -> String {
+    parse_ms(text).map(iso).unwrap_or_else(|| text.to_owned())
+}
+
+/// A failed thread's limit, read off its summary.
+pub fn limit_of_summary(s: &Summary) -> Option<Limit> {
+    if s.status != "failed" {
+        return None;
+    }
+    let error = s.last_error.as_ref()?;
+    classify_limit(&LimitInput {
+        error_class: Some(&error.class),
+        message: &error.message,
+        reset_at: s.usage_limit_reset_at.as_deref(),
+        at: &s.last_progress_at,
+        model: s.model.as_deref(),
+    })
+}
 
 /// The first `max` UTF-16 code units of `s`, as JS `slice(0, max)` (never splitting a character).
 pub fn js_take(s: &str, max: usize) -> &str {
@@ -650,7 +671,7 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
         None
     };
     let detail = if let Some(limit) = &limit {
-        if limit.class == super::limit::UsageClass::PoolExhausted {
+        if limit.class == UsageClass::PoolExhausted {
             let model = limit
                 .model
                 .as_deref()

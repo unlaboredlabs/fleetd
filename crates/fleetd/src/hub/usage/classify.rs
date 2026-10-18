@@ -1,17 +1,109 @@
-//! Usage-limit classification from what T3 reports about a failed thread: its failure class and reset time, plus the
-//! error text the `claude` CLI or a proxy in front of it produced. Pure; the executor uses it to tell a limit from a
-//! failure, and the usage layer to park and pace. fleetd never asks a usage API.
-//! The classifier itself is `executor::limit`'s; this module adds what the usage layer reads off the event log.
+//! Usage-limit classification from what the node reports about a failed run: its failure class and reset time, plus
+//! the error text the `claude` CLI or a proxy in front of it produced. Pure; the executor uses it to tell a limit from
+//! a failure, and the usage layer to park and pace. fleetd never asks a usage API.
+//! The text rules are the node's (`node::runner::failure::classify_text`); this module puts the node's own class
+//! first and adds what the usage layer reads off the event log.
 use super::ports::HubEvent;
 use super::time::{iso, parse_ms};
+use crate::node::runner::failure::classify_text;
+use fleetd_contracts::sessions::FailureClass;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
-pub use crate::hub::executor::limit::{Limit, LimitInput, UsageClass, classify_limit, limit_data};
+pub use crate::node::runner::failure::{FALLBACK_RATE_LIMIT_MS, FALLBACK_USAGE_LIMIT_MS};
 
-/// When nothing says when the limit resets.
-pub const FALLBACK_USAGE_LIMIT_MS: i64 = 60 * 60_000;
-pub const FALLBACK_RATE_LIMIT_MS: i64 = 5 * 60_000;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageClass {
+    UsageLimit,
+    RateLimit,
+    PoolExhausted,
+}
+
+impl UsageClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UsageLimit => "usage_limit",
+            Self::RateLimit => "rate_limit",
+            Self::PoolExhausted => "pool_exhausted",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LimitInput<'a> {
+    /// The node's failure class (`usage_limit`, `rate_limit`, `pool_exhausted`, `other`, ...).
+    pub error_class: Option<&'a str>,
+    pub message: &'a str,
+    /// The node's reset time for the limit.
+    pub reset_at: Option<&'a str>,
+    /// When the run failed; fallback resets count from here.
+    pub at: &'a str,
+    pub model: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Limit {
+    pub class: UsageClass,
+    /// Absent for pool_exhausted, which waits for usage_resume.
+    pub resume_at: Option<String>,
+    pub model: Option<String>,
+}
+
+/// The limit behind a failure, or None when it is an ordinary failure. A gateway's text names its pool first, then
+/// the node's class (pool or rate limit) decides, then the text rules (where `usage_limit` counts as the usage hint).
+pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
+    let at_ms = parse_ms(input.at).unwrap_or(0);
+    let model = input.model.filter(|m| !m.is_empty()).map(str::to_owned);
+    let found = classify_text(
+        input.message,
+        input.error_class == Some("usage_limit"),
+        input.reset_at.and_then(parse_ms),
+        at_ms,
+    );
+    let pool = |found_model: Option<String>| Limit {
+        class: UsageClass::PoolExhausted,
+        resume_at: None,
+        model: found_model.or(model.clone()),
+    };
+    match (input.error_class, found) {
+        (_, Some(f)) if f.class == FailureClass::PoolExhausted => Some(pool(f.model)),
+        (Some("pool_exhausted"), _) => Some(pool(None)),
+        (Some("rate_limit"), found) => {
+            let reset = found
+                .and_then(|f| f.reset_ms)
+                .or_else(|| input.reset_at.and_then(parse_ms).filter(|ms| *ms > at_ms));
+            Some(Limit {
+                class: UsageClass::RateLimit,
+                resume_at: Some(iso(reset.unwrap_or(at_ms + FALLBACK_RATE_LIMIT_MS))),
+                model,
+            })
+        }
+        (_, Some(f)) => Some(Limit {
+            class: if f.class == FailureClass::RateLimit {
+                UsageClass::RateLimit
+            } else {
+                UsageClass::UsageLimit
+            },
+            resume_at: f.reset_ms.map(iso),
+            model,
+        }),
+        (_, None) => None,
+    }
+}
+
+/// The event data fields the executor adds to thread.usage_limited.
+pub fn limit_data(limit: &Limit) -> Map<String, Value> {
+    let mut data = Map::new();
+    data.insert("usageClass".into(), json!(limit.class.as_str()));
+    if let Some(r) = &limit.resume_at {
+        data.insert("resumeAt".into(), json!(r));
+    }
+    if let Some(m) = &limit.model {
+        data.insert("model".into(), json!(m));
+    }
+    data
+}
 
 fn plus(at: &str, ms: i64) -> String {
     iso(parse_ms(at).unwrap_or(0) + ms)

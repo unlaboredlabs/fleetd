@@ -9,8 +9,8 @@ use fleetd_contracts::sessions::{
 use serde::Serialize;
 
 use super::OpenTool;
-use super::limit::{normalize_iso, parse_ms};
-use super::shell_mapper::{failure_class, js_len, js_take, keep_tail};
+use super::shell_mapper::{failure_class, js_len, js_take, keep_tail, normalize_iso};
+use crate::hub::usage::time::parse_ms;
 
 #[derive(Debug, Clone, Default)]
 pub struct ThreadView {

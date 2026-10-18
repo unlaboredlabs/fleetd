@@ -6,7 +6,6 @@
 //! One `Executors` serves thread watching, workspace files and changes, the runner's info and permission answers.
 //! Calls go out as `session_call` frames; the link server hands every `session_reply`, `machine_event` and
 //! `thread_event` frame to `handle_frame`.
-pub mod limit;
 pub mod providers;
 pub mod shell_mapper;
 pub mod thread_view;
