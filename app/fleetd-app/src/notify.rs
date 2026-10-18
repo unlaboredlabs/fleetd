@@ -13,6 +13,17 @@ const FALLBACK_COALESCE_MS: i64 = 20 * 60_000;
 pub struct Notification {
     pub title: String,
     pub body: String,
+    /// What clicking it opens.
+    pub target: Target,
+}
+
+/// Where a clicked notification takes you: the ask itself when it is about one ask, else the screen that
+/// explains it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    Ask(String),
+    Inbox,
+    Machines,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,6 +60,8 @@ struct Pending {
     line: String,
     urgent: bool,
     ask_id: Option<String>,
+    /// About a machine or its setup (machine.*, doctor.*, usage.*), so Machines explains it.
+    machine: bool,
     /// How many open-asks fetches had been sent when this arrived; only later ones can say it was answered.
     asks_sent: u64,
 }
@@ -64,7 +77,9 @@ impl Notifier {
     pub fn push(&mut self, event: &HubEvent, asks_sent: u64) {
         let Some(attention) = event.attention else { return };
         let ask_id = (event.r#type == HubEventType::AskCreated).then(|| event.data.as_ref()?.get("askId")?.as_str().map(str::to_string)).flatten();
-        self.pending.push(Pending { line: one_line(&event.summary, 140), urgent: attention == Attention::Urgent, ask_id, asks_sent });
+        let kind = event.r#type.as_str();
+        let machine = ["machine.", "doctor.", "usage."].iter().any(|p| kind.starts_with(p));
+        self.pending.push(Pending { line: one_line(&event.summary, 140), urgent: attention == Attention::Urgent, ask_id, machine, asks_sent });
     }
 
     /// What to show now, if anything. `still_open(ask_id, asks_sent)` drops asks answered or withdrawn
@@ -85,7 +100,12 @@ impl Notifier {
             1 => send[0].line.clone(),
             n => format!("{} (+{} more)", send[0].line, n - 1),
         };
-        Some(Notification { title: "fleetd needs you".into(), body })
+        let target = match send.as_slice() {
+            [one] if one.ask_id.is_some() => Target::Ask(one.ask_id.clone().unwrap_or_default()),
+            all if all.iter().all(|p| p.machine) => Target::Machines,
+            _ => Target::Inbox,
+        };
+        Some(Notification { title: "fleetd needs you".into(), body, target })
     }
 }
 
@@ -132,12 +152,18 @@ mod tests {
         let mut n = Notifier::default();
         n.push(&event("A1 [money] pay: Buy the\ndomain?", Some(Attention::Urgent), Some("A1")), 0);
         n.push(&event("thread failed", None, None), 0);
-        assert_eq!(n.due(T0, &policy, open), Some(Notification { title: "fleetd needs you".into(), body: "A1 [money] pay: Buy the domain?".into() }));
+        assert_eq!(
+            n.due(T0, &policy, open),
+            Some(Notification { title: "fleetd needs you".into(), body: "A1 [money] pay: Buy the domain?".into(), target: Target::Ask("A1".into()) })
+        );
         assert_eq!(n.due(T0, &policy, open), None, "nothing left");
         n.push(&event("lab-a breaker open", Some(Attention::Loud), None), 0);
         n.push(&event("A2 [credential] token", Some(Attention::Loud), Some("A2")), 0);
         assert_eq!(n.due(T0 + 19 * MIN, &policy, open), None);
-        assert_eq!(n.due(T0 + 20 * MIN, &policy, open).unwrap().body, "lab-a breaker open (+1 more)");
+        let both = n.due(T0 + 20 * MIN, &policy, open).unwrap();
+        assert_eq!((both.body.as_str(), both.target), ("lab-a breaker open (+1 more)", Target::Inbox));
+        n.push(&event("forge breaker open", Some(Attention::Loud), None), 0);
+        assert_eq!(n.due(T0 + 40 * MIN, &policy, open).unwrap().target, Target::Machines, "a usage breaker is explained on Machines");
     }
 
     #[test]

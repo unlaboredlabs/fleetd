@@ -8,7 +8,7 @@ use crate::actions::*;
 use crate::crash;
 
 const REPO_URL: &str = "https://github.com/unlaboredlabs/fleetd";
-const DOCS_URL: &str = "https://github.com/unlaboredlabs/fleetd#readme";
+const DOCS_URL: &str = "https://fleetd.sh/docs";
 
 pub fn init(cx: &mut App) {
     bind_keys(cx);

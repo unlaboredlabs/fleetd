@@ -16,7 +16,7 @@ use gpui::{
     App, AvailableSpace, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementId, ElementInputHandler, Entity, EntityInputHandler,
     EventEmitter, FocusHandle, Focusable, GlobalElementId, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     PaintQuad, Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString, Style, TextAlign, TextRun, TextStyle, UTF16Selection, UnderlineStyle,
-    Window, WrappedLine, actions, div, fill, point, prelude::*, px, relative, rgb, rgba, size,
+    Window, WrappedLine, actions, div, fill, point, prelude::*, px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use zeroize::{Zeroize, Zeroizing};
@@ -25,12 +25,6 @@ const CONTEXT: &str = "TextInput";
 const BULLET: char = '•';
 const HISTORY_MAX: usize = 50;
 const UNDO_MAX: usize = 200;
-
-const BG: u32 = 0x1b1c1f;
-const BORDER: u32 = 0x33353a;
-const ACCENT: u32 = 0x6ea8fe;
-const MUTED: u32 = 0x7d8089;
-const SELECTION: u32 = 0x6ea8fe50;
 
 actions!(
     text_input,
@@ -953,7 +947,14 @@ impl Render for TextInput {
             .min_w_0()
             .px_2()
             .py_1()
-            .when(self.bordered, |d| d.border_1().rounded_sm().bg(rgb(BG)).border_color(rgb(if focused { ACCENT } else { BORDER })))
+            .when(self.bordered, |d| {
+                let t = crate::theme::theme(cx);
+                d.rounded(px(crate::theme::radius::SM))
+                    .border_1()
+                    .bg(t.bg)
+                    .border_color(if focused { t.accent } else { t.border })
+                    .when(focused, |d| d.shadow(t.focus_ring()))
+            })
             .child(TextElement { input: cx.entity() })
     }
 }
@@ -980,10 +981,10 @@ impl IntoElement for TextElement {
 }
 
 /// Shapes what the field shows. `wrap` is the width for multi-line fields.
-fn shape(input: &TextInput, wrap: Option<Pixels>, style: &TextStyle, window: &mut Window) -> (Vec<WrappedLine>, bool) {
+fn shape(input: &TextInput, wrap: Option<Pixels>, style: &TextStyle, placeholder: gpui::Hsla, window: &mut Window) -> (Vec<WrappedLine>, bool) {
     let font_size = style.font_size.to_pixels(window.rem_size());
     let empty = input.text.is_empty();
-    let (display, color) = if empty { (input.placeholder.to_string(), rgb(MUTED).into()) } else { (input.display(), style.color) };
+    let (display, color) = if empty { (input.placeholder.to_string(), placeholder) } else { (input.display(), style.color) };
     let run = TextRun { len: display.len(), font: style.font(), color, background_color: None, underline: None, strikethrough: None };
     let runs = match input.marked.as_ref().filter(|_| !empty) {
         Some(marked) => {
@@ -1062,12 +1063,13 @@ impl Element for TextElement {
         };
         let input = self.input.clone();
         let text_style = window.text_style();
+        let placeholder = crate::theme::theme(cx).faint;
         let id = window.request_measured_layout(style, move |known, available, window, cx| {
             let width = known.width.or(match available.width {
                 AvailableSpace::Definite(w) => Some(w),
                 _ => None,
             });
-            let (lines, _) = shape(input.read(cx), width, &text_style, window);
+            let (lines, _) = shape(input.read(cx), width, &text_style, placeholder, window);
             let rows: usize = lines.iter().map(|l| l.wrap_boundaries().len() + 1).sum();
             size(width.unwrap_or_default(), line_height * rows.clamp(1, max_rows) as f32)
         });
@@ -1083,10 +1085,12 @@ impl Element for TextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Prepaint {
+        let t = crate::theme::theme(cx);
+        let (placeholder, selection_color, caret) = (t.faint, t.ring, t.accent);
         let input = self.input.read(cx);
         let line_height = window.line_height();
         let wrap = input.max_rows.map(|_| bounds.size.width);
-        let (lines, empty) = shape(input, wrap, &window.text_style(), window);
+        let (lines, empty) = shape(input, wrap, &window.text_style(), placeholder, window);
         let rows = rows_of(&lines);
         let probe = Layout { bounds, line_height, lines: Vec::new(), rows: rows.clone(), empty };
         let layout = Layout { lines, ..probe };
@@ -1128,12 +1132,12 @@ impl Element for TextElement {
                 let x = |offset: usize| layout.lines[row.line].unwrapped_layout.x_for_index(offset - row.line_start) - row.x0;
                 let top = origin.y + line_height * ix as f32;
                 let right = x(b) + if continues { px(4.) } else { px(0.) };
-                selection.push(fill(Bounds::from_corners(point(origin.x + x(a), top), point(origin.x + right, top + line_height)), rgba(SELECTION)));
+                selection.push(fill(Bounds::from_corners(point(origin.x + x(a), top), point(origin.x + right, top + line_height)), selection_color));
             }
         }
         let cursor = (input.selected.is_empty() || input.marked.is_some()).then(|| {
             let top = origin.y + line_height * cursor_row as f32;
-            fill(Bounds::new(point(origin.x + cursor_x, top), size(px(2.), line_height)), rgb(ACCENT))
+            fill(Bounds::new(point(origin.x + cursor_x, top), size(px(1.5), line_height)), caret)
         });
         self.input.update(cx, |input, _| {
             input.scroll = scroll;

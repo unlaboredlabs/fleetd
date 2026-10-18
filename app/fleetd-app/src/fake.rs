@@ -29,11 +29,11 @@ impl Rng {
 
 const PROJECTS: &[&str] = &[
     "fleetd",
-    "t3-fork-plan",
-    "hermes",
-    "adri",
-    "cliproxy",
-    "forge-infra",
+    "ops-plan",
+    "web-app",
+    "mailer",
+    "api-proxy",
+    "infra",
     "dotfiles",
     "zed-notes",
     "desktop-notify",
@@ -81,8 +81,8 @@ pub fn fixture_state() -> State {
         .iter()
         .map(|m| {
             from(json!({ "machineId": m, "name": m, "tags": [], "status": if *m == "mac" { "degraded" } else { "online" },
-                "lastSeenAt": AT, "t3": { "version": "2fbd4318fc", "protocol": 2 }, "nodeVersion": "0.0.0",
-                "degradedReason": if *m == "mac" { Some("T3 restarted 3 times in 10 min") } else { None } }))
+                "lastSeenAt": AT, "nodeVersion": "0.0.0",
+                "degradedReason": if *m == "mac" { Some("claude on mac exited 3 times in 10 min") } else { None } }))
         })
         .collect();
     for (i, name) in PROJECTS.iter().enumerate() {
@@ -109,7 +109,7 @@ pub fn fixture_state() -> State {
     let asks = [
         ("A1", "product", "Which path should the health endpoint use?", Some(vec!["/healthz", "/health"]), "/healthz"),
         ("A2", "money", "Raise the hub's Claude slot cap from 40 to 48 for this week?", None, "Keep 40"),
-        ("A3", "irreversible", "Delete the old forge-infra staging bucket (412 GB)?", None, "Delete it"),
+        ("A3", "irreversible", "Delete the old infra staging bucket (412 GB)?", None, "Delete it"),
     ];
     for (n, (id, class, text, options, rec)) in asks.iter().enumerate() {
         let ask = json!({ "askId": id, "projectRef": { "machineId": "forge", "projectId": PROJECTS[n] }, "kind": "decide",
@@ -122,10 +122,10 @@ pub fn fixture_state() -> State {
     let checks = json!([
         { "id": "hub/gh_auth", "scope": "hub", "status": "ok", "message": "gh is logged in as wynn-dev." },
         { "id": "forge/disk", "scope": "machine", "machineId": "forge", "status": "warn", "message": "12 GB free on /home (under 20 GB)." },
-        { "id": "mac/t3", "scope": "machine", "machineId": "mac", "status": "fail", "message": "T3 restarted 3 times in 10 min.",
-          "fix": { "kind": "auto", "label": "Restart T3 on mac" } },
+        { "id": "mac/node", "scope": "machine", "machineId": "mac", "status": "fail", "message": "claude on mac exited 3 times in 10 min.",
+          "fix": { "kind": "auto", "label": "Restart the node on mac" } },
         { "id": "mac/claude_auth", "scope": "machine", "machineId": "mac", "status": "unknown", "message": "Couldn't ask: the machine is degraded.",
-          "fix": { "kind": "manual", "label": "Log in to Claude on mac", "command": "claude /login" } },
+          "fix": { "kind": "manual", "label": "Log in to Claude on mac", "command": "claude auth login" } },
     ]);
     state.doctor = Some(Doctor { checks: from(checks), checked_at: Some(AT.into()), error: None });
     state.detail = Some(Detail { key: ("forge".into(), PROJECTS[0].into()), tail: Vec::new(), tail_error: None, version: 0 });
@@ -144,6 +144,9 @@ pub enum LogKind {
     Ok,
     Error,
     User,
+    /// Added and removed lines of a diff in an action's output.
+    DiffAdd,
+    DiffDel,
 }
 
 pub struct LogLine {
@@ -176,7 +179,7 @@ const TESTS: &[&str] = &[
     "digest_renders_open_asks",
     "lease_blocks_second_writer",
     "cursor_resumes_after_reconnect",
-    "node_restarts_dead_t3",
+    "node_restarts_dead_claude",
     "ask_batches_by_key",
 ];
 

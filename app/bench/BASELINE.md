@@ -218,8 +218,8 @@ person clicked into could differ.
 
 | Metric | Value |
 |---|---|
-| Idle RSS, empty log, 10 s after first frame | pending: rerun after fix (idle with streaming off never reported a present) |
-| Idle RSS, 20k-line log loaded, 10 s after first frame | pending: rerun after fix |
+| Idle RSS, empty log, 10 s after first frame | 94 / 97 MiB (2 runs) |
+| Idle RSS, 20k-line log loaded, 10 s after first frame | 103 / 102 MiB (2 runs) |
 | RSS, 20k-line log + streaming 50 lines/s, after 10 s | 104.5 MiB |
 | Cold start, exec -> first frame presented, warm cache (10 runs) | median 181.8 ms, p90 182.8 ms, max 197.7 ms |
 | Input latency in-app, key handler -> echo frame presented (200 keys, gpui dispatch) | median 3.6 ms, p90 7.7 ms, max 17.6 ms |
@@ -228,6 +228,11 @@ person clicked into could differ.
 
 Startup stages of one diagnostic cold run, ms from `main`: `app_launched` 111, `window_created` 155,
 `first_draw` 187, `first_present` 244 (another run: 212), 3 frames drawn up to the first counted present.
+
+The two idle RSS rows are from a rerun on nightly 0.0.0-nightly.20261018.65be478 (after the fix for idle runs
+with streaming off), lid closed, same external display at scale 1, on mains, RSS 10 s after `first_present`.
+Its stages: `platform_ready` at 52.8–59.6 ms and `first_present` at 173–316 ms (the first run, from a cold
+cache, at 316 ms; the rest 173–199 ms).
 
 What shapes these numbers:
 - **Cold start** includes a few ms of shell overhead (the quick block times from zsh, not the driver), and runs

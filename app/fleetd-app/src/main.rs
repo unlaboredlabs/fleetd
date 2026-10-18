@@ -1,20 +1,30 @@
 mod actions;
 mod bench;
 mod client;
+mod composer;
 mod crash;
-// The workstream diff view; the hub serves no diffs yet.
+// The full diff view waits on the hub serving workstream diffs; the lead log already tints diff output.
 #[allow(dead_code)]
 mod diff;
+#[allow(dead_code)]
+mod diffview;
 mod fake;
 mod input;
 mod keychain;
+mod links;
 mod menus;
 mod notify;
 mod pair;
+mod palette;
+mod prefs;
 mod seal;
+mod settings;
 mod shell;
+mod sidebar;
 mod state;
+mod theme;
 mod titlebar;
+mod ui;
 mod update;
 
 use std::borrow::Cow;

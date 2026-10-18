@@ -15,8 +15,8 @@ use fleetd_contracts::ids::{MachineId, ProjectId};
 use fleetd_contracts::ledger::{Ask, AskId, AskState, Batch, BatchId, BatchState, Lead, LeadState, Workstream};
 use fleetd_contracts::mcp::{
     AsksListInput, AsksListOutput, AttentionPolicyInput, AttentionPolicyOutput, DoctorFixInput, DoctorFixOutput, DoctorListInput, DoctorListOutput,
-    FleetStatus, InboxReplyInput, InboxReplyOutput, McpToolName, ProjectGetInput, ProjectGetOutput, SecretSubmitInput, SecretSubmitOutput, TailItem,
-    ThreadTailInput, ThreadTailOutput,
+    FleetStatus, InboxReplyInput, InboxReplyOutput, IntakeSubmitInput, IntakeSubmitOutput, McpToolName, ProjectGetInput, ProjectGetOutput,
+    SecretSubmitInput, SecretSubmitOutput, TailItem, ThreadTailInput, ThreadTailOutput,
 };
 use fleetd_contracts::model::{Machine, MachineStatus, ProjectOutcome, ProjectSummary, ThreadStatus, ThreadSummary};
 use fleetd_contracts::prim::{Int, IntOr, Text};
@@ -51,6 +51,7 @@ tools! {
     AttentionPolicyInput => AttentionPolicyOutput, AttentionPolicy;
     DoctorListInput => DoctorListOutput, DoctorList;
     DoctorFixInput => DoctorFixOutput, DoctorFix;
+    IntakeSubmitInput => IntakeSubmitOutput, IntakeSubmit;
 }
 
 /// (machineId, projectId)
@@ -74,12 +75,16 @@ enum Purpose {
         saved: String,
     },
     Policy,
+    /// A New order; `to` names the project for the echo when the app picked it.
+    Order {
+        to: Option<ProjectKey>,
+    },
 }
 
 impl Purpose {
     /// One-shot user actions: never coalesced, never redone.
     fn one_shot(&self) -> bool {
-        matches!(self, Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) | Purpose::Secret { .. })
+        matches!(self, Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) | Purpose::Secret { .. } | Purpose::Order { .. })
     }
 }
 
@@ -288,6 +293,26 @@ impl State {
         vec![self.call(Purpose::Reply, &InboxReplyInput { raw, batch_id: batch_id.cloned() })]
     }
 
+    /// Sends a New order through the hub's intake: to `to`, or (None) wherever the hub's router puts it.
+    /// `request_id` makes a retried send land once.
+    pub fn submit_order(&mut self, to: Option<&ProjectKey>, text: &str, request_id: &str) -> Out {
+        if !self.live_or_echo("Not connected to the hub; the order was not sent.") {
+            return Vec::new();
+        }
+        let (text, request_id) = match (Text::new(text), fleetd_contracts::mcp::RequestId::new(request_id)) {
+            (Ok(text), Ok(id)) => (text, id),
+            (Err(e), _) | (_, Err(e)) => return self.refuse(format!("The order was not sent: {e}.")),
+        };
+        let input = IntakeSubmitInput {
+            machine_id: to.map(|k| MachineId::unchecked(&k.0)),
+            project_id: to.map(|k| ProjectId::unchecked(&k.1)),
+            text,
+            template: None,
+            client_request_id: request_id,
+        };
+        vec![self.call(Purpose::Order { to: to.cloned() }, &input)]
+    }
+
     /// The Machines screen opened: list the doctor's checks.
     pub fn open_doctor(&mut self) -> Out {
         self.doctor.get_or_insert_with(Doctor::default);
@@ -456,7 +481,7 @@ impl State {
             Purpose::Tail(_) => self.request_tail(),
             Purpose::Doctor => self.request_doctor(),
             Purpose::Policy => self.request_policy(),
-            Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) | Purpose::Secret { .. } => None,
+            Purpose::Reply | Purpose::DoctorRerun | Purpose::DoctorFix(_) | Purpose::Secret { .. } | Purpose::Order { .. } => None,
         }
     }
 
@@ -628,6 +653,24 @@ impl State {
                 }
                 return self.request_asks().into_iter().collect();
             }
+            Purpose::Order { to } => {
+                match parse::<IntakeSubmitOutput>(output) {
+                    Ok(IntakeSubmitOutput { workstream_id: Some(ws), echo, .. }) => {
+                        let project = echo.as_ref().map(|e| e.project_ref.project_id.to_string()).or_else(|| to.as_ref().map(|k| k.1.clone()));
+                        let text = match (project, echo) {
+                            (Some(p), Some(e)) => format!("Order {ws} is with {p}'s lead: {}", e.reason),
+                            (Some(p), None) => format!("Order {ws} is with {p}'s lead."),
+                            (None, _) => format!("Order {ws} sent."),
+                        };
+                        self.echo = Some(Echo { text, ok: true });
+                    }
+                    Ok(_) => {
+                        self.echo = Some(Echo { text: "The hub couldn't tell which project this is for; pick one in the Inbox.".into(), ok: true })
+                    }
+                    Err(e) => self.echo = Some(Echo { text: e, ok: false }),
+                }
+                return self.request_asks().into_iter().collect();
+            }
             Purpose::Policy => {
                 self.policy = Some(parse::<AttentionPolicyOutput>(output).map_or_else(|_| Policy::fallback(), |p| Policy::from_output(&p)));
             }
@@ -660,7 +703,7 @@ impl State {
                 }
             }
             Purpose::Doctor | Purpose::DoctorRerun => self.doctor.get_or_insert_with(Doctor::default).error = Some(text),
-            Purpose::Reply | Purpose::DoctorFix(_) | Purpose::Secret { .. } => self.echo = Some(Echo { text, ok: false }),
+            Purpose::Reply | Purpose::DoctorFix(_) | Purpose::Secret { .. } | Purpose::Order { .. } => self.echo = Some(Echo { text, ok: false }),
             // An older hub without attention_policy: notify with the default window and no quiet hours.
             Purpose::Policy => self.policy = Some(Policy::fallback()),
         }
@@ -697,7 +740,7 @@ mod tests {
     fn snapshot(projects: &[(&str, &str)], cursor: u64) -> Incoming {
         let projects: Vec<Value> = projects.iter().map(|(m, p)| project_json(m, p)).collect();
         let frame = json!({ "t": "snapshot", "machines": [{ "machineId": "lab-a", "name": "lab-a", "tags": [], "status": "online",
-            "lastSeenAt": AT, "t3": null, "nodeVersion": "0.0.0" }], "projects": projects, "attention": [], "cursor": cursor });
+            "lastSeenAt": AT, "nodeVersion": "0.0.0" }], "projects": projects, "attention": [], "cursor": cursor });
         Incoming::Message(serde_json::from_value(frame).unwrap())
     }
 
@@ -860,6 +903,29 @@ mod tests {
     }
 
     #[test]
+    fn orders_go_through_intake_and_echo_where_they_landed() {
+        let mut s = synced();
+        let key: ProjectKey = ("lab-a".into(), "p1".into());
+        let AppClientMessage::Call { id, tool, input } = &s.submit_order(Some(&key), "ship dark mode", "app-1")[0] else { panic!() };
+        assert_eq!(tool.as_str(), "intake_submit");
+        assert_eq!(input, &json!({ "machineId": "lab-a", "projectId": "p1", "text": "ship dark mode", "clientRequestId": "app-1" }));
+        let echo = json!({ "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "template": "feature", "reason": "named in the order" });
+        let refresh = calls(&s.apply(result(id, json!({ "workstreamId": "W7", "echo": echo }))));
+        assert_eq!(s.echo, Some(Echo { text: "Order W7 is with p1's lead: named in the order".into(), ok: true }));
+        assert_eq!(refresh[0].1, "asks_list");
+
+        // Unrouted: the hub asks which project, as an inbox item.
+        let AppClientMessage::Call { id, input, .. } = &s.submit_order(None, "fix it", "app-2")[0] else { panic!() };
+        assert!(input.get("projectId").is_none());
+        s.apply(result(id, json!({ "askId": "A9" })));
+        assert!(s.echo.as_ref().is_some_and(|e| e.text.contains("Inbox")));
+
+        let AppClientMessage::Call { id, .. } = &s.submit_order(None, "again", "app-3")[0] else { panic!() };
+        s.apply(error(id, ErrorCode::Forbidden, "This key can't send orders.", Some("Pair again with fleetd pair.")));
+        assert_eq!(s.echo, Some(Echo { text: "This key can't send orders. Pair again with fleetd pair.".into(), ok: false }));
+    }
+
+    #[test]
     fn call_errors_land_where_the_call_was_for() {
         let mut s = synced();
         let id = calls(&s.apply(event("ask.created", None, None)))[0].0.clone();
@@ -944,21 +1010,21 @@ mod tests {
     fn a_doctor_fix_replaces_its_check_and_echoes_what_ran() {
         let mut s = synced();
         let id = calls(&s.open_doctor())[0].0.clone();
-        let auto = json!({ "kind": "auto", "label": "Restart T3" });
-        s.apply(result(&id, json!({ "checks": [check("hub/gh_auth", "ok", None), check("lab-a/t3", "fail", Some(auto))], "checkedAt": AT })));
+        let auto = json!({ "kind": "auto", "label": "Restart the node" });
+        s.apply(result(&id, json!({ "checks": [check("hub/gh_auth", "ok", None), check("lab-a/node", "fail", Some(auto))], "checkedAt": AT })));
 
-        let out = s.fix_doctor(&check_id("lab-a/t3"));
+        let out = s.fix_doctor(&check_id("lab-a/node"));
         let AppClientMessage::Call { id, tool, input } = &out[0] else { panic!() };
-        assert_eq!((tool.as_str(), input), ("doctor_fix", &json!({ "checkId": "lab-a/t3" })));
-        assert!(s.doctor_fixing(&check_id("lab-a/t3")));
-        assert!(s.fix_doctor(&check_id("lab-a/t3")).is_empty(), "one fix at a time per check");
-        s.apply(result(id, json!({ "ran": "Restarted T3 on lab-a.", "check": check("lab-a/t3", "ok", None) })));
+        assert_eq!((tool.as_str(), input), ("doctor_fix", &json!({ "checkId": "lab-a/node" })));
+        assert!(s.doctor_fixing(&check_id("lab-a/node")));
+        assert!(s.fix_doctor(&check_id("lab-a/node")).is_empty(), "one fix at a time per check");
+        s.apply(result(id, json!({ "ran": "Restarted the node on lab-a.", "check": check("lab-a/node", "ok", None) })));
         let checks = &s.doctor.as_ref().unwrap().checks;
         assert_eq!(
             checks.iter().map(|c| (c.id.as_str(), c.status)).collect::<Vec<_>>(),
-            [("hub/gh_auth", DoctorStatus::Ok), ("lab-a/t3", DoctorStatus::Ok)]
+            [("hub/gh_auth", DoctorStatus::Ok), ("lab-a/node", DoctorStatus::Ok)]
         );
-        assert_eq!(s.echo, Some(Echo { text: "Restarted T3 on lab-a.".into(), ok: true }));
+        assert_eq!(s.echo, Some(Echo { text: "Restarted the node on lab-a.".into(), ok: true }));
 
         let AppClientMessage::Call { id, .. } = &s.fix_doctor(&check_id("hub/gh_auth"))[0] else { panic!() };
         s.apply(error(id, ErrorCode::Invalid, "This fix is manual.", Some("Run gh auth login on the hub.")));
@@ -967,7 +1033,7 @@ mod tests {
     }
 
     fn machine_json(id: &str, status: &str, box_key: Option<&str>) -> Value {
-        let mut m = json!({ "machineId": id, "name": id, "tags": [], "status": status, "lastSeenAt": AT, "t3": null, "nodeVersion": "0.0.0" });
+        let mut m = json!({ "machineId": id, "name": id, "tags": [], "status": status, "lastSeenAt": AT, "nodeVersion": "0.0.0" });
         if let Some(k) = box_key {
             m["boxPubKey"] = json!(k);
         }
