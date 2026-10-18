@@ -12,7 +12,7 @@ use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, n
 use tokio::sync::oneshot;
 
 use super::{Reply, SessionService, now};
-use crate::node::runner::{RunOutcome, SessionCommand};
+use crate::node::runner::{ExitInfo, RunOutcome, SessionCommand};
 use crate::node::util::head_utf16;
 
 /// How long a mode-`now` send waits for claude's answer to its stop before replying without it (measured: 4 ms).
@@ -90,7 +90,7 @@ impl SessionService {
         }
     }
 
-    pub(super) fn steer_withdrawn(&self, run_id: &str, cancelled: bool) {
+    pub(super) fn steer_withdrawn(&self, run_id: &str, cancelled: bool, by_stop: bool) {
         let track = {
             let mut st = self.st();
             if let Some(waiter) = st.withdraw_waiters.remove(run_id) {
@@ -103,7 +103,47 @@ impl SessionService {
             }
         };
         if let Some(t) = track {
-            self.emit_steer(receipt(&t, run_id, SteerStage::Withdrawn));
+            let mut r = receipt(&t, run_id, SteerStage::Withdrawn);
+            if by_stop {
+                r.reason = Some(Text::unchecked(
+                    "the turn it waited on was stopped before it took this in",
+                ));
+            }
+            self.emit_steer(r);
+        }
+    }
+
+    /// The session's claude exited: every steer still open on it gets its final receipt, and is no longer tracked.
+    pub(super) fn steers_exited(&self, id: &str, exit: &ExitInfo) {
+        let open: Vec<(String, SteerTrack)> = {
+            let mut st = self.st();
+            let runs: Vec<String> = st
+                .steers
+                .iter()
+                .filter(|(_, t)| t.session_id == id)
+                .map(|(r, _)| r.clone())
+                .collect();
+            runs.into_iter()
+                .filter_map(|r| st.steers.remove(&r).map(|t| (r, t)))
+                .collect()
+        };
+        for (run_id, t) in open {
+            let r = if t.delivered {
+                let mut r = receipt(&t, &run_id, SteerStage::Unacknowledged);
+                if let Some((message_id, text)) = &t.first {
+                    r.message_id = NonEmpty::new(message_id.as_str()).ok();
+                    r.excerpt = Some(clip(text));
+                }
+                r
+            } else {
+                let mut r = receipt(&t, &run_id, SteerStage::Failed);
+                let code = exit
+                    .code
+                    .map_or_else(|| "a signal".to_owned(), |c| format!("code {c}"));
+                r.reason = Text::new(format!("claude exited ({code}) before taking it in")).ok();
+                r
+            };
+            self.emit_steer(r);
         }
     }
 

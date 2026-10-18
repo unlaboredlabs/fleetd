@@ -1416,6 +1416,7 @@ impl SessionService {
                     signal: None,
                     stderr_tail: "the runner stopped reporting on claude".into(),
                 };
+                self.steers_exited(&id, &exit);
                 self.exited(&id, generation, exit);
                 break;
             };
@@ -1440,6 +1441,7 @@ impl SessionService {
                     }
                 }
                 RunnerEvent::Exited(exit) => {
+                    self.steers_exited(&id, &exit);
                     self.exited(&id, generation, exit);
                     break;
                 }
@@ -1506,7 +1508,8 @@ impl SessionService {
                 RunnerEvent::Withdrawn {
                     run_id: steer,
                     cancelled,
-                } => self.steer_withdrawn(&self.resolve(&id, &steer), cancelled),
+                    by_stop,
+                } => self.steer_withdrawn(&self.resolve(&id, &steer), cancelled, by_stop),
                 RunnerEvent::AssistantText { message_id, text } => {
                     if delta.as_ref().is_some_and(|(m, _)| *m == message_id) {
                         delta = None;

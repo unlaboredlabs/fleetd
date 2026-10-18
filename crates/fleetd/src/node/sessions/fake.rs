@@ -191,6 +191,7 @@ impl Process {
                         let withdrawn = RunnerEvent::Withdrawn {
                             run_id,
                             cancelled: false,
+                            by_stop: false,
                         };
                         let _ = self.tx.send(withdrawn).await;
                         continue;
@@ -246,6 +247,7 @@ impl Process {
                 let _ = self.tx.try_send(RunnerEvent::Withdrawn {
                     run_id: queued.clone(),
                     cancelled: found.is_some(),
+                    by_stop: false,
                 });
                 if found.is_some() {
                     let _ = self.tx.try_send(RunnerEvent::RunEnded {

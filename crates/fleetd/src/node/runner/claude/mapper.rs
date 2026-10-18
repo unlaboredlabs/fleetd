@@ -80,6 +80,8 @@ enum Control {
     },
     Withdraw {
         run_id: String,
+        /// Sent because a person stopped the turn the steer waited on.
+        by_stop: bool,
     },
 }
 
@@ -136,6 +138,8 @@ pub struct StreamMapper {
     /// A mode-`now` send waiting for its `queued` before fleetd asks claude to send it now.
     send_now: Option<String>,
     controls: HashMap<String, Control>,
+    /// Steers that waited on a turn a person stopped: claude drops them, and they end withdrawn, not failed.
+    dropped_by_stop: Vec<String>,
     /// Runs an older claude merged into the running turn; they end with its `result`.
     joined: Vec<String>,
     withdraws_sent: u64,
@@ -173,6 +177,7 @@ impl StreamMapper {
             steers_waiting: Vec::new(),
             send_now: None,
             controls: HashMap::new(),
+            dropped_by_stop: Vec::new(),
             joined: Vec::new(),
             withdraws_sent: 0,
         }
@@ -226,20 +231,36 @@ impl StreamMapper {
         if !waiting {
             return None;
         }
+        Some(self.withdraw_request(run_id.to_owned(), false))
+    }
+
+    fn withdraw_request(&mut self, run_id: String, by_stop: bool) -> Input {
         self.withdraws_sent += 1;
         let request_id = format!("fleetd-withdraw-{}", self.withdraws_sent);
-        let run_id = run_id.to_owned();
         let request = json!({"subtype": "cancel_async_message", "message_uuid": run_id});
         self.controls
-            .insert(request_id.clone(), Control::Withdraw { run_id });
-        Some(Input::ControlRequest {
+            .insert(request_id.clone(), Control::Withdraw { run_id, by_stop });
+        Input::ControlRequest {
             request_id,
             request,
-        })
+        }
     }
 
     pub fn interrupt(&mut self) -> Input {
         self.interrupt_request(json!({"subtype": "interrupt"}))
+    }
+
+    /// A person's (or the watchdog's) stop: the interrupt, then a withdraw of every steer that waited on the turn.
+    /// The turn ends interrupted, not superseded, and the steers end withdrawn, never as a new turn after the stop.
+    pub fn stop(&mut self) -> Vec<Input> {
+        let waiting = std::mem::take(&mut self.steers_waiting);
+        self.send_now = None;
+        let mut out = vec![self.interrupt()];
+        for run_id in waiting {
+            self.dropped_by_stop.push(run_id.clone());
+            out.push(self.withdraw_request(run_id, true));
+        }
+        out
     }
 
     fn interrupt_request(&mut self, request: Value) -> Input {
@@ -267,6 +288,15 @@ impl StreamMapper {
             );
         }
         input
+    }
+
+    /// A withdraw is pending for `run_id`, or it waited on a turn a person stopped.
+    fn withdrawing(&self, run_id: &str) -> bool {
+        self.dropped_by_stop.iter().any(|r| r == run_id)
+            || self
+                .controls
+                .values()
+                .any(|c| matches!(c, Control::Withdraw { run_id: r, .. } if r == run_id))
     }
 
     /// The title of the running turn's oldest unfinished tool call.
@@ -360,9 +390,10 @@ impl StreamMapper {
                                 outcome,
                             }
                         }
-                        Control::Withdraw { run_id } => RunnerEvent::Withdrawn {
+                        Control::Withdraw { run_id, by_stop } => RunnerEvent::Withdrawn {
                             run_id,
                             cancelled: ok && answer["cancelled"].as_bool() == Some(true),
+                            by_stop,
                         },
                     });
                 }
@@ -565,6 +596,21 @@ impl StreamMapper {
                 self.usage_now = RunUsage::default();
                 self.spans.run_started(&run_id, now.ms);
                 out.events.push(RunnerEvent::RunStarted { run_id });
+            }
+            // claude says `cancelled` before it answers the withdraw: that is the withdraw's success. A steer that
+            // waited on a stopped turn is dropped the same way.
+            "cancelled" if self.open_runs.contains(&run_id) && self.withdrawing(&run_id) => {
+                let by_stop = self.dropped_by_stop.contains(&run_id);
+                self.controls.retain(
+                    |_, c| !matches!(c, Control::Withdraw { run_id: r, .. } if *r == run_id),
+                );
+                self.dropped_by_stop.retain(|r| *r != run_id);
+                out.events.push(RunnerEvent::Withdrawn {
+                    run_id: run_id.clone(),
+                    cancelled: true,
+                    by_stop,
+                });
+                self.end_run(run_id, RunOutcome::Interrupted, None, now, &mut out.events);
             }
             // After a `result` these are bookkeeping; without one the message never ran to a result.
             state @ ("cancelled" | "completed") if self.open_runs.contains(&run_id) => {
@@ -995,6 +1041,7 @@ impl StreamMapper {
         }
         self.open_runs.retain(|r| *r != run_id);
         self.steers_waiting.retain(|r| *r != run_id);
+        self.dropped_by_stop.retain(|r| *r != run_id);
         self.joined.retain(|r| *r != run_id);
         if self.send_now.as_deref() == Some(run_id.as_str()) {
             self.send_now = None;

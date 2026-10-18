@@ -153,10 +153,12 @@ pub enum RunnerEvent {
         outcome: SendNow,
         stopped_tool: Option<String>,
     },
-    /// The answer to a [`SessionCommand::Withdraw`].
+    /// The answer to a [`SessionCommand::Withdraw`], or a steer claude dropped because the turn it waited on was
+    /// stopped (`by_stop`).
     Withdrawn {
         run_id: String,
         cancelled: bool,
+        by_stop: bool,
     },
     /// Partial assistant text (`stream_event` text_delta), for live views only.
     Delta {

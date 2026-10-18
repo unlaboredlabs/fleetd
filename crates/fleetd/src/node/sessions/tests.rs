@@ -1181,3 +1181,38 @@ async fn a_queued_steer_can_be_withdrawn_and_the_session_does_not_read_as_interr
         SessionOutput::Withdrawn { cancelled: false }
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_steer_still_open_when_claude_exits_gets_its_final_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
+        .await;
+    // Plain, so the fake keeps it queued behind the turn; then the process goes.
+    hub.ok(steer("s1", "r2", SendMode::Plain, Some("S1"))).await;
+    hub.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    })
+    .await;
+    let receipts = hub.receipts_until_final().await;
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].stage, SteerStage::Failed);
+    assert!(
+        receipts[0]
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.contains("before taking it in")),
+        "{receipts:?}"
+    );
+    assert!(hub.service.st().steers.is_empty());
+}

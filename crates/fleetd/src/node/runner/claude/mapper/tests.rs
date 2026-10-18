@@ -1089,10 +1089,31 @@ fn a_send_now_steer_stops_the_running_tool_and_names_it() {
 fn a_withdrawn_steer_never_starts_and_the_turn_runs_on() {
     let replay = replay("steer-withdraw");
     let (task, steer) = task_and_steer("steer-withdraw");
-    assert!(replay.events.contains(&RunnerEvent::Withdrawn {
-        run_id: steer.clone(),
-        cancelled: true
-    }));
+    // claude says `cancelled` before it answers the withdraw: the withdraw is reported first, then the run's end.
+    let withdrawn = replay.events.iter().position(|e| {
+        *e == RunnerEvent::Withdrawn {
+            run_id: steer.clone(),
+            cancelled: true,
+            by_stop: false,
+        }
+    });
+    let ended = replay
+        .events
+        .iter()
+        .position(|e| matches!(e, RunnerEvent::RunEnded { run_id, .. } if *run_id == steer));
+    assert!(
+        withdrawn.is_some() && withdrawn < ended,
+        "{:?}",
+        replay.events
+    );
+    assert_eq!(
+        replay
+            .events
+            .iter()
+            .filter(|e| matches!(e, RunnerEvent::Withdrawn { .. }))
+            .count(),
+        1
+    );
     assert!(!replay.events.contains(&RunnerEvent::RunStarted {
         run_id: steer.clone()
     }));
@@ -1185,4 +1206,55 @@ fn a_now_steer_falls_back_by_capability() {
     let classify: Classify = Arc::new(|_: &FailureEvidence| None);
     let mut idle = StreamMapper::new("s", classify);
     assert_eq!(idle.send("steer", "stop", SendMode::Now).len(), 1);
+}
+
+#[test]
+fn a_persons_stop_ends_the_turn_interrupted_and_withdraws_the_waiting_steer() {
+    let mut mapper = mid_turn(&["interrupt_receipt_v1", "msg_lifecycle_v1"]);
+    mapper.send("steer", "do this instead", SendMode::Boundary);
+    let lines: Vec<Value> = mapper
+        .stop()
+        .iter()
+        .map(|i| serde_json::to_value(i).unwrap()["request"].clone())
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            serde_json::json!({"subtype": "interrupt"}),
+            serde_json::json!({"subtype": "cancel_async_message", "message_uuid": "steer"}),
+        ]
+    );
+    let mut events = Vec::new();
+    for line in [
+        serde_json::json!({"type": "result", "subtype": "error_during_execution", "is_error": true,
+            "terminal_reason": "aborted_tools", "user_message_uuid": "task"}),
+        serde_json::json!({"type": "command_lifecycle", "command_uuid": "steer", "state": "cancelled"}),
+        serde_json::json!({"type": "control_response", "response": {"subtype": "success",
+            "request_id": "fleetd-withdraw-1", "response": {"cancelled": true}}}),
+    ] {
+        events.extend(
+            mapper
+                .feed(serde_json::from_value(line).unwrap(), &now())
+                .events,
+        );
+    }
+    assert_eq!(
+        run_ends(&events),
+        vec![
+            ("task", &RunOutcome::Interrupted),
+            ("steer", &RunOutcome::Interrupted)
+        ]
+    );
+    let withdrawn: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, RunnerEvent::Withdrawn { .. }))
+        .collect();
+    assert_eq!(
+        withdrawn,
+        [&RunnerEvent::Withdrawn {
+            run_id: "steer".into(),
+            cancelled: true,
+            by_stop: true
+        }]
+    );
 }

@@ -271,11 +271,13 @@ impl Session {
                 _ => self.push(vec![RunnerEvent::Withdrawn {
                     run_id,
                     cancelled: false,
+                    by_stop: false,
                 }]),
             },
             SessionCommand::Interrupt => {
-                let input = self.mapper.interrupt();
-                self.write(input);
+                for input in self.mapper.stop() {
+                    self.write(input);
+                }
             }
             SessionCommand::Answer {
                 request_id,
