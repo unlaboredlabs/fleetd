@@ -54,7 +54,7 @@ fleetd prompts reset lead.start
 
 `edit` opens `$VISUAL` or `$EDITOR`, shows the warnings and asks before saving. A project's version beats the global
 one, which beats fleetd's. Playbooks have only the global level. Your versions are files under
-`~/.fleetd/hub/prompts/` ([Config & files](config-and-files.md)); a hand edit there is read at hub start.
+`~/.fleetd/hub/prompts/` ([Config & files](config-and-files.md)); edit them with `fleetd prompts edit`, not by hand.
 
 Prompts fill in `{{name}}` placeholders, such as `{{project}}`; the editor lists each prompt's own. Nothing else is
 template syntax.
@@ -84,9 +84,12 @@ They are added to every lead's first message and every task brief (writers, revi
 
 ## When fleetd changes a default you edited
 
-Your version stays in use. The prompt gets an "update" chip in Settings → Prompts and an inbox item; `fleetd prompts
-diff <id>` shows what changed in fleetd's text and in yours since you edited it, and `edit` opens a merge of both.
-Save it, keep yours, or reset. A safety rule the new default added and your text lacks shows as a warning.
+Your version stays in use. The prompt gets an "update" chip in Settings → Prompts; `fleetd prompts diff <id>` shows
+what changed in fleetd's text and in yours since you edited it, and `edit` opens a merge of both. Save it, keep yours,
+or reset. A safety rule the new default added and your text lacks shows as a warning.
+
+Playbooks are the exception: an edited playbook gets no notice when fleetd's version changes. Compare it yourself
+with `fleetd prompts diff playbook.<name>` after an update.
 
 ## What a running agent keeps {#pinning}
 

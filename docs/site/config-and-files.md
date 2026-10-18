@@ -18,7 +18,7 @@ description: Where fleetd keeps its state, the Claude login it uses, the project
     webhook.key          seals webhook secrets
     playbooks/<name>.md  your version of a playbook (the retro writes here too); delete it for fleetd's
     prompts/<id>.md      your version of a prompt, hub-wide
-    prompts/projects/<machine>/<project>/<id>.md   the same for one project
+    prompts/projects/<key>/<id>.md   the same for one project (<key> is a hash of the project)
   node/                  the node's home (every worker)
     node.json            the hub it belongs to, its machine id and an optional claudeConfigDir
     node-key.pem         proves the node to the hub

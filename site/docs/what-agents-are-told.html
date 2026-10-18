@@ -85,7 +85,7 @@ Diff are next to Save. On the hub machine:</p>
 <span class="l">fleetd prompts reset lead.start</span></code></pre>
 <p><code>edit</code> opens <code>$VISUAL</code> or <code>$EDITOR</code>, shows the warnings and asks before saving. A project's version beats the global
 one, which beats fleetd's. Playbooks have only the global level. Your versions are files under
-<code>~/.fleetd/hub/prompts/</code> (<a href="/docs/config-and-files">Config &amp; files</a>); a hand edit there is read at hub start.</p>
+<code>~/.fleetd/hub/prompts/</code> (<a href="/docs/config-and-files">Config &amp; files</a>); edit them with <code>fleetd prompts edit</code>, not by hand.</p>
 <p>Prompts fill in <code>{{name}}</code> placeholders, such as <code>{{project}}</code>; the editor lists each prompt's own. Nothing else is
 template syntax.</p>
 <h3 id="warnings">Warnings<a class="anchor" href="#warnings" aria-label="Link to this section">#</a></h3>
@@ -103,8 +103,11 @@ template syntax.</p>
 <p>They are added to every lead's first message and every task brief (writers, reviewers and judges), global first, under
 "Custom instructions from the human". Not to the router, the retro or wakes.</p>
 <h2 id="when-fleetd-changes-a-default-you-edited">When fleetd changes a default you edited<a class="anchor" href="#when-fleetd-changes-a-default-you-edited" aria-label="Link to this section">#</a></h2>
-<p>Your version stays in use. The prompt gets an "update" chip in Settings → Prompts and an inbox item; <code>fleetd prompts diff &lt;id&gt;</code> shows what changed in fleetd's text and in yours since you edited it, and <code>edit</code> opens a merge of both.
-Save it, keep yours, or reset. A safety rule the new default added and your text lacks shows as a warning.</p>
+<p>Your version stays in use. The prompt gets an "update" chip in Settings → Prompts; <code>fleetd prompts diff &lt;id&gt;</code> shows
+what changed in fleetd's text and in yours since you edited it, and <code>edit</code> opens a merge of both. Save it, keep yours,
+or reset. A safety rule the new default added and your text lacks shows as a warning.</p>
+<p>Playbooks are the exception: an edited playbook gets no notice when fleetd's version changes. Compare it yourself
+with <code>fleetd prompts diff playbook.&lt;name&gt;</code> after an update.</p>
 <h2 id="pinning">What a running agent keeps<a class="anchor" href="#pinning" aria-label="Link to this section">#</a></h2>
 <p>Each session keeps the exact prompt versions it started with, wakes included. An edit reaches new sessions at once: a
 task at its next attempt, a lead at its next start. To give a running lead your edit now, restart it with
