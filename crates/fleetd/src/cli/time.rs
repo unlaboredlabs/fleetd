@@ -19,7 +19,7 @@ pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--spans
              where agents' time went: an order's critical path, agent time by category, the
              slowest commands and the findings; a project by id or title (<machine>/<project>
              when two machines have one), the whole fleet with neither. --since takes 1h to
-             400d or an ISO time; --spans <rule> lists the spans a finding points at. On the
+             400d, a date or an ISO time; --spans <rule> lists the spans a finding points at. On the
              hub machine it needs no --hub or --key-file
   time --retention <days> [--hub <url> --key-file <path>]
              keep 1-365 days of timelines (admin key); daily totals are kept 400 days
@@ -44,12 +44,24 @@ impl TimeArgs {
 }
 
 /// `7d`, `12h` or an ISO time, as the ISO time it means.
-pub fn parse_since(given: &str, now: DateTime<Utc>) -> Result<String, String> {
-    let bad = || format!("--since must be 1h to 400d or an ISO time, got '{given}'");
+pub fn parse_since(given: &str, now: DateTime<Utc>, zone: Tz) -> Result<String, String> {
+    let bad = || format!("--since must be 1h to 400d, a date or an ISO time, got '{given}'");
     if let Ok(at) = DateTime::parse_from_rfc3339(given) {
         return Ok(at
             .with_timezone(&Utc)
             .to_rfc3339_opts(SecondsFormat::Millis, true));
+    }
+    // A date is its midnight on the hub machine's clock.
+    if let Ok(day) = chrono::NaiveDate::parse_from_str(given, "%Y-%m-%d") {
+        let midnight = day.and_hms_opt(0, 0, 0).expect("midnight exists");
+        return zone
+            .from_local_datetime(&midnight)
+            .earliest()
+            .map(|at| {
+                at.with_timezone(&Utc)
+                    .to_rfc3339_opts(SecondsFormat::Millis, true)
+            })
+            .ok_or_else(bad);
     }
     let (digits, hours_per) = match given.as_bytes().last() {
         Some(b'd') => (&given[..given.len() - 1], 24),
@@ -66,7 +78,7 @@ pub fn parse_since(given: &str, now: DateTime<Utc>) -> Result<String, String> {
     Ok((now - chrono::Duration::hours(hours)).to_rfc3339_opts(SecondsFormat::Millis, true))
 }
 
-pub fn parse_time_args(argv: &[String], now: DateTime<Utc>) -> Result<TimeArgs, String> {
+pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<TimeArgs, String> {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
@@ -109,7 +121,7 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>) -> Result<TimeArgs, 
     Ok(TimeArgs {
         hub,
         target: v.positionals.first().cloned().unwrap_or_default(),
-        since: parse_since(v.str("since").unwrap_or("7d"), now)?,
+        since: parse_since(v.str("since").unwrap_or("7d"), now, zone)?,
         spans: v.string("spans").filter(|s| !s.is_empty()),
         json: v.flag("json"),
         retention,
@@ -540,7 +552,7 @@ impl Hub {
 /// `fleetd time …`: exit 0, 1 when the hub refused the call, 2 on bad arguments, 3 when it refused the key, 4 when
 /// it cannot be reached.
 pub async fn time_command(argv: &[String]) -> u8 {
-    let args = match parse_time_args(argv, Utc::now()) {
+    let args = match parse_time_args(argv, Utc::now(), crate::hub::attention::hub_zone()) {
         Ok(args) => args,
         Err(error) => {
             eprint!("fleetd: {error}\n\nusage:\n{TIME_USAGE}");
@@ -564,7 +576,7 @@ pub async fn time_command(argv: &[String]) -> u8 {
         }
         None => {
             let local = match super::hub_key::resolve_home(None) {
-                Ok(home) => super::setup::doctor::connect(&home).await,
+                Ok(home) => super::setup::doctor::connect_as(&home, "fleetd-time").await,
                 Err(message) => Err(super::setup::Failure {
                     message,
                     fix: String::new(),
@@ -686,12 +698,17 @@ mod tests {
     #[test]
     fn arguments_and_the_range() {
         let base = ["--hub", "http://hub", "--key-file", "k"];
-        let parse = |extra: &[&str]| parse_time_args(&argv(&[extra, &base[..]].concat()), now());
+        let parse =
+            |extra: &[&str]| parse_time_args(&argv(&[extra, &base[..]].concat()), now(), Tz::UTC);
         let order = parse(&["W41", "--since", "2d"]).unwrap();
         assert!(order.is_order());
         assert_eq!(order.since, "2026-10-16T12:00:00.000Z");
         assert!(!parse(&["storefront"]).unwrap().is_order());
         assert_eq!(parse(&[]).unwrap().since, "2026-10-11T12:00:00.000Z");
+        assert_eq!(
+            parse_since("2026-10-01", now(), "Europe/Berlin".parse().unwrap()).unwrap(),
+            "2026-09-30T22:00:00.000Z"
+        );
         assert_eq!(
             parse(&["--since", "2026-10-18T09:30:00+02:00"])
                 .unwrap()
@@ -707,9 +724,12 @@ mod tests {
         ] {
             assert!(parse(bad).is_err(), "{bad:?}");
         }
-        assert_eq!(parse_time_args(&argv(&["W1"]), now()).unwrap().hub, None);
+        assert_eq!(
+            parse_time_args(&argv(&["W1"]), now(), Tz::UTC).unwrap().hub,
+            None
+        );
         assert!(
-            parse_time_args(&argv(&["W1", "--hub", "h"]), now())
+            parse_time_args(&argv(&["W1", "--hub", "h"]), now(), Tz::UTC)
                 .unwrap_err()
                 .contains("--key-file")
         );
@@ -777,8 +797,12 @@ mod tests {
 
     #[test]
     fn an_order_prints_its_path_agent_time_commands_and_findings() {
-        let args =
-            parse_time_args(&argv(&["W41", "--hub", "h", "--key-file", "k"]), now()).unwrap();
+        let args = parse_time_args(
+            &argv(&["W41", "--hub", "h", "--key-file", "k"]),
+            now(),
+            Tz::UTC,
+        )
+        .unwrap();
         let min = 60_000;
         let seg =
             |id: Option<u64>, cat: &str, kind: &str, label: Option<&str>, start: i64, end: i64| {
