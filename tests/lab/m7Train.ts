@@ -13,7 +13,7 @@ import path from "node:path";
 import { type Body, fleetdCommand, LAB, type Lab, LEAD_PROMPT_VERSION, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText } from "./harness.ts";
 
 const MACHINE = "lab-a";
-const REPO = "unlaboredlabs/fleetd-testbed";
+export const REPO = "unlaboredlabs/fleetd-testbed";
 export const TESTBED = path.join(LAB, "testbed");
 const TURN_MS = 240_000;
 const CI_MS = 600_000;
@@ -39,13 +39,13 @@ defaults:
 
 const run = (cmd: string, args: ReadonlyArray<string>, cwd = TESTBED) =>
   execFileSync(cmd, args, { cwd, env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-const git = (...args: Array<string>) => run("git", args);
+export const git = (...args: Array<string>) => run("git", args);
 // Outside the clone, so `--delete-branch` deletes only the remote branch, never a task's checked-out local one.
 const gh = (...args: Array<string>) => run("gh", args, LAB);
 const ghJson = <A = Body>(...args: Array<string>): A => JSON.parse(gh(...args)) as A;
 
 /** Open PRs and remote branches an earlier run of this scenario left on the testbed; never main. */
-const cleanTestbed = () => {
+export const cleanTestbed = () => {
   for (const pr of ghJson<Array<Body>>("pr", "list", "-R", REPO, "--state", "open", "--json", "number,headRefName")) {
     if (OURS.some((p) => (pr.headRefName as string).startsWith(p))) gh("pr", "close", String(pr.number), "-R", REPO, "--delete-branch");
   }
@@ -56,7 +56,7 @@ const cleanTestbed = () => {
 };
 
 /** The lab clone at origin/main, without task worktrees or branches from an earlier run, and with the policy file. */
-const prepareCheckout = () => {
+export const prepareCheckout = (policy = POLICY) => {
   git("fetch", "-q", "--prune", "origin");
   // An earlier run's machine homes, and the task worktrees in them, are gone; git forgets those first.
   git("worktree", "prune");
@@ -71,7 +71,7 @@ const prepareCheckout = () => {
   const exclude = path.join(TESTBED, ".git/info/exclude");
   if (!fs.readFileSync(exclude, "utf8").includes(".fleetd/")) fs.appendFileSync(exclude, "\n.fleetd/\n");
   fs.mkdirSync(path.join(TESTBED, ".fleetd"), { recursive: true });
-  fs.writeFileSync(path.join(TESTBED, ".fleetd/policy.yaml"), POLICY);
+  fs.writeFileSync(path.join(TESTBED, ".fleetd/policy.yaml"), policy);
 };
 
 /** Removes lab-a's testbed project if one is registered, so scenarios that take lab-a's project find repo-a. */
