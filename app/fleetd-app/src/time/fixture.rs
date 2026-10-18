@@ -389,7 +389,10 @@ fn build_order(spec: &OrderSpec) -> Built {
     let path_total: i64 = path.iter().map(|(_, a, b)| b - a).sum();
     debug_assert_eq!(path_total, m(102.) - m(0.), "the path adds up to the wall");
     let agent: i64 = g.out.iter().filter(|v| v["kind"] != "idle").filter_map(|v| v["exclMs"].as_i64()).sum();
-    let path = json!({ "startMs": m(0.), "endMs": m(102.), "segments": segments, "segmentsTruncated": false,
+    // The hub sends at most 400 segments; the totals still cover them all.
+    let truncated = segments.len() > 400;
+    let segments: Vec<Value> = segments.into_iter().take(400).collect();
+    let path = json!({ "startMs": m(0.), "endMs": m(102.), "segments": segments, "segmentsTruncated": truncated,
         "totals": totals.iter().map(|(c, ms)| json!({ "cat": c, "ms": ms })).collect::<Vec<_>>(),
         "nothingRunningMs": 0, "offPathMs": agent - path_total });
     Built { spans: g.out, path, wall: (m(0.), m(102.)), roles, machine: spec.machine, project: spec.project }
@@ -418,7 +421,9 @@ fn is_cmd(s: &Span) -> bool {
 }
 
 fn breakdown_json(d: &Data) -> Value {
-    let mut cats: HashMap<String, (i64, i64, HashMap<String, (i64, i64)>)> = HashMap::new();
+    // cat → (ms, n, kind → (ms, n))
+    type Totals = (i64, i64, HashMap<String, (i64, i64)>);
+    let mut cats: HashMap<String, Totals> = HashMap::new();
     for s in &d.spans {
         let Some(ex) = s.excl_ms.map(|e| e.get()) else { continue };
         if s.kind == SpanKind::Idle {
@@ -558,7 +563,10 @@ fn check_stats(d: &Data) -> Vec<Value> {
 }
 
 /// The findings this data fires, with the numbers the hub's rules would give.
-fn findings(d: &Data, fleet: bool) -> Vec<(String, String, Vec<(String, i64)>, Vec<i64>)> {
+/// (rule, message, numbers, span ids)
+type Finding = (String, String, Vec<(String, i64)>, Vec<i64>);
+
+fn findings(d: &Data, fleet: bool) -> Vec<Finding> {
     let mut out = Vec::new();
     let fmt = super::fmt_dur;
     // full_suite_repeat

@@ -40,7 +40,7 @@ pub fn delta(before: i64, now: i64) -> String {
 
 fn kinds_text(c: &CategoryTotal) -> String {
     let mut kinds: Vec<_> = c.kinds.iter().filter(|k| k.ms.get() > 0).collect();
-    kinds.sort_by(|a, b| b.ms.get().cmp(&a.ms.get()));
+    kinds.sort_by_key(|c| std::cmp::Reverse(c.ms.get()));
     kinds
         .iter()
         .take(4)
@@ -95,7 +95,7 @@ pub fn render(v: &mut TimeView, t: &Theme, cx: &mut Context<TimeView>) -> AnyEle
     if let Some(p) = b.critical_path.as_ref().filter(|_| order) {
         let total = p.end_ms.get() - p.start_ms.get();
         let mut totals: Vec<_> = p.totals.iter().filter(|c| c.ms.get() > 0).collect();
-        totals.sort_by(|a, b| b.ms.get().cmp(&a.ms.get()));
+        totals.sort_by_key(|c| std::cmp::Reverse(c.ms.get()));
         let mut rows = div().flex().flex_col();
         for c in totals {
             let cat = c.cat;
@@ -276,7 +276,7 @@ fn categories(v: &TimeView, t: &Theme, b: &TimeBreakdownOutput, cx: &mut Context
     let agent = b.agent_ms.get();
     let prev = b.compare.as_ref();
     let mut cats: Vec<&CategoryTotal> = b.by_category.iter().filter(|c| SHOWN.contains(&c.cat) && c.ms.get() > 0).collect();
-    cats.sort_by(|a, b| b.ms.get().cmp(&a.ms.get()));
+    cats.sort_by_key(|c| std::cmp::Reverse(c.ms.get()));
     let max = cats.first().map_or(1, |c| c.ms.get()).max(1);
     let mut cols = vec![("Agent time", 0.), ("", NUM_W), ("", PCT_W)];
     if prev.is_some() {

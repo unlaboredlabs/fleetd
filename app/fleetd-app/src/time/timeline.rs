@@ -88,6 +88,8 @@ pub struct Model {
     /// parent span id → its children (a message's phases, a group's calls).
     pub children: HashMap<i64, Vec<usize>>,
     pub has_path: bool,
+    /// The hub sent only the first 400 steps of a longer path.
+    pub path_truncated: bool,
 }
 
 fn row_key(s: &Span) -> String {
@@ -230,7 +232,19 @@ impl Model {
             Some(p) => (p.start_ms.get(), p.end_ms.get()),
             None => (items.iter().map(|i| i.start).min().unwrap_or(now_ms), items.iter().map(|i| i.end).max().unwrap_or(now_ms)),
         };
-        Model { spans, by_id, rows, items, start_ms, end_ms: end_ms.max(start_ms + 1), has_path: path.is_some(), path: path_segs, parallel, children }
+        Model {
+            spans,
+            by_id,
+            rows,
+            items,
+            start_ms,
+            end_ms: end_ms.max(start_ms + 1),
+            has_path: path.is_some(),
+            path_truncated: path.is_some_and(|p| p.segments_truncated),
+            path: path_segs,
+            parallel,
+            children,
+        }
     }
 }
 
@@ -665,7 +679,7 @@ fn highlight_banner(t: &Theme, h: &Highlight, cx: &mut Context<TimeView>) -> Div
 
 fn path_row(v: &TimeView, t: &Theme, p: &Paint, cx: &mut Context<TimeView>) -> Div {
     let m = p.model.clone();
-    let total: i64 = m.path.iter().map(|s| s.end - s.start).sum();
+    let total = m.end_ms - m.start_ms;
     let label = div()
         .w(px(LABEL_W))
         .flex_none()
@@ -673,9 +687,15 @@ fn path_row(v: &TimeView, t: &Theme, p: &Paint, cx: &mut Context<TimeView>) -> D
         .flex()
         .items_center()
         .gap_1p5()
+        .overflow_hidden()
+        .whitespace_nowrap()
         .text_size(px(tsize::XS))
         .child(div().font_weight(STRONG).child("critical path"))
-        .child(div().text_color(t.quiet).child(if m.has_path { fmt_dur(total) } else { "when the order is done".into() }));
+        .child(div().text_color(t.quiet).child(match (m.has_path, m.path_truncated) {
+            (false, _) => "when the order is done".to_string(),
+            (true, false) => fmt_dur(total),
+            (true, true) => format!("{} (part drawn)", fmt_dur(total)),
+        }));
     let (v0, v1) = p.v;
     let accent = t.accent;
     let danger = t.danger;

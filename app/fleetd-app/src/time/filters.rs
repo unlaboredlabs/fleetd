@@ -119,7 +119,7 @@ pub fn bar(v: &TimeView, t: &Theme, cx: &mut Context<TimeView>) -> Div {
     } else {
         let (since, until) = period(f.range, v.now_ms, f.custom);
         let end = until.map_or("now".to_string(), |u| crate::live::state::fmt_iso(u)[..16].replace('T', " "));
-        format!("{} to {end} UTC", &crate::live::state::fmt_iso(since)[..16].replace('T', " "))
+        format!("{} to {end} UTC", crate::live::state::fmt_iso(since)[..16].replace('T', " "))
     };
     div()
         .min_h(px(metric::BAR - 4.))
@@ -288,7 +288,7 @@ fn custom_card(v: &TimeView, t: &Theme, cx: &mut Context<TimeView>) -> Div {
         .child(div().flex().justify_end().child(ui::button(t, "custom-apply", "Apply", Variant::Primary, true).on_click(cx.listener(
             |v, _, _, cx| {
                 let (s, u) = (v.custom.0.read(cx).text().to_string(), v.custom.1.read(cx).text().to_string());
-                match (parse_when(&s), u.trim().is_empty().then_some(None).unwrap_or_else(|| parse_when(&u).map(Some))) {
+                match (parse_when(&s), if u.trim().is_empty() { Some(None) } else { parse_when(&u).map(Some) }) {
                     (Some(since), Some(until)) if until.is_none_or(|u| u > since) => {
                         v.custom_error = None;
                         v.filters.custom = Some((since, until));
@@ -314,8 +314,8 @@ mod tests {
         assert_eq!(period(Range::Hour, now, None), (now - 3_600_000, None));
         assert_eq!(period(Range::Today, now, None).0, parse_ms("2026-10-18T00:00:00.000Z").unwrap());
         assert_eq!(period(Range::Week, now, None).0, parse_ms("2026-10-11T10:07:12.000Z").unwrap());
-        let custom = Some((parse_ms("2026-10-01T00:00:00.000Z").unwrap(), Some(now)));
-        assert_eq!(period(Range::Custom, now, custom), custom.unwrap());
+        let custom = (parse_ms("2026-10-01T00:00:00.000Z").unwrap(), Some(now));
+        assert_eq!(period(Range::Custom, now, Some(custom)), custom);
     }
 
     #[test]

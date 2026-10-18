@@ -19,7 +19,7 @@ use std::rc::Rc;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::live::AgentRole;
-use fleetd_contracts::mcp::{TailItem, TailRole, ThreadWindowOutput, TimeBreakdownInput, TimeBreakdownOutput, TimeInsightsInput, TimeInsightsOutput};
+use fleetd_contracts::mcp::{TailItem, TailRole, TimeBreakdownInput, TimeBreakdownOutput, TimeInsightsInput, TimeInsightsOutput};
 use fleetd_contracts::time::{Category, Period, Span, SpanKind, SpanStatus, TimeFilters, TimeScope};
 use gpui::{
     Background, Bounds, Context, Div, Entity, EventEmitter, FocusHandle, Focusable, Hsla, KeyDownEvent, Pixels, SharedString, Stateful,
@@ -28,7 +28,7 @@ use gpui::{
 
 use crate::input::TextInput;
 use crate::live::chips::role_word;
-use crate::state::{Linked, ProjectKey, State, TimeQuery};
+use crate::state::{Linked, LinkedSpans, ProjectKey, State, TimeQuery, TranscriptWindow};
 use crate::theme::{STRONG, Theme, metric, radius, size, theme};
 use crate::ui::{self, Variant};
 use filters::Filters;
@@ -43,7 +43,7 @@ pub enum Tab {
 
 pub enum TimeEvent {
     /// Scope, filters or period changed: ask the hub again.
-    Query(TimeQuery),
+    Query(Box<TimeQuery>),
     Linked(Linked),
     CloseLinked,
     Window {
@@ -136,8 +136,8 @@ pub struct TimeView {
     pub(crate) model: Option<Rc<Model>>,
     pub(crate) breakdown: Option<Result<TimeBreakdownOutput, String>>,
     pub(crate) insights: Option<Result<TimeInsightsOutput, String>>,
-    pub(crate) linked: Option<(Linked, Option<Result<Vec<Span>, String>>)>,
-    pub(crate) window: Option<((String, String, String), Option<Result<ThreadWindowOutput, String>>)>,
+    pub(crate) linked: LinkedSpans,
+    pub(crate) window: TranscriptWindow,
     pub(crate) spans_done: bool,
     pub(crate) spans_error: Option<String>,
     /// The zoomed range, hub ms; None shows the whole order.
@@ -279,7 +279,7 @@ impl TimeView {
 
     pub(crate) fn ask(&mut self, cx: &mut Context<Self>) {
         let q = self.query();
-        cx.emit(TimeEvent::Query(q));
+        cx.emit(TimeEvent::Query(Box::new(q)));
         cx.notify();
     }
 
@@ -410,14 +410,18 @@ impl TimeView {
         if event.keystroke.key != "escape" {
             return;
         }
-        if self.menu.take().is_some() {
-        } else if self.window.is_some() {
-            cx.emit(TimeEvent::CloseWindow);
-        } else if self.linked.is_some() {
-            cx.emit(TimeEvent::CloseLinked);
-        } else if self.highlight.take().is_some() {
-        } else if self.view.take().is_some() {
-        } else {
+        // Esc closes the innermost thing: a menu, a sheet, the highlight, then the zoom.
+        let closed = self.menu.take().is_some()
+            || if self.window.is_some() {
+                cx.emit(TimeEvent::CloseWindow);
+                true
+            } else if self.linked.is_some() {
+                cx.emit(TimeEvent::CloseLinked);
+                true
+            } else {
+                self.highlight.take().is_some() || self.view.take().is_some()
+            };
+        if !closed {
             return;
         }
         cx.stop_propagation();

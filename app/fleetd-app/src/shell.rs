@@ -889,7 +889,7 @@ impl Shell {
         let bench = self.bench.is_some();
         match event {
             TimeEvent::Query(q) => {
-                let out = self.state.time_open(q.clone());
+                let out = self.state.time_open(q.as_ref().clone());
                 if bench {
                     crate::fake::time_answer(&mut self.state);
                 } else {

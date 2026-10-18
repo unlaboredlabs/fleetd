@@ -332,6 +332,13 @@ impl Linked {
     }
 }
 
+/// Asked for; `None` until the hub answered.
+pub type Pending<T> = Option<Result<T, String>>;
+/// (machine, thread, item).
+pub type ItemAt = (String, String, String);
+pub type LinkedSpans = Option<(Linked, Pending<Vec<TimeSpan>>)>;
+pub type TranscriptWindow = Option<(ItemAt, Pending<ThreadWindowOutput>)>;
+
 #[derive(Default)]
 pub struct TimeState {
     pub query: Option<TimeQuery>,
@@ -343,9 +350,9 @@ pub struct TimeState {
     pub spans_done: bool,
     pub spans_error: Option<String>,
     /// What was asked for, and its spans once they arrived (the first page only: 500).
-    pub linked: Option<(Linked, Option<Result<Vec<TimeSpan>, String>>)>,
+    pub linked: LinkedSpans,
     /// (machine, thread, item) and its transcript window.
-    pub window: Option<((String, String, String), Option<Result<ThreadWindowOutput, String>>)>,
+    pub window: TranscriptWindow,
     /// (retention days, stored bytes), for Settings → Data.
     pub store: Option<Result<(i64, i64), String>>,
     /// Bumped on every answer, so the view rebuilds only when something arrived.
@@ -715,7 +722,6 @@ impl State {
         vec![self.call(Purpose::Files { query: query.to_string() }, &input)]
     }
 
-    /// The Machines screen opened: list the doctor's checks.
     // ---- time inspector ---------------------------------------------------------------------
 
     /// Opens (or re-aims) the time inspector. The same query again sends nothing.
@@ -903,6 +909,7 @@ impl State {
         self.time.version += 1;
     }
 
+    /// The Machines screen opened: list the doctor's checks.
     pub fn open_doctor(&mut self) -> Out {
         self.doctor.get_or_insert_with(Doctor::default);
         self.request_doctor().into_iter().collect()
