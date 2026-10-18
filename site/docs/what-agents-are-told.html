@@ -51,8 +51,8 @@
 <main class="doc" id="main">
 <p class="kicker">Using fleetd</p>
 <h1>What agents are told</h1>
-<p>Every word fleetd sends a model is listed on this page and in <code>fleetd prompts list</code>, and you can edit each one. A
-session keeps the text it started with.</p>
+<p>Every word fleetd sends a model is listed on this page, in the app's Settings → Prompts and in <code>fleetd prompts list</code>,
+and you can edit each one. A session keeps the text it started with.</p>
 <h2 id="how-a-session-gets-its-instructions">How a session gets its instructions<a class="anchor" href="#how-a-session-gets-its-instructions" aria-label="Link to this section">#</a></h2>
 <p>There is no hidden system prompt. fleetd's instructions are the first message of a session (lead, task, reviewer,
 judge), later messages into it (wakes, review findings, train news, nudges), or the input of a one-shot <code>claude -p</code>
@@ -66,6 +66,9 @@ Editing those words away only means agents hit refusals they weren't warned abou
 don't read the PR description, a lead doesn't re-ask a decided question and asks you only about product, money,
 credentials or something irreversible. Remove one and nothing else stops it.</p>
 <h2 id="edit-a-prompt">Edit a prompt<a class="anchor" href="#edit-a-prompt" aria-label="Link to this section">#</a></h2>
+<p>In the app: Settings → Prompts. Pick Hub-wide or a project in "Texts for", open a prompt, edit it and Save; "Compare
+with default" shows your changes, "Reset to default" drops them. Click a placeholder to insert it. Warnings show as you
+type and never stop a save.</p>
 <p>On the hub machine:</p>
 <pre class="code sh" data-copy><code><span class="l">fleetd prompts show lead.start</span>
 <span class="l">fleetd prompts edit lead.start</span>
@@ -87,14 +90,17 @@ playbooks have only the global level. Your versions are files under <code>~/.fle
 <tr><td>too long</td><td>over three times the length of fleetd's text</td></tr>
 </tbody></table></div>
 <h2 id="instructions">Your own instructions<a class="anchor" href="#instructions" aria-label="Link to this section">#</a></h2>
+<p>In the app: Settings → Instructions, for every project or one project. On the hub machine:</p>
 <pre class="code sh" data-copy><code><span class="l">fleetd instructions edit</span>
 <span class="l">fleetd instructions edit --project builder-1/app</span>
 <span class="l">fleetd instructions show</span></code></pre>
 <p>They are added to every lead's first message and every task brief (writers, reviewers and judges), global first, under
 "Custom instructions from the human". Not to the router, the retro or wakes.</p>
 <h2 id="when-fleetd-changes-a-default-you-edited">When fleetd changes a default you edited<a class="anchor" href="#when-fleetd-changes-a-default-you-edited" aria-label="Link to this section">#</a></h2>
-<p>Your version stays in use, and <code>fleetd prompts list</code> marks the prompt <code>update</code>. Then <code>fleetd prompts diff &lt;id&gt;</code> shows
-what fleetd changed and what you changed since you edited it, and <code>edit</code> opens both merged. Save it, or reset. A
+<p>Your version stays in use. In Settings → Prompts the prompt gets a warning dot and "fleetd's default changed since you
+edited this. Your text stays in effect until you save it again." "Review the update" shows what fleetd changed and
+what you changed, above both merged: Save merged, Keep mine, or Use the new default. On the hub machine,
+<code>fleetd prompts list</code> marks it <code>update</code>, <code>fleetd prompts diff &lt;id&gt;</code> shows both changes and <code>edit</code> opens the merge. A
 safety rule the new default added and your text lacks shows as a warning.</p>
 <p>Playbooks are the exception: an edited playbook gets no notice when fleetd's version changes. After an update,
 compare it with <code>fleetd prompts diff playbook.&lt;name&gt;</code>.</p>
@@ -103,9 +109,11 @@ compare it with <code>fleetd prompts diff playbook.&lt;name&gt;</code>.</p>
 task at its next attempt, a lead at its next start. To give a running lead your edit now, restart it with
 <code>lead_restart</code> from an MCP client (<a href="/docs/projects-and-orders#its-lead">Its lead</a>).</p>
 <h2 id="told">See exactly what an agent was told<a class="anchor" href="#told" aria-label="Link to this section">#</a></h2>
+<p>In an order, "Show full prompt" on an agent's lane or in the lead's header opens the exact first message that session
+was sent, which version of each prompt it used (fleetd's, your hub-wide edit, the project's, your instructions) and
+the tools it never gets. On the hub machine, the message alone:</p>
 <pre class="code sh" data-copy><code><span class="l">fleetd prompts show --session &lt;machine&gt;/&lt;thread&gt;</span></code></pre>
-<p>prints the exact first message a session was sent; <code>session_prompt_get</code> from an MCP client also returns which version
-of each prompt it used and the tools it may not use. Later messages are in the lead's conversation in the app.</p>
+<p><code>session_prompt_get</code> returns the same to an MCP client. Later messages are in the lead's conversation.</p>
 <h2 id="not-editable-tool-descriptions-and-cli-replies">Not editable: tool descriptions and CLI replies<a class="anchor" href="#not-editable-tool-descriptions-and-cli-replies" aria-label="Link to this section">#</a></h2>
 <p>MCP tool descriptions and what the lead-side CLI prints back (each <code>next:</code> and <code>fix:</code>) are the other half of a
 protocol with code: a description must match its tool, a <code>next:</code> must name a real command. See the

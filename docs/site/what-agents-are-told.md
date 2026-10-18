@@ -5,8 +5,8 @@ order: 65
 description: Every prompt fleetd sends a model, how to read, edit, reset and diff it, your own instructions, and what a running agent keeps.
 ---
 
-Every word fleetd sends a model is listed on this page and in `fleetd prompts list`, and you can edit each one. A
-session keeps the text it started with.
+Every word fleetd sends a model is listed on this page, in the app's Settings → Prompts and in `fleetd prompts list`,
+and you can edit each one. A session keeps the text it started with.
 
 ## How a session gets its instructions
 
@@ -26,6 +26,10 @@ don't read the PR description, a lead doesn't re-ask a decided question and asks
 credentials or something irreversible. Remove one and nothing else stops it.
 
 ## Edit a prompt
+
+In the app: Settings → Prompts. Pick Hub-wide or a project in "Texts for", open a prompt, edit it and Save; "Compare
+with default" shows your changes, "Reset to default" drops them. Click a placeholder to insert it. Warnings show as you
+type and never stop a save.
 
 On the hub machine:
 
@@ -58,6 +62,8 @@ Saving never refuses text that isn't empty, but it warns:
 
 ## Your own instructions {#instructions}
 
+In the app: Settings → Instructions, for every project or one project. On the hub machine:
+
 ```sh
 fleetd instructions edit
 fleetd instructions edit --project builder-1/app
@@ -69,8 +75,10 @@ They are added to every lead's first message and every task brief (writers, revi
 
 ## When fleetd changes a default you edited
 
-Your version stays in use, and `fleetd prompts list` marks the prompt `update`. Then `fleetd prompts diff <id>` shows
-what fleetd changed and what you changed since you edited it, and `edit` opens both merged. Save it, or reset. A
+Your version stays in use. In Settings → Prompts the prompt gets a warning dot and "fleetd's default changed since you
+edited this. Your text stays in effect until you save it again." "Review the update" shows what fleetd changed and
+what you changed, above both merged: Save merged, Keep mine, or Use the new default. On the hub machine,
+`fleetd prompts list` marks it `update`, `fleetd prompts diff <id>` shows both changes and `edit` opens the merge. A
 safety rule the new default added and your text lacks shows as a warning.
 
 Playbooks are the exception: an edited playbook gets no notice when fleetd's version changes. After an update,
@@ -84,12 +92,15 @@ task at its next attempt, a lead at its next start. To give a running lead your 
 
 ## See exactly what an agent was told {#told}
 
+In an order, "Show full prompt" on an agent's lane or in the lead's header opens the exact first message that session
+was sent, which version of each prompt it used (fleetd's, your hub-wide edit, the project's, your instructions) and
+the tools it never gets. On the hub machine, the message alone:
+
 ```sh
 fleetd prompts show --session <machine>/<thread>
 ```
 
-prints the exact first message a session was sent; `session_prompt_get` from an MCP client also returns which version
-of each prompt it used and the tools it may not use. Later messages are in the lead's conversation in the app.
+`session_prompt_get` returns the same to an MCP client. Later messages are in the lead's conversation.
 
 ## Not editable: tool descriptions and CLI replies
 

@@ -93,7 +93,8 @@ Clicking it opens the ask.
 
 ## Settings
 
-Settings (⌘,) has Appearance, Motion and the hub connection. Motion: System follows the OS's reduce-motion setting,
+Settings (⌘,) has General (appearance, motion, the hub connection), Prompts and Instructions; the last two are in
+[What agents are told](what-agents-are-told.md). Motion: System follows the OS's reduce-motion setting,
 Reduced turns the brief card and lane transitions off, Full keeps them. Nothing in the app animates continuously.
 
 ## Shortcuts
