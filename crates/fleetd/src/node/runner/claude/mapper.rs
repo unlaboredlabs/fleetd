@@ -30,6 +30,7 @@ pub type Classify = Arc<dyn Fn(&FailureEvidence) -> Option<RunFailure> + Send + 
 
 const STDERR_TAIL: usize = 4000;
 const MESSAGE_MAX: usize = 4000;
+const THINKING_TITLE_MAX: usize = 120;
 
 /// The time a line was read.
 #[derive(Clone, Debug)]
@@ -441,6 +442,7 @@ impl StreamMapper {
             });
             return;
         }
+        let mut thinking_blocks = 0;
         for block in message.content {
             match block {
                 Block::Text { text } => {
@@ -470,6 +472,31 @@ impl StreamMapper {
                     self.tools.insert(id.clone(), tool);
                     let item =
                         self.item(id, ItemStatus::Running, title, now.at.clone(), None, kind);
+                    events.push(RunnerEvent::Item(item));
+                }
+                // `--thinking-display summarized`: claude's summary of its reasoning, kept as a finished item so the
+                // app and actions_list show what the agent weighed, and the watchdog sees progress during long
+                // thinking. Never AssistantText: it is not the reply. Empty or redacted blocks carry nothing to show.
+                Block::Thinking { thinking } if !thinking.trim().is_empty() => {
+                    thinking_blocks += 1;
+                    let id = format!("{}:thinking:{thinking_blocks}", message.id);
+                    let summary = thinking.trim();
+                    let first = summary.lines().next().unwrap_or_default();
+                    let title = format!("Thinking: {}", head_utf16(first, THINKING_TITLE_MAX));
+                    let kind = ItemKind::Tool {
+                        tool_name: "Thinking".into(),
+                        input: Value::Null,
+                        output: Some(summary.to_owned()),
+                        output_omitted: false,
+                    };
+                    let item = self.item(
+                        id,
+                        ItemStatus::Completed,
+                        title,
+                        now.at.clone(),
+                        Some(now),
+                        kind,
+                    );
                     events.push(RunnerEvent::Item(item));
                 }
                 _ => {}

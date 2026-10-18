@@ -752,3 +752,31 @@ fn several_text_blocks_of_one_message_keep_distinct_ids_shared_with_their_deltas
         ]
     );
 }
+
+#[test]
+fn summarized_thinking_becomes_a_finished_item_and_never_the_reply() {
+    let mut mapper = StreamMapper::new("s", recorder());
+    let assistant = json!({"type":"assistant","parent_tool_use_id":null,"message":{"id":"m1","content":[
+        {"type":"thinking","thinking":"Weighing a rebase against a merge.\nA rebase keeps the history linear."},
+        {"type":"thinking","thinking":""},
+        {"type":"redacted_thinking","data":"…"},
+        {"type":"text","text":"Rebased."}]}});
+    let events = mapper.feed(line(assistant), &now()).events;
+    let [
+        RunnerEvent::Item(item),
+        RunnerEvent::AssistantText { text, .. },
+    ] = &events[..]
+    else {
+        panic!("{events:?}");
+    };
+    assert_eq!(
+        (item.id.as_str(), item.status),
+        ("m1:thinking:1", ItemStatus::Completed)
+    );
+    assert_eq!(item.title, "Thinking: Weighing a rebase against a merge.");
+    assert!(
+        matches!(&item.kind, ItemKind::Tool { tool_name, output: Some(o), .. }
+        if tool_name == "Thinking" && o.ends_with("keeps the history linear."))
+    );
+    assert_eq!(text, "Rebased.");
+}

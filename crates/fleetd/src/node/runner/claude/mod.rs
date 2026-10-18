@@ -21,9 +21,27 @@ use super::{
 };
 use mapper::{Classify, StreamMapper};
 
-/// Tools no fleetd session gets: subagent fan-out stays under fleetd's slots, and nobody is at a terminal to answer
-/// AskUserQuestion (agents use `fleetd ask`).
-pub const ALWAYS_DISALLOWED: &[&str] = &["Task", "Workflow", "AskUserQuestion"];
+/// Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list):
+/// - Task, Workflow: subagent fan-out stays under fleetd's slots.
+/// - AskUserQuestion, EnterPlanMode, ExitPlanMode: nobody sits at a terminal to answer a question or approve a plan,
+///   so a headless run would stall there. Agents use `fleetd ask`.
+/// - CronCreate, CronDelete, CronList, ScheduleWakeup: work is scheduled by fleetd (tasks, wakes), never inside one
+///   claude process that the node may reap or restart.
+/// - EnterWorktree, ExitWorktree: fleetd owns worktrees (one per writer). A session that moves its own cwd can no
+///   longer be resumed, since claude files sessions by cwd.
+pub const ALWAYS_DISALLOWED: &[&str] = &[
+    "Task",
+    "Workflow",
+    "AskUserQuestion",
+    "EnterPlanMode",
+    "ExitPlanMode",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "ScheduleWakeup",
+    "EnterWorktree",
+    "ExitWorktree",
+];
 
 /// `--mcp-config` when the node wrote none: with `--strict-mcp-config`, no user or repo MCP server loads.
 const NO_MCP_SERVERS: &str = r#"{"mcpServers":{}}"#;
@@ -263,7 +281,8 @@ mod tests {
              --model claude-haiku-5-5 --effort max --thinking adaptive --thinking-display summarized \
              --session-id 7f0c0000-0000-4000-8000-000000000001 --permission-prompt-tool stdio --permission-mode manual \
              --allowedTools Bash(npm test:*) Bash(git commit -m \"a, b\") \
-             --disallowedTools Task Workflow AskUserQuestion WebFetch \
+             --disallowedTools Task Workflow AskUserQuestion EnterPlanMode ExitPlanMode CronCreate CronDelete \
+             CronList ScheduleWakeup EnterWorktree ExitWorktree WebFetch \
              --strict-mcp-config --mcp-config {\"mcpServers\":{}} --setting-sources user,project,local \
              --add-dir /work/root"
         );
