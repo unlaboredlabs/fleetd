@@ -37,6 +37,8 @@ pub enum Call {
     Get,
     Wait,
     Seen,
+    /// The fleet's doc for the digest notification, asked fresh when the hub's digest is ready.
+    Digest,
 }
 
 #[derive(Default)]
@@ -52,6 +54,10 @@ pub struct StatusState {
     /// Bumped each time the view goes back to a skeleton or changes scope: the number never tweens across one.
     pub session: u64,
     generation: u64,
+    /// Settings → Notifications: post the digest notification on the hub's `digest.ready`.
+    pub digest_on: bool,
+    /// A digest notification to post.
+    pub digest: Option<crate::notify::Notification>,
 }
 
 /// What the view shows.
@@ -139,7 +145,7 @@ impl State {
     fn status_get(&mut self) -> Out {
         match (&self.status.scope, &self.conn) {
             (Some(scope), Conn::Live) => {
-                let input = StatusGetInput { scope: scope.clone() };
+                let input = StatusGetInput { scope: scope.clone(), since_seq: None };
                 vec![self.call(Purpose::Status(Call::Get, self.status.generation), &input)]
             }
             _ => Vec::new(),
@@ -151,6 +157,7 @@ impl State {
             (Some(scope), Conn::Live) => {
                 let input = StatusWaitInput {
                     scope: scope.clone(),
+                    since_seq: None,
                     after: Some(Int::unchecked(after as i64)),
                     timeout_sec: IntOr(Int::unchecked(WAIT_SEC as i64)),
                 };
@@ -160,7 +167,26 @@ impl State {
         }
     }
 
+    /// The hub's morning or evening digest is ready: fetch the fleet's doc now (never a kept one) for the
+    /// notification.
+    pub(crate) fn status_digest_ready(&mut self) -> Out {
+        if !self.status.digest_on || self.conn != Conn::Live {
+            return Vec::new();
+        }
+        let input = StatusGetInput { scope: StatusScope::Fleet, since_seq: None };
+        vec![self.call(Purpose::Status(Call::Digest, 0), &input)]
+    }
+
     pub(crate) fn on_status_result(&mut self, call: Call, generation: u64, output: serde_json::Value) -> Out {
+        if call == Call::Digest {
+            let now = now_ms();
+            let quiet = self.policy.as_ref().is_some_and(|p| p.quiet_at(now));
+            if let (Ok(out), false) = (parse::<StatusGetOutput>(output), quiet) {
+                let (title, body) = digest_text(&out.doc);
+                self.status.digest = Some(crate::notify::Notification { title, body, target: crate::notify::Target::Status });
+            }
+            return Vec::new();
+        }
         if call == Call::Seen || generation != self.status.generation {
             return Vec::new();
         }
@@ -192,6 +218,8 @@ impl State {
     pub(crate) fn on_status_error(&mut self, call: Call, generation: u64, text: String) {
         match call {
             Call::Seen => self.echo = Some(Echo { text: format!("Couldn't record that you looked: {text}"), ok: false }),
+            // No doc, no digest: a notification from old numbers would be worse than none.
+            Call::Digest => {}
             _ if generation != self.status.generation => {}
             _ => {
                 self.status.error = Some(text);
@@ -199,6 +227,36 @@ impl State {
             }
         }
     }
+}
+
+/// The digest notification from a fresh fleet doc: "fleetd · 72%", then the headline (which starts "Not live: …"
+/// when a source is stale; said here too if the hub's line doesn't), what changed since you looked, and how many
+/// decisions wait.
+pub fn digest_text(doc: &StatusDoc) -> (String, String) {
+    let p = &doc.progress;
+    let title = if p.total.get() > 0 || p.polish_total.get() > 0 { format!("fleetd · {}%", p.pct) } else { "fleetd".to_string() };
+    let mut parts = Vec::new();
+    let headline = doc.headline.text.to_string();
+    if !doc.stale.is_empty() && !headline.starts_with("Not live") {
+        let sources: Vec<&str> = doc.stale.iter().map(|s| s.source.as_str()).collect();
+        parts.push(format!("Not live: {} stale.", sources.join(", ")));
+    }
+    parts.push(headline);
+    let s = &doc.since;
+    let counts: Vec<String> = [(s.merged.get(), "merged"), (s.verified.get(), "verified"), (s.started.get(), "started"), (s.failed.get(), "failed")]
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, w)| format!("{n} {w}"))
+        .collect();
+    if !counts.is_empty() {
+        parts.push(format!("Since you looked: {}.", counts.join(", ")));
+    }
+    match doc.needs_you.count.get() {
+        0 => {}
+        1 => parts.push("1 needs you.".into()),
+        n => parts.push(format!("{n} need you.")),
+    }
+    (title, parts.join(" "))
 }
 
 /// Time on screen with the window focused, for since-you-last-looked.
@@ -690,6 +748,19 @@ mod tests {
         assert_eq!(next_change([59_000, 4 * 60_000 + 5_000]), Some(1_000));
         assert_eq!(next_change([3_600_000 + 60_000]), Some(3_540_000));
         assert_eq!(next_change(Vec::new()), None);
+    }
+
+    #[test]
+    fn the_digest_says_the_figure_what_changed_and_when_it_is_not_live() {
+        let (title, body) = digest_text(&fixture::doc(&StatusScope::Fleet, fixture::Variant::Live));
+        assert_eq!(title, "fleetd · 72%");
+        assert!(body.starts_with("Fixing cart rounding"), "{body}");
+        assert!(body.ends_with("Since you looked: 7 merged, 3 verified, 2 started, 1 failed. 3 need you."), "{body}");
+        let mut stale = fixture::doc(&StatusScope::Fleet, fixture::Variant::Stale);
+        assert!(digest_text(&stale).1.starts_with("Not live: buildbox silent"), "the hub's own clause, once");
+        stale.headline.text = fleetd_contracts::prim::Line::unchecked("Nothing running.");
+        let (_, body) = digest_text(&stale);
+        assert!(body.starts_with("Not live: machine:buildbox, usage:buildbox, github:acme/storefront stale. Nothing running."), "{body}");
     }
 
     #[test]

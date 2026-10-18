@@ -13,6 +13,8 @@ pub enum SettingsEvent {
     Disconnect,
     /// Keep time inspector spans this many days.
     Retention(i64),
+    /// The digest notification turned on or off.
+    Digest(bool),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -56,11 +58,13 @@ pub struct Settings {
     /// The hub's span retention (days) and what its span tables take on disk; None until it answered.
     pub data: Option<Result<(i64, i64), String>>,
     motion: Motion,
+    digest: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hub: Hub::default(), data: None, motion: prefs::load().motion }
+        let p = prefs::load();
+        Self { hub: Hub::default(), data: None, motion: p.motion, digest: p.digest }
     }
 }
 
@@ -122,6 +126,23 @@ impl Render for Settings {
                 .spawn(async move {
                     let mut p = prefs::load();
                     p.motion = motion;
+                    // Not saved only if the config directory is unwritable; the choice still holds for this run.
+                    let _ = prefs::save(&p);
+                })
+                .detach();
+        });
+        let this = cx.entity().downgrade();
+        let digest = segmented(t, "digest", &[(false, "Off"), (true, "On")], self.digest, move |on, _, cx| {
+            this.update(cx, |s, cx| {
+                s.digest = on;
+                cx.emit(SettingsEvent::Digest(on));
+                cx.notify();
+            })
+            .ok();
+            cx.background_executor()
+                .spawn(async move {
+                    let mut p = prefs::load();
+                    p.digest = on;
                     // Not saved only if the config directory is unwritable; the choice still holds for this run.
                     let _ = prefs::save(&p);
                 })
@@ -211,6 +232,13 @@ impl Render for Settings {
                         .gap_6()
                         .child(setting("Motion", "Cards, lanes and the inbox panel move briefly when they change. Reduced turns that off.".into()))
                         .child(motion),
+                )
+                .child(
+                    div().flex().items_start().gap_6().child(setting(
+                        "Digest",
+                        "A notification at 09:00 and 18:00, the hub's digest times: the fleet's progress, its headline, what changed since you looked and what needs you.".into(),
+                    ))
+                    .child(digest),
                 )
                 .child(ui::hairline(t))
                 .child(

@@ -252,6 +252,7 @@ impl Shell {
                             this.send(out);
                         }
                     }
+                    SettingsEvent::Digest(on) => this.state.status.digest_on = *on,
                 }
                 cx.notify();
             }),
@@ -347,6 +348,7 @@ impl Shell {
                     .update(cx, |this, cx| {
                         match this.notified.take() {
                             Some(Target::Machines) => this.go(Screen::Machines),
+                            Some(Target::Status) => this.open_status(fleetd_contracts::status::StatusScope::Fleet, cx),
                             Some(Target::Ask(id)) => {
                                 this.toggle_inbox(true, cx);
                                 this.focus_ask = Some(id);
@@ -362,6 +364,16 @@ impl Shell {
 
     /// Posts the notification the hub's attention rules and policy allow now, if any.
     fn notify_if_due(&mut self, cx: &mut App) {
+        if let Some(n) = self.state.status.digest.take() {
+            self.notified = Some(n.target);
+            // Its own tag, so it doesn't replace a "needs you" one still on screen.
+            cx.show_system_notification(SystemNotification {
+                tag: "fleetd-digest".into(),
+                title: n.title.into(),
+                body: n.body.into(),
+                actions: Vec::new(),
+            });
+        }
         let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
         if let Some(n) = self.state.take_notification(now_ms) {
             self.notified = Some(n.target);
@@ -466,6 +478,7 @@ impl Shell {
         add.lost |= add.active();
         self.state = State::default();
         self.state.add = add;
+        self.state.status.digest_on = crate::prefs::load().digest;
         self.screen = Screen::Board;
         self.selected = 0;
         self.pending_focus = Some(self.docked.focus_handle(cx));

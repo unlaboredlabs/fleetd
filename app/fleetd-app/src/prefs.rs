@@ -16,6 +16,8 @@ pub struct Prefs {
     pub motion: MotionPref,
     /// The time inspector's filters.
     pub time: crate::time::filters::Filters,
+    /// A notification with the fleet's status at the hub's morning and evening digest. Off by default.
+    pub digest: bool,
 }
 
 pub fn load() -> Prefs {
@@ -46,6 +48,9 @@ fn parse(bytes: &[u8]) -> Prefs {
     if let Some(time) = map.get("time").and_then(|v| serde_json::from_value(v.clone()).ok()) {
         prefs.time = time;
     }
+    if let Some(digest) = map.get("digest").and_then(|v| v.as_bool()) {
+        prefs.digest = digest;
+    }
     prefs
 }
 
@@ -69,7 +74,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let prefs = Prefs { theme: Mode::Light, motion: MotionPref::Full, time: Default::default() };
+        let prefs = Prefs { theme: Mode::Light, motion: MotionPref::Full, time: Default::default(), digest: true };
         assert_eq!(parse(&serde_json::to_vec(&prefs).unwrap()), prefs);
     }
 }

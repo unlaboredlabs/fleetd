@@ -187,7 +187,7 @@ impl Purpose {
                 | Purpose::AddProject
                 | Purpose::AddInspect
                 | Purpose::AddRecover
-                | Purpose::Status(crate::status::Call::Seen, _)
+                | Purpose::Status(crate::status::Call::Seen | crate::status::Call::Digest, _)
         )
     }
 }
@@ -1248,6 +1248,9 @@ impl State {
         }
         self.add_saw(event.seq);
         out.extend(self.on_add_event(event));
+        if event.r#type == HubEventType::DigestReady {
+            out.extend(self.status_digest_ready());
+        }
         if event.r#type == HubEventType::DoctorChanged && self.doctor.is_some() {
             out.extend(self.request_doctor());
         }
