@@ -256,12 +256,19 @@ mod tests {
         )
     }
 
-    /// True when `pid` is gone or a zombie waiting to be reaped.
+    /// True when `pid` is gone, a zombie, or already inside the kernel's exit path (`PF_EXITING`, stat field 9):
+    /// past that point it never runs user code again.
     fn dead(pid: i32) -> bool {
+        const PF_EXITING: u64 = 0x4;
         std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| {
-            stat.split(") ")
-                .nth(1)
-                .is_some_and(|rest| rest.starts_with('Z'))
+            let fields: Vec<&str> = stat
+                .rsplit_once(") ")
+                .map_or(vec![], |(_, rest)| rest.split_whitespace().collect());
+            fields.first() == Some(&"Z")
+                || fields
+                    .get(6)
+                    .and_then(|f| f.parse::<u64>().ok())
+                    .is_some_and(|flags| flags & PF_EXITING != 0)
         })
     }
 
@@ -352,30 +359,31 @@ mod tests {
         assert!(long.output_tail.ends_with("line599\n"));
     }
 
-    #[tokio::test]
+    /// Paused time: the 1 s timeout can only fire once nothing else is pending. The blocking read of the script's
+    /// fifo holds the clock (tokio does not auto-advance while a blocking task runs), so the kill comes exactly after
+    /// the script has started its background child and printed, however loaded the machine is.
+    #[tokio::test(start_paused = true)]
     async fn kills_the_whole_process_group_at_the_timeout() {
         let root = tempfile::tempdir().unwrap();
         let roots = vec![root.path().to_string_lossy().into_owned()];
-        let pid_file = root.path().join("bg.pid");
+        let fifo = root.path().join("bg.pid");
+        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).unwrap();
         let script = format!(
-            "sleep 30 & echo $! > {}; echo started; wait",
-            pid_file.display()
+            "sleep 3600 & echo started; echo $! > {}; wait",
+            fifo.display()
         );
-        let result = run_cmd_check(check(root.path(), &["sh", "-c", &script], 1), &roots).await;
+        let ready = tokio::task::spawn_blocking(move || std::fs::read_to_string(fifo).unwrap());
+        let (result, pid) = tokio::join!(
+            run_cmd_check(check(root.path(), &["sh", "-c", &script], 1), &roots),
+            ready
+        );
         assert_eq!(
             parts(&result),
             (None, "started\n[fleetd: killed after 1 s]", true)
         );
-        let pid: i32 = std::fs::read_to_string(&pid_file)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        // The signal is delivered at once, but the orphaned child is reaped asynchronously by init.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        while !dead(pid) && std::time::Instant::now() < deadline {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
+        // run_cmd_check returns only after the output pipes closed, and the background sleep held them: it has
+        // been killed and is exiting, whoever reaps it.
+        let pid: i32 = pid.unwrap().trim().parse().unwrap();
         assert!(dead(pid));
     }
 }
