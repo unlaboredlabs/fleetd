@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steering · fleetd docs</title>
+<meta name="description" content="Redirect a lead or any agent while it works, know when it took your words in, and take a steer back.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
+<script src="/docs/docs.js?v=1cc74a7d" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
+  <div class="search" role="search">
+    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
+    <ul id="hits" role="listbox" hidden></ul>
+  </div>
+  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
+</header>
+<div class="wrap">
+<nav class="side" id="side" aria-label="Docs">
+<p>Get started</p>
+<ul>
+<li><a href="/docs/install">Install</a></li>
+<li><a href="/docs/quick-start">Quick start</a></li>
+<li><a href="/docs/concepts">Concepts</a></li>
+</ul>
+<p>Using fleetd</p>
+<ul>
+<li><a href="/docs/machines">Machines</a></li>
+<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/steering" aria-current="page">Steering</a></li>
+<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
+<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
+<li><a href="/docs/desktop-app">The desktop app</a></li>
+<li><a href="/docs/status">Status</a></li>
+<li><a href="/docs/time-inspector">Where time went</a></li>
+</ul>
+<p>Reference</p>
+<ul>
+<li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/config-and-files">Config &amp; files</a></li>
+<li><a href="/docs/security">Security model</a></li>
+<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
+<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
+</ul>
+</nav>
+<main class="doc" id="main">
+<p class="kicker">Using fleetd</p>
+<h1>Steering</h1>
+<p>A steer is a short message to an agent that is already working: "skip the docs page, ship the API first". It goes
+straight to the agent, never waits for the lead's next wake, and every steer gets a receipt saying whether the agent
+took it in and acted on it.</p>
+<h2 id="keys">The two keys<a class="anchor" href="#keys" aria-label="Link to this section">#</a></h2>
+<p>In an order, the box under the conversation steers its lead:</p>
+<div class="table"><table><thead><tr><th>Key</th><th>Label</th><th>What happens</th></tr></thead><tbody>
+<tr><td>Enter</td><td>Add to the lead's queue</td><td>The lead takes it in at its next step, as its own turn. Nothing it is doing is cut short</td></tr>
+<tr><td>⌘Enter (Ctrl+Enter)</td><td>Interrupt and redirect now</td><td>The lead's current step is stopped and your steer is delivered at once</td></tr>
+</tbody></table></div>
+<p>When the agent is between turns, both keys do the same thing: it starts on your steer right away.</p>
+<h3 id="next-step">What "next step" means<a class="anchor" href="#next-step" aria-label="Link to this section">#</a></h3>
+<p>An agent works in steps: it thinks, runs a tool (a command, an edit, a search), reads the result, and decides what to
+do next. Enter waits for the tool the agent is running to finish, then delivers your steer before it decides
+anything else. Most tools take a second or two, but a test suite or a build can take minutes, and Enter waits for all
+of it. While it waits, the line above the box says what it waits for ("S12 waits for the lead's next step
+(<code>cargo test</code> running 1m12s)").</p>
+<p>If the running step is the thing you want stopped, use ⌘Enter. The tool is stopped (a long command is killed), its
+step ends there, and the agent starts on your steer. Nothing else the agent had queued is dropped.</p>
+<h2 id="receipts">Receipts<a class="anchor" href="#receipts" aria-label="Link to this section">#</a></h2>
+<p>Each steer gets an id, <code>S12</code>, and its receipt shows under your message in the conversation:</p>
+<div class="table"><table><thead><tr><th>Receipt</th><th>Means</th></tr></thead><tbody>
+<tr><td>queued</td><td>fleetd has it; the agent has not taken it in yet. "withdraw" is still possible</td></tr>
+<tr><td>delivered</td><td>The agent took it in: it started a turn, came after the running tool, or stopped that tool (the receipt names it)</td></tr>
+<tr><td>acknowledged</td><td>The agent's reply begins with "S12:" and says what it will do. The receipt quotes it</td></tr>
+<tr><td>not acknowledged</td><td>The agent's turn ended without naming S12. The receipt quotes what it said instead</td></tr>
+<tr><td>withdrawn</td><td>You took it back before the agent saw it</td></tr>
+<tr><td>failed</td><td>It could not be delivered; the receipt says why</td></tr>
+</tbody></table></div>
+<p>Agents are asked to begin their next message with the steer's id. That is how fleetd knows, without guessing, that
+your words were read as yours.</p>
+<p><strong>Not acknowledged</strong> means the agent saw the message but did not say it would act on it. It may have taken it for
+text inside a tool's output, or carried on with its old plan. Read the quoted reply: if it is still doing the wrong
+thing, send the steer again with ⌘Enter, which delivers it as its own turn.</p>
+<p>If the agent's machine is offline, the steer waits with the receipt "waiting for lab-b (until 14:30)" and goes as
+soon as the machine is back; past that time it fails. If your Claude usage is used up, it says "held: usage resets
+14:00".</p>
+<h2 id="agents">Steer any agent<a class="anchor" href="#agents" aria-label="Link to this section">#</a></h2>
+<p>Click an agent's lane in an order (a writer, a reviewer, a verifier, or the lead) to open its sheet: what it is doing
+now, its last steps, its steers, and a box with the same two keys aimed at that agent.</p>
+<p>When you steer an agent directly, its lead is told at its next wake: what you said, to whom, and that the agent now
+works to it, so the lead keeps its plan in line instead of undoing your steer. The lead is never interrupted for it.
+Once the agent acknowledges (or doesn't), the lead's summary of the order says so.</p>
+<p>A steer to an agent that has not started yet reaches it with its instructions; one to an agent that has finished
+continues its conversation.</p>
+<h2 id="withdraw">Take a steer back<a class="anchor" href="#withdraw" aria-label="Link to this section">#</a></h2>
+<p>While a steer is still queued, "withdraw" under it (or <code>fleetd steer withdraw S12</code>) takes it back, and the agent never
+sees it. Once it is delivered it cannot be unsaid: send another steer that says what changed.</p>
+<h2 id="plan">When a steer changes the plan<a class="anchor" href="#plan" aria-label="Link to this section">#</a></h2>
+<p>If your steer changes what the order delivers, the lead updates the order's plan in the same turn and names your
+steer. The status view then shows it on the order: "↳ you steered S12 14:02 · acknowledged ·
+−1 item".</p>
+<h2 id="cli">From the command line<a class="anchor" href="#cli" aria-label="Link to this section">#</a></h2>
+<p><code>fleetd steer</code> speaks for you, so it needs a human key: create one on the hub machine with
+<a href="/docs/cli#hub-key-create-human"><code>fleetd hub key create --human</code></a>, and keep it in a file only you can read.</p>
+<pre class="code sh" data-copy><code><span class="l">fleetd steer W41 &quot;skip the docs page; ship the API first&quot; --key-file ~/.fleetd/me.key</span>
+<span class="l">fleetd steer T88 &quot;stop: the schema changed, rebase first&quot; --now --wait --key-file ~/.fleetd/me.key</span>
+<span class="l">fleetd steers W41 --key-file ~/.fleetd/me.key</span>
+<span class="l">fleetd steer withdraw S12 --key-file ~/.fleetd/me.key</span></code></pre>
+<p><code>W41</code> steers that order's lead, <code>T88</code> one agent. <code>--now</code> is ⌘Enter. <code>--wait</code> prints each receipt as it arrives and
+exits 0 once the agent acknowledged, 1 if it was not acknowledged, withdrawn or failed. On another machine add
+<code>--hub &lt;url&gt;</code>. See the <a href="/docs/cli#steer">CLI reference</a>.</p>
+<p>A lead steers its own agents the same way with <code>fleetd task message T88 "&lt;text&gt;"</code>, adding <code>--now</code> to stop the agent's
+current step.</p>
+<p>From an MCP client: <code>steer_send {target: {workstreamId} | {taskId}, text, mode: "queue" | "now"}</code> (operate, human
+key), <code>steer_withdraw {steerId}</code> and <code>steers_list {workstreamId?, taskId?}</code>.</p>
+<nav class="pn" aria-label="Previous and next">
+<a class="prev" href="/docs/projects-and-orders"><span>Previous</span>Projects &amp; orders</a>
+<a class="next" href="/docs/approvals-and-secrets"><span>Next</span>Approvals &amp; secrets</a>
+</nav>
+<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/steering.md">Edit this page</a></p>
+</main>
+<aside class="toc" aria-label="On this page">
+<p>On this page</p>
+<ul>
+<li><a href="#keys">The two keys</a></li>
+<li><a href="#receipts">Receipts</a></li>
+<li><a href="#agents">Steer any agent</a></li>
+<li><a href="#withdraw">Take a steer back</a></li>
+<li><a href="#plan">When a steer changes the plan</a></li>
+<li><a href="#cli">From the command line</a></li>
+</ul>
+</aside>
+</div>
+<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
+</body>
+</html>

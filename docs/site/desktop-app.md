@@ -59,11 +59,13 @@ The box under the conversation talks to the lead:
 
 | Do | How | The lead |
 |---|---|---|
-| Add a note | Enter | reads it at its next wake |
-| Steer | ⌘Enter, or "Steer now" | is woken now |
+| Add to the lead's queue | Enter | takes it in at its next step, after the tool it is running ([what that means](steering.md#next-step)) |
+| Interrupt and redirect | ⌘Enter, or "Interrupt and redirect" | stops its current step and reads it at once |
 | Stop | "Stop W…" (⌘⇧.), then confirm | its running agents are cancelled and its asks withdrawn; merged PRs stay |
 | Reorder | "Reorder" on a stopped order | nothing yet: its text goes back into the composer, to send as a new order |
 
+Each steer shows its receipt under it: queued, delivered, acknowledged or not acknowledged
+([Receipts](steering.md#receipts)); a queued one has "withdraw". Click an agent's lane to steer that agent instead.
 A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order, Esc back to the board.
 
 ## Status {#status}
@@ -138,8 +140,8 @@ order, machine and role, and compares two periods. How to read it, and what is n
 | ⌘⇧. | Stop the open order (asks to confirm) |
 | ⌘, | Settings |
 | ⌘B | Toggle the sidebar |
-| Enter | Send an order; in an order, add a note |
-| ⌘Enter | In an order, steer: wake the lead now |
+| Enter | Send an order; in an order, add to the lead's queue |
+| ⌘Enter | In an order, interrupt and redirect the lead now |
 | Shift+Enter | New line |
 | ⌘⇧P / ⌘⇧T / ⌘⇧A | In the composer: project picker / type picker / attach |
 | ↑ ↓ (or j k) | Move the selection on the board, in a menu or the palette (also Ctrl+P / Ctrl+N in the palette) |

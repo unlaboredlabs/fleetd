@@ -35,6 +35,7 @@
 <ul>
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
+<li><a href="/docs/steering">Steering</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app" aria-current="page">The desktop app</a></li>
@@ -92,12 +93,14 @@ results; the right side is the project lead's conversation, focused on this orde
 ("Worked for 48s · ran 3 commands") and runs about other orders collapse.</p>
 <p>The box under the conversation talks to the lead:</p>
 <div class="table"><table><thead><tr><th>Do</th><th>How</th><th>The lead</th></tr></thead><tbody>
-<tr><td>Add a note</td><td>Enter</td><td>reads it at its next wake</td></tr>
-<tr><td>Steer</td><td>⌘Enter, or "Steer now"</td><td>is woken now</td></tr>
+<tr><td>Add to the lead's queue</td><td>Enter</td><td>takes it in at its next step, after the tool it is running (<a href="/docs/steering#next-step">what that means</a>)</td></tr>
+<tr><td>Interrupt and redirect</td><td>⌘Enter, or "Interrupt and redirect"</td><td>stops its current step and reads it at once</td></tr>
 <tr><td>Stop</td><td>"Stop W…" (⌘⇧.), then confirm</td><td>its running agents are cancelled and its asks withdrawn; merged PRs stay</td></tr>
 <tr><td>Reorder</td><td>"Reorder" on a stopped order</td><td>nothing yet: its text goes back into the composer, to send as a new order</td></tr>
 </tbody></table></div>
-<p>A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order, Esc back to the board.</p>
+<p>Each steer shows its receipt under it: queued, delivered, acknowledged or not acknowledged
+(<a href="/docs/steering#receipts">Receipts</a>); a queued one has "withdraw". Click an agent's lane to steer that agent instead.
+A stopped order isn't reopened. ⌘[ and ⌘] go to the previous and next order, Esc back to the board.</p>
 <h2 id="status">Status<a class="anchor" href="#status" aria-label="Link to this section">#</a></h2>
 <p>⌘. opens Status for what you're looking at: the open order, the selected project, or the whole fleet; ⌘. again goes
 back. It's also in the sidebar above Board, in the palette ("Status", "Status for W41") and on an order's header. It
@@ -155,8 +158,8 @@ order, machine and role, and compares two periods. How to read it, and what is n
 <tr><td>⌘⇧.</td><td>Stop the open order (asks to confirm)</td></tr>
 <tr><td>⌘,</td><td>Settings</td></tr>
 <tr><td>⌘B</td><td>Toggle the sidebar</td></tr>
-<tr><td>Enter</td><td>Send an order; in an order, add a note</td></tr>
-<tr><td>⌘Enter</td><td>In an order, steer: wake the lead now</td></tr>
+<tr><td>Enter</td><td>Send an order; in an order, add to the lead's queue</td></tr>
+<tr><td>⌘Enter</td><td>In an order, interrupt and redirect the lead now</td></tr>
 <tr><td>Shift+Enter</td><td>New line</td></tr>
 <tr><td>⌘⇧P / ⌘⇧T / ⌘⇧A</td><td>In the composer: project picker / type picker / attach</td></tr>
 <tr><td>↑ ↓ (or j k)</td><td>Move the selection on the board, in a menu or the palette (also Ctrl+P / Ctrl+N in the palette)</td></tr>

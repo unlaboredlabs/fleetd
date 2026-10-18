@@ -15,6 +15,10 @@ judge), later messages into it (wakes, review findings, train news, nudges), or 
 with no tools (the router, the retro). Your own claude setup applies as usual underneath
 ([Config & files](config-and-files.md)). [Every prompt](#prompts) is listed at the end of this page.
 
+A [steer](steering.md) reaches the agent as one short message from you, wrapped in the `steer.message` prompt,
+which asks it to begin its reply with the steer's id. When you steer an agent directly, its lead hears about it in a
+wake line (`wake.agent_steer`).
+
 ## Claude's auto memory is off {#auto-memory}
 
 Claude Code can keep its own notes per folder ("auto memory") and read them back in later sessions. fleetd turns that

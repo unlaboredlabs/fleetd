@@ -95,7 +95,9 @@ board shows every order's phase and live agents; open one for its PRs, checks an
 
 ## Add to it, steer it, stop it
 
-In the order, Enter adds a note the lead reads at its next wake; ⌘Enter (Ctrl+Enter) or "Steer now" wakes it now.
+In the order, Enter adds your words to the lead's queue: it takes them in at its next step, after the tool it is
+running. ⌘Enter (Ctrl+Enter) interrupts and redirects: its current step stops and it reads you at once. Each steer
+gets a receipt, and any agent in the order can be steered the same way: see [Steering](steering.md).
 Stop cancels the order's running and queued agents and withdraws its asks; merged PRs stay. A stopped order stays
 stopped: send it again as a new order.
 
