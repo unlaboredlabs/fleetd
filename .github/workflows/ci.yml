@@ -50,7 +50,8 @@ jobs:
   site:
     # fleetd.sh may only mention what fleetd has: no index.* at the root of site/ (Vercel would serve it at / instead
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
-    # landing page and in the docs' sources; and every link on the site resolves.
+    # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
+    # landing page for a browser and install.sh for curl; and every link on the site resolves.
     needs: rust-crates
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 5
