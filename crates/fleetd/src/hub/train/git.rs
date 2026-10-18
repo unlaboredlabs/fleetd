@@ -41,6 +41,35 @@ fn is_hex_sha(s: &str) -> bool {
     (s.len() == 40 || s.len() == 64) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+/// What a linked worktree's `.git` file points at (`gitdir: <repo>/worktrees/<name>`), absolute. None for anything
+/// that is not such a file.
+fn linked_gitdir(worktree: &str, dot_git: &str) -> Option<String> {
+    let path = dot_git.trim().strip_prefix("gitdir:")?.trim();
+    let parent = path.trim_end_matches('/').rsplit_once('/')?.0;
+    if !(parent == "worktrees" || parent.ends_with("/worktrees")) {
+        return None;
+    }
+    Some(if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("{worktree}/{path}")
+    })
+}
+
+/// Marks the error a person has to fix: something that is not the train's sits where its worktree goes.
+pub const BLOCKED: &str = "the train's worktree is blocked: ";
+
+fn blocked(worktree: &str, root: &str, gitdir: Option<&str>) -> String {
+    let what = match gitdir {
+        Some(gitdir) => format!("a worktree of another repository ({gitdir})"),
+        None => "not a worktree of this checkout".into(),
+    };
+    format!(
+        "{BLOCKED}{worktree} is {what}, and fleetd leaves what isn't its own. Move it elsewhere (or delete it if \
+         you don't need it), e.g. `mv {worktree} {worktree}.moved`; the train then makes its worktree there from {root}."
+    )
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Seen {
     pub head_sha: CommitSha,
@@ -146,27 +175,83 @@ impl TrainGit<'_> {
         )))
     }
 
-    async fn ensure_worktree(&self) -> Result<(), GitError> {
-        let there = self
+    /// The git dir shared by all worktrees of the checkout whose top is `dir`, as an absolute path.
+    async fn common_dir(&self, dir: &str) -> Result<Option<String>, GitError> {
+        let out = self
             .exec(
                 &[
                     "git",
                     "-C",
-                    &self.worktree,
+                    dir,
                     "rev-parse",
-                    "--is-inside-work-tree",
+                    "--path-format=absolute",
+                    "--git-common-dir",
+                    "--show-prefix",
                 ],
                 Some(&self.root),
                 120,
             )
             .await?;
-        if there.exit_code == Some(0) {
+        // The prefix is empty only at the top of a work tree, so a directory merely inside some other checkout fails.
+        Ok(
+            match out.output_tail.trim_end().split('\n').collect::<Vec<_>>()[..] {
+                [common] if out.exit_code == Some(0) => Some(common.trim().to_string()),
+                _ => None,
+            },
+        )
+    }
+
+    /// Exit 0 of `argv`, run in the checkout.
+    async fn holds(&self, argv: &[&str]) -> Result<bool, GitError> {
+        Ok(self.exec(argv, Some(&self.root), 120).await?.exit_code == Some(0))
+    }
+
+    /// Makes sure the train worktree is a worktree of this checkout. What is in its place is deleted only when it is
+    /// the train's own leftover: a linked worktree whose repository is gone (an earlier clone of the
+    /// project, or a run whose checkout was deleted). Anything else stays, and the error says what to move.
+    async fn ensure_worktree(&self) -> Result<(), GitError> {
+        let ours = self.common_dir(&self.root).await?;
+        if ours.is_some() && self.common_dir(&self.worktree).await? == ours {
             return Ok(());
         }
+        let ours = ours.ok_or_else(|| {
+            GitError(format!(
+                "{} on {} is not a git checkout",
+                self.root, self.machine_id
+            ))
+        })?;
         self.ok(&["git", "worktree", "prune"], Some(&self.root), 120)
             .await?;
+        let wt = self.worktree.as_str();
+        let dot_git = format!("{wt}/.git");
+        if self.holds(&["test", "-e", wt]).await? || self.holds(&["test", "-L", wt]).await? {
+            let empty = self.exec(&["ls", "-A", wt], Some(&self.root), 120).await?;
+            let is_empty = empty.exit_code == Some(0) && empty.output_tail.trim().is_empty();
+            if !is_empty {
+                let gitdir = if self.holds(&["test", "-f", &dot_git]).await? {
+                    let out = self.ok(&["cat", &dot_git], Some(&self.root), 120).await?;
+                    linked_gitdir(wt, &out)
+                } else {
+                    None
+                };
+                let stale = match &gitdir {
+                    Some(gitdir) => {
+                        gitdir.starts_with(&format!("{ours}/worktrees/"))
+                            || !self.holds(&["test", "-e", gitdir]).await?
+                    }
+                    None => false,
+                };
+                if !stale {
+                    return Err(GitError(blocked(wt, &self.root, gitdir.as_deref())));
+                }
+                self.ok(&["rm", "-rf", "--", wt], Some(&self.root), 120)
+                    .await?;
+                self.ok(&["git", "worktree", "prune"], Some(&self.root), 120)
+                    .await?;
+            }
+        }
         self.ok(
-            &["git", "worktree", "add", "--detach", &self.worktree],
+            &["git", "worktree", "add", "--detach", wt],
             Some(&self.root),
             120,
         )

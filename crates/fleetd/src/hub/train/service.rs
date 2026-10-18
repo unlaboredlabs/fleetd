@@ -14,7 +14,7 @@ use super::contract::{
     GitHubRepo, NonEmpty, Positive, ProjectRef, Serves, Timestamp, TrainState, last_error,
     parse_pr_url, state_str, tier_str,
 };
-use super::git::{GitError, Rebase, TrainGit, default_worktree};
+use super::git::{BLOCKED, GitError, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TrainGitHub};
 use super::host::{BoxFut, IncidentInput, TrainHost};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
@@ -785,6 +785,21 @@ impl Train {
         }
     }
 
+    /// A git failure goes on the Change as its last error and the loop retries it. A blocked worktree needs a person,
+    /// so it is also an event, once per Change and error rather than every pass.
+    fn git_failed(&self, change: &Change, error: &str) -> Text<0, 2000> {
+        let text = error_text(&format!("git: {error}"));
+        if error.starts_with(BLOCKED) && change.last_error.as_ref() != Some(&text) {
+            self.emit(
+                &change.project_ref,
+                "train.blocked",
+                format!("train {}: {error}", change.repo),
+                json!({ "changeId": change.change_id, "repo": change.repo, "error": error }),
+            );
+        }
+        text
+    }
+
     /// A pass that could not finish: the Change goes back first in line with the reason, and the loop retries later.
     fn put_back(&self, change: &Change, why: &str) {
         tracing::warn!(change_id = %change.change_id, why, "train: pass failed");
@@ -835,7 +850,10 @@ impl Train {
         match self.take_inner(change).await {
             Ok(()) => {}
             Err(TakeError::Gh(e)) => self.put_back(change, &format!("GitHub: {}", e.message)),
-            Err(TakeError::Git(e)) => self.put_back(change, &format!("git: {}", e.0)),
+            Err(TakeError::Git(e)) => {
+                let why = self.git_failed(change, &e.0);
+                self.put_back(change, why.as_str())
+            }
         }
     }
 
@@ -1042,8 +1060,9 @@ impl Train {
                 || pull.head.sha.to_lowercase() != change.head_sha.as_str())
                 && let Err(GitError(e)) = self.admit(&change, &pull).await
             {
+                let why = self.git_failed(&change, &e);
                 self.update(&change.change_id, Some(&[change.state]), |mut c| {
-                    c.last_error = Some(error_text(&format!("git: {e}")));
+                    c.last_error = Some(why);
                     c
                 });
             }
@@ -1425,8 +1444,9 @@ impl Train {
         );
         // Reading the patch id needs the machine; if that fails, the loop retries it from `queued`.
         if let Err(GitError(e)) = self.admit(&change, &pull).await {
+            let why = self.git_failed(&change, &e);
             self.update(&change.change_id, Some(&[ChangeState::Queued]), |mut c| {
-                c.last_error = Some(error_text(&format!("git: {e}")));
+                c.last_error = Some(why);
                 c
             });
         }
