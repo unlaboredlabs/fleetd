@@ -180,7 +180,8 @@ impl WriteQueue {
 
     /// Sends now when the machine is connected and nothing is queued for it; otherwise queues the message until it
     /// is. `client_request_id` names the node's run, so a retried or re-queued send is delivered once. The error is
-    /// ThreadNotFound or NodeRequestFailed, never MachineNotConnected.
+    /// ThreadNotFound or NodeRequestFailed (also for a linked machine whose runner can't run), never
+    /// MachineNotConnected.
     pub async fn send(
         self: &Arc<Self>,
         target: &ThreadRef,
@@ -188,6 +189,11 @@ impl WriteQueue {
         client_request_id: &str,
         wake_id: Option<&str>,
     ) -> Result<SendResult, ExecutorError> {
+        // Linked but unusable (logged out, claude out of range): fail now in the runner's words. Only a machine
+        // that is truly away waits in the queue.
+        if let Some(refused) = self.writer.refusal(&target.machine_id) {
+            return Err(refused);
+        }
         let behind: i64 = self.db.run(|db| {
             db.query_row(
                 "SELECT COUNT(*) FROM queued_writes WHERE machine_id = ?",
@@ -650,6 +656,30 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_linked_machine_with_an_unusable_runner_refuses_instead_of_queueing() {
+        let kit = Kit::new();
+        kit.writer.go_live("lab-a");
+        kit.writer
+            .degrade("lab-a", "claude is not logged in for fleetd on lab-a");
+        let q = kit.queue(DEFAULT_TTL);
+        match q.send(&t1(), "hi", "r1", None).await {
+            Err(ExecutorError::NodeRequestFailed { message, fix, .. }) => {
+                assert_eq!(message, "claude is not logged in for fleetd on lab-a");
+                assert!(fix.unwrap().contains("claude auth login"));
+            }
+            other => panic!("{other:?}"),
+        }
+        // Nothing waits, nothing was sent, nothing was logged.
+        assert!(kit.writer.messages().is_empty());
+        assert!(kit.events.all().is_empty());
+        let queued: i64 = q.db.run(|db| {
+            db.query_row("SELECT COUNT(*) FROM queued_writes", [], |r| r.get(0))
+                .unwrap()
+        });
+        assert_eq!(queued, 0);
     }
 
     #[tokio::test(start_paused = true)]

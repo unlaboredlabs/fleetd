@@ -88,6 +88,11 @@ pub trait ThreadWriter: Send + Sync {
         message: &str,
         client_request_id: &str,
     ) -> BoxFuture<'_, Result<Sent, ExecutorError>>;
+    /// Why a machine that is linked can't take a message at all (its runner is logged out or out of range), so a
+    /// send fails at once with the runner's words instead of waiting as if the machine were offline.
+    fn refusal(&self, _machine_id: &MachineId) -> Option<ExecutorError> {
+        None
+    }
 }
 
 impl From<executor::ExecutorError> for ExecutorError {
@@ -159,6 +164,14 @@ impl ThreadWriter for executor::Executors {
     fn await_live(&self, machine_id: &MachineId) -> BoxFuture<'_, ()> {
         let machine_id = machine_id.clone();
         Box::pin(async move { executor::Executors::await_ready(self, &machine_id).await })
+    }
+    fn refusal(&self, machine_id: &MachineId) -> Option<ExecutorError> {
+        // Only while linked: a machine that is away waits in the queue whatever its runner said last.
+        if !executor::Executors::is_connected(self, machine_id) {
+            return None;
+        }
+        executor::Executors::runner_refusal(self, machine_id, executor::NodeOperation::Send)
+            .map(Into::into)
     }
     fn send(
         &self,

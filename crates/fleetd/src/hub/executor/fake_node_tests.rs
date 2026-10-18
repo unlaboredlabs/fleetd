@@ -469,12 +469,23 @@ async fn a_logged_out_runner_refuses_launches_until_it_logs_back_in() {
         other => panic!("{other:?}"),
     }
     assert!(node.rx.try_recv().is_err());
+    // And a send to it fails the same way rather than waiting in the offline queue.
+    let refused =
+        crate::hub::queue::ports::ThreadWriter::refusal(node.executors.as_ref(), &node.machine);
+    assert!(matches!(
+        refused,
+        Some(crate::hub::queue::ports::ExecutorError::NodeRequestFailed { message, .. }) if message == problem
+    ));
 
     node.push(runner_event("logged_in", None));
     runner.changed().await.unwrap();
     let seen = runner.borrow_and_update().clone().unwrap();
     assert_eq!(providers::runner_problem(&seen), None);
     assert!(providers::to_instance(&seen).usable);
+    assert!(
+        crate::hub::queue::ports::ThreadWriter::refusal(node.executors.as_ref(), &node.machine)
+            .is_none()
+    );
     assert_eq!(node.executors.cached_runner(&node.machine), Some(seen));
     let executors = node.executors.clone();
     let machine = node.machine.clone();
@@ -525,6 +536,9 @@ async fn queued_writes_wait_for_the_online_verdict_not_just_the_link() {
     node.executors.set_runner_ready(&node.machine, true);
     // A dropped link clears it, so a relink waits for its own verdict.
     node.executors.detach_link(&node.machine, 1).await;
+    // Away now, so even a logged-out runner's machine queues rather than refuses.
+    node.push(runner_event("logged_out", Some("claude is not logged in")));
+    assert!(ThreadWriter::refusal(node.executors.as_ref(), &node.machine).is_none());
     assert!(!ThreadWriter::is_connected(
         node.executors.as_ref(),
         &node.machine

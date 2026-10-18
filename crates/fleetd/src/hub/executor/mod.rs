@@ -619,6 +619,23 @@ impl Executors {
         self.runner_slot(machine_id).borrow().clone()
     }
 
+    /// The runner's last reported problem as a refusal of `operation`, with the fix to run on the machine. None when
+    /// it is usable or unknown.
+    pub fn runner_refusal(
+        &self,
+        machine_id: &MachineId,
+        operation: NodeOperation,
+    ) -> Option<ExecutorError> {
+        let info = self.cached_runner(machine_id)?;
+        let problem = providers::runner_problem(&info)?;
+        Some(ExecutorError::NodeRequestFailed {
+            machine_id: machine_id.clone(),
+            operation,
+            message: problem,
+            fix: Some(providers::runner_fix(&info, machine_id.as_str())),
+        })
+    }
+
     fn remember_runner(&self, machine_id: &MachineId, info: &RunnerInfo) {
         self.runner_slot(machine_id).send_if_modified(|current| {
             let changed = current.as_ref() != Some(info);
@@ -1200,19 +1217,11 @@ impl Executors {
         })?;
         // No new session goes to a runner the node says can't run it (spec §3.6): an expired login or a claude
         // outside the supported range. Unknown (the node can't say) leaves it to the node.
-        let runner_state = match self.cached_runner(machine_id) {
-            Some(info) => Some(info),
-            None => self.runner_info(machine_id).await.ok(),
-        };
-        if let Some(info) = runner_state
-            && let Some(problem) = providers::runner_problem(&info)
-        {
-            return Err(ExecutorError::NodeRequestFailed {
-                machine_id: machine_id.clone(),
-                operation: op,
-                message: problem,
-                fix: Some(providers::runner_fix(&info, machine_id.as_str())),
-            });
+        if self.cached_runner(machine_id).is_none() {
+            let _ = self.runner_info(machine_id).await;
+        }
+        if let Some(refused) = self.runner_refusal(machine_id, op) {
+            return Err(refused);
         }
         let title = match input.title.as_deref().map(str::trim) {
             Some(t) if !t.is_empty() => t.to_owned(),

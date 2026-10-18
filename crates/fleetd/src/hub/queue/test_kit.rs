@@ -81,6 +81,7 @@ pub struct FakeWriter {
     sends: Mutex<Vec<(ThreadRef, String, String)>>,
     refused: Mutex<HashSet<String>>,
     behind_run: Mutex<HashSet<String>>,
+    degraded: Mutex<HashMap<MachineId, String>>,
 }
 
 impl FakeWriter {
@@ -96,6 +97,13 @@ impl FakeWriter {
             .lock()
             .unwrap()
             .insert(client_request_id.into());
+    }
+    /// The machine stays linked, but its runner can't run: sends are refused with `why`.
+    pub fn degrade(&self, machine: &str, why: &str) {
+        self.degraded
+            .lock()
+            .unwrap()
+            .insert(MachineId::unchecked(machine), why.into());
     }
     /// The node takes this send behind the thread's active run.
     pub fn behind_run(&self, client_request_id: &str) {
@@ -151,6 +159,17 @@ impl ThreadWriter for FakeWriter {
             })
         };
         Box::pin(async move { result })
+    }
+    fn refusal(&self, machine_id: &MachineId) -> Option<ExecutorError> {
+        let why = self.degraded.lock().unwrap().get(machine_id)?.clone();
+        Some(ExecutorError::NodeRequestFailed {
+            machine_id: machine_id.clone(),
+            operation: "send",
+            message: why,
+            fix: Some(format!(
+                "On {machine_id}: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude auth login"
+            )),
+        })
     }
 }
 
