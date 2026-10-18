@@ -360,15 +360,15 @@ mod tests {
     #[test]
     fn a_machine_says_only_what_it_reports() {
         let now = parse_ms("2026-10-18T10:07:12Z").unwrap();
-        let forge = machine(serde_json::json!({
-            "machineId": "forge", "name": "forge", "status": "online", "running": 6, "asOf": "2026-10-18T10:07:00Z",
+        let build = machine(serde_json::json!({
+            "machineId": "build-1", "name": "build-1", "status": "online", "running": 6, "asOf": "2026-10-18T10:07:00Z",
             "load": {"cpus": 32, "load1": 3.06, "memUsedPct": 41, "limits": [
                 {"limitType": "five_hour", "utilization": 0.58, "status": "allowed"},
                 {"limitType": "seven_day", "utilization": 0.41, "status": "allowed_warning"},
                 {"limitType": "seven_day_opus", "status": "allowed"}
             ]}
         }));
-        let parts = machine_parts(&forge, now);
+        let parts = machine_parts(&build, now);
         assert_eq!(parts.last().unwrap().1, Tone::Warning);
         assert_eq!(texts(parts), ["6 running", "load 3.1/32", "mem 41%", "claude 58% 5h · 41% wk"]);
         let bare =

@@ -571,7 +571,7 @@ mod tests {
             "laneId": "T30", "role": "implementer", "title": "x", "status": "done",
             "startedAt": "2026-10-18T10:00:00Z", "endedAt": "2026-10-18T10:03:02Z",
             "receipts": {"commands": 14, "commandsFailed": 1, "filesChanged": 4, "toolCalls": 30},
-            "pr": {"changeId": "X11", "repo": "wynn-dev/fleetd", "number": 211, "url": "https://github.com/wynn-dev/fleetd/pull/211",
+            "pr": {"changeId": "X11", "repo": "acme/storefront", "number": 211, "url": "https://github.com/acme/storefront/pull/211",
                    "state": "merged", "reviewsDone": 2, "reviewsNeeded": 2}
         }))
         .unwrap();

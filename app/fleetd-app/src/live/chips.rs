@@ -171,7 +171,7 @@ mod tests {
     fn pr_labels() {
         let pr = |state: &str, pos: Option<i64>| -> PrRef {
             serde_json::from_value(serde_json::json!({
-                "changeId": "X12", "repo": "wynn-dev/fleetd", "number": 212, "url": "https://github.com/wynn-dev/fleetd/pull/212",
+                "changeId": "X12", "repo": "acme/storefront", "number": 212, "url": "https://github.com/acme/storefront/pull/212",
                 "state": state, "position": pos, "reviewsDone": 1, "reviewsNeeded": 2
             }))
             .unwrap()

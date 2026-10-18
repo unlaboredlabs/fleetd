@@ -328,7 +328,7 @@ mod tests {
 
     fn board(w: &str, lanes: Vec<AgentLane>) -> OrdersBoardOutput {
         let card: OrderCard = serde_json::from_value(serde_json::json!({
-            "workstreamId": w, "projectRef": {"machineId": "forge", "projectId": "p1"}, "title": "x", "state": "running",
+            "workstreamId": w, "projectRef": {"machineId": "build-1", "projectId": "p1"}, "title": "x", "state": "running",
             "template": null, "phase": "working", "phaseDetail": null, "next": null, "needsYou": 0, "settled": 0, "total": 1,
             "lanes": [], "prs": [], "createdAt": "2026-10-18T10:00:00Z", "updatedAt": "2026-10-18T10:00:00Z"
         }))
@@ -343,7 +343,7 @@ mod tests {
     }
 
     fn key() -> ProjectKey {
-        ("forge".into(), "p1".into())
+        ("build-1".into(), "p1".into())
     }
 
     fn w(s: &str) -> WorkstreamId {
@@ -369,7 +369,9 @@ mod tests {
     fn the_hubs_fixtures_merge_into_the_w14_lanes() {
         use crate::live::fixture::{board_fixture, frame_fixture};
         let mut s = LiveState::default();
-        s.set_board(&("forge".into(), "fleetd".into()), board_fixture());
+        let board = board_fixture();
+        let project = board.orders[0].project_ref.clone();
+        s.set_board(&(project.machine_id.to_string(), project.project_id.to_string()), board);
         let at = parse_ms("2026-10-18T10:07:12.000Z").unwrap();
         s.apply(frame_fixture(crate::live::fixture::FULL), at);
         s.apply(frame_fixture(crate::live::fixture::DELTA), at + 250);
@@ -384,7 +386,7 @@ mod tests {
         assert_eq!(s.machines().len(), 2);
         assert_eq!(s.slots().unwrap().cap.get(), 40);
         assert_eq!(s.trains()[0].chips.len(), 3);
-        assert!(s.text("lead:forge/fleetd").unwrap().1.contains("T31 is editing"));
+        assert!(s.text(fleetd_contracts::live::lead_lane_id(&project).as_str()).unwrap().1.contains("T31"));
     }
 
     #[test]
@@ -458,7 +460,7 @@ mod tests {
     fn trains_are_one_per_repo_newest_snapshot_wins() {
         let train = |merged: i64| -> TrainLive {
             serde_json::from_value(
-                serde_json::json!({"repo": "wynn-dev/fleetd", "frozen": false, "frozenReason": null, "chips": [], "mergedToday": merged}),
+                serde_json::json!({"repo": "acme/storefront", "frozen": false, "frozenReason": null, "chips": [], "mergedToday": merged}),
             )
             .unwrap()
         };
@@ -469,7 +471,7 @@ mod tests {
         let mut b = board("W2", vec![]);
         b.trains = List::unchecked(vec![train(2)]);
         b.at = Timestamp::from("2026-10-18T10:00:05Z");
-        s.set_board(&("forge".into(), "p2".into()), b);
+        s.set_board(&("build-1".into(), "p2".into()), b);
         s.set_board(&key(), a);
         assert_eq!(s.trains().len(), 1);
         assert_eq!(s.trains()[0].merged_today.get(), 2);

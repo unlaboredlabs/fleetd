@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # One command: build fleetd-app in release, run every speed measurement, print a markdown table.
 #
-#   app/bench/run.sh [--runs N] [--precompiled-shaders] [--only live]
+#   app/bench/run.sh [--runs N] [--precompiled-shaders] [--only live|keys]
 #
 # --precompiled-shaders (macOS with full Xcode): build without gpui's runtime_shaders feature.
-# --only live: just the live board rows (FLEETD_BENCH=live, about a minute).
+# --only live|keys: just the live board rows (about a minute) or the input latency rows.
 #
 # Linux without a display (or FLEETD_HEADLESS=1): runs under a private Xvfb from the user-space
 # sysroot (app/bench/linux-sysroot.sh) with Mesa lavapipe unless FLEETD_VK_ICD names another driver.
@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     --runs) RUNS="$2"; shift 2 ;;
     --precompiled-shaders) features=(--no-default-features); shaders="precompiled shaders"; shift ;;
     --only) only=(--only "$2"); shift 2 ;;
-    *) echo "usage: $0 [--runs N] [--precompiled-shaders] [--only live]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--runs N] [--precompiled-shaders] [--only live|keys]" >&2; exit 2 ;;
   esac
 done
 

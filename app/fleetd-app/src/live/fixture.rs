@@ -81,13 +81,13 @@ fn shifted<T: serde::de::DeserializeOwned>(json: &str, by_ms: i64) -> T {
 }
 
 const ACTIVITIES: &[(&str, &str)] = &[
-    ("edit", "crates/fleetd/src/hub/leads/digest.rs"),
-    ("command", "cargo test -p fleetd hub::leads"),
-    ("search", "fn stalled"),
+    ("edit", "src/checkout/cart.rs"),
+    ("command", "cargo test -p storefront checkout"),
+    ("search", "fn apply_discount"),
     ("writing", ""),
-    ("read", "crates/fleetd/src/hub/leads/wakes.rs"),
-    ("command", "cargo clippy -p fleetd -- -D warnings"),
-    ("edit", "crates/fleetd/src/hub/leads/mod.rs"),
+    ("read", "src/checkout/pricing.rs"),
+    ("command", "cargo clippy -p storefront -- -D warnings"),
+    ("edit", "src/checkout/mod.rs"),
     ("thinking", ""),
     ("tool", "docs.rs"),
     ("command", "git diff --stat"),
@@ -145,7 +145,8 @@ impl Feed {
     pub fn demo(now_ms: i64) -> Self {
         let by = now_ms - parse_ms(FIXTURE_AT).unwrap();
         let board: OrdersBoardOutput = shifted(BOARD, by);
-        Self::from_boards(vec![(("forge".into(), "fleetd".into()), board)], false, now_ms)
+        let p = board.orders[0].project_ref.clone();
+        Self::from_boards(vec![((p.machine_id.to_string(), p.project_id.to_string()), board)], false, now_ms)
     }
 
     /// `orders` copies of W14, `lanes` working lanes each, over five projects.
@@ -156,12 +157,12 @@ impl Feed {
         let card = base["orders"][0].clone();
         let template = card["lanes"][0].clone();
         let titles = [
-            "Harden lead digest",
-            "Test ask batching",
+            "Cart totals round once",
+            "Discount codes stack",
             "Login flow cleanup",
-            "Retry overloaded runs",
-            "Slot board per project",
-            "Trim the thread tail",
+            "Retry failed payments",
+            "Order history paging",
+            "Trim the product feed",
         ];
         let mut boards: Vec<(ProjectKey, OrdersBoardOutput)> = Vec::new();
         let mut task = 1000;
@@ -194,7 +195,7 @@ impl Feed {
                 cards.push(c);
             }
             let out = serde_json::json!({"orders": cards, "trains": if p == 0 { base["trains"].clone() } else { Value::Array(vec![]) }, "at": fmt_iso(now_ms)});
-            boards.push((("forge".into(), project), serde_json::from_value(out).unwrap()));
+            boards.push((("build-1".into(), project), serde_json::from_value(out).unwrap()));
         }
         let mut feed = Self::from_boards(boards, true, now_ms);
         feed.next_task = task + 1;
@@ -436,7 +437,7 @@ fn move_train(train: &mut fleetd_contracts::live::TrainLive, number: i64) {
         let mut new = merged[0].clone();
         new.number = fleetd_contracts::prim::Positive::unchecked(number);
         new.change_id = fleetd_contracts::train::ChangeId::unchecked(format!("X{number}"));
-        new.url = fleetd_contracts::train::GitHubPrUrl::unchecked(format!("https://github.com/wynn-dev/fleetd/pull/{number}"));
+        new.url = fleetd_contracts::train::GitHubPrUrl::unchecked(format!("https://github.com/acme/storefront/pull/{number}"));
         new.state = ChangeState::Reviewing;
         chips.push(new);
         for (i, c) in chips.iter_mut().enumerate().skip(1) {

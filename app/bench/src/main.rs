@@ -1,6 +1,6 @@
 //! Runs fleetd-app in its FLEETD_BENCH modes and prints a markdown table of the results.
 //!
-//! usage: fleetd-bench <path/to/fleetd-app> [--runs N] [--label TEXT] [--only live]
+//! usage: fleetd-bench <path/to/fleetd-app> [--runs N] [--label TEXT] [--only live|keys]
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -14,7 +14,7 @@ struct Args {
     app: String,
     runs: usize,
     label: String,
-    /// `live`: only the live board rows.
+    /// `live` or `keys`: only the live board rows, or only the input latency rows.
     only: Option<String>,
 }
 
@@ -44,8 +44,12 @@ fn main() {
         rows.push((name.to_string(), value));
     };
 
-    if args.only.as_deref() == Some("live") {
-        live_rows(&args.app, &mut row);
+    match args.only.as_deref() {
+        Some("live") => live_rows(&args.app, &mut row),
+        Some("keys") => key_rows(&args.app, &mut row),
+        _ => {}
+    }
+    if args.only.is_some() {
         return print_table(&args.label, rows);
     }
 
@@ -77,12 +81,24 @@ fn main() {
     }
     let _ = mapped;
 
+    key_rows(&args.app, &mut row);
+
+    eprintln!("scroll ...");
+    let (fps, worst) = scroll(&args.app);
+    row("Scroll 20k-line log for 5 s: presented frames/s", format!("{fps:.1}"));
+    row("Scroll 20k-line log for 5 s: worst frame interval", format!("{worst:.1} ms"));
+
+    live_rows(&args.app, &mut row);
+    print_table(&args.label, rows);
+}
+
+fn key_rows(app: &str, row: &mut impl FnMut(&str, String)) {
     eprintln!("input latency ...");
-    let internal = keys_internal(&args.app);
+    let internal = keys_internal(app);
     row(&format!("Input latency in-app, key handler -> echo frame presented ({} keys, gpui dispatch)", internal.len()), med_p90(&internal, "ms"));
     #[cfg(target_os = "linux")]
     if std::env::var_os("DISPLAY").is_some() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        match keys_external(&args.app) {
+        match keys_external(app) {
             Ok((in_app, external)) => {
                 row(&format!("Input latency in-app, key handler -> echo frame presented ({} XTEST keys)", in_app.len()), med_p90(&in_app, "ms"));
                 row(
@@ -93,14 +109,6 @@ fn main() {
             Err(e) => row("Input latency external (XTEST)", format!("failed: {e}")),
         }
     }
-
-    eprintln!("scroll ...");
-    let (fps, worst) = scroll(&args.app);
-    row("Scroll 20k-line log for 5 s: presented frames/s", format!("{fps:.1}"));
-    row("Scroll 20k-line log for 5 s: worst frame interval", format!("{worst:.1} ms"));
-
-    live_rows(&args.app, &mut row);
-    print_table(&args.label, rows);
 }
 
 fn print_table(label: &str, rows: Vec<(String, String)>) {
@@ -342,7 +350,7 @@ fn keys_external(app: &str) -> Result<(Vec<f64>, Vec<f64>), String> {
         run.kill();
         return Err("app is not on X11".into());
     }
-    let external = xtest::type_and_watch(window, 200).map_err(|e| e.to_string());
+    let external = xtest::type_and_watch(window, 200, field(&ready, "field")).map_err(|e| e.to_string());
     std::thread::sleep(Duration::from_millis(300));
     let mut in_app = Vec::new();
     while let Ok(line) = run.lines.try_recv() {
