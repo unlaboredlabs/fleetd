@@ -8,6 +8,7 @@
 //! `thread_event` frame to `handle_frame`.
 pub mod activity;
 pub mod providers;
+pub mod repos;
 pub mod shell_mapper;
 pub mod thread_view;
 pub mod tools;
@@ -333,6 +334,8 @@ pub struct Executors {
     /// Per machine: the runner as the node last reported it, by a `runner_info` answer or a pushed event.
     runners: Mutex<HashMap<MachineId, watch::Sender<Option<RunnerInfo>>>>,
     tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
+    /// Running clones by add id: where their `clone_progress` frames go.
+    clones: repos::CloneWatchers,
     /// Where later areas plug into the M1 tools.
     pub hooks: tools::ToolHooks,
     time: std::sync::OnceLock<Arc<crate::hub::time::Time>>,
@@ -459,6 +462,7 @@ impl Executors {
             runners: Mutex::default(),
             ready: Mutex::default(),
             tool_policy: Mutex::default(),
+            clones: Mutex::default(),
             hooks: tools::ToolHooks::default(),
             time: std::sync::OnceLock::new(),
         })
@@ -709,6 +713,7 @@ impl Executors {
                 }
             }
             NodeToHub::ThreadEvent(frame) => self.apply_thread_frame(machine_id, &frame),
+            NodeToHub::CloneProgress(frame) => self.clone_progress(frame),
             _ => {}
         }
     }

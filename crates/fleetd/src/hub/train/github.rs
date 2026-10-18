@@ -261,6 +261,15 @@ impl TrainGitHub {
         }
     }
 
+    /// A GET for callers outside the train (adding a project reads repo settings, branch rules and workflows):
+    /// `Ok(Err((status, message)))` for a non-2xx answer.
+    pub async fn get(&self, path: &str) -> Result<Result<Value, (u16, String)>, GhError> {
+        Ok(match self.call("GET", path, &[]).await? {
+            Reply::Ok(v) => Ok(v),
+            Reply::Err { status, message } => Err((status, message)),
+        })
+    }
+
     pub async fn pull(&self, repo: &str, n: i64) -> Result<Pull, GhError> {
         self.json("GET", &format!("repos/{repo}/pulls/{n}"), &[])
             .await
