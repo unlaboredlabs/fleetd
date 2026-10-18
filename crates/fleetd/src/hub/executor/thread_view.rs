@@ -198,6 +198,25 @@ pub fn to_action(item: &ThreadItem) -> Option<Action> {
     })
 }
 
+/// The node's own retry of a run after an overloaded, 5xx or network failure, as `actions_list` shows it (the lab
+/// asserts this text). An `other` action, so receipts never count it: the agent ran nothing.
+pub fn node_retry_summary(
+    attempt: u32,
+    of: u32,
+    delay_ms: u64,
+    class: fleetd_contracts::sessions::FailureClass,
+) -> String {
+    let delay = if delay_ms.is_multiple_of(1000) {
+        format!("{} s", delay_ms / 1000)
+    } else {
+        format!("{delay_ms} ms")
+    };
+    format!(
+        "node retry {attempt}/{of} in {delay}: {}",
+        failure_class(class)
+    )
+}
+
 fn newest_first<T>(xs: &mut [T], at: impl Fn(&T) -> &str) {
     // Stable, like Array.prototype.sort.
     xs.sort_by(|a, b| at(b).cmp(at(a)));

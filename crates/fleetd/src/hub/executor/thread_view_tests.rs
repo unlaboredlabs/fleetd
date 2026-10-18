@@ -189,3 +189,16 @@ fn a_pending_prompt_reads_as_what_it_would_do() {
     assert_eq!(long.chars().count(), 1500);
     assert!(long.ends_with('…'));
 }
+
+#[test]
+fn a_node_retry_reads_as_when_and_why() {
+    use fleetd_contracts::sessions::FailureClass;
+    assert_eq!(
+        node_retry_summary(1, 3, 60_000, FailureClass::Overloaded),
+        "node retry 1/3 in 60 s: overloaded"
+    );
+    assert_eq!(
+        node_retry_summary(2, 3, 500, FailureClass::Network),
+        "node retry 2/3 in 500 ms: network"
+    );
+}
