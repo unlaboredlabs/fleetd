@@ -45,8 +45,6 @@ export const fleetdCommand = (args: ReadonlyArray<string>): [string, Array<strin
 export const MODEL = "claude-haiku-5-5";
 
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
-/** `hub/leads/prompt.rs` LEAD_PROMPT_VERSION. */
-export const LEAD_PROMPT_VERSION = "v4";
 /** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
 export const FINISH_ALL_IDLE = "finish-all: nothing left with a value source";
 /** `hub/watchdog/ladder.rs` NUDGE. */

@@ -2,6 +2,7 @@
 //! review tasks and what those recorded.
 use std::collections::{HashMap, HashSet};
 
+use crate::hub::prompts::PromptSet;
 use crate::hub::train::contract::{Change, ReviewRule, Tier, tier_str};
 use crate::hub::train::host::{PlaybookView, TaskView};
 
@@ -218,53 +219,25 @@ pub fn has_receipts(task: Option<&TaskView>) -> bool {
 
 pub use crate::hub::executor::providers::{codex_instance, other_codex};
 
-fn verdict_line(sha: &str, summary: &str) -> String {
-    format!(
-        "fleetd review verdict --task <your task id, from the first line> --sha {sha} --blocking <n> --non-blocking <n> --summary \"{summary}\""
-    )
-}
-
 /// A reviewer's or verifier's prompt: the PR diff ref and the tier rules. Tasks adds the brief's goal and done-when.
 /// Never the author's narrative, so the PR description and comments are off limits too.
-pub fn review_prompt(change: &Change, role: ReviewRole) -> String {
-    let n = change.pr_number;
-    let fetch = format!("git fetch origin pull/{n}/head");
-    let (url, repo, tier, head, serves) = (
-        &change.pr_url,
-        &change.repo,
-        tier_str(change.tier),
-        &change.head_sha,
-        &change.serves,
-    );
-    if role == ReviewRole::Verifier {
-        return [
-            format!("Verify pull request {url} ({repo}#{n}, tier {tier}) at head {head} by running the repo's tests on exactly that commit."),
-            String::new(),
-            format!("1. `{fetch}`, then `git worktree add --detach \"$(mktemp -d)\" {head}` and work only in that worktree; never check anything out in the project's own checkout."),
-            "2. Find the repo's test command (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, package.json scripts, Makefile, the CI workflow) and run it with any install step it needs.".into(),
-            "3. Remove the worktree with `git worktree remove --force <dir>`.".into(),
-            String::new(),
-            "blocking = the number of test commands that failed, 0 when all passed. The hub counts the commands you ran and their exit codes; a verdict without them does not count.".into(),
-            "Do not read the PR description or comments. Do not change, commit or push anything.".into(),
-            "Finish with exactly one command, filled in:".into(),
-            verdict_line(head, "<the commands you ran and their exit codes; for failures, the failing tests>"),
-        ]
-        .join("\n");
-    }
-    [
-        format!("Review pull request {url} ({repo}#{n}, tier {tier}) at head {head}. You are an independent reviewer: you get the diff and the brief, not the author's account."),
-        String::new(),
-        format!("Read the change yourself: `gh pr diff {n} --repo {repo}`, and files at that head with `{fetch}` then `git show {head}:<path>`. Do not read the PR description or its comments; judge the diff against the goal and done-when below."),
-        String::new(),
-        format!("Rules for tier {tier}:"),
-        format!("- Blocking means the change is wrong, unsafe, or fails the done-when it serves ({serves}). Style, naming, polish and nice-to-haves are non-blocking."),
-        format!("- It serves {serves} only: the other done-when checks are other PRs' work, never a finding here."),
-        "- One round: report everything you find now. A verdict with 0 blocking ends review for this patch.".into(),
-        "- Do not change, commit or push anything.".into(),
-        "Finish with exactly one command, filled in:".into(),
-        verdict_line(head, "<each blocking finding as path:line and what is wrong, then the non-blocking ones>"),
-    ]
-    .join("\n")
+pub fn review_prompt(set: &PromptSet, change: &Change, role: ReviewRole) -> String {
+    let id = if role == ReviewRole::Verifier {
+        "review.verifier"
+    } else {
+        "review.reviewer"
+    };
+    set.render(
+        id,
+        &[
+            ("prUrl", &change.pr_url),
+            ("repo", &change.repo),
+            ("prNumber", &change.pr_number),
+            ("tier", &tier_str(change.tier)),
+            ("headSha", &change.head_sha),
+            ("serves", &change.serves),
+        ],
+    )
 }
 
 pub struct FindingsVerdict<'a> {
@@ -276,26 +249,26 @@ pub struct FindingsVerdict<'a> {
 }
 
 /// The message that sends blocking findings back to the task that wrote the code.
-pub fn findings_message(change: &Change, v: &FindingsVerdict<'_>) -> String {
-    [
-        format!(
-            "Review {} of {} at {} found {} blocking finding{} ({} non-blocking):",
-            v.task_id,
-            change.pr_url,
-            &v.pr_head_sha[..v.pr_head_sha.len().min(12)],
-            v.blocking,
-            if v.blocking == 1 { "" } else { "s" },
-            v.non_blocking
-        ),
-        String::new(),
-        v.summary.trim().to_string(),
-        String::new(),
-        format!(
-            "Fix the blocking findings on {}, commit and push to the same PR. It is reviewed again once its patch changes, and the train will not merge it before then. Do not merge it yourself.",
-            change.branch
-        ),
-    ]
-    .join("\n")
+pub fn findings_message(set: &PromptSet, change: &Change, v: &FindingsVerdict<'_>) -> String {
+    set.render(
+        "task.review_findings",
+        &[
+            ("reviewTaskId", &v.task_id),
+            ("prUrl", &change.pr_url),
+            ("headSha", &&v.pr_head_sha[..v.pr_head_sha.len().min(12)]),
+            (
+                "blocking",
+                &format!(
+                    "{} blocking finding{}",
+                    v.blocking,
+                    if v.blocking == 1 { "" } else { "s" }
+                ),
+            ),
+            ("nonBlocking", &v.non_blocking),
+            ("summary", &v.summary.trim()),
+            ("branch", &change.branch),
+        ],
+    )
 }
 
 /// One line, at most `max` characters.

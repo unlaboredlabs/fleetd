@@ -161,6 +161,9 @@ fn playbook_name(name: &str) -> Option<PlaybookName> {
 }
 
 impl RetroPlaybooks for OpsPorts {
+    fn prompts(&self) -> crate::hub::prompts::PromptSet {
+        self.hub().db.prompts().current(None)
+    }
     fn current(&self, name: &str) -> (String, String) {
         match playbook_name(name) {
             Some(n) => {

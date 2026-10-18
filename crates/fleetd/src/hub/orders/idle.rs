@@ -2,6 +2,7 @@
 //! are closed (`on_done`). And a safety net for a lead that ends its turn with an order frozen and nothing under way: no task running or queued,
 //! no PR in the train, no open ask and no wake coming. Nothing would ever wake it again, so the hub wakes it once per
 //! order with a plain line. Bounded: a second idle turn on the same order gets no second nudge.
+use crate::hub::prompts::PromptSet;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -67,9 +68,10 @@ pub fn forget_settled(nudged: &mut HashSet<WorkstreamId>, orders: &[OrderFacts])
     });
 }
 
-pub fn nudge_line(id: &WorkstreamId, title: &str) -> String {
-    format!(
-        "- You ended your turn without starting work or asking anything for {id} '{title}': nothing else will wake you for it. Continue it now (spawn its tasks), ask the human, or say why it waits with `fleetd status set --workstream {id}`."
+pub fn nudge_line(set: &PromptSet, id: &WorkstreamId, title: &str) -> String {
+    set.render(
+        "wake.order_idle",
+        &[("workstreamId", id), ("title", &title)],
     )
 }
 
@@ -194,7 +196,7 @@ pub async fn run(hub: Arc<Hub>) {
                     &r,
                     Trigger::Line {
                         kind: LineKind::Idle,
-                        text: nudge_line(&id, title),
+                        text: nudge_line(&hub.db.prompts().for_lead(&r), &id, title),
                     },
                 );
                 nudged.lock().unwrap().insert(id);

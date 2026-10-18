@@ -216,6 +216,11 @@ pub fn build_on(
 ) -> anyhow::Result<Arc<Hub>> {
     let store = Arc::new(HubStore::new(db.clone()));
     let events = Arc::new(EventLog::new(db.clone(), clock.clone())?);
+    crate::hub::prompts::start(
+        &db,
+        &events,
+        &crate::hub::store::iso_ms(crate::hub::store::now_ms(clock.as_ref())),
+    )?;
     let auth = Arc::new(Auth::new(db.clone(), clock.clone()));
     let decisions = Arc::new(Decisions::new(db.clone(), events.clone(), clock.clone()));
     let asks = Arc::new(Asks::new(db.clone(), events.clone(), clock.clone()));

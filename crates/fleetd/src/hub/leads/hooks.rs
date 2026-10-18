@@ -32,6 +32,7 @@ pub trait TasksHook: Send + Sync {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
+        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String>;
     /// Live (queued, running, idle) tasks, in one project or all.
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)>;
@@ -60,6 +61,7 @@ pub trait TrainHook: Send + Sync {
         &self,
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
+        prompts: &crate::hub::prompts::PromptSet,
     ) -> Option<Vec<String>>;
 }
 

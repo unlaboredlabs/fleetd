@@ -2,6 +2,7 @@
 //! the user's own `claude` uses (~/.claude: OAuth, or a base URL and token in its settings' env), in safe mode so none
 //! of the user's hooks, plugins, MCP servers or CLAUDE.md load, and nothing of any `CLAUDE*` session the hub was
 //! started from.
+use crate::hub::prompts::PromptSet;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -38,8 +39,6 @@ pub const ONE_SHOT_FLAGS: [&str; 5] = [
     "--safe-mode",
 ];
 
-pub const ROUTER_PROMPT: &str = include_str!("../../../assets/prompts/router-prompt.md");
-
 #[derive(Debug, Clone)]
 pub struct RouterProject {
     pub project_ref: ProjectRef,
@@ -64,6 +63,9 @@ pub struct RouterRun {
     /// Why the run gave no usable answer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The prompt it was given (`router@…` or `router.retry@…`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_ref: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +84,7 @@ fn basename(path: &str) -> &str {
         .unwrap_or("")
 }
 
-pub fn render_router_prompt(template: &str, text: &str, projects: &[RouterProject]) -> String {
+pub fn render_router_prompt(set: &PromptSet, text: &str, projects: &[RouterProject]) -> String {
     let lines: Vec<String> = projects
         .iter()
         .map(|p| {
@@ -97,9 +99,10 @@ pub fn render_router_prompt(template: &str, text: &str, projects: &[RouterProjec
             )
         })
         .collect();
-    template
-        .replacen("{{projects}}", &lines.join("\n"), 1)
-        .replacen("{{intent}}", text.trim(), 1)
+    set.render(
+        "router",
+        &[("projects", &lines.join("\n")), ("intent", &text.trim())],
+    )
 }
 
 fn json_str(s: &str) -> String {
@@ -297,6 +300,7 @@ impl OneShot {
             input_tokens: envelope.input_tokens,
             output_tokens: envelope.output_tokens,
             error: failed.as_ref().map(|f| f.chars().take(300).collect()),
+            prompt_ref: None,
         };
         OneShotResult {
             text: if failed.is_none() {
@@ -388,9 +392,15 @@ impl IntakeRouter {
         (verdict, run)
     }
 
-    pub async fn route(&self, text: &str, projects: &[RouterProject]) -> RouteOutcome {
-        let prompt = render_router_prompt(ROUTER_PROMPT, text, projects);
-        let (first, first_run) = self.attempt(&prompt, projects).await;
+    pub async fn route(
+        &self,
+        set: &PromptSet,
+        text: &str,
+        projects: &[RouterProject],
+    ) -> RouteOutcome {
+        let prompt = render_router_prompt(set, text, projects);
+        let (first, mut first_run) = self.attempt(&prompt, projects).await;
+        first_run.prompt_ref = Some(set.get("router").r#ref.clone());
         let error = match first {
             Verdict::Ok(result) => {
                 return RouteOutcome {
@@ -408,10 +418,9 @@ impl IntakeRouter {
             }
             Verdict::Invalid(error) => error,
         };
-        let retry = format!(
-            "{prompt}\n\nYour previous answer was not usable ({error}). Reply with only the JSON object."
-        );
-        let (second, second_run) = self.attempt(&retry, projects).await;
+        let retry = set.render("router.retry", &[("prompt", &prompt), ("error", &error)]);
+        let (second, mut second_run) = self.attempt(&retry, projects).await;
+        second_run.prompt_ref = Some(set.get("router.retry").r#ref.clone());
         let runs = vec![first_run, second_run];
         match second {
             Verdict::Ok(result) => RouteOutcome {
@@ -585,9 +594,14 @@ exit "$(cat "$dir/reply-$n.exit")"
     #[test]
     fn prompt_names_every_template_and_renders_projects_and_the_intent() {
         for name in fleetd_contracts::ledger::PlaybookName::ALL {
-            assert!(ROUTER_PROMPT.contains(&format!("- {}:", name.as_str())));
+            assert!(
+                PromptSet::defaults()
+                    .get("router")
+                    .text
+                    .contains(&format!("- {}:", name.as_str()))
+            );
         }
-        let prompt = render_router_prompt(ROUTER_PROMPT, TEXT, &projects());
+        let prompt = render_router_prompt(PromptSet::defaults(), TEXT, &projects());
         assert!(prompt.contains(r#"{"machineId":"lab-a","projectId":"p-a","title":"repo-a","folder":"repo-a","recentIntents":["add a /health endpoint"]}"#));
         assert!(prompt.contains(TEXT));
         assert!(!prompt.contains("{{"));
@@ -628,7 +642,10 @@ exit "$(cat "$dir/reply-$n.exit")"
     #[tokio::test]
     async fn runs_claude_once_with_the_users_login_and_no_claude_session_variables() {
         let fake = Fake::new(&[(&result(&to_a()), 0)]);
-        let outcome = fake.router(None).route(TEXT, &projects()).await;
+        let outcome = fake
+            .router(None)
+            .route(PromptSet::defaults(), TEXT, &projects())
+            .await;
         assert_eq!(
             serde_json::to_value(outcome.result.unwrap()).unwrap(),
             to_a()
@@ -681,7 +698,7 @@ exit "$(cat "$dir/reply-$n.exit")"
         let fake = Fake::new(&[(&result(&to_a()), 0)]);
         let outcome = fake
             .router(Some("claude-sonnet-5-5"))
-            .route(TEXT, &projects())
+            .route(PromptSet::defaults(), TEXT, &projects())
             .await;
         assert!(fake.call(1).0.contains(&"claude-sonnet-5-5".to_string()));
         assert_eq!(outcome.runs[0].model, "claude-sonnet-5-5");
@@ -692,7 +709,10 @@ exit "$(cat "$dir/reply-$n.exit")"
         let mut bad = to_a();
         bad["projectRef"]["projectId"] = json!("p-z");
         let fake = Fake::new(&[(&result(&bad), 0), (&result(&to_a()), 0)]);
-        let outcome = fake.router(None).route(TEXT, &projects()).await;
+        let outcome = fake
+            .router(None)
+            .route(PromptSet::defaults(), TEXT, &projects())
+            .await;
         assert!(outcome.result.is_some());
         assert_eq!(
             outcome.runs.iter().map(|r| r.ok).collect::<Vec<_>>(),
@@ -714,7 +734,10 @@ exit "$(cat "$dir/reply-$n.exit")"
     async fn gives_up_after_a_cli_error_then_no_json() {
         let error = json!({ "type": "result", "subtype": "error_during_execution", "is_error": true, "result": "API Error: 529" }).to_string();
         let fake = Fake::new(&[(&error, 0), (&result(&json!("repo-a")), 0)]);
-        let outcome = fake.router(None).route(TEXT, &projects()).await;
+        let outcome = fake
+            .router(None)
+            .route(PromptSet::defaults(), TEXT, &projects())
+            .await;
         assert!(outcome.result.is_none());
         assert!(
             outcome
@@ -739,7 +762,10 @@ exit "$(cat "$dir/reply-$n.exit")"
     #[tokio::test]
     async fn counts_a_failed_exit_and_garbage_output_as_invalid() {
         let fake = Fake::new(&[("", 1), ("not json", 0)]);
-        let outcome = fake.router(None).route(TEXT, &projects()).await;
+        let outcome = fake
+            .router(None)
+            .route(PromptSet::defaults(), TEXT, &projects())
+            .await;
         assert!(outcome.result.is_none());
         assert_eq!(
             outcome
@@ -759,7 +785,10 @@ exit "$(cat "$dir/reply-$n.exit")"
             ),
             0,
         )]);
-        let outcome = fake.router(None).route(TEXT, &projects()).await;
+        let outcome = fake
+            .router(None)
+            .route(PromptSet::defaults(), TEXT, &projects())
+            .await;
         assert_eq!(outcome.why.as_deref(), Some("both repos have a README"));
         assert!(outcome.result.is_none() && outcome.runs[0].ok);
         assert_eq!(fake.calls(), 1);
@@ -769,7 +798,10 @@ exit "$(cat "$dir/reply-$n.exit")"
     async fn reports_a_missing_claude_binary_as_the_reason() {
         let mut fake = Fake::new(&[]);
         fake.env.insert("PATH".into(), "/nonexistent".into());
-        let outcome = fake.router(None).route(TEXT, &projects()).await;
+        let outcome = fake
+            .router(None)
+            .route(PromptSet::defaults(), TEXT, &projects())
+            .await;
         assert!(outcome.result.is_none());
         let error = outcome.runs[0].error.clone().unwrap();
         assert!(

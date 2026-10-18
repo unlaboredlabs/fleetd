@@ -1,0 +1,1 @@
+- {{changeId}} merged{{since}}: {{pr}}{{sha}} (serves {{serves}}{{by}})

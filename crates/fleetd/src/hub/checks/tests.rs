@@ -278,7 +278,12 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
         panic!("one claim_failed wake: {wakes:?}")
     };
     assert_eq!(
-        claim_failed_lines(claim_id, workstream_id, failures),
+        claim_failed_lines(
+            crate::hub::prompts::PromptSet::defaults(),
+            claim_id,
+            workstream_id,
+            failures,
+        ),
         [
             "- Claim C1 on W1 failed; W1 stays verifying. Checks that did not pass:",
             "  done:0 (on lab-a: `test -f docs/x.md` exits 0): fail, exit 1",

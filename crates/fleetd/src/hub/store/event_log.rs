@@ -108,6 +108,10 @@ pub struct EventLog {
 
 impl EventLog {
     /// Prunes events past retention, then picks the head up where the database left it.
+    pub fn db(&self) -> &HubDb {
+        &self.db
+    }
+
     pub fn new(db: Arc<HubDb>, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
         let now = now_ms(clock.as_ref());
         let head = db.with(|conn| {

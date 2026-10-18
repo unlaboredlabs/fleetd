@@ -2,6 +2,7 @@
 use fleetd_contracts::ledger::{DecisionRule, DecisionRuleBetter, MetricValues, ResearchOutcome};
 
 use crate::hub::leads::brief::js_f64;
+use crate::hub::prompts::PromptSet;
 
 fn sign(rule: &DecisionRule) -> f64 {
     match rule.better {
@@ -25,6 +26,7 @@ fn num(n: f64) -> String {
 
 /// What the verdict rests on, and for INCONCLUSIVE what evidence would change it.
 pub fn verdict_text(
+    set: &PromptSet,
     outcome: ResearchOutcome,
     rule: &DecisionRule,
     values: &MetricValues,
@@ -40,23 +42,13 @@ pub fn verdict_text(
         better_text(rule),
         num(improvement)
     );
-    match outcome {
-        ResearchOutcome::Go => format!(
-            "GO: {measured}, at least the go line {}.",
-            num(rule.go_at_least.get())
-        ),
-        ResearchOutcome::Stop => format!(
-            "STOP: {measured}, below the stop line {}. STOP is a success: the question is answered.",
-            num(rule.stop_below.get())
-        ),
-        ResearchOutcome::Inconclusive => format!(
-            "INCONCLUSIVE: {measured}, between the stop line {} and the go line {}. An improvement of at least {} would make it GO; one below {} would make it STOP.",
-            num(rule.stop_below.get()),
-            num(rule.go_at_least.get()),
-            num(rule.go_at_least.get()),
-            num(rule.stop_below.get())
-        ),
-    }
+    let (go, stop) = (num(rule.go_at_least.get()), num(rule.stop_below.get()));
+    let id = match outcome {
+        ResearchOutcome::Go => "wake.research_verdict.go",
+        ResearchOutcome::Stop => "wake.research_verdict.stop",
+        ResearchOutcome::Inconclusive => "wake.research_verdict.inconclusive",
+    };
+    set.render(id, &[("measured", &measured), ("go", &go), ("stop", &stop)])
 }
 
 #[cfg(test)]
@@ -127,12 +119,19 @@ mod tests {
     fn verdict_lines() {
         let higher = rule(DecisionRuleBetter::Higher, 0.1, 0.1);
         assert_eq!(
-            verdict_text(ResearchOutcome::Go, &higher, &v(0.5, 0.6), Some("hit rate")),
+            verdict_text(
+                PromptSet::defaults(),
+                ResearchOutcome::Go,
+                &higher,
+                &v(0.5, 0.6),
+                Some("hit rate")
+            ),
             "GO: candidate 0.6 vs baseline 0.5 on hit rate (higher is better): improvement 0.1, at least the go line 0.1."
         );
         let lower = rule(DecisionRuleBetter::Lower, 50.0, 20.0);
         assert_eq!(
             verdict_text(
+                PromptSet::defaults(),
                 ResearchOutcome::Inconclusive,
                 &lower,
                 &v(400.0, 370.0),

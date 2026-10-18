@@ -306,7 +306,9 @@ impl Tasks {
 
     fn wake_result(&self, task: &Task, result: &TaskResult) {
         let receipts = self.hooks.receipts.get().and_then(|r| r.line(result));
+        let set = self.d.db.prompts().for_lead(&task.project_ref);
         let text = render::task_result_lines(
+            &set,
             task.task_id.as_str(),
             task.title.as_str(),
             result,
@@ -370,18 +372,22 @@ impl Tasks {
         };
         let branch = write.then(|| branch_for(task.task_id.as_str(), task.title.as_str()));
         let globs = area_globs(&policy, &area_names(task));
-        let prompt = render_task_prompt(&render::PromptInput {
-            task,
-            project_title: &project.title,
-            brief: brief.as_ref(),
-            done_when: brief.as_ref().map(|b| self.d.ports.done_when_text(b)),
-            area_globs: &globs,
-            branch: branch.as_deref(),
-            base_branch: base_branch.as_deref(),
-        });
+        let set = self.d.db.prompts().current(Some(r));
+        let prompt = render_task_prompt(
+            &set,
+            &render::PromptInput {
+                task,
+                project_title: &project.title,
+                brief: brief.as_ref(),
+                done_when: brief.as_ref().map(|b| self.d.ports.done_when_text(b)),
+                area_globs: &globs,
+                branch: branch.as_deref(),
+                base_branch: base_branch.as_deref(),
+            },
+        );
         let request = LaunchRequest {
             project_id: r.project_id.clone(),
-            prompt,
+            prompt: prompt.clone(),
             model: task.model.as_str().to_owned(),
             effort: task.effort,
             title: js_prefix(
@@ -395,6 +401,17 @@ impl Tasks {
                 .map(|(base_ref, branch)| Worktree { base_ref, branch }),
         };
         let thread_id = self.d.ports.launch(&r.machine_id, request).await?;
+        // Every later message to this thread renders from the texts it starts with. The thread runs either way.
+        if let Err(error) = self.d.db.prompts().pin(
+            &set,
+            crate::hub::prompts::Audience::Task,
+            r,
+            &thread_id,
+            &Timestamp(self.now_iso()),
+            &prompt,
+        ) {
+            tracing::warn!(task = %task.task_id.as_str(), %error, "task prompts not pinned");
+        }
         Ok((
             ThreadRef {
                 machine_id: r.machine_id.clone(),
@@ -415,7 +432,12 @@ impl Tasks {
         let result = TaskResult {
             status: TaskResultStatus::Failed,
             tail: Text::unchecked(tail_of(
-                &format!("fleetd could not start the task: {message}"),
+                &self
+                    .d
+                    .db
+                    .prompts()
+                    .for_lead(&task.project_ref)
+                    .render("wake.task_start_failed", &[("message", &message)]),
                 render::TAIL_MAX,
             )),
             branch: task.branch.clone(),
@@ -871,7 +893,9 @@ impl Tasks {
                             thread_ref.thread_id.as_str()
                         )
                     });
+                let set = self.d.db.prompts().for_lead(&task.project_ref);
                 let text = render::task_waiting_lines(
+                    &set,
                     task.task_id.as_str(),
                     task.title.as_str(),
                     &question,
@@ -1228,10 +1252,11 @@ impl Tasks {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
+        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
         let since = since.map(Timestamp::as_str);
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
-            Ok(tasks) => render::task_digest_lines(&tasks, since),
+            Ok(tasks) => render::task_digest_lines(prompts, &tasks, since),
             Err(error) => {
                 tracing::warn!(%error, "tasks: digest lines not read");
                 Vec::new()

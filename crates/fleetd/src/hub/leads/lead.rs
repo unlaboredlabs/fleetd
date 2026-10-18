@@ -10,10 +10,11 @@ use fleetd_contracts::model::{ProjectSummary, ThreadStatus, ThreadSummary};
 use tokio::sync::Mutex;
 
 use super::error::LeadError;
-use super::prompt::{LEAD_PROMPT, LEAD_PROMPT_VERSION, render_lead_prompt};
+use super::prompt::render_lead_start;
 use super::records::{LeadRecords, LeadSettings, StoredLead, WorkstreamFilter};
 use super::wakes::LeadWakes;
 use super::{Ctx, now_iso};
+use crate::hub::prompts::Audience;
 use crate::hub::store::{NewEvent, WaitInput, now_ms};
 
 pub const DEFAULT_LEAD_MODEL: &str = "claude-opus-5-5";
@@ -265,10 +266,12 @@ impl Leads {
             .unwrap_or(DEFAULT_LEAD_EFFORT);
         // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).
         let at = now_iso(&self.ctx);
-        let prompt = format!(
-            "{}\n\n{}",
-            render_lead_prompt(LEAD_PROMPT, r, &project.title),
-            self.wakes.digest(r, &[]).await?
+        let set = self.ctx.db.prompts().current(Some(r));
+        let prompt = render_lead_start(
+            &set,
+            r,
+            &project.title,
+            &self.wakes.digest(r, &[], &set).await?,
         );
         let launched_ms = now_ms(self.ctx.clock.as_ref());
         let title: String = format!("fleetd lead: {}", project.title)
@@ -289,22 +292,34 @@ impl Leads {
         }))
         .map_err(|e| LeadError::bare(ErrorCode::Invalid, format!("The lead launch is invalid: {e}")))?;
         let thread_id = self.ctx.ports().launch(&r.machine_id, input).await?;
+        let at: Timestamp = at.into();
+        // Every later message to this thread renders from the texts it starts with.
+        let text_sha = self
+            .ctx
+            .db
+            .prompts()
+            .pin(&set, Audience::Lead, r, &thread_id, &at, &prompt)
+            .unwrap_or_else(|error| {
+                // The lead runs either way; its wakes then follow the current texts.
+                tracing::warn!(%error, "lead prompts not pinned");
+                String::new()
+            });
         let lead = StoredLead {
             project_ref: r.clone(),
             thread_id: thread_id.clone(),
-            started_at: Timestamp::from(at.clone()),
+            started_at: at.clone(),
             last_wake_at: None,
             session_generation,
         };
         self.records.lead_put(&lead)?;
         self.ctx.events.append(NewEvent {
-            at: at.into(),
+            at,
             r#type: HubEventType::LeadStarted,
             machine_id: Some(r.machine_id.clone()),
             project_id: Some(r.project_id.clone()),
             thread_id: Some(thread_id),
             summary: format!("Lead of {} started (session {session_generation})", project.title),
-            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "model": model, "effort": effort, "prompt": LEAD_PROMPT_VERSION })),
+            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "model": model, "effort": effort, "promptRef": set.get("lead.start").r#ref, "textSha": text_sha })),
             attention: None,
         })?;
         self.with_state(lead)

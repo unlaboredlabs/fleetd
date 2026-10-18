@@ -200,4 +200,24 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "project_files",
         "A project's files (tracked and untracked, not ignored) best matching a fuzzy query, for @-mentions. limit defaults to 20, max 50.",
     ),
+    (
+        "prompts_list",
+        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, judges, wakes, router, retro, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
+    ),
+    (
+        "prompt_get",
+        "One prompt: its shipped default, the global and project overrides with their refs, the text in effect, its placeholders, its safety rules (and whether the text still says each), warnings, and, when fleetd changed the default you edited, the old default, the new one, yours and a 3-way merge.",
+    ),
+    (
+        "prompt_set",
+        "Save a prompt override, hub-wide (scope global) or for one project (scope project, with projectRef); id instructions holds the custom instructions appended to every lead and task. Warns (never refuses) when the text drops a placeholder or a safety rule; dryRun returns the warnings only. New sessions get it at once; running ones keep the text they started with. Admin keys, or a person's device.",
+    ),
+    (
+        "prompt_reset",
+        "Remove a prompt override at one scope; the next one down (project, global, shipped default) is in effect again. Admin keys, or a person's device.",
+    ),
+    (
+        "session_prompt_get",
+        "Exactly what one session fleetd started (a lead, task, reviewer or judge) was told: its first message byte for byte, its SHA, the ref and scope of every prompt it is pinned to, and the tools it never gets.",
+    ),
 ];

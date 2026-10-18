@@ -8,7 +8,7 @@ pub mod preview;
 pub mod router;
 
 #[cfg(test)]
-mod auto_start_tests;
+pub(crate) mod auto_start_tests;
 
 use std::sync::Arc;
 
@@ -469,7 +469,10 @@ impl Intake {
                 recent_intents: recent.into_iter().map(|w| w.title.to_string()).collect(),
             });
         }
-        let outcome = self.router.route(&input.text, &projects).await;
+        let outcome = self
+            .router
+            .route(&self.ctx.db.prompts().current(None), &input.text, &projects)
+            .await;
         let base = Route {
             text: input.text.clone(),
             template: fixed,

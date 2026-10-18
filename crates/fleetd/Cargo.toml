@@ -56,6 +56,8 @@ serde_path_to_error = { workspace = true }
 sha1 = { workspace = true }
 cliclack = "0.5"
 console = "0.16"
+# prompts: the 3-way merge when a release changes a default you edited
+diffy = "0.5.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

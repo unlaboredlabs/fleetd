@@ -23,6 +23,10 @@ use crate::playbooks::IntakeEcho;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
 };
+use crate::prompts::{
+    PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
+    SessionPrompt,
+};
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
@@ -834,6 +838,47 @@ input!(ProjectRemoveInput {
 });
 output!(ProjectRemoveOutput { ok: True });
 
+// prompts_list, prompt_get, prompt_set, prompt_reset, session_prompt_get: every prompt fleetd sends a model.
+input!(PromptsListInput {
+    /// The texts in effect for this project; absent: hub-wide.
+    project_ref: Option<ProjectRef>,
+});
+output!(PromptsListOutput { prompts: Vec<PromptSummary> });
+input!(PromptGetInput { id: PromptId, project_ref: Option<ProjectRef> });
+output!(PromptGetOutput {
+    #[serde(flatten)]
+    prompt: PromptDetail,
+});
+input!(PromptSetInput {
+    id: PromptId,
+    scope: PromptScope,
+    /// Required with scope project.
+    project_ref: Option<ProjectRef>,
+    /// May be empty only for `instructions`.
+    text: String,
+    /// The default ref the text was edited from (`prompt_get` default.ref); absent: the one shipped now.
+    base: Option<PromptRef>,
+    /// Return the warnings without saving.
+    dry_run: Option<bool>,
+});
+output!(PromptSetOutput {
+    r#ref: PromptRef,
+    /// What the edit may break; it is saved anyway.
+    warnings: Vec<PromptWarning>,
+});
+input!(PromptResetInput { id: PromptId, scope: PromptScope, project_ref: Option<ProjectRef> });
+output!(PromptResetOutput {
+    effective: PromptVersion,
+    scope: PromptScope
+});
+input!(SessionPromptGetInput {
+    machine_id: MachineId,
+    thread_id: ThreadId
+});
+output!(SessionPromptGetOutput {
+    session: SessionPrompt
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -948,6 +993,13 @@ tools! {
     order_get => OrderGet, Read, OrderGetInput, OrderGetOutput;
     order_note => OrderNote, Operate, OrderNoteInput, OrderNoteOutput;
     order_stop => OrderStop, Operate, OrderStopInput, OrderStopOutput;
+    prompts_list => PromptsList, Read, PromptsListInput, PromptsListOutput;
+    prompt_get => PromptGet, Read, PromptGetInput, PromptGetOutput;
+    // Global: admin on every machine, as the retro; project: admin on its machine; or a person's device (a human key)
+    // with operate there. The handler checks which.
+    prompt_set => PromptSet, Operate, PromptSetInput, PromptSetOutput;
+    prompt_reset => PromptReset, Operate, PromptResetInput, PromptResetOutput;
+    session_prompt_get => SessionPromptGet, Read, SessionPromptGetInput, SessionPromptGetOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1079,7 +1131,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 53);
+        assert_eq!(McpToolName::ALL.len(), 58);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());

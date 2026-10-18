@@ -343,7 +343,11 @@ impl Reviews {
                     ),
                     80,
                 ),
-                prompt: review_prompt(change, planned.role),
+                prompt: review_prompt(
+                    &self.db.prompts().current(Some(&change.project_ref)),
+                    change,
+                    planned.role,
+                ),
                 serves: change.serves.to_string(),
                 pr: change.pr_url.to_string(),
                 tier: change.tier,
@@ -494,6 +498,10 @@ impl Reviews {
             };
             self.note(&row.change_id, &format!("{waiting}; sent to {author}"));
             let text = findings_message(
+                &self
+                    .db
+                    .prompts()
+                    .for_task(&change.project_ref, author.as_str()),
                 &change,
                 &FindingsVerdict {
                     task_id: &task_id,

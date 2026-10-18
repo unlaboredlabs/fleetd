@@ -54,11 +54,18 @@ impl Research {
             .as_ref()
             .and_then(|b| b.metric.as_ref())
             .map(|m| m.to_string());
+        let set = self.ctx.db.prompts().for_lead(&w.project_ref);
         let text_of = |v: &ResearchVerdict| {
             format!(
                 "{} research verdict {}",
                 w.workstream_id,
-                verdict_text(v.outcome, &v.rule, &v.metric_values, metric.as_deref())
+                verdict_text(
+                    &set,
+                    v.outcome,
+                    &v.rule,
+                    &v.metric_values,
+                    metric.as_deref()
+                )
             )
         };
         if let Some(v) = &w.verdict {

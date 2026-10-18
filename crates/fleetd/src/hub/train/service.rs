@@ -261,6 +261,22 @@ impl Train {
         self.host.wake_lead(project_ref, line).await;
     }
 
+    /// The texts of the project's lead, or of the change's author task, for a message to it.
+    fn lead_prompts(&self, project_ref: &ProjectRef) -> crate::hub::prompts::PromptSet {
+        self.records.db().prompts().for_lead(project_ref)
+    }
+
+    fn author_prompts(&self, change: &Change) -> crate::hub::prompts::PromptSet {
+        match &change.task_id {
+            Some(task_id) => self
+                .records
+                .db()
+                .prompts()
+                .for_task(&change.project_ref, task_id.as_str()),
+            None => self.lead_prompts(&change.project_ref),
+        }
+    }
+
     /// Applies `next` to the stored Change if it is still in one of `from` (any state when None); else does nothing.
     fn update(
         &self,
@@ -353,11 +369,15 @@ impl Train {
                 }
             }
         }
-        self.wake_lead(
-            &change.project_ref,
-            format!("{} ({}): {text}", change.change_id, change.pr_url),
-        )
-        .await;
+        let line = self.lead_prompts(&change.project_ref).render(
+            "wake.train.line",
+            &[
+                ("changeId", &change.change_id),
+                ("prUrl", &change.pr_url),
+                ("text", &text),
+            ],
+        );
+        self.wake_lead(&change.project_ref, line).await;
     }
 
     fn set_ready(&self, change: &Change, reviews: Vec<ChangeReview>) -> Option<Change> {
@@ -471,14 +491,15 @@ impl Train {
             c
         });
         if done.is_some() {
-            self.wake_lead(
-                &change.project_ref,
-                format!(
-                    "{} left the train: {} {why}.",
-                    change.change_id, change.pr_url
-                ),
-            )
-            .await;
+            let line = self.lead_prompts(&change.project_ref).render(
+                "wake.train.left",
+                &[
+                    ("changeId", &change.change_id),
+                    ("prUrl", &change.pr_url),
+                    ("why", &why),
+                ],
+            );
+            self.wake_lead(&change.project_ref, line).await;
         }
     }
 
@@ -517,17 +538,18 @@ impl Train {
             .as_ref()
             .map(|t| format!(", by {t}"))
             .unwrap_or_default();
-        self.wake_lead(
-            &merged.project_ref,
-            format!(
-                "{} merged by the train: {}{as_sha} (tier {}, serves {}{by}).",
-                merged.change_id,
-                merged.pr_url,
-                tier_str(merged.tier),
-                merged.serves
-            ),
-        )
-        .await;
+        let line = self.lead_prompts(&merged.project_ref).render(
+            "wake.train.merged",
+            &[
+                ("changeId", &merged.change_id),
+                ("prUrl", &merged.pr_url),
+                ("sha", &as_sha),
+                ("tier", &tier_str(merged.tier)),
+                ("serves", &merged.serves),
+                ("by", &by),
+            ],
+        );
+        self.wake_lead(&merged.project_ref, line).await;
     }
 
     async fn needs_rebase(&self, change: &Change, base: &str, paths: &[String], output: &str) {
@@ -553,14 +575,17 @@ impl Train {
             format!("{} needs a rebase: {why}", change.change_id),
             json!({ "changeId": change.change_id, "paths": paths.iter().take(50).collect::<Vec<_>>() }),
         );
-        self.tell_author(
-            &parked,
-            format!(
-                "The merge train could not rebase your PR {} ({}): it {why}. Rebase {} onto origin/{base}, resolve the conflicts, push, and stop; the train takes the new head by itself.",
-                change.pr_url, change.change_id, change.branch
-            ),
-        )
-        .await;
+        let text = self.author_prompts(&parked).render(
+            "task.train_rebase",
+            &[
+                ("prUrl", &change.pr_url),
+                ("changeId", &change.change_id),
+                ("why", &why),
+                ("branch", &change.branch),
+                ("base", &base),
+            ],
+        );
+        self.tell_author(&parked, text).await;
     }
 
     async fn ci_failed(&self, change: &Change, failing: &[CheckRun], timed_out: bool) {
@@ -609,14 +634,16 @@ impl Train {
             format!("{} {why}", change.change_id),
             data,
         );
-        self.tell_author(
-            &parked,
-            format!(
-                "The merge train did not merge your PR {} ({}): {why}. Fix it on {}, push, and stop; the train retries the new head by itself.",
-                change.pr_url, change.change_id, change.branch
-            ),
-        )
-        .await;
+        let text = self.author_prompts(&parked).render(
+            "task.train_ci_failed",
+            &[
+                ("prUrl", &change.pr_url),
+                ("changeId", &change.change_id),
+                ("why", &why),
+                ("branch", &change.branch),
+            ],
+        );
+        self.tell_author(&parked, text).await;
     }
 
     /// Polls the head's check runs until all are done, one is red, or the timeout passes.
@@ -857,14 +884,16 @@ impl Train {
             )));
             c
         });
-        self.wake_lead(
-            &change.project_ref,
-            format!(
-                "{} ({}) was not merged: {why}. The train gave up after {refusals} tries; check the repo's merge settings.",
-                change.change_id, change.pr_url
-            ),
-        )
-        .await;
+        let line = self.lead_prompts(&change.project_ref).render(
+            "wake.train.gave_up",
+            &[
+                ("changeId", &change.change_id),
+                ("prUrl", &change.pr_url),
+                ("why", &why),
+                ("tries", &refusals),
+            ],
+        );
+        self.wake_lead(&change.project_ref, line).await;
         Ok(())
     }
 
@@ -1367,14 +1396,16 @@ impl Train {
                 .as_ref()
                 .map(|f| format!(" Fix: {f}."))
                 .unwrap_or_default();
-            self.wake_lead(
-                &task.project_ref,
-                format!(
-                    "The train refused {pr_url} from {}: {}{fix}",
-                    task.task_id, e.message
-                ),
-            )
-            .await;
+            let line = self.lead_prompts(&task.project_ref).render(
+                "wake.train.refused",
+                &[
+                    ("prUrl", &pr_url),
+                    ("taskId", &task.task_id),
+                    ("message", &e.message),
+                    ("fix", &fix),
+                ],
+            );
+            self.wake_lead(&task.project_ref, line).await;
         }
     }
 

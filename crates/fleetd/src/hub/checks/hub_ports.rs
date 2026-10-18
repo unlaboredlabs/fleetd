@@ -73,6 +73,7 @@ impl Ports for HubPorts {
     }
     fn wake(&self, project: &ProjectRef, wake: ClaimWake) {
         let Some(hub) = self.hub() else { return };
+        let set = hub.db.prompts().for_lead(project);
         let trigger = match wake {
             ClaimWake::Failed {
                 claim_id,
@@ -80,14 +81,14 @@ impl Ports for HubPorts {
                 failures,
             } => Trigger::Line {
                 kind: LineKind::ClaimFailed,
-                text: render::claim_failed_lines(&claim_id, &workstream_id, &failures),
+                text: render::claim_failed_lines(&set, &claim_id, &workstream_id, &failures),
             },
             ClaimWake::Passed {
                 claim_id,
                 workstream_id,
             } => Trigger::Line {
                 kind: LineKind::ClaimPassed,
-                text: render::claim_passed_line(&claim_id, &workstream_id),
+                text: render::claim_passed_line(&set, &claim_id, &workstream_id),
             },
         };
         hub.leads.wakes.trigger(project, trigger);

@@ -109,6 +109,13 @@ impl UsageQueue for OpsPorts {
         let (message, id) = (message.to_owned(), id.to_owned());
         Box::pin(async move {
             let target = target.ok_or("not a thread ref")?;
+            // `message` is a prompt id (the continue message): the thread gets the text its session started with.
+            let message = self
+                .hub()
+                .db
+                .prompts()
+                .for_thread(&target.machine_id, target.thread_id.as_str())
+                .render(&message, &[]);
             self.hub()
                 .queue
                 .send(&target, &message, &id, None)

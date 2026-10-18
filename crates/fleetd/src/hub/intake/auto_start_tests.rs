@@ -26,10 +26,10 @@ const LOGIN_FIX: &str = "On lab-a: CLAUDE_CONFIG_DIR=~/.fleetd/claude claude aut
 
 /// The node: refuses launches while the runner is unusable, as the executor's launch gate does.
 #[derive(Default)]
-struct Node {
+pub(crate) struct Node {
     runner_usable: AtomicBool,
-    launches: Mutex<Vec<ThreadLaunchInput>>,
-    sends: Mutex<Vec<String>>,
+    pub(crate) launches: Mutex<Vec<ThreadLaunchInput>>,
+    pub(crate) sends: Mutex<Vec<String>>,
 }
 
 struct Ports(Arc<Node>);
@@ -112,18 +112,19 @@ impl PolicyHook for Policy {
     }
 }
 
-struct Hub {
-    area: Arc<Area>,
-    node: Arc<Node>,
+pub(crate) struct Hub {
+    pub(crate) area: Arc<Area>,
+    pub(crate) node: Arc<Node>,
     clock: Arc<ManualClock>,
     events: Arc<EventLog>,
-    project: ProjectRef,
+    pub(crate) project: ProjectRef,
     _home: tempfile::TempDir,
 }
 
-fn hub(runner_usable: bool, auto_start: bool) -> Hub {
+/// A hub home in a temporary directory, so prompt overrides have somewhere to live.
+pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
     let home = tempfile::tempdir().unwrap();
-    let db = HubDb::open_memory().unwrap();
+    let db = HubDb::open(home.path()).unwrap();
     let clock = ManualClock::at(T0_MS);
     let store = Arc::new(HubStore::new(db.clone()));
     let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
@@ -174,7 +175,7 @@ fn hub(runner_usable: bool, auto_start: bool) -> Hub {
 }
 
 impl Hub {
-    async fn order(&self, text: &str) -> (WorkstreamId, String, Option<String>) {
+    pub(crate) async fn order(&self, text: &str) -> (WorkstreamId, String, Option<String>) {
         let placed = self
             .area
             .intake
@@ -200,7 +201,7 @@ impl Hub {
         }
     }
 
-    fn launched_prompts(&self) -> Vec<String> {
+    pub(crate) fn launched_prompts(&self) -> Vec<String> {
         let launches = self.node.launches.lock().unwrap();
         launches.iter().map(|l| l.prompt.to_string()).collect()
     }
@@ -214,7 +215,7 @@ impl Hub {
     }
 
     /// Lets every pending wake flush.
-    async fn after_debounce(&self) {
+    pub(crate) async fn after_debounce(&self) {
         settle().await;
         self.clock.advance(WAKE_DEBOUNCE + Duration::from_secs(1));
         settle().await;

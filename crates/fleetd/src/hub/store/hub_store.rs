@@ -25,6 +25,12 @@ pub struct HubStore {
     db: Arc<HubDb>,
 }
 
+impl HubStore {
+    pub fn db(&self) -> &HubDb {
+        &self.db
+    }
+}
+
 fn decode<T: serde::de::DeserializeOwned>(data: String) -> Result<T, StoreError> {
     Ok(serde_json::from_str(&data)?)
 }

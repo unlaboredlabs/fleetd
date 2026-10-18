@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, LAB, type Lab, LEAD_PROMPT_VERSION, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText } from "./harness.ts";
+import { type Body, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText } from "./harness.ts";
 
 const MACHINE = "lab-a";
 export const REPO = "unlaboredlabs/fleetd-testbed";
@@ -118,7 +118,7 @@ export async function m7Train(lab: Lab) {
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    ok(`lead ${leadThread} started on prompt ${LEAD_PROMPT_VERSION}`);
+    ok(`lead ${leadThread} started`);
 
     // Two workstreams, briefs registered from the shell as the lead would, before the intent wakes fire.
     const workstream = async (text: string, brief: Body) => {

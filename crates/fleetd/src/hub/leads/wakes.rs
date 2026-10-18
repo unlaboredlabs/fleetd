@@ -20,6 +20,7 @@ use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
 use crate::hub::playbooks::Playbooks;
+use crate::hub::prompts::PromptSet;
 use crate::hub::store::{NewEvent, now_ms};
 
 pub const WAKE_DEBOUNCE: Duration = Duration::from_secs(10);
@@ -113,7 +114,7 @@ fn scope_text(scope: &DecisionScope) -> String {
 
 /// The "why you are woken" lines. Answers are already listed in the digest, so they get one summary line; so do
 /// playbook instructions the digest already shows.
-pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
+pub fn trigger_lines(set: &PromptSet, triggers: &[Trigger], digest: &str) -> Vec<String> {
     let mut lines = Vec::new();
     for t in triggers {
         match t {
@@ -122,16 +123,19 @@ pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
                 text,
                 playbook,
             } => {
-                lines.push(format!(
-                    "- New intent {workstream_id}: '{}'. Register it with `fleetd brief create --workstream {workstream_id} --json '<Brief>'`.",
-                    quote(text)
+                lines.push(set.render(
+                    "wake.intent",
+                    &[("workstreamId", workstream_id), ("text", &quote(text))],
                 ));
                 if let Some(p) = playbook {
                     let instructions = one_line(&p.lead_instructions, 600);
                     lines.push(if digest.contains(&instructions) {
-                        format!("  It follows the {} playbook; its instructions are under \"Playbooks\" above.", p.name)
+                        set.render("wake.intent.playbook_listed", &[("playbook", &p.name)])
                     } else {
-                        format!("  It follows the {} playbook: {instructions}", p.name)
+                        set.render(
+                            "wake.intent.playbook",
+                            &[("playbook", &p.name), ("instructions", &instructions)],
+                        )
                     });
                 }
             }
@@ -144,12 +148,15 @@ pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
                         d.by.as_deref().unwrap_or("(unnamed)")
                     )
                 };
-                lines.push(format!(
-                    "- {who} recorded {}: {} = {} ({}). Follow it.",
-                    d.decision_id,
-                    d.key,
-                    quote(d.value.as_ref()),
-                    scope_text(&d.scope)
+                lines.push(set.render(
+                    "wake.decision",
+                    &[
+                        ("who", &who),
+                        ("decisionId", &d.decision_id),
+                        ("key", &d.key),
+                        ("value", &quote(d.value.as_ref())),
+                        ("scope", &scope_text(&d.scope)),
+                    ],
                 ));
             }
             Trigger::Line { text, .. } => lines.push(text.clone()),
@@ -161,15 +168,18 @@ pub fn trigger_lines(triggers: &[Trigger], digest: &str) -> Vec<String> {
         .filter(|t| matches!(t, Trigger::Answer(_)))
         .count();
     if answers > 0 {
-        lines.push(format!("- The human settled {answers} of your asks; see \"Answers since your last wake\" above."));
+        lines.push(set.render("wake.answers", &[("count", &answers)]));
     }
     lines
 }
 
-pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {
-    format!(
-        "{digest}\n\n## Why you are woken\n{}",
-        trigger_lines(triggers, digest).join("\n")
+pub fn render_wake(set: &PromptSet, digest: &str, triggers: &[Trigger]) -> String {
+    set.render(
+        "wake.frame",
+        &[
+            ("digest", &digest),
+            ("lines", &trigger_lines(set, triggers, digest).join("\n")),
+        ],
     )
 }
 
@@ -317,7 +327,12 @@ impl LeadWakes {
     }
 
     /// The lead digest as of now, with `answers` as its "since your last wake" list.
-    pub async fn digest(&self, r: &ProjectRef, answers: &[Answer]) -> Result<String, LeadError> {
+    pub async fn digest(
+        &self,
+        r: &ProjectRef,
+        answers: &[Answer],
+        set: &PromptSet,
+    ) -> Result<String, LeadError> {
         let ctx = &self.ctx;
         let project = ctx.store.project_get(r)?;
         let workstreams = self.records.workstreams_list(&WorkstreamFilter {
@@ -350,15 +365,16 @@ impl LeadWakes {
             .hooks
             .tasks
             .get()
-            .map(|t| t.digest_lines(r, since.as_ref(), 50));
+            .map(|t| t.digest_lines(r, since.as_ref(), 50, set));
         let train = ctx
             .hooks
             .train
             .get()
-            .and_then(|t| t.lead_lines(r, since.as_ref()));
+            .and_then(|t| t.lead_lines(r, since.as_ref(), set));
         let facts = self.workstream_facts(&workstreams);
         let at = now_iso(ctx);
         Ok(render_lead_digest(&DigestInput {
+            prompts: set,
             project_ref: r,
             title: project
                 .as_ref()
@@ -465,7 +481,13 @@ impl LeadWakes {
                 _ => None,
             })
             .collect();
-        let message = render_wake(&self.digest(r, &answers).await?, &triggers);
+        // The lead keeps the texts its session started with.
+        let set = self
+            .ctx
+            .db
+            .prompts()
+            .for_thread(&r.machine_id, lead.thread_id.as_str());
+        let message = render_wake(&set, &self.digest(r, &answers, &set).await?, &triggers);
         let at = now_iso(&self.ctx);
         let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
         // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.

@@ -178,4 +178,7 @@ pub struct RetroRun {
     pub dropped: Vec<DroppedChange>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<OrchestratorRun>,
+    /// The retro prompt it was given (`retro@…`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_ref: Option<String>,
 }
