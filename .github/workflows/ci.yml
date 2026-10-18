@@ -138,7 +138,7 @@ jobs:
           xcode-select -p
           if xcrun --find metal 2>/dev/null; then echo "metal compiler unexpectedly present"; fi
       - if: steps.scope.outputs.run == 'true'
-        run: cargo clippy --locked -p fleetd-app -p fleetd-bench --all-targets -- -D warnings
+        run: cargo clippy --locked -p fleetd-app -p fleetd-bench -p fleetd-record --all-targets -- -D warnings
       - if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd-app -p fleetd-bench
         env:

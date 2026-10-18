@@ -24,6 +24,7 @@ mod pair;
 mod palette;
 mod prefs;
 mod prompts;
+mod record;
 mod seal;
 mod settings;
 mod shell;
@@ -53,6 +54,13 @@ fn main() {
             std::process::exit(2);
         }
     };
+    let record = match record::from_env() {
+        Ok(record) => record,
+        Err(e) => {
+            eprintln!("fleetd-app: {e}");
+            std::process::exit(2);
+        }
+    };
     if let Some(mode) = bench {
         bench::stage("process_start", &format!("mode={mode:?} pid={}", std::process::id()));
         bench::start_watchdog();
@@ -69,10 +77,10 @@ fn main() {
         bench::stage("platform_ready", "");
     }
     // On macOS this closure runs inside applicationDidFinishLaunching, which can't unwind.
-    app.run(move |cx: &mut App| crash::guard("startup", || launch(bench, links, cx)));
+    app.run(move |cx: &mut App| crash::guard("startup", || launch(bench, record, links, cx)));
 }
 
-fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
+fn launch(bench: Option<bench::Mode>, record: Option<record::Config>, links: pair::Links, cx: &mut App) {
     let stage = |name, detail: &str| {
         if bench.is_some() {
             bench::stage(name, detail);
@@ -128,6 +136,9 @@ fn launch(bench: Option<bench::Mode>, links: pair::Links, cx: &mut App) {
     }
     cx.activate(true);
     stage("activate_requested", "");
+    if let Some(config) = record {
+        record::start(config, cx);
+    }
 }
 
 /// AppKit's window restoration runs during launch, before gpui calls `launch`. After a launch that died part way

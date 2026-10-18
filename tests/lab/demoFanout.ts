@@ -11,11 +11,20 @@
 // With FLEETD_DEMO_ORDER=app it writes RUN/demo/app.json ({ hubUrl, key, projectId, order }) as soon as the hub has a
 // human key, then waits up to 10 minutes for that order to arrive from the app. Either way RUN/demo/timeline.jsonl
 // gets one line per milestone with its wall-clock time, for cutting the recording. Costs about 15-25 haiku turns.
-import { spawnSync } from "node:child_process";
+//
+// FLEETD_DEMO_APP=<fleetd-app binary> also starts the app on the hub with the human key, recording its own window into
+// FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD, macOS) from before the order until the merges; then it stops
+// the app by its PID, which finishes the MP4. scripts/demo-mac.sh runs it so on a Mac.
+//
+// It closes and deletes only the PRs and branches it made, so a run on another machine against the same testbed is
+// left alone. Task ids, and so branch names, restart at T1 with every run, so they are written to LAB/demo-testbed.ledger
+// as they appear, and a run reclaims whatever an interrupted one left listed there before it starts (and Ctrl-C runs
+// the same cleanup, through onCleanup).
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, cli, HUB_PORT, LAB, type Lab, MODEL, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { cleanTestbed, git, prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
+import { type Body, cli, detached, HUB_PORT, LAB, type Lab, MODEL, onCleanup, recordPid, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
+import { git, prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -24,6 +33,8 @@ const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const PAGES = ["alpha", "beta", "gamma"] as const;
+/** On screen before the order goes in, and after the last merge: the board settled, for the cut. */
+const APP_HOLD_MS = 6_000;
 const POLICY = `areas:
 ${PAGES.map((p) => `  ${p}: ["${DIR}/${p}.md"]`).join("\n")}
 defaults:
@@ -65,6 +76,94 @@ const appSession = async (key: string) => {
   return { call, live, frames, close: () => ws.close() };
 };
 
+/** `hub/tasks/render.rs` slug_of: a task's branch is `fleetd/<taskId>-<slug of its title>`. */
+const slugOf = (title: string) => {
+  const words = title.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().split(/[^a-z0-9]+/u).filter(Boolean);
+  let slug = "";
+  for (const w of words) {
+    if ((slug === "" ? w.length : slug.length + 1 + w.length) > 40) break;
+    slug += `${slug === "" ? "" : "-"}${w}`;
+  }
+  return slug !== "" ? slug : (words[0]?.slice(0, 40) ?? "task");
+};
+
+/** One line per PR (`pr <n>`) and branch (`branch <name>`) this lab made on the testbed; scripts/demo-mac.sh reads it too. */
+const LEDGER = path.join(LAB, "demo-testbed.ledger");
+const note = (line: string) => fs.appendFileSync(LEDGER, `${line}\n`);
+
+/** Closes and deletes everything the ledger lists, then empties it. Gone already is fine. */
+const reclaimTestbed = (lab: Pick<Lab, "log">) => {
+  if (!fs.existsSync(LEDGER)) return;
+  const gh = (...args: Array<string>) => spawnSync("gh", args, { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
+  const lines = [...new Set(fs.readFileSync(LEDGER, "utf8").split("\n").filter(Boolean))];
+  for (const line of lines) {
+    const [kind, value] = line.split(" ") as [string, string];
+    if (kind === "pr" && gh("pr", "view", value, "-R", REPO, "--json", "state", "--jq", ".state").stdout.trim() === "OPEN") {
+      gh("pr", "close", value, "-R", REPO, "--delete-branch");
+    }
+    if (kind === "branch") gh("api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${value}`);
+  }
+  fs.rmSync(LEDGER, { force: true });
+  lab.log(`reclaimed ${lines.length} testbed PRs and branches from ${LEDGER}`);
+};
+
+/** Notes every task's branch and every queued or refused PR in the ledger as the hub reports them, until stopped. */
+const watchLedger = (lab: Lab, from: number) => {
+  let stopping = false;
+  const done = (async () => {
+    for (let cursor = from; !stopping; ) {
+      const page = (await lab.callTool("events_wait", { cursor, types: ["task.started", "change.queued", "change.refused"], timeoutSec: 5 })).body;
+      for (const e of page.events as Array<Body>) {
+        if (e.type === "task.started") {
+          // A write task's event names its branch; else it is derived, as the hub derives it.
+          const task = e.data?.branch === undefined ? ((await lab.callTool("task_get", { taskId: e.data.taskId })).body.task as Body) : undefined;
+          note(`branch ${e.data?.branch ?? `fleetd/${task!.taskId}-${slugOf(task!.title as string)}`}`);
+        } else {
+          const n = e.data?.prNumber ?? Number(/\/pull\/(\d+)$/u.exec(String(e.data?.prUrl ?? ""))?.[1]);
+          if (Number.isInteger(n) && n > 0) note(`pr ${n}`);
+        }
+      }
+      cursor = page.cursor;
+    }
+  })().catch((error: unknown) => lab.log(`ledger watch ended: ${String(error)}`));
+  return async () => {
+    stopping = true;
+    await done;
+  };
+};
+
+/** The app on the hub with the human key, recording itself; resolves once the recorder has a window. */
+const startApp = async (lab: Lab, bin: string, key: string, out: string) => {
+  fs.mkdirSync(out, { recursive: true });
+  const logFile = path.join(lab.dir, "app.log");
+  const child = spawn(bin, [], {
+    env: { ...scrubbedEnv(), FLEETD_HUB_URL: lab.hubUrl, FLEETD_AGENT_KEY: key, FLEETD_RECORD: out },
+    stdio: ["ignore", fs.openSync(logFile, "a"), fs.openSync(logFile, "a")],
+    ...detached(),
+  });
+  recordPid(child.pid, bin);
+  lab.log(`started app pid=${child.pid}, recording into ${out}`);
+  await lab.until("the app's recorder starts (app.log)", 60_000, async () => {
+    const text = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
+    if (/FLEETD_RECORD error=|panicked/u.test(text) || child.exitCode !== null) throw new Error(`the app did not start recording; see ${logFile}`);
+    if (text.includes("FLEETD_RECORD start")) return true;
+    await sleep(250);
+    return undefined;
+  });
+  return child;
+};
+
+/** SIGTERM by the spawn PID: the recorder finishes the MP4, then the app exits. */
+const stopApp = async (lab: Lab, child: ChildProcess) => {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((r) => child.once("exit", r));
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => child.kill("SIGKILL"), 30_000);
+  await exited;
+  clearTimeout(timer);
+  lab.log(`stopped app pid=${child.pid} (${child.signalCode ?? `exit ${child.exitCode}`})`);
+};
+
 /**
  * The node refuses to remove a project while one of its threads runs, and a late task result can wake the lead again,
  * so: interrupt every running or waiting thread of the testbed project, try the removal, and repeat for up to 2 min.
@@ -100,7 +199,7 @@ export async function demoFanout(lab: Lab) {
   await lab.waitLive(MACHINE);
   requireGhLogin();
   check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (git clone https://github.com/${REPO} ${TESTBED})`);
-  cleanTestbed();
+  reclaimTestbed(lab);
   prepareCheckout(POLICY);
   ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked policy with areas ${PAGES.join(", ")} under ${DIR}`);
   fs.rmSync(lab.dir, { recursive: true, force: true });
@@ -113,6 +212,16 @@ export async function demoFanout(lab: Lab) {
 
   const scenarioStart = await lab.cursor();
   let app: Awaited<ReturnType<typeof appSession>> | undefined;
+  let desktop: ChildProcess | undefined;
+  const record = process.env.FLEETD_DEMO_RECORD ?? path.join(lab.dir, "rec");
+  const stopWatch = watchLedger(lab, scenarioStart);
+  // Also run by the driver on Ctrl-C, while the hub still answers.
+  const cleanup = onCleanup(async () => {
+    app?.close();
+    if (desktop !== undefined) await stopApp(lab, desktop);
+    await stopWatch();
+    reclaimTestbed(lab);
+  });
   try {
     const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
     const ref = { machineId: MACHINE, projectId };
@@ -131,6 +240,11 @@ export async function demoFanout(lab: Lab) {
     check(key, "hub key create --human printed a key");
     app = await appSession(key!);
     app.live(true);
+    if (process.env.FLEETD_DEMO_APP) {
+      desktop = await startApp(lab, process.env.FLEETD_DEMO_APP, key!, record);
+      await sleep(APP_HOLD_MS);
+      mark("app recording", { record });
+    }
     const fromApp = process.env.FLEETD_DEMO_ORDER === "app";
     const orderCursor = await lab.cursor();
     let workstreamId: string;
@@ -198,6 +312,11 @@ export async function demoFanout(lab: Lab) {
     const trains = board.trains as Array<Body>;
     mark("board", { orders: (board.orders as Array<Body>).map((o) => `${o.workstreamId} ${o.phase} ${o.settled}/${o.total} "${o.title}"`), mergedToday: trains[0]?.mergedToday });
     for (const o of board.orders as Array<Body>) check((o.title as string).length <= 60, `card title is short: "${o.title}"`);
+    if (desktop !== undefined) {
+      await sleep(APP_HOLD_MS);
+      await stopApp(lab, desktop);
+      mark("app stopped", { mp4: path.join(record, "fleetd.mp4") });
+    }
 
     // What came over the live feed, against its bounds.
     const frames = app.frames;
@@ -267,11 +386,7 @@ export async function demoFanout(lab: Lab) {
     }
     mark("turns", { lead: leadTurns, tasks: taskTurns, byTask: tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`) });
   } finally {
-    app?.close();
-    for (const pr of JSON.parse(spawnSync("gh", ["pr", "list", "-R", REPO, "--state", "open", "--json", "number,headRefName"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" }).stdout || "[]") as Array<Body>) {
-      if ((pr.headRefName as string).startsWith("fleetd/")) spawnSync("gh", ["pr", "close", String(pr.number), "-R", REPO, "--delete-branch"], { cwd: LAB, env: scrubbedEnv(), stdio: "ignore" });
-    }
-    cleanTestbed();
+    await cleanup();
     await quiesceAndRemove(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
     fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
   }

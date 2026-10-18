@@ -19,6 +19,8 @@ import {
   cli,
   HUB_PORT,
   HUB_URL,
+  handleInterrupts,
+  interrupted,
   joinNode,
   LAB,
   type Lab,
@@ -33,6 +35,7 @@ import {
   pidOf,
   QUEUE_TTL_SEC,
   RUN,
+  runCleanups,
   seedRepo,
   setCmdRoots,
   startCli,
@@ -111,6 +114,7 @@ async function main() {
   if (unknown.length > 0) throw new Error(`unknown scenario ${unknown.join(", ")}; known: ${SCENARIOS.map((s) => s.name).join(", ")}`);
   const scenarios = wanted.length === 0 ? SCENARIOS.filter((s) => s.only !== true) : SCENARIOS.filter((s) => wanted.includes(s.name));
   takeLabLock();
+  handleInterrupts();
 
   let client: Client | undefined;
   try {
@@ -233,11 +237,13 @@ async function main() {
 
     for (const scenario of scenarios) {
       log(`--- ${scenario.name}`);
-      await scenario.run({ ...base, dir: path.join(RUN, scenario.name) });
+      await Promise.race([scenario.run({ ...base, dir: path.join(RUN, scenario.name) }), interrupted]);
       ok(`scenario ${scenario.name} passed`);
     }
     log(`PASS ${scenarios.map((s) => s.name).join(" ")}`);
   } finally {
+    // Before the client closes and the hub stops: a scenario's cleanup may still need them.
+    await runCleanups();
     await client?.close().catch(() => undefined);
     await stopAll();
     cleanupMachineHomes();
@@ -250,4 +256,6 @@ main().catch((error: unknown) => {
   if (error instanceof Error) log(`${error.stack?.split("\n").slice(1, 6).join("\n") ?? ""}${error.cause === undefined ? "" : `\ncause: ${String(error.cause)}`}`);
   log(`logs: ${path.join(RUN, "logs")}`);
   process.exitCode = 1;
+  // An interrupted scenario still has calls and timers pending; everything it started is stopped by now.
+  void interrupted.catch(() => process.exit(130));
 });
