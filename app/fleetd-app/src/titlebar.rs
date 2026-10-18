@@ -11,19 +11,13 @@ use std::borrow::Cow;
 use gpui::{
     Action, AnyElement, App, AssetSource, Bounds, Context, CursorStyle, Decorations, Entity, HitboxBehavior, Hsla, MouseButton, OwnedMenuItem,
     Pixels, Point, ResizeEdge, SharedString, Size, Tiling, Window, WindowButton, WindowButtonLayout, WindowControlArea, anchored, canvas, deferred,
-    div, point, prelude::*, px, rgb, svg, transparent_black,
+    div, point, prelude::*, px, svg, transparent_black,
 };
 
 use crate::actions::{About, BringAllToFront, Minimize, ToggleFullScreen, Zoom};
 use crate::crash;
 use crate::shell::Shell;
-
-const BAR_BG: u32 = 0x222327;
-const BORDER: u32 = 0x33353a;
-const TEXT: u32 = 0xd6d7da;
-const MUTED: u32 = 0x7d8089;
-const HOVER: u32 = 0x2f3238;
-const MENU_BG: u32 = 0x26272b;
+use crate::theme::{self, size, theme};
 
 /// Where AppKit draws the traffic lights, and the room the bar leaves for them. Zed's numbers: 78 px fits
 /// the wider lights of macOS 26 and leaves a few spare pixels on older systems.
@@ -96,7 +90,7 @@ impl Render for Frame {
                 div()
                     .size_full()
                     .cursor(CursorStyle::Arrow)
-                    .border_color(rgb(BORDER))
+                    .border_color(theme(cx).hairline)
                     .map(|d| client_corners(d, tiling))
                     .when(!tiling.top, |d| d.border_t_1())
                     .when(!tiling.bottom, |d| d.border_b_1())
@@ -217,6 +211,7 @@ impl RenderOnce for TitleBar {
         let layout = if csd { cx.button_layout().or_else(default_button_layout) } else { None };
         let left_buttons = layout.map(|l| l.left).filter(|b| b[0].is_some() && !fullscreen);
         let right_buttons = layout.map(|l| l.right).filter(|b| b[0].is_some() && !fullscreen);
+        let t = theme(cx).clone();
         let (left_pad, right_pad) = match (cfg!(target_os = "macos"), fullscreen) {
             (true, false) => (TRAFFIC_LIGHT_PADDING, TRAFFIC_LIGHT_PADDING),
             // Room for the menu button on the left, mirrored on the right so the title stays centred.
@@ -231,10 +226,12 @@ impl RenderOnce for TitleBar {
             .w_full()
             .flex()
             .items_center()
-            .bg(rgb(BAR_BG))
+            // One tone with the sidebar below it, so bar and sidebar read as the window's frame.
+            .bg(t.sidebar)
             .border_b_1()
-            .border_color(rgb(BORDER))
-            .text_color(rgb(MUTED))
+            .border_color(t.hairline)
+            .text_size(px(size::MD))
+            .text_color(t.quiet)
             .on_mouse_down(MouseButton::Left, set_flag(&should_move, true))
             .on_mouse_up(MouseButton::Left, set_flag(&should_move, false))
             .on_mouse_down_out(set_flag(&should_move, false))
@@ -260,13 +257,13 @@ impl RenderOnce for TitleBar {
             })
             .when(csd && controls.window_menu, |d| d.on_mouse_down(MouseButton::Right, |e, window, _| window.show_window_menu(e.position)))
             .map(|d| match left_buttons {
-                Some(buttons) => d.child(window_buttons("left-window-buttons", buttons, window)),
+                Some(buttons) => d.child(window_buttons("left-window-buttons", buttons, window, &t)),
                 None => d.pl(left_pad),
             })
             .when(!cfg!(target_os = "macos"), |d| d.child(menu_button(window, cx)))
             .child(div().flex_1().min_w_0().flex().items_center().justify_center().gap_2().child("fleetd").children(self.children))
             .map(|d| match right_buttons {
-                Some(buttons) => d.child(window_buttons("right-window-buttons", buttons, window)),
+                Some(buttons) => d.child(window_buttons("right-window-buttons", buttons, window, &t)),
                 None => d.pr(right_pad),
             })
     }
@@ -287,7 +284,7 @@ fn default_button_layout() -> Option<WindowButtonLayout> {
     None
 }
 
-fn window_buttons(id: &'static str, buttons: [Option<WindowButton>; 3], window: &Window) -> impl IntoElement {
+fn window_buttons(id: &'static str, buttons: [Option<WindowButton>; 3], window: &Window, t: &theme::Theme) -> impl IntoElement {
     let controls = window.window_controls();
     let maximized = window.is_maximized();
     div()
@@ -314,7 +311,7 @@ fn window_buttons(id: &'static str, buttons: [Option<WindowButton>; 3], window: 
                         WindowButton::Maximize => ("maximize", "icons/maximize.svg"),
                         WindowButton::Close => ("close", "icons/close.svg"),
                     };
-                    icon_button(name, icon).on_click(move |_, window, cx| {
+                    icon_button(name, icon, t).on_click(move |_, window, cx| {
                         cx.stop_propagation();
                         match button {
                             WindowButton::Minimize => window.minimize_window(),
@@ -326,7 +323,8 @@ fn window_buttons(id: &'static str, buttons: [Option<WindowButton>; 3], window: 
         )
 }
 
-fn icon_button(id: &'static str, icon: &'static str) -> gpui::Stateful<gpui::Div> {
+fn icon_button(id: &'static str, icon: &'static str, t: &theme::Theme) -> gpui::Stateful<gpui::Div> {
+    let hover = t.hover;
     div()
         .id(id)
         .size(px(22.))
@@ -335,9 +333,9 @@ fn icon_button(id: &'static str, icon: &'static str) -> gpui::Stateful<gpui::Div
         .justify_center()
         .rounded_full()
         .cursor_pointer()
-        .hover(|d| d.bg(rgb(HOVER)))
+        .hover(move |d| d.bg(hover))
         .on_mouse_move(|_, _, cx| cx.stop_propagation())
-        .child(svg().path(icon).size(px(16.)).text_color(rgb(TEXT)))
+        .child(svg().path(icon).size(px(16.)).text_color(t.text))
 }
 
 /// Linux has no global menu bar, so the app menu opens from here.
@@ -347,7 +345,7 @@ fn menu_button(window: &mut Window, cx: &mut App) -> impl IntoElement {
     let toggle = open.clone();
     div()
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(icon_button("app-menu", "icons/menu.svg").on_click(move |_, _, cx| {
+        .child(icon_button("app-menu", "icons/menu.svg", &theme(cx).clone()).on_click(move |_, _, cx| {
             toggle.update(cx, |o, cx| {
                 *o = !*o;
                 cx.notify();
@@ -357,6 +355,7 @@ fn menu_button(window: &mut Window, cx: &mut App) -> impl IntoElement {
 }
 
 fn menu_list(open: Entity<bool>, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    let t = theme(cx).clone();
     let close = open.clone();
     let mut list = div()
         .id("app-menu-list")
@@ -365,12 +364,13 @@ fn menu_list(open: Entity<bool>, window: &mut Window, cx: &mut App) -> impl Into
         .mt(px(28.))
         .min_w(px(240.))
         .py_1()
-        .bg(rgb(MENU_BG))
+        .bg(t.raised)
         .border_1()
-        .border_color(rgb(BORDER))
-        .rounded_md()
-        .shadow_lg()
-        .text_color(rgb(TEXT))
+        .border_color(t.hairline)
+        .rounded(px(theme::radius::MD))
+        .shadow(t.float_shadow())
+        .text_size(px(size::MD))
+        .text_color(t.text)
         .on_mouse_down_out(move |_, _, cx| {
             close.update(cx, |o, cx| {
                 *o = false;
@@ -379,20 +379,29 @@ fn menu_list(open: Entity<bool>, window: &mut Window, cx: &mut App) -> impl Into
         });
     for (i, menu) in cx.get_menus().unwrap_or_default().into_iter().enumerate() {
         if i > 0 {
-            list = list.child(div().my_1().h(px(1.)).bg(rgb(BORDER)));
+            list = list.child(div().my_1().h(px(1.)).bg(t.hairline));
         }
-        list = list.child(div().px_3().py_0p5().text_size(px(11.5)).text_color(rgb(MUTED)).child(menu.name));
+        list = list.child(div().px_3().py_0p5().text_size(px(size::XS)).font_weight(theme::STRONG).text_color(t.quiet).child(menu.name));
         for (j, item) in menu.items.into_iter().enumerate() {
             let OwnedMenuItem::Action { name, action, .. } = item else { continue };
             // The focused view's handlers, or an app-wide one (the window's own check misses those).
             let enabled = window.is_action_available(action.as_ref(), cx) || cx.is_action_available(action.as_ref());
-            list = list.child(menu_row((i, j), name.into(), action, enabled, open.clone(), window));
+            list = list.child(menu_row((i, j), name.into(), action, enabled, open.clone(), window, &t));
         }
     }
     list
 }
 
-fn menu_row(id: (usize, usize), name: SharedString, action: Box<dyn Action>, enabled: bool, open: Entity<bool>, window: &Window) -> impl IntoElement {
+fn menu_row(
+    id: (usize, usize),
+    name: SharedString,
+    action: Box<dyn Action>,
+    enabled: bool,
+    open: Entity<bool>,
+    window: &Window,
+    t: &theme::Theme,
+) -> impl IntoElement {
+    let hover = t.hover;
     let keys = window
         .highest_precedence_binding_for_action(action.as_ref())
         .map(|b| b.keystrokes().iter().map(|k| k.to_string()).collect::<Vec<_>>().join(" "))
@@ -407,9 +416,9 @@ fn menu_row(id: (usize, usize), name: SharedString, action: Box<dyn Action>, ena
         .justify_between()
         .gap_4()
         .rounded_sm()
-        .when(!enabled, |d| d.text_color(rgb(MUTED)))
+        .when(!enabled, |d| d.text_color(t.faint))
         .when(enabled, |d| {
-            d.cursor_pointer().hover(|d| d.bg(rgb(HOVER))).on_click(move |_, window, cx| {
+            d.cursor_pointer().hover(move |d| d.bg(hover)).on_click(move |_, window, cx| {
                 open.update(cx, |o, cx| {
                     *o = false;
                     cx.notify();
@@ -418,7 +427,7 @@ fn menu_row(id: (usize, usize), name: SharedString, action: Box<dyn Action>, ena
             })
         })
         .child(name)
-        .child(div().text_color(rgb(MUTED)).child(keys))
+        .child(div().text_size(px(size::XS)).text_color(t.faint).child(keys))
 }
 
 /// The title bar's icons, drawn here so the app needs no icon files (svg renders them in the text colour).

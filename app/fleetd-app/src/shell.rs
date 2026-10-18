@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fleetd_contracts::app::AppClientMessage;
@@ -9,45 +10,35 @@ use fleetd_contracts::model::MachineStatus;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use gpui::{
-    AnyElement, App, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, KeyBinding, KeyDownEvent, Keystroke, MouseButton, ScrollDelta,
-    ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, Subscription, SystemNotification, Task, UniformListScrollHandle, Window, actions, div,
-    point, prelude::*, px, rgb, transparent_black, uniform_list,
+    AnyElement, App, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, Hsla, KeyBinding, KeyDownEvent, Keystroke, MouseButton,
+    ScrollDelta, ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, Subscription, SystemNotification, Task, UniformListScrollHandle, Window,
+    actions, div, point, prelude::*, px, uniform_list,
 };
 
+use crate::actions;
 use crate::bench::{self, Mode, Probe};
 use crate::client;
+use crate::composer::{self, Composer, ComposerEvent};
+use crate::diffview;
 use crate::fake::{self, LogKind, LogStream};
 use crate::input::{InputEvent, TextInput};
 use crate::keychain::{self, Saved};
-use crate::notify::unix_secs;
+use crate::links;
+use crate::notify::{Target, unix_secs};
 use crate::pair::{self, Failure};
+use crate::palette::{self, Command, Palette, PaletteEvent};
 use crate::seal;
+use crate::settings::{self, Settings, SettingsEvent};
+use crate::sidebar;
 use crate::state::{Conn, Echo, ProjectKey, ProjectRow, State};
+use crate::theme::{self, STRONG, Theme, metric, size, theme};
+use crate::ui::{self, Variant};
 
-const UI_FONT: &str = "IBM Plex Sans";
-const MONO_FONT: &str = "Lilex";
-const ROW_H: f32 = 30.;
-const LINE_H: f32 = 18.;
 const LINES_PER_SEC: u64 = 50;
 const SCROLL_PX_PER_SEC: f32 = 2400.;
 const POLL_EVERY: Duration = Duration::from_secs(3);
-const SHORTCUTS: [&str; 3] = if cfg!(target_os = "macos") { ["⌘1", "⌘2", "⌘3"] } else { ["^1", "^2", "^3"] };
-
-struct Theme;
-impl Theme {
-    const BG: u32 = 0x1b1c1f;
-    const PANEL: u32 = 0x222327;
-    const BORDER: u32 = 0x33353a;
-    const TEXT: u32 = 0xd6d7da;
-    const MUTED: u32 = 0x7d8089;
-    const ACCENT: u32 = 0x6ea8fe;
-    const GREEN: u32 = 0x7cc47f;
-    const RED: u32 = 0xe5737a;
-    const YELLOW: u32 = 0xd9b45c;
-    const SELECTED: u32 = 0x2d3a52;
-    const HOVER: u32 = 0x2a2c31;
-    const BUTTON: u32 = 0x2f3238;
-}
+/// Width of a tail line's "10:04:05  " stamp, which the log shows in its own column.
+const STAMP_WIDTH: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Screen {
@@ -58,6 +49,7 @@ enum Screen {
     Projects,
     Project,
     Machines,
+    Settings,
 }
 
 actions!(shell, [FocusNext, FocusPrev]);
@@ -65,6 +57,7 @@ actions!(shell, [FocusNext, FocusPrev]);
 /// The app's keys: the text field bindings, and Tab / Shift+Tab between fields, buttons and rows.
 pub fn bind_keys(cx: &mut App) {
     crate::input::bind_keys(cx);
+    palette::bind_keys(cx);
     cx.bind_keys([KeyBinding::new("tab", FocusNext, None), KeyBinding::new("shift-tab", FocusPrev, None)]);
 }
 
@@ -83,7 +76,17 @@ struct ConnectForm {
 
 struct LogRow {
     kind: LogKind,
-    text: SharedString,
+    stamp: SharedString,
+    body: SharedString,
+    /// The body has a URL or path to click, worked out once here rather than every frame.
+    linked: bool,
+}
+
+impl LogRow {
+    fn new(kind: LogKind, text: &str) -> Self {
+        let (stamp, body) = split_stamp(text);
+        Self { kind, stamp: stamp.to_string().into(), linked: !links::find(body).is_empty(), body: body.to_string().into() }
+    }
 }
 
 /// The live link to the hub. Dropping it stops the client.
@@ -117,10 +120,23 @@ pub struct Shell {
     focus: FocusHandle,
     bench: Option<(LogStream, Probe)>,
     update: Option<String>,
+    palette: Option<Entity<Palette>>,
+    composer: Option<Entity<Composer>>,
+    settings: Entity<Settings>,
+    /// Where Settings' Done goes back to.
+    before_settings: Screen,
+    sidebar_hidden: bool,
+    seen: sidebar::Seen,
+    /// The ask a notification or the palette pointed at, marked in the inbox.
+    focus_ask: Option<String>,
+    /// What the notification on screen opens when clicked.
+    notified: Option<Target>,
 }
 
 impl Shell {
     pub fn new(bench: Option<Mode>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        theme::init(window, cx);
+        let settings = cx.new(|_| Settings::default());
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let log_scroll = UniformListScrollHandle::new();
@@ -150,6 +166,16 @@ impl Shell {
                     this.submit_key(cx);
                 }
             }),
+            cx.subscribe(&settings, |this, _, event: &SettingsEvent, cx| {
+                match event {
+                    SettingsEvent::Disconnect => this.disconnect(cx),
+                    SettingsEvent::Close => {
+                        this.screen = this.before_settings;
+                        this.pending_focus = Some(this.reply.focus_handle(cx));
+                    }
+                }
+                cx.notify();
+            }),
         ];
         let mut shell = Self {
             state: State::default(),
@@ -171,6 +197,14 @@ impl Shell {
             focus,
             bench: None,
             update: None,
+            palette: None,
+            composer: None,
+            settings,
+            before_settings: Screen::Inbox,
+            sidebar_hidden: false,
+            seen: sidebar::Seen::default(),
+            focus_ask: None,
+            notified: None,
         };
         match bench {
             Some(mode) => shell.start_bench(mode, window, cx),
@@ -184,7 +218,8 @@ impl Shell {
         shell
     }
 
-    /// Clicking a "needs you" notification brings the window forward on the inbox.
+    /// Clicking a "needs you" notification brings the window forward on what it was about: the ask, else the
+    /// inbox, or Machines for a machine's trouble.
     fn on_notification_click(&self, window: &mut Window, cx: &mut Context<Self>) {
         let shell = cx.entity().downgrade();
         let handle = window.window_handle();
@@ -195,7 +230,14 @@ impl Shell {
                 handle.update(cx, |_, window, _| window.activate_window()).ok();
                 shell
                     .update(cx, |this, cx| {
-                        this.go(Screen::Inbox);
+                        match this.notified.take() {
+                            Some(Target::Machines) => this.go(Screen::Machines),
+                            Some(Target::Ask(id)) => {
+                                this.go(Screen::Inbox);
+                                this.focus_ask = Some(id);
+                            }
+                            Some(Target::Inbox) | None => this.go(Screen::Inbox),
+                        }
                         cx.notify();
                     })
                     .ok();
@@ -207,6 +249,7 @@ impl Shell {
     fn notify_if_due(&mut self, cx: &mut App) {
         let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
         if let Some(n) = self.state.take_notification(now_ms) {
+            self.notified = Some(n.target);
             // One tag: a newer notification replaces an older one still on screen.
             cx.show_system_notification(SystemNotification {
                 tag: "fleetd-needs-you".into(),
@@ -477,6 +520,10 @@ impl Shell {
     }
 
     fn after_state_change(&mut self, cx: &mut Context<Self>) {
+        self.seen.prime(&self.state);
+        if let Some(row) = self.state.detail.as_ref().and_then(|d| self.state.project(&d.key)) {
+            self.seen.mark(&row.key(), row.summary.last_activity_at.as_str());
+        }
         if let Conn::Refused(message) = &self.state.conn {
             self.form.error = Some(Failure {
                 code: String::new(),
@@ -524,8 +571,15 @@ impl Shell {
     // ---- navigation and keys ---------------------------------------------------------------
 
     fn go(&mut self, screen: Screen) {
-        if self.hub.is_none() && self.bench.is_none() {
+        // Settings works before connecting too (appearance); everything else needs a hub.
+        if !self.connected() && screen != Screen::Settings {
             return;
+        }
+        if screen == Screen::Settings && self.screen != Screen::Settings {
+            self.before_settings = self.screen;
+        }
+        if screen != Screen::Inbox {
+            self.focus_ask = None;
         }
         if screen != Screen::Project {
             self.state.close_project();
@@ -539,6 +593,9 @@ impl Shell {
     }
 
     fn open_project(&mut self, key: ProjectKey) {
+        if let Some(row) = self.state.project(&key) {
+            self.seen.mark(&key, row.summary.last_activity_at.as_str());
+        }
         let out = self.state.open_project(key);
         self.send(out);
         self.log.clear();
@@ -599,7 +656,7 @@ impl Shell {
     }
 
     fn has_reply_bar(&self) -> bool {
-        !matches!(self.screen, Screen::Connect | Screen::Loading)
+        self.connected() && !matches!(self.screen, Screen::Connect | Screen::Loading)
     }
 
     fn on_reply_event(&mut self, input: Entity<TextInput>, event: &InputEvent, cx: &mut Context<Self>) {
@@ -612,7 +669,7 @@ impl Shell {
                 });
                 if self.bench.is_some() {
                     // No hub in the bench: echo locally, as typing a reply would.
-                    self.push_log(LogRow { kind: LogKind::User, text: format!("› you: {raw}").into() });
+                    self.push_log(LogRow::new(LogKind::User, &format!("› you: {raw}")));
                 } else {
                     let out = self.state.reply(&raw, None);
                     self.send(out);
@@ -666,29 +723,25 @@ impl Shell {
     fn copy_button(&self, id: impl Into<SharedString>, text: impl Into<String>, cx: &mut Context<Self>) -> Stateful<Div> {
         let text = text.into();
         let copied = self.copied.as_deref() == Some(text.as_str());
-        button(id.into(), if copied { "Copied" } else { "Copy" }, cx.listener(move |this, _, _, cx| this.copy(text.clone(), cx)))
+        ui::copy_button(theme(cx), id.into(), copied).on_click(cx.listener(move |this, _, _, cx| this.copy(text.clone(), cx)))
     }
 
-    /// Error text in red with a Copy button, so it can be pasted into an issue or a search.
-    fn error_line(&self, id: impl Into<SharedString>, text: impl Into<String>, cx: &mut Context<Self>) -> Div {
-        let text = text.into();
-        div()
-            .flex()
-            .gap_2()
-            .items_start()
-            .child(div().flex_1().min_w_0().whitespace_normal().text_color(rgb(Theme::RED)).child(text.clone()))
-            .child(self.copy_button(id, text, cx))
+    /// An error and its fix, with a Copy button for both, so they can be pasted into an issue or a search.
+    fn error_line(&self, id: impl Into<SharedString>, message: impl Into<String>, fix: Option<String>, cx: &mut Context<Self>) -> Div {
+        let message = message.into();
+        let all = match &fix {
+            Some(fix) => format!("{message}\n{fix}"),
+            None => message.clone(),
+        };
+        let copy = self.copy_button(id, all, cx);
+        ui::error(theme(cx), message, fix.map(Into::into), copy)
     }
 
     /// A command to run elsewhere, in mono, with a Copy button.
     fn command_line(&self, id: impl Into<SharedString>, command: impl Into<String>, cx: &mut Context<Self>) -> Div {
         let command = command.into();
-        div()
-            .flex()
-            .gap_2()
-            .items_center()
-            .child(div().flex_1().min_w_0().whitespace_normal().font_family(MONO_FONT).text_size(px(12.)).child(command.clone()))
-            .child(self.copy_button(id, command, cx))
+        let copy = self.copy_button(id, command.clone(), cx);
+        ui::command(theme(cx), command, copy)
     }
 
     fn quick_reply(&mut self, batch_id: BatchId, raw: String, cx: &mut Context<Self>) {
@@ -714,147 +767,182 @@ impl Shell {
         }
     }
 
+    // ---- overlays and commands ------------------------------------------------------------
+
+    fn pick(&mut self, pick: sidebar::Pick, cx: &mut Context<Self>) {
+        match pick {
+            sidebar::Pick::Inbox => self.go(Screen::Inbox),
+            sidebar::Pick::Projects => self.go(Screen::Projects),
+            sidebar::Pick::Machines => self.go(Screen::Machines),
+            sidebar::Pick::Settings => self.go(Screen::Settings),
+            sidebar::Pick::Project(key) => self.open_project(key),
+        }
+        cx.notify();
+    }
+
+    /// Runs a palette command. Every one of these is also a click or a menu item away.
+    fn run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
+        self.palette = None;
+        self.pending_focus = Some(self.reply.focus_handle(cx));
+        match command {
+            Command::Inbox => self.go(Screen::Inbox),
+            Command::Projects => self.go(Screen::Projects),
+            Command::Machines => self.go(Screen::Machines),
+            Command::Settings => self.go(Screen::Settings),
+            Command::Project(key) => self.open_project(key),
+            Command::Ask(id) => {
+                self.go(Screen::Inbox);
+                self.focus_ask = Some(id);
+            }
+            Command::NewOrder(target) => self.open_composer(target, window, cx),
+            Command::Connect => self.disconnect(cx),
+        }
+        cx.notify();
+    }
+
+    fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.palette.take().is_some() || !self.connected() {
+            self.pending_focus = Some(self.reply.focus_handle(cx));
+            return cx.notify();
+        }
+        self.composer = None;
+        let items = palette::items(&self.state);
+        let palette = cx.new(|cx| Palette::new(items, window, cx));
+        cx.subscribe_in(&palette, window, |this, _, event: &PaletteEvent, window, cx| match event {
+            PaletteEvent::Run(command) => this.run(command.clone(), window, cx),
+            PaletteEvent::Dismiss => this.close_overlays(cx),
+        })
+        .detach();
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
+    /// The New order composer, aimed at `target`, else at the open project, else at whatever the hub picks.
+    fn open_composer(&mut self, target: Option<ProjectKey>, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.connected() {
+            return;
+        }
+        self.palette = None;
+        let target = target.or_else(|| self.state.detail.as_ref().map(|d| d.key.clone()));
+        let targets = self.state.projects.iter().map(|r| composer::Target { key: r.key(), title: r.summary.title.clone().into() }).collect();
+        let composer = cx.new(|cx| Composer::new(targets, target, window, cx));
+        cx.subscribe_in(&composer, window, |this, _, event: &ComposerEvent, _, cx| match event {
+            ComposerEvent::Send { target, text } => {
+                if this.bench.is_some() {
+                    this.state.echo = Some(Echo { text: format!("Order sent: {text}"), ok: true });
+                } else {
+                    let id = format!("app-{}", SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis()));
+                    let out = this.state.submit_order(target.as_ref(), text, &id);
+                    this.send(out);
+                }
+                this.close_overlays(cx);
+            }
+            ComposerEvent::Dismiss => this.close_overlays(cx),
+        })
+        .detach();
+        self.composer = Some(composer);
+        cx.notify();
+    }
+
+    fn close_overlays(&mut self, cx: &mut Context<Self>) {
+        self.palette = None;
+        self.composer = None;
+        self.pending_focus = Some(self.reply.focus_handle(cx));
+        cx.notify();
+    }
+
+    fn connected(&self) -> bool {
+        self.hub.is_some() || self.bench.is_some()
+    }
+
     // ---- screens -------------------------------------------------------------------------
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let inbox = self.state.inbox().len();
-        let offline = self.state.machines.iter().filter(|m| m.status != MachineStatus::Online).count();
-        let nav = |label: &'static str, count: String, shortcut: &'static str, screen: Screen, cx: &mut Context<Self>| {
-            let active = self.screen == screen || (screen == Screen::Projects && self.screen == Screen::Project);
-            clickable(div().id(label))
-                .h(px(30.))
-                .px_3()
-                .flex()
-                .items_center()
-                .gap_2()
-                .when(active, |d| d.bg(rgb(Theme::SELECTED)))
-                .hover(|d| d.bg(rgb(Theme::HOVER)))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.go(screen);
-                    cx.notify();
-                }))
-                .child(div().flex_1().child(label))
-                .child(muted(count))
-                .child(muted(shortcut))
-        };
-        let (dot, status) = match (&self.state.conn, self.bench.is_some()) {
-            (_, true) => (Theme::YELLOW, "bench fixture, no hub".to_string()),
-            (Conn::Live, _) => (Theme::GREEN, "live".to_string()),
-            (Conn::Connecting { reason: None, .. }, _) => (Theme::YELLOW, "connecting…".to_string()),
+    fn conn_line(&self, t: &Theme) -> sidebar::Conn {
+        let host = self.hub.as_ref().map(|h| h.url.split("://").nth(1).unwrap_or(&h.url).trim_end_matches('/').to_string()).unwrap_or_default();
+        let (color, label) = match (&self.state.conn, self.bench.is_some()) {
+            (_, true) => (t.warning, "Bench fixture, no hub".to_string()),
+            (Conn::Live, _) => (t.success, format!("Connected to {host}")),
+            (Conn::Connecting { reason: None, .. }, _) => (t.faint, format!("Connecting to {host}…")),
             (Conn::Connecting { reason: Some(r), retry_in }, _) => {
-                (Theme::RED, format!("retrying in {}s: {r}", retry_in.map_or(0, |d| d.as_secs_f32().ceil() as u64)))
+                (t.warning, format!("Reconnecting in {}s: {r}", retry_in.map_or(0, |d| d.as_secs_f32().ceil() as u64)))
             }
-            (Conn::Refused(_), _) => (Theme::RED, "key refused".to_string()),
+            (Conn::Refused(_), _) => (t.danger, "The hub refused this key".to_string()),
         };
-        let bench_status = status.clone();
-        pane(px(220.))
-            .child(header("fleetd", String::new()))
-            .when_some(self.update.clone(), |d, text| {
-                d.child(
-                    div()
-                        .px_3()
-                        .py_1()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(div().whitespace_normal().text_color(rgb(Theme::ACCENT)).child(text))
-                        .child(self.command_line("copy-update", "fleetd update", cx)),
-                )
-            })
-            .child(nav("Inbox", if inbox > 0 { inbox.to_string() } else { String::new() }, SHORTCUTS[0], Screen::Inbox, cx))
-            .child(nav("Projects", self.state.projects.len().to_string(), SHORTCUTS[1], Screen::Projects, cx))
-            .child(nav(
-                "Machines",
-                if offline > 0 { format!("{offline} down") } else { self.state.machines.len().to_string() },
-                SHORTCUTS[2],
-                Screen::Machines,
-                cx,
-            ))
-            .child(div().flex_1())
-            .when(self.hub.is_some(), |d| {
-                d.child(
-                    div()
-                        .p_3()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .border_t_1()
-                        .border_color(rgb(Theme::BORDER))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .child(div().text_color(rgb(dot)).child("●"))
-                                .child(div().flex_1().min_w_0().whitespace_normal().child(muted(status))),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .items_center()
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .overflow_hidden()
-                                        .text_ellipsis()
-                                        .child(muted(self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default())),
-                                )
-                                .child(self.copy_button("copy-hub-url", self.hub.as_ref().map(|h| h.url.clone()).unwrap_or_default(), cx)),
-                        )
-                        .child(button("disconnect", "Disconnect and forget key", cx.listener(|this, _, _, cx| this.disconnect(cx)))),
-                )
-            })
-            .when(self.bench.is_some(), |d| d.child(div().p_3().child(muted(bench_status))))
+        sidebar::Conn { label: label.into(), color }
+    }
+
+    fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = &theme(cx).clone();
+        let active = match self.screen {
+            Screen::Inbox => sidebar::Active::Inbox,
+            Screen::Projects => sidebar::Active::Projects,
+            Screen::Machines => sidebar::Active::Machines,
+            Screen::Settings => sidebar::Active::Settings,
+            Screen::Project => self.state.detail.as_ref().map_or(sidebar::Active::None, |d| sidebar::Active::Project(d.key.clone())),
+            Screen::Loading | Screen::Connect => sidebar::Active::None,
+        };
+        let this = cx.entity().downgrade();
+        let on_pick: sidebar::OnPick = Rc::new(move |pick, _, cx| {
+            this.update(cx, |this, cx| this.pick(pick, cx)).ok();
+        });
+        let update = self.update.clone().map(|text| {
+            div()
+                .px_4()
+                .pb_3()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .text_size(px(size::XS))
+                .child(div().text_color(t.accent).child(text))
+                .child(self.command_line("copy-update", "fleetd update", cx))
+                .into_any_element()
+        });
+        sidebar::render(t, &self.state, &self.seen, &active, self.conn_line(t), update, on_pick)
     }
 
     fn connect_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = &theme(cx).clone();
         let form = &self.form;
-        let field = |label: &'static str, input: &Entity<TextInput>| div().flex().flex_col().gap_1().child(muted(label)).child(input.clone());
-        let mut card = div()
-            .w(px(500.))
-            .p_5()
+        let field = |label: &'static str, input: &Entity<TextInput>| {
+            div().flex().flex_col().gap_1().child(div().text_size(px(size::XS)).text_color(t.quiet).child(label)).child(input.clone())
+        };
+        let mut col = div()
+            .w(px(440.))
             .flex()
             .flex_col()
             .gap_4()
-            .bg(rgb(Theme::PANEL))
-            .border_1()
-            .border_color(rgb(Theme::BORDER))
-            .rounded_md()
-            .child(div().text_size(px(16.)).child("Connect to your fleetd hub"))
-            .when_some(form.status.clone(), |d, status| d.child(div().whitespace_normal().text_color(rgb(Theme::MUTED)).child(status)))
+            .child(div().text_size(px(size::XL)).font_weight(STRONG).child("Connect to your fleetd hub"))
+            // The pairing messages mark commands with backticks; the command names read fine without them here.
+            .when_some(form.status.clone(), |d, status| d.child(div().whitespace_normal().text_color(t.quiet).child(status.replace('`', ""))))
             .child(field("Hub address", &form.hub));
         if !form.use_key {
-            card = card
+            col = col
                 .child(field("Pairing code", &form.code))
-                .child(div().flex().child(primary_button(
-                    "pair",
-                    if form.busy { "Connecting…" } else { "Connect" },
-                    cx.listener(|this, _, _, cx| this.submit_code(cx)),
-                )))
+                .child(
+                    div().flex().child(
+                        ui::button(t, "pair", if form.busy { "Connecting…" } else { "Connect" }, Variant::Primary, !form.busy)
+                            .on_click(cx.listener(|this, _, _, cx| this.submit_code(cx))),
+                    ),
+                )
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_1()
-                        .child(muted("No code yet? On the hub, run this and type the code it prints:"))
+                        .child(div().text_color(t.quiet).child("No code yet? On the hub, run this and type the code it prints:"))
                         .child(self.command_line("copy-pair", "fleetd pair", cx)),
                 );
         }
         if let Some(error) = &form.error {
-            let text = match &error.fix {
-                Some(fix) => format!("{}\n{fix}", error.message),
-                None => error.message.clone(),
-            };
-            card = card.child(self.error_line("copy-connect-error", text, cx));
+            col =
+                col.child(self.error_line("copy-connect-error", error.message.replace('`', ""), error.fix.as_ref().map(|f| f.replace('`', "")), cx));
         }
-        card = card.child(
-            clickable(div().id("use-key"))
+        col = col.child(
+            ui::clickable(t, div().id("use-key"))
                 .flex()
                 .gap_1()
                 .items_center()
-                .text_color(rgb(Theme::ACCENT))
-                .hover(|d| d.text_color(rgb(Theme::TEXT)))
+                .text_color(t.accent)
                 .child(if form.use_key { "▾ Use a key instead" } else { "▸ Use a key instead" })
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.form.use_key = !this.form.use_key;
@@ -865,74 +953,65 @@ impl Shell {
                 })),
         );
         if form.use_key {
-            card = card
+            col = col
                 .child(field("Key", &form.key))
-                .child(div().flex().child(primary_button("connect-key", "Connect with key", cx.listener(|this, _, _, cx| this.submit_key(cx)))))
+                .child(
+                    div().flex().child(
+                        ui::button(t, "connect-key", "Connect with key", Variant::Primary, true)
+                            .on_click(cx.listener(|this, _, _, cx| this.submit_key(cx))),
+                    ),
+                )
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_1()
-                        .child(muted("On the hub, create a key for this device, so your answers are recorded as yours:"))
+                        .child(
+                            div()
+                                .text_color(t.quiet)
+                                .whitespace_normal()
+                                .child("On the hub, create a key for this device, so your answers are recorded as yours:"),
+                        )
                         .child(self.command_line("copy-key-create", "fleetd hub key create --human --name <device>", cx)),
                 );
         }
-        card = card.child(muted("The key is kept in the OS keychain, never in a file."));
-        div()
-            .id("connect")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .items_center()
-            .py_8()
-            .child(div().flex_1())
-            .child(card)
-            .child(div().flex_1())
-            .into_any_element()
+        col = col.child(div().text_size(px(size::XS)).text_color(t.faint).child("The key is kept in the OS keychain, never in a file."));
+        // Left-aligned at a third of the window, like a document, not a centred card.
+        div().id("connect").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().pt(px(96.)).pb_8().pl(px(120.)).child(col).into_any_element()
     }
 
     fn inbox_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = &theme(cx).clone();
         let items = self.state.inbox();
-        let mut body = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().p_3().flex().flex_col().gap_2();
-        if let Some(echo) = &self.state.echo {
-            body = body.child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .items_start()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .whitespace_normal()
-                            .text_color(rgb(if echo.ok { Theme::GREEN } else { Theme::YELLOW }))
-                            .child(echo.text.clone()),
-                    )
-                    .when(!echo.ok, |d| d.child(self.copy_button("copy-echo", echo.text.clone(), cx))),
-            );
-        }
+        let open = items.len();
+        let mut body = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().px_6().pb_6().flex().flex_col();
         if let Some(e) = &self.state.asks_error {
-            body = body.child(self.error_line("copy-asks-error", e.clone(), cx));
+            body = body.child(div().pt_4().child(self.error_line("copy-asks-error", e.clone(), None, cx)));
         }
         if items.is_empty() && self.state.asks_error.is_none() {
-            body = body.child(muted("Nothing needs you. Leads decide everything that isn't a product, money, credential or irreversible call."));
+            body = body.child(match self.state.conn {
+                Conn::Live => ui::empty(
+                    t,
+                    "Nothing needs you.",
+                    "Leads decide everything that isn't a product, money, credential or irreversible call. When one comes up it lands here and as a notification.",
+                ),
+                _ => ui::loading(t, "Waiting for the hub…"),
+            });
         }
         let mut batch = "";
         let (routed, unrouted): (Vec<_>, Vec<_>) = items.into_iter().partition(|item| item.ask.project_ref.is_some());
         for item in routed {
             if item.batch_id != batch {
                 batch = item.batch_id;
-                body = body.child(div().pt_2().text_color(rgb(Theme::MUTED)).child(format!("Batch {batch}")));
+                body = body.child(ui::section(t, format!("Batch {batch}")));
             }
-            body = body.child(self.ask_card(item.batch_id, item.number, item.ask, cx));
+            body = body.child(self.ask_block(item.batch_id, item.number, item.ask, cx));
         }
         // Intents the router could not place: answering one picks the project.
         if !unrouted.is_empty() {
-            body = body.child(div().pt_2().text_color(rgb(Theme::MUTED)).child("Unrouted"));
+            body = body.child(ui::section(t, "Not placed in a project yet"));
             for item in unrouted {
-                body = body.child(self.ask_card(item.batch_id, item.number, item.ask, cx));
+                body = body.child(self.ask_block(item.batch_id, item.number, item.ask, cx));
             }
         }
         div()
@@ -940,268 +1019,370 @@ impl Shell {
             .flex()
             .flex_col()
             .min_w_0()
-            .child(header("Inbox", "reply below: 1 go 2 nvm 3 b · recs fine".into()))
+            .child(ui::header(
+                t,
+                "Inbox",
+                if open > 0 { format!("{open} open · reply by number below, recommendations are fine") } else { String::new() },
+            ))
             .child(body)
             .into_any_element()
     }
 
-    fn ask_card(&self, batch_id: &BatchId, number: i64, ask: &Ask, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Opens a clicked link; a path on another machine is copied instead, and the echo says so.
+    fn link_opener(&self, workspace: Option<String>, cx: &mut Context<Self>) -> links::OnOpen {
+        let this = cx.entity().downgrade();
+        Rc::new(move |link, _, cx| {
+            if let links::Opened::Copied(path) = links::open(link, workspace.as_deref(), cx) {
+                this.update(cx, |this, cx| {
+                    this.state.echo = Some(Echo { text: format!("{path} isn't on this computer; copied its path."), ok: true });
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+    }
+
+    /// One ask, set loud: the question at full weight, its context quiet, the recommended answer as the one
+    /// filled button (outlined red when the call is irreversible).
+    fn ask_block(&self, batch_id: &BatchId, number: i64, ask: &Ask, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = &theme(cx).clone();
         let project = match &ask.project_ref {
-            Some(p) => format!("{}/{}", p.machine_id, p.project_id),
+            Some(p) => format!("{} on {}", p.project_id, p.machine_id),
             None => format!("{batch_id} · no project yet"),
         };
         let class_color = match ask.class {
-            AskClass::Product => Theme::ACCENT,
-            AskClass::Money | AskClass::Irreversible => Theme::RED,
-            _ => Theme::YELLOW,
+            AskClass::Money | AskClass::Irreversible => t.danger,
+            AskClass::Credential => t.warning,
+            _ => t.quiet,
         };
-        let reply = |label: String, raw: String, cx: &mut Context<Self>| {
+        let reply = |label: String, raw: String, variant: Variant, cx: &mut Context<Self>| {
             let batch_id = batch_id.clone();
-            button(
-                SharedString::from(format!("{}-{number}-{raw}", ask.ask_id)),
-                label,
-                cx.listener(move |this, _, _, cx| this.quick_reply(batch_id.clone(), raw.clone(), cx)),
-            )
+            ui::button(t, SharedString::from(format!("{}-{number}-{raw}", ask.ask_id)), label, variant, true)
+                .on_click(cx.listener(move |this, _, _, cx| this.quick_reply(batch_id.clone(), raw.clone(), cx)))
         };
-        let mut buttons = div().flex().flex_wrap().gap_2().pt_1();
+        let mut buttons = div().flex().flex_wrap().items_center().gap_2().pt_2();
         match ask.kind {
             AskKind::Approve => {
-                buttons =
-                    buttons.child(reply("Approve".into(), format!("{number} go"), cx)).child(reply("Reject".into(), format!("{number} no"), cx));
+                buttons = buttons.child(reply("Approve".into(), format!("{number} go"), Variant::Primary, cx)).child(reply(
+                    "Reject".into(),
+                    format!("{number} no"),
+                    Variant::Secondary,
+                    cx,
+                ));
             }
-            AskKind::Secret => buttons = buttons.child(reply("decline".into(), format!("{number} no"), cx)),
+            AskKind::Secret => buttons = buttons.child(reply("Decline".into(), format!("{number} no"), Variant::Ghost, cx)),
             _ => {
                 if ask.kind == AskKind::Do {
-                    buttons = buttons.child(reply("✓ done".into(), format!("{number} done"), cx));
+                    buttons = buttons.child(reply("Done".into(), format!("{number} done"), Variant::Primary, cx));
                 } else if let Some(rec) = &ask.recommendation {
-                    buttons = buttons.child(reply(format!("go: {}", clip(rec, 40)), format!("{number} go"), cx));
+                    // An irreversible call is never the filled, easy button.
+                    let variant = if ask.class == AskClass::Irreversible { Variant::Danger } else { Variant::Primary };
+                    buttons = buttons
+                        .child(reply(clip(rec, 48), format!("{number} go"), variant, cx))
+                        .child(div().text_size(px(size::XS)).text_color(t.faint).child("recommended"));
                 }
                 for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
+                    if ask.recommendation.as_deref() == Some(option.as_str()) {
+                        continue;
+                    }
                     let letter = (b'a' + i as u8) as char;
-                    buttons = buttons.child(reply(format!("{letter}: {}", clip(option, 40)), format!("{number} {letter}"), cx));
+                    buttons = buttons.child(reply(clip(option, 48), format!("{number} {letter}"), Variant::Secondary, cx));
                 }
-                buttons = buttons.child(reply("no".into(), format!("{number} no"), cx));
+                buttons = buttons.child(reply("No".into(), format!("{number} no"), Variant::Ghost, cx));
             }
         }
-        let mut card = div()
-            .p_3()
+        let marked = self.focus_ask.as_deref() == Some(ask.ask_id.as_str());
+        let workspace = ask
+            .project_ref
+            .as_ref()
+            .and_then(|p| self.state.project(&(p.machine_id.to_string(), p.project_id.to_string())))
+            .map(|r| r.summary.workspace_root.clone());
+        let on_open = self.link_opener(workspace, cx);
+        let mut block = div()
+            .max_w(px(metric::MEASURE))
+            .py_4()
             .flex()
             .flex_col()
-            .gap_1()
-            .bg(rgb(Theme::PANEL))
-            .border_1()
-            .border_color(rgb(Theme::BORDER))
-            .rounded_md()
+            .gap_1p5()
+            .border_b_1()
+            .border_color(t.hairline)
             .child(
                 div()
                     .flex()
                     .gap_2()
                     .items_center()
-                    .child(div().text_color(rgb(Theme::ACCENT)).child(format!("{number}")))
-                    .child(div().text_color(rgb(class_color)).text_size(px(11.5)).child(label(&ask.class)))
-                    .child(muted(project))
-                    .when(ask.proceeded_on_rec, |d| d.child(muted("· went ahead on the recommendation")))
-                    .when(ask.blocks != "nothing", |d| {
-                        d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child(format!("blocks: {}", ask.blocks)))
-                    }),
+                    .text_size(px(size::XS))
+                    .text_color(t.quiet)
+                    .when(marked, |d| d.child(ui::unread(t)))
+                    .child(format!("{number}"))
+                    .child(div().text_color(class_color).child(label(&ask.class)))
+                    .child(project)
+                    .when(ask.proceeded_on_rec, |d| d.child("· went ahead on the recommendation"))
+                    .when(ask.blocks != "nothing", |d| d.child(div().text_color(t.warning).child(format!("· blocks {}", ask.blocks)))),
             )
-            .child(div().whitespace_normal().child(ask.text.to_string()));
+            .child(div().font_weight(STRONG).whitespace_normal().child(links::text(
+                t,
+                format!("{}-text", ask.ask_id),
+                ask.text.to_string(),
+                true,
+                on_open.clone(),
+            )));
         for (i, step) in ask.steps.iter().flatten().enumerate() {
-            card =
-                card.child(div().whitespace_normal().child(format!("{}. {}", i + 1, step.text)).child(muted(format!("on {}", label(&step.r#where)))));
-            if let Some(command) = &step.command {
-                card = card.child(div().pl_4().child(self.command_line(format!("{}-copy-{i}", ask.ask_id), command.to_string(), cx)));
-            }
-            if let Some(expect) = &step.expect {
-                card = card.child(div().pl_4().child(muted(format!("expect: {expect}"))));
-            }
+            block = block.child(
+                div()
+                    .pt_2()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(div().whitespace_normal().child(format!("{}. {}", i + 1, step.text)))
+                    .child(ui::quiet(t, format!("on {}", label(&step.r#where))))
+                    .when_some(step.command.as_ref(), |d, command| {
+                        d.child(self.command_line(format!("{}-copy-{i}", ask.ask_id), command.to_string(), cx))
+                    })
+                    .when_some(step.expect.as_ref(), |d, expect| d.child(ui::quiet(t, format!("Expect: {expect}")))),
+            );
         }
         if let Some(gated) = &ask.gated {
             // The exact stored argv, as JSON so spaces and quotes stay visible.
             let argv = serde_json::to_string(&gated.argv).unwrap_or_default();
-            card = card
-                .child(self.command_line(format!("{}-copy-argv", ask.ask_id), argv, cx))
-                .child(muted(format!("in {}", gated.cwd.as_deref().unwrap_or("the project workspace"))))
-                .child(muted(format!("{} · {} · up to {} min", label(&gated.class), gated.reason, (gated.timeout_sec.get() + 59) / 60)));
+            block = block
+                .child(div().pt_2().child(self.command_line(format!("{}-copy-argv", ask.ask_id), argv, cx)))
+                .child(ui::quiet(t, format!("in {}", gated.cwd.as_deref().unwrap_or("the project workspace"))))
+                .child(ui::quiet(t, format!("{} · {} · up to {} min", label(&gated.class), gated.reason, (gated.timeout_sec.get() + 59) / 60)));
             let env: Vec<String> = gated.secret_env.iter().flat_map(|e| e.0.iter()).map(|e| format!("{} ← {}", e.name, e.secret_key)).collect();
             if !env.is_empty() {
-                card = card.child(muted(format!("secret env: {}", env.join(", "))));
+                block = block.child(ui::quiet(t, format!("Secret env: {}", env.join(", "))));
             }
         }
         if ask.kind == AskKind::Secret {
-            card = card.child(self.secret_entry(ask, cx));
+            block = block.child(self.secret_entry(ask, cx));
         }
         if let Some(evidence) = &ask.evidence {
-            card = card.child(muted(evidence.to_string()));
+            block = block.child(div().text_color(t.quiet).whitespace_normal().child(links::text(
+                t,
+                format!("{}-evidence", ask.ask_id),
+                evidence.to_string(),
+                true,
+                on_open,
+            )));
         }
-        card.child(buttons)
+        block.child(buttons)
     }
 
     /// Masked entry: the value lives only in the field's self-wiping buffer, and is sealed to the sink machine's
     /// key here before anything is sent.
     fn secret_entry(&self, ask: &Ask, cx: &mut Context<Self>) -> Div {
-        let col = div().flex().flex_col().gap_1().child(muted(format!("{} → {}", ask.key, ask.sink.as_deref().unwrap_or("?"))));
+        let t = &theme(cx).clone();
+        let col = div().pt_2().flex().flex_col().gap_1().child(ui::quiet(t, format!("{} → {}", ask.key, ask.sink.as_deref().unwrap_or("?"))));
         let machine = match self.state.secret_target(ask) {
             Ok((machine, _)) => machine,
-            Err(reason) => return col.child(div().text_color(rgb(Theme::YELLOW)).whitespace_normal().child(reason)),
+            Err(reason) => return col.child(div().text_color(t.warning).whitespace_normal().child(reason)),
         };
         let Some((input, _)) = self.secrets.get(ask.ask_id.as_str()) else { return col };
         let typed = !input.read(cx).is_empty();
         let sending = self.state.secret_submitting(&ask.ask_id);
         let id = ask.ask_id.to_string();
-        let send = button(
+        let send = ui::button(
+            t,
             SharedString::from(format!("{}-seal", ask.ask_id)),
-            if sending { "Sending…" } else { "Seal & send" },
-            cx.listener(move |this, _, _, cx| this.submit_secret(&id, cx)),
-        );
-        col.child(div().flex().gap_2().items_center().child(div().flex_1().child(input.clone())).when(typed, |d| d.child(send)))
-            .child(muted(format!("Encrypted here to {machine}'s key; the hub never sees the value.")))
+            if sending { "Sending…" } else { "Seal and send" },
+            Variant::Primary,
+            !sending,
+        )
+        .on_click(cx.listener(move |this, _, _, cx| this.submit_secret(&id, cx)));
+        col.child(div().flex().gap_2().items_center().child(div().flex_1().child(input.clone())).when(typed, |d| d.child(send))).child(
+            div().text_size(px(size::XS)).text_color(t.quiet).child(format!("Encrypted here to {machine}'s key; the hub never sees the value.")),
+        )
     }
 
     fn projects_screen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = &theme(cx).clone();
+        let body = if self.state.projects.is_empty() {
+            match self.state.conn {
+                Conn::Live => {
+                    ui::empty(t, "No projects yet.", "Add one on the hub with fleetd init, which also offers the repos it finds.").into_any_element()
+                }
+                _ => ui::loading(t, "Loading projects…").into_any_element(),
+            }
+        } else {
+            uniform_list(
+                "projects",
+                self.state.projects.len(),
+                cx.processor(|this, range: std::ops::Range<usize>, _, cx| range.map(|ix| this.project_row(ix, cx)).collect::<Vec<_>>()),
+            )
+            .track_scroll(&self.projects_scroll)
+            .flex_1()
+            .p_2()
+            .into_any_element()
+        };
+        let new_order = ui::button(t, "projects-new-order", "New order", Variant::Secondary, true)
+            .on_click(cx.listener(|this, _, window, cx| this.open_composer(None, window, cx)));
         div()
             .flex_1()
             .flex()
             .flex_col()
             .min_w_0()
-            .child(header("Projects", "click to open · ↑↓ Enter".into()))
-            .child(
-                uniform_list(
-                    "projects",
-                    self.state.projects.len(),
-                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| range.map(|ix| this.project_row(ix, cx)).collect::<Vec<_>>()),
-                )
-                .track_scroll(&self.projects_scroll)
-                .flex_1(),
-            )
+            .child(ui::header(t, "Projects", div().flex().items_center().gap_3().child(ui::kbd(t, ui::shortcut("N"))).child(new_order)))
+            .child(body)
             .into_any_element()
     }
 
     fn project_row(&self, ix: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+        let t = &theme(cx).clone();
         let row = &self.state.projects[ix];
-        let (lead_color, lead_label) = lead_badge(row);
+        let (lead_color, lead_label) = lead_badge(t, row);
         let open = row.workstreams().len();
         let headline = row.error.clone().or_else(|| row.headline().map(str::to_string)).unwrap_or_default();
         let key = row.key();
-        clickable(div().id(ix))
-            .w_full()
-            .h(px(ROW_H))
-            .px_3()
-            .flex()
-            .items_center()
+        let needs = self
+            .state
+            .inbox()
+            .iter()
+            .filter(|i| i.ask.project_ref.as_ref().is_some_and(|p| p.machine_id.as_str() == key.0 && p.project_id.as_str() == key.1))
+            .count();
+        let unread = self.seen.unread(&key, row.summary.last_activity_at.as_str());
+        ui::row(t, ix, ix == self.selected)
+            .h(px(metric::ROW + 4.))
             .gap_3()
-            .whitespace_nowrap()
-            .overflow_hidden()
-            .when(ix == self.selected, |d| d.bg(rgb(Theme::SELECTED)))
-            .hover(|d| d.bg(rgb(Theme::HOVER)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = ix;
                 this.open_project(key.clone());
                 cx.notify();
             }))
+            .child(div().w(px(6.)).flex_none().when(unread, |d| d.child(ui::unread(t))))
             .child(
                 div()
-                    .w(px(90.))
+                    .w(px(180.))
                     .flex_none()
                     .flex()
-                    .gap_1()
                     .items_center()
-                    .child(div().text_color(rgb(lead_color)).child("●"))
-                    .child(muted(lead_label)),
+                    .gap_2()
+                    .child(
+                        div().min_w_0().overflow_hidden().text_ellipsis().when(needs > 0, |d| d.font_weight(STRONG)).child(row.summary.title.clone()),
+                    )
+                    .when(needs > 0, |d| d.child(ui::count(t, needs, true))),
             )
-            .child(div().w(px(180.)).flex_none().overflow_hidden().text_ellipsis().child(row.summary.title.clone()))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
-                    .text_color(rgb(if row.error.is_some() { Theme::RED } else { Theme::MUTED }))
+                    .text_color(if row.error.is_some() { t.danger } else { t.quiet })
                     .child(headline),
             )
-            .child(muted(if open == 0 { "no open work".to_string() } else { format!("{open} open") }))
-            .child(self.machine_chip(&row.summary.machine_id))
-            .when(row.stale(), |d| d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child("stale")))
+            .child(div().w(px(64.)).flex_none().text_size(px(size::XS)).text_color(t.faint).child(if open == 0 {
+                String::new()
+            } else {
+                format!("{open} open")
+            }))
+            .child(
+                div()
+                    .w(px(84.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap_1p5()
+                    .text_size(px(size::XS))
+                    .text_color(t.quiet)
+                    .child(ui::dot(lead_color))
+                    .child(lead_label),
+            )
+            .child(self.machine_label(t, &row.summary.machine_id, row.stale()))
     }
 
-    fn machine_chip(&self, machine_id: &str) -> Div {
-        let color = match self.state.machine(machine_id).map(|m| m.status) {
-            Some(MachineStatus::Online) => Theme::GREEN,
-            Some(MachineStatus::Degraded) => Theme::YELLOW,
-            _ => Theme::RED,
+    /// The machine a project is on: quiet, with a word only when it changes how to read the row.
+    fn machine_label(&self, t: &Theme, machine_id: &str, stale: bool) -> Div {
+        // Degraded machines are explained on Machines.
+        let note = match (self.state.machine(machine_id).map(|m| m.status), stale) {
+            (Some(MachineStatus::Offline) | None, _) => Some(("offline", t.warning)),
+            (_, true) => Some(("stale", t.faint)),
+            _ => None,
         };
         div()
-            .px_2()
-            .rounded_sm()
-            .bg(rgb(Theme::BUTTON))
+            .w(px(120.))
+            .flex_none()
             .flex()
             .gap_1()
-            .items_center()
-            .text_size(px(11.5))
-            .child(div().text_color(rgb(color)).child("●"))
+            .text_size(px(size::XS))
+            .text_color(t.quiet)
             .child(machine_id.to_string())
+            .when_some(note, |d, (n, color)| d.child(div().text_color(color).child(n)))
     }
 
     fn project_screen(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(key) = self.state.detail.as_ref().map(|d| d.key.clone()) else { return self.projects_screen(cx) };
+        let t = &theme(cx).clone();
         let row = self.state.project(&key);
         let title = row.map_or(key.1.clone(), |r| r.summary.title.clone());
-        let mut left = div().id("workstreams").flex_1().min_h_0().overflow_y_scroll().p_3().flex().flex_col().gap_3();
-        if let Some(row) = row {
-            if let Some(e) = &row.error {
-                left = left.child(self.error_line("copy-project-error", e.clone(), cx));
+        let mut left = div().id("workstreams").flex_1().min_h_0().overflow_y_scroll().px_4().pb_4().flex().flex_col();
+        match row {
+            Some(row) if row.outcome.is_none() && row.error.is_none() => left = left.child(ui::loading(t, "Loading workstreams…")),
+            Some(row) => {
+                if let Some(e) = &row.error {
+                    left = left.child(div().pt_4().child(self.error_line("copy-project-error", e.clone(), None, cx)));
+                }
+                if row.workstreams().is_empty() && row.outcome.is_some() {
+                    left = left.child(ui::empty(t, "No open work.", "Send an order and the lead turns it into a workstream here."));
+                }
+                for w in row.workstreams() {
+                    left = left.child(workstream_block(t, w));
+                }
             }
-            if row.workstreams().is_empty() && row.outcome.is_some() {
-                left = left.child(muted("No open workstreams."));
-            }
-            for w in row.workstreams() {
-                left = left.child(workstream_card(w));
-            }
+            None => {}
         }
-        let (lead_color, lead_label) = row.map_or((Theme::MUTED, "no lead"), lead_badge);
+        let (lead_color, lead_label) = row.map_or((t.faint, "no lead"), |r| lead_badge(t, r));
         let tail_error = self.state.detail.as_ref().and_then(|d| d.tail_error.clone());
-        let log_title = match row.and_then(|r| r.lead()) {
-            Some(lead) => format!("lead · {} · session {}", lead.thread_id, lead.session_generation),
-            None => "lead".into(),
+        let stale = row.is_some_and(ProjectRow::stale);
+        let workspace = row.map(|r| r.summary.workspace_root.clone());
+        let back = ui::button(t, "back", "‹ Projects", Variant::Ghost, true).on_click(cx.listener(|this, _, _, cx| {
+            this.go(Screen::Projects);
+            cx.notify();
+        }));
+        let new_order = {
+            let key = key.clone();
+            ui::button(t, "project-new-order", "New order", Variant::Secondary, true)
+                .on_click(cx.listener(move |this, _, window, cx| this.open_composer(Some(key.clone()), window, cx)))
         };
         div()
             .flex_1()
             .flex()
+            .flex_col()
             .min_w_0()
+            .child(ui::header(
+                t,
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(back)
+                    .child(title)
+                    .child(div().font_weight(theme::REGULAR).text_color(t.quiet).child(format!("on {}", key.0)))
+                    .when(stale, |d| d.child(div().font_weight(theme::REGULAR).text_size(px(size::XS)).text_color(t.warning).child("stale"))),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(div().flex().items_center().gap_1p5().child(ui::dot(lead_color)).child(format!("lead {lead_label}")))
+                    .child(ui::kbd(t, ui::shortcut("N")))
+                    .child(new_order),
+            ))
             .child(
-                pane(px(440.))
-                    .child(header_el(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .items_center()
-                            .child(button(
-                                "back",
-                                "‹ Projects",
-                                cx.listener(|this, _, _, cx| {
-                                    this.go(Screen::Projects);
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(title)
-                            .child(self.machine_chip(&key.0))
-                            .when(row.is_some_and(ProjectRow::stale), |d| {
-                                d.child(div().text_color(rgb(Theme::YELLOW)).text_size(px(11.5)).child("stale"))
-                            }),
-                        muted("Esc"),
-                    ))
-                    .child(left),
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .child(div().w(px(400.)).flex_none().flex().flex_col().border_r_1().border_color(t.hairline).child(left))
+                    .child(self.log_pane(t, tail_error, workspace, window, cx)),
             )
-            .child(self.log_pane(log_title, lead_color, lead_label, tail_error, window, cx))
             .into_any_element()
     }
 
     fn log_pane(
         &mut self,
-        title: String,
-        lead_color: u32,
-        lead_label: &'static str,
+        t: &Theme,
         error: Option<String>,
+        workspace: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -1209,169 +1390,220 @@ impl Shell {
         if !self.follow && self.scroll_bench_idle() && self.log_scroll.is_scrolled_to_end() == Some(true) {
             self.follow = true;
         }
-        let status = if self.follow { "following" } else { "paused" };
         let empty = self.log.is_empty();
+        let lead = self
+            .state
+            .detail
+            .as_ref()
+            .and_then(|d| self.state.project(&d.key))
+            .and_then(|r| r.lead())
+            .map(|l| (l.thread_id.to_string(), l.session_generation));
         let jump = (!self.follow).then(|| {
-            button(
-                "jump-latest",
-                "Jump to latest",
-                cx.listener(|this, _, _, cx| {
-                    this.follow = true;
-                    if !this.log.is_empty() {
-                        this.log_scroll.scroll_to_item(this.log.len() - 1, ScrollStrategy::Bottom);
-                    }
-                    cx.notify();
-                }),
-            )
+            ui::button(t, "jump-latest", "Jump to latest", Variant::Ghost, true).on_click(cx.listener(|this, _, _, cx| {
+                this.follow = true;
+                if !this.log.is_empty() {
+                    this.log_scroll.scroll_to_item(this.log.len() - 1, ScrollStrategy::Bottom);
+                }
+                cx.notify();
+            }))
         });
+        let on_open = self.link_opener(workspace, cx);
         div()
             .flex_1()
             .flex()
             .flex_col()
             .min_w_0()
-            .bg(rgb(Theme::BG))
-            .child(header_el(
-                div().flex().gap_2().items_center().child(div().text_color(rgb(lead_color)).child("●")).child(muted(lead_label)).child(title),
-                div().flex().gap_2().items_center().child(muted(format!("{} lines · {status}", self.log.len()))).children(jump),
-            ))
-            .when_some(error, |d, e| d.child(div().px_3().py_1().child(self.error_line("copy-tail-error", e, cx))))
-            .when(empty, |d| d.child(div().p_3().child(muted("The lead's latest messages and actions show here."))))
+            .child(
+                div()
+                    .h(px(metric::BAR - 8.))
+                    .flex_none()
+                    .px_4()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .text_size(px(size::XS))
+                    .text_color(t.quiet)
+                    .child(lead.map_or("Lead log".to_string(), |(id, generation)| format!("Lead log · {id} · session {generation}")))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(format!("{} lines · {}", self.log.len(), if self.follow { "following" } else { "paused" }))
+                            .children(jump),
+                    ),
+            )
+            .when_some(error, |d, e| d.child(div().px_4().pb_2().child(self.error_line("copy-tail-error", e, None, cx))))
+            .when(empty, |d| d.child(div().px_4().text_color(t.quiet).child("The lead's latest messages and actions show here.")))
             .child(
                 uniform_list(
                     "log",
                     self.log.len(),
-                    cx.processor(|this, range: std::ops::Range<usize>, _, _| {
-                        range
-                            .map(|ix| {
-                                let line = &this.log[ix];
-                                text_row().text_color(rgb(log_color(line.kind))).child(line.text.clone())
-                            })
-                            .collect::<Vec<_>>()
+                    cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                        let t = theme(cx);
+                        range.map(|ix| log_row(t, ix, &this.log[ix], &on_open)).collect::<Vec<_>>()
                     }),
                 )
                 .track_scroll(&self.log_scroll)
                 .on_scroll_wheel(cx.listener(Self::on_log_wheel))
                 .flex_1()
-                .font_family(MONO_FONT)
-                .text_size(px(12.5)),
+                .font_family(t.mono_font.clone())
+                .text_size(px(size::SM)),
             )
     }
 
     fn machines_screen(&self, cx: &mut Context<Self>) -> AnyElement {
-        let mut list = div().id("machines").flex_1().min_h_0().overflow_y_scroll().flex().flex_col();
+        let t = &theme(cx).clone();
+        let mut list = div().id("machines").flex_1().min_h_0().overflow_y_scroll().p_2().pb_6().flex().flex_col();
         if self.state.machines.is_empty() {
-            list = list.child(div().p_3().child(muted("No machines have joined this hub yet (fleetd machine add).")));
+            list = list.child(ui::empty(t, "No machines yet.", "Add one on the hub with fleetd machine add <ssh-host>, or run fleetd init again."));
         }
         for (ix, m) in self.state.machines.iter().enumerate() {
-            let (color, label) = match m.status {
-                MachineStatus::Online => (Theme::GREEN, "online"),
-                MachineStatus::Degraded => (Theme::YELLOW, "degraded"),
-                MachineStatus::Offline => (Theme::RED, "offline"),
+            let (color, status) = match m.status {
+                MachineStatus::Online => (t.success, "online"),
+                MachineStatus::Degraded => (t.warning, "degraded"),
+                MachineStatus::Offline => (t.danger, "offline"),
             };
             let detail = match (&m.degraded_reason, m.status) {
                 (Some(reason), _) => reason.clone(),
-                (None, MachineStatus::Offline) => format!("last seen {}", ago(m.last_seen_at.as_str())),
+                (None, MachineStatus::Offline) => format!("Last seen {}", ago(m.last_seen_at.as_str())),
                 _ => String::new(),
             };
+            let versions = format!("node {}", m.node_version);
             list = list.child(
-                clickable(div().id(SharedString::from(format!("machine-{}", m.name))))
-                    .min_h(px(ROW_H))
-                    .px_3()
-                    .py_1()
-                    .flex()
-                    .items_center()
+                ui::row(t, SharedString::from(format!("machine-{}", m.name)), ix == self.selected)
+                    .h(px(metric::ROW + 8.))
                     .gap_3()
-                    .hover(|d| d.bg(rgb(Theme::HOVER)))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.selected = ix;
                         cx.notify();
                     }))
-                    .when(ix == self.selected, |d| d.bg(rgb(Theme::SELECTED)))
                     .child(
                         div()
-                            .w(px(110.))
+                            .w(px(140.))
                             .flex_none()
                             .flex()
-                            .gap_1()
                             .items_center()
-                            .child(div().text_color(rgb(color)).child("●"))
-                            .child(muted(label)),
+                            .gap_2()
+                            .child(ui::dot(color))
+                            .child(div().font_weight(STRONG).child(m.name.clone())),
                     )
-                    .child(div().w(px(160.)).flex_none().child(m.name.clone()))
+                    .child(div().w(px(72.)).flex_none().text_size(px(size::XS)).text_color(t.quiet).child(status))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .whitespace_normal()
-                            .text_color(rgb(if m.degraded_reason.is_some() { Theme::YELLOW } else { Theme::MUTED }))
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .text_color(if m.degraded_reason.is_some() { t.warning } else { t.quiet })
                             .child(detail),
                     )
-                    .child(muted(format!("node {}", m.node_version)))
-                    .child(muted(ago(m.last_seen_at.as_str()))),
+                    .child(div().flex_none().text_size(px(size::XS)).text_color(t.faint).font_family(t.mono_font.clone()).child(versions))
+                    .child(
+                        div()
+                            .w(px(64.))
+                            .flex_none()
+                            .flex()
+                            .justify_end()
+                            .text_size(px(size::XS))
+                            .text_color(t.faint)
+                            .child(ago(m.last_seen_at.as_str())),
+                    ),
             );
         }
         list = list.child(self.doctor_section(cx));
-        div().flex_1().flex().flex_col().min_w_0().child(header("Machines", String::new())).child(list).into_any_element()
+        div().flex_1().flex().flex_col().min_w_0().child(ui::header(t, "Machines", String::new())).child(list).into_any_element()
     }
 
     fn doctor_section(&self, cx: &mut Context<Self>) -> Div {
+        let t = &theme(cx).clone();
         let doctor = self.state.doctor.as_ref();
         let rerunning = self.state.doctor_rerunning();
         let checked = match doctor.and_then(|d| d.checked_at.as_ref().map(|t| t.as_str())) {
-            Some(at) => format!("checked {}", ago(at)),
-            None => "checking…".into(),
+            Some(at) => format!("Checked {}", ago(at)),
+            None => "Checking…".into(),
         };
-        let rerun = button(
-            "doctor-rerun",
-            if rerunning { "Re-running…" } else { "Re-run" },
+        let rerun = ui::button(t, "doctor-rerun", if rerunning { "Re-running…" } else { "Re-run" }, Variant::Ghost, !rerunning).on_click(
             cx.listener(|this, _, _, cx| {
                 let out = this.state.rerun_doctor();
                 this.send(out);
                 cx.notify();
             }),
         );
-        let mut section = div()
-            .p_3()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .border_t_1()
-            .border_color(rgb(Theme::BORDER))
-            .child(div().flex().gap_3().items_center().child("Doctor").child(muted(checked)).child(div().flex_1()).child(rerun));
+        let mut section = div().px_2().flex().flex_col().max_w(px(metric::MEASURE + 340.)).child(
+            div()
+                .pt_6()
+                .pb_2()
+                .flex()
+                .gap_3()
+                .items_center()
+                .child(div().font_weight(STRONG).child("Setup checks"))
+                .child(div().text_size(px(size::XS)).text_color(t.quiet).child(checked))
+                .child(div().flex_1())
+                .child(rerun),
+        );
         if let Some(e) = doctor.and_then(|d| d.error.clone()) {
-            section = section.child(self.error_line("copy-doctor-error", e, cx));
+            section = section.child(self.error_line("copy-doctor-error", e, None, cx));
         }
         for check in doctor.map(|d| d.checks.as_slice()).unwrap_or_default() {
             let color = match check.status {
-                DoctorStatus::Ok => Theme::GREEN,
-                DoctorStatus::Warn => Theme::YELLOW,
-                DoctorStatus::Fail => Theme::RED,
-                _ => Theme::MUTED,
+                DoctorStatus::Ok => t.success,
+                DoctorStatus::Warn => t.warning,
+                DoctorStatus::Fail => t.danger,
+                _ => t.faint,
             };
+            let ok = check.status == DoctorStatus::Ok;
             let mut row = div()
+                .py_2()
                 .flex()
                 .gap_3()
                 .items_start()
-                .child(div().text_color(rgb(color)).child("●"))
-                .child(div().w(px(180.)).flex_none().font_family(MONO_FONT).text_size(px(12.)).child(check.id.to_string()))
-                .child(div().flex_1().min_w_0().whitespace_normal().child(check.message.to_string()));
-            if let Some(fix) = check.fix.as_ref().filter(|_| check.status != DoctorStatus::Ok) {
-                let mut fix_col = div().w(px(320.)).flex_none().flex().flex_col().gap_1().child(muted(fix.label.to_string()));
+                .border_b_1()
+                .border_color(t.hairline)
+                .child(div().pt(px(6.)).child(ui::dot(color)))
+                .child(
+                    div()
+                        .w(px(170.))
+                        .flex_none()
+                        .pt(px(1.))
+                        .font_family(t.mono_font.clone())
+                        .text_size(px(size::SM))
+                        .text_color(t.quiet)
+                        .child(check.id.to_string()),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .whitespace_normal()
+                        .when(ok, |d| d.text_color(t.quiet))
+                        .when(!ok, |d| d.font_weight(STRONG))
+                        .child(check.message.to_string()),
+                );
+            if let Some(fix) = check.fix.as_ref().filter(|_| !ok) {
+                let mut fix_col = div().w(px(320.)).flex_none().flex().flex_col().gap_1().child(ui::quiet(t, fix.label.to_string()));
                 if let Some(command) = fix.command.as_ref().filter(|_| fix.kind == DoctorFixKind::Manual) {
                     fix_col = fix_col.child(self.command_line(format!("copy-fix-{}", check.id), command.to_string(), cx));
                 }
                 if fix.kind == DoctorFixKind::Auto {
                     let id = check.id.clone();
-                    let label = if self.state.doctor_fixing(&id) { "Fixing…" } else { "Fix" };
-                    fix_col = fix_col.child(div().flex().child(button(
-                        SharedString::from(format!("fix-{id}")),
-                        label,
-                        cx.listener(move |this, _, _, cx| {
-                            let out = this.state.fix_doctor(&id);
-                            this.send(out);
-                            cx.notify();
-                        }),
-                    )));
+                    let fixing = self.state.doctor_fixing(&id);
+                    fix_col = fix_col.child(
+                        div().flex().child(
+                            ui::button(
+                                t,
+                                SharedString::from(format!("fix-{id}")),
+                                if fixing { "Fixing…" } else { "Fix" },
+                                Variant::Secondary,
+                                !fixing,
+                            )
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                let out = this.state.fix_doctor(&id);
+                                this.send(out);
+                                cx.notify();
+                            })),
+                        ),
+                    );
                 }
                 row = row.child(fix_col);
             }
@@ -1380,40 +1612,49 @@ impl Shell {
         section
     }
 
+    /// The reply field: terse inbox replies from any screen ("1 go 2 nvm").
     fn reply_bar(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = &theme(cx).clone();
         let focused = self.reply.focus_handle(cx).is_focused(window);
-        let echo = self.state.echo.as_ref().filter(|_| self.screen != Screen::Inbox);
         let has_text = !self.reply.read(cx).is_empty();
         div()
-            .min_h(px(40.))
             .flex_none()
-            .px_3()
-            .py_1()
+            .px_4()
+            .py_2()
             .flex()
-            .items_center()
+            .items_end()
             .gap_2()
             .border_t_1()
-            .border_color(rgb(if focused { Theme::ACCENT } else { Theme::BORDER }))
-            .bg(rgb(Theme::PANEL))
-            .font_family(MONO_FONT)
-            .text_size(px(13.))
-            .child(div().text_color(rgb(Theme::ACCENT)).child("›"))
-            .child(div().flex_1().min_w_0().child(self.reply.clone()))
-            .when_some(echo, |d, e| {
+            .border_color(t.hairline)
+            .child(ui::field(t, focused).flex_1().min_w_0().px_1().child(self.reply.clone()))
+            .when(has_text, |d| {
                 d.child(
-                    div()
-                        .max_w(px(600.))
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap()
-                        .text_color(rgb(if e.ok { Theme::GREEN } else { Theme::YELLOW }))
-                        .font_family(UI_FONT)
-                        .child(e.text.clone()),
+                    ui::button(t, "send-reply", "Send", Variant::Primary, true)
+                        .mb(px(2.))
+                        .on_click(cx.listener(|this, _, _, cx| this.send_reply(cx))),
                 )
             })
-            .when(has_text, |d| {
-                d.child(div().font_family(UI_FONT).child(button("send-reply", "Send", cx.listener(|this, _, _, cx| this.send_reply(cx)))))
-            })
+    }
+
+    /// What the last action did (sent, saved, refused), above the reply field on every screen.
+    fn echo_line(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let t = &theme(cx).clone();
+        let echo = self.state.echo.as_ref()?;
+        Some(
+            div()
+                .min_h(px(metric::ROW + 4.))
+                .flex_none()
+                .px_4()
+                .flex()
+                .items_center()
+                .gap_2()
+                .border_t_1()
+                .border_color(t.hairline)
+                .text_size(px(size::XS))
+                .child(ui::dot(if echo.ok { t.success } else { t.warning }))
+                .child(div().flex_1().min_w_0().whitespace_normal().child(echo.text.clone()))
+                .when(!echo.ok, |d| d.child(self.copy_button("copy-echo", echo.text.clone(), cx))),
+        )
     }
 
     // ---- bench -----------------------------------------------------------------------------
@@ -1423,7 +1664,22 @@ impl Shell {
         let mut stream = LogStream::new(1);
         self.log = (0..history).map(|_| to_row(stream.next_line())).collect();
         self.state = fake::fixture_state();
-        self.screen = Screen::Project;
+        self.seen.prime(&self.state);
+        // Two projects with news since you last looked, so the fixture shows the unread state.
+        for row in self.state.projects.iter().skip(3).step_by(4).take(2) {
+            self.seen.mark(&row.key(), "2026-10-17T09:00:00.000Z");
+        }
+        // FLEETD_SCREEN picks the screen the fixture opens on, for screenshots; the speed runs use the project.
+        self.screen = match std::env::var("FLEETD_SCREEN").as_deref() {
+            Ok("inbox") => Screen::Inbox,
+            Ok("projects") => Screen::Projects,
+            Ok("machines") => Screen::Machines,
+            Ok("settings") => Screen::Settings,
+            _ => Screen::Project,
+        };
+        if self.screen != Screen::Project {
+            self.state.close_project();
+        }
         self.bench = Some((stream, Probe::new()));
         if env_num("FLEETD_STREAM", 1) == 1 {
             cx.spawn(async move |this, cx| {
@@ -1475,102 +1731,139 @@ impl Render for Shell {
             Screen::Projects => self.projects_screen(cx),
             Screen::Project => self.project_screen(window, cx),
             Screen::Machines => self.machines_screen(cx),
+            Screen::Settings => {
+                let hub = settings::Hub {
+                    url: self.hub.as_ref().map(|h| h.url.clone().into()),
+                    status: self.conn_line(theme(cx)).label,
+                    live: self.state.conn == Conn::Live && self.hub.is_some(),
+                };
+                self.settings.update(cx, |s, _| s.hub = hub);
+                self.settings.clone().into_any_element()
+            }
         };
+        let t = theme(cx).clone();
         let banner = self.note.clone().or_else(|| self.state.notice.clone());
+        let chrome = self.has_reply_bar();
         let main = div()
             .flex_1()
             .min_w_0()
             .flex()
             .flex_col()
             .when_some(banner, |d, text| {
-                d.child(
-                    div()
-                        .px_3()
-                        .py_1()
-                        .flex()
-                        .gap_2()
-                        .items_center()
-                        .bg(rgb(0x3a3220))
-                        .child(div().flex_1().min_w_0().whitespace_normal().text_color(rgb(Theme::YELLOW)).child(text.clone()))
-                        .child(self.copy_button("copy-banner", text, cx)),
-                )
+                d.child(div().px_4().py_2().border_b_1().border_color(t.hairline).child(self.error_line("copy-banner", text, None, cx)))
             })
-            .child(div().flex_1().min_h_0().flex().child(screen));
+            .child(div().flex_1().min_h_0().flex().child(screen))
+            .when(chrome, |d| d.children(self.echo_line(cx)));
+        let overlay = |child: AnyElement, cx: &mut Context<Self>| {
+            // A click outside the floating panel closes it; the panel itself stops clicks reaching what's under.
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .flex_col()
+                .items_center()
+                .pt(px(88.))
+                .occlude()
+                .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| this.close_overlays(cx)))
+                .child(div().occlude().child(child))
+        };
         div()
+            .relative()
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(Theme::BG))
-            .text_color(rgb(Theme::TEXT))
-            .text_size(px(13.))
-            .font_family(UI_FONT)
+            .bg(t.bg)
+            .text_color(t.text)
+            .text_size(px(size::MD))
+            .font_family(t.ui_font.clone())
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
             .on_action(cx.listener(|_, _: &FocusNext, window, cx| window.focus_next(cx)))
             .on_action(cx.listener(|_, _: &FocusPrev, window, cx| window.focus_prev(cx)))
+            .on_action(cx.listener(|this, _: &actions::OpenSettings, _, cx| {
+                this.go(Screen::Settings);
+                cx.notify();
+            }))
+            .when(self.connected(), |d| {
+                d.on_action(cx.listener(|this, _: &actions::NewOrder, window, cx| this.open_composer(None, window, cx)))
+                    .on_action(cx.listener(|this, _: &actions::ToggleCommandPalette, window, cx| this.toggle_palette(window, cx)))
+                    .on_action(cx.listener(|this, _: &actions::ToggleSidebar, _, cx| {
+                        this.sidebar_hidden = !this.sidebar_hidden;
+                        cx.notify();
+                    }))
+            })
             .child(crate::titlebar::TitleBar::new())
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .when(self.screen != Screen::Connect && self.screen != Screen::Loading, |d| d.child(self.sidebar(cx)))
-                    .child(main),
-            )
-            .when(self.has_reply_bar(), |d| d.child(self.reply_bar(window, cx)))
+            .child(div().flex_1().min_h_0().flex().when(chrome && !self.sidebar_hidden, |d| d.child(self.sidebar(cx))).child(main))
+            .when(chrome, |d| d.child(self.reply_bar(window, cx)))
+            .when_some(self.palette.clone(), |d, p| d.child(overlay(p.into_any_element(), cx)))
+            .when_some(self.composer.clone(), |d, c| d.child(overlay(c.into_any_element(), cx)))
     }
 }
 
-fn workstream_card(w: &Workstream) -> impl IntoElement {
+/// A workstream, quietly: its title, id and state on one line, the lead's status line, and what "done" means.
+fn workstream_block(t: &Theme, w: &Workstream) -> impl IntoElement {
     let state_color = match w.state {
-        WorkstreamState::Done => Theme::GREEN,
-        WorkstreamState::Failed | WorkstreamState::Stopped => Theme::RED,
-        WorkstreamState::Draft | WorkstreamState::Idle => Theme::MUTED,
-        _ => Theme::ACCENT,
+        WorkstreamState::Done => t.success,
+        WorkstreamState::Failed | WorkstreamState::Stopped => t.danger,
+        _ => t.quiet,
     };
-    let mut card = div()
+    let mut block = div()
+        .py_3()
         .flex()
         .flex_col()
         .gap_1()
+        .border_b_1()
+        .border_color(t.hairline)
         .child(
             div()
                 .flex()
                 .gap_2()
-                .items_center()
-                .child(muted(w.workstream_id.to_string()))
+                .items_baseline()
                 .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(w.title.to_string()))
-                .child(div().text_color(rgb(state_color)).text_size(px(11.5)).child(label(&w.state))),
+                .child(div().text_size(px(size::XS)).text_color(t.faint).child(w.workstream_id.to_string()))
+                .child(div().text_size(px(size::XS)).text_color(state_color).child(label(&w.state))),
         )
-        .when_some(w.headline.clone(), |d, h| d.child(div().text_color(rgb(Theme::MUTED)).whitespace_normal().child(format!("lead says: {h}"))));
+        .when_some(w.headline.clone(), |d, h| d.child(div().text_color(t.quiet).whitespace_normal().child(h.to_string())));
     match &w.brief {
         // ✓ comes only from checks the hub ran (M6); until then every item is open.
         Some(brief) => {
+            let mut list = div().pt_1().flex().flex_col().gap_0p5();
             for check in &brief.done_when {
-                card = card
-                    .child(div().pl_3().flex().gap_2().child(muted("○")).child(div().whitespace_normal().text_size(px(12.)).child(describe(check))));
+                list = list.child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .items_center()
+                        .text_size(px(size::XS))
+                        .text_color(t.quiet)
+                        .child(div().size(px(7.)).flex_none().rounded_full().border_1().border_color(t.faint))
+                        .child(div().whitespace_normal().child(describe(check))),
+                );
             }
+            block = block.child(list);
         }
-        None => card = card.child(div().pl_3().child(muted("draft: the lead hasn't written the brief yet"))),
+        None => block = block.child(div().text_size(px(size::XS)).text_color(t.faint).child("Draft: the lead hasn't written the brief yet.")),
     }
-    card
+    block
 }
 
-fn lead_badge(row: &ProjectRow) -> (u32, &'static str) {
+/// Quiet unless it needs a look: working is green, stalled amber, everything else grey.
+fn lead_badge(t: &Theme, row: &ProjectRow) -> (Hsla, &'static str) {
     match row.lead().map(|l| l.state) {
-        None if row.outcome.is_none() => (Theme::MUTED, "…"),
-        None => (Theme::MUTED, "no lead"),
-        Some(LeadState::Working) => (Theme::ACCENT, "working"),
-        Some(LeadState::Idle) => (Theme::GREEN, "idle"),
-        Some(LeadState::Starting) => (Theme::YELLOW, "starting"),
-        Some(LeadState::Stalled) => (Theme::RED, "stalled"),
-        Some(LeadState::Stopped) => (Theme::MUTED, "stopped"),
+        None if row.outcome.is_none() => (t.faint, "…"),
+        None => (t.faint, "no lead"),
+        Some(LeadState::Working) => (t.success, "working"),
+        Some(LeadState::Idle) => (t.faint, "idle"),
+        Some(LeadState::Starting) => (t.faint, "starting"),
+        Some(LeadState::Stalled) => (t.warning, "stalled"),
+        Some(LeadState::Stopped) => (t.faint, "stopped"),
     }
 }
 
 /// Log rows for a tail: one per line, a timestamp on the first line of each item.
 fn tail_rows(items: &[TailItem]) -> Vec<LogRow> {
     let mut rows = Vec::new();
-    let mut push = |kind, text: String| rows.push(LogRow { kind, text: text.into() });
+    let mut push = |kind, text: String| rows.push(LogRow::new(kind, &text));
     for item in items {
         match item {
             TailItem::Message(TailMessage { at, role, text }) => {
@@ -1583,8 +1876,17 @@ fn tail_rows(items: &[TailItem]) -> Vec<LogRow> {
             TailItem::Action(TailAction { at, action }) => {
                 let kind = if action.failed { LogKind::Error } else { LogKind::Tool };
                 push(kind, format!("{}  ● {} [{}]", clock(at.as_str()), action.summary, label(&action.status)));
-                for line in action.output_tail.iter().flat_map(|o| o.lines()) {
-                    push(if action.failed { LogKind::Error } else { LogKind::Output }, format!("            {line}"));
+                let output = action.output_tail.as_deref().unwrap_or_default();
+                // An edit's or `git diff`'s output reads as a diff: added and removed lines tinted.
+                let diff = diffview::looks_like_diff(output);
+                for line in output.lines() {
+                    let kind = match (action.failed, diff, line.as_bytes().first()) {
+                        (true, ..) => LogKind::Error,
+                        (false, true, Some(b'+')) if !line.starts_with("+++") => LogKind::DiffAdd,
+                        (false, true, Some(b'-')) if !line.starts_with("---") => LogKind::DiffDel,
+                        _ => LogKind::Output,
+                    };
+                    push(kind, format!("            {line}"));
                 }
             }
         }
@@ -1743,98 +2045,52 @@ fn x11_window_id(window: &Window) -> Option<u32> {
 }
 
 fn to_row(line: fake::LogLine) -> LogRow {
-    LogRow { kind: line.kind, text: line.text.into() }
+    LogRow::new(line.kind, &line.text)
 }
 
 fn env_num(name: &str, default: usize) -> usize {
     std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
-fn pane(width: gpui::Pixels) -> Div {
-    div().w(width).flex_none().flex().flex_col().bg(rgb(Theme::PANEL)).border_color(rgb(Theme::BORDER)).border_r_1()
-}
-
-fn header(title: &str, detail: String) -> Div {
-    header_el(div().text_color(rgb(Theme::TEXT)).child(title.to_string()), muted(detail))
-}
-
-fn header_el(title: impl IntoElement, detail: impl IntoElement) -> Div {
-    div()
-        .h(px(32.))
-        .flex_none()
-        .px_3()
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_2()
-        .border_b_1()
-        .border_color(rgb(Theme::BORDER))
-        .font_family(UI_FONT)
-        .child(title)
-        .child(detail)
-}
-
-fn muted(text: impl Into<SharedString>) -> Div {
-    div().text_color(rgb(Theme::MUTED)).text_size(px(11.5)).child(text.into())
-}
-
-/// Anything you click: pointer cursor, a focus ring when reached with Tab (Enter/Space then click it), and a
-/// click that leaves keyboard focus where it was, so typing in a field carries on.
-fn clickable(el: Stateful<Div>) -> Stateful<Div> {
-    el.tab_index(0)
-        .cursor_pointer()
-        .border_1()
-        .border_color(transparent_black())
-        .focus_visible(|d| d.border_color(rgb(Theme::ACCENT)))
-        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-}
-
-fn button(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<SharedString>,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
-) -> Stateful<Div> {
-    clickable(div().id(id))
-        .flex_none()
-        .px_2()
-        .py_0p5()
-        .rounded_sm()
-        .bg(rgb(Theme::BUTTON))
-        .text_size(px(12.))
-        .hover(|d| d.bg(rgb(Theme::SELECTED)))
-        .on_click(on_click)
-        .child(label.into())
-}
-
-/// The one main action on a screen.
-fn primary_button(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<SharedString>,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
-) -> Stateful<Div> {
-    clickable(div().id(id))
-        .px_4()
-        .py_1()
-        .rounded_sm()
-        .bg(rgb(Theme::SELECTED))
-        .text_color(rgb(Theme::TEXT))
-        .hover(|d| d.bg(rgb(0x3a4c6b)))
-        .on_click(on_click)
-        .child(label.into())
-}
-
 fn text_row() -> Div {
-    div().h(px(LINE_H)).px_3().flex().items_center().whitespace_nowrap().overflow_hidden()
+    div().h(px(metric::LINE)).px_4().flex().items_center().whitespace_nowrap().overflow_hidden()
 }
 
-fn log_color(kind: LogKind) -> u32 {
+/// One log line: a faint timestamp column, then the line; links in it are clickable; diff lines are tinted.
+fn log_row(t: &Theme, ix: usize, line: &LogRow, on_open: &links::OnOpen) -> Div {
+    let bg = match line.kind {
+        LogKind::DiffAdd => Some(t.diff_add),
+        LogKind::DiffDel => Some(t.diff_del),
+        _ => None,
+    };
+    let body = div().min_w_0().text_color(log_color(t, line.kind));
+    let body = if line.linked {
+        body.child(links::text(t, format!("log-{ix}"), line.body.clone(), false, on_open.clone()))
+    } else {
+        body.child(line.body.clone())
+    };
+    text_row().when_some(bg, |d, bg| d.bg(bg)).child(div().w(px(96.)).flex_none().text_color(t.faint).child(line.stamp.clone())).child(body)
+}
+
+/// Quiet work, loud failures: output and passing checks are grey, errors red, your own words in the accent.
+fn log_color(t: &Theme, kind: LogKind) -> Hsla {
     match kind {
-        LogKind::Tool => Theme::ACCENT,
-        LogKind::Output => Theme::MUTED,
-        LogKind::Thought => Theme::TEXT,
-        LogKind::Ok => Theme::GREEN,
-        LogKind::Error => Theme::RED,
-        LogKind::User => Theme::YELLOW,
+        LogKind::Tool | LogKind::Thought | LogKind::DiffAdd | LogKind::DiffDel => t.text,
+        LogKind::Output | LogKind::Ok => t.quiet,
+        LogKind::Error => t.danger,
+        LogKind::User => t.accent,
+    }
+}
+
+/// "10:04:05.120  ● Read(a.rs)" -> ("10:04:05.120", "● Read(a.rs)"). A line without a stamp loses the stamp
+/// column's worth of indent, so continuation lines line up under the text they continue.
+fn split_stamp(text: &str) -> (&str, &str) {
+    match text.split_once("  ") {
+        Some((stamp, rest)) if stamp.len() >= 8 && stamp.as_bytes()[0].is_ascii_digit() && stamp.as_bytes()[2] == b':' => (stamp, rest),
+        _ => {
+            let indent = text.len() - text.trim_start_matches(' ').len();
+            ("", &text[indent.min(STAMP_WIDTH)..])
+        }
     }
 }
 
@@ -1850,10 +2106,24 @@ mod tests {
               "status": "failed", "summary": "pnpm test", "outputTail": "1 failed", "exitCode": 1, "failed": true } },
         ]))
         .unwrap();
-        let rows: Vec<(LogKind, String)> = tail_rows(&items).into_iter().map(|r| (r.kind, r.text.to_string())).collect();
-        assert_eq!(rows[0], (LogKind::Thought, "10:04:05  assistant: Plan:".into()));
-        assert_eq!(rows[1].1.trim(), "1. read");
-        assert_eq!(rows[2], (LogKind::Error, "10:04:06  ● pnpm test [failed]".into()));
-        assert_eq!((rows[3].0, rows[3].1.trim()), (LogKind::Error, "1 failed"));
+        let rows: Vec<(LogKind, String, String)> = tail_rows(&items).into_iter().map(|r| (r.kind, r.stamp.to_string(), r.body.to_string())).collect();
+        assert_eq!(rows[0], (LogKind::Thought, "10:04:05".into(), "assistant: Plan:".into()));
+        assert_eq!((rows[1].1.as_str(), rows[1].2.as_str()), ("", "1. read"));
+        assert_eq!(rows[2], (LogKind::Error, "10:04:06".into(), "● pnpm test [failed]".into()));
+        assert_eq!((rows[3].0, rows[3].2.as_str()), (LogKind::Error, "  1 failed"));
+    }
+
+    #[test]
+    fn diff_output_is_tinted_and_paths_are_linked() {
+        let items: Vec<TailItem> = serde_json::from_value(serde_json::json!([
+            { "kind": "action", "at": "2026-10-17T10:04:06.000Z", "action": { "at": "2026-10-17T10:04:06.000Z", "kind": "file_change",
+              "status": "completed", "summary": "Edit src/a.rs", "outputTail": "--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-old\n+new", "failed": false } },
+        ]))
+        .unwrap();
+        let rows = tail_rows(&items);
+        let kinds: Vec<LogKind> = rows.iter().map(|r| r.kind).collect();
+        use LogKind::*;
+        assert_eq!(kinds, [Tool, Output, Output, Output, DiffDel, DiffAdd]);
+        assert!(rows[0].linked, "the edited file is a link");
     }
 }

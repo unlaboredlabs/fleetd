@@ -1,7 +1,7 @@
 //! Small building blocks every screen shares, styled only from the [`Theme`]. Screens compose these; they do
 //! not restyle them.
 
-use gpui::{App, ClipboardItem, Div, ElementId, Hsla, SharedString, Stateful, Window, div, prelude::*, px};
+use gpui::{Div, ElementId, Hsla, MouseButton, SharedString, Stateful, div, prelude::*, px};
 
 use crate::theme::{STRONG, Theme, metric, radius, size};
 
@@ -15,6 +15,16 @@ pub enum Variant {
     Ghost,
     /// Irreversible actions, outlined, never filled.
     Danger,
+}
+
+/// Anything you click: pointer cursor, the focus ring when reached with Tab (Enter or Space then clicks it),
+/// and a click that leaves keyboard focus where it was, so typing in a field carries on.
+pub fn clickable(t: &Theme, el: Stateful<Div>) -> Stateful<Div> {
+    let ring = t.focus_ring();
+    el.tab_index(0)
+        .cursor_pointer()
+        .focus_visible(move |s| s.shadow(ring.clone()))
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
 }
 
 /// A button. Attach `.on_click` at the call site; leave it off (and pass `enabled: false`) while it can't run.
@@ -42,7 +52,7 @@ pub fn button(t: &Theme, id: impl Into<ElementId>, label: impl Into<SharedString
     }
     let hover = t.hover;
     let text = t.text;
-    base.cursor_pointer().hover(move |s| match variant {
+    clickable(t, base).hover(move |s| match variant {
         Variant::Primary => s.opacity(0.88),
         Variant::Ghost => s.bg(hover).text_color(text),
         _ => s.bg(hover),
@@ -133,9 +143,9 @@ pub fn loading(t: &Theme, what: impl Into<SharedString>) -> Div {
     div().px_4().py_6().text_color(t.quiet).child(what.into())
 }
 
-/// An error: what went wrong in text colour, the fix below it (a command when there is one, with Copy).
-pub fn error(t: &Theme, id: impl Into<SharedString>, message: impl Into<SharedString>, fix: Option<SharedString>, copied: bool) -> Div {
-    let id = id.into();
+/// An error: a red dot, what went wrong in body text, the fix below it in grey, and a Copy button (made by
+/// the caller, which tracks what was copied) so it can be pasted into an issue or a search.
+pub fn error(t: &Theme, message: impl Into<SharedString>, fix: Option<SharedString>, copy: Stateful<Div>) -> Div {
     let message = message.into();
     div()
         .max_w(px(metric::MEASURE))
@@ -148,24 +158,19 @@ pub fn error(t: &Theme, id: impl Into<SharedString>, message: impl Into<SharedSt
                 .items_start()
                 .gap_2()
                 .child(div().pt(px(5.)).child(dot(t.danger)))
-                .child(div().flex_1().min_w_0().whitespace_normal().child(message.clone()))
-                .child(copy_button(t, SharedString::from(format!("{id}-copy")), message, copied)),
+                .child(div().flex_1().min_w_0().whitespace_normal().child(message))
+                .child(copy),
         )
         .when_some(fix, |d, fix| d.child(div().pl(px(15.)).text_color(t.quiet).whitespace_normal().child(fix)))
 }
 
-/// "Copy" that writes `text` to the clipboard. The caller tracks what was copied last and passes `copied` so
-/// the label can say "Copied".
-pub fn copy_button(t: &Theme, id: impl Into<ElementId>, text: impl Into<SharedString>, copied: bool) -> Stateful<Div> {
-    let text = text.into();
+/// "Copy", or "Copied" once it was. The caller attaches the click (it tracks what was copied last).
+pub fn copy_button(t: &Theme, id: impl Into<ElementId>, copied: bool) -> Stateful<Div> {
     button(t, id, if copied { "Copied" } else { "Copy" }, Variant::Ghost, true)
-        .on_click(move |_, _: &mut Window, cx: &mut App| cx.write_to_clipboard(ClipboardItem::new_string(text.to_string())))
 }
 
 /// A command to run by hand: mono, on a one-step tone, with its Copy button.
-pub fn command(t: &Theme, id: impl Into<SharedString>, cmd: impl Into<SharedString>, copied: bool) -> Div {
-    let id = id.into();
-    let cmd = cmd.into();
+pub fn command(t: &Theme, cmd: impl Into<SharedString>, copy: Stateful<Div>) -> Div {
     div()
         .flex()
         .items_center()
@@ -175,8 +180,8 @@ pub fn command(t: &Theme, id: impl Into<SharedString>, cmd: impl Into<SharedStri
         .py_0p5()
         .rounded(px(radius::SM))
         .bg(t.selected)
-        .child(div().flex_1().min_w_0().whitespace_normal().font_family(t.mono_font.clone()).text_size(px(size::SM)).child(cmd.clone()))
-        .child(copy_button(t, SharedString::from(format!("{id}-copy")), cmd, copied))
+        .child(div().flex_1().min_w_0().whitespace_normal().font_family(t.mono_font.clone()).text_size(px(size::SM)).child(cmd.into()))
+        .child(copy)
 }
 
 /// The frame around a text field: hairline border, focus ring when focused. The field itself is the
@@ -197,8 +202,7 @@ pub fn field(t: &Theme, focused: bool) -> Div {
 /// horizontal padding.
 pub fn row(t: &Theme, id: impl Into<ElementId>, selected: bool) -> Stateful<Div> {
     let hover = t.hover;
-    div()
-        .id(id)
+    clickable(t, div().id(id))
         .w_full()
         .h(px(metric::ROW))
         .px_2()
@@ -208,12 +212,11 @@ pub fn row(t: &Theme, id: impl Into<ElementId>, selected: bool) -> Stateful<Div>
         .rounded(px(radius::SM))
         .whitespace_nowrap()
         .overflow_hidden()
-        .cursor_pointer()
         .when(selected, |d| d.bg(t.selected))
         .when(!selected, |d| d.hover(move |s| s.bg(hover)))
 }
 
 /// A floating surface (palette, composer): raised tone, hairline, one soft shadow.
 pub fn floating(t: &Theme) -> Div {
-    div().bg(t.raised).border_1().border_color(t.hairline).rounded(px(radius::LG)).shadow(t.float_shadow()).overflow_hidden()
+    div().bg(t.raised).border_1().border_color(t.border).rounded(px(radius::LG)).shadow(t.float_shadow()).overflow_hidden()
 }

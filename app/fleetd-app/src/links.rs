@@ -129,13 +129,18 @@ pub fn open(link: &Link, workspace_root: Option<&str>, cx: &mut App) -> Opened {
     }
 }
 
-/// `text` with its links underlined in the accent colour and clickable. `on_open` gets the clicked link.
-pub fn text(t: &Theme, id: impl Into<SharedString>, text: impl Into<SharedString>, on_open: OnOpen) -> InteractiveText {
+/// `text` with its links clickable. Loud links (in an ask) are accent and underlined; quiet ones (in a log, where
+/// most lines name a file) keep the text colour over a faint underline. `on_open` gets the clicked link.
+pub fn text(t: &Theme, id: impl Into<SharedString>, text: impl Into<SharedString>, loud: bool, on_open: OnOpen) -> InteractiveText {
     let text = text.into();
     let links = find(&text);
     let style = HighlightStyle {
-        color: Some(t.accent),
-        underline: Some(UnderlineStyle { thickness: px(1.), color: Some(t.accent.opacity(0.4)), wavy: false }),
+        color: loud.then_some(t.accent),
+        underline: Some(UnderlineStyle {
+            thickness: px(1.),
+            color: Some(if loud { t.accent.opacity(0.4) } else { t.faint.opacity(0.6) }),
+            wavy: false,
+        }),
         ..Default::default()
     };
     let ranges: Vec<Range<usize>> = links.iter().map(|(r, _)| r.clone()).collect();

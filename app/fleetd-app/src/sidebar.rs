@@ -82,7 +82,8 @@ pub struct Conn {
     pub color: Hsla,
 }
 
-pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn, on_pick: OnPick) -> Div {
+/// `notice` (the update notice) sits above the connection line.
+pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn, notice: Option<AnyElement>, on_pick: OnPick) -> Div {
     let asks = state.inbox().len();
     let down = state.machines.iter().filter(|m| m.status != MachineStatus::Online).count();
     let needs = needs_you(state);
@@ -198,6 +199,7 @@ pub fn render(t: &Theme, state: &State, seen: &Seen, active: &Active, conn: Conn
                 .child("Projects"),
         )
         .child(projects)
+        .children(notice)
         .child(
             div()
                 .id("sidebar-conn")

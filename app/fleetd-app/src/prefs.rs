@@ -1,8 +1,8 @@
 //! The app's own preferences (not the hub connection, which lives in the keychain): one small JSON file next
-//! to fleetd's other per-user config, `$XDG_CONFIG_HOME/fleetd/app.json` (macOS: `~/Library/Application
-//! Support/fleetd/app.json`). A missing or unreadable file means the defaults.
+//! to `app-pair.json`, `$XDG_CONFIG_HOME/fleetd/app.json` (macOS: `~/Library/Application Support/fleetd/app.json`).
+//! A missing or unreadable file means the defaults.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,18 +40,7 @@ fn parse(bytes: &[u8]) -> Prefs {
 }
 
 fn path() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from)?;
-    let xdg = std::env::var_os("XDG_CONFIG_HOME").filter(|h| !h.is_empty()).map(PathBuf::from);
-    Some(config_dir(&home, xdg.as_deref(), cfg!(target_os = "macos")).join("fleetd").join("app.json"))
-}
-
-fn config_dir(home: &Path, xdg: Option<&Path>, macos: bool) -> PathBuf {
-    match (macos, xdg) {
-        (true, _) => home.join("Library/Application Support"),
-        // XDG says a relative value is invalid and must be ignored.
-        (false, Some(x)) if x.is_absolute() => x.to_path_buf(),
-        (false, _) => home.join(".config"),
-    }
+    crate::pair::app_pair_file().map(|f| f.with_file_name("app.json"))
 }
 
 #[cfg(test)]
@@ -70,14 +59,5 @@ mod tests {
     fn round_trips() {
         let prefs = Prefs { theme: Mode::Light };
         assert_eq!(parse(&serde_json::to_vec(&prefs).unwrap()), prefs);
-    }
-
-    #[test]
-    fn config_dir_follows_the_platform_and_xdg() {
-        let home = Path::new("/home/u");
-        assert_eq!(config_dir(home, None, false), Path::new("/home/u/.config"));
-        assert_eq!(config_dir(home, Some(Path::new("/cfg")), false), Path::new("/cfg"));
-        assert_eq!(config_dir(home, Some(Path::new("rel")), false), Path::new("/home/u/.config"));
-        assert_eq!(config_dir(home, Some(Path::new("/cfg")), true), Path::new("/home/u/Library/Application Support"));
     }
 }

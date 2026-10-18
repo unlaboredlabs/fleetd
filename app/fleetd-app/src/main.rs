@@ -1,11 +1,9 @@
 mod actions;
 mod bench;
 mod client;
-// Phase-one components of the design system, wired into the shell next.
-#[allow(dead_code)]
 mod composer;
 mod crash;
-// The workstream diff view; the hub serves no diffs yet.
+// The full diff view waits on the hub serving workstream diffs; the lead log already tints diff output.
 #[allow(dead_code)]
 mod diff;
 #[allow(dead_code)]
@@ -13,26 +11,19 @@ mod diffview;
 mod fake;
 mod input;
 mod keychain;
-#[allow(dead_code)]
 mod links;
 mod menus;
 mod notify;
 mod pair;
-#[allow(dead_code)]
 mod palette;
-#[allow(dead_code)]
 mod prefs;
 mod seal;
-#[allow(dead_code)]
 mod settings;
 mod shell;
-#[allow(dead_code)]
 mod sidebar;
 mod state;
-#[allow(dead_code)]
 mod theme;
 mod titlebar;
-#[allow(dead_code)]
 mod ui;
 mod update;
 

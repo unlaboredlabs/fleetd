@@ -17,16 +17,15 @@ use std::borrow::Cow;
 use gpui::{App, BoxShadow, FontWeight, Global, Hsla, SharedString, Window, WindowAppearance, point, px, rgb, rgba};
 use serde::{Deserialize, Serialize};
 
-/// Type scale (px). Five steps; most text is `MD`, metadata is `XS`, machine text is `SM` in mono.
+/// Type scale (px). Four steps; most text is `MD`, titles are `MD` semibold (hierarchy from weight, not size),
+/// metadata is `XS`, machine text is `SM` in mono.
 pub mod size {
     /// Metadata: counts, timestamps, machine chips, field labels.
     pub const XS: f32 = 11.;
     /// Mono: commands, logs, diffs, ids.
     pub const SM: f32 = 12.;
-    /// Body and controls; the macOS default control size.
+    /// Body, controls and titles; the macOS default control size.
     pub const MD: f32 = 13.;
-    /// Screen titles (semibold).
-    pub const LG: f32 = 15.;
     /// The one headline on the connect screen and empty states.
     pub const XL: f32 = 20.;
 }
@@ -180,7 +179,6 @@ pub const DARK: Palette = Palette {
 #[derive(Clone, Debug)]
 pub struct Theme {
     pub mode: Mode,
-    pub dark: bool,
     pub bg: Hsla,
     pub sidebar: Hsla,
     pub raised: Hsla,
@@ -211,13 +209,11 @@ impl Global for Theme {}
 
 impl Theme {
     pub fn new(mode: Mode, os: WindowAppearance, ui_font: SharedString, mono_font: SharedString) -> Self {
-        let dark = mode.is_dark(os);
-        let p = if dark { DARK } else { LIGHT };
+        let p = if mode.is_dark(os) { DARK } else { LIGHT };
         let c = |v: u32| -> Hsla { rgb(v).into() };
         let a = |v: u32| -> Hsla { rgba(v).into() };
         Theme {
             mode,
-            dark,
             bg: c(p.bg),
             sidebar: c(p.sidebar),
             raised: c(p.raised),
@@ -254,8 +250,11 @@ impl Theme {
     }
 }
 
+/// The current theme. Before [`init`] (tests, or a view built before the window), the dark defaults.
 pub fn theme(cx: &App) -> &Theme {
-    cx.global::<Theme>()
+    static FALLBACK: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    cx.try_global::<Theme>()
+        .unwrap_or_else(|| FALLBACK.get_or_init(|| Theme::new(Mode::Dark, WindowAppearance::Dark, "IBM Plex Sans".into(), "Lilex".into())))
 }
 
 /// Registers fonts, resolves the saved mode against the window's appearance, and follows OS changes.

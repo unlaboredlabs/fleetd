@@ -144,6 +144,9 @@ pub enum LogKind {
     Ok,
     Error,
     User,
+    /// Added and removed lines of a diff in an action's output.
+    DiffAdd,
+    DiffDel,
 }
 
 pub struct LogLine {
