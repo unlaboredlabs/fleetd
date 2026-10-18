@@ -6,6 +6,7 @@
 //! One `Executors` serves thread watching, workspace files and changes, the runner's info and permission answers.
 //! Calls go out as `session_call` frames; the link server hands every `session_reply`, `machine_event` and
 //! `thread_event` frame to `handle_frame`.
+pub mod activity;
 pub mod providers;
 pub mod shell_mapper;
 pub mod thread_view;
@@ -35,7 +36,7 @@ use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
     MachineEvent, MachineEventFrame, PermissionDecision, RunnerInfo, SessionCall, SessionCallFrame,
     SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult, SessionWorkspace,
-    ThreadEventFrame,
+    ThreadEvent, ThreadEventFrame,
 };
 use futures_util::StreamExt;
 use serde_json::json;
@@ -232,6 +233,16 @@ pub struct ThreadChanges {
     pub pull_request_urls: Vec<String>,
 }
 
+/// A followed thread's live lane values (see `activity`).
+#[derive(Debug, Clone)]
+pub struct LiveParts {
+    pub activity: Option<fleetd_contracts::live::ActivityNow>,
+    pub tokens: Option<fleetd_contracts::live::Tokens>,
+    pub spark: fleetd_contracts::live::Spark,
+    pub text: Option<activity::StreamText>,
+    pub run_active: bool,
+}
+
 /// A thread's tail, newest first (thread_tail's items, thread and truncated).
 #[derive(Debug, Clone)]
 pub struct Tail {
@@ -249,6 +260,8 @@ enum Ready {
 
 struct WatchState {
     view: ThreadView,
+    /// What the thread is doing now, for the app's live lanes.
+    activity: activity::ActivityTracker,
     last_used_ms: u64,
     /// Any machine or thread frame for the session counts as progress; starts at the follow's opening.
     last_frame_ms: u64,
@@ -689,9 +702,17 @@ impl Executors {
             .get(machine_id)
             .and_then(|s| s.watches.get(frame.session_id.as_str()).cloned());
         let Some(w) = w else { return };
+        let root = matches!(frame.event, ThreadEvent::Snapshot(_))
+            .then(|| self.session_root(machine_id, &frame.event))
+            .flatten();
         let ready = {
             let mut s = w.state.lock().unwrap();
-            s.last_frame_ms = self.now_ms();
+            let now = self.now_ms();
+            s.last_frame_ms = now;
+            if root.is_some() {
+                s.activity.set_root(root);
+            }
+            s.activity.apply(&frame.event, now as i64);
             thread_view::apply_thread_event(&mut s.view, &frame.event);
             s.view.ready
         };
@@ -1049,6 +1070,7 @@ impl Executors {
                     let w = Arc::new(Watch {
                         state: Mutex::new(WatchState {
                             view: ThreadView::default(),
+                            activity: activity::ActivityTracker::default(),
                             last_used_ms: now,
                             last_frame_ms: now,
                             pinned: false,
@@ -1098,11 +1120,13 @@ impl Executors {
             Err(e) => e,
             Ok(output) => {
                 if let SessionOutput::Snapshot(snapshot) = output {
+                    let event = ThreadEvent::Snapshot(snapshot);
+                    let root = self.session_root(&r.machine_id, &event);
+                    let now = self.now_ms() as i64;
                     let mut s = w.state.lock().unwrap();
-                    thread_view::apply_thread_event(
-                        &mut s.view,
-                        &fleetd_contracts::sessions::ThreadEvent::Snapshot(snapshot),
-                    );
+                    s.activity.set_root(root);
+                    s.activity.apply(&event, now);
+                    thread_view::apply_thread_event(&mut s.view, &event);
                     drop(s);
                     w.settle(Ready::Open);
                 }
@@ -1427,6 +1451,12 @@ impl Executors {
             .collect()
     }
 
+    /// The thread as last seen: its status ("running", "waiting", "idle", "completed", "failed", "interrupted"),
+    /// model and effort.
+    pub fn thread_summary(&self, r: &ThreadRef) -> Option<Summary> {
+        Some(self.tracked(r)?.summary)
+    }
+
     /// The session's latest run as last seen; None for an unknown thread.
     pub fn latest_run(&self, r: &ThreadRef) -> Option<LatestRun> {
         let t = self.tracked(r)?;
@@ -1482,6 +1512,47 @@ impl Executors {
         Some(Progress {
             last_frame_ms: s.last_frame_ms,
             tool: thread_view::open_tool(&s.view, active.as_deref()),
+        })
+    }
+
+    /// The live parts of a followed thread's lane at the hub's `now`; None when nobody follows it (it is not running,
+    /// or its machine is unlinked).
+    pub fn live(&self, r: &ThreadRef) -> Option<LiveParts> {
+        let w = self
+            .machines
+            .lock()
+            .unwrap()
+            .get(&r.machine_id)?
+            .watches
+            .get(r.thread_id.as_str())?
+            .clone();
+        let now = self.now_ms() as i64;
+        let s = w.state.lock().unwrap();
+        if !s.view.ready {
+            return None;
+        }
+        Some(LiveParts {
+            activity: s.activity.now(now),
+            tokens: s.activity.tokens(),
+            spark: s.activity.spark(now),
+            text: s.activity.text().cloned(),
+            run_active: s.activity.run_active(),
+        })
+    }
+
+    /// Where a session's paths are relative to: its worktree, else its project's workspace root.
+    fn session_root(&self, machine_id: &MachineId, event: &ThreadEvent) -> Option<String> {
+        let ThreadEvent::Snapshot(snap) = event else {
+            return None;
+        };
+        snap.summary.worktree_path.clone().or_else(|| {
+            let machines = self.machines.lock().unwrap();
+            machines
+                .get(machine_id)?
+                .shell
+                .projects
+                .get(snap.summary.project_id.as_str())
+                .map(|p| p.workspace_root.clone())
         })
     }
 
@@ -1603,6 +1674,43 @@ impl Executors {
             SessionOutput::File { contents } => Ok(contents),
             _ => Err(failed(machine_id, op, "the node sent no file")),
         }
+    }
+
+    /// The project's files best matching `query`, repo-relative.
+    pub async fn list_files(
+        &self,
+        r: &ProjectRef,
+        query: &str,
+        limit: i64,
+    ) -> Result<(Vec<String>, bool), ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::ListFiles {
+            project_id: r.project_id.clone(),
+            query: fleetd_contracts::prim::Text::unchecked(js_take(query, 200)),
+            limit: fleetd_contracts::prim::Int::unchecked(limit.clamp(1, 50)),
+        };
+        match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::Files { paths, truncated } => Ok((paths, truncated)),
+            _ => Err(failed(&r.machine_id, op, "the node sent no file list")),
+        }
+    }
+
+    /// Writes a file under the project's `.fleetd/attachments/`.
+    pub async fn put_file(
+        &self,
+        r: &ProjectRef,
+        rel_path: &str,
+        data_b64: String,
+    ) -> Result<(), ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::PutFile {
+            project_id: r.project_id.clone(),
+            rel_path: non_empty(&r.machine_id, op, "path", rel_path)?,
+            data_b64: non_empty(&r.machine_id, op, "file", &data_b64)?,
+        };
+        self.call(&r.machine_id, op, call, Duration::from_secs(60))
+            .await
+            .map(|_| ())
     }
 
     /// The repo's default branch at `cwd`, else its current branch.

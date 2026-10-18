@@ -34,6 +34,8 @@ pub enum LineKind {
     TaskWaiting,
     Train,
     ResearchVerdict,
+    /// A person added to an order (`order_note`).
+    Human,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +90,7 @@ impl Trigger {
                 LineKind::TaskWaiting => "task_waiting",
                 LineKind::Train => "train",
                 LineKind::ResearchVerdict => "research_verdict",
+                LineKind::Human => "human",
             },
         }
     }
@@ -240,6 +243,24 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
     }
 }
 
+impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
+    /// Flushes `item` now, with whatever else is pending for `key`; that key's running timers then find nothing.
+    pub fn push_now<F>(self: &Arc<Self>, key: K, item: T, flush: F)
+    where
+        F: FnOnce(K, Vec<T>) -> BoxFuture<()> + Send + 'static,
+    {
+        let mut items = self
+            .pending
+            .lock()
+            .unwrap()
+            .remove(&key)
+            .map(|p| p.items)
+            .unwrap_or_default();
+        items.push(item);
+        tokio::spawn(flush(key, items));
+    }
+}
+
 fn key_of(r: &ProjectRef) -> String {
     format!("{}/{}", r.machine_id, r.project_id)
 }
@@ -271,6 +292,15 @@ impl LeadWakes {
         self.debouncer.push(r.clone(), trigger, move |r, triggers| {
             Box::pin(async move { this.flush(r, triggers).await })
         });
+    }
+
+    /// Wakes the lead now with this trigger and any pending ones, skipping the debounce (a person steering).
+    pub fn trigger_now(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
+        let this = Arc::clone(self);
+        self.debouncer
+            .push_now(r.clone(), trigger, move |r, triggers| {
+                Box::pin(async move { this.flush(r, triggers).await })
+            });
     }
 
     /// The lead digest as of now, with `answers` as its "since your last wake" list.

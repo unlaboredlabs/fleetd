@@ -27,7 +27,23 @@ pub fn register(tools: &mut Registry) {
     });
     tools.add::<IntakeSubmitInput, IntakeSubmitOutput, _, _>(
         "intake_submit",
-        |hub: Arc<Hub>, caller, input| async move { hub.leads.intake_submit(&caller, input).await },
+        |hub: Arc<Hub>, caller, input| async move {
+            // References and attachments are checked before anything is placed, and reach the lead with the intent.
+            let refs = crate::hub::orders::notes::render_refs(
+                &hub,
+                &caller,
+                input.refs.as_ref().map_or(&[][..], |r| r.as_slice()),
+            )?;
+            let files: Vec<AttachmentId> = input.attachments.iter().flatten().cloned().collect();
+            crate::hub::intake::attachments::check(&hub, &caller, &files)?;
+            let out = hub.leads.intake_submit(&caller, input).await?;
+            if let Some(w) = &out.workstream_id
+                && (!refs.is_empty() || !files.is_empty())
+            {
+                crate::hub::orders::notes::with_intent(&hub, &caller, w, &refs, &files).await?;
+            }
+            Ok(out)
+        },
     );
     tools.add::<WorkstreamListInput, WorkstreamListOutput, _, _>(
         "workstream_list",

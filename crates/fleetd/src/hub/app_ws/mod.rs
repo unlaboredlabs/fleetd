@@ -1,6 +1,9 @@
 //! The app WebSocket at /app: `auth` with a key, then `snapshot` for the
-//! fleetd_status data, `events` to stream HubEvents after a cursor as they happen, and `call` to run any MCP tool
-//! with the session's key, through the same registry, grants and limits as /mcp.
+//! fleetd_status data, `events` to stream HubEvents after a cursor as they happen, `call` to run any MCP tool
+//! with the session's key, through the same registry, grants and limits as /mcp, and `live` for ephemeral lane
+//! frames (see `live`).
+pub mod live;
+
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};
 use crate::hub::auth::AuthError;
 use crate::hub::mcp::invalid_input;
@@ -125,6 +128,9 @@ struct Session {
     caller: Option<(String, Caller)>,
     stream: Option<tokio::task::JoinHandle<()>>,
     calls: JoinSet<()>,
+    /// The live subscription's pump, and the one-frame slot it writes to.
+    live: Option<tokio::task::JoinHandle<()>>,
+    live_slot: Arc<live::LiveSlot>,
 }
 
 /// What to do with the socket after a frame.
@@ -202,6 +208,7 @@ impl Session {
                     "projects": status["projects"],
                     "attention": status["attention"],
                     "cursor": status["cursor"],
+                    "slots": status["slots"],
                 })),
                 Err(CallError::Tool(error)) => self.send(error_frame(&error, None)),
                 Err(other) => tracing::error!(?other, "app snapshot failed"),
@@ -220,12 +227,22 @@ impl Session {
                 );
                 self.stream = Some(tokio::spawn(task));
             }
-            AppClientMessage::Live { .. } => {
-                let todo = ToolError::new(
-                    ErrorCode::Invalid,
-                    "This hub does not stream live frames yet.",
-                );
-                self.send(error_frame(&todo, None));
+            AppClientMessage::Live { board, focus } => {
+                // A new `live` request replaces the running subscription; its first frame is full.
+                if let Some(old) = self.live.take() {
+                    old.abort();
+                }
+                self.live_slot.clear();
+                let scope = live::Scope {
+                    caller: info,
+                    board,
+                    focus,
+                };
+                self.live = Some(tokio::spawn(live::run(
+                    self.hub.clone(),
+                    scope,
+                    self.live_slot.clone(),
+                )));
             }
         }
         After::Continue
@@ -243,12 +260,22 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         caller: None,
         stream: None,
         calls: JoinSet::new(),
+        live: None,
+        live_slot: Arc::default(),
     };
+    let live_slot = session.live_slot.clone();
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
             Some(frame) = frames.recv() => {
                 if socket.send(Message::Text(frame.to_string().into())).await.is_err() {
+                    break None;
+                }
+            }
+            () = live_slot.notify.notified() => {
+                if let Some(frame) = live_slot.take()
+                    && socket.send(Message::Text(frame.into())).await.is_err()
+                {
                     break None;
                 }
             }
@@ -276,6 +303,9 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     };
     if let Some(stream) = session.stream.take() {
         stream.abort();
+    }
+    if let Some(live) = session.live.take() {
+        live.abort();
     }
     session.calls.abort_all();
     if let Some((code, reason)) = close {

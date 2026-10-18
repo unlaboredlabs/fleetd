@@ -95,6 +95,17 @@ impl Reviews {
         rule_for(change.tier, loaded.as_ref())
     }
 
+    /// Whether a review task reviews or verifies; None for tasks the review gate did not spawn.
+    pub fn role_of(&self, task_id: &str) -> Option<ReviewRole> {
+        self.reviewer_task(task_id).map(|t| t.role)
+    }
+
+    /// Clean reviews the Change's tier asks for: its reviewers plus the verifier when there is one.
+    pub fn reviews_needed(&self, change: &Change) -> i64 {
+        let rule = self.rule_of(change);
+        rule.reviewers.get() + i64::from(rule.verifier)
+    }
+
     fn reviewer_task(&self, task_id: &str) -> Option<ReviewerTask> {
         sql(&self.db, |conn| {
             conn.query_row(

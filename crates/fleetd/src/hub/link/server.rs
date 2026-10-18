@@ -15,7 +15,7 @@ use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::{Machine, MachineStatus};
-use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeToHub, close};
+use fleetd_contracts::node_link::{HubToNode, NodeHello, NodeLoad, NodeToHub, close};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -70,6 +70,15 @@ struct State {
     /// Per-machine silence timers. They outlive the socket, so a quick reconnect never flaps.
     watchdogs: HashMap<MachineId, JoinHandle<()>>,
     next_link_id: u64,
+    /// The latest load each node reported with its heartbeat; dropped when the machine goes offline.
+    loads: HashMap<MachineId, NodeLoad>,
+}
+
+impl NodeLinkServer {
+    /// The load the machine's node last reported; None from older nodes, offline machines or a failed read.
+    pub fn load(&self, machine_id: &MachineId) -> Option<NodeLoad> {
+        self.state.lock().unwrap().loads.get(machine_id).cloned()
+    }
 }
 
 pub struct NodeLinkServer {
@@ -287,6 +296,7 @@ impl NodeLinkServer {
             let mut state = self.state.lock().unwrap();
             state.announced.remove(machine_id);
             state.watchdogs.remove(machine_id);
+            state.loads.remove(machine_id);
             state.links.remove(machine_id)
         };
         let at = self.now_iso();
@@ -628,10 +638,17 @@ impl NodeLinkServer {
             }
             self.touch(&machine_id);
             match frame {
-                NodeToHub::Heartbeat(_) => {
-                    let status = match self.state.lock().unwrap().announced.get(&machine_id) {
-                        Some(Announced::Degraded) => MachineStatus::Degraded,
-                        _ => MachineStatus::Online,
+                NodeToHub::Heartbeat(beat) => {
+                    let status = {
+                        let mut state = self.state.lock().unwrap();
+                        match beat.load {
+                            Some(load) => state.loads.insert(machine_id.clone(), load),
+                            None => state.loads.remove(&machine_id),
+                        };
+                        match state.announced.get(&machine_id) {
+                            Some(Announced::Degraded) => MachineStatus::Degraded,
+                            _ => MachineStatus::Online,
+                        }
                     };
                     let at = Timestamp(self.now_iso());
                     if let Err(e) = self.deps.store.machine_set_status(&machine_id, status, &at) {
