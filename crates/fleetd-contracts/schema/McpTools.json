@@ -8707,136 +8707,18 @@
     },
     "StatusGetOutput": {
       "properties": {
-        "done": {
-          "items": {
-            "$ref": "#/$defs/DoneRow"
-          },
-          "maxItems": 10,
-          "type": "array"
-        },
-        "eta": {
-          "$ref": "#/$defs/StatusEta"
-        },
-        "gates": {
-          "items": {
-            "$ref": "#/$defs/Gate"
-          },
-          "maxItems": 3,
-          "type": "array"
-        },
-        "headline": {
-          "$ref": "#/$defs/Headline"
-        },
-        "health": {
-          "$ref": "#/$defs/Health"
-        },
-        "inProgress": {
-          "items": {
-            "$ref": "#/$defs/InProgressRow"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "markers": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/Marker"
-          },
-          "maxItems": 3,
-          "type": "array"
-        },
-        "more": {
-          "$ref": "#/$defs/MoreCounts"
-        },
-        "needsYou": {
-          "$ref": "#/$defs/NeedsYou"
+        "doc": {
+          "$ref": "#/$defs/StatusDoc"
         },
         "next": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "now": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The hub clock when the doc was rendered."
-        },
-        "parts": {
-          "items": {
-            "$ref": "#/$defs/ScopePart"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "progress": {
-          "$ref": "#/$defs/Progress"
-        },
-        "risks": {
-          "items": {
-            "$ref": "#/$defs/Risk"
-          },
-          "maxItems": 5,
-          "type": "array"
-        },
-        "scope": {
-          "$ref": "#/$defs/StatusScope"
-        },
-        "seq": {
-          "$ref": "#/$defs/EventSeq",
-          "description": "The event log's head the doc reflects; `status_seen` records it."
-        },
-        "since": {
-          "$ref": "#/$defs/Since"
-        },
-        "stale": {
-          "items": {
-            "$ref": "#/$defs/StaleSource"
-          },
-          "maxItems": 10,
-          "type": "array"
-        },
-        "title": {
-          "description": "\"Fleet\", the project's title or the order's.",
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
         "truncated": {
           "type": "boolean"
-        },
-        "version": {
-          "description": "Bumps whenever the doc's content changes; `status_wait` waits past it.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "virtualTier": {
-          "$ref": "#/$defs/Tier",
-          "description": "The order's tier when the scope is an order with no plan items."
         }
       },
       "required": [
-        "scope",
-        "title",
-        "version",
-        "seq",
-        "now",
-        "progress",
-        "markers",
-        "eta",
-        "gates",
-        "headline",
-        "since",
-        "parts",
-        "done",
-        "inProgress",
-        "next",
-        "needsYou",
-        "risks",
-        "health",
-        "stale",
-        "more"
+        "doc"
       ],
       "type": "object"
     },

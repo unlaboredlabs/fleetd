@@ -1037,10 +1037,8 @@ output!(SessionPromptGetOutput {
 
 // status_get, status_wait, status_seen: the status view of the fleet, a project or an order.
 input!(StatusGetInput { scope: StatusScope });
-output!(StatusGetOutput {
-    #[serde(flatten)]
-    doc: StatusDoc,
-});
+// Not flattened: the doc's own `next` (Next-up rows) would clash with the output's `next` hint.
+output!(StatusGetOutput { doc: StatusDoc });
 input!(StatusWaitInput {
     scope: StatusScope,
     /// The version the caller has; absent waits for none (answers at once).
@@ -1373,6 +1371,31 @@ mod tests {
         assert_eq!(McpToolName::DoctorFix.scope(), Role::Operate);
         assert_eq!(McpToolName::FleetdStatus.scope(), Role::Read);
         assert_eq!(McpToolName::parse("push_subscribe"), None);
+    }
+
+    #[test]
+    fn status_get_round_trips_a_doc_with_next_rows() {
+        let doc = json!({
+            "scope": { "kind": "order", "workstreamId": "W41" },
+            "title": "native runner", "version": 3, "seq": 120, "now": "2026-10-18T14:02:07.000Z",
+            "progress": { "pct": 72, "done": 5, "total": 8, "polishDone": 2, "polishTotal": 5,
+                          "asOf": "2026-10-18T14:02:07.000Z" },
+            "markers": [], "eta": { "samples": 2, "basis": "none" }, "gates": [],
+            "headline": { "text": "Nothing running. Nothing needs you.", "source": "template",
+                          "at": "2026-10-18T14:02:07.000Z" },
+            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "asked": 0, "scopeItems": 0 },
+            "parts": [], "done": [], "inProgress": [],
+            "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
+            "needsYou": { "count": 0, "askIds": [] }, "risks": [],
+            "health": { "ci": [], "machines": [], "usage": [],
+                        "slots": { "running": 0, "used": 0, "cap": 40, "queued": 0 } },
+            "stale": [],
+            "more": { "done": 0, "inProgress": 0, "next": 0, "risks": 0, "parts": 0, "stale": 0 }
+        });
+        let output = json!({ "doc": doc, "next": "status_wait" });
+        let decoded: StatusGetOutput = decode(output.clone()).unwrap();
+        assert_eq!(decoded.doc.next.len(), 1);
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), output);
     }
 
     #[test]
