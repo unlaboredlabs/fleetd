@@ -1,9 +1,15 @@
-//! The live checklist `fleetd init` prints: one line per step, rewritten in place from "…" to its outcome when
-//! nothing else was printed in between.
+//! What `fleetd init` and `fleetd doctor` print, clack style on a terminal: a step header per group (`◆  Logins
+//! 2/6`), a spinner while a check runs that resolves to one ✓/✗/!/– line, a one-line fix under a failure. Without a
+//! terminal the same items come out as plain lines. Colors follow NO_COLOR; glyphs fall back to ASCII where the
+//! terminal can't show them.
 
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+use console::{Emoji, style};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     Done,
     Failed,
@@ -18,72 +24,178 @@ pub struct Item {
     pub fix: Option<String>,
 }
 
+struct Spinner {
+    stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
 pub struct Checklist {
     pub items: Vec<Item>,
     /// Steps left to the user on purpose (`--no-service`: start the hub and nodes): (what, command).
     pub todos: Vec<(String, String)>,
-    tty: bool,
-    /// The running step's title and the line count when it started.
-    running: Option<(String, usize)>,
+    pub rich: bool,
+    sections: usize,
+    section: usize,
+    spinner: Option<Spinner>,
+}
+
+const BAR: Emoji = Emoji("│", "|");
+const STEP: Emoji = Emoji("◆", "*");
+const OK: Emoji = Emoji("✓", "+");
+const FAIL: Emoji = Emoji("✗", "x");
+const WARN: Emoji = Emoji("!", "!");
+const SKIP: Emoji = Emoji("–", "-");
+const FRAMES: [Emoji; 4] = [
+    Emoji("◒", "-"),
+    Emoji("◐", "\\"),
+    Emoji("◓", "|"),
+    Emoji("◑", "/"),
+];
+
+impl Default for Checklist {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Checklist {
+    /// Rich on a terminal, plain lines otherwise.
     pub fn new() -> Self {
         Checklist {
             items: Vec::new(),
             todos: Vec::new(),
-            tty: std::io::stderr().is_terminal(),
-            running: None,
+            rich: std::io::stderr().is_terminal(),
+            sections: 0,
+            section: 0,
+            spinner: None,
         }
     }
 
-    fn paint(&self, code: &str, text: &str) -> String {
-        if self.tty {
-            format!("\x1b[{code}m{text}\x1b[0m")
+    pub fn plain() -> Self {
+        let mut list = Self::new();
+        list.rich = false;
+        list
+    }
+
+    pub fn set_sections(&mut self, n: usize) {
+        self.sections = n;
+    }
+
+    fn out(&self, text: &str) {
+        let _ = writeln!(std::io::stderr(), "{text}");
+    }
+
+    /// A group header: `◆  Logins  2/6`.
+    pub fn section(&mut self, name: &str) {
+        self.stop_spinner();
+        self.section += 1;
+        let count = if self.sections > 0 {
+            format!("  {}/{}", self.section, self.sections)
         } else {
-            text.to_owned()
+            String::new()
+        };
+        if self.rich {
+            self.out(&format!(
+                "{}\n{}  {}{}",
+                style(BAR).dim().for_stderr(),
+                style(STEP).cyan().for_stderr(),
+                style(name).bold().for_stderr(),
+                style(count).dim().for_stderr()
+            ));
+        } else {
+            self.out(&format!("\n{name}{count}"));
+        }
+    }
+
+    /// Text under the bar: a short explanation or a command to copy.
+    pub fn note(&mut self, text: &str) {
+        self.stop_spinner();
+        for line in text.lines() {
+            if self.rich {
+                self.out(&format!("{}  {line}", style(BAR).dim().for_stderr()));
+            } else {
+                self.out(&format!("  {line}"));
+            }
         }
     }
 
     pub fn line(&self, item: &Item) -> String {
         let mark = match item.state {
-            State::Done => self.paint("32", "✓"),
-            State::Failed => self.paint("31", "✗"),
-            State::Skipped => self.paint("2", "–"),
-            State::Warn => self.paint("33", "!"),
-        };
-        let mut text = format!("{mark} {}", item.title);
-        if !item.detail.is_empty() {
-            text.push_str(&format!(": {}", item.detail));
+            State::Done => style(OK).green(),
+            State::Failed => style(FAIL).red(),
+            State::Warn => style(WARN).yellow(),
+            State::Skipped => style(SKIP).dim(),
         }
+        .for_stderr();
+        let title = style(&item.title).bold().for_stderr();
+        let mut text = if item.detail.is_empty() {
+            format!("{mark}  {title}")
+        } else {
+            format!("{mark}  {title} {}", item.detail)
+        };
         if let Some(fix) = &item.fix {
-            text.push_str(&format!(". Fix: {}", self.paint("1", fix)));
+            let label = style("Fix:").dim().for_stderr();
+            let fix = style(fix).bold().for_stderr();
+            if self.rich {
+                text.push_str(&format!(
+                    "\n{}  {label} {fix}",
+                    style(BAR).dim().for_stderr()
+                ));
+            } else {
+                text.push_str(&format!(". Fix: {fix}"));
+            }
         }
         text
     }
 
-    /// Shows `… title` until the step's outcome replaces it.
+    /// A running check: a spinner with `title…` until [`Checklist::finish`].
     pub fn start(&mut self, title: &str) {
-        super::say(&format!("{} {title}", self.paint("2", "…")));
-        self.running = Some((title.to_owned(), super::said()));
+        self.stop_spinner();
+        if !self.rich {
+            return;
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        let text = format!("{title}…");
+        let thread = std::thread::spawn(move || {
+            let term = console::Term::stderr();
+            let _ = term.hide_cursor();
+            let mut i = 0;
+            while !flag.load(Ordering::Relaxed) {
+                let frame = style(&FRAMES[i % FRAMES.len()]).magenta().for_stderr();
+                let _ = term.clear_line();
+                let _ = term.write_str(&format!("{frame}  {text}"));
+                i += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            let _ = term.clear_line();
+            let _ = term.show_cursor();
+        });
+        self.spinner = Some(Spinner {
+            stop,
+            thread: Some(thread),
+        });
+    }
+
+    /// Stops the spinner, so a prompt or a program that needs the terminal can take it.
+    pub fn stop_spinner(&mut self) {
+        if let Some(mut spinner) = self.spinner.take() {
+            spinner.stop.store(true, Ordering::Relaxed);
+            if let Some(thread) = spinner.thread.take() {
+                let _ = thread.join();
+            }
+        }
     }
 
     pub fn finish(&mut self, title: &str, state: State, detail: &str, fix: Option<&str>) {
+        self.stop_spinner();
         let item = Item {
             title: title.to_owned(),
             state,
             detail: detail.to_owned(),
             fix: fix.map(str::to_owned),
         };
-        let in_place = self.tty
-            && self
-                .running
-                .take()
-                .is_some_and(|(running, at)| running == title && at == super::said());
-        if in_place {
-            eprint!("\x1b[1A\r\x1b[2K");
-        }
-        super::say(&self.line(&item));
+        self.out(&self.line(&item));
         self.items.push(item);
     }
 
@@ -118,8 +230,8 @@ impl Checklist {
         self.failures().any(|i| i.fix.as_deref() == Some(fix))
     }
 
-    /// What the closing summary lists: each failure once (the doctor may find what a step already reported), then
-    /// what was left to the user.
+    /// What the closing summary lists: each failure once (the doctor may find what a step already reported), as
+    /// "what: fix", then what was left to the user.
     pub fn needs_you(&self) -> Vec<String> {
         let mut lines: Vec<String> = Vec::new();
         let mut fixes: Vec<&str> = Vec::new();
@@ -130,14 +242,48 @@ impl Checklist {
                 }
                 fixes.push(fix);
             }
-            lines.push(self.line(item));
+            lines.push(format!(
+                "{}: {}",
+                item.title,
+                item.fix.as_deref().unwrap_or(&item.detail)
+            ));
         }
         lines.extend(
             self.todos
                 .iter()
-                .map(|(what, command)| format!("→ {what}: {}", self.paint("1", command))),
+                .map(|(what, command)| format!("{what}: {command}")),
         );
         lines
+    }
+
+    /// The end: a short box of what needs you (if anything), then the one next action.
+    pub fn outro(&mut self, needs_you: &[String], next: &str) {
+        self.stop_spinner();
+        if self.rich {
+            if needs_you.is_empty() {
+                self.out(&style(BAR).dim().for_stderr().to_string());
+            } else {
+                let _ = cliclack::note(
+                    format!("{} step(s) need you", needs_you.len()),
+                    needs_you.join("\n"),
+                );
+            }
+            let _ = cliclack::outro(next);
+        } else {
+            if !needs_you.is_empty() {
+                self.out(&format!("\n{} step(s) need you:", needs_you.len()));
+                for line in needs_you {
+                    self.out(&format!("  {line}"));
+                }
+            }
+            self.out(&format!("\n{next}"));
+        }
+    }
+}
+
+impl Drop for Checklist {
+    fn drop(&mut self) {
+        self.stop_spinner();
     }
 }
 
@@ -147,8 +293,7 @@ mod tests {
 
     #[test]
     fn the_closing_list_names_each_problem_once_then_what_is_left_to_you() {
-        let mut list = Checklist::new();
-        list.tty = false;
+        let mut list = Checklist::plain();
         list.failed("claude", "not logged in", "claude auth login");
         list.failed("gh", "not logged in", "gh auth login");
         list.failed(
@@ -166,9 +311,9 @@ mod tests {
         assert_eq!(
             list.needs_you(),
             [
-                "✗ claude: not logged in. Fix: claude auth login",
-                "✗ gh: not logged in. Fix: gh auth login",
-                "→ start the hub: fleetd hub start --home ~/.fleetd/hub --listen 127.0.0.1:4790",
+                "claude: claude auth login",
+                "gh: gh auth login",
+                "start the hub: fleetd hub start --home ~/.fleetd/hub --listen 127.0.0.1:4790",
             ]
         );
     }
