@@ -1,4 +1,4 @@
-//! The window's content: connect, then the board (tasking first), an order's view, Machines and Settings, with
+//! The window's content: connect, then the board (tasking first), an order's view, Machines, Time and Settings, with
 //! the sidebar, the inbox panel, the machine and train strips, and the palette and floating composer on top.
 //! Screens live in `board.rs`, `order.rs` and `inbox.rs` as `impl Shell` blocks; this file holds the hub link,
 //! navigation, keys and the frame around them.
@@ -39,6 +39,7 @@ use crate::settings::{self, Settings, SettingsEvent};
 use crate::sidebar;
 use crate::state::{Conn, Echo, ProjectKey, SentOrder, State};
 use crate::theme::{STRONG, Theme, metric, size, theme};
+use crate::time::{TimeEvent, TimeView};
 use crate::ui::{self, Variant};
 
 const LINES_PER_SEC: u64 = 50;
@@ -59,6 +60,8 @@ pub enum Screen {
     Board,
     Order,
     Machines,
+    /// The time inspector: an order's timeline, or where the fleet's time went.
+    Time,
     Settings,
 }
 
@@ -154,6 +157,7 @@ pub struct Shell {
     pub(crate) follow: Entity<Composer>,
     pub(crate) settings: Entity<Settings>,
     pub(crate) settings_section: settings::Section,
+    time: Entity<TimeView>,
     /// Where Settings' Done goes back to.
     before_settings: Screen,
     pub(crate) prompts_ui: crate::prompts::Ui,
@@ -199,6 +203,7 @@ impl Shell {
         live::motion::init(cx);
         live::motion::set_pref(crate::prefs::load().motion, cx);
         let settings = cx.new(|_| Settings::default());
+        let time = cx.new(|cx| TimeView::new(crate::prefs::load().time, cx));
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let log_scroll = UniformListScrollHandle::new();
@@ -234,9 +239,18 @@ impl Shell {
             cx.subscribe(&settings, |this, _, event: &SettingsEvent, cx| {
                 match event {
                     SettingsEvent::Disconnect => this.disconnect(cx),
+                    SettingsEvent::Retention(days) => {
+                        if this.bench.is_some() {
+                            this.state.time.store = Some(Ok((*days, 41_900_000)));
+                        } else {
+                            let out = this.state.set_retention(*days);
+                            this.send(out);
+                        }
+                    }
                 }
                 cx.notify();
             }),
+            cx.subscribe(&time, Self::on_time_event),
             cx.subscribe_in(&docked, window, Self::on_composer_event),
             cx.subscribe_in(&follow, window, Self::on_composer_event),
         ];
@@ -266,6 +280,7 @@ impl Shell {
             follow,
             settings,
             settings_section: settings::Section::General,
+            time,
             before_settings: Screen::Board,
             prompts_ui: crate::prompts::Ui::new(cx),
             sidebar_hidden: false,
@@ -683,6 +698,7 @@ impl Shell {
         self.sync_lanes(cx);
         self.update_live(false, cx);
         self.sync_conversation(cx);
+        self.sync_time(cx);
         self.board_remeasure = true;
     }
 
@@ -841,8 +857,90 @@ impl Shell {
             let out = self.state.open_doctor();
             self.send(out);
         }
+        if screen != Screen::Time && self.screen == Screen::Time {
+            self.state.time_close();
+        }
+        if screen == Screen::Settings && self.screen != Screen::Settings {
+            if self.bench.is_some() {
+                crate::fake::time_store(&mut self.state);
+            } else {
+                let since = fleetd_contracts::ids::Timestamp::from(crate::live::state::fmt_iso(now_ms() - 3_600_000));
+                let out = self.state.time_store(since);
+                self.send(out);
+            }
+        }
         self.screen = screen;
         self.selected = 0;
+    }
+
+    /// The time inspector on an order (its timeline) or, with none, on what the filters pick.
+    pub(crate) fn open_time(&mut self, order: Option<String>, cx: &mut Context<Self>) {
+        if !self.connected() {
+            return;
+        }
+        self.go(Screen::Time);
+        let now = self.state.live.hub_now_ms(now_ms());
+        self.time.update(cx, |v, cx| v.open(order, now, cx));
+        self.pending_focus = Some(self.time.focus_handle(cx));
+        cx.notify();
+    }
+
+    fn on_time_event(&mut self, _: Entity<TimeView>, event: &TimeEvent, cx: &mut Context<Self>) {
+        let bench = self.bench.is_some();
+        match event {
+            TimeEvent::Query(q) => {
+                let out = self.state.time_open(q.as_ref().clone());
+                if bench {
+                    crate::fake::time_answer(&mut self.state);
+                } else {
+                    self.send(out);
+                }
+            }
+            TimeEvent::Linked(linked) => {
+                let out = self.state.time_linked(linked.clone());
+                if bench {
+                    crate::fake::time_linked(&mut self.state);
+                } else {
+                    self.send(out);
+                }
+            }
+            TimeEvent::Window { machine, thread, item } => {
+                let out = self.state.time_window(machine, thread, item);
+                if bench {
+                    crate::fake::time_window(&mut self.state);
+                } else {
+                    self.send(out);
+                }
+            }
+            TimeEvent::CloseLinked => self.state.time_close_linked(),
+            TimeEvent::CloseWindow => self.state.time_close_window(),
+            TimeEvent::OpenOrder(w) => {
+                let w = w.clone();
+                self.open_order(&w, cx);
+                return;
+            }
+            TimeEvent::Save(filters) => {
+                let filters = filters.clone();
+                cx.background_executor()
+                    .spawn(async move {
+                        let mut p = crate::prefs::load();
+                        p.time = filters;
+                        // Not saved only if the config directory is unwritable; the choice still holds for this run.
+                        let _ = crate::prefs::save(&p);
+                    })
+                    .detach();
+                return;
+            }
+        }
+        self.sync_time(cx);
+    }
+
+    fn sync_time(&mut self, cx: &mut Context<Self>) {
+        if self.screen == Screen::Time {
+            let now = self.state.live.hub_now_ms(now_ms());
+            let state = &self.state;
+            self.time.update(cx, |v, cx| v.sync(state, now, cx));
+        }
     }
 
     pub(crate) fn open_order(&mut self, workstream_id: &str, cx: &mut Context<Self>) {
@@ -876,6 +974,7 @@ impl Shell {
             (_, Some(f)) => f.focus_handle(cx),
             (Screen::Order, None) => self.follow.focus_handle(cx),
             (Screen::Board, None) => self.docked.focus_handle(cx),
+            (Screen::Time, None) => self.time.focus_handle(cx),
             _ => self.focus.clone(),
         });
         cx.notify();
@@ -1107,6 +1206,7 @@ impl Shell {
                 self.pending_focus = Some(self.docked.focus_handle(cx));
             }
             sidebar::Pick::Machines => self.go(Screen::Machines),
+            sidebar::Pick::Time => self.open_time(None, cx),
             sidebar::Pick::Settings => self.go(Screen::Settings),
             sidebar::Pick::Project(key) => {
                 self.selected_project = if self.selected_project.as_ref() == Some(&key) && self.screen == Screen::Board { None } else { Some(key) };
@@ -1131,6 +1231,7 @@ impl Shell {
             }
             Command::Inbox => self.toggle_inbox(true, cx),
             Command::Machines => self.go(Screen::Machines),
+            Command::Time(order) => self.open_time(order, cx),
             Command::Settings => self.go(Screen::Settings),
             Command::Project(key) => self.pick(sidebar::Pick::Project(key), window, cx),
             Command::Order(w) => self.open_order(&w, cx),
@@ -1209,6 +1310,7 @@ impl Shell {
                 None => sidebar::Active::Board,
             },
             Screen::Machines => sidebar::Active::Machines,
+            Screen::Time => sidebar::Active::Time,
             Screen::Settings => sidebar::Active::Settings,
             Screen::Order => self.state.order.as_ref().map_or(sidebar::Active::None, |o| sidebar::Active::Order(o.workstream_id.clone())),
             Screen::Loading | Screen::Connect => sidebar::Active::None,
@@ -1299,13 +1401,18 @@ impl Render for Shell {
             Screen::Board => self.board_screen(cx),
             Screen::Order => self.order_screen(window, cx),
             Screen::Machines => self.machines_screen(cx),
+            Screen::Time => self.time.clone().into_any_element(),
             Screen::Settings => {
                 let hub = settings::Hub {
                     url: self.hub.as_ref().map(|h| h.url.clone().into()),
                     status: self.conn_line(theme(cx)).label,
                     live: self.state.conn == Conn::Live && self.hub.is_some(),
                 };
-                self.settings.update(cx, |s, _| s.hub = hub);
+                let data = self.state.time.store.clone();
+                self.settings.update(cx, |s, _| {
+                    s.hub = hub;
+                    s.data = data;
+                });
                 self.settings_screen(cx)
             }
         };
@@ -1816,6 +1923,22 @@ impl Shell {
             "machines" => self.go(Screen::Machines),
             "settings" => self.go(Screen::Settings),
             "prompts" | "instructions" => self.bench_prompts(base, extra, cx),
+            "time" | "time-breakdown" | "time-insights" | "fleet-time" | "fleet-insights" => {
+                let order = base.starts_with("time").then(|| crate::time::fixture::ORDER.to_string());
+                if extra == "compare" {
+                    self.time.update(cx, |v, _| v.filters.compare = true);
+                }
+                self.open_time(order, cx);
+                let tab = match base {
+                    "time-breakdown" | "fleet-time" => Some(crate::time::Tab::Breakdown),
+                    "time-insights" | "fleet-insights" => Some(crate::time::Tab::Insights),
+                    _ => None,
+                };
+                if let Some(tab) = tab {
+                    self.time.update(cx, |v, cx| v.set_tab(tab, cx));
+                }
+                self.time.update(cx, |v, cx| v.bench_extra(extra, cx));
+            }
             _ => {
                 self.state.order = None;
                 self.open_order(fake::FIXTURE_ORDER, cx);

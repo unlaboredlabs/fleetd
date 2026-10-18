@@ -1,6 +1,6 @@
-//! Settings (⌘, / Ctrl+,, or the app menu): General (appearance, motion, the hub this app is paired with, the
-//! version), Prompts (`prompts.rs`) and Instructions (`instructions.rs`). Appearance and motion apply at once and
-//! are saved; the connection is wherever `keychain.rs` keeps it.
+//! Settings (⌘, / Ctrl+,, or the app menu): General (appearance, motion, the hub this app is paired with, how long
+//! the hub keeps time inspector spans, the version), Prompts (`prompts.rs`) and Instructions (`instructions.rs`).
+//! Appearance and motion apply at once and are saved; the connection is wherever `keychain.rs` keeps it.
 
 use gpui::{AnyElement, Context, EventEmitter, SharedString, Window, div, prelude::*, px};
 
@@ -11,6 +11,8 @@ use crate::ui::{self, Variant};
 pub enum SettingsEvent {
     /// Forget the saved key and go back to the connect screen.
     Disconnect,
+    /// Keep time inspector spans this many days.
+    Retention(i64),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -51,14 +53,18 @@ pub struct Hub {
 
 pub struct Settings {
     pub hub: Hub,
+    /// The hub's span retention (days) and what its span tables take on disk; None until it answered.
+    pub data: Option<Result<(i64, i64), String>>,
     motion: Motion,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hub: Hub::default(), motion: prefs::load().motion }
+        Self { hub: Hub::default(), data: None, motion: prefs::load().motion }
     }
 }
+
+const RETENTION: [(i64, &str); 4] = [(7, "7 days"), (30, "30 days"), (90, "90 days"), (365, "1 year")];
 
 /// A segmented control: one option per button, the current one raised.
 pub(crate) fn segmented<T: Copy + PartialEq + 'static>(
@@ -157,6 +163,33 @@ impl Render for Settings {
                     ),
                 )
             });
+        let data = match &self.data {
+            None => div().text_color(t.quiet).child(if hub.live { "Asking the hub…" } else { "Connect to a hub to see this." }).into_any_element(),
+            Some(Err(e)) => div().max_w(px(320.)).text_color(t.quiet).whitespace_normal().child(e.clone()).into_any_element(),
+            Some(Ok((days, bytes))) => {
+                let options: Vec<(i64, &'static str)> = RETENTION.to_vec();
+                let other = (!options.iter().any(|(d, _)| d == days)).then(|| format!("Now {days} days, set with fleetd time --retention."));
+                let this = cx.entity().downgrade();
+                let pick = segmented(t, "retention", &options, *days, move |d, _, cx| {
+                    this.update(cx, |s, cx| {
+                        if let Some(Ok(cur)) = s.data.as_mut() {
+                            cur.0 = d;
+                        }
+                        cx.emit(SettingsEvent::Retention(d));
+                        cx.notify();
+                    })
+                    .ok();
+                });
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(pick)
+                    .children(other.map(|o| ui::quiet(t, o).text_size(px(size::XS))))
+                    .child(ui::quiet(t, format!("Stored now: {} on the hub.", crate::time::fmt_bytes(*bytes))).text_size(px(size::XS)))
+                    .into_any_element()
+            }
+        };
         div().size_full().flex().flex_col().text_size(px(size::MD)).text_color(t.text).child(
             div()
                 .id("settings-body")
@@ -187,6 +220,15 @@ impl Render for Settings {
                         .gap_6()
                         .child(setting("Hub", format!("This app acts as you on this hub, with a key kept {}.", crate::keychain::where_kept()).into()))
                         .child(connection),
+                )
+                .child(ui::hairline(t))
+                .child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap_6()
+                        .child(setting("Time data", "How long the hub keeps the time inspector's spans. Daily totals stay for 400 days.".into()))
+                        .child(data),
                 )
                 .child(ui::hairline(t))
                 .child(

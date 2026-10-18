@@ -203,6 +203,10 @@ fn live_fixture(state: &mut State) {
         let out = json!({ "orders": [card], "trains": [], "at": FIXTURE_NOW });
         state.live.set_board(&(machine.into(), project.into()), from(out));
     }
+    // W8, finished this morning: the order the time inspector's screenshots open.
+    let mut storefront = serde_json::to_value(crate::live::fixture::board_fixture()).unwrap();
+    storefront["orders"].as_array_mut().unwrap().push(crate::time::fixture::order_card());
+    state.live.set_board(&fleetd, from(storefront));
     state.live.set_order(crate::live::fixture::order_fixture());
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
     state.live.apply(crate::live::fixture::frame_fixture(crate::live::fixture::FULL), now);
@@ -252,6 +256,23 @@ fn fixture_tail() -> Value {
         act("06:40", "command", "fleetd task list --workstream W14", false),
         act("06:52", "command", "fleetd change status X12", false),
     ])
+}
+
+/// The time inspector's tools, answered from `time::fixture` as the hub would.
+pub fn time_answer(state: &mut State) {
+    crate::time::fixture::answer(state);
+}
+
+pub fn time_linked(state: &mut State) {
+    crate::time::fixture::answer_linked(state);
+}
+
+pub fn time_window(state: &mut State) {
+    crate::time::fixture::answer_window(state);
+}
+
+pub fn time_store(state: &mut State) {
+    crate::time::fixture::answer_store(state);
 }
 
 fn from<T: serde::de::DeserializeOwned>(v: Value) -> T {

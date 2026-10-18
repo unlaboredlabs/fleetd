@@ -11,7 +11,7 @@ use std::time::Duration;
 use fleetd_contracts::app::{AppCallId, AppClientMessage, AppServerMessage};
 use fleetd_contracts::doctor::{DoctorCheck, DoctorCheckId};
 use fleetd_contracts::events::{HubEvent, HubEventType};
-use fleetd_contracts::ids::{MachineId, ProjectId};
+use fleetd_contracts::ids::{MachineId, ProjectId, Timestamp};
 use fleetd_contracts::ledger::{Ask, AskId, AskState, Batch, BatchId, BatchState, Lead, LeadState, PlaybookName, Workstream, WorkstreamId};
 use fleetd_contracts::live::OrderCard;
 use fleetd_contracts::mcp::{
@@ -19,11 +19,14 @@ use fleetd_contracts::mcp::{
     AttentionPolicyOutput, DoctorFixInput, DoctorFixOutput, DoctorListInput, DoctorListOutput, FleetStatus, InboxReplyInput, InboxReplyOutput,
     IntakePreviewInput, IntakePreviewOutput, IntakeRef, IntakeSubmitInput, IntakeSubmitOutput, OrderGetInput, OrderGetOutput, OrderNoteInput,
     OrderNoteOutput, OrderStopInput, OrderStopOutput, OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput, ProjectGetInput,
-    ProjectGetOutput, SecretSubmitInput, SecretSubmitOutput, TailItem, ThreadTailInput, ThreadTailOutput,
+    ProjectGetOutput, SecretSubmitInput, SecretSubmitOutput, TailItem, ThreadTailInput, ThreadTailOutput, ThreadWindowInput, ThreadWindowOutput,
+    TimeBreakdownInput, TimeBreakdownOutput, TimeInsightsInput, TimeInsightsOutput, TimeRetentionSetInput, TimeRetentionSetOutput, TimeSpansInput,
+    TimeSpansOutput,
 };
 use fleetd_contracts::model::{Machine, MachineStatus, ProjectOutcome, ProjectSummary, ThreadStatus, ThreadSummary};
 use fleetd_contracts::prim::{Int, IntOr, List, Text};
 use fleetd_contracts::secrets::{SealedSecret, parse_secret_sink};
+use fleetd_contracts::time::{InsightRule, Span as TimeSpan, SpanKind, TimeScope};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -72,6 +75,11 @@ tools! {
     PromptSetInput => PromptSetOutput, "prompt_set";
     PromptResetInput => PromptResetOutput, "prompt_reset";
     SessionPromptGetInput => SessionPromptGetOutput, "session_prompt_get";
+    TimeSpansInput => TimeSpansOutput, "time_spans";
+    TimeBreakdownInput => TimeBreakdownOutput, "time_breakdown";
+    TimeInsightsInput => TimeInsightsOutput, "time_insights";
+    TimeRetentionSetInput => TimeRetentionSetOutput, "time_retention_set";
+    ThreadWindowInput => ThreadWindowOutput, "thread_window";
 }
 
 /// (machineId, projectId)
@@ -118,6 +126,22 @@ pub(crate) enum Purpose {
     },
     /// Settings → Prompts and Instructions, and the "what this agent was told" sheet.
     Prompt(crate::prompts::Call),
+    /// The time inspector, tagged with the query generation it was sent for, so a page for an older query is dropped.
+    Time(TimeCall, u64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TimeCall {
+    Breakdown,
+    Insights,
+    /// One page of the open order's spans.
+    Spans,
+    /// The spans a finding or a breakdown row links to.
+    Linked,
+    Window,
+    Retention,
+    /// Settings → Data: the retention and the stored size.
+    Store,
 }
 
 impl Purpose {
@@ -136,6 +160,7 @@ impl Purpose {
                 | Purpose::Attach(_)
                 | Purpose::Files { .. }
                 | Purpose::Prompt(_)
+                | Purpose::Time(TimeCall::Spans | TimeCall::Linked | TimeCall::Window | TimeCall::Retention, _)
         )
     }
 }
@@ -278,6 +303,64 @@ pub struct InboxItem<'a> {
     pub ask: &'a Ask,
 }
 
+/// What the time inspector asks about. `spans` is set for an order: its timeline needs every span, the other
+/// scopes show totals only.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TimeQuery {
+    pub scope: TimeScope,
+    pub breakdown: TimeBreakdownInput,
+    pub insights: TimeInsightsInput,
+    pub spans: bool,
+}
+
+/// The spans a finding or a breakdown row links to: by rule, by kind, and narrowed on the client to one label or
+/// check name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Linked {
+    pub title: String,
+    pub rule: Option<InsightRule>,
+    pub kinds: Vec<SpanKind>,
+    pub label: Option<String>,
+    pub check: Option<String>,
+}
+
+impl Linked {
+    pub fn keeps(&self, span: &TimeSpan) -> bool {
+        (self.kinds.is_empty() || self.kinds.contains(&span.kind))
+            && self.label.as_ref().is_none_or(|l| span.label.as_deref() == Some(l.as_str()))
+            && self.check.as_ref().is_none_or(|c| span.extra.as_ref().and_then(|e| e.check.as_deref()) == Some(c.as_str()))
+    }
+}
+
+/// Asked for; `None` until the hub answered.
+pub type Pending<T> = Option<Result<T, String>>;
+/// (machine, thread, item).
+pub type ItemAt = (String, String, String);
+pub type LinkedSpans = Option<(Linked, Pending<Vec<TimeSpan>>)>;
+pub type TranscriptWindow = Option<(ItemAt, Pending<ThreadWindowOutput>)>;
+
+#[derive(Default)]
+pub struct TimeState {
+    pub query: Option<TimeQuery>,
+    generation: u64,
+    pub breakdown: Option<Result<TimeBreakdownOutput, String>>,
+    pub insights: Option<Result<TimeInsightsOutput, String>>,
+    /// The open order's spans, oldest id first; pages keep arriving until `spans_done`.
+    pub spans: Vec<TimeSpan>,
+    pub spans_done: bool,
+    pub spans_error: Option<String>,
+    /// What the hub knows is missing from those spans.
+    pub spans_coverage: Option<fleetd_contracts::time::Coverage>,
+    /// What was asked for, and its spans once they arrived (the first page only: 500).
+    pub linked: LinkedSpans,
+    /// (machine, thread, item) and its transcript window.
+    pub window: TranscriptWindow,
+    /// (retention days, stored bytes), for Settings → Data.
+    pub store: Option<Result<(i64, i64), String>>,
+    /// Bumped on every answer, so the view rebuilds only when something arrived.
+    pub version: u64,
+}
+
 pub struct State {
     pub conn: Conn,
     pub machines: Vec<Machine>,
@@ -310,6 +393,8 @@ pub struct State {
     /// Notes steered into a running lead turn, so the conversation can mark them.
     pub steered: VecDeque<String>,
     pub prompts: crate::prompts::Prompts,
+    /// The time inspector's last answers, for the query it has open.
+    pub time: TimeState,
     order_events: HashMap<String, VecDeque<HubEvent>>,
     /// The live subscription last sent on this connection, and whether this hub streams live frames at all.
     live_sub: Option<(bool, Option<String>)>,
@@ -352,6 +437,7 @@ impl Default for State {
             last_project: None,
             steered: VecDeque::new(),
             prompts: crate::prompts::Prompts::default(),
+            time: TimeState::default(),
             order_events: HashMap::new(),
             live_sub: None,
             live_frames: false,
@@ -379,7 +465,11 @@ impl State {
                 self.conn = Conn::Live;
                 self.notice = None;
                 self.snapshot_pending = true;
-                vec![AppClientMessage::Snapshot {}]
+                let mut out = vec![AppClientMessage::Snapshot {}];
+                if let Some(q) = self.time.query.take() {
+                    out.extend(self.time_open(q));
+                }
+                out
             }
             Incoming::Disconnected { reason, retry_in } => {
                 self.reset_calls();
@@ -634,6 +724,195 @@ impl State {
         vec![self.call(Purpose::Files { query: query.to_string() }, &input)]
     }
 
+    // ---- time inspector ---------------------------------------------------------------------
+
+    /// Opens (or re-aims) the time inspector. The same query again sends nothing.
+    pub fn time_open(&mut self, query: TimeQuery) -> Out {
+        if self.time.query.as_ref() == Some(&query) {
+            return Vec::new();
+        }
+        self.time.generation += 1;
+        let g = self.time.generation;
+        let t = &mut self.time;
+        t.breakdown = None;
+        t.insights = None;
+        t.spans.clear();
+        t.spans_done = !query.spans;
+        t.spans_error = None;
+        t.spans_coverage = None;
+        t.linked = None;
+        t.window = None;
+        t.version += 1;
+        let mut out = vec![
+            self.call(Purpose::Time(TimeCall::Breakdown, g), &query.breakdown),
+            self.call(Purpose::Time(TimeCall::Insights, g), &query.insights),
+        ];
+        if query.spans {
+            out.push(self.call(Purpose::Time(TimeCall::Spans, g), &spans_input(&query, None)));
+        }
+        self.time.query = Some(query);
+        out
+    }
+
+    /// The view closed: late answers are dropped and events no longer refetch.
+    pub fn time_close(&mut self) {
+        self.time.query = None;
+        self.time.generation += 1;
+    }
+
+    pub fn time_linked(&mut self, linked: Linked) -> Out {
+        let Some(q) = self.time.query.clone() else { return Vec::new() };
+        let mut input = spans_input(&q, None);
+        input.rule = linked.rule;
+        input.kinds = (!linked.kinds.is_empty()).then(|| List::unchecked(linked.kinds.clone()));
+        self.time.linked = Some((linked, None));
+        self.time.version += 1;
+        vec![self.call(Purpose::Time(TimeCall::Linked, self.time.generation), &input)]
+    }
+
+    pub fn time_close_linked(&mut self) {
+        self.time.linked = None;
+        self.time.version += 1;
+    }
+
+    /// The transcript around one item of a session (click on a span).
+    pub fn time_window(&mut self, machine: &str, thread: &str, item: &str) -> Out {
+        self.time.window = Some(((machine.into(), thread.into(), item.into()), None));
+        self.time.version += 1;
+        let input = ThreadWindowInput {
+            machine_id: MachineId::unchecked(machine),
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked(thread),
+            item_id: Text::unchecked(item),
+            before: IntOr::default(),
+            after: IntOr::default(),
+        };
+        vec![self.call(Purpose::Time(TimeCall::Window, self.time.generation), &input)]
+    }
+
+    pub fn time_close_window(&mut self) {
+        self.time.window = None;
+        self.time.version += 1;
+    }
+
+    /// Settings → Data: the hub's retention and stored size come with any breakdown; the last hour of the fleet
+    /// is the cheapest one.
+    pub fn time_store(&mut self, since: Timestamp) -> Out {
+        let input = TimeBreakdownInput { scope: TimeScope::Fleet, since, until: None, compare: None, filters: Default::default() };
+        self.refetch(Purpose::Time(TimeCall::Store, 0), &input).into_iter().collect()
+    }
+
+    pub fn set_retention(&mut self, days: i64) -> Out {
+        if !self.live_or_echo("Not connected to the hub; retention was not changed.") {
+            return Vec::new();
+        }
+        vec![self.call(Purpose::Time(TimeCall::Retention, 0), &TimeRetentionSetInput { retention_days: Int::unchecked(days) })]
+    }
+
+    /// A running order's open view refetches on the hub events that change its time: no polling.
+    fn time_on_event(&mut self, event: &HubEvent) -> Out {
+        let Some(TimeScope::Order { workstream_id }) = self.time.query.as_ref().map(|q| &q.scope) else { return Vec::new() };
+        let kind = event.r#type.as_str();
+        let concerns = ["task.", "change.", "ask.", "workstream."].iter().any(|p| kind.starts_with(p))
+            || matches!(event.r#type, HubEventType::LeadWoken | HubEventType::PrMerged);
+        let data = event.data.as_ref();
+        let about = data.and_then(|d| d.get("workstreamId")).and_then(|v| v.as_str()) == Some(workstream_id.as_str())
+            || data
+                .and_then(|d| d.get("workstreamIds"))
+                .and_then(|v| v.as_array())
+                .is_some_and(|ws| ws.iter().any(|w| w.as_str() == Some(workstream_id.as_str())));
+        if !concerns || !about {
+            return Vec::new();
+        }
+        let g = self.time.generation;
+        let Some(q) = self.time.query.clone() else { return Vec::new() };
+        let mut out: Out = self.refetch(Purpose::Time(TimeCall::Breakdown, g), &q.breakdown).into_iter().collect();
+        out.extend(self.refetch(Purpose::Time(TimeCall::Insights, g), &q.insights));
+        if q.spans && self.time.spans_done {
+            // From just before the oldest span still open, so the ones that closed come back with their end.
+            let open = self.time.spans.iter().filter(|s| s.end_ms.is_none()).map(|s| s.id.get()).min();
+            let after = open.map(|id| id - 1).or_else(|| self.time.spans.last().map(|s| s.id.get()));
+            self.time.spans_done = false;
+            out.push(self.call(Purpose::Time(TimeCall::Spans, g), &spans_input(&q, after)));
+        }
+        out
+    }
+
+    fn on_time_result(&mut self, call: TimeCall, g: u64, output: serde_json::Value) -> Out {
+        let mut out = Vec::new();
+        let current = g == self.time.generation;
+        match call {
+            TimeCall::Store => self.time.store = Some(parse::<TimeBreakdownOutput>(output).map(|b| (b.retention_days.get(), b.stored_bytes.get()))),
+            TimeCall::Retention => match parse::<TimeRetentionSetOutput>(output) {
+                Ok(r) => {
+                    let bytes = self.time.store.as_ref().and_then(|s| s.as_ref().ok()).map_or(0, |s| s.1);
+                    self.time.store = Some(Ok((r.retention_days.get(), bytes)));
+                }
+                Err(e) => self.echo = Some(Echo { text: e, ok: false }),
+            },
+            _ if !current => return out,
+            TimeCall::Breakdown => self.time.breakdown = Some(parse(output)),
+            TimeCall::Insights => self.time.insights = Some(parse(output)),
+            TimeCall::Spans => match parse::<TimeSpansOutput>(output) {
+                Ok(page) => {
+                    let t = &mut self.time;
+                    t.spans_coverage = Some(page.coverage.clone());
+                    for span in page.spans.into_iter() {
+                        match t.spans.binary_search_by_key(&span.id.get(), |s| s.id.get()) {
+                            Ok(ix) => t.spans[ix] = span,
+                            Err(ix) => t.spans.insert(ix, span),
+                        }
+                    }
+                    match (page.next_after_id, self.time.query.clone()) {
+                        (Some(next), Some(q)) => out.push(self.call(Purpose::Time(TimeCall::Spans, g), &spans_input(&q, Some(next.get())))),
+                        _ => self.time.spans_done = true,
+                    }
+                }
+                Err(e) => {
+                    self.time.spans_error = Some(e);
+                    self.time.spans_done = true;
+                }
+            },
+            TimeCall::Linked => {
+                if let Some((linked, slot)) = self.time.linked.as_mut() {
+                    *slot = Some(parse::<TimeSpansOutput>(output).map(|p| p.spans.into_iter().filter(|s| linked.keeps(s)).collect()));
+                }
+            }
+            TimeCall::Window => {
+                if let Some((_, slot)) = self.time.window.as_mut() {
+                    *slot = Some(parse(output));
+                }
+            }
+        }
+        self.time.version += 1;
+        out
+    }
+
+    fn on_time_error(&mut self, call: TimeCall, g: u64, text: String) {
+        let t = &mut self.time;
+        match call {
+            TimeCall::Store => t.store = Some(Err(text)),
+            TimeCall::Retention => self.echo = Some(Echo { text, ok: false }),
+            _ if g != t.generation => return,
+            TimeCall::Breakdown => t.breakdown = Some(Err(text)),
+            TimeCall::Insights => t.insights = Some(Err(text)),
+            TimeCall::Spans => {
+                t.spans_error = Some(text);
+                t.spans_done = true;
+            }
+            TimeCall::Linked => {
+                if let Some((_, slot)) = t.linked.as_mut() {
+                    *slot = Some(Err(text));
+                }
+            }
+            TimeCall::Window => {
+                if let Some((_, slot)) = t.window.as_mut() {
+                    *slot = Some(Err(text));
+                }
+            }
+        }
+        self.time.version += 1;
+    }
+
     /// The Machines screen opened: list the doctor's checks.
     pub fn open_doctor(&mut self) -> Out {
         self.doctor.get_or_insert_with(Doctor::default);
@@ -834,6 +1113,11 @@ impl State {
             Purpose::Policy => self.request_policy(),
             Purpose::Board(key) => self.request_board(&key),
             Purpose::OrderGet(_) => self.request_order(),
+            Purpose::Time(call @ (TimeCall::Breakdown | TimeCall::Insights), g) if g == self.time.generation => {
+                let q = self.time.query.clone()?;
+                let purpose = Purpose::Time(call, g);
+                if call == TimeCall::Breakdown { self.refetch(purpose, &q.breakdown) } else { self.refetch(purpose, &q.insights) }
+            }
             _ => None,
         }
     }
@@ -937,6 +1221,7 @@ impl State {
         if matches!(event.r#type, HubEventType::PromptChanged | HubEventType::PromptDefaultChanged) {
             out.extend(self.on_prompt_event());
         }
+        out.extend(self.time_on_event(event));
         let project_scoped = ["workstream.", "lead.", "thread."].iter().any(|p| kind.starts_with(p));
         if let (true, Some(machine_id), Some(project_id)) = (project_scoped, &event.machine_id, &event.project_id) {
             let key = (machine_id.to_string(), project_id.to_string());
@@ -994,6 +1279,7 @@ impl State {
     fn on_result(&mut self, purpose: &Purpose, output: serde_json::Value) -> Out {
         match purpose {
             Purpose::Prompt(call) => return self.on_prompt_result(call, output),
+            Purpose::Time(call, g) => return self.on_time_result(*call, *g, output),
             Purpose::Asks => match parse::<AsksListOutput>(output) {
                 Ok(list) => {
                     self.asks_seen = self.asks_sent;
@@ -1193,6 +1479,7 @@ impl State {
     fn on_call_error(&mut self, purpose: &Purpose, text: String) {
         match purpose {
             Purpose::Prompt(call) => self.on_prompt_error(call, text),
+            Purpose::Time(call, g) => self.on_time_error(*call, *g, text),
             Purpose::Asks => self.asks_error = Some(text),
             Purpose::Project(key) => {
                 if let Some(row) = self.projects.iter_mut().find(|r| &r.key() == key) {
@@ -1248,6 +1535,18 @@ impl State {
         if let Some(note) = self.order.as_mut().and_then(|o| o.notes.iter_mut().find(|n| n.request_id == request_id)) {
             note.status = status;
         }
+    }
+}
+
+fn spans_input(q: &TimeQuery, after_id: Option<i64>) -> TimeSpansInput {
+    TimeSpansInput {
+        scope: q.scope.clone(),
+        since: q.breakdown.since.clone(),
+        until: q.breakdown.until.clone(),
+        kinds: None,
+        rule: None,
+        after_id: after_id.map(Int::unchecked),
+        limit: IntOr(Int::unchecked(500)),
     }
 }
 
