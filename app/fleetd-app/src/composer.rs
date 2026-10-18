@@ -97,6 +97,8 @@ pub enum ComposerEvent {
         mime: String,
         data_b64: String,
     },
+    /// "Add project…" in the project picker, or a folder dropped on the composer.
+    AddProject(Option<PathBuf>),
 }
 
 /// A project the order can go to.
@@ -480,7 +482,7 @@ impl Composer {
 
     fn menu_len(&self) -> usize {
         match &self.menu {
-            Some(Menu::Project { .. }) => self.sync.targets.len() + 1,
+            Some(Menu::Project { .. }) => self.sync.targets.len() + 2,
             Some(Menu::Template { .. }) => TEMPLATES.len(),
             Some(Menu::Mention { .. }) => self.mention_items().len(),
             None => 0,
@@ -501,6 +503,11 @@ impl Composer {
         match self.menu.clone() {
             Some(Menu::Project { selected }) => {
                 let ix = ix.unwrap_or(selected);
+                if ix == self.sync.targets.len() + 1 {
+                    self.menu = None;
+                    cx.emit(ComposerEvent::AddProject(None));
+                    return cx.notify();
+                }
                 self.chosen = Some(if ix == 0 { None } else { self.sync.targets.get(ix - 1).map(|t| t.key.clone()) });
             }
             Some(Menu::Template { selected }) => self.template = TEMPLATES.get(ix.unwrap_or(selected)).copied(),
@@ -603,6 +610,11 @@ impl Composer {
 
     fn attach_files(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         for path in paths {
+            // A folder isn't an attachment: dropped here, it adds a project.
+            if path.is_dir() {
+                cx.emit(ComposerEvent::AddProject(Some(path)));
+                continue;
+            }
             let name = path.file_name().map_or_else(|| "file".into(), |n| n.to_string_lossy().to_string());
             if self.attached.len() >= MAX_ATTACHMENTS {
                 self.error = Some(format!("At most {MAX_ATTACHMENTS} attachments per order."));
@@ -744,6 +756,8 @@ impl Composer {
         let mut list = div().id("composer-menu").max_h(px(metric::ROW * MENU_ROWS as f32 + 8.)).overflow_y_scroll().p_1().flex().flex_col();
         let row = |ix: usize, selected: bool, label: String, detail: String, cx: &mut Context<Self>| {
             ui::row(t, ("composer-menu-row", ix), selected)
+                // Rows keep their height in a long list; the menu scrolls instead of squashing them.
+                .flex_none()
                 .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(label))
                 .child(div().text_size(px(size::XS)).text_color(t.quiet).child(detail))
                 .on_click(cx.listener(move |this, _, window, cx| this.pick(Some(ix), window, cx)))
@@ -755,6 +769,8 @@ impl Composer {
                     let detail = if tg.machine_offline { format!("{} offline", tg.machine) } else { tg.machine.to_string() };
                     list = list.child(row(i + 1, *selected == i + 1, tg.title.to_string(), detail, cx));
                 }
+                let add = self.sync.targets.len() + 1;
+                list = list.child(row(add, *selected == add, "Add project…".into(), "a GitHub repo or a folder".into(), cx));
             }
             Menu::Template { selected } => {
                 for (i, tp) in TEMPLATES.iter().enumerate() {

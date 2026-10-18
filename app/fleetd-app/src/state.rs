@@ -34,6 +34,10 @@ use crate::client::Incoming;
 use crate::live::state::LiveState;
 use crate::notify::{Notification, Notifier, Policy};
 use fleetd_contracts::mcp::{
+    EventsWaitInput, EventsWaitOutput, ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput, ProjectInspectInput,
+    ProjectInspectOutput,
+};
+use fleetd_contracts::mcp::{
     PromptGetInput, PromptGetOutput, PromptResetInput, PromptResetOutput, PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput,
     SessionPromptGetInput, SessionPromptGetOutput,
 };
@@ -80,6 +84,10 @@ tools! {
     TimeInsightsInput => TimeInsightsOutput, "time_insights";
     TimeRetentionSetInput => TimeRetentionSetOutput, "time_retention_set";
     ThreadWindowInput => ThreadWindowOutput, "thread_window";
+    ProjectDiscoverInput => ProjectDiscoverOutput, "project_discover";
+    ProjectAddInput => ProjectAddOutput, "project_add";
+    ProjectInspectInput => ProjectInspectOutput, "project_inspect";
+    EventsWaitInput => EventsWaitOutput, "events_wait";
 }
 
 /// (machineId, projectId)
@@ -128,6 +136,13 @@ pub(crate) enum Purpose {
     Prompt(crate::prompts::Call),
     /// The time inspector, tagged with the query generation it was sent for, so a page for an older query is dropped.
     Time(TimeCall, u64),
+    /// The Add project sheet: what's there to add, and the add itself.
+    AddDiscover,
+    AddProject,
+    /// Whether a clone's existing folder is that repo, before offering to add it.
+    AddInspect,
+    /// The add's events since it started, looked up after a reconnect.
+    AddRecover,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -161,6 +176,10 @@ impl Purpose {
                 | Purpose::Files { .. }
                 | Purpose::Prompt(_)
                 | Purpose::Time(TimeCall::Spans | TimeCall::Linked | TimeCall::Window | TimeCall::Retention, _)
+                | Purpose::AddDiscover
+                | Purpose::AddProject
+                | Purpose::AddInspect
+                | Purpose::AddRecover
         )
     }
 }
@@ -395,6 +414,7 @@ pub struct State {
     pub prompts: crate::prompts::Prompts,
     /// The time inspector's last answers, for the query it has open.
     pub time: TimeState,
+    pub add: crate::project_add::Feed,
     order_events: HashMap<String, VecDeque<HubEvent>>,
     /// The live subscription last sent on this connection, and whether this hub streams live frames at all.
     live_sub: Option<(bool, Option<String>)>,
@@ -438,6 +458,7 @@ impl Default for State {
             steered: VecDeque::new(),
             prompts: crate::prompts::Prompts::default(),
             time: TimeState::default(),
+            add: crate::project_add::Feed::default(),
             order_events: HashMap::new(),
             live_sub: None,
             live_frames: false,
@@ -473,6 +494,7 @@ impl State {
             }
             Incoming::Disconnected { reason, retry_in } => {
                 self.reset_calls();
+                self.add_disconnected();
                 // Lanes keep their last values, greyed; elapsed keeps ticking from startedAt.
                 self.live.mark_stale();
                 self.conn = Conn::Connecting { reason: Some(reason), retry_in: Some(retry_in) };
@@ -480,6 +502,7 @@ impl State {
             }
             Incoming::Unauthorized(message) => {
                 self.reset_calls();
+                self.add_disconnected();
                 self.live.clear();
                 self.conn = Conn::Refused(message);
                 Vec::new()
@@ -1096,7 +1119,7 @@ impl State {
         self.refetch(Purpose::Doctor, &DoctorListInput { machine_id: None, rerun: None })
     }
 
-    fn request_snapshot(&mut self) -> Option<AppClientMessage> {
+    pub(crate) fn request_snapshot(&mut self) -> Option<AppClientMessage> {
         if self.conn != Conn::Live || self.snapshot_pending {
             return None;
         }
@@ -1161,6 +1184,9 @@ impl State {
                 };
                 self.inflight.remove(&purpose);
                 self.dirty.remove(&purpose);
+                if matches!(purpose, Purpose::AddDiscover | Purpose::AddProject | Purpose::AddInspect | Purpose::AddRecover) {
+                    return self.on_add_error(&purpose, error.message, error.fix);
+                }
                 self.on_call_error(&purpose, text);
                 Vec::new()
             }
@@ -1195,15 +1221,20 @@ impl State {
             out.extend(self.request_doctor());
         }
         out.extend(self.prompts_reconnected());
+        self.add_saw(status.cursor);
+        out.extend(self.add_reconnected());
         out
     }
 
     fn on_event(&mut self, event: &HubEvent) -> Out {
         let mut out = Vec::new();
         let kind = event.r#type.as_str();
-        if kind.starts_with("machine.") {
+        // A project added or removed elsewhere (another app, the CLI, an agent) shows up or leaves.
+        if kind.starts_with("machine.") || matches!(event.r#type, HubEventType::ProjectAdded | HubEventType::ProjectRemoved) {
             out.extend(self.request_snapshot());
         }
+        self.add_saw(event.seq);
+        out.extend(self.on_add_event(event));
         if event.r#type == HubEventType::DoctorChanged && self.doctor.is_some() {
             out.extend(self.request_doctor());
         }
@@ -1280,6 +1311,7 @@ impl State {
         match purpose {
             Purpose::Prompt(call) => return self.on_prompt_result(call, output),
             Purpose::Time(call, g) => return self.on_time_result(*call, *g, output),
+            Purpose::AddDiscover | Purpose::AddProject | Purpose::AddInspect | Purpose::AddRecover => return self.on_add_result(purpose, output),
             Purpose::Asks => match parse::<AsksListOutput>(output) {
                 Ok(list) => {
                     self.asks_seen = self.asks_sent;
@@ -1480,6 +1512,7 @@ impl State {
         match purpose {
             Purpose::Prompt(call) => self.on_prompt_error(call, text),
             Purpose::Time(call, g) => self.on_time_error(*call, *g, text),
+            Purpose::AddDiscover | Purpose::AddProject | Purpose::AddInspect | Purpose::AddRecover => {}
             Purpose::Asks => self.asks_error = Some(text),
             Purpose::Project(key) => {
                 if let Some(row) = self.projects.iter_mut().find(|r| &r.key() == key) {

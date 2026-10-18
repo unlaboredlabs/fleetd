@@ -23,6 +23,7 @@ mod order;
 mod pair;
 mod palette;
 mod prefs;
+mod project_add;
 mod prompts;
 mod record;
 mod seal;

@@ -50,6 +50,8 @@ pub enum Command {
     Settings,
     /// Back to the connect screen, to pair with another hub.
     Connect,
+    /// The Add project sheet.
+    AddProject,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -118,6 +120,7 @@ pub fn items(state: &State) -> Vec<Item> {
         item(Group::Action, "Board", "Every open order", Some(ui::shortcut("0")), Command::Board),
         item(Group::Action, "Inbox", "What needs you", Some(ui::shortcut("I")), Command::Inbox),
         item(Group::Action, "Group by project or status", "Regroup the board", Some(ui::shortcut("⇧G")), Command::ToggleGroup),
+        item(Group::Action, "Add project…", "Clone a GitHub repo or add a folder on one of your machines", None, Command::AddProject),
         item(Group::Action, "Machines", "Machines and setup checks", None, Command::Machines),
         item(Group::Action, "Time", "Where the fleet's agent time went", None, Command::Time(None)),
         item(Group::Action, "Settings", "Appearance, motion and hub connection", Some(ui::shortcut(",")), Command::Settings),

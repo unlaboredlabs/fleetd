@@ -292,8 +292,12 @@ impl Shell {
                     .flex_col()
                     .gap_2()
                     .text_color(t.quiet)
-                    .child("No projects yet. On the hub, run this again: it offers the repos it finds and keeps what already works.")
-                    .child(div().max_w(px(420.)).child(self.command_line("copy-init", "fleetd init", cx))),
+                    .child("No projects yet. Add a GitHub repo or a folder on one of your machines; each project gets its own lead. You can also drop a folder on this window.")
+                    .child(div().flex().child(ui::button(t, "board-add-project", "Add project…", ui::Variant::Secondary, true).on_click(
+                        cx.listener(|this, _, window, cx| {
+                            this.open_add(window, cx);
+                        }),
+                    ))),
             )
         } else if !self.boards_loaded() {
             Some(ui::loading(t, "Loading orders…"))

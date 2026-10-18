@@ -24,6 +24,7 @@ pub enum Pick {
     Project(ProjectKey),
     Order(String),
     Settings,
+    AddProject,
 }
 
 /// Called with where a sidebar click goes.
@@ -144,7 +145,7 @@ pub fn render(
                 .text_size(px(size::XS))
                 .text_color(t.quiet)
                 .whitespace_normal()
-                .child("No projects yet. Run fleetd init again on the hub: it offers the repos it finds."),
+                .child("No projects yet. Add one: a GitHub repo, or a folder on one of your machines."),
         );
     }
     let mut jump = 0;
@@ -211,6 +212,25 @@ pub fn render(
         }
     }
 
+    let add_pick = on_pick.clone();
+    let projects_head = div()
+        .h(px(metric::ROW - 4.))
+        .flex_none()
+        .pl_4()
+        .pr_2()
+        .flex()
+        .items_center()
+        .text_size(px(size::XS))
+        .text_color(t.quiet)
+        .child(div().flex_1().font_weight(STRONG).child("Projects"))
+        .child(
+            ui::clickable(t, div().id("sidebar-add-project"))
+                .px_1p5()
+                .rounded(px(crate::theme::radius::SM))
+                .hover(|s| s.bg(t.hover).text_color(t.text))
+                .child("+ Add")
+                .on_click(move |_, window, cx| add_pick(Pick::AddProject, window, cx)),
+        );
     let settings_pick = on_pick.clone();
     div()
         .w(px(metric::SIDEBAR))
@@ -234,7 +254,8 @@ pub fn render(
                 .child(entry("nav-machines", "Machines", Pick::Machines, *active == Active::Machines, machines_note))
                 .child(entry("nav-time", "Time", Pick::Time, *active == Active::Time, div().into_any_element())),
         )
-        .child(div().h(px(8.)))
+        .child(div().h(px(6.)))
+        .child(projects_head)
         .child(projects)
         .children(notice)
         .child(

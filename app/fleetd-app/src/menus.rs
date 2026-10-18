@@ -49,7 +49,11 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Quit fleetd", Quit),
         ]),
-        Menu::new("File").items([MenuItem::action("New Order", NewOrder), MenuItem::action("Focus Composer", FocusComposer)]),
+        Menu::new("File").items([
+            MenuItem::action("New Order", NewOrder),
+            MenuItem::action("Add Project…", AddProject),
+            MenuItem::action("Focus Composer", FocusComposer),
+        ]),
         Menu::new("Edit").items([
             MenuItem::os_action("Undo", Undo, OsAction::Undo),
             MenuItem::os_action("Redo", Redo, OsAction::Redo),
