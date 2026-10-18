@@ -128,7 +128,7 @@ jobs:
     # the key store on the signed app). Pull request dry runs skip it; PR CI already bundles the app on macOS.
     if: needs.plan.outputs.build-app == 'true' && (inputs.publish || github.event_name == 'workflow_dispatch')
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
       # Developer ID signing runs only when the certificate secrets exist, notarization only when the notary key
@@ -169,16 +169,21 @@ jobs:
           .github/release/macos-sign.sh keychain
           .github/release/macos-sign.sh sign dist/fleetd.app
       - name: Notarize and staple
+        id: notarize
         if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
         run: |
           ditto -c -k --keepParent dist/fleetd.app "$RUNNER_TEMP/fleetd-app-notarize.zip"
-          .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-app-notarize.zip"
+          rc=0
+          .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-app-notarize.zip" || rc=$?
+          if [ "$rc" = 3 ]; then exit 0; fi
+          [ "$rc" = 0 ] || exit "$rc"
           xcrun stapler staple dist/fleetd.app
           xcrun stapler validate dist/fleetd.app
+          echo "stapled=true" >> "$GITHUB_OUTPUT"
       - name: Gatekeeper
         if: steps.secrets.outputs.sign == 'true'
         env:
-          NOTARIZED: ${{ steps.secrets.outputs.notarize }}
+          NOTARIZED: ${{ steps.notarize.outputs.stapled }}
         run: |
           codesign --verify --deep --strict --verbose=2 dist/fleetd.app
           out="$(spctl -a -vv -t exec dist/fleetd.app 2>&1 || true)"
@@ -188,7 +193,7 @@ jobs:
               echo "::error::Gatekeeper doesn't accept the notarized app"; exit 1
             fi
           else
-            echo "not notarized (no notary key): Gatekeeper rejecting a downloaded copy is expected"
+            echo "not notarized yet: Gatekeeper rejecting a downloaded copy is expected"
           fi
       - name: No keychain prompt on launch (signed app, dry runs)
         # The signed app keeps its key in its own keychain item, trusted by Team ID, so it survives an update (the
@@ -216,7 +221,7 @@ jobs:
     # Like app-macos: builds that publish and manual dispatches, not pull request dry runs.
     if: inputs.publish || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
       MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -250,7 +255,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/fleetd-cli"
           cp dist/fleetd-darwin-arm64 dist/fleetd-darwin-x64 "$RUNNER_TEMP/fleetd-cli/"
           ditto -c -k --keepParent "$RUNNER_TEMP/fleetd-cli" "$RUNNER_TEMP/fleetd-cli-notarize.zip"
-          .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-cli-notarize.zip"
+          rc=0
+          .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-cli-notarize.zip" || rc=$?
+          if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then exit "$rc"; fi
           # Logged, not enforced: Gatekeeper's verdict on a bare binary depends on fetching its ticket online.
           for bin in dist/fleetd-darwin-*; do
             echo "$bin: $(spctl -a -vv -t open --context context:primary-signature "$bin" 2>&1 | tr '\n' ' ' || true)"

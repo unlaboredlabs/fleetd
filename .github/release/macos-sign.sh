@@ -13,7 +13,7 @@
 #   macos-sign.sh enabled             prints true when the signing secrets are set (else logs and prints false)
 #   macos-sign.sh keychain            a temporary keychain with the identity, on this job's search list
 #   macos-sign.sh sign <path>...      a .app (nested code first, never --deep) or bare binaries
-#   macos-sign.sh notarize <zip>      submits and waits; fails with Apple's log unless Accepted
+#   macos-sign.sh notarize <zip>      submits and waits: 0 Accepted, 3 still in progress, else fails with Apple's log
 #   macos-sign.sh cleanup             deletes the keychain and any decoded key material (run it with always())
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -80,21 +80,33 @@ sign)
   ;;
 
 notarize)
+  # Exit 0: Accepted. Exit 3: Apple is still processing after NOTARY_WAIT (a new team's first submissions can
+  # take hours); the asset ships signed but not stapled, and Gatekeeper accepts it once Apple finishes. Anything
+  # else (Invalid, Rejected) fails with Apple's log.
   zip="$2"
+  auth=(--key "$p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
   (umask 077 && printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$p8")
   out="$tmp/notary-$(basename "$zip").json"
-  xcrun notarytool submit "$zip" --key "$p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait \
-    --output-format json > "$out" || true
-  id="$(plutil -extract id raw -o - "$out" 2>/dev/null || true)"
+  xcrun notarytool submit "$zip" "${auth[@]}" --output-format json > "$out" || { cat "$out"; rm -f "$p8"; die "notarytool submit failed"; }
+  id="$(plutil -extract id raw -o - "$out")"
+  echo "notarization of $(basename "$zip"): submission $id"
+  xcrun notarytool wait "$id" "${auth[@]}" --timeout "${NOTARY_WAIT:-40m}" --output-format json > "$out" || true
   status="$(plutil -extract status raw -o - "$out" 2>/dev/null || true)"
-  echo "notarization of $(basename "$zip"): submission ${id:-none}, status ${status:-unknown}"
-  if [ "$status" != Accepted ]; then
-    cat "$out" || true
-    [ -n "$id" ] && xcrun notarytool log "$id" --key "$p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" || true
+  [ -n "$status" ] || status="$(xcrun notarytool info "$id" "${auth[@]}" --output-format json | plutil -extract status raw -o - - 2>/dev/null || true)"
+  echo "notarization of $(basename "$zip"): submission $id, status ${status:-unknown}"
+  case "$status" in
+  Accepted) rm -f "$p8" ;;
+  "In Progress")
     rm -f "$p8"
-    die "notarization of $(basename "$zip") was ${status:-not submitted}"
-  fi
-  rm -f "$p8"
+    echo "::warning::notarization $id still in progress after ${NOTARY_WAIT:-40m}; shipping signed, not stapled"
+    exit 3
+    ;;
+  *)
+    xcrun notarytool log "$id" "${auth[@]}" || true
+    rm -f "$p8"
+    die "notarization $id of $(basename "$zip") is ${status:-unknown}"
+    ;;
+  esac
   ;;
 
 cleanup)
