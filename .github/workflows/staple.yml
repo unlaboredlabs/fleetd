@@ -1,0 +1,39 @@
+# Staples a published app once Apple accepts its notarization, when the release job shipped it signed but unstapled
+# because Apple's queue outlasted its wait. No rebuild: see .github/release/macos-staple.sh.
+name: Staple release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag
+        type: string
+        default: nightly
+      submission:
+        description: Notarization submission id (default the newest accepted one whose ticket matches the app)
+        type: string
+        default: ""
+
+# The nightly's own group, so this never races a publish; a newer nightly cancels it, which is fine.
+concurrency:
+  group: ${{ inputs.tag == 'nightly' && 'release-nightly' || format('release-refs/tags/{0}', inputs.tag) }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  staple:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Staple and replace the app zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          SUBMISSION: ${{ inputs.submission }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+        run: .github/release/macos-staple.sh
