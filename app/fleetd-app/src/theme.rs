@@ -297,8 +297,10 @@ pub fn set_mode(mode: Mode, window: &mut Window, cx: &mut App) {
 
 #[cfg(target_os = "macos")]
 fn fonts(cx: &App) -> (SharedString, SharedString) {
-    // SF Mono ships with macOS but is not always registered as a public family; Menlo always is.
-    let mono = if cx.text_system().font_id(&gpui::font("SF Mono")).is_ok() { "SF Mono" } else { "Menlo" };
+    // SF Mono ships with macOS but is not always registered as a public family; Menlo always is. A family gpui
+    // can't load resolves to its fallback (Lilex, bundled), so SF Mono is there when it resolves to anything else.
+    let ts = cx.text_system();
+    let mono = if ts.resolve_font(&gpui::font("SF Mono")) != ts.resolve_font(&gpui::font("Lilex")) { "SF Mono" } else { "Menlo" };
     (".SystemUIFont".into(), mono.into())
 }
 

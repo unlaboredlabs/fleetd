@@ -1218,7 +1218,10 @@ impl Shell {
             uniform_list(
                 "projects",
                 self.state.projects.len(),
-                cx.processor(|this, range: std::ops::Range<usize>, _, cx| range.map(|ix| this.project_row(ix, cx)).collect::<Vec<_>>()),
+                cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                    let needs = sidebar::needs_you(&this.state);
+                    range.map(|ix| this.project_row(ix, &needs, cx)).collect::<Vec<_>>()
+                }),
             )
             .track_scroll(&self.projects_scroll)
             .flex_1()
@@ -1237,19 +1240,14 @@ impl Shell {
             .into_any_element()
     }
 
-    fn project_row(&self, ix: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn project_row(&self, ix: usize, needs: &HashMap<ProjectKey, usize>, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = &theme(cx).clone();
         let row = &self.state.projects[ix];
         let (lead_color, lead_label) = lead_badge(t, row);
         let open = row.workstreams().len();
         let headline = row.error.clone().or_else(|| row.headline().map(str::to_string)).unwrap_or_default();
         let key = row.key();
-        let needs = self
-            .state
-            .inbox()
-            .iter()
-            .filter(|i| i.ask.project_ref.as_ref().is_some_and(|p| p.machine_id.as_str() == key.0 && p.project_id.as_str() == key.1))
-            .count();
+        let needs = needs.get(&key).copied().unwrap_or(0);
         let unread = self.seen.unread(&key, row.summary.last_activity_at.as_str());
         ui::row(t, ix, ix == self.selected)
             .h(px(metric::ROW + 4.))
