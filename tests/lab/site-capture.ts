@@ -20,6 +20,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   type Body,
   callToolWith,
+  claudeLoginEnv,
   check,
   cli,
   fleetdCommand,
@@ -57,8 +58,8 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 // The app, as it is laid out today. A redesign changes these and nothing else in this file.
 /** The app's default window, in logical pixels; the captures are this times GPUI_X11_SCALE_FACTOR. */
 const APP_WINDOW = { width: 1400, height: 900 };
-/** Screen pixels at the page's scale: the Projects entry in the sidebar, and an empty spot to park the pointer on. */
-const CLICK = { projects: [73, 223], park: [900, 1316] } as const;
+/** Screen pixels at the page's scale: the project in the sidebar, and an empty spot to park the pointer on. */
+const CLICK = { project: [119, 301], park: [900, 1316] } as const;
 const REPLY = "1 go 2 nvm 3 b";
 
 /** What the lead is told to run: the asks are arranged, the filing, batching and answering are real. */
@@ -228,33 +229,77 @@ function xwdToPng(xwd: Buffer, width: number, height: number) {
 
 const INIT = 'fleetd init --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service';
 
-/** A throwaway HOME (user demo) with this fleetd on its PATH; `run` gives a command's output with that HOME as `~`. */
-function demoHome() {
+/** The GitHub login the lab's machines borrow; a public transcript says "demo" instead. */
+const GH_USER = (() => {
+  try {
+    return /^\s+user:\s*(\S+)/mu.exec(fs.readFileSync(path.join(os.homedir(), ".config/gh/hosts.yml"), "utf8"))?.[1];
+  } catch {
+    return undefined;
+  }
+})();
+
+/** This machine on its tailnet, as the wizard finds it (`tailscale status --json`), when it is on one. */
+const TAILNET = (() => {
+  if (execFileSync("sh", ["-c", "command -v tailscale || true"], { env: scrubbedEnv(), encoding: "utf8" }).trim() === "") return undefined;
+  try {
+    const self = (JSON.parse(execFileSync("tailscale", ["status", "--json"], { env: scrubbedEnv(), encoding: "utf8" })) as Body).Self as Body | undefined;
+    return { name: String(self?.DNSName ?? "").replace(/\.$/u, ""), ips: (self?.TailscaleIPs ?? []) as Array<string> };
+  } catch {
+    return undefined;
+  }
+})();
+
+/** This machine as a reader may see it: its tailnet name and addresses as placeholders, the gh login as "demo". */
+const sanitizeSetup = (text: string) => {
+  let out = text;
+  if (TAILNET?.name) out = out.replaceAll(TAILNET.name, "hub.your-tailnet.ts.net");
+  for (const ip of TAILNET?.ips ?? []) out = out.replaceAll(ip, "<tailnet-ip>");
+  out = out.replace(/\b(?!127\.0\.0\.1\b)\d{1,3}(?:\.\d{1,3}){3}\b/gu, "<lan-ip>");
+  return GH_USER === undefined ? out : out.replaceAll(GH_USER, "demo");
+};
+
+/** A throwaway HOME (user demo) with this fleetd on its PATH; `run` gives a command's output with that HOME as `~`,
+ * sanitized. `logins` gives it the lab's claude and gh logins (0600, gone with the HOME), as a set-up machine has. */
+function demoHome(opts: { readonly logins?: boolean } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-site-"));
   cleanups.push(() => fs.rmSync(base, { recursive: true, force: true }));
   const home = path.join(base, "demo");
   fs.mkdirSync(path.join(home, ".local/bin"), { recursive: true });
   fs.copyFileSync(fleetdCommand([])[0], path.join(home, ".local/bin/fleetd"));
+  const dirs = [`${home}/.local/bin`, "/usr/bin:/bin"];
+  if (opts.logins) {
+    fs.mkdirSync(path.join(home, ".fleetd"), { mode: 0o700 });
+    const login = Object.entries(claudeLoginEnv()).map(([k, v]) => `${k}=${v}\n`).join("");
+    fs.writeFileSync(path.join(home, ".fleetd/claude.env"), login, { mode: 0o600 });
+    const gh = path.join(os.homedir(), ".config/gh/hosts.yml");
+    if (fs.existsSync(gh)) {
+      fs.mkdirSync(path.join(home, ".config/gh"), { recursive: true, mode: 0o700 });
+      fs.copyFileSync(gh, path.join(home, ".config/gh/hosts.yml"));
+      fs.chmodSync(path.join(home, ".config/gh/hosts.yml"), 0o600);
+    }
+    const claude = execFileSync("sh", ["-c", "command -v claude || true"], { env: scrubbedEnv(), encoding: "utf8" }).trim();
+    if (claude !== "") dirs.splice(1, 0, path.dirname(claude));
+  }
   return (cmd: string) => {
     const r = spawnSync("bash", ["-c", `cd ~ && ${cmd} 2>&1`], {
-      env: { HOME: home, USER: "demo", LOGNAME: "demo", LANG: "C.UTF-8", PATH: `${home}/.local/bin:/usr/bin:/bin` },
+      env: { HOME: home, USER: "demo", LOGNAME: "demo", LANG: "C.UTF-8", PATH: dirs.join(":") },
       encoding: "utf8",
       timeout: 60_000,
     });
-    return { cmd, status: r.status ?? 1, out: r.stdout.replace(/\n$/u, "").replaceAll(home, "~") };
+    return { cmd, status: r.status ?? 1, out: sanitizeSetup(r.stdout.replace(/\n$/u, "").replaceAll(home, "~")) };
   };
 }
 
-/** `fleetd init` and `machine add --dry-run` in a throwaway HOME. --no-service: with a service, init drives the real
- * systemd user manager. */
+/** The `fleetd init` wizard (--yes: every default) and `machine add --dry-run` after it, on a machine with the claude
+ * and gh logins. --no-service: with a service, init drives the real systemd user manager. */
 function setupTranscripts() {
-  const exec = demoHome();
+  const exec = demoHome({ logins: true });
   const run = (cmd: string) => {
     const r = exec(cmd);
     check(r.status === 0, `${cmd}: exit ${r.status} ${r.out}`);
     return { cmd, out: `${r.out}\n[exit ${r.status}]` };
   };
-  const init = run(INIT);
+  const init = run('fleetd init --yes --no-service --git-identity "Demo <demo@users.noreply.github.com>"');
   const add = run("fleetd machine add builder-1 --dry-run");
   // The page shows the plan, not the shell command indented under each step or the trailing notes.
   add.out = add.out.split("\n").filter((l) => !/^\s/u.test(l) && !l.startsWith("note:")).join("\n");
@@ -474,6 +519,8 @@ function assertPublishable(name: string, text: string) {
     ["a /home path", /\/home\/(?!demo\b)/u],
     ["hostname", new RegExp(`\\b${host.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "iu")],
     ["fleetd key", /fld_[a-z2-7]{20,}/u],
+    ...(GH_USER === undefined ? [] : [["GitHub login", GH_USER] as [string, string]]),
+    ["tailnet name", /\.ts\.net\b(?<!hub\.your-tailnet\.ts\.net)/u],
     ["non-loopback IPv4", /\b(?!127\.0\.0\.1\b)\d{1,3}(\.\d{1,3}){3}\b/u],
   ];
   for (const [what, needle] of leaks) {
@@ -565,14 +612,16 @@ async function main() {
   // The reply, typed into the app; Enter sends it as the human. Turn 3: the hub wakes the lead with the answers.
   from = await cursor();
   screen.type(REPLY);
+  const typed = await screen.settled();
   screen.type("\n");
+  await screen.settled(typed);
+  screen.png(path.join(shots, "capture-reply.png"));
+  log("captured the inbox after the reply");
   const woken = await waitEvent("the lead woken with the answers", 120_000, { cursor: from, types: ["lead.woken"], match: (e) => e.threadId === lead });
   await turn("the lead's wake", woken.cursor, lead);
-  let shown = screen.hash();
-  screen.click(CLICK.projects);
-  shown = await screen.settled(shown);
-  screen.type("\n");
-  shown = await screen.settled(shown);
+  const sidebar = screen.hash();
+  screen.click(CLICK.project);
+  await screen.settled(sidebar);
   screen.click(CLICK.park);
   await screen.settled();
   screen.png(path.join(shots, "capture-lead.png"));
@@ -611,11 +660,14 @@ async function main() {
   for (const [name, make] of [...Object.entries(htmlBlocks), ...Object.entries(txtBlocks)]) assertPublishable(`capture:${name}`, make(""));
 
   // Everything checked: now the site changes.
-  for (const shot of ["capture-inbox.png", "capture-lead.png"]) fs.copyFileSync(path.join(shots, shot), path.join(SITE, shot));
+  // Every capture the page shows, and only those.
+  const published = fs.readdirSync(shots).filter((shot) => html.includes(`/${shot}`));
+  for (const shot of html.matchAll(/\/(capture-[\w-]+\.png)/gu)) check(published.includes(shot[1]!), `the run shot ${shot[1]}, which home.html shows`);
+  for (const shot of published) fs.copyFileSync(path.join(shots, shot), path.join(SITE, shot));
   fill(path.join(SITE, "home.html"), htmlBlocks);
   fs.writeFileSync(path.join(SITE, "fleetd.txt"), fillTwin(fs.readFileSync(path.join(SITE, "fleetd.txt"), "utf8"), txtBlocks));
   const stale = staleQuotes([...strings(tail), ...strings(answered), wake, digest, init.out, add.out].join("\n"));
-  log(`wrote site/capture-inbox.png, site/capture-lead.png and the capture blocks in site/home.html and site/fleetd.txt`);
+  log(`wrote ${published.map((s) => `site/${s}`).join(", ")} and the capture blocks in site/home.html and site/fleetd.txt`);
   fillDocs(docsBlocks({ ...landingTranscripts({ init, add }), digest }));
   if (stale.length > 0) log(`check by hand: the page says these, this run's output doesn't:\n${stale.map((s) => `  - ${s}`).join("\n")}`);
   log("callouts are placed by hand: if the app's layout moved, re-aim --x/--y in home.html (see the comment above Fig. 1)");

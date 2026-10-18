@@ -22,13 +22,15 @@ FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts
 ```
 
 It stands up a hub and a node on that lab slot, has a haiku lead file three numbered asks (three tiny turns), runs the
-desktop app under a private Xvfb at the page's image size, shoots the inbox, types the reply and shoots the lead's
-view; then it runs `fleetd init` and `fleetd machine add builder-1 --dry-run` in a throwaway HOME and reads the merge
-train from the newest lab m7 run, if there is one: the whole path of its first two merged changes and the first of
-each refusal, freeze, red CI and conflict, at most 16 lines. It refuses to write text that names this machine, its
-home or lab paths, a non-loopback address or a key. Review the result with `git diff site/`. The callout positions
-(`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and ids on the page that
-its run didn't produce, and you re-aim the callouts if the app's layout moved.
+desktop app under a private Xvfb at the page's image size, shoots the inbox, types the reply, shoots the inbox again
+and then the lead's view (it publishes the shots `home.html` shows); then it runs the `fleetd init --yes --no-service`
+wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME that has the lab's claude and gh logins, and
+reads the merge train from the newest lab m7 run, if there is one: the whole path of its first two merged changes and
+the first of each refusal, freeze, red CI and conflict, at most 16 lines. This machine's tailnet name and addresses
+become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login `demo`, and it refuses to write text that still
+names this machine, its home or lab paths, a non-loopback address or a key. Review the result with `git diff site/`.
+The callout positions (`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and
+ids on the page that its run didn't produce, and you re-aim the callouts if the app's layout moved.
 
 ## Docs (fleetd.sh/docs)
 
@@ -110,8 +112,8 @@ $ fleetd doctor
   the block's first command is `fleetd init` itself), writes each command's output under it, keeps a nonzero exit as
   a final `[exit N]` line, and regenerates `site/docs`. It refuses to write a hostname, a real `/home` path, a
   non-loopback IP or a key.
-- Blocks named `init` and `machine-add` get exactly the landing page's transcripts (`fleetd init --listen …` and
-  `fleetd machine add builder-1 --dry-run` as the plan only, each ending in `[exit 0]`).
+- Blocks named `init` and `machine-add` get exactly the landing page's transcripts (the `fleetd init --yes
+  --no-service …` wizard and `fleetd machine add builder-1 --dry-run` as the plan only, each ending in `[exit 0]`).
 - Output that needs a live hub, a node or claude can't be captured that way. A block named `digest` is filled from
   the full lab run (`FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts`, which also does everything `--docs` does).
   For anything else that needs a live fleet, paste real output from a lab run into an unmarked `console` block.
