@@ -177,10 +177,10 @@ export async function m5Tasks(lab: Lab) {
     // 2. Cap 1: a read task queues on the slot board; so does the out-of-area writer for item 4.
     const capped = (await admin("cap_set", { cap: 1 })).body;
     check(capped.slots?.cap === 1, `cap_set 1: ${JSON.stringify(capped)}`);
-    const t3 = spawnTask(["--workstream", workstreamId, "--title", "say ok", "--kind", "read", "--prompt", "Reply with the single word OK."]);
-    const t3Task = await task(t3.taskId);
-    check(t3Task.state === "queued" && /^slots: \d+\/1 in use/u.test(t3Task.queuedReason ?? ""), `T3 queued on the cap: ${JSON.stringify(t3Task)}`);
-    ok(`2. cap set to 1; ${t3.taskId} queued: ${t3Task.queuedReason}`);
+    const reader = spawnTask(["--workstream", workstreamId, "--title", "say ok", "--kind", "read", "--prompt", "Reply with the single word OK."]);
+    const readerTask = await task(reader.taskId);
+    check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
+    ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);
     const t4 = spawnTask([
       "--workstream", workstreamId, "--title", "add notes", "--areas", "api", "--serves", "done:0",
       "--prompt",
@@ -213,10 +213,10 @@ export async function m5Tasks(lab: Lab) {
     check(git(root, "branch", "--list", "fleetd/T1-add-file").trim() !== "", "branch fleetd/T1-add-file exists in the repo");
     check((await task("T1")).worktreePath, `T1 records its worktree: ${JSON.stringify(await task("T1"))}`);
 
-    // 2. T3 got the freed slot only after T1's turn ended; then the cap goes back up so T2 and T4 run side by side.
-    const t3Started = await taskEvent(`task.started ${t3.taskId}`, t1Started.cursor, "task.started", t3.taskId);
-    check(t3Started.event.seq > t1Done.event.seq, `${t3.taskId} started (seq ${t3Started.event.seq}) after T1 ended (seq ${t1Done.event.seq})`);
-    ok(`2. ${t3.taskId} started only after T1's turn ended (seq ${t3Started.event.seq} > ${t1Done.event.seq})`);
+    // 2. The read task got the freed slot only after T1's turn ended; then the cap goes back up so T2 and T4 run side by side.
+    const readerStarted = await taskEvent(`task.started ${reader.taskId}`, t1Started.cursor, "task.started", reader.taskId);
+    check(readerStarted.event.seq > t1Done.event.seq, `${reader.taskId} started (seq ${readerStarted.event.seq}) after T1 ended (seq ${t1Done.event.seq})`);
+    ok(`2. ${reader.taskId} started only after T1's turn ended (seq ${readerStarted.event.seq} > ${t1Done.event.seq})`);
     await admin("cap_set", { cap: 40 });
 
     // 3. T2 starts once T1's lease is released.
@@ -231,7 +231,7 @@ export async function m5Tasks(lab: Lab) {
 
     // Every task ends, then the lead's wakes for them: each wake fires within WAKE_MAX_WAIT (60 s) of its trigger.
     let after = afterWake;
-    for (const id of [t2.taskId, t3.taskId, t4.taskId]) {
+    for (const id of [t2.taskId, reader.taskId, t4.taskId]) {
       const ended = await lab.waitEvent(`${id} ends`, 2 * TURN_MS, {
         cursor: t1Started.cursor,
         types: ["task.completed", "task.failed"],

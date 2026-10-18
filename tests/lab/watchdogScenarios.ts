@@ -96,7 +96,10 @@ export async function stallNudgeFail(ctx: LabContext, machineId = "lab-a") {
     machineId,
     projectId,
     "fleetd test:lab stall",
-    "Use the Bash tool to run exactly `sleep 900` in the foreground (not in the background) and wait for it. " +
+    // Unset, so the watchdog holds the call to FLEETD_STALL_TOOL_TIMEOUT_SEC; a stated timeout (claude likes 600000 for a
+    // long sleep) would be honoured, and the stall would take ten minutes.
+    "Use the Bash tool to run exactly `sleep 900` in the foreground (not in the background), leaving the tool's timeout " +
+      "parameter unset, and wait for it. " +
       "If you are interrupted or asked to continue, run `sleep 900` in the foreground again. Do nothing else.",
   );
   ctx.log(`ok  thread_launch ${machineId} -> ${threadId} (sleep 900)`);
