@@ -49,6 +49,16 @@ impl Ui {
         answer
     }
 
+    /// Whether to run an interactive login (claude/gh auth login) now: only when a person is at the terminal and
+    /// says yes. Without a terminal, with --yes or in a scripted --join it is never offered, so nothing waits for a
+    /// browser; the step fails with its fix instead.
+    fn offer_login(&self, list: &mut Checklist, prompt: &str) -> Result<bool, Stopped> {
+        if !self.interactive {
+            return Ok(false);
+        }
+        self.confirm(list, prompt, true)
+    }
+
     /// An input; Enter on an empty line takes `default`. `check` explains a bad answer inline.
     fn input(
         &self,
@@ -731,7 +741,7 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
         if setup.login_kind.is_none()
             && setup.version.is_some()
             && !offered
-            && ui.confirm(list, "claude isn't logged in. Log in now?", true)?
+            && ui.offer_login(list, "claude isn't logged in. Log in now?")?
         {
             offered = true;
             attached(list, "claude", &["auth", "login"]);
@@ -771,7 +781,7 @@ async fn gh_check(ui: &Ui, list: &mut Checklist) -> Result<bool, Stopped> {
             list.done("gh", message);
             return Ok(true);
         }
-        if !offered && ui.confirm(list, "gh isn't logged in. Log in now?", true)? {
+        if !offered && ui.offer_login(list, "gh isn't logged in. Log in now?")? {
             offered = true;
             attached(list, "gh", &["auth", "login"]);
             continue;
@@ -1041,13 +1051,12 @@ async fn worker_claude(
             return Ok(());
         }
         if offered
-            || !ui.confirm(
+            || !ui.offer_login(
                 list,
                 &format!(
                     "claude on {} isn't logged in. Log in now?",
                     added.machine_id
                 ),
-                true,
             )?
         {
             list.failed(&title, "not logged in", &fix);
@@ -1379,4 +1388,25 @@ fn finish(list: &mut Checklist, summary: &Summary, paired: bool) {
         }
     };
     list.outro(&[], &next);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// --yes, no terminal, a scripted --join: a logged-out claude or gh is reported, never logged in interactively.
+    #[test]
+    fn logins_are_offered_only_to_a_person_at_the_terminal() {
+        let mut list = Checklist::plain();
+        let unattended = Ui { interactive: false };
+        assert!(matches!(
+            unattended.offer_login(&mut list, "claude isn't logged in. Log in now?"),
+            Ok(false)
+        ));
+        // Other prompts still take their defaults unattended.
+        assert!(matches!(
+            unattended.confirm(&mut list, "Pair the fleetd app?", true),
+            Ok(true)
+        ));
+    }
 }
