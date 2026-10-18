@@ -67,7 +67,10 @@ pub async fn probe_host() -> NodeProbe {
                 .map(|s| IdleSleep {
                     source: Text::unchecked(s.source),
                     action: Text::unchecked(s.action),
-                    after_sec: s.after_sec.map(|n| Count::unchecked(n as i64)),
+                    // An absurd timeout is dropped: past 2^53 the hub could not decode the probe.
+                    after_sec: s
+                        .after_sec
+                        .and_then(|n| Count::new(i64::try_from(n).ok()?).ok()),
                     fix: Text::unchecked(head_utf16(&s.fix, 400)),
                 })
                 .collect(),

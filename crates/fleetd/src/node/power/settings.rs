@@ -94,8 +94,12 @@ pub fn logind(action: &str, after_sec: Option<u64>) -> Option<IdleSleep> {
 pub fn logind_files(texts: &[String]) -> Option<IdleSleep> {
     let entries: Vec<_> = texts.iter().flat_map(|t| ini(t)).collect();
     let action = last(&entries, "[Login]", "IdleAction").unwrap_or("ignore");
-    let after = last(&entries, "[Login]", "IdleActionSec").map_or(Some(1800), parse_timespan);
-    logind(action, after)
+    let after = last(&entries, "[Login]", "IdleActionSec");
+    // logind never acts after an infinite idle time.
+    if after.is_some_and(|a| a.trim() == "infinity") {
+        return None;
+    }
+    logind(action, after.map_or(Some(1800), parse_timespan))
 }
 
 /// Plasma 6 `powerdevilrc`, or Plasma 5 `powermanagementprofilesrc` when Plasma 6 has not migrated it. Plasma 6
@@ -216,6 +220,10 @@ mod imp {
             && let Some(action) = property::<String>(&bus, "IdleAction").await
         {
             let usec = property::<u64>(&bus, "IdleActionUSec").await;
+            // IdleActionSec=infinity: logind never acts.
+            if usec == Some(u64::MAX) {
+                return None;
+            }
             return logind(&action, usec.map(|u| u / 1_000_000));
         }
         let mut texts = Vec::new();
@@ -336,6 +344,8 @@ mod tests {
         assert_eq!(logind_files(&["[Login]\n".to_owned()]), None);
         let lock = "[Login]\nIdleAction=lock\nIdleActionSec=10min\n".to_owned();
         assert_eq!(logind_files(&[lock]), None);
+        let never = "[Login]\nIdleAction=suspend\nIdleActionSec=infinity\n".to_owned();
+        assert_eq!(logind_files(&[never]), None);
     }
 
     #[test]

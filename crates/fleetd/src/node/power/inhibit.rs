@@ -144,6 +144,9 @@ mod macos {
             let kind = (api.cf_string)(std::ptr::null(), kind.as_ptr(), UTF8);
             let name = (api.cf_string)(std::ptr::null(), name.as_ptr(), UTF8);
             if kind.is_null() || name.is_null() {
+                for s in [kind, name].into_iter().filter(|s| !s.is_null()) {
+                    (api.cf_release)(s);
+                }
                 return Err("cannot make the assertion's name".into());
             }
             let status = (api.create)(kind, LEVEL_ON, name, &mut id);

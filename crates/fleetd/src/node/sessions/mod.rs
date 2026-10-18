@@ -1683,12 +1683,18 @@ impl SessionService {
             Some(why) => EndCause::Requested(why),
             None => EndCause::Exited(exit),
         };
-        // A run the node is retrying outlives its process: the retry resumes the session.
+        // A run the node is retrying outlives an exit nobody asked for: the retry resumes the session. An interrupt
+        // or stop ends it, and so its retry.
+        let requested = matches!(cause, EndCause::Requested(_));
         let retrying: HashSet<String> = self.st().retries.keys().cloned().collect();
+        let mut closed = Vec::new();
         self.log(self.update(id, |c| {
             let retried = |r: &RunInfo| r.status.is_active() && retrying.contains(r.id.as_str());
-            if !c.runs.iter().any(retried) {
-                state::close_out(&mut c.runs, &cause, &c.at);
+            if requested || !c.runs.iter().any(retried) {
+                closed = state::close_out(&mut c.runs, &cause, &c.at)
+                    .into_iter()
+                    .map(|i| c.runs[i].id.to_string())
+                    .collect();
             }
             c.cancel_pending();
             // A replacement process may already be recorded.
@@ -1697,6 +1703,10 @@ impl SessionService {
                 c.row.local.pid_start = None;
             }
         }));
+        let mut st = self.st();
+        for run in closed {
+            st.retries.remove(&run);
+        }
     }
 
     async fn interrupt(&self, id: &str, run_id: Option<&str>, reason: Option<String>) -> Reply {

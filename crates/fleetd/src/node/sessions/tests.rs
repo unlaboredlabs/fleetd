@@ -41,8 +41,12 @@ fn config(dir: &Path) -> SessionConfig {
 }
 
 async fn hub(dir: &Path, store: NodeStore, runner: FakeRunner) -> Hub {
+    hub_with(store, runner, config(dir)).await
+}
+
+async fn hub_with(store: NodeStore, runner: FakeRunner, config: SessionConfig) -> Hub {
     let runner = Arc::new(runner);
-    let service = SessionService::start(store, runner.clone(), config(dir))
+    let service = SessionService::start(store, runner.clone(), config)
         .await
         .unwrap();
     let (tx, rx) = mpsc::unbounded_channel();
@@ -623,6 +627,46 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
             },
         }
     ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_interrupt_during_a_retry_wait_ends_the_run_for_good() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = SessionConfig {
+        retry_schedule_ms: vec![60_000],
+        ..config(dir.path())
+    };
+    let store = NodeStore::open_memory(10_000).unwrap();
+    let mut hub = hub_with(store, FakeRunner::fixture("overloaded-529"), config).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    // The 529 came back and the node waits a minute to retry; claude sits idle and ignores the interrupt.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    hub.ok(SessionCall::Interrupt {
+        session_id: ThreadId::unchecked("s1"),
+        run_id: None,
+        reason: Some("hub asked".into()),
+    })
+    .await;
+    let ended = hub.settled("r1").await;
+    assert_eq!(ended.latest_run.unwrap().status, RunStatus::Interrupted);
+    // Past the retry's time: nothing resumes it.
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    assert_eq!(hub.runner.spawned().len(), 1);
+    assert!(
+        !hub.runner
+            .received()
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+    );
+    let runs = hub.service.store().runs("s1").unwrap();
+    assert_eq!(runs[0].status, RunStatus::Interrupted);
+    assert_eq!(*hub.service.running().borrow(), 0);
 }
 
 #[tokio::test(start_paused = true)]

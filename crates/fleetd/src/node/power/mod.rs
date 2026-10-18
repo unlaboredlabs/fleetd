@@ -57,36 +57,51 @@ impl Wakes {
     }
 }
 
-/// The inhibitor for `running` agents: one hold while any run, its name updated when the count changes. Gives up
-/// for good (logged once) where there is nothing to hold one with: no logind, no system bus, a container.
+/// logind or powerd that does not answer in this long is not waited for.
+const TAKE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The inhibitor for `running` agents: one hold while any run, its name updated when the count changes. Where none
+/// can be had (no logind, no system bus, a container) it tries again only once agents start again after none ran,
+/// and warns only the first time.
 #[derive(Default)]
 struct Inhibitor {
     held: Option<(usize, inhibit::Hold)>,
-    unavailable: bool,
+    failed: bool,
+    warned: bool,
 }
 
 impl Inhibitor {
     async fn set(&mut self, running: usize) {
         if running == 0 {
+            self.failed = false;
             if self.held.take().is_some() {
                 tracing::info!("no agents running; sleep inhibitor released");
             }
             return;
         }
-        if self.unavailable || self.held.as_ref().is_some_and(|(n, _)| *n == running) {
+        if self.failed || self.held.as_ref().is_some_and(|(n, _)| *n == running) {
             return;
         }
         let why = inhibit::why(running);
-        match inhibit::take(&why).await {
+        let taken = tokio::time::timeout(TAKE_TIMEOUT, inhibit::take(&why))
+            .await
+            .unwrap_or_else(|_| Err(format!("no answer in {} s", TAKE_TIMEOUT.as_secs())));
+        match taken {
             // The old hold is dropped only after the new one is held, so there is no gap.
             Ok(hold) => {
                 if self.held.replace((running, hold)).is_none() {
                     tracing::info!(%why, "holding a sleep inhibitor while agents run");
                 }
             }
+            // A failed rename keeps the hold it has; only a first take that failed waits for the next start.
+            Err(_) if self.held.is_some() => {}
             Err(error) => {
-                self.unavailable = true;
-                tracing::warn!(%error, "cannot keep this machine awake while agents run; it may sleep under them");
+                self.failed = true;
+                if !std::mem::replace(&mut self.warned, true) {
+                    tracing::warn!(%error, "cannot keep this machine awake while agents run; it may sleep under them");
+                } else {
+                    tracing::debug!(%error, "sleep inhibitor still unavailable");
+                }
             }
         }
     }
