@@ -39,6 +39,8 @@ const SPEC: Spec = Spec {
 };
 
 const CALL: Duration = Duration::from_secs(120);
+/// A clone reports each phase and every 5 percent; this long without a word, it is not coming.
+const QUIET_LIMIT: Duration = Duration::from_secs(20 * 60);
 
 fn usage(message: &str) -> u8 {
     eprint!("fleetd: {message}\n\nusage:\n{PROJECT_USAGE}");
@@ -564,7 +566,23 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
         println!("cloning into {path} on {machine}");
     }
     let mut last_phase = String::new();
+    let mut heard = std::time::Instant::now();
     loop {
+        if heard.elapsed() > QUIET_LIMIT {
+            if let Some(bar) = &bar {
+                bar.error("no word from the clone");
+            }
+            return Err(Stop(
+                1,
+                format!(
+                    "no progress from the clone on {machine} for {} minutes",
+                    QUIET_LIMIT.as_secs() / 60
+                ),
+                Some(format!(
+                    "fleetd project list --machine {machine} shows whether it was added; else add it again"
+                )),
+            ));
+        }
         let page = call(
             client,
             "events_wait",
@@ -586,6 +604,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
             if s(e, "/data/addId") != add_id {
                 continue;
             }
+            heard = std::time::Instant::now();
             match s(e, "/type") {
                 "project.clone_progress" => {
                     let phase = s(e, "/data/phase").replace('_', " ");

@@ -3,7 +3,8 @@
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::prim::{Int, Text};
 use fleetd_contracts::projects::{
-    CiInfo, MergeRules, ProjectInspect, ProjectProblem, ProjectProblemCode,
+    CiInfo, MergeRules, ProjectAddFailedData, ProjectAddedData, ProjectInspect, ProjectProblem,
+    ProjectProblemCode,
 };
 use fleetd_contracts::sessions::RepoFacts;
 use fleetd_contracts::train::GitHubRepo;
@@ -22,6 +23,8 @@ pub struct GitHubAnswers {
     pub rulesets: Option<Value>,
     /// `repos/{repo}/actions/workflows`.
     pub workflows: Option<Value>,
+    /// Reads that failed, each as "what (why)": CI and merge rules are then unknown, not absent.
+    pub unread: Vec<String>,
 }
 
 fn strs<'a>(v: Option<&'a Value>, key: &str) -> impl Iterator<Item = String> + 'a {
@@ -149,11 +152,8 @@ pub fn build(
         }
     }
     if repo.is_some() && gh_ok {
-        if gh.branch.is_none() || gh.rules.is_none() {
-            notes.push("branch protection and rules could not be read".into());
-        }
-        if gh.workflows.is_none() {
-            notes.push("workflows could not be read".into());
+        for what in &gh.unread {
+            notes.push(format!("could not read {what}"));
         }
         if gh.repo.is_some() && merge.squash_allowed.is_none() {
             notes.push("merge settings need push access to read".into());
@@ -167,18 +167,25 @@ pub fn build(
         lead_needs: Text::unchecked("ready"),
         notes,
     };
-    inspect.lead_needs = Text::unchecked(lead_needs(&inspect, gh_ok));
+    let line = lead_needs(&inspect, gh_ok, &gh.unread);
+    inspect.lead_needs = Text::unchecked(crate::hub::executor::shell_mapper::js_take(&line, 300));
     inspect
 }
 
 /// One line for a person: the most important thing the lead and the merge train will need here.
-pub fn lead_needs(i: &ProjectInspect, gh_ok: bool) -> String {
+pub fn lead_needs(i: &ProjectInspect, gh_ok: bool, unread: &[String]) -> String {
     let branch = i.default_branch.as_deref().unwrap_or("the default branch");
     let Some(repo) = &i.repo else {
         return "no GitHub remote: the lead can work here, but the merge train needs a GitHub repo to open and merge PRs".into();
     };
     if !gh_ok {
         return "gh is not logged in on the hub: run `gh auth login` there so the merge train can open and merge PRs".into();
+    }
+    if !unread.is_empty() {
+        return format!(
+            "CI and merge rules unknown: gh on the hub could not read {} on {repo}",
+            unread.join(", ")
+        );
     }
     if i.merge.squash_allowed == Some(false) {
         return format!(
@@ -238,6 +245,8 @@ pub fn compact(mut i: ProjectInspect, budget: usize) -> ProjectInspect {
 pub struct Worker {
     pub machine_id: MachineId,
     pub connected: bool,
+    /// Its node understands the repo calls (it is new enough).
+    pub capable: bool,
     /// The runner is usable (not degraded).
     pub ready: bool,
     pub running: usize,
@@ -249,7 +258,7 @@ pub struct Worker {
 pub fn best_worker(workers: &[Worker]) -> Option<MachineId> {
     workers
         .iter()
-        .filter(|w| w.connected)
+        .filter(|w| w.connected && w.capable)
         .min_by(|a, b| {
             (!a.ready, a.running)
                 .cmp(&(!b.ready, b.running))
@@ -261,6 +270,80 @@ pub fn best_worker(workers: &[Worker]) -> Option<MachineId> {
                 .then(a.machine_id.as_str().cmp(b.machine_id.as_str()))
         })
         .map(|w| w.machine_id.clone())
+}
+
+/// Under the event log's 2 KB of data (it replaces anything larger, addId included, with `{"truncated":true}`).
+const EVENT_DATA_MAX: usize = 1900;
+
+fn size<T: serde::Serialize>(v: &T) -> usize {
+    serde_json::to_string(v).map_or(usize::MAX, |t| t.len())
+}
+
+/// At most `max` bytes, cut at a character boundary, with "…" when cut.
+pub fn cut(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let mut end = max.saturating_sub(3);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &text[..end])
+}
+
+/// A path's end matters most: "…" and its last `max` bytes.
+pub fn cut_path(path: &str, max: usize) -> String {
+    if path.len() <= max {
+        return path.to_owned();
+    }
+    let mut start = path.len() - max.saturating_sub(3);
+    while !path.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("…{}", &path[start..])
+}
+
+/// `project.added` data that fits the event log, so its addId always arrives.
+pub fn fit_added(mut d: ProjectAddedData) -> ProjectAddedData {
+    d.title = cut(&d.title, 300);
+    d.path = cut_path(&d.path, 500);
+    let mut budget = 1500;
+    loop {
+        d.inspect = compact(d.inspect, budget);
+        if size(&d) <= EVENT_DATA_MAX || budget <= 200 {
+            return d;
+        }
+        budget -= 200;
+    }
+}
+
+/// `project.add_failed` data that fits the event log.
+pub fn fit_failed(mut d: ProjectAddFailedData) -> ProjectAddFailedData {
+    d.path = cut_path(&d.path, 500);
+    d.problem.message = cut(&d.problem.message, 700);
+    d.problem.fix = d.problem.fix.map(|f| cut(&f, 400));
+    d
+}
+
+/// Whether a machine's node can take the repo calls: linked, and new enough to list them in its hello.
+pub fn repo_gate(m: &MachineId, connected: bool, capable: bool) -> Result<(), ProjectProblem> {
+    if !connected {
+        return Err(ProjectProblem {
+            code: ProjectProblemCode::MachineOffline,
+            message: format!("{m} is offline"),
+            fix: Some(format!(
+                "Start the node on {m} (fleetd node run) or check its network, then retry"
+            )),
+        });
+    }
+    if !capable {
+        return Err(ProjectProblem {
+            code: ProjectProblemCode::NodeTooOld,
+            message: format!("{m}'s node is too old to find, inspect or clone repos"),
+            fix: Some(format!("Run fleetd update on {m}, then retry")),
+        });
+    }
+    Ok(())
 }
 
 /// A clone's failure, from git's own last line.
@@ -342,6 +425,7 @@ mod tests {
                 { "name": "CI", "state": "active", "path": ".github/workflows/ci.yml" },
                 { "name": "Old", "state": "disabled_manually" },
                 { "name": "Copilot", "state": "active", "path": "dynamic/copilot-swe-agent/copilot" } ] })),
+            unread: vec![],
         };
         let i = build(Some(&repo()), &gh, None, vec![], true);
         assert_eq!(i.default_branch.as_deref(), Some("main"));
@@ -355,6 +439,32 @@ mod tests {
         assert_eq!(
             i.lead_needs.as_str(),
             "ready: main requires build, test; the train waits for them before each squash merge"
+        );
+    }
+
+    #[test]
+    fn failed_reads_are_unknown_not_absent() {
+        let gh = GitHubAnswers {
+            repo: Some(json!({ "default_branch": "main", "allow_squash_merge": true })),
+            branch: Some(json!({ "protected": false })),
+            rules: Some(json!([])),
+            unread: vec!["workflows (HTTP 403: API rate limit exceeded)".into()],
+            ..GitHubAnswers::default()
+        };
+        let i = build(Some(&repo()), &gh, None, vec![], true);
+        assert_eq!(
+            i.lead_needs.as_str(),
+            "CI and merge rules unknown: gh on the hub could not read workflows (HTTP 403: API rate limit exceeded) on acme/storefront"
+        );
+        assert!(i.notes.iter().any(|n| n.contains("rate limit")));
+        let whole = GitHubAnswers {
+            unread: vec!["acme/storefront (HTTP 502: Bad Gateway)".into()],
+            ..GitHubAnswers::default()
+        };
+        assert!(
+            build(Some(&repo()), &whole, None, vec![], true)
+                .lead_needs
+                .starts_with("CI and merge rules unknown")
         );
     }
 
@@ -393,6 +503,7 @@ mod tests {
             rules: Some(json!([])),
             rulesets: Some(json!([])),
             workflows: Some(json!({ "workflows": [] })),
+            unread: vec![],
         };
         assert_eq!(
             bare(none).lead_needs.as_str(),
@@ -450,6 +561,7 @@ mod tests {
         let w = |id: &str, connected, ready, running, load| Worker {
             machine_id: MachineId::new(id).unwrap(),
             connected,
+            capable: true,
             ready,
             running,
             load,
@@ -478,6 +590,88 @@ mod tests {
             ]),
             Some("buildbox".into())
         );
+    }
+
+    #[test]
+    fn project_events_always_fit_the_log_with_their_add_id() {
+        let long = format!("/home/me/{}/storefront", "é".repeat(490));
+        let checks: Vec<Value> = (0..60)
+            .map(|n| json!({ "context": format!("a long required check name {n}") }))
+            .collect();
+        let gh = GitHubAnswers {
+            repo: Some(json!({ "default_branch": "main" })),
+            rules: Some(
+                json!([{ "type": "required_status_checks", "parameters": { "required_status_checks": checks } }]),
+            ),
+            ..GitHubAnswers::default()
+        };
+        let added = fit_added(ProjectAddedData {
+            add_id: Some(Text::unchecked("08028d03-66c3-4f57-c1f1-967e18cd24f4")),
+            title: "t".repeat(200),
+            path: long.clone(),
+            created: true,
+            inspect: build(Some(&repo()), &gh, None, vec!["n".repeat(400); 5], true),
+        });
+        let text = serde_json::to_string(&added).unwrap();
+        assert!(text.len() <= 2048, "{}", text.len());
+        assert!(text.contains("08028d03-66c3-4f57-c1f1-967e18cd24f4"));
+        assert!(added.path.ends_with("/storefront"));
+
+        let failed = fit_failed(ProjectAddFailedData {
+            add_id: Text::unchecked("a1"),
+            repo: Some(repo()),
+            path: long.clone(),
+            problem: clone_problem(
+                &"x".repeat(2000),
+                &repo(),
+                &MachineId::new("devbox").unwrap(),
+                &long,
+            ),
+        });
+        let text = serde_json::to_string(&failed).unwrap();
+        assert!(text.len() <= 2048, "{}", text.len());
+        assert!(text.contains("\"addId\":\"a1\"") && text.contains("clone_failed"));
+    }
+
+    #[test]
+    fn an_old_node_is_never_sent_repo_calls() {
+        let m = MachineId::new("buildbox").unwrap();
+        assert_eq!(
+            repo_gate(&m, true, false).unwrap_err().code,
+            ProjectProblemCode::NodeTooOld
+        );
+        assert_eq!(
+            repo_gate(&m, false, false).unwrap_err().code,
+            ProjectProblemCode::MachineOffline
+        );
+        assert!(repo_gate(&m, true, true).is_ok());
+        let old = Worker {
+            machine_id: m,
+            connected: true,
+            capable: false,
+            ready: true,
+            running: 0,
+            load: None,
+        };
+        let new = Worker {
+            machine_id: MachineId::new("devbox").unwrap(),
+            connected: true,
+            capable: true,
+            ready: true,
+            running: 9,
+            load: None,
+        };
+        assert_eq!(
+            best_worker(&[old, new]).map(|w| w.to_string()),
+            Some("devbox".into())
+        );
+        // A hello from before this release carries no capabilities.
+        let hello: fleetd_contracts::node_link::NodeHello = serde_json::from_value(serde_json::json!({
+            "machineId": "buildbox", "name": "buildbox", "tags": [], "nodeVersion": "0.1.0", "protocol": 1,
+            "pubKey": "k", "sig": "s"
+        }))
+        .unwrap();
+        assert!(hello.capabilities.is_empty());
     }
 
     #[test]

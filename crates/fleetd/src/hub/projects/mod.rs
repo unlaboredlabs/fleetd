@@ -64,6 +64,16 @@ fn problem(
     }
 }
 
+/// Whether `m`'s node can take the repo calls now. An older node drops its link on a call it can't decode, so it is
+/// never sent one.
+fn repo_node(hub: &Hub, m: &MachineId) -> Result<(), ProjectProblem> {
+    inspect::repo_gate(
+        m,
+        hub.executors.is_connected(m),
+        hub.link.node_can(m, fleetd_contracts::node_link::CAP_REPOS),
+    )
+}
+
 fn node_problem(m: &MachineId, e: &ExecutorError) -> ProjectProblem {
     match e {
         ExecutorError::MachineNotConnected { .. } => problem(
@@ -100,6 +110,9 @@ fn workers(hub: &Hub) -> Vec<Worker> {
             let id = m.machine_id;
             Worker {
                 connected: hub.executors.is_connected(&id) && m.status != MachineStatus::Offline,
+                capable: hub
+                    .link
+                    .node_can(&id, fleetd_contracts::node_link::CAP_REPOS),
                 ready: hub.executors.is_ready(&id),
                 running: running
                     .iter()
@@ -133,14 +146,7 @@ fn target_machine(hub: &Hub, given: Option<&MachineId>) -> Result<MachineId, Too
     if hub.store.machine_get(&m)?.is_none() {
         return Err(crate::hub::api::unknown_machine(&m));
     }
-    if !hub.executors.is_connected(&m) {
-        return Err(problem_error(&node_problem(
-            &m,
-            &ExecutorError::MachineNotConnected {
-                machine_id: m.clone(),
-            },
-        )));
-    }
+    repo_node(hub, &m).map_err(|p| problem_error(&p))?;
     Ok(m)
 }
 
@@ -181,11 +187,14 @@ async fn read_github(
                 ),
             )));
         }
-        Ok(Err((status, message))) => {
-            notes.push(format!("gh api repos/{r} failed ({status}): {message}"))
+        Ok(Err((status, message))) => answers
+            .unread
+            .push(format!("{r} (HTTP {status}: {message})")),
+        Err(e) if e.kind == GhErrorKind::Failed => {
+            answers.unread.push(format!("{r} ({})", e.message))
         }
         Err(e) => {
-            gh_ok = e.kind == GhErrorKind::Failed;
+            gh_ok = false;
             notes.push(e.message);
         }
     }
@@ -199,7 +208,13 @@ async fn read_github(
             .to_owned();
         let read = |path: String| {
             let gh = gh.clone();
-            async move { gh.get(&path).await.ok().and_then(Result::ok) }
+            async move {
+                match gh.get(&path).await {
+                    Ok(Ok(v)) => Ok(v),
+                    Ok(Err((status, message))) => Err(format!("HTTP {status}: {message}")),
+                    Err(e) => Err(e.message),
+                }
+            }
         };
         let (b, rules, sets, wf) = tokio::join!(
             read(format!("repos/{r}/branches/{branch}")),
@@ -207,10 +222,23 @@ async fn read_github(
             read(format!("repos/{r}/rulesets")),
             read(format!("repos/{r}/actions/workflows")),
         );
-        answers.branch = b;
-        answers.rules = rules;
-        answers.rulesets = sets;
-        answers.workflows = wf;
+        let mut take = |what: &str, got: Result<serde_json::Value, String>| match got {
+            Ok(v) => Some(v),
+            Err(why) => {
+                answers.unread.push(format!("{what} ({why})"));
+                None
+            }
+        };
+        let (branch_v, rules_v, wf_v) = (
+            take("branch protection", b),
+            take("branch rules", rules),
+            take("workflows", wf),
+        );
+        answers.branch = branch_v;
+        answers.rules = rules_v;
+        answers.workflows = wf_v;
+        // Without ruleset names the rules still apply; they show as "ruleset <id>".
+        answers.rulesets = sets.ok();
     }
     Ok(inspect::build(Some(repo), &answers, local, notes, gh_ok))
 }
@@ -231,6 +259,7 @@ async fn inspect_checkout(facts: &RepoFacts) -> Result<ProjectInspect, ToolError
 
 /// The checkout at `path` on `m`, or why it can't be a project.
 async fn checkout(hub: &Hub, m: &MachineId, path: &str) -> Result<RepoFacts, ToolError> {
+    repo_node(hub, m).map_err(|p| problem_error(&p))?;
     let facts = hub
         .executors
         .repo_inspect(m, path)
@@ -261,6 +290,7 @@ async fn clone_target(
     repo: &GitHubRepo,
     dest: Option<&str>,
 ) -> Result<CloneTarget, ToolError> {
+    repo_node(hub, m).map_err(|p| problem_error(&p))?;
     let path = match dest {
         Some(d) => d.strip_suffix('/').unwrap_or(d).to_owned(),
         None => {
@@ -301,18 +331,13 @@ pub async fn discover(
         .filter(|m| allows(caller, Role::Read, Some(m)))
         .collect();
     let scans = join_all(machines.iter().map(|m| async move {
-        if !hub.executors.is_connected(m) {
+        if let Err(problem) = repo_node(hub, m) {
             return MachineRepos {
                 machine_id: m.clone(),
-                online: false,
+                online: hub.executors.is_connected(m),
                 clone_root: None,
                 repos: vec![],
-                problem: Some(node_problem(
-                    m,
-                    &ExecutorError::MachineNotConnected {
-                        machine_id: m.clone(),
-                    },
-                )),
+                problem: Some(problem),
             };
         }
         match hub.executors.repo_scan(m).await {
@@ -374,6 +399,7 @@ async fn gh_list(hub: &Hub, fallback: Option<MachineId>, scans: &[MachineRepos])
     let hub_problem = listed.problem.clone();
     if hub_problem.is_some()
         && let Some(m) = fallback
+        && repo_node(hub, &m).is_ok()
         && let Ok(theirs) = hub.executors.gh_repo_list(&m).await
         && theirs.problem.is_none()
     {
@@ -499,14 +525,14 @@ async fn register(
             .map_err(crate::hub::executor::tools::from_executor)?;
     }
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
-    let data = ProjectAddedData {
+    // The event log keeps at most 2 KB of data; project_inspect has the whole inspect.
+    let data = inspect::fit_added(ProjectAddedData {
         add_id,
         title,
         path: path.to_owned(),
         created,
-        // The event log keeps at most 2 KB of data; project_inspect has the whole thing.
-        inspect: inspect::compact(inspect, 1500),
-    };
+        inspect,
+    });
     hub.events.append(NewEvent {
         at: now(hub),
         r#type: HubEventType::ProjectAdded,
@@ -672,7 +698,7 @@ pub fn fail_interrupted(
             .repo
             .as_ref()
             .map_or_else(|| d.path.clone(), |r| r.to_string());
-        let data = ProjectAddFailedData {
+        let data = inspect::fit_failed(ProjectAddFailedData {
             add_id: d.add_id,
             repo: d.repo,
             path: d.path,
@@ -681,7 +707,7 @@ pub fn fail_interrupted(
                 format!("the hub restarted while cloning {what}"),
                 "Add it again; a clone that finished on the machine is offered for reuse",
             ),
-        };
+        });
         events.append(NewEvent {
             at: at.clone(),
             r#type: HubEventType::ProjectAddFailed,
@@ -733,7 +759,7 @@ async fn clone_and_register(
         let data = CloneProgressData {
             add_id: add_id.clone(),
             repo: Some(repo.clone()),
-            path: path.clone(),
+            path: inspect::cut_path(&path, 500),
             phase,
             percent: percent.map(|p| fleetd_contracts::prim::Int::unchecked(i64::from(p))),
             detail: detail
@@ -772,12 +798,12 @@ async fn clone_and_register(
         }
     };
     let failed = |p: ProjectProblem| {
-        let data = ProjectAddFailedData {
+        let data = inspect::fit_failed(ProjectAddFailedData {
             add_id: add_id.clone(),
             repo: Some(repo.clone()),
             path: path.clone(),
             problem: p.clone(),
-        };
+        });
         emit(
             HubEventType::ProjectAddFailed,
             p.message.clone(),
