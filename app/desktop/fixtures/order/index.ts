@@ -101,11 +101,11 @@ function steeringStates(f: Fixture): void {
     const lead = obj(o["lead"]);
     leadThread = lead["threadRef"] ?? {};
     t12Thread = obj(arr(obj(o["order"])["lanes"]).find((l) => obj(l)["taskId"] === "T12"))["threadRef"] ?? {};
-    const activity = { since: t(72), activity: { kind: "command", text: "pnpm test --filter share" } };
+    const activity = { since: t(72), activity: { kind: "command", text: "pnpm test --filter storefront-share-card" } };
     return { ...o, lead: { ...lead, live: { ...obj(lead["live"]), activity } } };
   });
   // The live feed has the last word on a lane: it has the lead on that run too.
-  const running = { status: "working", activity: { since: t(72), activity: { kind: "command", text: "pnpm test --filter share" } } };
+  const running = { status: "working", activity: { since: t(72), activity: { kind: "command", text: "pnpm test --filter storefront-share-card" } } };
   f.live = f.live.map((frame) => ({
     ...frame,
     lanes: arr(frame["lanes"]).map((l) => (asText(obj(l)["laneId"]).startsWith("lead:") ? { ...obj(l), ...running } : l)),
