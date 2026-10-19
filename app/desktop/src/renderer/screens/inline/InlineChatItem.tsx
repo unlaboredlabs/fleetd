@@ -8,7 +8,7 @@ import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
 import { prose } from "./prose";
-import { approvalOutcome, classWords, secretEnvLine, secretOutcome, secretTarget, shellLine, type Outcome } from "./request";
+import { approvalOutcome, classWords, secretEnvLines, secretOutcome, secretTarget, shellLine, type Outcome } from "./request";
 import s from "./InlineChatItem.module.css";
 
 const errorText = (e: HubError): string => (e.fix === undefined ? e.message : `${e.message} ${e.fix}`);
@@ -111,6 +111,11 @@ function SecretItem({ item }: { item: SecretRequestItem }) {
       <Text as="p" strong className={cx(s.title)}>
         {prose(item.text)}
       </Text>
+      {item.note === undefined || item.note.trim() === "" ? null : (
+        <Text as="p" size="sm" tone="quiet" className={cx(s.line)}>
+          {prose(item.note)}
+        </Text>
+      )}
       {outcome !== undefined ? (
         <OutcomeLine outcome={outcome} />
       ) : !target.ok ? (
@@ -159,62 +164,68 @@ function ApprovalItem({ item }: { item: CommandApprovalItem }) {
   const { call } = useDataLayer();
   const { shown, busy, error, run } = useSent(item);
   const outcome = approvalOutcome(shown);
-  const env = secretEnvLine(item);
-  const answer = (approve: boolean): void =>
+  const { gated, permission } = item;
+  const answer = (decision: "approve" | "deny"): void =>
     run(async () => {
-      const out = await call("approval_answer", { requestId: item.requestId, approve });
-      return out.ok ? { ok: true, sent: { state: approve ? "approved" : "denied" } } : out;
+      const out = await call("approval_answer", { requestId: item.requestId, decision });
+      return out.ok ? { ok: true, sent: { state: decision === "approve" ? "approved" : "denied" } } : out;
     });
   return (
     <section className={s.item} data-request={item.requestId} aria-label="Command to approve">
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {item.argv === undefined ? "Permission" : "Command"}
+          {gated === undefined ? "Permission" : "Command"}
         </Text>
-        <Text size="xs" tone={item.class === "credential" ? "warning" : "danger"} strong>
-          {classWords(item.class)}
-        </Text>
-      </div>
-      <Text as="p" strong className={cx(s.title)}>
-        {prose(item.reason)}
-      </Text>
-      <div className={s.detail}>
-        {item.argv === undefined ? (
-          <>
-            {item.tool === undefined ? null : (
-              <Text size="xs" tone="quiet">
-                {item.tool}
-              </Text>
-            )}
-            {item.inputSummary === undefined ? null : <Code code={item.inputSummary} bare />}
-          </>
-        ) : (
-          <Code code={shellLine(item.argv)} lang="sh" bare />
-        )}
-        <Text size="xs" tone="quiet">
-          on {item.machineId}
-          {item.cwd === undefined ? null : (
-            <>
-              {" "}
-              in <InlineCode>{item.cwd}</InlineCode>
-            </>
-          )}
-          {item.timeoutSec === undefined ? null : ` · stops after ${String(Math.ceil(item.timeoutSec / 60))} min`}
-        </Text>
-        {env === undefined ? null : (
-          <Text size="xs" tone="quiet">
-            {prose(env)}
+        {gated === undefined ? null : (
+          <Text size="xs" tone={gated.class === "credential" ? "warning" : "danger"} strong>
+            {classWords(gated.class)}
           </Text>
         )}
       </div>
+      <Text as="p" strong className={cx(s.title)}>
+        {gated !== undefined
+          ? prose(gated.reason)
+          : permission !== undefined
+            ? `An agent wants to use ${permission.toolName}`
+            : "An agent needs your OK"}
+      </Text>
+      <div className={s.detail}>
+        {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
+        {gated === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
+        <Text size="xs" tone="quiet">
+          on {item.machineId}
+          {gated?.cwd === undefined ? null : (
+            <>
+              {" "}
+              in <InlineCode>{gated.cwd}</InlineCode>
+            </>
+          )}
+          {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
+        </Text>
+        {gated === undefined
+          ? null
+          : secretEnvLines(gated).map((line) => (
+              <Text key={line} size="xs" tone="quiet">
+                {prose(line)}
+              </Text>
+            ))}
+      </div>
+      {/* Why it is open again (approved while the node was offline) or why it failed. */}
+      {item.note === undefined || item.note.trim() === "" ? null : (
+        <p className={s.outcome}>
+          <Text size="sm" tone={shown.state === "open" ? "warning" : "quiet"}>
+            {prose(item.note)}
+          </Text>
+        </p>
+      )}
       {outcome === undefined ? null : <OutcomeLine outcome={outcome} />}
       {item.outputTail === undefined || item.outputTail.trim() === "" ? null : <Code code={item.outputTail} bare />}
       {shown.state === "open" ? (
         <div className={s.actions}>
-          <Button variant={item.class === "irreversible" ? "danger" : "primary"} disabled={!live || busy} onClick={() => answer(true)}>
-            Approve
+          <Button variant={gated?.class === "irreversible" ? "danger" : "primary"} disabled={!live || busy} onClick={() => answer("approve")}>
+            {item.note === undefined ? "Approve" : "Approve again"}
           </Button>
-          <Button variant="secondary" disabled={!live || busy} onClick={() => answer(false)}>
+          <Button variant="secondary" disabled={!live || busy} onClick={() => answer("deny")}>
             Deny
           </Button>
         </div>

@@ -1,6 +1,6 @@
 // What the two inline chat items say, as pure functions: where a secret lands and whether it can be sealed now, the
 // exact command an approval runs, and the one result line under it.
-import type { CommandApprovalItem, Machine, SecretRequestItem } from "../../../shared/contracts";
+import type { CommandApprovalItem, GatedClass, GatedRunSpec, Machine, SecretRequestItem } from "../../../shared/contracts";
 
 export type SecretTarget =
   | { readonly ok: true; readonly machine: string; readonly boxPubKey: string; readonly where: string }
@@ -25,7 +25,8 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
   if (machine.status === "offline") {
     return { ok: false, message: `${machine.name} is offline.`, fix: `Save it once ${machine.name} is back online.` };
   }
-  const where = kind === "env" ? `in ${path} on ${machine.name}` : `to ${path} on ${machine.name}`;
+  const where =
+    kind === "env" ? `${item.envName === undefined ? "" : `as ${item.envName} `}in ${path} on ${machine.name}` : `to ${path} on ${machine.name}`;
   return { ok: true, machine: machine.name, boxPubKey: machine.boxPubKey, where };
 };
 
@@ -33,14 +34,12 @@ export const secretTarget = (machines: Readonly<Record<string, Machine>>, item: 
 export const shellLine = (argv: readonly string[]): string =>
   argv.map((a) => (/^[\w@%+=:,./-]+$/u.test(a) ? a : `'${a.replace(/'/gu, `'\\''`)}'`)).join(" ");
 
-/** The secrets a command is started with, names only. Backticks: the item shows them as code. */
-export const secretEnvLine = (item: CommandApprovalItem): string | undefined =>
-  item.secretEnv === undefined || item.secretEnv.length === 0
-    ? undefined
-    : `Gets the secret${item.secretEnv.length === 1 ? "" : "s"} ${item.secretEnv.map((n) => `\`${n}\``).join(", ")}`;
+/** The secrets a command is started with, by name: the variable and the stored secret it comes from, never a value. */
+export const secretEnvLines = (gated: GatedRunSpec): string[] =>
+  (gated.secretEnv ?? []).map((e) => `\`${e.name}\` gets the secret \`${e.secretKey}\``);
 
-/** The class in plain words; every approval raises the stakes, so it always has one. */
-export const classWords = (c: CommandApprovalItem["class"]): string =>
+/** The class in plain words; every gated command raises the stakes, so it always has one. */
+export const classWords = (c: GatedClass): string =>
   c === "irreversible" ? "Can't be undone" : c === "money" ? "Costs money" : "Uses a credential";
 
 export type Outcome = { readonly tone: "quiet" | "success" | "danger" | "warning"; readonly text: string };
