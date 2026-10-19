@@ -14,7 +14,8 @@ type ChatAttachment = ChatItem["attachments"][number];
 import { shortClock } from "./format";
 import { systemHeadline, type Row } from "./model";
 import { MessageReceipt } from "./Composer";
-import { InlineChatItem, LiveStrip, type ProjectRef } from "./slots";
+import { LiveStrip } from "../live";
+import { InlineChatItem, type ProjectRef } from "./slots";
 import { Disclosure, InlineText, Message } from "./text";
 import s from "./view.module.css";
 

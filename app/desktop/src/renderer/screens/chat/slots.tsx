@@ -1,17 +1,11 @@
 // STAND-INS for the other slices' parts of the chat screen, so this one builds alone. At integration each becomes
 // one import of the real component (names agreed with its owner), and its stand-in here is deleted.
-import type { AgentLane } from "../../../shared/contracts";
 import { Text } from "../../ui";
 import type { ChatItem } from "../../src/data/chat";
 
 export interface ProjectRef {
   readonly machineId: string;
   readonly projectId: string;
-}
-
-/** F2 (A4): `import { LiveStrip } from "../live"`. Renders nothing while no agent is at work. */
-export function LiveStrip(_props: { project: ProjectRef; onTold: (lane: AgentLane) => void }) {
-  return null;
 }
 
 /** F5 (A5): `import { InlineChatItem } from "../inline"`: a secret field or a gated command with Approve / Deny. */
