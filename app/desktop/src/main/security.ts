@@ -32,8 +32,12 @@ export const harden = (): void => {
 /** Run once the app is ready (sessions exist then). */
 export const lockSession = (): void => {
   const ses = session.defaultSession;
-  ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  ses.setPermissionCheckHandler(() => false);
+  // Copy buttons write the clipboard; nothing may read it, and every other permission stays denied.
+  const allowed = (permission: string, url: string) => permission === "clipboard-sanitized-write" && isOwnUrl(url);
+  ses.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(allowed(permission, details.requestingUrl || contents.getURL()));
+  });
+  ses.setPermissionCheckHandler((_contents, permission, requestingOrigin) => allowed(permission, requestingOrigin));
   ses.webRequest.onBeforeRequest((details, callback) => {
     const allowed = isOwnUrl(details.url) || details.url.startsWith("devtools://") || details.url.startsWith("data:");
     callback({ cancel: !allowed });

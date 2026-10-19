@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["out/", "node_modules/", "eslint.config.js"] },
+  { ignores: ["out/", "node_modules/", "eslint.config.js", "qa-results/", "test-results/"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
@@ -16,7 +16,7 @@ export default defineConfig(
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
       "@typescript-eslint/consistent-type-imports": "error",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true }],
       "@typescript-eslint/no-confusing-void-expression": "off",
     },
   },
@@ -26,7 +26,11 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ["src/main/**/*.ts", "src/preload/**/*.ts", "*.config.ts"],
+    files: ["src/main/**/*.ts", "src/preload/**/*.ts", "*.config.ts", "qa/**/*.{ts,js}"],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: ["qa/selftest/app/pages.js"],
+    languageOptions: { globals: globals.browser },
   },
 );
