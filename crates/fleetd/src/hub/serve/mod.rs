@@ -307,6 +307,7 @@ pub fn build_on(
     let leases = crate::hub::leases::Leases::new(db.clone(), events.clone(), clock.clone());
     let source = crate::hub::leases::policy::NodePolicySource {
         store: store.clone(),
+        executors: executors.clone(),
         ports: task_ports.clone(),
     };
     let policies = crate::hub::leases::Policies::new(Arc::new(source), clock.clone());

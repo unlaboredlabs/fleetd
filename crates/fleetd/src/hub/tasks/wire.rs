@@ -28,7 +28,7 @@ use crate::hub::link::commands::CommandInput;
 use crate::hub::link::lead_calls::{AgentDirectory, CallerAgent, LeadCallFuture};
 use crate::hub::link::{LeadCallHandler, LeadCaller, NodeCommands};
 
-fn port_error(error: ExecutorError) -> PortError {
+pub(crate) fn port_error(error: ExecutorError) -> PortError {
     match error {
         ExecutorError::MachineNotConnected { .. } => PortError::Offline,
         other => PortError::Failed(other.to_string()),

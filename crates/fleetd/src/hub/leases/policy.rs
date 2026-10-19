@@ -226,16 +226,15 @@ fn sets_areas(text: &str) -> bool {
     serde_yaml_ng::from_str::<Value>(text).is_ok_and(|v| v.get("areas").is_some())
 }
 
-/// Where a project's files come from. The hub's source asks the machine's node (`Executors::read_file`, and one
-/// `git ls-tree` for the layout); tests use a fake.
+/// Where a project's files come from. The hub's source asks the machine's node (`Executors::read_project_file`, and
+/// one `git ls-tree` for the layout); tests use a fake.
 pub trait PolicySource: Send + Sync {
-    /// The project's machine and workspace root.
-    fn locate(&self, project_ref: &ProjectRef) -> Result<(MachineId, String), LeadError>;
-    /// A repo-relative file in `root`: `None` when it does not exist.
+    /// The project's workspace root.
+    fn root(&self, project_ref: &ProjectRef) -> Result<String, LeadError>;
+    /// A repo-relative file of the project: `None` when it does not exist.
     fn read<'a>(
         &'a self,
-        machine_id: &'a MachineId,
-        root: &'a str,
+        project_ref: &'a ProjectRef,
         path: &'a str,
     ) -> BoxFut<'a, Result<Option<String>, LeadError>>;
     /// The committed directories at the top of `root` and one level under each of `parents` (`parent/child`);
@@ -248,10 +247,12 @@ pub trait PolicySource: Send + Sync {
     ) -> BoxFut<'a, Option<Vec<String>>>;
 }
 
-/// Reads the files from the project's workspace root through the machine's node.
+/// Reads the files from the project's workspace through the machine's node.
 pub struct NodePolicySource {
     pub store: Arc<crate::hub::store::HubStore>,
-    /// WorkspaceFiles.read and NodeCommands.run, over the executor.
+    /// WorkspaceFiles.read, by project id, so a project just added reads before the hub's view of the node has it.
+    pub executors: Arc<crate::hub::executor::Executors>,
+    /// NodeCommands.run, over the executor.
     pub ports: Arc<dyn TaskPorts>,
 }
 
@@ -266,7 +267,7 @@ const DIRS_SCRIPT: &str = concat!(
 const DIRS_OUTPUT_MAX: usize = 2000;
 
 impl PolicySource for NodePolicySource {
-    fn locate(&self, project_ref: &ProjectRef) -> Result<(MachineId, String), LeadError> {
+    fn root(&self, project_ref: &ProjectRef) -> Result<String, LeadError> {
         let project = self.store.project_get(project_ref).map_err(|e| {
             tracing::error!(error = %e, "policy: project not read");
             LeadError::new(ErrorCode::Failed, "The hub failed to answer that request.")
@@ -284,20 +285,21 @@ impl PolicySource for NodePolicySource {
                 "Check the project with project_get; its machine may not have reported it yet.",
             ));
         };
-        Ok((project_ref.machine_id.clone(), project.workspace_root))
+        Ok(project.workspace_root)
     }
 
     fn read<'a>(
         &'a self,
-        machine_id: &'a MachineId,
-        root: &'a str,
+        project_ref: &'a ProjectRef,
         path: &'a str,
     ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
         Box::pin(async move {
-            self.ports
-                .read_file(machine_id, root, path)
+            self.executors
+                .read_project_file(&project_ref.machine_id, &project_ref.project_id, path)
                 .await
-                .map_err(|e| e.to_task_error(machine_id))
+                .map_err(|e| {
+                    crate::hub::tasks::wire::port_error(e).to_task_error(&project_ref.machine_id)
+                })
         })
     }
 
@@ -371,9 +373,28 @@ impl Policies {
         {
             return result.clone();
         }
-        let (machine_id, root) = self.source.locate(project_ref)?;
+        let root = self.source.root(project_ref)?;
+        self.load_and_cache(project_ref, &root, now).await
+    }
+
+    /// Reads the project's policy afresh, for a project just registered at `root`: the hub may not list it yet.
+    pub async fn resolve_new(
+        &self,
+        project_ref: &ProjectRef,
+        root: &str,
+    ) -> Result<Resolved, LeadError> {
+        let now = self.now_ms();
+        self.load_and_cache(project_ref, root, now).await
+    }
+
+    async fn load_and_cache(
+        &self,
+        project_ref: &ProjectRef,
+        root: &str,
+        now: u128,
+    ) -> Result<Resolved, LeadError> {
         // A read failure (machine offline) is not cached.
-        let result = self.load(&machine_id, &root).await?;
+        let result = self.load(project_ref, root).await?;
         self.cache
             .lock()
             .unwrap()
@@ -381,23 +402,13 @@ impl Policies {
         result
     }
 
-    /// The policy of the checkout at `root` on a machine, uncached, for a project being added. `None` when the node
-    /// can't be read.
-    pub async fn resolve_at(
-        &self,
-        machine_id: &MachineId,
-        root: &str,
-    ) -> Option<Result<Resolved, LeadError>> {
-        self.load(machine_id, root).await.ok()
-    }
-
     /// Outer error: the file could not be read. Inner: what the file says, a broken file included.
     async fn load(
         &self,
-        machine_id: &MachineId,
+        project_ref: &ProjectRef,
         root: &str,
     ) -> Result<Result<Resolved, LeadError>, LeadError> {
-        let text = self.source.read(machine_id, root, POLICY_FILE_PATH).await?;
+        let text = self.source.read(project_ref, POLICY_FILE_PATH).await?;
         let policy = match text.as_deref() {
             None => default_policy(),
             Some(text) => match parse_policy(text) {
@@ -412,7 +423,7 @@ impl Policies {
             },
         };
         let mut policy = policy;
-        if let Some(areas) = self.infer(machine_id, root).await {
+        if let Some(areas) = self.infer(project_ref, root).await {
             policy.areas = areas;
         }
         Ok(Ok(Resolved {
@@ -424,15 +435,11 @@ impl Policies {
     /// The areas the repo's layout suggests; `None` when the node can't list it, which leaves "all".
     async fn infer(
         &self,
-        machine_id: &MachineId,
+        project_ref: &ProjectRef,
         root: &str,
     ) -> Option<BTreeMap<String, List<AreaGlob, 1, 50>>> {
         let read = |path: &'static str| async move {
-            self.source
-                .read(machine_id, root, path)
-                .await
-                .ok()
-                .flatten()
+            self.source.read(project_ref, path).await.ok().flatten()
         };
         let manifests = areas::Manifests {
             cargo_toml: read("Cargo.toml").await,
@@ -441,7 +448,11 @@ impl Policies {
         };
         let dirs = self
             .source
-            .dirs(machine_id, root, areas::dirs_to_list(&manifests))
+            .dirs(
+                &project_ref.machine_id,
+                root,
+                areas::dirs_to_list(&manifests),
+            )
             .await?;
         Some(
             areas::infer(&manifests, &dirs)
@@ -553,14 +564,13 @@ mod tests {
     }
 
     impl PolicySource for Fake {
-        fn locate(&self, r: &ProjectRef) -> Result<(MachineId, String), LeadError> {
-            Ok((r.machine_id.clone(), "/repo".into()))
+        fn root(&self, _: &ProjectRef) -> Result<String, LeadError> {
+            Ok("/repo".into())
         }
 
         fn read<'a>(
             &'a self,
-            _: &'a MachineId,
-            _: &'a str,
+            _: &'a ProjectRef,
             path: &'a str,
         ) -> BoxFut<'a, Result<Option<String>, LeadError>> {
             Box::pin(async move {

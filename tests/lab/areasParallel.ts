@@ -1,6 +1,6 @@
 // Default areas (`npm run lab -- areas`), on lab-a in this slot's namespace of the lab repo, whose seed has
 // packages/alpha and packages/beta. The policy file sets no `areas`, so the hub infers `alpha`, `beta` and `all` from
-// the repo: project_inspect shows them as inferred, `fleetd doctor` lists them, and two writers, one per package, run
+// the repo: project_add shows them as inferred, `fleetd doctor` lists them, and two writers, one per package, run
 // at the same time instead of queueing on one area. Costs a lead start turn, its wakes and two haiku writer turns.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -28,13 +28,14 @@ export async function areasParallel(lab: Lab) {
   check(fs.existsSync(path.join(CLONE, "packages/alpha")) && fs.existsSync(path.join(CLONE, "packages/beta")), `the seed has packages/alpha and packages/beta (run node tests/lab/labRepo.ts)`);
   const scenarioStart = await lab.cursor();
   try {
-    const inspected = (await callTool("project_inspect", { machineId: MACHINE, path: CLONE })).body.inspect as Body;
-    const areas = inspected.areas as Array<string> | undefined;
-    check(inspected.areasInferred === true && ["all", "alpha", "beta"].every((a) => areas?.includes(a)), `project_inspect infers the areas: ${JSON.stringify({ areas, inferred: inspected.areasInferred })}`);
-    ok(`project_inspect: areas ${areas!.join(", ")} (inferred from the repo)`);
-
+    const addedFrom = await lab.cursor();
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
+    const added = await lab.waitEvent("project.added", 30_000, { cursor: addedFrom, types: ["project.added"], match: (e) => e.projectId === projectId });
+    const inspect = added.event.data?.inspect as Body | undefined;
+    const areas = inspect?.areas as Array<string> | undefined;
+    check(inspect?.areasInferred === true && ["all", "alpha", "beta"].every((a) => areas?.includes(a)), `project_add infers the areas: ${JSON.stringify(inspect)}`);
+    ok(`project_add: areas ${areas!.join(", ")} (inferred from the repo)`);
     const doctor = (await callTool("doctor_list", { rerun: true })).body;
     const line = ((doctor.checks ?? []) as Array<Body>).find((c) => c.id === `${MACHINE}/areas`)?.message as string | undefined;
     check(line?.includes("fleetd-lab: ") && line.includes("alpha") && line.includes("(inferred from the repo"), `doctor lists the inferred areas: ${line}`);
