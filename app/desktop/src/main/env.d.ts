@@ -1,4 +1,6 @@
 interface ImportMetaEnv {
+  /** True only under `electron-vite dev`; Vite inlines it. */
+  readonly DEV: boolean;
   /**
    * "1" only in the unpublished CI test build (`MAIN_VITE_FLEETD_TEST_BUILD=1 pnpm build`); electron-vite inlines it
    * at build time, so a release build has no way to turn it on.

@@ -39,33 +39,34 @@ const build = (name: string, testBuild: boolean): string => {
   return out;
 };
 
+/** Hard-links (or, across filesystems, copies) the tree at `from` into `to`, giving the file `rename[0]` the name `rename[1]`. */
+const linkTree = (from: string, to: string, rename: readonly [string, string]): void => {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const src = path.join(from, entry.name);
+    const dst = path.join(to, src === rename[0] ? rename[1] : entry.name);
+    if (entry.isDirectory()) linkTree(src, dst, rename);
+    else if (entry.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(src), dst);
+    else {
+      try {
+        fs.linkSync(src, dst);
+      } catch {
+        fs.copyFileSync(src, dst);
+        fs.chmodSync(dst, fs.statSync(src).mode);
+      }
+    }
+  }
+};
+
 /**
- * A packaged layout: Electron's files hard-linked (copied across filesystems) with the binary renamed, so app.isPackaged
- * is true, and the app in resources/app. Returns the binary.
+ * A packaged layout: Electron's files with the binary named `fleetd`, so app.isPackaged is true, and the app in
+ * resources/app. Returns the binary.
  */
 const fakePackage = (name: string, out: string): string => {
   const dist = electronDist();
   const dir = path.join(WORK, name, "fleetd");
   fs.rmSync(dir, { recursive: true, force: true });
-  const link = (from: string, to: string) => {
-    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-      const [src, dst] = [path.join(from, entry.name), path.join(to, entry.name === "electron" && from === dist ? "fleetd" : entry.name)];
-      if (entry.isDirectory()) {
-        fs.mkdirSync(dst, { recursive: true });
-        link(src, dst);
-      } else if (entry.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(src), dst);
-      else {
-        try {
-          fs.linkSync(src, dst);
-        } catch {
-          fs.copyFileSync(src, dst);
-          fs.chmodSync(dst, fs.statSync(src).mode);
-        }
-      }
-    }
-  };
-  fs.mkdirSync(dir, { recursive: true });
-  link(dist, dir);
+  linkTree(dist, dir, [path.join(dist, "electron"), "fleetd"]);
   const app = path.join(dir, "resources/app");
   fs.mkdirSync(app, { recursive: true });
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { name: string; productName: string };
@@ -73,6 +74,17 @@ const fakePackage = (name: string, out: string): string => {
   fs.cpSync(out, path.join(app, "out"), { recursive: true });
   fs.symlinkSync(path.join(ROOT, "node_modules"), path.join(app, "node_modules"));
   return path.join(dir, "fleetd");
+};
+
+/**
+ * The reviewer's repro: the same package with its binary renamed `electron`, which makes app.isPackaged false. The
+ * guard must not care. Returns the renamed binary.
+ */
+const renamedCopy = (binary: string): string => {
+  const dir = path.join(WORK, "renamed");
+  fs.rmSync(dir, { recursive: true, force: true });
+  linkTree(path.dirname(binary), dir, [binary, "electron"]);
+  return path.join(dir, "electron");
 };
 
 const listening = (port: number) =>
@@ -167,6 +179,13 @@ for (const c of real ? [...REMOTE, ...INSPECT] : REMOTE) {
   console.log(`ok  release build refuses ${c.name} (exit ${REFUSED_EXIT}, nothing listened)`);
 }
 if (!real) console.log("--  --inspect is closed by electron-builder.yml's electronFuses; run with --packaged <binary> to check it");
+
+for (const c of REMOTE.slice(0, 1)) {
+  const run = await launch(`renamed ${c.name}`, renamedCopy(release), c.args, c.env);
+  if (run.opened.length > 0) fail(`release build renamed to electron with ${c.name}: port ${run.opened.join(", ")} listened`);
+  if (run.code !== REFUSED_EXIT) fail(`release build renamed to electron with ${c.name}: exit ${run.code ?? "none (still running)"}\n${run.output}`);
+  console.log(`ok  release build renamed to electron still refuses ${c.name} (exit ${REFUSED_EXIT}, nothing listened)`);
+}
 
 const plain = await launch("plain", release, [], {}, 3000);
 if (plain.code !== null) fail(`release build without switches exited (${plain.code})\n${plain.output}`);
