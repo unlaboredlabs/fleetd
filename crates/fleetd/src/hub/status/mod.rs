@@ -43,6 +43,7 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::WorkstreamDone,
     HubEventType::AskCreated,
     HubEventType::AskAuto,
+    HubEventType::AskClosed,
     HubEventType::BatchReady,
     HubEventType::DecisionRecorded,
     HubEventType::TaskQueued,

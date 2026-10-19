@@ -12,6 +12,7 @@ use fleetd_contracts::mcp::{
 };
 use fleetd_contracts::prim::Positive;
 
+use super::asks::closed_event;
 use super::decisions::recorded_event;
 use super::grammar::{Action, parse_reply, resolve_plan};
 use super::repo::{self, RecordInput, batch_n};
@@ -376,6 +377,9 @@ impl Inbox {
         };
         for decision in &done.decisions {
             self.ctx.emit(recorded_event(decision, None));
+        }
+        for answer in &done.answers {
+            self.ctx.emit(closed_event(&answer.ask, now));
         }
         if let Some(sink) = self
             .misfiled

@@ -73,6 +73,10 @@ pub enum HubEventType {
     /// An ask was answered from the decision log and never reached a batch.
     #[serde(rename = "ask.auto")]
     AskAuto,
+    /// An open ask stopped being open (answered, withdrawn); `data.askId`, `data.key`, `data.state`, and
+    /// `data.workstreamId` when it was about an order. Everything that counts open asks recomputes on it.
+    #[serde(rename = "ask.closed")]
+    AskClosed,
     #[serde(rename = "batch.ready")]
     BatchReady,
     #[serde(rename = "decision.recorded")]
@@ -264,6 +268,7 @@ impl HubEventType {
             Self::WorkstreamState => "workstream.state",
             Self::AskCreated => "ask.created",
             Self::AskAuto => "ask.auto",
+            Self::AskClosed => "ask.closed",
             Self::BatchReady => "batch.ready",
             Self::DecisionRecorded => "decision.recorded",
             Self::LeadStarted => "lead.started",
