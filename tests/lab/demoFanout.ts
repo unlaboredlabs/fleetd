@@ -12,8 +12,8 @@
 // human key, then waits up to 10 minutes for that order to arrive from the app. Either way RUN/demo/timeline.jsonl
 // gets one line per milestone with its wall-clock time, for cutting the recording. Costs about 15-25 haiku turns.
 //
-// FLEETD_DEMO_APP=<fleetd-app binary> also starts the app on the hub with the human key, recording its own window into
-// FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD, macOS). The app types the order into its composer and sends
+// FLEETD_DEMO_APP=<app executable> also starts the desktop app on the hub with the human key, recording its own window
+// into FLEETD_DEMO_RECORD (default RUN/demo/rec; FLEETD_RECORD). The app types the order into its composer and sends
 // it (FLEETD_DEMO_TYPE); clip.mp4 runs from just before the first key to 3 s after the last merge, fleetd.mp4 is the
 // whole capture. Then it stops the app by its PID, which finishes both. scripts/demo-mac.sh runs it so on a Mac.
 //
@@ -138,7 +138,8 @@ const startApp = async (lab: Lab, bin: string, key: string, out: string, order: 
   fs.mkdirSync(out, { recursive: true });
   const logFile = path.join(lab.dir, "app.log");
   const child = spawn(bin, [], {
-    env: { ...scrubbedEnv(), FLEETD_HUB_URL: lab.hubUrl, FLEETD_AGENT_KEY: key, FLEETD_RECORD: out, FLEETD_DEMO_TYPE: order },
+    // FLEETD_HOME keeps the desktop app's own state (and its Chromium profile) in the run, not the user's app data.
+    env: { ...scrubbedEnv(), FLEETD_HOME: path.join(lab.dir, "app-home"), FLEETD_HUB_URL: lab.hubUrl, FLEETD_AGENT_KEY: key, FLEETD_RECORD: out, FLEETD_DEMO_TYPE: order },
     stdio: ["ignore", fs.openSync(logFile, "a"), fs.openSync(logFile, "a")],
     ...detached(),
   });
