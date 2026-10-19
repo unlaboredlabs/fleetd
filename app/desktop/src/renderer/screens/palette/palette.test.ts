@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { statusRouteFor, toggleInboxHash } from "./defaults";
 import { dispatchable } from "./keymap";
 import { pushRecent, rank, score } from "./rank";
-import { commandFor, registerCommands, registerSource, runCommand, snapshotItems, type Command } from "./registry";
-import { isReply, namedItems, readReplyOutcome } from "./reply";
+import { bindLatest, commandFor, registerCommands, registerSource, runCommand, snapshotItems, type Command } from "./registry";
+import { isReply, namedBatch, namedItems, planReply, readReplyOutcome } from "./reply";
 
 const item = (id: string, title: string, group: Command["group"], extra: Partial<Command> = {}): Command => ({
   id,
@@ -17,7 +17,7 @@ describe("rank", () => {
   it("matches subsequences and prefers word starts and runs", () => {
     expect(score("frt", "fleet-infra")).toBeUndefined();
     expect(score("fi", "fleet-infra")).toBeDefined();
-    expect(score("fle", "fleetd")).toBeGreaterThan(score("fle", "forge-lead-e") ?? Infinity);
+    expect(score("fle", "fleetd")).toBeGreaterThan(score("fle", "field-lead-e") ?? Infinity);
     expect(score("dn", "desktop-notify")).toBeGreaterThan(score("dn", "addon") ?? Infinity);
     expect(score("FLEET", "fleetd")).toBe(score("fleet", "fleetd"));
   });
@@ -73,7 +73,7 @@ describe("reply mode", () => {
   it("reads the hub's echo, its hint, or the call's error", () => {
     expect(readReplyOutcome({ ok: true, output: { parsed: true, echo: "Logged: 1 → go (D12)", applied: [] } })).toEqual({ ok: true, text: "Logged: 1 → go (D12)" });
     expect(readReplyOutcome({ ok: true, output: { parsed: false, hint: "No item 9 in B2." } })).toEqual({ ok: false, text: "No item 9 in B2." });
-    expect(readReplyOutcome({ ok: false, error: { message: "Not connected.", fix: "Check the hub." } })).toEqual({ ok: false, text: "Not connected. Check the hub." });
+    expect(readReplyOutcome({ ok: false, error: { code: "disconnected", message: "Not connected.", fix: "Check the hub." } })).toEqual({ ok: false, text: "Not connected. Check the hub." });
   });
 });
 
@@ -81,6 +81,23 @@ describe("registry", () => {
   const offs: (() => void)[] = [];
   afterEach(() => {
     for (const off of offs.splice(0)) off();
+  });
+
+  it("never lets a default shadow a screen's command, whichever registers first", () => {
+    const ran: string[] = [];
+    // React runs the shell's effects after its children's, so the screen registers first at launch.
+    offs.push(registerCommands([item("status.toggle", "Status", "go-to", { run: () => ran.push("screen") })]));
+    const offDefault = registerCommands([item("status.toggle", "Status", "go-to", { run: () => ran.push("default") })], "default");
+    runCommand("status.toggle");
+    // A screen that mounts later still wins over the default, and the default returns once screens are gone.
+    const offLater = registerCommands([item("status.toggle", "Status", "go-to", { run: () => ran.push("later") })]);
+    runCommand("status.toggle");
+    offLater();
+    for (const off of offs.splice(0)) off();
+    runCommand("status.toggle");
+    offDefault();
+    expect(ran).toEqual(["screen", "later", "default"]);
+    expect(runCommand("status.toggle")).toBe(false);
   });
 
   it("lets the latest registration of an id win until it unmounts", () => {
@@ -109,6 +126,86 @@ describe("registry", () => {
     offs.push(registerCommands([item("order:W1", "From a command", "orders")]));
     offs.push(registerSource({ id: "orders", items: () => [item("order:W1", "Duplicate", "orders"), item("order:W2", "W2 Fix login", "orders")] }));
     expect(snapshotItems().map((c) => c.title)).toEqual(["From a command", "W2 Fix login"]);
+  });
+});
+
+describe("useCommands closures", () => {
+  it("runs the command with the key's id after the list reorders or shrinks", () => {
+    const ran: string[] = [];
+    const stop = item("order.stop", "Stop", "orders", { run: () => ran.push("stop") });
+    const prev = item("order.previous", "Previous", "orders", { run: () => ran.push("previous") });
+    const next = item("order.next", "Next", "orders", { run: () => ran.push("next") });
+    const latest: { current: readonly Command[] } = { current: [stop, prev, next] };
+    const off = registerCommands(bindLatest(latest));
+    // The order stops running: "stop" leaves the list without a re-registration.
+    latest.current = [prev, next];
+    runCommand("order.previous");
+    runCommand("order.next");
+    expect(runCommand("order.stop")).toBe(false);
+    expect(commandFor("order.stop")).toBeUndefined();
+    off();
+    expect(ran).toEqual(["previous", "next"]);
+  });
+});
+
+describe("keys while the palette is open", () => {
+  const offs: (() => void)[] = [];
+  afterEach(() => {
+    for (const off of offs.splice(0)) off();
+  });
+  const ctrl = (k: string, code: string) => ({ key: k, code, metaKey: false, ctrlKey: true, shiftKey: false, altKey: false, repeat: false, isComposing: false });
+
+  it("holds back only the palette's own Ctrl+N/P off macOS; other shortcuts still run", () => {
+    offs.push(
+      registerCommands([
+        item("order.new", "New order", "actions"),
+        item("palette.toggle", "Palette", "actions"),
+        item("board.open", "Board", "go-to"),
+        item("shortcuts.show", "Shortcuts", "actions"),
+      ]),
+    );
+    expect(dispatchable(ctrl("n", "KeyN"), "linux", false)).toBe("order.new");
+    expect(dispatchable(ctrl("n", "KeyN"), "linux", true)).toBeUndefined();
+    expect(dispatchable(ctrl("k", "KeyK"), "linux", true)).toBe("palette.toggle");
+    expect(dispatchable(ctrl("0", "Digit0"), "linux", true)).toBe("board.open");
+    // The footer's "All shortcuts" key works from inside the palette.
+    expect(dispatchable(ctrl("/", "Slash"), "linux", true)).toBe("shortcuts.show");
+    // On macOS Ctrl isn't Mod, so ⌘N keeps meaning New order with the palette open.
+    expect(dispatchable({ ...ctrl("n", "KeyN"), ctrlKey: false, metaKey: true }, "darwin", true)).toBe("order.new");
+  });
+
+  it("finds a letter shortcut on a layout without Latin letters", () => {
+    offs.push(registerCommands([item("palette.toggle", "Palette", "actions")]));
+    expect(dispatchable(ctrl("л", "KeyK"), "linux")).toBe("palette.toggle");
+  });
+});
+
+describe("reply batches", () => {
+  const ask = (batchId: string, number: number, title: string) => item(`ask:${batchId}-${number}`, title, "needs-you", { ask: { batchId, number } });
+
+  it("previews the one open batch and sends its id with the reply", () => {
+    const plan = planReply("1 go 3 nvm", [ask("B4", 1, "Which health path?"), ask("B4", 2, "Raise the cap?")]);
+    expect(plan).toEqual({
+      kind: "ready",
+      batchId: "B4",
+      items: [
+        { n: 1, item: expect.objectContaining({ title: "Which health path?" }) as unknown },
+        { n: 3, item: undefined },
+      ],
+    });
+  });
+
+  it("asks for a batch when several are open, and follows a #B prefix", () => {
+    const items = [ask("B4", 1, "Old question"), ask("B5", 1, "New question")];
+    expect(planReply("1 go", items)).toEqual({ kind: "ambiguous", batches: ["B5", "B4"] });
+    const named = planReply("#B4 1 go", items);
+    expect(named.kind === "ready" && named.batchId).toBe("B4");
+    expect(named.kind === "ready" && named.items.map((i) => i.item?.title)).toEqual(["Old question"]);
+    expect(namedBatch(" #b07 2 nvm")).toBe("B7");
+  });
+
+  it("sends no batch when no open question is known, so the hub's own answer shows", () => {
+    expect(planReply("1 go", [])).toEqual({ kind: "ready", batchId: undefined, items: [{ n: 1, item: undefined }] });
   });
 });
 

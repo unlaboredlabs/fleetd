@@ -22,6 +22,8 @@ const subscribe = (listener: () => void) => {
 
 export const useOverlay = (): Overlay => useSyncExternalStore(subscribe, () => overlay);
 
+export const paletteOpen = (): boolean => overlay.kind === "palette";
+
 /** Opens the palette with `query` typed in (a reply such as "1 " starts it in reply mode). */
 export const openPalette = (query = ""): void => {
   seq += 1;
