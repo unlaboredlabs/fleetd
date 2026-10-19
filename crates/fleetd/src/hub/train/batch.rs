@@ -445,13 +445,27 @@ impl Train {
         {
             CiOutcome::Green => None,
             CiOutcome::NoCi(note) => Some(note),
-            CiOutcome::Red(_) | CiOutcome::Timeout(_) => {
+            CiOutcome::Red(_) => {
                 // Bisect: the last one in goes alone next; the rest try again without it.
                 let last = in_ci[in_ci.len() - 1].change.change_id.clone();
                 tracing::info!(repo, pr, sha, change_id = %last, "train: batch red, dropping its last member");
                 lock(&self.lanes).suspects.insert(last);
                 self.release(&in_ci, None);
                 return Round::Again(in_ci[..in_ci.len() - 1].to_vec());
+            }
+            CiOutcome::Timeout(_) => {
+                // A timeout blames no member, and halving would wait it out again per round: each goes alone.
+                tracing::info!(
+                    repo,
+                    pr,
+                    sha,
+                    "train: batch CI timed out, its members go one at a time"
+                );
+                lock(&self.lanes)
+                    .suspects
+                    .extend(in_ci.iter().map(|m| m.change.change_id.clone()));
+                self.release(&in_ci, None);
+                return Round::Again(vec![in_ci[0].clone()]);
             }
         };
 

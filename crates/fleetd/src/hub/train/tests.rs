@@ -2081,7 +2081,7 @@ async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn required_checks_and_githubs_rules_still_block_a_batch() {
-    // Checks the base requires never report: the batch times out, goes red, and each alone does too.
+    // Checks the base requires never report: the batch times out, and each alone times out too, never merging.
     let kit = Kit::with(FakeCi::Required, one_poll);
     let a = kit
         .enqueue(
@@ -2099,8 +2099,8 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
         kit.train.step(REPO).await;
     }
     assert!(merged_prs(&kit).is_empty());
-    assert_ne!(state_of(&kit, &a), ChangeState::Merged);
-    assert_ne!(state_of(&kit, &b), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+    assert_eq!(state_of(&kit, &b), ChangeState::CiFailed);
 
     // GitHub refuses the batch PR (say, it wants an approval): after the merge attempts, batching is off for the
     // repo and each goes alone, through GitHub's rules again.
