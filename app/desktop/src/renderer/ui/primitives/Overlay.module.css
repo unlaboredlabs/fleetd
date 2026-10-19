@@ -1,5 +1,7 @@
 /* Floating surfaces: menus, select lists, popovers, tooltips, dialogs. A hairline and one soft shadow, no glow. */
 .surface {
+  /* Over the title bar, a floating surface is the app, not the window's drag handle. */
+  -webkit-app-region: no-drag;
   z-index: 50;
   min-width: 180px;
   max-width: min(420px, calc(100vw - 2 * var(--edge-inset)));
@@ -87,6 +89,7 @@
 }
 
 .tooltip {
+  -webkit-app-region: no-drag;
   z-index: 60;
   max-width: min(360px, calc(100vw - 2 * var(--edge-inset)));
   padding: var(--space-1) var(--space-2);
@@ -151,6 +154,7 @@
 
 /* Dialogs and sheets */
 .backdrop {
+  -webkit-app-region: no-drag;
   position: fixed;
   inset: 0;
   z-index: 40;
@@ -158,6 +162,7 @@
   animation: fade var(--dur-base) var(--ease-out);
 }
 .dialog {
+  -webkit-app-region: no-drag;
   position: fixed;
   z-index: 41;
   top: 12vh;
@@ -176,6 +181,7 @@
   width: min(760px, calc(100vw - 4 * var(--edge-inset)));
 }
 .sheet {
+  -webkit-app-region: no-drag;
   position: fixed;
   z-index: 41;
   top: var(--edge-inset);
