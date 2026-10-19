@@ -251,8 +251,12 @@ export type AskEventData = {
   number?: number;
   /** ask.created: a closed ask opened again (a failed verify, an undone answer). */
   reopened?: boolean;
+  /** ask.closed: the state it closed in. */
+  state?: AskState;
   /** ask.answered: until then `inbox_undo` takes the answer back. */
   undoUntil?: Timestamp;
+  /** The order it is about, when it is about one (ask.closed always says). */
+  workstreamId?: WorkstreamId;
 };
 
 export type AskId = string;

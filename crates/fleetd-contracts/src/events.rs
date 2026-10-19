@@ -4,7 +4,7 @@ use serde_with::skip_serializing_none;
 
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
-    AskClass, AskId, AskKind, BatchId, BriefHash, DecisionId, DecisionKey, WorkstreamId,
+    AskClass, AskId, AskKind, AskState, BatchId, BriefHash, DecisionId, DecisionKey, WorkstreamId,
     WorkstreamState,
 };
 use crate::prim::{Count, Positive, Text};
@@ -419,6 +419,10 @@ pub struct WorkstreamEventData {
 #[serde(rename_all = "camelCase")]
 pub struct AskEventData {
     pub ask_id: AskId,
+    /// The order it is about, when it is about one (ask.closed always says).
+    pub workstream_id: Option<WorkstreamId>,
+    /// ask.closed: the state it closed in.
+    pub state: Option<AskState>,
     pub key: Option<DecisionKey>,
     pub class: Option<AskClass>,
     pub kind: Option<AskKind>,
