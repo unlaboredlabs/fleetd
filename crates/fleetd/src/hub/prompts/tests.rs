@@ -39,7 +39,7 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         warnings
             .iter()
             .any(|w| w.code == PromptWarningCode::SafetyRuleMissing
-                && w.rule.as_deref() == Some("secrets-via-ask"))
+                && w.rule.as_deref() == Some("secrets-via-request"))
     );
     prompts
         .set(
@@ -260,6 +260,40 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
     assert!(
         found.is_empty(),
         "agent-facing texts name lead-side commands:\n{}",
+        found.join("\n")
+    );
+}
+
+/// There is no questions tool: leads ask in the chat and log answers with `decide`. No shipped prompt or playbook
+/// sends an agent to `ask`, an ask card, the inbox or an ask id.
+#[test]
+fn model_facing_texts_never_mention_the_questions_tool() {
+    let ask = regex::Regex::new(
+        r"(?i)`(ask|ask_withdraw|inbox_reply|inbox_undo|asks_list)`|question cards?|ask cards?|\binbox\b|\bask:A|amend A\d|proceededOnRec|kind secret|your asks\b|taps? one choice|\baskId\b",
+    )
+    .unwrap();
+    // The prompt trim deletes these with their code paths; drop each id here when it goes.
+    const DELETED_WITH_THE_TRIM: [&str; 5] = [
+        "permission.denied.withdrawn",
+        "permission.denied.human",
+        "digest.answer.withdrawn",
+        "digest.answer.skipped",
+        "wake.answers",
+    ];
+    let texts = super::registry::ENTRIES
+        .iter()
+        .filter(|e| !DELETED_WITH_THE_TRIM.contains(&e.id))
+        .map(|e| (e.id, e.default));
+    let playbooks = crate::hub::playbooks::load::BUNDLED
+        .iter()
+        .map(|(n, t)| (n.as_str(), *t));
+    let found: Vec<String> = texts
+        .chain(playbooks)
+        .filter_map(|(id, text)| ask.find(text).map(|m| format!("{id}: {}", m.as_str())))
+        .collect();
+    assert!(
+        found.is_empty(),
+        "texts still point at the questions tool:\n{}",
         found.join("\n")
     );
 }

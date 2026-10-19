@@ -146,15 +146,15 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
-                "ask-four-classes",
-                "asks the human only about product, money, credentials, irreversible",
-                r"product, money, credential",
+                "ask-big-calls",
+                "asks the human only for product, money or irreversible calls, in the chat, each with a recommendation",
+                r"product, money or irreversible calls",
                 Prompt
             ),
             (
-                "secrets-via-ask",
-                "secrets only through `ask` with kind secret",
-                r"kind secret",
+                "secrets-via-request",
+                "secrets only through `request_secret`",
+                r"request_secret",
                 Code
             ),
             (
@@ -165,8 +165,8 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "never-block",
-                "never blocks on a question (`proceededOnRec`)",
-                r"proceededOnRec",
+                "never waits idle on an answer",
+                r"Never wait idle on an answer",
                 Prompt
             ),
             (
@@ -189,8 +189,26 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "no-re-ask",
-                "never re-asks a key the digest lists",
-                r"never re-ask",
+                "never asks the same question twice; logs every answer with `decide`",
+                r"Never ask the same question twice",
+                Prompt
+            ),
+            (
+                "reply-becomes-work",
+                "a reply that asks for work starts it before anything closes",
+                r"A reply that asks for work becomes work",
+                Prompt
+            ),
+            (
+                "agent-cap",
+                "plans to the agent cap and never works around it",
+                r"Never work around the cap",
+                Prompt
+            ),
+            (
+                "no-time",
+                "never estimates time",
+                r"Never estimate time",
                 Prompt
             ),
             (
@@ -441,9 +459,9 @@ pub const ENTRIES: &[Entry] = &[
         "per task waiting on input",
         "taskId!=the task, T<n>; title!=its title; question!=its question, quoted",
         &[(
-            "ask-four-classes",
-            "asks the human only about product, money, credentials, irreversible",
-            r"product, money, credential",
+            "ask-big-calls",
+            "brings the human only product, money or irreversible calls",
+            r"product, money or irreversible",
             Prompt
         )]
     ),

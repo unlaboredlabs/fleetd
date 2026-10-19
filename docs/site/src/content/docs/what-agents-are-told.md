@@ -30,10 +30,27 @@ Agents act through fleetd's MCP tools. The list, generated from the code, is in
 
 ## Rules agents work by {#rules}
 
+### How the lead talks to you {#chat}
+
+Each project's lead talks to you in that project's chat. It is told to:
+
+- Lead with the state: what is done, what is running, what is blocked.
+- Keep it short and plain, with no internal ids, keys or branch names.
+- Ask only for product, money or irreversible calls, as numbered items at the end of its message, each with its
+  recommendation.
+- Read short replies by item number: "1 go, 2 rec", "do it", "rec" (take the recommendations), "nvm" (drop it).
+- Log every answer as a decision and check the decisions before asking, so it never asks the same question twice.
+- Ask a human done-when check as one line, such as "looks good on your end?".
+- Turn a reply that asks for work into work in the same turn. Work never closes while your latest reply asks for
+  something not yet started; if the lead won't build it, it says why.
+
+fleetd backs the last rule up: a done claim counts only for the brief it checked, so changing the brief to the build
+voids a claim made before.
+
 ### No time estimates {#no-time}
 
-fleetd never asks an agent how long something will take. Leads are told never to put an ETA or a duration in a brief,
-an ask, a status line, a plan or a summary. Plan items are sized `s`, `m` or `l` instead.
+fleetd never asks an agent how long something will take. Leads are told never to put an ETA or a duration in the chat,
+a brief, a status line, a plan or a summary. Plan items are sized `s`, `m` or `l` instead.
 
 What fleetd measures, such as CI runs and span durations, is shown as measured. See [Status](/docs/status).
 
@@ -46,7 +63,22 @@ In place of a clock, leads are told to work for throughput:
 - Have each slice reviewed as it lands, and put each finished PR on the train at once.
 - End a turn only to wait on their agents, or when nothing approved can run.
 
-They are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
+### The agent cap {#cap}
+
+Each project has a cap on how many agents run at once. Every wake tells the lead the live count, such as "agents: 7
+running of 12, 2 queued". The lead is told to:
+
+- Plan to the cap: at most that many slices at once, the rest queued by value, each started as a slot frees.
+- Treat a queued spawn as normal. The hub starts it when a slot frees; the lead doesn't spawn it again.
+- Never work around the cap: no doing an agent's work itself, no running agents one by one to dodge it, and no asking
+  you to raise it unless you asked about speed.
+- At a cap of 1, work one agent at a time and say so once in the chat.
+
+Lowering the cap stops nothing that is running; raising it starts queued agents at once.
+
+### Gates never relax {#gates}
+
+Leads are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
 exactly as they are, and no filler work is made up to fill a slot. fleetd backs this up with two wakes, never with a
 task of its own. See [How the lead schedules work](/docs/projects-and-orders#scheduling).
 
@@ -78,7 +110,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 
 | Agent | Gets |
 |---|---|
-| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `ask`, `decide`, `brief`, `claim_done`, `plan_*`, `gated_run` and more. |
+| Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `workstream_open`, `brief`, `decide`, `claim_done`, `plan_*`, `request_secret`, `gated_run` and more. |
 | Task | `report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. |
 
 - Results come back in the lead's next wake, never by polling.
@@ -195,7 +227,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the digest | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only about product, money, credentials, irreversible (prompt only); secrets only through \`ask\` with kind secret; prod writes, spends and deletes only through \`gated\_run\`; never blocks on a question (\`proceededOnRec\`) (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
+| `lead.start` | lead start and every lead\_restart, followed by the digest | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; never waits idle on an answer (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never asks the same question twice; logs every answer with \`decide\` (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
 | `lead.digest` | the top of the lead's first message and of every wake | the digest is the truth, over the lead's memory (prompt only) |
 | `plan.granularity` | when \`plan\_add\` (or \`plan\_edit\` with a size) gets an item with no size or one bigger than m |  |
 
@@ -252,7 +284,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `wake.answers` | per batch of answers |  |
 | `wake.task_result` | per task that completed or failed |  |
 | `wake.task_cancelled` | per cancelled task |  |
-| `wake.task_waiting` | per task waiting on input | asks the human only about product, money, credentials, irreversible (prompt only) |
+| `wake.task_waiting` | per task waiting on input | brings the human only product, money or irreversible calls (prompt only) |
 | `wake.task_start_failed` | per queued task that failed to start (its result) |  |
 | `wake.train.line` | when the train could not reach a PR's author task |  |
 | `wake.train.left` | per PR the train abandoned |  |
