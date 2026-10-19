@@ -9,7 +9,7 @@ use super::runner::{CheckContext, CheckRunner, ran_by_of};
 use crate::clock::Clock;
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentInput, Incidents};
-use crate::hub::orders::open_work::{CLOSED_ON_PURPOSE, OpenWork, ids, listed};
+use crate::hub::orders::open_work::{CLOSED_ON_PURPOSE, Item, OpenWork, ids, listed};
 use crate::hub::store::{EventLog, NewEvent, StoreError};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
@@ -57,6 +57,12 @@ fn state_name(s: WorkstreamState) -> String {
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_default()
+}
+
+/// A claim that closes over unlanded work on purpose: why, and the work the lead was shown when it claimed.
+struct CloseOver {
+    why: String,
+    seen: Vec<Item>,
 }
 
 pub struct Claims {
@@ -178,7 +184,7 @@ impl Claims {
 
     /// Stores the claim and acts on it. The workstream is re-read: it may have been stopped while checks ran. Runs with
     /// the lock held and nothing awaited, so a superseding claim cannot cut it off halfway.
-    fn conclude(&self, claim: &Claim, close_over: Option<&str>) -> Result<(), StoreError> {
+    fn conclude(&self, claim: &Claim, close_over: Option<&CloseOver>) -> Result<(), StoreError> {
         self.records.finish(claim)?;
         let Some(w) = self.ports.workstream(&claim.workstream_id) else {
             return Ok(());
@@ -192,11 +198,19 @@ impl Claims {
             if w.state != WorkstreamState::Verifying {
                 return Ok(());
             }
-            // Write work spawned while it verified (a review's fixes) would be dropped once it is done: it stays open,
-            // unless the lead closes over it on purpose.
+            // Write work spawned while it verified (a review's fixes) would be dropped once it is done: it stays open.
+            // Closing over work on purpose covers only the work the lead was shown when it claimed.
             let work = self.ports.open_work(&w);
-            if close_over.is_none() && !work.is_empty() {
-                return self.hold(&w, claim, work);
+            let unseen: Vec<OpenWork> = match close_over {
+                Some(c) => work
+                    .iter()
+                    .filter(|o| !c.seen.contains(&o.item))
+                    .cloned()
+                    .collect(),
+                None => work.clone(),
+            };
+            if !unseen.is_empty() {
+                return self.hold(&w, claim, unseen);
             }
             let done = Workstream {
                 state: WorkstreamState::Done,
@@ -213,7 +227,10 @@ impl Claims {
             let mut data =
                 serde_json::json!({ "workstreamId": w.workstream_id, "claimId": claim.claim_id });
             let mut summary = format!("{} is done: {}", w.workstream_id, w.title);
-            if let Some(why) = close_over.filter(|_| !work.is_empty()) {
+            if let Some(why) = close_over
+                .map(|c| c.why.as_str())
+                .filter(|_| !work.is_empty())
+            {
                 let reason = format!("{CLOSED_ON_PURPOSE}{why} (dropping {})", listed(&work));
                 summary = format!("{} is done, {reason}", w.workstream_id);
                 data["reason"] = serde_json::json!(reason);
@@ -310,7 +327,7 @@ impl Claims {
         claim_id: ClaimId,
         by: String,
         at: Timestamp,
-        close_over: Option<String>,
+        close_over: Option<CloseOver>,
     ) -> Claim {
         let results = self.run_checks(&w, &claim_id).await;
         let outcome = if results.iter().all(|r| r.result == CheckOutcome::Pass) {
@@ -328,7 +345,7 @@ impl Claims {
         };
         // Waiting for the lock stays abortable, so a superseded claim gives way; once it holds it, it finishes.
         let _held = self.lock.lock().await;
-        if let Err(error) = self.conclude(&claim, close_over.as_deref()) {
+        if let Err(error) = self.conclude(&claim, close_over.as_ref()) {
             tracing::warn!(claim_id = %claim.claim_id, %error, "claim not concluded");
         }
         claim
@@ -432,7 +449,10 @@ impl Claims {
             claim_id.clone(),
             by.to_owned(),
             at,
-            close_over.map(str::to_owned),
+            close_over.map(|why| CloseOver {
+                why: why.to_owned(),
+                seen: work.iter().map(|o| o.item.clone()).collect(),
+            }),
         ));
         // This claim supersedes one still running on the same workstream.
         if let Some(previous) = self

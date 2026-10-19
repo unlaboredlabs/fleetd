@@ -614,3 +614,54 @@ async fn claim_done_refuses_over_unlanded_work_in_plain_words_until_closed_over_
         "{summary}"
     );
 }
+
+#[tokio::test]
+async fn closing_over_work_on_purpose_never_drops_work_spawned_after_the_claim() {
+    // The W1/T4 timing with closeOver: the lead closed over an old PR, and a review's fix appeared while the checks ran.
+    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
+    k.set_node(0, "");
+    let old_pr = OpenWork {
+        item: Item::Pr(fleetd_contracts::train::ChangeId::new("X2").unwrap()),
+        line: "a pull request in o/testbed (needs a rebase)".into(),
+    };
+    k.ports.open_work.lock().unwrap().push(old_pr);
+    *k.ports.fix_on_check.lock().unwrap() = Some(t4());
+
+    let held = k
+        .claims
+        .claim_done(
+            &w1(),
+            LEAD_BY,
+            None,
+            Some("the old PR was redone elsewhere"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (held.state, k.state()),
+        (WorkstreamState::Running, WorkstreamState::Running)
+    );
+    assert!(
+        k.events_of(&[HubEventType::WorkstreamDone])
+            .await
+            .is_empty()
+    );
+    let wakes = k.ports.wakes.lock().unwrap().clone();
+    assert!(
+        matches!(wakes.last(), Some(ClaimWake::Held { work, .. }) if work == &[t4()]),
+        "held over the work the lead never saw: {wakes:?}"
+    );
+
+    // Shown it now, the lead may close over both on purpose.
+    let done = k
+        .claims
+        .claim_done(
+            &w1(),
+            LEAD_BY,
+            None,
+            Some("both are redone in the next order"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(done.state, WorkstreamState::Done);
+}
