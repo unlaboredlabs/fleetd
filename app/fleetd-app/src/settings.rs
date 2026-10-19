@@ -279,14 +279,18 @@ impl crate::shell::Shell {
         let mut nav = div().w(px(184.)).flex_none().p_2().flex().flex_col().gap_0p5().border_r_1().border_color(t.hairline);
         for section in Section::ALL {
             nav = nav.child(
+                // Grows with its help line, which wraps: font widths differ by platform, so a fixed one-line row clips.
                 ui::row(t, SharedString::from(format!("settings-{}", section.label())), section == current)
-                    .h(px(metric::ROW + 16.))
+                    .h_auto()
+                    .min_h(px(metric::ROW + 16.))
+                    .py_1()
                     .flex_col()
                     .items_start()
                     .justify_center()
                     .gap_0()
+                    .whitespace_normal()
                     .child(div().when(section == current, |d| d.font_weight(STRONG)).child(section.label()))
-                    .child(div().text_size(px(size::XS)).text_color(t.quiet).child(section.help()))
+                    .child(div().w_full().text_size(px(size::XS)).text_color(t.quiet).child(section.help()))
                     .on_click(cx.listener(move |this, _, _, cx| this.open_settings_section(section, cx))),
             );
         }

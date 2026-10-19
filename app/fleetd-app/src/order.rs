@@ -905,6 +905,7 @@ fn section(t: &Theme, label: &'static str, detail: String) -> Div {
 fn call_row(t: &Theme, summary: &str, failed: bool) -> Div {
     div()
         .h(px(metric::LINE))
+        .flex_none()
         .flex()
         .items_center()
         .gap_2()
