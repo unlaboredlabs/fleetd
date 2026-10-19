@@ -107,7 +107,7 @@ pub fn read_changes(
 /// What decides a row's state word.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Facts {
-    /// The lead waits for the person's reply.
+    /// The lead waits for the person's reply: the chat's own needs-you.
     pub needs_you: bool,
     /// Why nothing can move, if something outside the work stops it.
     pub blocked: Option<String>,
@@ -166,8 +166,8 @@ pub fn rows(hub: &Hub, w: &World) -> Vec<ProjectStatusRow> {
             _ => red.map(|repo| format!("main CI is red on {repo}")),
         };
         let facts = Facts {
-            // Open asks until the lead chat's own needs-you state (`hub.chat.state`) is on main.
-            needs_you: w.asks.iter().any(|a| a.project_ref.as_ref() == Some(&r)),
+            // The lead chat's own rule, so the row and the chat's needs-you dot never disagree.
+            needs_you: crate::hub::chat::flow::state(hub, &r).is_ok_and(|c| c.needs_you),
             blocked,
             agents: w
                 .slots
@@ -226,6 +226,72 @@ mod tests {
             "a PR in CI is work with no agent running"
         );
         assert_eq!(state_of(&f(false, None, 0, 0)), ProjectRowState::Idle);
+    }
+
+    /// "Waiting on you" is the chat's needs-you: a lead question the person hasn't answered, gone once they reply.
+    #[test]
+    fn waiting_on_you_is_the_lead_chats_needs_you() {
+        use fleetd_contracts::chat::ChatAuthor;
+        use fleetd_contracts::ids::{MachineId, ProjectId};
+
+        use crate::hub::api::{HubConfig, Listen};
+        use crate::hub::chat::NewMessage;
+        use crate::hub::store::test_clock::ManualClock;
+
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+            queue_ttl_sec: None,
+            router_model: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            ManualClock::at(1_792_000_000_000),
+        )
+        .unwrap();
+        hub.store
+            .projects_upsert_many(
+                &MachineId::unchecked("devbox"),
+                &[serde_json::from_value(serde_json::json!({
+                    "machineId": "devbox", "projectId": "app", "title": "app", "workspaceRoot": "/work/app",
+                    "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                    "lastActivityAt": "2026-10-19T10:00:00.000Z",
+                }))
+                .unwrap()],
+            )
+            .unwrap();
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("devbox"),
+            project_id: ProjectId::unchecked("app"),
+        };
+        let row = || {
+            let world = World::read(&hub, 1_792_000_000_000, None, Default::default()).unwrap();
+            rows(&hub, &world).remove(0)
+        };
+        assert_eq!(row().state, ProjectRowState::Idle);
+        let say = |author, text: &str| {
+            hub.chat
+                .add(
+                    &r,
+                    NewMessage {
+                        author: Some(author),
+                        text: text.into(),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        };
+        say(
+            ChatAuthor::Lead,
+            "1. Public link or image only? I'd pick the link.",
+        );
+        assert!(crate::hub::chat::flow::state(&hub, &r).unwrap().needs_you);
+        assert_eq!(row().state, ProjectRowState::WaitingOnYou);
+        say(ChatAuthor::Human, "1 rec");
+        assert_eq!(row().state, ProjectRowState::Idle);
     }
 
     /// The latest merge per project, titled by its writer task (else its order), and PRs in flight per project.
