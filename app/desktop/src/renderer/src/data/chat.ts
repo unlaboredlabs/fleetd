@@ -39,6 +39,8 @@ export interface Chat {
    */
   readonly hasNewer: boolean;
   readonly loadingNewer: boolean;
+  /** Live messages that arrived while the window was above the latest: folded in when it gets back there. */
+  readonly held: readonly ChatMessage[];
   /** The latest page landed this generation. */
   readonly loaded: boolean;
   readonly error?: HubError | undefined;
@@ -56,6 +58,7 @@ export const emptyChat: Chat = {
   loadingOlder: false,
   hasNewer: false,
   loadingNewer: false,
+  held: [],
   loaded: false,
   missing: [],
 };
@@ -105,9 +108,22 @@ export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[], evic
   };
 };
 
-/** A live message: folded in, unless the window is paged above the latest and doesn't hold it. */
-export const mergeLive = (chat: Chat, message: ChatMessage): Chat =>
-  chat.hasNewer && !chat.messages.some((m) => m.messageId === message.messageId) ? chat : mergeMessages(chat, [message]);
+/** How many live messages a window above the latest holds back; past that, the oldest of them are read again. */
+const HELD_MAX = 500;
+
+/**
+ * A live message: folded in, or, while the window is paged above the latest and doesn't hold it, kept aside until
+ * the window gets back there (a history page read before it happened won't have it).
+ */
+export const mergeLive = (chat: Chat, message: ChatMessage): Chat => {
+  if (!chat.hasNewer || chat.messages.some((m) => m.messageId === message.messageId)) return mergeMessages(chat, [message]);
+  const held = [...chat.held.filter((m) => m.messageId !== message.messageId || !newer(message, m)), message];
+  return { ...chat, held: held.length > HELD_MAX ? held.slice(held.length - HELD_MAX) : held };
+};
+
+/** Back at the latest: the held live messages go in. */
+const foldHeld = (chat: Chat): Chat =>
+  chat.hasNewer || chat.held.length === 0 ? chat : { ...mergeMessages(chat, chat.held), held: [] };
 
 /**
  * A history page: the latest one, one before the oldest message held, or one after the newest. The latest page on
@@ -117,7 +133,7 @@ export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "la
   const base = direction === "latest" && chat.hasNewer ? { ...chat, messages: [], streams: {}, hasNewer: false } : chat;
   const merged = mergeMessages(base, page.messages, direction === "older" ? "newest" : "oldest");
   const fresh = !chat.loaded || base !== chat;
-  return {
+  return foldHeld({
     ...merged,
     // The latest page says nothing about what's older than messages already held from an earlier page.
     hasOlder: direction === "older" ? page.moreBefore : fresh ? page.moreBefore || merged.hasOlder : merged.hasOlder,
@@ -127,7 +143,7 @@ export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "la
     loaded: true,
     error: undefined,
     gap: false,
-  };
+  });
 };
 
 /**
