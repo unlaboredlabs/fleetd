@@ -7,7 +7,6 @@ import type { Screen } from "./routes";
 // Each screen is its own chunk, loaded when its route first opens: the app starts by parsing the shell and the one
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
 const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").then((m) => ({ default: m.OnboardingScreen })));
-const InboxPanel = lazy(() => import("../inbox/InboxPanel").then((m) => ({ default: m.InboxPanel })));
 const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
 const BoardScreen = lazy(() => import("../board/BoardScreen").then((m) => ({ default: m.BoardScreen })));
 const BoardStrips = lazy(() => import("../board/Strips").then((m) => ({ default: m.BoardStrips })));
@@ -67,13 +66,9 @@ function screenFor(screen: Screen): ReactNode {
   }
 }
 
-/** The inbox panel's body (F5): the question cards, scrolled to `askId` when given. */
-export function InboxBody({ askId }: { askId: string | null; onClose: () => void }) {
-  return (
-    <Loading>
-      <InboxPanel askId={askId ?? undefined} />
-    </Loading>
-  );
+/** The question cards are gone (no questions tool); F1's frame rewrite removes the panel itself. */
+export function InboxBody(_props: { askId: string | null; onClose: () => void }) {
+  return null;
 }
 
 /** The machine and train strips along the bottom (F2). Renders nothing until there is something to show. */

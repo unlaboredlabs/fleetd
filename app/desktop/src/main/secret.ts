@@ -1,4 +1,4 @@
-// Secret asks: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
+// Secret requests: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
 // crypto_box_seal (the same construction as the node's crypto_box_seal_open and the old app's seal.rs), so the hub
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
@@ -36,11 +36,11 @@ export const seal = async (boxPubKey: string, value: string): Promise<{ ok: true
 /** Seals, then hands the box to secret_submit. Only the node's fingerprint of the value comes back. */
 export const submitSecret = async (
   request: SecretRequest,
-  call: (tool: string, input: { askId: string; sealed: string }) => Promise<CallOutcome>,
+  call: (tool: string, input: { requestId: string; sealed: string }) => Promise<CallOutcome>,
 ): Promise<SecretOutcome> => {
   const sealed = await seal(request.boxPubKey, request.value);
   if (!sealed.ok) return sealed;
-  const out = await call("secret_submit", { askId: request.askId, sealed: sealed.sealed });
+  const out = await call("secret_submit", { requestId: request.requestId, sealed: sealed.sealed });
   if (!out.ok) return out;
   const fingerprint = (out.output as { fingerprint?: unknown } | null)?.fingerprint;
   return { ok: true, fingerprint: typeof fingerprint === "string" ? fingerprint : "" };

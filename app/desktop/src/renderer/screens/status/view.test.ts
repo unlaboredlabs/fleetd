@@ -9,7 +9,6 @@ import {
   limitName,
   machineView,
   ciUrl,
-  needsYouRow,
   riskTarget,
   rowLanes,
   nextAgeChange,
@@ -208,23 +207,13 @@ describe("the digest", () => {
   });
 });
 
-describe("needs you", () => {
-  it("shows a card only for an ask the layer holds open, never one answered a moment ago", () => {
-    const asks = { A1: { state: "open" }, A2: { state: "answered" } };
-    expect(needsYouRow(asks, "A1")).toEqual({ kind: "card", ask: { state: "open" } });
-    expect(needsYouRow(asks, "A2"), "the doc still lists it until status_get refetches").toEqual({ kind: "changed" });
-    expect(needsYouRow(asks, "A3")).toEqual({ kind: "changed" });
-    expect(needsYouRow(undefined, "A1")).toEqual({ kind: "loading" });
-  });
-});
-
 describe("where things lead", () => {
-  it("sends machine risks to Machines and a blocking ask to the inbox, as the old app did", () => {
+  it("sends machine risks to Machines; the rest are read where they stand", () => {
     expect(["machine_offline", "machine_flaky", "usage_high", "blocked_on_you", "ci_red_main", "rule_from_a_newer_hub"].map(riskTarget)).toEqual([
       "machines",
       "machines",
       "machines",
-      "inbox",
+      null,
       null,
       null,
     ]);
