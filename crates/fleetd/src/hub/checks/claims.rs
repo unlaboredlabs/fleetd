@@ -182,26 +182,38 @@ impl Claims {
             return self.records.finish(claim);
         };
         // The brief changed while the checks ran (W4: the human asked for a build and the lead amended the brief, then
-        // confirmed the old answer-only check). The claim checked done-when that no longer exist, so it never counts.
+        // confirmed the old answer-only check). The claim checked done-when that no longer exist, so it never counts;
+        // the amend voided it and said so.
         if w.brief_hash.as_ref() != checked {
-            return self.void_with(&w, &claim.claim_id);
+            return Ok(());
         }
-        self.records.finish(claim)?;
         // A research judge's numbers already made it done, with its verdict.
         if w.state == WorkstreamState::Done {
-            return Ok(());
+            return self.records.finish(claim);
         }
         let label = format!("{} on {}", claim.claim_id, w.workstream_id);
         if claim.outcome == ClaimOutcome::Pass {
             if w.state != WorkstreamState::Verifying {
-                return Ok(());
+                return self.records.finish(claim);
             }
             let done = Workstream {
                 state: WorkstreamState::Done,
                 updated_at: now_ts(self.clock.as_ref()),
                 ..w.clone()
             };
-            self.ports.put_workstream(&done);
+            // Only over the workstream as read: an amend landing since then wins, and this claim never counts.
+            if !self.ports.put_workstream_if(&done, &w) {
+                let amended = self
+                    .ports
+                    .workstream(&w.workstream_id)
+                    .is_some_and(|now| now.brief_hash.as_ref() != checked);
+                return if amended {
+                    Ok(())
+                } else {
+                    self.records.finish(claim)
+                };
+            }
+            self.records.finish(claim)?;
             self.emit(
                 &w,
                 HubEventType::ClaimPassed,
@@ -216,6 +228,7 @@ impl Claims {
             )?;
             return self.estimates.record_done(&w.workstream_id);
         }
+        self.records.finish(claim)?;
         let failures: Vec<CheckResult> = claim
             .results
             .iter()
@@ -447,7 +460,10 @@ impl Claims {
                 ),
                 claim_id,
                 workstream_id: workstream_id.clone(),
-                state: WorkstreamState::Verifying,
+                state: self
+                    .ports
+                    .workstream(workstream_id)
+                    .map_or(WorkstreamState::Verifying, |w| w.state),
                 claim: None,
             }),
             None => {
@@ -511,11 +527,12 @@ impl Claims {
 
     fn void_with(&self, w: &Workstream, claim_id: &ClaimId) -> Result<(), StoreError> {
         if w.state == WorkstreamState::Verifying {
-            self.ports.put_workstream(&Workstream {
+            let running = Workstream {
                 state: WorkstreamState::Running,
                 updated_at: now_ts(self.clock.as_ref()),
                 ..w.clone()
-            });
+            };
+            self.ports.put_workstream_if(&running, w);
         }
         self.emit(
             w,

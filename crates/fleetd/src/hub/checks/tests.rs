@@ -65,6 +65,8 @@ struct Fake {
     human: Mutex<Option<String>>,
     /// Set once a human check has filed its ask and waits for the answer.
     filed: std::sync::atomic::AtomicBool,
+    /// Stored just before the next `put_workstream_if` compares: a write that lands between a read and that write.
+    lands_first: Mutex<Option<Workstream>>,
 }
 
 impl Ports for Fake {
@@ -76,6 +78,18 @@ impl Ports for Fake {
             .lock()
             .unwrap()
             .insert(w.workstream_id.clone(), w.clone());
+    }
+    fn put_workstream_if(&self, w: &Workstream, expect: &Workstream) -> bool {
+        if let Some(first) = self.lands_first.lock().unwrap().take() {
+            self.put_workstream(&first);
+        }
+        let mut all = self.workstreams.lock().unwrap();
+        let now = all.get(&w.workstream_id).unwrap();
+        if now.state != expect.state || now.brief_hash != expect.brief_hash {
+            return false;
+        }
+        all.insert(w.workstream_id.clone(), w.clone());
+        true
     }
     fn wake(&self, _: &ProjectRef, wake: ClaimWake) {
         self.wakes.lock().unwrap().push(wake);
@@ -468,12 +482,22 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
     assert!(k.commands.lock().unwrap().is_empty());
 }
 
-/// W4 on a real hub: a research order's answer-only brief had one human check ("did this answer your question?"). The
-/// lead claimed done and, in the same turn, asked whether to build. The human said build; the lead amended the brief to
-/// the build. Then the human confirmed the old check, and that claim, made against the answer-only brief, closed the
-/// workstream with the build never started. A claim only counts for the brief it checked.
-#[tokio::test]
-async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
+/// The build brief of W4's amend, as `brief_create` writes it: a verifying workstream is running again.
+fn build_brief(mut w: Workstream) -> Workstream {
+    w.brief = Some(
+        serde_json::from_value(
+            json!({ "goal": "build schedules", "why": "the human chose to build", "pointers": [],
+            "constraints": [], "tier": "L", "doneWhen": [doc_check()] }),
+        )
+        .unwrap(),
+    );
+    w.brief_hash = Some(BriefHash::unchecked("b".repeat(64)));
+    w.state = WorkstreamState::Running;
+    w
+}
+
+/// A research workstream with one human check ("did this answer your question?"), under brief hash a….
+fn research_kit() -> Kit {
     let research = vec![
         json!({ "type": "human", "question": "Did the answer on scheduled work answer your question?" }),
     ];
@@ -482,25 +506,19 @@ async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
     w.brief_hash = Some(BriefHash::unchecked("a".repeat(64)));
     k.ports.put_workstream(&w);
     *k.ports.human.lock().unwrap() = Some(String::new());
+    k
+}
 
-    let id = w1();
-    let claimed = k.claims.claim_done(&id, LEAD_BY, None);
-    let (claimed, ()) = tokio::join!(claimed, async {
-        // The human check is filed and waits; the human answers "build it", and the lead amends the brief.
-        while !k.ports.filed.load(std::sync::atomic::Ordering::SeqCst) {
+impl Kit {
+    async fn until_the_human_is_asked(&self) {
+        while !self.ports.filed.load(std::sync::atomic::Ordering::SeqCst) {
             tokio::task::yield_now().await;
         }
-        let mut build = k.ports.workstream(&w1()).unwrap();
-        build.brief = Some(
-            serde_json::from_value(json!({ "goal": "build schedules", "why": "the human chose to build", "pointers": [],
-                "constraints": [], "tier": "L", "doneWhen": [doc_check()] }))
-            .unwrap(),
-        );
-        build.brief_hash = Some(BriefHash::unchecked("b".repeat(64)));
-        k.ports.put_workstream(&build);
-        // Then the human confirms the old answer-only check.
-        *k.ports.human.lock().unwrap() = Some("done".into());
-        k.events
+    }
+    /// The human answers "done" to the claim's human check.
+    fn human_says_done(&self) {
+        *self.ports.human.lock().unwrap() = Some("done".into());
+        self.events
             .append(NewEvent {
                 at: now_ts(&SystemClock),
                 r#type: HubEventType::DecisionRecorded,
@@ -512,50 +530,97 @@ async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
                 attention: None,
             })
             .unwrap();
-    });
-    let claimed = claimed.unwrap();
-    assert!(claimed.claim.is_some(), "{}", claimed.next);
-    assert_eq!(k.state(), WorkstreamState::Running);
-    assert!(
-        k.events_of(&[HubEventType::WorkstreamDone, HubEventType::ClaimPassed])
+    }
+    async fn closed(&self) -> bool {
+        !self
+            .events_of(&[HubEventType::WorkstreamDone, HubEventType::ClaimPassed])
             .await
             .is_empty()
-    );
-    let voided = k.events_of(&[HubEventType::WorkstreamState]).await;
-    assert_eq!(
-        voided.last().unwrap().1,
-        "C1 on W1 no longer counts: its brief changed"
-    );
+    }
+}
+
+/// W4 on a real hub: a research order's answer-only brief had one human check. The lead claimed done and, in the same
+/// turn, asked whether to build. The human said build; the lead amended the brief to the build. Then the human
+/// confirmed the old check, and that claim, made against the answer-only brief, closed the workstream with the build
+/// never started. Here the amend voids the waiting claim, as `brief_create` does, and the old answer counts for nothing.
+#[tokio::test]
+async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
+    let k = research_kit();
+    let id = w1();
+    let claimed = k.claims.claim_done(&id, LEAD_BY, None);
+    let (claimed, ()) = tokio::join!(claimed, async {
+        k.until_the_human_is_asked().await;
+        k.ports
+            .put_workstream(&build_brief(k.ports.workstream(&w1()).unwrap()));
+        k.claims.void(&w1()).unwrap();
+        k.human_says_done();
+    });
+    let claimed = claimed.unwrap();
+    assert_eq!(claimed.state, WorkstreamState::Running, "{}", claimed.next);
+    assert!(!k.closed().await);
+    let voided: Vec<_> = k
+        .events_of(&[HubEventType::WorkstreamState])
+        .await
+        .into_iter()
+        .filter(|e| e.1.contains("no longer counts"))
+        .collect();
+    assert_eq!(voided.len(), 1, "{voided:?}");
+    assert_eq!(voided[0].1, "C1 on W1 no longer counts: its brief changed");
     // The build is still open: a claim on the new brief runs its checks.
     k.set_node(0, "");
     let passed = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
     assert_eq!(passed.state, WorkstreamState::Done);
 }
 
-/// The lead amends a brief while a claim on the old one still waits: the claim stops at once and never counts.
+/// The amend lands but the old claim's answer arrives before the void does: the claim still never counts.
 #[tokio::test]
-async fn amending_the_brief_voids_the_claim_still_waiting_on_it() {
-    let k = kit(vec![workstream(
-        "W1",
-        Some(vec![
-            json!({ "type": "human", "question": "Looks good on your end?" }),
-        ]),
-    )]);
-    *k.ports.human.lock().unwrap() = Some(String::new());
+async fn a_claim_finishing_after_the_amend_never_counts() {
+    let k = research_kit();
     let id = w1();
     let claimed = k.claims.claim_done(&id, LEAD_BY, None);
     let (claimed, ()) = tokio::join!(claimed, async {
-        while !k.ports.filed.load(std::sync::atomic::Ordering::SeqCst) {
-            tokio::task::yield_now().await;
-        }
-        k.claims.void(&w1()).unwrap();
+        k.until_the_human_is_asked().await;
+        k.ports
+            .put_workstream(&build_brief(k.ports.workstream(&w1()).unwrap()));
+        k.human_says_done();
     });
-    let claimed = claimed.unwrap();
-    assert!(claimed.claim.is_none());
-    assert!(
-        claimed.next.contains("change to the brief"),
-        "{}",
-        claimed.next
+    claimed.unwrap();
+    assert!(!k.closed().await);
+    let w = k.ports.workstream(&w1()).unwrap();
+    assert_eq!(
+        (w.state, w.brief_hash.unwrap().as_str().starts_with('b')),
+        (WorkstreamState::Running, true)
     );
-    assert_eq!(k.state(), WorkstreamState::Running);
+}
+
+/// The amend lands between the concluding claim's read and its write: the write loses, and the build brief stays.
+#[tokio::test]
+async fn an_amend_racing_the_concluding_claim_wins() {
+    let k = research_kit();
+    let id = w1();
+    let claimed = k.claims.claim_done(&id, LEAD_BY, None);
+    let (claimed, ()) = tokio::join!(claimed, async {
+        k.until_the_human_is_asked().await;
+        let amended = build_brief(k.ports.workstream(&w1()).unwrap());
+        *k.ports.lands_first.lock().unwrap() = Some(amended);
+        k.human_says_done();
+    });
+    claimed.unwrap();
+    assert!(!k.closed().await);
+    let w = k.ports.workstream(&w1()).unwrap();
+    assert_eq!(
+        (w.state, w.brief_hash.unwrap().as_str().starts_with('b')),
+        (WorkstreamState::Running, true)
+    );
+    assert!(
+        k.claims
+            .list(&ClaimFilter {
+                workstream_id: Some(w1()),
+                limit: 5,
+                ..Default::default()
+            })
+            .unwrap()
+            .is_empty(),
+        "a claim that never counts is never recorded"
+    );
 }

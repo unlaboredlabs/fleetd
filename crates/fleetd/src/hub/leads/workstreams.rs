@@ -334,37 +334,60 @@ impl Workstreams {
             ));
         };
         self.check_amend(&stored, amend)?;
+        // A claim made against the old brief must not close the workstream on the new one (W4): the amend reopens a
+        // verifying workstream and voids the claim still waiting on its checks.
+        let verifying = w.state == WorkstreamState::Verifying;
         let next = Workstream {
             brief: Some(brief),
             brief_hash: Some(hash.clone()),
+            state: if verifying {
+                WorkstreamState::Running
+            } else {
+                w.state
+            },
             updated_at: at.into(),
             ..w.clone()
         };
         let mut amends = stored.amends.clone();
         amends.push(amend.clone());
-        self.records.workstream_put(&StoredWorkstream {
-            workstream: next.clone(),
-            amends,
-        })?;
+        // Only over the workstream as read, so a claim concluding meanwhile and this amend never overwrite each other.
+        let written = self.records.workstream_put_if(
+            &StoredWorkstream {
+                workstream: next.clone(),
+                amends,
+            },
+            w,
+        )?;
+        if !written {
+            let now = self.get(id)?.map_or(w.state, |w| w.state);
+            return Err(LeadError::invalid(
+                format!(
+                    "{id} changed while you amended it; it is {} now.",
+                    state_text(now)
+                ),
+                if is_closed(now) {
+                    "Start the change as new work instead.".to_owned()
+                } else {
+                    format!("Call `brief` for {id} again.")
+                },
+            ));
+        }
         self.event(
             &next,
             HubEventType::WorkstreamState,
             format!("{id} brief amended under {amend}"),
             Some(serde_json::json!({ "workstreamId": id, "state": next.state, "briefHash": hash, "amend": amend })),
         )?;
-        // A claim made against the old brief must not close the workstream on the new one (W4).
-        let verifying = next.state == WorkstreamState::Verifying;
-        if verifying && let Some(claims) = self.ctx.hooks.claims.get() {
-            claims.void(id);
-        }
-        let state = self.get(id)?.map_or(next.state, |w| w.state);
         let voided = if verifying {
+            if let Some(claims) = self.ctx.hooks.claims.get() {
+                claims.void(id);
+            }
             " The claim you made before no longer counts; claim again once the new done-when checks hold."
         } else {
             ""
         };
         Ok(result(
-            state,
+            next.state,
             format!("Brief amended under {amend}.{voided} {running}"),
         ))
     }

@@ -98,6 +98,8 @@ pub trait Ports: Send + Sync + 'static {
     fn workstream(&self, id: &WorkstreamId) -> Option<Workstream>;
     /// Replaces the stored workstream, keeping its amends.
     fn put_workstream(&self, workstream: &Workstream);
+    /// `put_workstream` only while the stored one still has `expect`'s state and brief hash; false when it changed.
+    fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool;
     // leads: LeadWakes.trigger
     fn wake(&self, project: &ProjectRef, wake: ClaimWake);
     // link: NodeCommands.run (default 120 s timeout); the error is NodeCommandError's message.
