@@ -117,6 +117,7 @@ fn lead_line(t: &Theme, lead: Option<&AgentLane>, state: Option<&str>, next: Opt
     div()
         .h(px(24.))
         .w_full()
+        .flex_none()
         .overflow_hidden()
         .flex()
         .items_center()

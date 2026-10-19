@@ -110,7 +110,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "inbox_reply",
-        "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Each answer becomes a Decision and wakes its lead. Unparseable text changes nothing and returns a hint. Approve asks take only \"<n> go\" (the node runs the stored command) or \"<n> no\"; secret, approve and do asks take answers from human keys only.",
+        "Answer a batch tersely: \"1 go 2 nvm 3 b\", \"1-3 go\", \"recs fine\" (accept every recommendation), \"2: free text\", \"3 skip\" (skip for now: the lead keeps its recommendation, no decision), \"4 later\", \"pref: <standing preference>\", \"forget D12\". Binds to the latest open batch unless it starts with \"#B<n>\". Letters pick the options in the order listed. A decide answer can be taken back with inbox_undo for 10 s; then it becomes a Decision and wakes its lead. Other answers become a Decision at once. Unparseable text changes nothing and returns a hint. Approve asks take only \"<n> go\" (the node runs the stored command) or \"<n> no\"; secret, approve and do asks take answers from human keys only.",
+    ),
+    (
+        "inbox_undo",
+        "Take back a decide answer within 10 s of inbox_reply (its applied item's undoUntil): the ask is open again and its lead never hears of the answer. Refused once the window passed; record a new decision instead.",
     ),
     (
         "secret_submit",

@@ -18,6 +18,8 @@ export const IPC = {
   hubForget: "hub:forget",
   /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
   copy: "app:copy",
+  /** invoke(url) → OpenOutcome. Opens an https github.com / fleetd.sh link in the user's browser; refuses the rest. */
+  openExternal: "app:openExternal",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
 } as const;

@@ -18,8 +18,11 @@ const SERVES_FIX: &str =
 
 pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <A>]
              freeze the brief of a draft workstream and start it
-  ask --key <k> --class <product|money|credential|irreversible> --text <t> --rec <r>
-      [--options a,b] [--blocks "<step>"] [--proceeded] [--workstream <W>]
+  ask --key <k> --class <product|money|credential|irreversible> --text "<short question>"
+      [--context "<1-2 lines of background>"] --option '<key>|<Label>|<what happens if picked>'
+      --option '...' (2 to 6) --rec <option key> --why "<one line: why you recommend it>"
+      [--blocks "<step>"] [--proceeded] [--workstream <W>]
+             the human sees the labels and consequences as choices; keys are only recorded
   ask --kind do --key <k> --class <c> --text <t> --step '<json>' [--step '<json>' ...]
       [--verify '<check json>']
              a step is {"text","where":"<machine>|browser","command"?,"expect"?}; --verify is a
@@ -126,6 +129,8 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("text", Kind::Str),
     ("rec", Kind::Str),
     ("options", Kind::Str),
+    ("option", Kind::Multi),
+    ("context", Kind::Str),
     ("step", Kind::Multi),
     ("blocks", Kind::Str),
     ("proceeded", Kind::Bool),
@@ -335,7 +340,10 @@ pub fn parse_lead_args(
                     "class",
                     "text",
                     "rec",
+                    "why",
                     "options",
+                    "option",
+                    "context",
                     "step",
                     "verify",
                     "sink",
@@ -369,6 +377,34 @@ pub fn parse_lead_args(
                     .str("verify")
                     .map(|text| parse_json("--verify", text))
                     .transpose()?;
+                // `key|Label|what happens`: the label and consequence may hold commas; only the first two '|' split.
+                let mut options: Vec<Value> = v
+                    .multi("option")
+                    .iter()
+                    .map(|o| {
+                        let mut parts = o.splitn(3, '|').map(str::trim);
+                        defined(vec![
+                            ("key", parts.next().map(|k| Value::String(k.to_owned()))),
+                            (
+                                "label",
+                                parts
+                                    .next()
+                                    .filter(|l| !l.is_empty())
+                                    .map(|l| Value::String(l.to_owned())),
+                            ),
+                            (
+                                "consequence",
+                                parts
+                                    .next()
+                                    .filter(|c| !c.is_empty())
+                                    .map(|c| Value::String(c.to_owned())),
+                            ),
+                        ])
+                    })
+                    .collect();
+                if let Some(bare) = v.str("options") {
+                    options.extend(split_list(bare));
+                }
                 let mut steps = Vec::new();
                 for (i, step) in v.multi("step").iter().enumerate() {
                     steps.push(parse_json(&format!("--step {}", i + 1), step)?);
@@ -379,10 +415,12 @@ pub fn parse_lead_args(
                     ("key", s(v.str("key"))),
                     ("class", s(class)),
                     ("text", s(v.str("text"))),
+                    ("context", s(v.str("context"))),
                     ("recommendation", s(v.str("rec"))),
+                    ("recommendationWhy", s(v.str("why"))),
                     (
                         "options",
-                        v.str("options").map(|o| Value::Array(split_list(o))),
+                        (!options.is_empty()).then_some(Value::Array(options)),
                     ),
                     ("steps", (!steps.is_empty()).then_some(Value::Array(steps))),
                     ("verify", verify),
@@ -1674,16 +1712,46 @@ mod tests {
             "product",
             "--text",
             "Path?",
+            "--context",
+            "The load balancer probes it.",
             "--rec",
             "/healthz",
-            "--options",
-            "/healthz, /health",
+            "--why",
+            "The probe expects it.",
+            "--option",
+            "/healthz|/healthz|Matches the probe, no config change.",
+            "--option",
+            "/health | Shorter | The probe config changes too, then it works|",
         ])
         .unwrap();
         assert_eq!(ask["kind"], "decide");
         assert_eq!(ask["blocks"], "nothing");
         assert_eq!(ask["proceededOnRec"], false);
-        assert_eq!(ask["options"], json!(["/healthz", "/health"]));
+        assert_eq!(ask["context"], "The load balancer probes it.");
+        assert_eq!(ask["recommendationWhy"], "The probe expects it.");
+        assert_eq!(
+            ask["options"],
+            json!([
+                { "key": "/healthz", "label": "/healthz", "consequence": "Matches the probe, no config change." },
+                { "key": "/health", "label": "Shorter", "consequence": "The probe config changes too, then it works|" }
+            ])
+        );
+        // The old bare form still parses; the hub then refuses it with the command to send instead.
+        let bare = parse(&[
+            "ask",
+            "--key",
+            "a.b",
+            "--class",
+            "product",
+            "--text",
+            "t",
+            "--rec",
+            "x",
+            "--options",
+            "x, y",
+        ])
+        .unwrap();
+        assert_eq!(bare["options"], json!([{ "key": "x" }, { "key": "y" }]));
         assert_eq!(
             parse(&["decide", "--key", "a.b", "--value", "v"]).unwrap()["scope"],
             "workstream"

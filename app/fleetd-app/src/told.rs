@@ -77,19 +77,12 @@ impl Shell {
         let started = sp.started_at.as_str().get(..16).unwrap_or_default().replace('T', " ");
         let sha = sp.text_sha.get(..10).unwrap_or(&sp.text_sha);
         let caption = |text: &'static str| div().pt_2().text_size(px(size::XS)).font_weight(STRONG).text_color(t.quiet).child(text);
-        let mut refs = div().flex().flex_col();
+        let mut refs = ui::table(3).text_size(px(size::XS));
         for r in &sp.refs {
-            refs = refs.child(
-                div()
-                    .h(px(metric::LINE))
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .text_size(px(size::XS))
-                    .child(div().w(px(150.)).flex_none().font_family(t.mono_font.clone()).text_size(px(size::SM)).child(r.id.to_string()))
-                    .child(div().w(px(250.)).flex_none().child(level(r.id.as_str(), r.scope)))
-                    .child(div().text_color(t.quiet).font_family(t.mono_font.clone()).text_size(px(size::SM)).child(r.r#ref.to_string())),
-            );
+            refs = refs
+                .child(div().font_family(t.mono_font.clone()).text_size(px(size::SM)).child(r.id.to_string()))
+                .child(div().child(level(r.id.as_str(), r.scope)))
+                .child(div().text_color(t.quiet).font_family(t.mono_font.clone()).text_size(px(size::SM)).child(r.r#ref.to_string()));
         }
         div()
             .flex_1()

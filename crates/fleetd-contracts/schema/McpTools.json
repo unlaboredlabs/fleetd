@@ -370,6 +370,12 @@
         "class": {
           "$ref": "#/$defs/AskClass"
         },
+        "context": {
+          "description": "One or two lines of background, shown under the question.",
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -407,9 +413,7 @@
         },
         "options": {
           "items": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "type": "string"
+            "$ref": "#/$defs/AskOption"
           },
           "maxItems": 6,
           "type": "array"
@@ -427,9 +431,16 @@
           "description": "Absent only on an `intake.route.*` ask: the human picks the project by answering it."
         },
         "recommendation": {
-          "description": "Required for decide.",
+          "description": "Required for decide. On asks filed since labels, the key of one of `options`.",
           "maxLength": 2000,
           "minLength": 1,
+          "type": "string"
+        },
+        "recommendationWhy": {
+          "description": "The lead's one-line reason for its recommendation.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
         "sink": {
@@ -448,6 +459,7 @@
           "type": "array"
         },
         "text": {
+          "description": "The question. On asks filed since labels, one short line; the background is in `context`.",
           "maxLength": 500,
           "minLength": 1,
           "type": "string"
@@ -481,9 +493,28 @@
         "by": {
           "type": "string"
         },
+        "deliveredAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The receipt: when the lead was woken with this answer. Absent while the undo window runs."
+        },
+        "kind": {
+          "$ref": "#/$defs/AskAnswerKind"
+        },
+        "note": {
+          "description": "The reply's note (\"1 a: because …\"), kept for the decision's why.",
+          "type": "string"
+        },
         "raw": {
           "description": "The reply text it was parsed from.",
           "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/DecisionSource",
+          "description": "Who the decision will be recorded as, once the undo window passes."
+        },
+        "undoUntil": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Until then `inbox_undo` reopens the ask and the lead never hears of the answer."
         },
         "value": {
           "type": "string"
@@ -496,6 +527,15 @@
         "raw"
       ],
       "type": "object"
+    },
+    "AskAnswerKind": {
+      "description": "option: one of the ask's options (`value` is its key). text: the human's own words (\"Something else…\"). skip:\n\"Skip for now\", the lead carries on with its recommendation (`value`) and no decision is recorded. Absent on\nanswers recorded before kinds, and for approve, do and secret answers (\"go\", \"done\", \"no\").",
+      "enum": [
+        "option",
+        "text",
+        "skip"
+      ],
+      "type": "string"
     },
     "AskClass": {
       "enum": [
@@ -519,6 +559,35 @@
         "approve"
       ],
       "type": "string"
+    },
+    "AskOption": {
+      "description": "One choice of a decide ask. The human reads `label` and `consequence`; `key` is internal and is what gets recorded.",
+      "properties": {
+        "consequence": {
+          "description": "One line, what happens if the human picks it. Absent only on asks stored before labels.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "key": {
+          "description": "The decision value recorded when the human picks it, e.g. \"public-snapshot\".",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "label": {
+          "description": "A few words, e.g. \"Public snapshot\". Absent only on asks stored before labels: show [`humanize_key`].",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
     },
     "AskState": {
       "enum": [
@@ -3183,6 +3252,26 @@
           "type": "string"
         },
         {
+          "const": "ask.closed",
+          "description": "An open ask stopped being open (answered, withdrawn); `data.askId`, `data.key`, `data.state`, and\n`data.workstreamId` when it was about an order. Everything that counts open asks recomputes on it.",
+          "type": "string"
+        },
+        {
+          "const": "ask.answered",
+          "description": "A decide ask was answered; `data.askId`, `data.undoUntil`. Its decision and the lead's wake follow once the\nundo window passes.",
+          "type": "string"
+        },
+        {
+          "const": "ask.undone",
+          "description": "An answer was taken back inside its undo window; the ask is open again. `data.askId`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.delivered",
+          "description": "The receipt: the lead was woken with the answer. `data.askId`, `data.deliveredAt`, `data.decisionId` (absent\nfor a skip).",
+          "type": "string"
+        },
+        {
           "const": "digest.ready",
           "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
           "type": "string"
@@ -3500,7 +3589,16 @@
           "type": "string"
         },
         "decisionId": {
-          "$ref": "#/$defs/DecisionId"
+          "$ref": "#/$defs/DecisionId",
+          "description": "Absent while a decide answer's undo window runs."
+        },
+        "kind": {
+          "$ref": "#/$defs/AskAnswerKind",
+          "description": "option, text or skip, for a decide ask."
+        },
+        "label": {
+          "description": "What the human sees: the picked option's label, the free text, or the kept recommendation's label.",
+          "type": "string"
         },
         "number": {
           "description": "The batch item number; absent for \"pref:\" and \"forget\".",
@@ -3514,6 +3612,10 @@
         "source": {
           "$ref": "#/$defs/DecisionSource",
           "description": "The written decision's source and by, filled by the hub from the caller (human device or agent key)."
+        },
+        "undoUntil": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Until then `inbox_undo` takes the answer back."
         },
         "value": {
           "type": "string"
@@ -3543,9 +3645,10 @@
       "type": "object"
     },
     "InboxReplyOutcome": {
-      "description": "answered: a Decision was written. later: moved to the next batch. retired: \"forget Dn\". pref: \"pref:\" recorded.",
+      "description": "answered: the ask is answered (a decide ask's decision is written once `undoUntil` passes). skipped: \"skip\",\nthe lead keeps its recommendation and no decision is written. later: moved to the next batch. retired: \"forget\nDn\". pref: \"pref:\" recorded.",
       "enum": [
         "answered",
+        "skipped",
         "withdrawn",
         "later",
         "retired",
@@ -3586,6 +3689,35 @@
       "required": [
         "parsed",
         "applied"
+      ],
+      "type": "object"
+    },
+    "InboxUndoInput": {
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        }
+      },
+      "required": [
+        "askId"
+      ],
+      "type": "object"
+    },
+    "InboxUndoOutput": {
+      "properties": {
+        "ask": {
+          "$ref": "#/$defs/Ask",
+          "description": "The ask, open again in its batch."
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ask"
       ],
       "type": "object"
     },
@@ -4504,6 +4636,12 @@
         "inbox_reply.output": {
           "$ref": "#/$defs/InboxReplyOutput"
         },
+        "inbox_undo.input": {
+          "$ref": "#/$defs/InboxUndoInput"
+        },
+        "inbox_undo.output": {
+          "$ref": "#/$defs/InboxUndoOutput"
+        },
         "incidents_list.input": {
           "$ref": "#/$defs/IncidentsListInput"
         },
@@ -4880,6 +5018,8 @@
         "github_webhook_set.output",
         "inbox_reply.input",
         "inbox_reply.output",
+        "inbox_undo.input",
+        "inbox_undo.output",
         "incidents_list.input",
         "incidents_list.output",
         "intake_preview.input",

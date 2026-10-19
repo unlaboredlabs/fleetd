@@ -24,6 +24,7 @@ export interface HubError {
 }
 
 export type CallOutcome = { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError };
+export type OpenOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 export type ConnectOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /** main → renderer, on IPC.hubFrame. After a `state` with phase `live`, a `snapshot` always precedes events. */

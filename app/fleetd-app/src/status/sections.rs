@@ -287,6 +287,7 @@ fn line(t: &Theme) -> Div {
     div()
         .w_full()
         .h(px(metric::ROW))
+        .flex_none()
         .px_2()
         .flex()
         .items_center()
