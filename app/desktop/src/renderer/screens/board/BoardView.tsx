@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState, type Ref } from
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { Button, StatusChip, Text, Truncate, VirtualList, cx, type StatusTone } from "../../ui";
 import { peekNow, useNow } from "./clock";
-import { Composer, type ComposerApi, type ComposerHandle } from "./Composer";
+import { Composer, type ComposerApi, type ComposerHandle, type Offline } from "./Composer";
 import type { Target } from "./composerLogic";
 import type { AgentLane, OrderPhase } from "./contracts";
 import { groupLabel, nowLane, reviewProgress, writtenIn } from "./fleet";
@@ -39,7 +39,7 @@ export interface BoardViewProps {
   /** The board filtered to one project (a sidebar click). */
   readonly filter?: ProjectKey | undefined;
   readonly lastUsed?: ProjectKey | undefined;
-  readonly offline?: string | undefined;
+  readonly offline?: Offline | undefined;
   /** Told which order is on the stage, so its detail (the agents a card leaves out) can be fetched. */
   readonly onStage?: ((workstreamId: string | undefined) => void) | undefined;
 }

@@ -46,6 +46,8 @@ export type ConnectionView =
       readonly view: "skeleton";
       readonly hub: string;
       readonly reason?: string | undefined;
+      /** What to do about it, as main words it; may hold `code` in backticks. */
+      readonly fix?: string | undefined;
       readonly retryAt?: number | undefined;
     }
   | { readonly view: "live"; readonly hub: string };
@@ -59,7 +61,7 @@ export const selectConnection = memo(
       case "refused":
         return { view: "refused", message: hub.message };
       case "retrying":
-        return { view: "skeleton", hub: hub.hub, reason: hub.reason, retryAt: hub.retryAt };
+        return { view: "skeleton", hub: hub.hub, reason: hub.reason, fix: hub.fix, retryAt: hub.retryAt };
       case "connecting":
         return { view: "skeleton", hub: hub.hub };
       case "live":

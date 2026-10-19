@@ -7,8 +7,7 @@ import type { HubError } from "../../../shared/hub";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
-import { plainReason } from "../shell/model";
-import type { ComposerApi, Draft } from "./Composer";
+import type { ComposerApi, Draft, Offline } from "./Composer";
 import { type ProjectKey, projectKey } from "./live";
 import type { BoardModel, SentOrder } from "./model";
 
@@ -52,7 +51,7 @@ export interface BoardSource {
   };
   readonly lastUsed: ProjectKey | undefined;
   /** Why Send is off, when the hub isn't live. */
-  readonly offline: string | undefined;
+  readonly offline: Offline | undefined;
   /** The order on the stage: its detail (order_get) is loaded, for the agents a card leaves out. */
   readonly watch: (workstreamId: string | undefined) => void;
 }
@@ -136,14 +135,15 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
     [sent, submit, board],
   );
 
+  // Main words connection errors (src/main/hub/explain.ts); they are shown as sent, never rewritten here.
   const c = data.connection;
-  const offline =
+  const offline: Offline | undefined =
     c.view === "live"
       ? undefined
       : c.view === "refused"
-        ? c.message
+        ? { reason: c.message }
         : c.view === "skeleton" && c.reason !== undefined
-          ? `Reconnecting: ${plainReason(c.reason, c.hub)}`
-          : "Not connected to the hub.";
+          ? { reason: c.reason, fix: c.fix }
+          : { reason: "Not connected to the hub" };
   return { model: { data, sent: sent.orders, boardError }, composer, actions, watch, lastUsed, offline };
 };

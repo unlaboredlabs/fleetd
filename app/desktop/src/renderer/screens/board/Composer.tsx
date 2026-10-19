@@ -5,6 +5,7 @@ import { useEffect, useId, useImperativeHandle, useRef, useState, type Clipboard
 import { AtSign, Paperclip } from "lucide-react";
 import {
   Button,
+  InlineCode,
   Menu,
   MenuContent,
   MenuItem,
@@ -62,6 +63,19 @@ export interface ComposerApi {
   addProject(): void;
 }
 
+export interface Offline {
+  readonly reason: string;
+  /** May hold `code` in backticks. */
+  readonly fix?: string | undefined;
+}
+
+/** A fix as main words it, with `code` in backticks shown as code. */
+const FixText = ({ text }: { text: string }) => (
+  <>
+    {text.split("`").map((part, i) => (i % 2 === 1 ? <InlineCode key={i}>{part}</InlineCode> : part))}
+  </>
+);
+
 export interface ComposerHandle {
   focus(): void;
   /** Opens the project picker (⌘⇧P). */
@@ -81,8 +95,8 @@ export interface ComposerProps {
   readonly lastUsed?: string | undefined;
   readonly orders: readonly { id: string; title: string }[];
   readonly prs: readonly { number: number; url: string; title: string }[];
-  /** Why Send is off, e.g. "Not connected; retrying in 4 s". */
-  readonly offline?: string | undefined;
+  /** Why Send is off: main's own words for the connection (`reason` has no final period) and what to do. */
+  readonly offline?: Offline | undefined;
   readonly api: ComposerApi;
   readonly handle?: Ref<ComposerHandle> | undefined;
   readonly autoFocus?: boolean;
@@ -472,7 +486,13 @@ export function Composer(props: ComposerProps) {
           </Text>
         ) : props.offline ? (
           <Text size="xs" tone="warning" className={cx(c.error)}>
-            {props.offline}
+            {`${props.offline.reason}.`}
+            {props.offline.fix ? (
+              <>
+                {" "}
+                <FixText text={props.offline.fix} />
+              </>
+            ) : null}
           </Text>
         ) : (
           <span className={c.keys}>Enter send · ⇧Enter newline</span>
