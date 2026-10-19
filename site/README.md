@@ -12,17 +12,18 @@ would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and f
 ## Refreshing the captures
 
 The screenshots, the `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by
-the shape of fleetd's output, so the twin carries no markers) come from one command, run from the repo root on a Linux
-machine with the lab set up (see "Lab suite" in `docs/CONTRIBUTING.md`) and the headless display sysroot
-(`app/bench/linux-sysroot.sh`):
+the shape of fleetd's output, so the twin carries no markers) come from one command, run from the repo root on a
+machine with the lab set up (see "Lab suite" in `docs/CONTRIBUTING.md`):
 
 ```sh
-cargo build --release --locked -p fleetd -p fleetd-app -p fleetd-bench && npm ci --prefix tests/lab
+cargo build --release --locked -p fleetd && npm ci --prefix tests/lab
+(cd app/desktop && pnpm install && pnpm qa:build)
 FLEETD_LAB_SLOT=8 node tests/lab/site-capture.ts
 ```
 
 It stands up a hub and a node on that lab slot, has a haiku lead file three numbered asks (three tiny turns), runs the
-desktop app under a private Xvfb at the page's image size, shoots the inbox, types the reply, shoots the inbox again
+desktop app through its QA harness (`app/desktop/qa`) at the page's image size, shoots the inbox, types the reply,
+shoots the inbox again
 (it publishes the shots `home.html` shows); then it runs the `fleetd init --yes --no-service`
 wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME that has the lab's claude and gh logins, and
 reads the merge train from the newest lab m7 run, if there is one: the whole path of its first two merged changes and
@@ -32,12 +33,12 @@ names this machine, its home or lab paths, a non-loopback address or a key. Revi
 The callout positions (`--x`, `--y`) and the hand-written callout text are not generated: the script lists quotes and
 ids on the page that its run didn't produce, and you re-aim the callouts if the app's layout moved.
 
-`fleet-board.png`, the board at the top of the page, is a still of the app during the lab's demo order
-(`FLEETD_DEMO_ORDER=app npm --prefix tests/lab run lab -- demo`, the app at 1400x900@2x in the light theme, pointed
-at the lab hub with `FLEETD_HUB_URL` and `FLEETD_AGENT_KEY` from `RUN/demo/app.json`), taken while all nine checkers
-work. The app shots in the docs (`site/docs/img/`) are the app's fixture screens at the same size
-(`FLEETD_BENCH=idle FLEETD_SCREEN=status`, `time`, `order+steer`, `board+add-cloning`), with
-`FLEETD_SHOT_HUB=127.0.0.1:4790` so the footer shows a connected lab hub rather than the fixture's own label.
+`fleet-board.png`, the board at the top of the page, and the app shots in the docs (`site/docs/img/`) are the app's
+fixture screens, each a screen and fixture of the QA gate at 1400x900@2x in the light theme. `app/desktop/qa/site.ts`
+lists them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes them into `site/`.
+
+Every app image on the site is marked `recapture` there while it still shows the earlier app. Re-shoot each once
+its screen is final, re-aim the landing page's callouts, then drop the mark.
 
 ## Docs (fleetd.sh/docs)
 
@@ -158,7 +159,7 @@ A browser at the same URL should show the landing page.
 ## Testing the installer without a release
 
 `FLEETD_BASE_URL` points the installer at any directory of release assets, e.g. a local `python3 -m http.server`
-serving `SHA256SUMS`, `fleetd-linux-x64` and `fleetd-app-linux-x64.tar.gz`:
+serving `SHA256SUMS`, `fleetd-linux-x64` and `fleetd-desktop-linux-x86_64.AppImage`:
 
 ```sh
 FLEETD_BASE_URL=http://127.0.0.1:8000 HOME=/tmp/fleetd-home sh site/install.sh

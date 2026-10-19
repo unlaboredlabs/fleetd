@@ -65,13 +65,15 @@ async function launchElectron(options: Parameters<typeof electron.launch>[0], at
 }
 
 // `fixture` is required for the app; only the self-test's stand-in window runs without one.
-export async function launch(fixture: FixtureName | undefined, main = appMain): Promise<Launched> {
+// Without a fixture, `hub` connects the app to a real hub for one run (the site's lab captures); nothing is saved.
+export async function launch(fixture: FixtureName | undefined, main = appMain, hub?: { url: string; key: string }): Promise<Launched> {
   if (!existsSync(main)) throw new Error(`${main} is missing: run \`pnpm qa:build\` in app/desktop first.`);
   const { now, settleMs = 0 } = fixture === undefined ? {} : fixtureMeta(path.join(fixturesDir, `${fixture}.json`));
   const userData = mkdtempSync(path.join(tmpdir(), "fleetd-qa-"));
   // Only what Electron needs: never the user's fleetd home, credentials or the agent's own session variables.
   const env: Record<string, string> = {
     ...(fixture === undefined ? {} : { FLEETD_FIXTURE: fixture, FLEETD_FIXTURE_DIR: fixturesDir }),
+    ...(hub === undefined ? {} : { FLEETD_HUB_URL: hub.url, FLEETD_AGENT_KEY: hub.key }),
     FLEETD_HOME: path.join(userData, "fleetd"),
     HOME: process.env.HOME ?? userData,
     PATH: process.env.PATH ?? "",
