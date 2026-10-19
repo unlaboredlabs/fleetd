@@ -8,9 +8,23 @@
 # architecture), so it never staples a ticket onto a different build. Without SUBMISSION it takes the newest
 # accepted fleetd-app-notarize.zip submission whose ticket matches. Then it staples, requires Gatekeeper to say
 # "accepted, source=Notarized Developer ID", and replaces the zip and its SHA256SUMS line as publish.sh writes them.
+# Without SUBMISSION, "nothing to do yet" (no notary key, a nightly building, nothing accepted) exits 0.
 # Env: TAG, GH_TOKEN, NOTARY_KEY_ID, NOTARY_ISSUER, NOTARY_KEY_P8_BASE64, optional SUBMISSION.
 set -euo pipefail
-: "${TAG:?}" "${NOTARY_KEY_ID:?}" "${NOTARY_ISSUER:?}" "${NOTARY_KEY_P8_BASE64:?}"
+: "${TAG:?}"
+if [ -z "${NOTARY_KEY_ID:-}" ] || [ -z "${NOTARY_ISSUER:-}" ] || [ -z "${NOTARY_KEY_P8_BASE64:-}" ]; then
+  echo "no notary key; nothing to staple"
+  exit 0
+fi
+# A release build may be about to replace the asset: leave it to that build's own notarization.
+building() {
+  [ -n "$(gh run list --workflow nightly.yml --branch main --limit 5 --json status \
+    -q '[.[] | select(.status != "completed")] | .[0].status // empty')" ]
+}
+if [ "$TAG" = nightly ] && building; then
+  echo "a nightly is building; trying again later"
+  exit 0
+fi
 asset=fleetd-app-macos-universal.zip
 work="${RUNNER_TEMP:?}/staple"
 p8="$RUNNER_TEMP/fleetd-notary.p8"
@@ -20,7 +34,8 @@ rm -rf "$work" && mkdir -p "$work/app"
 auth=(--key "$p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
 die() { echo "::error::$*"; exit 1; }
 
-gh release download "$TAG" -p "$asset" -p SHA256SUMS -D "$work"
+gh release download "$TAG" -p "$asset" -p SHA256SUMS -D "$work" || { echo "no $asset on $TAG"; exit 0; }
+published="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/SHA256SUMS")"
 ditto -x -k "$work/$asset" "$work/app"
 app="$work/app/fleetd.app"
 [ -d "$app" ] || die "$asset has no fleetd.app"
@@ -60,7 +75,12 @@ for id in $candidates; do
   if covers "$id"; then chosen="$id"; break; fi
   echo "submission $id's ticket doesn't cover the published app"
 done
-[ -n "$chosen" ] || die "no accepted submission covers the $TAG app yet"
+if [ -z "$chosen" ]; then
+  # An explicit id that doesn't fit is a mistake; the scheduled check just waits for Apple.
+  [ -z "${SUBMISSION:-}" ] || die "submission $SUBMISSION doesn't cover the $TAG app"
+  echo "no accepted submission covers the $TAG app yet"
+  exit 0
+fi
 echo "stapling the ticket of submission $chosen"
 
 xcrun stapler staple "$app"
@@ -76,6 +96,12 @@ ditto -c -k --keepParent "$app" "$work/out/$asset"
 (cd "$work/out" && shasum -a 256 "$asset") > "$work/new"
 awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$work/new" "$work/SHA256SUMS" | cat "$work/new" - | sort -k2 > "$work/out/SHA256SUMS"
 cat "$work/out/SHA256SUMS"
+gh release download "$TAG" -p SHA256SUMS -O "$work/now" --clobber
+now="$(awk -v n="$asset" '$2 == n { print $1 }' "$work/now")"
+if [ "$now" != "$published" ] || { [ "$TAG" = nightly ] && building; }; then
+  echo "the $TAG app changed while stapling; leaving the new one alone"
+  exit 0
+fi
 gh release upload "$TAG" "$work/out/$asset" --clobber
 gh release upload "$TAG" "$work/out/SHA256SUMS" --clobber
 echo "stapled and replaced $asset on $TAG"

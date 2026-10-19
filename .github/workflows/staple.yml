@@ -1,5 +1,6 @@
 # Staples a published app once Apple accepts its notarization, when the release job shipped it signed but unstapled
-# because Apple's queue outlasted its wait. No rebuild: see .github/release/macos-staple.sh.
+# because Apple's queue outlasted its wait. No rebuild: see .github/release/macos-staple.sh. Every 30 minutes it
+# checks the nightly; that's a no-op once the app is stapled, while nothing accepted covers it yet, and on forks.
 name: Staple release
 
 on:
@@ -13,17 +14,23 @@ on:
         description: Notarization submission id (default the newest accepted one whose ticket matches the app)
         type: string
         default: ""
+  schedule:
+    - cron: "7,37 * * * *"
 
-# The nightly's own group, so this never races a publish; a newer nightly cancels it, which is fine.
+# Not the release's own group: a queued run there would cancel a pending nightly. The script instead skips while a
+# release build runs and re-checks the asset just before replacing it.
 concurrency:
-  group: ${{ inputs.tag == 'nightly' && 'release-nightly' || format('release-refs/tags/{0}', inputs.tag) }}
+  group: staple-${{ inputs.tag || 'nightly' }}
   cancel-in-progress: false
 
 permissions:
   contents: write
+  # To see whether a nightly is building.
+  actions: read
 
 jobs:
   staple:
+    if: github.repository == 'unlaboredlabs/fleetd'
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -31,7 +38,7 @@ jobs:
       - name: Staple and replace the app zip
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          TAG: ${{ inputs.tag || 'nightly' }}
           SUBMISSION: ${{ inputs.submission }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
