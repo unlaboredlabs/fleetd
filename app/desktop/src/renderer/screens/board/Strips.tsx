@@ -2,6 +2,7 @@
 // claude usage windows (only what it reports), then the slot board. The train strip: each repo's merge train as
 // chips in train order (queued → CI → merged); a chip that changes place slides there, a merged one leaves after
 // 10 s. Every move is one transition on a change; nothing runs while the trains stand still.
+import { ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dot, Tooltip, Truncate, cx, toast } from "../../ui";
 import type { MachineLive, PrChip, SlotState, TrainLive } from "./contracts";
@@ -189,7 +190,7 @@ function Chips({ chips, onOpenPr }: { chips: readonly { chip: PrChip; leaving: b
               <ChipBody chip={chip} />
             </span>
           )}
-          {i + 1 < chips.length ? <span className={s.arrow}>▸</span> : null}
+          {i + 1 < chips.length ? <ChevronRight className={s.arrow} aria-hidden /> : null}
         </span>
       ))}
     </span>

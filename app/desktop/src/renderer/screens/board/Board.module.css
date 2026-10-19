@@ -687,6 +687,8 @@
 .arrow {
   color: var(--faint);
   flex: none;
+  width: 12px;
+  height: 12px;
 }
 .mergedToday {
   flex: none;

@@ -2,7 +2,7 @@
 // how below (attach, mention, Enter). Enter sends and keeps focus; Shift+Enter adds a line. The rules live in
 // composerLogic.ts; this file is the box.
 import { useEffect, useId, useImperativeHandle, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from "react";
-import { AtSign, Paperclip } from "lucide-react";
+import { AtSign, ChevronDown, Paperclip, X } from "lucide-react";
 import {
   Button,
   InlineCode,
@@ -341,7 +341,7 @@ export function Composer(props: ComposerProps) {
               <Truncate expand="none" size="xs" tone="inherit">
                 {targetRow?.title ?? "Any project"}
               </Truncate>
-              <span aria-hidden>▾</span>
+              <ChevronDown className={c.chevron} aria-hidden />
             </button>
           </MenuTrigger>
           <MenuContent>
@@ -365,7 +365,7 @@ export function Composer(props: ComposerProps) {
         <Menu open={typeMenu} onOpenChange={setTypeMenu}>
           <MenuTrigger asChild>
             <button type="button" className={cx(c.picker, c.type)} aria-label="Type">
-              {TEMPLATE_LABEL[kind]} <span aria-hidden>▾</span>
+              {TEMPLATE_LABEL[kind]} <ChevronDown className={c.chevron} aria-hidden />
             </button>
           </MenuTrigger>
           <MenuContent>
@@ -431,7 +431,7 @@ export function Composer(props: ComposerProps) {
                 {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "failed") : "uploading…"}`}
               </Truncate>
               <button type="button" className={c.remove} aria-label={`Remove ${a.name}`} onClick={() => setAttached(attached.filter((x) => x.local !== a.local))}>
-                ×
+                <X className={c.removeIcon} aria-hidden />
               </button>
             </span>
           ))}
@@ -441,7 +441,7 @@ export function Composer(props: ComposerProps) {
                 {r.chip}
               </Truncate>
               <button type="button" className={c.remove} aria-label={`Remove ${r.chip}`} onClick={() => setRefs(refs.filter((x) => x !== r))}>
-                ×
+                <X className={c.removeIcon} aria-hidden />
               </button>
             </span>
           ))}
