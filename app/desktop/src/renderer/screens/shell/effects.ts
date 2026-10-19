@@ -7,7 +7,7 @@ import { closeOverlay, commandFor, runCommand } from "../palette";
 // Not in the palette's public surface yet; the menu needs to hear when commands come and go.
 import { subscribeRegistry } from "../palette/registry";
 import type { HubEvent } from "../../../shared/hub";
-import { useDataLayer } from "../../src/data/react";
+import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { useHubEvents } from "./hubFeed";
 import { currentRoute, navigate } from "./navigation";
 import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type Policy } from "./notifier";
@@ -82,7 +82,8 @@ export const useMenuState = (): void => {
 
 const CHECK_EVERY_MS = 15_000;
 
-// The hub's attention policy as last read; one per window, shared with the other notifications (the Status digest).
+// The hub's attention policy as the data layer last read it (a decision.recorded event refetches it, so quiet hours
+// set from the phone or the CLI apply at once); shared with the other notifications (the Status digest).
 let policy: Policy = FALLBACK_POLICY;
 
 /** Inside the hub's quiet hours now: only urgent items may notify. */
@@ -110,23 +111,22 @@ export const useNotifications = (live: boolean): void => {
   });
   useHubEvents(onEvent);
 
+  // Fetched once the connection is fresh, and again whenever an event says it changed.
+  const policyQuery = useToolQuery("attention_policy", {});
+  const { data: policyOutput, refetch } = policyQuery;
+  useEffect(() => {
+    policy = policyFrom(policyOutput) ?? FALLBACK_POLICY;
+  }, [policyOutput]);
+
   useEffect(() => {
     if (!live) return;
-    let cancelled = false;
-    const refresh = async () => {
-      const out = await window.fleetd.hub.call("attention_policy", {});
-      if (!cancelled && out.ok) policy = policyFrom(out.output) ?? FALLBACK_POLICY;
-    };
-    void refresh();
     const timer = setInterval(() => {
-      if (policyStale(policy, Date.now())) void refresh();
+      // The hub sends the quiet window under way and the next; past the last one, ask for the next ones.
+      if (policyStale(policy, Date.now())) void refetch();
       check();
     }, CHECK_EVERY_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [live, check]);
+    return () => clearInterval(timer);
+  }, [live, check, refetch]);
 };
 
 /** A field Esc should leave rather than act through (the composer, a search box). */

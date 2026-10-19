@@ -29,13 +29,7 @@ const useShellData = (): ShellData => {
   return useMemo(
     () =>
       toShellData(
-        {
-          projects: projects ?? [],
-          board: board ?? [],
-          inbox: inbox ?? [],
-          machines: machines ?? [],
-          leadStatus: (key) => lanes[leadLaneId(key)]?.status,
-        },
+        { projects, board, inbox, machines, leadStatus: (key) => lanes[leadLaneId(key)]?.status },
         // A finished order drops off when the data next changes, not on a timer, so nothing repaints while idle;
         // the clock is read once per data change, which is the point of the memo.
         // eslint-disable-next-line react-hooks/purity
@@ -65,12 +59,12 @@ export function Shell() {
   useEscape(route);
 
   // What was there when the app connected counts as seen; a project you open is seen up to now.
-  seen.prime(data.projects);
+  if (data.projects !== undefined) seen.prime(data.projects);
   const screen = route.screen;
   useEffect(() => {
     if (screen.id !== "board" || screen.project === null) return;
     const key = screen.project;
-    const open = data.projects.find((p) => p.key.machineId === key.machineId && p.key.projectId === key.projectId);
+    const open = data.projects?.find((p) => p.key.machineId === key.machineId && p.key.projectId === key.projectId);
     if (open !== undefined) seen.mark(open.key, open.lastActivityAt);
   }, [screen, data.projects, seen]);
 
