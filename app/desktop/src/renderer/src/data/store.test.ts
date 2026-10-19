@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyFrame, applyLive, applyStreams, failRead, ingest, initialState, type DataState } from "./store";
-import { selectAsksError, selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
+import { selectProjectList, selectAsksError, selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
 import { ask, card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
@@ -205,5 +205,18 @@ describe("live frames", () => {
     expect(l.skewMs).toBe(-100);
     l = applyLive(l, frame(true, [], at(13_000)), 13_700);
     expect(l.skewMs).toBe(-700);
+  });
+});
+
+describe("the project list", () => {
+  it("keeps a stable order by title, whatever needs you or works", () => {
+    let s = withBoard(run([live(), snapshot(1)]), []);
+    const storefront = s.projects["devbox/storefront"];
+    if (storefront === undefined) throw new Error("the snapshot has storefront");
+    s = { ...s, projects: { ...s.projects, "devbox/acme": { ...storefront, projectId: "acme", title: "acme" } } };
+    const order = () => selectProjectList(s)?.map((r) => [r.project.title, r.needsYou]);
+    expect(order()).toEqual([["acme", false], ["storefront", false]]);
+    s = run([{ t: "event", event: { seq: 2, at: "2026-10-19T10:00:00.000Z", type: "chat.waiting", summary: "", data: { projectRef: project, needsYou: true, leadWorking: true, lastSeq: 4 } } }], s);
+    expect(order()).toEqual([["acme", false], ["storefront", true]]);
   });
 });

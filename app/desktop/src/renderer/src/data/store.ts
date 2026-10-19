@@ -26,7 +26,7 @@ import {
   type TrainLive,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
-import { applyDelta, emptyChat, mergeMessages, settleSends, type Chat, type ChatSend } from "./chat";
+import { applyDelta, emptyChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
 import { settled } from "./phase";
@@ -239,7 +239,7 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
       const settled = sends === undefined ? undefined : settleSends(sends, [message]);
       return {
         ...s,
-        chats: chat?.loaded === true ? { ...s.chats, [key]: mergeMessages(chat, [message]) } : s.chats,
+        chats: chat?.loaded === true ? { ...s.chats, [key]: mergeLive(chat, message) } : s.chats,
         chatSends: settled === undefined || settled === sends ? s.chatSends : { ...s.chatSends, [key]: settled },
       };
     }
