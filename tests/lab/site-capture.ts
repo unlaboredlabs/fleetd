@@ -554,10 +554,12 @@ async function main() {
   const reply = panel.getByRole("textbox", { name: "Reply" });
   await reply.fill(REPLY);
   await reply.press("Enter");
+  // Shot once the answers are delivered: inside its 10 s undo window an answered ask still shows as needing a look.
+  const woken = await waitEvent("the lead woken with the answers", 120_000, { cursor: from, types: ["lead.woken"], match: (e) => e.threadId === lead });
+  for (const ask of open.asks as Array<Body>) await panel.getByText(String(ask.text)).first().waitFor({ state: "detached", timeout: 30_000 });
   await screen.settle();
   await screen.png(path.join(shots, "capture-reply.png"));
   log("captured the inbox after the reply");
-  const woken = await waitEvent("the lead woken with the answers", 120_000, { cursor: from, types: ["lead.woken"], match: (e) => e.threadId === lead });
   await turn("the lead's wake", woken.cursor, lead);
 
   const tail = ok(await callTool("thread_tail", { machineId: MACHINE, threadId: lead, n: 50 }), "thread_tail");

@@ -345,9 +345,11 @@ impl App {
         match self {
             App::MacOs(dest) => replace_bundle(dest, archive),
             App::Linux(dir) => {
+                // Before the write: once the AppImage is there, gpui() no longer sees the GPUI binary beside it.
+                let gpui = self.gpui();
                 fs::create_dir_all(dir)?;
                 replace_file(&self.binary(), archive)?;
-                if self.gpui() {
+                if gpui {
                     retire_gpui_linux(dir)?;
                 }
                 Ok(())
