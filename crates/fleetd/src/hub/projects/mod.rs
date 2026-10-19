@@ -285,7 +285,71 @@ async fn checkout(hub: &Hub, m: &MachineId, path: &str) -> Result<RepoFacts, Too
             "Give the repository's root directory, or run `git init` there first",
         )));
     }
+    inside_cmd_roots(hub, m, path).await?;
     Ok(facts)
+}
+
+/// The node runs no command outside its cmdRoots, the merge train's git included, so a project there could never
+/// merge. A node that can't be asked is not a refusal: the add goes on as before.
+async fn inside_cmd_roots(hub: &Hub, m: &MachineId, dir: &str) -> Result<(), ToolError> {
+    let input = crate::hub::link::commands::CommandInput {
+        cwd: dir.to_owned(),
+        argv: vec!["true".into()],
+        timeout_sec: Some(30),
+    };
+    let Ok(result) = hub.node_commands.run(m, input).await else {
+        return Ok(());
+    };
+    match outside_roots(m, &result) {
+        Some(p) => Err(problem_error(&p)),
+        None => Ok(()),
+    }
+}
+
+/// One `true` in `dir` on the node; None when it can't be asked.
+async fn cmd_in(
+    hub: &Hub,
+    m: &MachineId,
+    dir: String,
+) -> Option<fleetd_contracts::node_link::CmdResult> {
+    let input = crate::hub::link::commands::CommandInput {
+        cwd: dir,
+        argv: vec!["true".into()],
+        timeout_sec: Some(30),
+    };
+    hub.node_commands.run(m, input).await.ok()
+}
+
+/// A clone destination that doesn't exist yet: the clone creates its missing parents, so what counts is the nearest
+/// directory above it that exists. Asks the node about each parent in turn until one is there.
+async fn dest_outside_roots<F, Fut>(m: &MachineId, dest: &str, ask: F) -> Option<ProjectProblem>
+where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = Option<fleetd_contracts::node_link::CmdResult>>,
+{
+    let mut dir = std::path::Path::new(dest).parent();
+    while let Some(d) = dir.filter(|d| d.is_absolute()) {
+        let result = ask(d.to_string_lossy().into_owned()).await?;
+        if let Some(p) = outside_roots(m, &result) {
+            return Some(p);
+        }
+        // Not there yet (or not a directory): its parent decides.
+        crate::node::cmd::not_run_why(result.exit_code.is_none(), result.output_tail.as_str())?;
+        dir = d.parent();
+    }
+    None
+}
+
+fn outside_roots(
+    m: &MachineId,
+    result: &fleetd_contracts::node_link::CmdResult,
+) -> Option<ProjectProblem> {
+    let why = crate::node::cmd::refusal(result.exit_code.is_none(), result.output_tail.as_str())?;
+    Some(problem(
+        ProjectProblemCode::Other,
+        format!("{why} on {m}, so the merge train could not work there"),
+        crate::node::cmd::outside_roots_fix(m.as_str()),
+    ))
 }
 
 async fn clone_target(
@@ -296,7 +360,14 @@ async fn clone_target(
 ) -> Result<CloneTarget, ToolError> {
     repo_node(hub, m).map_err(|p| problem_error(&p))?;
     let path = match dest {
-        Some(d) => d.strip_suffix('/').unwrap_or(d).to_owned(),
+        Some(d) => {
+            let d = d.strip_suffix('/').unwrap_or(d);
+            let ask = |dir: String| async move { cmd_in(hub, m, dir).await };
+            if let Some(p) = dest_outside_roots(m, d, ask).await {
+                return Err(problem_error(&p));
+            }
+            d.to_owned()
+        }
         None => {
             let (root, _) = hub
                 .executors
@@ -931,5 +1002,71 @@ mod tests {
             ClonePhase::Receiving,
             15
         ));
+    }
+
+    /// What `project add` says, from what the node really answers for a checkout outside its cmdRoots.
+    #[tokio::test]
+    async fn a_checkout_outside_cmd_roots_is_refused_with_how_to_add_it() {
+        let home = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let roots = vec![home.path().display().to_string()];
+        let m = MachineId::unchecked("fe7");
+        let ask = |dir: &std::path::Path| {
+            serde_json::from_value(serde_json::json!({
+                "id": "c1", "cwd": dir, "argv": ["true"], "timeoutSec": 30
+            }))
+            .unwrap()
+        };
+        let outside = crate::node::cmd::run_cmd_check(ask(elsewhere.path()), &roots).await;
+        let p = outside_roots(&m, &outside).expect("refused");
+        assert!(p.message.contains("is outside cmdRoots"), "{}", p.message);
+        assert!(p.message.contains(&roots[0]), "{}", p.message);
+        assert!(
+            p.fix
+                .as_deref()
+                .is_some_and(|f| f.contains("\"cmdRoots\" in node.json on fe7")),
+            "{:?}",
+            p.fix
+        );
+        let inside = crate::node::cmd::run_cmd_check(ask(home.path()), &roots).await;
+        assert!(outside_roots(&m, &inside).is_none());
+    }
+
+    /// A clone into a folder that doesn't exist yet is judged by the nearest folder above it that does.
+    #[tokio::test]
+    async fn a_new_clone_destination_is_judged_by_where_it_will_be() {
+        let home = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let roots = vec![home.path().display().to_string()];
+        let m = MachineId::unchecked("fe7");
+        let ask = |dir: String| {
+            let roots = roots.clone();
+            async move {
+                let check = serde_json::from_value(serde_json::json!({
+                    "id": "c1", "cwd": dir, "argv": ["true"], "timeoutSec": 30
+                }))
+                .unwrap();
+                Some(crate::node::cmd::run_cmd_check(check, &roots).await)
+            }
+        };
+        let under = |root: &std::path::Path, rest: &str| root.join(rest).display().to_string();
+        assert!(
+            dest_outside_roots(&m, &under(home.path(), "src/new/acme/storefront"), ask)
+                .await
+                .is_none(),
+            "new folders under cmdRoots are fine"
+        );
+        assert!(
+            dest_outside_roots(&m, &under(home.path(), "storefront"), ask)
+                .await
+                .is_none()
+        );
+        for dest in [
+            under(elsewhere.path(), "storefront"),
+            under(elsewhere.path(), "new/deeper/storefront"),
+        ] {
+            let p = dest_outside_roots(&m, &dest, ask).await.expect("refused");
+            assert!(p.message.contains("is outside cmdRoots"), "{}", p.message);
+        }
     }
 }

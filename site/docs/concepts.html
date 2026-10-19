@@ -1,117 +1,227 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Concepts · fleetd docs</title>
-<meta name="description" content="The hub, nodes, leads, orders, asks and the merge train, one short section each.">
-<meta name="color-scheme" content="light dark">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
-<script src="/docs/docs.js?v=1cc74a7d" defer></script>
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-<header class="top">
-  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
-  <div class="search" role="search">
-    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
-    <ul id="hits" role="listbox" hidden></ul>
-  </div>
-  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
-  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
-</header>
-<div class="wrap">
-<nav class="side" id="side" aria-label="Docs">
-<p>Get started</p>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Concepts | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/concepts.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Concepts"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/concepts.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="The hub, nodes, Claude sessions and the clients that talk to them, and what happens to an order."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="The hub, nodes, Claude sessions and the clients that talk to them, and what happens to an order."/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/docs/_astro/print.ehPL0gv-.css" media="print"><link rel="stylesheet" href="/docs/_astro/index.Df6hsKY8.css"><style>@layer starlight.components{svg:where(.astro-hkc32dio){color:var(--sl-icon-color);font-size:var(--sl-icon-size,1em);width:1em;height:1em;overflow:visible}}
+</style><script type="module" src="/docs/_astro/page.cNngjUgL.js"></script></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-by6fddyj"><div class="title-wrapper sl-flex astro-by6fddyj"><a href="/docs/index.html" class="site-title sl-flex astro-6rvad3va"><img class="astro-6rvad3va" alt src="/docs/_astro/icon.BdYr-TZB.svg" width="1024" height="1024"><span class="astro-6rvad3va" translate="no">fleetd docs</span></a></div><div class="sl-flex print:hidden astro-by6fddyj"><site-search class="astro-by6fddyj astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}" data-strip-trailing-slash><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script><script type="module" src="/docs/_astro/Search.astro_astro_type_script_index_0_lang.DrbjDjUC.js"></script></div><div class="sl-hidden md:sl-flex print:hidden right-group astro-by6fddyj"><div class="sl-flex social-icons astro-by6fddyj"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script><script type="module">var e=`starlight-theme`,t=e=>e===`auto`||e===`dark`||e===`light`?e:`auto`,n=()=>t(typeof localStorage<`u`&&localStorage.getItem(e));function r(t){typeof localStorage<`u`&&localStorage.setItem(e,t===`light`||t===`dark`?t:``)}var i=()=>matchMedia(`(prefers-color-scheme: light)`).matches?`light`:`dark`;function a(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e===`auto`?i():e,r(e)}matchMedia(`(prefers-color-scheme: light)`).addEventListener(`change`,()=>{n()===`auto`&&a(`auto`)});var o=class extends HTMLElement{constructor(){super(),a(n()),this.querySelector(`select`)?.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&a(t(e.currentTarget.value))})}};customElements.define(`starlight-theme-select`,o);</script><script type="module">var e=class extends HTMLElement{constructor(){super();let e=this.querySelector(`select`);e&&(e.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=e.currentTarget.value)}),window.addEventListener(`pageshow`,t=>{if(!t.persisted)return;let n=e.querySelector(`option[selected]`)?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}};customElements.define(`starlight-lang-select`,e);</script></div></div></header><nav class="sidebar print:hidden astro-yntsjkba" aria-label="Main"><button popovertarget="starlight__sidebar" class="sl-menu-button sl-flex md:sl-hidden print:hidden astro-r2osgdlg"><svg aria-hidden="true" class="open-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg><svg aria-hidden="true" class="close-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg><span class="sr-only astro-r2osgdlg">Menu</span></button><script type="module">var e=class extends HTMLElement{constructor(){super();let e=matchMedia(`(min-width: 50em)`),t=()=>{this.popover=e.matches?null:`auto`};t(),e.addEventListener(`change`,()=>t()),this.addEventListener(`toggle`,({newState:e})=>this.trapFocus(e===`open`))}trapFocus(e){document.querySelectorAll(`.main-frame, .sl-skip-link`).forEach(t=>{t.toggleAttribute(`inert`,e)})}};customElements.define(`sl-sidebar-pane`,e);</script><sl-sidebar-pane popover id="starlight__sidebar" class="sidebar-pane astro-yntsjkba"><div class="sidebar-content sl-flex astro-yntsjkba"><sl-sidebar-state-persist data-hash="19o6qwi" class="astro-ipdry5cl"><script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script><ul class="top-level astro-rmhv4bp6"><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Get started</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="0"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/install.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Install</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/quick-start.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Quick start</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/concepts.html" aria-current="page" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Concepts</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Use fleetd</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="1"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/machines.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Machines</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/projects-and-orders.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Projects &amp; orders</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/merge-train.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Merge train</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/steering.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Steering</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/approvals-and-secrets.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Approvals &amp; secrets</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/desktop-app.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">The desktop app</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/status.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Status</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/time-inspector.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Where time went</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/what-agents-are-told.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">What agents are told</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/mcp-clients.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">MCP clients</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Reference</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="2"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/reference/cli.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">CLI reference</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/reference/agent-tools.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Agent tools</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/config-and-files.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Config &amp; files</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/security.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Security model</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/glossary.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Glossary</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Help</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="3"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/troubleshooting.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Troubleshooting</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/updating-and-uninstall.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Updating &amp; uninstall</span></a></li></ul></details></li></ul><script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-p4azlveh"><div class="social-icons astro-p4azlveh"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#the-parts" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The parts</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-happens-to-an-order" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What happens to an order</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#the-terms" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The terms</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#hub" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Hub</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#nodes" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Node and worker</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#leads" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Lead</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#orders" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Order</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#asks" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Ask and decision</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#merge-train" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Merge train</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#done" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Done, checked</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-agents-can-call" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What agents can call</span></a></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#the-parts" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The parts</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-happens-to-an-order" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What happens to an order</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#the-terms" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The terms</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#hub" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Hub</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#nodes" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Node and worker</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#leads" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Lead</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#orders" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Order</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#asks" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Ask and decision</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#merge-train" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Merge train</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#done" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Done, checked</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#what-agents-can-call" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">What agents can call</span></a></li></ul></nav></starlight-toc><script type="module" src="/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><h1 id="_top" class="astro-bebwqqxs">Concepts</h1></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content"><p>This page shows how fleetd’s parts fit together and what happens to a piece of work. Every term is also in the
+<a href="/docs/glossary">Glossary</a>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="the-parts">The parts</h2><a class="sl-anchor-link" href="#the-parts"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The parts”</span></a></div>
+<figure>
+<svg viewBox="0 0 680 400" role="img" aria-labelledby="fleet-title fleet-desc" style="width:100%;height:auto;max-width:680px" font-family="inherit" font-size="14" fill="none" stroke="currentColor">
+<title id="fleet-title">fleetd's parts</title>
+<desc id="fleet-desc">The desktop app and the CLI or MCP clients talk to the hub. Each node dials out to the hub and runs Claude sessions on its machine.</desc>
+<defs><marker id="fleet-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="currentColor" stroke="none"/></marker></defs>
+<rect x="110" y="16" width="200" height="48" rx="6"/>
+<text x="210" y="45" text-anchor="middle" fill="currentColor" stroke="none">Desktop app</text>
+<rect x="370" y="16" width="200" height="48" rx="6"/>
+<text x="470" y="45" text-anchor="middle" fill="currentColor" stroke="none">CLI and MCP clients</text>
+<path d="M210 64 300 126" marker-end="url(#fleet-arrow)" marker-start="url(#fleet-arrow)"/>
+<path d="M470 64 380 126" marker-end="url(#fleet-arrow)" marker-start="url(#fleet-arrow)"/>
+<rect x="190" y="128" width="300" height="64" rx="6" stroke-width="2"/>
+<text x="340" y="156" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Hub</text>
+<text x="340" y="178" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">projects · orders · asks · merge train</text>
+<path d="M175 260 290 194" marker-end="url(#fleet-arrow)"/>
+<path d="M505 260 390 194" marker-end="url(#fleet-arrow)"/>
+<text x="205" y="222" text-anchor="end" fill="currentColor" stroke="none" font-size="12">dials out</text>
+<text x="475" y="222" fill="currentColor" stroke="none" font-size="12">dials out</text>
+<rect x="30" y="262" width="290" height="124" rx="6"/>
+<text x="175" y="286" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Node on machine A</text>
+<rect x="46" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
+<text x="86" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">lead</text>
+<rect x="135" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
+<text x="175" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">writer</text>
+<rect x="224" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
+<text x="264" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">reviewer</text>
+<text x="175" y="366" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">claude sessions</text>
+<rect x="360" y="262" width="290" height="124" rx="6"/>
+<text x="505" y="286" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">Node on machine B</text>
+<rect x="376" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
+<text x="416" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">writer</text>
+<rect x="465" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
+<text x="505" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">writer</text>
+<rect x="554" y="300" width="80" height="34" rx="4" stroke-dasharray="4 3"/>
+<text x="594" y="322" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">verifier</text>
+<text x="505" y="366" text-anchor="middle" fill="currentColor" stroke="none" font-size="12">claude sessions</text>
+</svg>
+</figure>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>What it is</th>
+<th>How many</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hub</strong></td>
+<td>The coordinator. It stores all state and serves the app, the nodes and MCP clients on one port.</td>
+<td>One per fleet, on an always-on machine.</td>
+</tr>
+<tr>
+<td><strong>Node</strong></td>
+<td>The fleetd process on a machine that runs agents. It connects out to the hub, so the machine opens no port.</td>
+<td>One per worker.</td>
+</tr>
+<tr>
+<td><strong>Worker</strong></td>
+<td>Any machine with a node. The hub machine is usually a worker too.</td>
+<td>As many as you like.</td>
+</tr>
+<tr>
+<td><strong>Claude session</strong></td>
+<td>One <code dir="auto">claude</code> process doing one job: a lead, a writer, a reviewer. It uses your own <code dir="auto">~/.claude</code> setup.</td>
+<td>Many per node.</td>
+</tr>
+<tr>
+<td><strong>Desktop app</strong></td>
+<td>Where you give work, follow it and answer questions.</td>
+<td>Any number of devices.</td>
+</tr>
+<tr>
+<td><strong>CLI and MCP clients</strong></td>
+<td><code dir="auto">fleetd</code> commands, and agents such as Claude Code connected to <code dir="auto">&lt;hub url&gt;/mcp</code>.</td>
+<td>Any number.</td>
+</tr>
+</tbody>
+</table>
+<p>The hub keeps its data in one SQLite file, <code dir="auto">~/.fleetd/hub/hub.sqlite</code>. See <a href="/docs/config-and-files">Config &amp; files</a>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="what-happens-to-an-order">What happens to an order</h2><a class="sl-anchor-link" href="#what-happens-to-an-order"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What happens to an order”</span></a></div>
+<ol>
+<li>You send an <strong>order</strong>: one line, such as <code dir="auto">fix the typo in the README</code>.</li>
+<li>The hub picks the <strong>project</strong> (a git repo on a worker) and wakes its <strong>lead</strong>.</li>
+<li>The lead writes a <strong>brief</strong>: the plan, and the done-when checks that prove the work is finished.</li>
+<li>The lead starts <strong>tasks</strong>. Each writer gets its own git worktree and branch, and opens a pull request.</li>
+<li>Reviewers check each pull request. The <strong>merge train</strong> merges it once CI passes on the exact commit.</li>
+<li>The lead claims the order is done (<code dir="auto">claim_done</code>). The hub runs the done-when checks itself, and only all of
+them passing makes it done.</li>
+</ol>
+<p>When the lead needs a decision, it sends you an <strong>ask</strong>. You can redirect any agent while it works with a <strong>steer</strong>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="the-terms">The terms</h2><a class="sl-anchor-link" href="#the-terms"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The terms”</span></a></div>
+<div class="sl-heading-wrapper level-h3"><h3 id="hub">Hub</h3><a class="sl-anchor-link" href="#hub"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Hub”</span></a></div>
+<p>One per fleet. It holds projects, leads, briefs, tasks, asks and decisions, the merge trains and checks. Start it
+with <code dir="auto">fleetd init</code>, which runs it as a service. It listens on port 4790 by default.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="nodes">Node and worker</h3><a class="sl-anchor-link" href="#nodes"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Node and worker”</span></a></div>
+<p>Each worker runs one <code dir="auto">fleetd node</code>. The node starts one <code dir="auto">claude</code> process per live session, each writer in its own git
+worktree. Sessions use your claude setup on that machine: the same login, proxy and MCP servers as <code dir="auto">claude</code> in your
+shell. See <a href="/docs/machines">Machines</a>.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="leads">Lead</h3><a class="sl-anchor-link" href="#leads"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Lead”</span></a></div>
+<p>Each project has one lead: a long-running Claude session that turns orders into briefs and tasks. It never writes
+code. A project’s first order starts it. It runs on <code dir="auto">claude-opus-5-5</code> by default. Its tools are listed in
+<a href="/docs/reference/agent-tools">Agent tools</a>.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="orders">Order</h3><a class="sl-anchor-link" href="#orders"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Order”</span></a></div>
+<p>One line of intent, sent from the app, the CLI or MCP (<code dir="auto">intake_submit</code>). A leading <code dir="auto">@project</code> names the project;
+otherwise the hub picks one or asks you. Inside fleetd an order is a <strong>workstream</strong>, with an id such as <code dir="auto">W41</code>.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="asks">Ask and decision</h3><a class="sl-anchor-link" href="#asks"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Ask and decision”</span></a></div>
+<p>A lead asks you only about product calls, money, credentials and irreversible steps. Asks arrive numbered in the
+inbox, and you answer in one line (<code dir="auto">1 go 2 nvm 3 b</code>). Each answer becomes a <strong>decision</strong> in a searchable log, so the
+same question is never asked twice. See <a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a> for commands and secrets.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="merge-train">Merge train</h3><a class="sl-anchor-link" href="#merge-train"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Merge train”</span></a></div>
+<p>Only fleetd merges. Each repo has one train, a queue that rebases each ready pull request, waits for CI on that exact
+commit, and squash-merges it. Ready PRs that touch different files merge together in one CI run. See
+<a href="/docs/merge-train">Merge train</a>.</p>
+<p>A pull request’s <strong>tier</strong> sets its reviews:</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Reviews needed before merge</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>S</td>
+<td>none</td>
+</tr>
+<tr>
+<td>M</td>
+<td>one clean review</td>
+</tr>
+<tr>
+<td>L</td>
+<td>two clean reviews and a verifier</td>
+</tr>
+</tbody>
+</table>
+<p>A PR with no CI merges on fleetd’s own checks, and the merge says so. Each pull request body needs a <code dir="auto">Source:</code> line
+that names what it serves.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="done">Done, checked</h3><a class="sl-anchor-link" href="#done"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Done, checked”</span></a></div>
+<p>A lead can’t just say “done”. It calls <code dir="auto">claim_done</code>, and the hub runs the brief’s done-when checks itself: a PR
+merged, CI green, a command on a machine, an HTTP check, a judge, or a person. Each claim keeps its evidence and exit
+codes.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="what-agents-can-call">What agents can call</h2><a class="sl-anchor-link" href="#what-agents-can-call"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What agents can call”</span></a></div>
+<p>Leads and tasks act through fleetd’s MCP tools, never Claude’s own subagents. A lead starts agents with
+<code dir="auto">spawn_agent</code>; a task reports back with <code dir="auto">report</code>, <code dir="auto">ask_lead</code> and <code dir="auto">claim_done</code>.</p>
 <ul>
-<li><a href="/docs/install">Install</a></li>
-<li><a href="/docs/quick-start">Quick start</a></li>
-<li><a href="/docs/concepts" aria-current="page">Concepts</a></li>
+<li><a href="/docs/reference/agent-tools">Agent tools</a>: every tool an agent can call, generated from the code.</li>
+<li><a href="/docs/what-agents-are-told">What agents are told</a>: every prompt fleetd sends a model.</li>
 </ul>
-<p>Using fleetd</p>
-<ul>
-<li><a href="/docs/machines">Machines</a></li>
-<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
-<li><a href="/docs/steering">Steering</a></li>
-<li><a href="/docs/merge-train">Merge train</a></li>
-<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
-<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
-<li><a href="/docs/desktop-app">The desktop app</a></li>
-<li><a href="/docs/status">Status</a></li>
-<li><a href="/docs/time-inspector">Where time went</a></li>
-</ul>
-<p>Reference</p>
-<ul>
-<li><a href="/docs/cli">CLI reference</a></li>
-<li><a href="/docs/agent-tools">Agent tools</a></li>
-<li><a href="/docs/config-and-files">Config &amp; files</a></li>
-<li><a href="/docs/security">Security model</a></li>
-<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
-<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
-</ul>
-</nav>
-<main class="doc" id="main">
-<p class="kicker">Get started</p>
-<h1>Concepts</h1>
-<h2 id="hub">Hub<a class="anchor" href="#hub" aria-label="Link to this section">#</a></h2>
-<p>One per fleet, on an always-on machine (<code>fleetd hub start</code>, run as a service by <code>fleetd init</code>). It holds everything
-that lasts: projects, leads, briefs, tasks, asks and decisions, the merge train, checks and wakes. It serves the
-desktop app and one MCP endpoint, <code>&lt;hub url&gt;/mcp</code>, over all your machines. Its data is one SQLite file in
-<code>~/.fleetd/hub</code>.</p>
-<h2 id="nodes">Nodes<a class="anchor" href="#nodes" aria-label="Link to this section">#</a></h2>
-<p>One <code>fleetd node</code> per machine that runs agents (a worker). The node dials out to the hub, so no worker opens a port.
-It runs one <code>claude</code> process per live session, each writer in its own git worktree and branch. Sessions use your own
-claude setup in <code>~/.claude</code>: the same login, proxy settings and MCP servers as the <code>claude</code> in your shell. The hub
-machine is usually a worker too.</p>
-<h2 id="leads">Leads<a class="anchor" href="#leads" aria-label="Link to this section">#</a></h2>
-<p>Each project has one lead: a long-running <code>claude</code> session that turns orders into briefs, splits them into tasks
-for writer and reviewer sessions, and never writes code itself. Leads run on <code>claude-opus-5-5</code> by default. A
-project's first order starts its lead. Leads and tasks reach fleetd through its MCP tools; <a href="/docs/agent-tools">Agent tools</a>
-lists what each role gets and what it can't do.</p>
-<h2 id="orders">Orders<a class="anchor" href="#orders" aria-label="Link to this section">#</a></h2>
-<p>An order is one line of intent, such as <code>fix the typo in the README</code>, sent from the app or with <code>intake_submit</code>
-over MCP. The hub picks the project (a leading <code>@project</code> names it), opens a workstream and wakes the lead. The lead
-freezes a brief with done-when checks, then spawns tasks. A slot board caps how many sessions run at once.</p>
-<h2 id="asks-and-decisions">Asks and decisions<a class="anchor" href="#asks-and-decisions" aria-label="Link to this section">#</a></h2>
-<p>A lead asks you only about product calls, money, credentials and irreversible steps. Asks arrive numbered, in
-batches, in the app's inbox; you answer tersely (<code>1 go 2 nvm 3 b</code>). Each answer becomes a decision in a searchable
-log, and an ask that a past decision already answers comes back at once without bothering you. Some asks need more
-than words: approving an exact command, ticking off steps, or entering a secret. See
-<a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a>.</p>
-<h2 id="merge-train">Merge train<a class="anchor" href="#merge-train" aria-label="Link to this section">#</a></h2>
-<p>Only fleetd merges. Each writer's PR goes on its repo's train, one serial queue per repo. The train rebases each
-ready change onto its base, waits for CI on that exact head and squash-merges it. A head with no CI (the base requires
-no check but <code>fleetd/train</code>, and no workflow's <code>on:</code> can run for the PR) merges on fleetd's own checks, and the merge
-says so. A change's tier sets its reviews:
-S needs none, M one clean review, L two plus a verifier, each bound to the current patch. A PR body needs a
-<code>Source:</code> line naming what it serves. You can freeze a repo's train with <code>train_freeze</code>. Disjoint ready PRs merge
-together in one CI run, and a PR stacked on another is tested ahead on it; see <a href="/docs/merge-train">Merge train</a>.</p>
-<h2 id="done-checked">Done, checked<a class="anchor" href="#done-checked" aria-label="Link to this section">#</a></h2>
-<p>A lead can't just say "done". <code>fleetd claim done</code> makes the hub run the workstream's done-when checks itself
-(a PR merged, CI green, a command or test on a machine, an HTTP check, a judge, a person), and only all of them
-passing makes it done. Each claim keeps its evidence and exit codes.</p>
-<nav class="pn" aria-label="Previous and next">
-<a class="prev" href="/docs/quick-start"><span>Previous</span>Quick start</a>
-<a class="next" href="/docs/machines"><span>Next</span>Machines</a>
-</nav>
-<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/concepts.md">Edit this page</a></p>
-</main>
-<aside class="toc" aria-label="On this page">
-<p>On this page</p>
-<ul>
-<li><a href="#hub">Hub</a></li>
-<li><a href="#nodes">Nodes</a></li>
-<li><a href="#leads">Leads</a></li>
-<li><a href="#orders">Orders</a></li>
-<li><a href="#asks-and-decisions">Asks and decisions</a></li>
-<li><a href="#merge-train">Merge train</a></li>
-<li><a href="#done-checked">Done, checked</a></li>
-</ul>
-</aside>
-</div>
-<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
-</body>
-</html>
+</div><footer class="sl-flex astro-ddtxxk7k"><div class="meta sl-flex astro-ddtxxk7k"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/src/content/docs/concepts.md" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/docs/quick-start.html" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Quick start</span></span></a><a href="/docs/machines.html" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Machines</span></span></a></div></footer></div></div></main></div></div></div></div></body></html>

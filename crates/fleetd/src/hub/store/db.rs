@@ -137,12 +137,19 @@ fn resolve(p: &Path) -> PathBuf {
     out
 }
 
-/// Resolves `--home` (default `~/.fleetd/hub`, `~` expanded).
+/// Resolves `--home` (default `<fleetd dir>/hub`, `~` expanded).
 pub fn resolve_hub_home(home: Option<&str>, user_home: &Path) -> PathBuf {
-    let expanded = match home {
-        None => user_home.join(".fleetd").join("hub"),
-        Some("~") => user_home.to_path_buf(),
-        Some(raw) => match raw.strip_prefix("~/") {
+    match home {
+        None => crate::home::fleetd_dir().join("hub"),
+        Some(raw) => expand_home(raw, user_home),
+    }
+}
+
+/// A directory as given on a command line or in the environment: `~` expanded, absolute against the cwd.
+pub fn expand_home(raw: &str, user_home: &Path) -> PathBuf {
+    let expanded = match raw {
+        "~" => user_home.to_path_buf(),
+        _ => match raw.strip_prefix("~/") {
             Some(rest) => user_home.join(rest),
             None => PathBuf::from(raw),
         },

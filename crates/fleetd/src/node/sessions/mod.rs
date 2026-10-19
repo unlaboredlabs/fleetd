@@ -97,13 +97,13 @@ pub struct SessionConfig {
 }
 
 impl SessionConfig {
-    /// The user's own claude setup and the optional `~/.fleetd/claude.env`, from `$HOME`, so a lab node with its own
+    /// The user's own claude setup and the optional `<fleetd dir>/claude.env`, from `$HOME`, so a lab node with its own
     /// HOME needs no flag. A dedicated config dir comes from the node config (`claudeConfigDir`), else from a
     /// `CLAUDE_CONFIG_DIR` the node itself was started with.
     /// `FLEETD_NODE_IDLE_REAP_SEC` and `FLEETD_NODE_RETRY_SCHEDULE_MS` (e.g. `500,1000,2000`) exist for tests and
     /// the lab only.
     pub fn for_node(home: &Path) -> Self {
-        let fleetd = super::util::home_dir().join(".fleetd");
+        let fleetd = crate::home::fleetd_dir();
         let mut base_env = super::util::scrubbed_env();
         for key in [
             "GIT_AUTHOR_NAME",

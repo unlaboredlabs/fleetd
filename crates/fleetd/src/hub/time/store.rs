@@ -554,6 +554,7 @@ pub fn read_meta(
                 workstream_id: r.get(15)?,
                 task_id: r.get(16)?,
                 thread_id: r.get(17)?,
+                role: role.clone(),
                 extra: extra
                     .and_then(|e| serde_json::from_str(&e).ok())
                     .unwrap_or_default(),

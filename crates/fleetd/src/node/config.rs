@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub fn default_node_home() -> PathBuf {
-    super::util::home_dir().join(".fleetd").join("node")
+    crate::home::fleetd_dir().join("node")
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

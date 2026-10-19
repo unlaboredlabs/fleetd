@@ -1,220 +1,405 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Troubleshooting · fleetd docs</title>
-<meta name="description" content="Every fleetd doctor finding and the command that fixes it.">
-<meta name="color-scheme" content="light dark">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
-<script src="/docs/docs.js?v=1cc74a7d" defer></script>
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-<header class="top">
-  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
-  <div class="search" role="search">
-    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
-    <ul id="hits" role="listbox" hidden></ul>
-  </div>
-  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
-  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
-</header>
-<div class="wrap">
-<nav class="side" id="side" aria-label="Docs">
-<p>Get started</p>
-<ul>
-<li><a href="/docs/install">Install</a></li>
-<li><a href="/docs/quick-start">Quick start</a></li>
-<li><a href="/docs/concepts">Concepts</a></li>
-</ul>
-<p>Using fleetd</p>
-<ul>
-<li><a href="/docs/machines">Machines</a></li>
-<li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
-<li><a href="/docs/steering">Steering</a></li>
-<li><a href="/docs/merge-train">Merge train</a></li>
-<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
-<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
-<li><a href="/docs/desktop-app">The desktop app</a></li>
-<li><a href="/docs/status">Status</a></li>
-<li><a href="/docs/time-inspector">Where time went</a></li>
-</ul>
-<p>Reference</p>
-<ul>
-<li><a href="/docs/cli">CLI reference</a></li>
-<li><a href="/docs/agent-tools">Agent tools</a></li>
-<li><a href="/docs/config-and-files">Config &amp; files</a></li>
-<li><a href="/docs/security">Security model</a></li>
-<li><a href="/docs/troubleshooting" aria-current="page">Troubleshooting</a></li>
-<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
-</ul>
-</nav>
-<main class="doc" id="main">
-<p class="kicker">Reference</p>
-<h1>Troubleshooting</h1>
-<p><code>fleetd doctor</code> on the hub checks the hub and every machine, and prints each problem with its fix. The app's Machines
-screen shows the same checks. Fix commands run on the machine the finding names. Each section here is one check:
-a hub check <code>hub/&lt;name&gt;</code> is <code>#hub-&lt;name&gt;</code>, a machine check <code>&lt;machine&gt;/&lt;name&gt;</code> is <code>#&lt;name&gt;</code>.</p>
-<pre class="code console" data-copy><code><span class="c">$ fleetd doctor</span>
-<span class="o">✗ doctor hub: gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login
-✗ doctor hub: claude on the hub is not logged in; the intake router and the retro can't reach a model. Fix: claude auth login
-! doctor laptop: laptop is degraded: claude is not logged in. Fix: claude auth login
-✗ doctor laptop: laptop: claude 2.1.302, not logged in, so its sessions can't start. Fix: claude auth login
-✗ doctor laptop: No git commit identity is set on laptop. Fix: fleetd pair --worker laptop, then run what it prints on laptop
-✓ doctor: 7 of 12 checks pass
-[exit 1]</span></code></pre>
-<p>✗ is a failure; ! is a warning or a check that couldn't tell.</p>
-<h2 id="no-hub">The hub doesn't answer<a class="anchor" href="#no-hub" aria-label="Link to this section">#</a></h2>
-<pre class="code console" data-copy data-capture="doctor-no-hub"><code><span class="c">$ fleetd doctor</span>
-<span class="o">✗  doctor the hub does not answer at http://127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)
-[exit 4]</span></code></pre>
-<p>Run <code>fleetd init</code>. If you run the hub yourself (<code>--no-service</code>), start it with <code>fleetd hub start</code>. The log is
-<code>~/.fleetd/hub/hub.log</code>.</p>
-<h2 id="hub-reachable">The hub doesn't answer at its own address<a class="anchor" href="#hub-reachable" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>The hub does not answer at its own address http://…/healthz (…).</p>
-</blockquote>
-<p>Restart the hub service:</p>
-<pre class="code sh" data-copy><code><span class="l">systemctl --user restart fleetd-hub.service                  # Linux</span>
-<span class="l">launchctl kickstart -k gui/$(id -u)/sh.fleetd.hub            # macOS</span></code></pre>
-<h2 id="hub-gh_auth">gh is not installed or not logged in<a class="anchor" href="#hub-gh_auth" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>gh is not logged in on the hub; the merge train and PR checks need it.</p>
-</blockquote>
-<pre class="code sh" data-copy><code><span class="l">gh auth login</span></code></pre>
-<p>If gh is missing, install it from <a href="https://cli.github.com">cli.github.com</a> first.</p>
-<h2 id="hub-claude_login">claude on the hub is not logged in<a class="anchor" href="#hub-claude_login" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>claude on the hub is not logged in; the intake router and the retro can't reach a model.</p>
-</blockquote>
-<pre class="code sh" data-copy><code><span class="l">claude auth login</span></code></pre>
-<p>When the hub's claude goes through a proxy, the doctor names it; log in with your proxy as you normally do. For a
-gateway, API key or token instead, put <code>ANTHROPIC_BASE_URL</code> and <code>ANTHROPIC_AUTH_TOKEN</code> (or <code>ANTHROPIC_API_KEY</code>, or
-<code>CLAUDE_CODE_OAUTH_TOKEN</code>) in <code>~/.fleetd/claude.env</code> and restart the hub service: see <a href="/docs/config-and-files#claude-env">claude.env</a>. If claude is missing ("Claude Code (claude) is not on the hub's PATH"), install it first
-(next section).</p>
-<h2 id="hub-claude_version">claude on the hub is missing or the wrong version<a class="anchor" href="#hub-claude_version" aria-label="Link to this section">#</a></h2>
-<p>Same findings and fixes as <a href="#claude_version">a worker's claude version</a>, for the hub's own claude. Not installed:</p>
-<pre class="code sh" data-copy><code><span class="l">curl -fsSL https://claude.ai/install.sh | bash</span></code></pre>
-<h2 id="hub-https">The hub isn't reachable over HTTPS<a class="anchor" href="#hub-https" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>The hub's address http://… is not HTTPS; keys from the desktop app and other machines would cross the network
-unencrypted.</p>
-</blockquote>
-<p>Plain HTTP passes on loopback and on a tailnet address (<code>100.64.0.0/10</code> or a <code>*.ts.net</code> name). Elsewhere, serve the hub
-over HTTPS, then stop the hub and point fleetd at the new address:</p>
-<pre class="code sh" data-copy><code><span class="l">tailscale serve --bg 4790</span>
-<span class="l">fleetd init --url https://&lt;that address&gt;</span></code></pre>
-<p>The same fix applies to "The hub has no address set up" and to an unreadable <code>~/.fleetd/hub/setup.json</code>. When the
-HTTPS address stops answering, check where it points with <code>tailscale serve status</code>.</p>
-<h2 id="online">A machine is offline or degraded<a class="anchor" href="#online" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>laptop is offline (last seen …). · laptop is degraded: ….</p>
-</blockquote>
-<p>The finding's fix follows the cause. For claude logged out, out of range or missing, it is the login, update or
-install (see the claude findings below), and both in order when both are needed. Only a node that is down or has
-no claude cause gets a restart, on that machine:</p>
-<pre class="code sh" data-copy><code><span class="l">systemctl --user restart fleetd-node.service                 # Linux</span>
-<span class="l">launchctl kickstart -k gui/$(id -u)/sh.fleetd.node           # macOS</span></code></pre>
-<p>The log is <code>~/.fleetd/logs/node.log</code>.</p>
-<h2 id="claude_version">claude is missing or the wrong version<a class="anchor" href="#claude_version" aria-label="Link to this section">#</a></h2>
-<p>fleetd speaks claude's stream-json protocol, which isn't a stable API. It is tested with claude <code>&gt;=2.1.300, &lt;2.2.0</code>
-(fixtures from 2.1.302). An older claude runs with a warning: fleetd checks its protocol at every start and refuses
-it only if something fleetd uses is missing. A claude past 2.2 is refused.</p>
-<div class="table"><table><thead><tr><th>Finding</th><th>Status</th><th>Fix</th></tr></thead><tbody>
-<tr><td>claude is not installed on laptop; its sessions can't start.</td><td>✗</td><td><code>curl -fsSL https://claude.ai/install.sh | bash</code></td></tr>
-<tr><td>claude 2.1.296 is older than fleetd is tested with (from 2.1.300); it may work, and fleetd checks its protocol at every start.</td><td>!</td><td><code>claude update</code></td></tr>
-<tr><td>claude 2.2.0 is newer than this fleetd supports (&gt;=2.1.300, &lt;2.2.0); its stream-json protocol may have changed.</td><td>✗</td><td><code>claude install 2.1.302, or fleetd update</code></td></tr>
-<tr><td>claude 2.1.303 is newer than 2.1.302, the version this fleetd was tested with. It is inside the supported range, so sessions run.</td><td>!</td><td><code>claude install 2.1.302</code></td></tr>
-<tr><td><code>claude --version</code> printed "…", which fleetd can't read as a version.</td><td>✗</td><td><code>curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302</code></td></tr>
-</tbody></table></div>
-<p>Sessions on that machine are refused until a ✗ is fixed. fleetd turns claude's auto-updater off for its own sessions.</p>
-<h2 id="claude_login">claude is not logged in on a worker<a class="anchor" href="#claude_login" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>laptop: claude 2.1.302, not logged in, so its sessions can't start.</p>
-</blockquote>
-<p>Sessions use the worker's own claude setup, so log in there as you would for yourself:</p>
-<pre class="code sh" data-copy><code><span class="l">claude auth login</span></code></pre>
-<p>If claude goes through a proxy (<code>ANTHROPIC_BASE_URL</code> in <code>~/.claude/settings.json</code>; the doctor names it), log in with
-your proxy as you normally do. A login that expires mid-run ("claude refused its login: …") has the same fix. See
-<a href="/docs/config-and-files#claude">the Claude login</a>.</p>
-<h2 id="runner_conformance">claude doesn't answer the protocol probe<a class="anchor" href="#runner_conformance" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>claude on laptop did not answer fleetd's protocol probe as expected.</p>
-</blockquote>
-<p>Put the tested claude on that machine:</p>
-<pre class="code sh" data-copy><code><span class="l">claude install 2.1.302</span></code></pre>
-<p>"<code>claude --version</code> and the running claude disagree (… vs …): two installs on PATH?" means two claudes; reinstall
-with <code>curl -fsSL https://claude.ai/install.sh | bash</code> and remove the other. "has not probed its claude yet" clears by
-itself a second after the node starts.</p>
-<h2 id="commit_identity">No or the wrong commit identity<a class="anchor" href="#commit_identity" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>No git commit identity is set on laptop. · Commits on laptop use … (from git's global config); the hub's identity
-is ….</p>
-</blockquote>
-<p>For a machine set up over SSH, write the hub's identity into its service again, from the hub:</p>
-<pre class="code sh" data-copy><code><span class="l">fleetd machine add laptop</span></code></pre>
-<p>For the hub's own machine, the finding prints <code>fleetd machine add --local</code>.</p>
-<p>For one that joined with a code, run <code>fleetd pair --worker laptop</code> on the hub, then the command it prints on the
-machine. Without a hub identity, set one on the machine:
-<code>git config --global user.email '&lt;id&gt;+&lt;user&gt;@users.noreply.github.com'</code>.</p>
-<h2 id="disk">Low disk space<a class="anchor" href="#disk" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>… free under ~ on laptop; fleetd needs at least 5.0 GB.</p>
-</blockquote>
-<p>Each writer session gets its own git worktree, so a machine needs room. Free space under the path the finding
-names; <code>df -h &lt;path&gt;</code> shows what is left.</p>
-<h2 id="sleep">A machine sleeps when idle<a class="anchor" href="#sleep" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>laptop sleeps after 15 min idle on AC power (KDE power management). fleetd keeps it awake while agents run, but it
-still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it.</p>
-</blockquote>
-<p>While any agent runs, the node keeps its machine awake (<code>systemd-inhibit --list</code> or <code>pmset -g assertions</code> shows
-"fleetd: 2 agents running"). Between orders nothing does, so a machine set to sleep when idle drops off until
-someone wakes it. Sleep on battery only is fine. The fix names the setting for that machine's desktop:</p>
-<div class="table"><table><thead><tr><th>Where</th><th>Fix</th></tr></thead><tbody>
-<tr><td>KDE Plasma</td><td>System Settings &gt; Power Management &gt; On AC Power &gt; When inactive: Do nothing</td></tr>
-<tr><td>GNOME</td><td><code>gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'</code></td></tr>
-<tr><td>logind <code>IdleAction</code></td><td><code>IdleAction=ignore</code> in <code>/etc/systemd/logind.conf.d/fleetd.conf</code>, then reboot</td></tr>
-<tr><td>macOS</td><td><code>sudo pmset -c sleep 0</code></td></tr>
-</tbody></table></div>
-<p>When a machine wakes, its node links to the hub again at once, resumes any run whose claude went quiet during the
-sleep, and logs <code>machine.slept</code>. The app's machine strip shows "slept 10m46s" for an hour after.</p>
-<h2 id="usage_breaker">The usage breaker is open<a class="anchor" href="#usage_breaker" aria-label="Link to this section">#</a></h2>
-<blockquote>
-<p>New turns on laptop are paused by the usage breaker.</p>
-</blockquote>
-<p>The machine's Claude login hit a plan or rate limit, and new turns wait. Wait for the reset (the finding says when),
-or, once the login has capacity, call <code>usage_resume</code> for that machine from an MCP client.</p>
-<nav class="pn" aria-label="Previous and next">
-<a class="prev" href="/docs/security"><span>Previous</span>Security model</a>
-<a class="next" href="/docs/updating-and-uninstall"><span>Next</span>Updating &amp; uninstall</a>
-</nav>
-<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/troubleshooting.md">Edit this page</a></p>
-</main>
-<aside class="toc" aria-label="On this page">
-<p>On this page</p>
-<ul>
-<li><a href="#no-hub">The hub doesn't answer</a></li>
-<li><a href="#hub-reachable">The hub doesn't answer at its own address</a></li>
-<li><a href="#hub-gh_auth">gh is not installed or not logged in</a></li>
-<li><a href="#hub-claude_login">claude on the hub is not logged in</a></li>
-<li><a href="#hub-claude_version">claude on the hub is missing or the wrong version</a></li>
-<li><a href="#hub-https">The hub isn't reachable over HTTPS</a></li>
-<li><a href="#online">A machine is offline or degraded</a></li>
-<li><a href="#claude_version">claude is missing or the wrong version</a></li>
-<li><a href="#claude_login">claude is not logged in on a worker</a></li>
-<li><a href="#runner_conformance">claude doesn't answer the protocol probe</a></li>
-<li><a href="#commit_identity">No or the wrong commit identity</a></li>
-<li><a href="#disk">Low disk space</a></li>
-<li><a href="#sleep">A machine sleeps when idle</a></li>
-<li><a href="#usage_breaker">The usage breaker is open</a></li>
-</ul>
-</aside>
-</div>
-<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
-</body>
-</html>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Troubleshooting | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/troubleshooting.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Troubleshooting"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/troubleshooting.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="Every fleetd doctor finding, what causes it, and the command that fixes it."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Every fleetd doctor finding, what causes it, and the command that fixes it."/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/docs/_astro/print.ehPL0gv-.css" media="print"><link rel="stylesheet" href="/docs/_astro/index.Df6hsKY8.css"><style>@layer starlight.components{svg:where(.astro-hkc32dio){color:var(--sl-icon-color);font-size:var(--sl-icon-size,1em);width:1em;height:1em;overflow:visible}}
+</style><script type="module" src="/docs/_astro/page.cNngjUgL.js"></script><style>@layer starlight.components{starlight-tabs:where(.astro-scn3uvmv){display:block}.tablist-wrapper:where(.astro-scn3uvmv){overflow-x:auto}:where(.astro-scn3uvmv)[role=tablist]{border-bottom:2px solid var(--sl-color-gray-5);padding:0;list-style:none;display:flex}.tab:where(.astro-scn3uvmv){display:flex}.tab:where(.astro-scn3uvmv)>:where(.astro-scn3uvmv)[role=tab]{--sl-tab-color-border:var(--sl-color-gray-5);line-height:var(--sl-line-height-headings);box-shadow:0 2px 0 var(--sl-tab-color-border);color:var(--sl-color-gray-3);outline-offset:var(--sl-outline-offset-inside);overflow-wrap:initial;align-items:center;gap:.5rem;padding:.275rem 1.25rem;text-decoration:none;display:flex}.tab:where(.astro-scn3uvmv) :where(.astro-scn3uvmv)[role=tab][aria-selected=true]{--sl-tab-color-border:var(--sl-color-text-accent);color:var(--sl-color-white);font-weight:600}.tablist-wrapper:where(.astro-scn3uvmv)~[role=tabpanel]{margin-top:1rem}}
+</style><style>@layer starlight.components{.sl-steps{--bullet-size:calc(var(--sl-line-height) * 1rem);--bullet-margin:.375rem;counter-reset:steps-counter var(--sl-steps-start,0);padding-inline-start:0;list-style:none}.sl-steps>li{counter-increment:steps-counter;padding-inline-start:calc(var(--bullet-size) + 1rem);min-height:calc(var(--bullet-size) + var(--bullet-margin));padding-bottom:1px;position:relative}.sl-steps>li+li{margin-top:0}.sl-steps>li:before{content:counter(steps-counter);top:0;width:var(--bullet-size);height:var(--bullet-size);line-height:var(--bullet-size);font-size:var(--sl-text-xs);text-align:center;color:var(--sl-color-white);background-color:var(--sl-color-gray-6);box-shadow:inset 0 0 0 1px var(--sl-color-gray-5);border-radius:99rem;font-weight:600;position:absolute;inset-inline-start:0}.sl-steps>li:after{--guide-width:1px;content:"";top:calc(var(--bullet-size) + var(--bullet-margin));bottom:var(--bullet-margin);width:var(--guide-width);background-color:var(--sl-color-hairline-light);position:absolute;inset-inline-start:calc((var(--bullet-size) - var(--guide-width)) / 2)}}@layer starlight.content{.sl-steps>li>:first-child{--lh:calc(1em * var(--sl-line-height));--shift-y:calc(.5 * (var(--bullet-size) - var(--lh)));transform:translateY(var(--shift-y));margin-bottom:var(--shift-y)}.sl-steps>li>:first-child:where(h1,h2,h3,h4,h5,h6){--lh:calc(1em * var(--sl-line-height-headings))}@supports (--prop:1lh){.sl-steps>li>:first-child{--lh:1lh}}}
+</style></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-by6fddyj"><div class="title-wrapper sl-flex astro-by6fddyj"><a href="/docs/index.html" class="site-title sl-flex astro-6rvad3va"><img class="astro-6rvad3va" alt src="/docs/_astro/icon.BdYr-TZB.svg" width="1024" height="1024"><span class="astro-6rvad3va" translate="no">fleetd docs</span></a></div><div class="sl-flex print:hidden astro-by6fddyj"><site-search class="astro-by6fddyj astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}" data-strip-trailing-slash><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script><script type="module" src="/docs/_astro/Search.astro_astro_type_script_index_0_lang.DrbjDjUC.js"></script></div><div class="sl-hidden md:sl-flex print:hidden right-group astro-by6fddyj"><div class="sl-flex social-icons astro-by6fddyj"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script><script type="module">var e=`starlight-theme`,t=e=>e===`auto`||e===`dark`||e===`light`?e:`auto`,n=()=>t(typeof localStorage<`u`&&localStorage.getItem(e));function r(t){typeof localStorage<`u`&&localStorage.setItem(e,t===`light`||t===`dark`?t:``)}var i=()=>matchMedia(`(prefers-color-scheme: light)`).matches?`light`:`dark`;function a(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e===`auto`?i():e,r(e)}matchMedia(`(prefers-color-scheme: light)`).addEventListener(`change`,()=>{n()===`auto`&&a(`auto`)});var o=class extends HTMLElement{constructor(){super(),a(n()),this.querySelector(`select`)?.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&a(t(e.currentTarget.value))})}};customElements.define(`starlight-theme-select`,o);</script><script type="module">var e=class extends HTMLElement{constructor(){super();let e=this.querySelector(`select`);e&&(e.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=e.currentTarget.value)}),window.addEventListener(`pageshow`,t=>{if(!t.persisted)return;let n=e.querySelector(`option[selected]`)?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}};customElements.define(`starlight-lang-select`,e);</script></div></div></header><nav class="sidebar print:hidden astro-yntsjkba" aria-label="Main"><button popovertarget="starlight__sidebar" class="sl-menu-button sl-flex md:sl-hidden print:hidden astro-r2osgdlg"><svg aria-hidden="true" class="open-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg><svg aria-hidden="true" class="close-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg><span class="sr-only astro-r2osgdlg">Menu</span></button><script type="module">var e=class extends HTMLElement{constructor(){super();let e=matchMedia(`(min-width: 50em)`),t=()=>{this.popover=e.matches?null:`auto`};t(),e.addEventListener(`change`,()=>t()),this.addEventListener(`toggle`,({newState:e})=>this.trapFocus(e===`open`))}trapFocus(e){document.querySelectorAll(`.main-frame, .sl-skip-link`).forEach(t=>{t.toggleAttribute(`inert`,e)})}};customElements.define(`sl-sidebar-pane`,e);</script><sl-sidebar-pane popover id="starlight__sidebar" class="sidebar-pane astro-yntsjkba"><div class="sidebar-content sl-flex astro-yntsjkba"><sl-sidebar-state-persist data-hash="19o6qwi" class="astro-ipdry5cl"><script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script><ul class="top-level astro-rmhv4bp6"><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Get started</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="0"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/install.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Install</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/quick-start.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Quick start</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/concepts.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Concepts</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Use fleetd</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="1"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/machines.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Machines</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/projects-and-orders.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Projects &amp; orders</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/merge-train.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Merge train</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/steering.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Steering</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/approvals-and-secrets.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Approvals &amp; secrets</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/desktop-app.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">The desktop app</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/status.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Status</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/time-inspector.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Where time went</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/what-agents-are-told.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">What agents are told</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/mcp-clients.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">MCP clients</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Reference</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="2"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/reference/cli.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">CLI reference</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/reference/agent-tools.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Agent tools</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/config-and-files.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Config &amp; files</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/security.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Security model</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/glossary.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Glossary</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Help</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="3"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/troubleshooting.html" aria-current="page" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Troubleshooting</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/updating-and-uninstall.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Updating &amp; uninstall</span></a></li></ul></details></li></ul><script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-p4azlveh"><div class="social-icons astro-p4azlveh"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#doctor" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Run the doctor</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#hub" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The hub</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#claude" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Claude</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#machines" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Machines</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#sleep" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Keep a machine awake</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#restart" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Restart a service</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#stuck" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">An order is stuck</span></a></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#doctor" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Run the doctor</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#hub" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">The hub</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#claude" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Claude</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#machines" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Machines</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#sleep" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">Keep a machine awake</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#restart" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Restart a service</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#stuck" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">An order is stuck</span></a></li></ul></nav></starlight-toc><script type="module" src="/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><h1 id="_top" class="astro-bebwqqxs">Troubleshooting</h1></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content">
+<p>Find the problem <code dir="auto">fleetd doctor</code> reported, or why an order is stuck, and fix it. <code dir="auto">fleetd doctor</code> checks the
+<a href="/docs/glossary#hub">hub</a> and every <a href="/docs/glossary#worker">worker</a>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="doctor">Run the doctor</h2><a class="sl-anchor-link" href="#doctor"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Run the doctor”</span></a></div>
+<p>On the hub:</p>
+<div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">doctor</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd doctor"><div></div></button></div></figure></div>
+<p>Example output, from a new hub with one worker, <code dir="auto">test-1</code>, where nothing is logged in yet:</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor hub gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor hub Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run. Fix: claude auth login</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1 is degraded: claude is not installed (claude not found). Fix: curl -fsSL https://claude.ai/install.sh | bash</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor test-1 claude is not installed on test-1; its sessions can't start. Fix: curl -fsSL https://claude.ai/install.sh | bash</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1's node could not tell whether its claude is logged in</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1's node has not probed its claude yet</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✗  doctor test-1 No git commit identity is set on test-1. Fix: git config --global user.email '&lt;id&gt;+&lt;user&gt;@users.noreply.github.com'</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">!  doctor test-1 test-1 sleeps after 15 min idle on AC power (KDE power management). fleetd keeps it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it. Fix: System Settings &gt; Power Management &gt; On AC Power &gt; When inactive: Do nothing</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✓  doctor 4 of 13 checks pass</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">[exit 1]</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="✗  doctor hub gh is not logged in on the hub; the merge train and PR checks need it. Fix: gh auth login✗  doctor hub Claude Code (claude) is not on the hub&#x27;s PATH; the intake router and the retro can&#x27;t run. Fix: claude auth login!  doctor test-1 test-1 is degraded: claude is not installed (claude not found). Fix: curl -fsSL https://claude.ai/install.sh | bash✗  doctor test-1 claude is not installed on test-1; its sessions can&#x27;t start. Fix: curl -fsSL https://claude.ai/install.sh | bash!  doctor test-1 test-1&#x27;s node could not tell whether its claude is logged in!  doctor test-1 test-1&#x27;s node has not probed its claude yet✗  doctor test-1 No git commit identity is set on test-1. Fix: git config --global user.email &#x27;<id>+<user>@users.noreply.github.com&#x27;!  doctor test-1 test-1 sleeps after 15 min idle on AC power (KDE power management). fleetd keeps it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it. Fix: System Settings > Power Management > On AC Power > When inactive: Do nothing✓  doctor 4 of 13 checks pass[exit 1]"><div></div></button></div></figure></div>
+<p>Each line names where the problem is: <code dir="auto">hub</code>, or a machine. Checks that pass aren’t listed, only counted on the last
+line.</p>
+<table>
+<thead>
+<tr>
+<th>Mark</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>✗</td>
+<td>A failure. Fix it.</td>
+</tr>
+<tr>
+<td>!</td>
+<td>A warning, or a check that couldn’t tell.</td>
+</tr>
+<tr>
+<td>–</td>
+<td>Not checked yet.</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>Only on the last line: how many checks passed.</td>
+</tr>
+</tbody>
+</table>
+<p>Most findings end with <code dir="auto">Fix:</code> and what to do, on the machine the finding names. The app’s Machines screen shows the
+same checks. The tables below give each check’s id in brackets, such as <code dir="auto">[claude_login]</code>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="hub">The hub</h2><a class="sl-anchor-link" href="#hub"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The hub”</span></a></div>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“the hub does not answer at <code dir="auto">http://…</code>” <code dir="auto">[exit 4]</code></td>
+<td>The hub isn’t running.</td>
+<td><code dir="auto">fleetd init</code>. If you run the hub yourself (<code dir="auto">--no-service</code>): <code dir="auto">fleetd hub start</code>. Log: <code dir="auto">~/.fleetd/hub/hub.log</code>.</td>
+</tr>
+<tr>
+<td>“The hub does not answer at its own address …/healthz” <code dir="auto">[reachable]</code></td>
+<td>The hub service is stuck.</td>
+<td><a href="#restart">Restart the hub service</a>.</td>
+</tr>
+<tr>
+<td>“gh is not logged in on the hub” <code dir="auto">[gh_auth]</code></td>
+<td><code dir="auto">gh</code> is missing or logged out.</td>
+<td><code dir="auto">gh auth login</code>. If <code dir="auto">gh</code> is missing, install it from <a href="https://cli.github.com">cli.github.com</a> first.</td>
+</tr>
+<tr>
+<td>“claude on the hub is not logged in” <code dir="auto">[claude_login]</code></td>
+<td>The hub’s own <code dir="auto">claude</code> (used by the router and the retro) is logged out.</td>
+<td><code dir="auto">claude auth login</code>, or through your proxy. For a gateway or token, see <a href="/docs/config-and-files#claude-env">claude.env</a>.</td>
+</tr>
+<tr>
+<td>“The hub’s address <code dir="auto">http://…</code> is not HTTPS” <code dir="auto">[https]</code></td>
+<td>The hub listens on plain HTTP outside loopback or a tailnet.</td>
+<td>Serve it over HTTPS, then point fleetd at it (below).</td>
+</tr>
+<tr>
+<td>“The hub has no address set up”, or <code dir="auto">setup.json</code> is unreadable <code dir="auto">[https]</code></td>
+<td><code dir="auto">~/.fleetd/hub/setup.json</code> is missing or broken.</td>
+<td>Same as above: <code dir="auto">fleetd init --url &lt;https address&gt;</code>.</td>
+</tr>
+<tr>
+<td>“… has no hub set up” <code dir="auto">[exit 4]</code></td>
+<td>The hub was started by hand without <code dir="auto">fleetd init</code> first, so its home has no <code dir="auto">setup.json</code>.</td>
+<td>Run the fix it prints. For a hub you run yourself, that is <code dir="auto">fleetd init --no-service --home &lt;home&gt; --listen &lt;host:port&gt;</code>, which leaves the running hub alone.</td>
+</tr>
+</tbody>
+</table>
+<p>This is what doctor shows when the hub is down:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="console"><code><div class="ec-line"><div class="code"><span style="--0:#E1E4E8;--1:#24292E">$ fleetd doctor</span></div></div><div class="ec-line"><div class="code"><span style="--0:#79B8FF;--1:#005CC5">✗  doctor the hub does not answer at http://127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)</span></div></div><div class="ec-line"><div class="code"><span style="--0:#79B8FF;--1:#005CC5">[exit 4]</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="$ fleetd doctor✗  doctor the hub does not answer at http://127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)[exit 4]"><div></div></button></div></figure></div>
+<p>To serve the hub over HTTPS with Tailscale, stop the hub, then:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">tailscale</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">serve</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--bg</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">4790</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">init</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--url</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">https://&lt;that</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">address&gt;</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="tailscale serve --bg 4790fleetd init --url https://<that address>"><div></div></button></div></figure></div>
+<p>Plain HTTP is accepted on loopback and on a tailnet address (<code dir="auto">100.64.0.0/10</code> or a <code dir="auto">*.ts.net</code> name). If the HTTPS
+address stops answering, check where it points with <code dir="auto">tailscale serve status</code>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="claude">Claude</h2><a class="sl-anchor-link" href="#claude"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Claude”</span></a></div>
+<p>These apply to every worker, and to the hub’s own <code dir="auto">claude</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“claude 2.1.302, not logged in, so its sessions can’t start” <code dir="auto">[claude_login]</code></td>
+<td><code dir="auto">claude</code> on that machine is logged out, or its login expired.</td>
+<td><code dir="auto">claude auth login</code> on that machine, or log in through your proxy.</td>
+</tr>
+<tr>
+<td>“claude is not installed on laptop” <code dir="auto">[claude_version]</code></td>
+<td>No <code dir="auto">claude</code> on the machine’s <code dir="auto">PATH</code>.</td>
+<td><code dir="auto">curl -fsSL https://claude.ai/install.sh | bash</code></td>
+</tr>
+<tr>
+<td>“claude 2.1.296 is older than fleetd is tested with” <code dir="auto">[claude_version]</code> !</td>
+<td>An older <code dir="auto">claude</code>. It may work: fleetd checks its protocol at every start.</td>
+<td><code dir="auto">claude update</code></td>
+</tr>
+<tr>
+<td>“claude 2.2.0 is newer than this fleetd supports” <code dir="auto">[claude_version]</code></td>
+<td>A <code dir="auto">claude</code> past fleetd’s supported range. Sessions are refused.</td>
+<td><code dir="auto">claude install 2.1.302</code>, or <code dir="auto">fleetd update</code></td>
+</tr>
+<tr>
+<td>“claude 2.1.303 is newer than 2.1.302, the version this fleetd was tested with” <code dir="auto">[claude_version]</code> !</td>
+<td>Newer, but inside the supported range. Sessions run.</td>
+<td><code dir="auto">claude install 2.1.302</code></td>
+</tr>
+<tr>
+<td>“<code dir="auto">claude --version</code> printed …, which fleetd can’t read” <code dir="auto">[claude_version]</code></td>
+<td>A broken install.</td>
+<td><code dir="auto">curl -fsSL https://claude.ai/install.sh | bash -s 2.1.302</code></td>
+</tr>
+<tr>
+<td>“did not answer fleetd’s protocol probe as expected” <code dir="auto">[runner_conformance]</code></td>
+<td>This <code dir="auto">claude</code> speaks a different protocol.</td>
+<td><code dir="auto">claude install 2.1.302</code></td>
+</tr>
+<tr>
+<td>“<code dir="auto">claude --version</code> and the running claude disagree” <code dir="auto">[runner_conformance]</code></td>
+<td>Two <code dir="auto">claude</code> installs on <code dir="auto">PATH</code>.</td>
+<td>Reinstall with <code dir="auto">curl -fsSL https://claude.ai/install.sh | bash</code>, and remove the other.</td>
+</tr>
+<tr>
+<td>“has not probed its claude yet” <code dir="auto">[runner_conformance]</code></td>
+<td>The node just started.</td>
+<td>Nothing: it clears by itself.</td>
+</tr>
+<tr>
+<td>“still offers its own subagents in fleetd sessions” <code dir="auto">[claude_subagents]</code></td>
+<td>This <code dir="auto">claude</code> version exposes subagents fleetd can’t turn off. No new session starts there.</td>
+<td><code dir="auto">claude install 2.1.302</code></td>
+</tr>
+<tr>
+<td>“kept its auto memory on” <code dir="auto">[claude_auto_memory]</code> !</td>
+<td>Your claude settings override fleetd’s.</td>
+<td>Set <code dir="auto">"autoMemoryEnabled": false</code> in <code dir="auto">~/.claude/settings.json</code> on that machine, then <code dir="auto">fleetd update</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>fleetd is tested with claude <code dir="auto">&gt;=2.1.300, &lt;2.2.0</code>. A machine with a ✗ claude finding runs no sessions until it is
+fixed. fleetd turns claude’s auto-updater off for its own sessions.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="machines">Machines</h2><a class="sl-anchor-link" href="#machines"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Machines”</span></a></div>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“laptop is offline (last seen …)” <code dir="auto">[online]</code></td>
+<td>The node is down, or the machine is asleep or off the network.</td>
+<td>Wake it, then <a href="#restart">restart the node</a>. Log: <code dir="auto">~/.fleetd/logs/node.log</code>.</td>
+</tr>
+<tr>
+<td>“laptop is degraded: …” <code dir="auto">[online]</code></td>
+<td>Usually a claude problem on that machine.</td>
+<td>The fix the finding names: see <a href="#claude">Claude</a>.</td>
+</tr>
+<tr>
+<td>“No git commit identity is set on laptop” <code dir="auto">[commit_identity]</code></td>
+<td>The node has no commit author.</td>
+<td>Set up over SSH: <code dir="auto">fleetd machine add laptop</code>. Joined with a code: <code dir="auto">fleetd pair --worker laptop</code>, then run what it prints on laptop. The hub machine: <code dir="auto">fleetd machine add --local</code>.</td>
+</tr>
+<tr>
+<td>“Commits on laptop use … ; the hub’s identity is …” <code dir="auto">[commit_identity]</code></td>
+<td>The machine’s git config differs from the hub’s.</td>
+<td>Same as above.</td>
+</tr>
+<tr>
+<td>“… free under ~ on laptop; fleetd needs at least 5.0 GB” <code dir="auto">[disk]</code></td>
+<td>Low disk. Each writer gets its own git worktree.</td>
+<td>Free space under the named path. <code dir="auto">df -h &lt;path&gt;</code> shows what is left.</td>
+</tr>
+<tr>
+<td>“The node on laptop won’t run commands in … (outside its cmdRoots)” <code dir="auto">[cmd-roots]</code></td>
+<td>A project’s checkout is outside the node’s <code dir="auto">cmdRoots</code>, so the merge train can’t merge its PRs.</td>
+<td>Move the checkout into your home directory, or add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
+</tr>
+<tr>
+<td>“laptop sleeps after 15 min idle on AC power” <code dir="auto">[sleep]</code></td>
+<td>The machine sleeps between orders and drops off the fleet.</td>
+<td>Turn off sleep on AC power (below).</td>
+</tr>
+<tr>
+<td>“New turns on laptop are paused by the usage breaker” <code dir="auto">[usage_breaker]</code></td>
+<td>Its Claude login hit a plan or rate limit.</td>
+<td>Wait for the reset (the finding says when), or, once it has capacity, call <code dir="auto">usage_resume</code> from an <a href="/docs/mcp-clients">MCP client</a>.</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h3"><h3 id="sleep">Keep a machine awake</h3><a class="sl-anchor-link" href="#sleep"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Keep a machine awake”</span></a></div>
+<p>While agents run, the node keeps its machine awake. Between orders nothing does. Sleep on battery only is fine.</p>
+<table>
+<thead>
+<tr>
+<th>Desktop</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>macOS</td>
+<td><code dir="auto">sudo pmset -c sleep 0</code></td>
+</tr>
+<tr>
+<td>GNOME</td>
+<td><code dir="auto">gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'</code></td>
+</tr>
+<tr>
+<td>KDE Plasma</td>
+<td>System Settings &gt; Power Management &gt; On AC Power &gt; When inactive: Do nothing</td>
+</tr>
+<tr>
+<td>logind <code dir="auto">IdleAction</code></td>
+<td><code dir="auto">IdleAction=ignore</code> in <code dir="auto">/etc/systemd/logind.conf.d/fleetd.conf</code>, then reboot</td>
+</tr>
+</tbody>
+</table>
+<p>When a machine wakes, its node reconnects at once, resumes any run that went quiet, and the machine strip shows
+“slept 10m46s” for a while.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="restart">Restart a service</h2><a class="sl-anchor-link" href="#restart"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Restart a service”</span></a></div>
+<script>
+(() => {
+	class StarlightTabsRestore extends HTMLElement {
+		connectedCallback() {
+			const starlightTabs = this.closest('starlight-tabs');
+			if (!(starlightTabs instanceof HTMLElement) || typeof localStorage === 'undefined') return;
+			const syncKey = starlightTabs.dataset.syncKey;
+			if (!syncKey) return;
+			const label = localStorage.getItem(`starlight-synced-tabs__${syncKey}`);
+			if (!label) return;
+			const tabs = [...starlightTabs?.querySelectorAll('[role="tab"]')];
+			const tabIndexToRestore = tabs.findIndex(
+				(tab) => tab instanceof HTMLAnchorElement && tab.textContent?.trim() === label
+			);
+			const panels = starlightTabs?.querySelectorAll(':scope > [role="tabpanel"]');
+			const newTab = tabs[tabIndexToRestore];
+			const newPanel = panels[tabIndexToRestore];
+			if (tabIndexToRestore < 1 || !newTab || !newPanel) return;
+			tabs[0]?.setAttribute('aria-selected', 'false');
+			tabs[0]?.setAttribute('tabindex', '-1');
+			panels?.[0]?.setAttribute('hidden', 'true');
+			newTab.removeAttribute('tabindex');
+			newTab.setAttribute('aria-selected', 'true');
+			newPanel.removeAttribute('hidden');
+		}
+	}
+	customElements.define('starlight-tabs-restore', StarlightTabsRestore);
+})()
+</script><starlight-tabs data-sync-key="os" class="astro-scn3uvmv"><div class="tablist-wrapper not-content astro-scn3uvmv"><ul role="tablist" class="astro-scn3uvmv"><li role="presentation" class="tab astro-scn3uvmv"><a role="tab" href="#tab-panel-0-0" id="tab-0-0" aria-selected="true" tabindex="0" class="astro-scn3uvmv">macOS</a></li><li role="presentation" class="tab astro-scn3uvmv"><a role="tab" href="#tab-panel-0-1" id="tab-0-1" aria-selected="false" tabindex="-1" class="astro-scn3uvmv">Linux</a></li></ul></div><div id="tab-panel-0-0" aria-labelledby="tab-0-0" role="tabpanel"><div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">launchctl</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">kickstart</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">-k</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">gui/</span><span style="--0:#E1E4E8;--1:#24292E">$(</span><span style="--0:#B392F0;--1:#6F42C1">id</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">-u</span><span style="--0:#E1E4E8;--1:#24292E">)</span><span style="--0:#9ECBFF;--1:#032F62">/sh.fleetd.hub</span><span style="--0:#E1E4E8;--1:#24292E">     </span><span style="--0:#99A0A6;--1:#616972"># the hub</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">launchctl</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">kickstart</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">-k</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">gui/</span><span style="--0:#E1E4E8;--1:#24292E">$(</span><span style="--0:#B392F0;--1:#6F42C1">id</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">-u</span><span style="--0:#E1E4E8;--1:#24292E">)</span><span style="--0:#9ECBFF;--1:#032F62">/sh.fleetd.node</span><span style="--0:#E1E4E8;--1:#24292E">    </span><span style="--0:#99A0A6;--1:#616972"># a node, on that machine</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="launchctl kickstart -k gui/$(id -u)/sh.fleetd.hub     # the hublaunchctl kickstart -k gui/$(id -u)/sh.fleetd.node    # a node, on that machine"><div></div></button></div></figure></div></div><div id="tab-panel-0-1" aria-labelledby="tab-0-1" role="tabpanel" hidden><div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">systemctl</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--user</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">restart</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">fleetd-hub.service</span><span style="--0:#E1E4E8;--1:#24292E">     </span><span style="--0:#99A0A6;--1:#616972"># the hub</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">systemctl</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--user</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">restart</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">fleetd-node.service</span><span style="--0:#E1E4E8;--1:#24292E">    </span><span style="--0:#99A0A6;--1:#616972"># a node, on that machine</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="systemctl --user restart fleetd-hub.service     # the hubsystemctl --user restart fleetd-node.service    # a node, on that machine"><div></div></button></div></figure></div></div><starlight-tabs-restore class="astro-scn3uvmv"></starlight-tabs-restore></starlight-tabs><script type="module">var e=class e extends HTMLElement{static#e=new Map;tabs;panels;#t;#n=`starlight-synced-tabs__`;constructor(){super();let t=this.querySelector(`[role="tablist"]`);if(this.tabs=[...t.querySelectorAll(`[role="tab"]`)],this.panels=[...this.querySelectorAll(`:scope > [role="tabpanel"]`)],this.#t=this.dataset.syncKey,this.#t){let t=e.#e.get(this.#t)??[];t.push(this),e.#e.set(this.#t,t)}this.tabs.forEach((e,n)=>{e.addEventListener(`click`,e=>{e.preventDefault();let r=t.querySelector(`[aria-selected="true"]`);e.currentTarget!==r&&this.switchTab(e.currentTarget,n)}),e.addEventListener(`keydown`,e=>{let t=this.tabs.indexOf(e.currentTarget),n=e.key===`ArrowLeft`?t-1:e.key===`ArrowRight`?t+1:e.key===`Home`?0:e.key===`End`?this.tabs.length-1:null;n!==null&&this.tabs[n]&&(e.preventDefault(),this.switchTab(this.tabs[n],n))})})}switchTab(t,n,r=!0){if(!t)return;let i=r?this.getBoundingClientRect().top:0;this.tabs.forEach(e=>{e.setAttribute(`aria-selected`,`false`),e.setAttribute(`tabindex`,`-1`)}),this.panels.forEach(e=>{e.hidden=!0});let a=this.panels[n];a&&(a.hidden=!1),t.removeAttribute(`tabindex`),t.setAttribute(`aria-selected`,`true`),r&&(t.focus(),e.#i(this,t),window.scrollTo({top:window.scrollY+(this.getBoundingClientRect().top-i),behavior:`instant`}))}#r(e){this.#t&&typeof localStorage<`u`&&localStorage.setItem(this.#n+this.#t,e)}static#i(t,n){let r=t.#t,i=e.#a(n);if(!r||!i)return;let a=e.#e.get(r);if(a){for(let n of a){if(n===t)continue;let r=n.tabs.findIndex(t=>e.#a(t)===i);r!==-1&&n.switchTab(n.tabs[r],r,!1)}t.#r(i)}}static#a(e){return e.textContent?.trim()}};customElements.define(`starlight-tabs`,e);</script>
+<table>
+<thead>
+<tr>
+<th>Log</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hub</td>
+<td><code dir="auto">~/.fleetd/hub/hub.log</code>. Run by hand: the terminal.</td>
+</tr>
+<tr>
+<td>Node</td>
+<td><code dir="auto">~/.fleetd/logs/node.log</code>. Run by hand: the terminal.</td>
+</tr>
+</tbody>
+</table>
+<div class="sl-heading-wrapper level-h2"><h2 id="stuck">An order is stuck</h2><a class="sl-anchor-link" href="#stuck"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “An order is stuck”</span></a></div>
+<p>Start with what the order waits on:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">status</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">W41</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd status W41"><div></div></button></div></figure></div>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“W41 is a draft: waiting for the lead’s brief”</td>
+<td>The lead hasn’t written the order’s <a href="/docs/glossary#brief">brief</a> yet.</td>
+<td><code dir="auto">fleetd status W41 --watch</code> shows it once the brief exists. If the lead never starts, see <a href="/docs/projects-and-orders#its-lead">Its lead</a>.</td>
+</tr>
+<tr>
+<td>A pull request stays queued on the <a href="/docs/glossary#merge-train">merge train</a></td>
+<td>The train can’t work in the checkout, or CI or a review is pending.</td>
+<td><code dir="auto">fleetd status</code> lists a PR the train can’t move under risks, with the train’s error. For more, run <code dir="auto">fleetd change status X&lt;n&gt;</code> in the project’s checkout on its worker. The change id <code dir="auto">X&lt;n&gt;</code> is listed by the <code dir="auto">train_get</code> tool.</td>
+</tr>
+<tr>
+<td>A risk says “#212 can’t merge: its checkout on laptop is outside the node’s cmdRoots”</td>
+<td>The checkout is outside the node’s <code dir="auto">cmdRoots</code> (default: your home directory).</td>
+<td>Add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
+</tr>
+<tr>
+<td>The order waits and the app says why</td>
+<td>The lead can’t start: <code dir="auto">claude</code> logged out, out of range, or the worker offline.</td>
+<td>See <a href="#claude">Claude</a> and <a href="#machines">Machines</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>“Waiting on” lists the stages left for the item in fleetd’s pipeline, in order, leaving out review when the PR’s tier
+needs none. See <a href="/docs/status#waits">What it waits on</a>.</p>
+<p><code dir="auto">fleetd change status</code> is a lead-side command: run it inside the project’s checkout on the worker. If that node uses
+a non-default home, set <code dir="auto">FLEETD_HOME</code> as it has, or <code dir="auto">FLEETD_NODE_SOCK=&lt;node home&gt;/node.sock</code>.</p>
+<p>Then check the logs (above) for the hub and the order’s worker.</p></div><footer class="sl-flex astro-ddtxxk7k"><div class="meta sl-flex astro-ddtxxk7k"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/src/content/docs/troubleshooting.mdx" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/docs/glossary.html" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Glossary</span></span></a><a href="/docs/updating-and-uninstall.html" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Updating &amp; uninstall</span></span></a></div></footer></div></div></main></div></div></div></div></body></html>

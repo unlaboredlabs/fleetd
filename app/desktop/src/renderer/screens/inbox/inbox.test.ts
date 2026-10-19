@@ -153,6 +153,17 @@ describe("the inbox's own state over the data layer's asks", () => {
       { seq: 12, at: "2026-10-19T10:29:00.000Z", summary: "An implementer stopped: the tests would not start.", urgent: false, project: "storefront" },
     ]);
   });
+
+  it("leaves an urgent ask's filing out, so an answered ask doesn't linger as worth a look", () => {
+    const filed: HubEvent = {
+      seq: 9,
+      type: "ask.created",
+      at: "2026-10-19T10:30:00.000Z",
+      summary: "A3 [money] billing.team.trial: Free trial length for the Team plan?",
+      attention: "urgent",
+    };
+    expect(attentionItems({ attention: [filed], events: [filed], projects: {} })).toEqual([]);
+  });
 });
 
 describe("a secret ask's destination", () => {

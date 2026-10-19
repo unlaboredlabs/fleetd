@@ -26,7 +26,7 @@ use super::lead::js_number;
 use super::mcp_client::{McpClient, McpError};
 use super::time::resolve_project;
 
-pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path>]
+pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
              progress (verified plus work in flight), why it fell, the critical path it waits on,
              what is slower than usual, what changed since you last looked, health and risks;
              for an order (W41), a project by id or title (<machine>/<project> when two machines
@@ -35,7 +35,7 @@ pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json
              needs no --hub or --key-file
 "#;
 
-pub const GITHUB_WEBHOOK_USAGE: &str = r#"  hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path>]
+pub const GITHUB_WEBHOOK_USAGE: &str = r#"  hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path> | --home <dir>]
              let GitHub tell the hub about pull requests, checks and pushes on the train's repos
              as they happen (admin key). It needs a URL GitHub can reach that forwards to this hub,
              which fleetd never creates; without one the hub syncs with GitHub on its own
@@ -50,6 +50,8 @@ const BACKOFF: &[u64] = &[1, 2, 5, 10, 30];
 pub struct StatusArgs {
     /// Both, or neither for the hub on this machine.
     pub hub: Option<(String, String)>,
+    /// That hub's home, when it isn't the default.
+    pub home: Option<String>,
     /// The order id or project as given; empty for the fleet.
     pub target: String,
     pub watch: bool,
@@ -72,6 +74,7 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
+        ("home", Kind::Str),
         ("watch", Kind::Bool),
         ("json", Kind::Bool),
     ];
@@ -90,6 +93,7 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
     }
     Ok(StatusArgs {
         hub: hub_flags(&v)?,
+        home: v.string("home").filter(|s| !s.is_empty()),
         target: v.positionals.first().cloned().unwrap_or_default(),
         watch: v.flag("watch"),
         json: v.flag("json"),
@@ -622,7 +626,11 @@ enum Target {
 }
 
 impl Target {
-    fn from_args(hub: &Option<(String, String)>, who: &str) -> Result<Self, u8> {
+    fn from_args(
+        hub: &Option<(String, String)>,
+        home: Option<&str>,
+        who: &str,
+    ) -> Result<Self, u8> {
         match hub {
             Some((url, key_file)) => match std::fs::read_to_string(key_file) {
                 Ok(key) => Ok(Target::Remote {
@@ -634,7 +642,7 @@ impl Target {
                     Err(2)
                 }
             },
-            None => match super::hub_key::resolve_home(None) {
+            None => match super::hub_key::resolve_home(home) {
                 Ok(home) => Ok(Target::Local { home }),
                 Err(message) => {
                     eprintln!(
@@ -779,7 +787,7 @@ fn decode<A: serde::de::DeserializeOwned>(tool: &str, body: Value) -> Result<A, 
     })
 }
 
-/// "Since you last looked here": this machine's own mark per hub and scope, in `~/.fleetd/cli/status-seen.json`
+/// "Since you last looked here": this machine's own mark per hub and scope, in `<fleetd dir>/cli/status-seen.json`
 /// (0600). It is separate from the per-person marks the app keeps on the hub: neither moves the other, so the CLI
 /// needs no person's key and a look in one place never hides news from the other.
 struct Mark {
@@ -791,7 +799,7 @@ struct Mark {
 
 impl Mark {
     fn load(hub: &str, scope: &Value) -> Self {
-        let file = super::home_dir().join(".fleetd/cli/status-seen.json");
+        let file = crate::home::fleetd_dir().join("cli/status-seen.json");
         let scope_key = serde_json::from_value::<StatusScope>(scope.clone())
             .map(|s| s.key())
             .unwrap_or_default();
@@ -857,6 +865,44 @@ async fn get(
     Ok(decode::<StatusGetOutput>("status_get", body).map(|out| mark.apply(out.doc)))
 }
 
+/// A just-sent order has no status doc until the lead writes its brief: that is waiting, not a refusal.
+async fn is_draft(client: &mut McpClient, target: &str) -> bool {
+    if WorkstreamId::new(target).is_err() {
+        return false;
+    }
+    call(
+        client,
+        "order_get",
+        json!({ "workstreamId": target }),
+        Duration::from_secs(30),
+    )
+    .await
+    .is_ok_and(|body| body.pointer("/order/state").and_then(Value::as_str) == Some("draft"))
+}
+
+/// Waits for a scope's first doc (a draft order's, once its brief exists).
+async fn first_doc(
+    client: &mut McpClient,
+    scope: &Value,
+    mark: &Mark,
+) -> Result<Result<StatusDoc, u8>, CallError> {
+    loop {
+        let wait = mark.input(json!({ "scope": scope, "timeoutSec": WAIT_SEC }));
+        let body = call(
+            client,
+            "status_wait",
+            wait,
+            Duration::from_secs(WAIT_SEC + 15),
+        )
+        .await?;
+        match decode::<StatusWaitOutput>("status_wait", body) {
+            Ok(StatusWaitOutput { doc: Some(doc), .. }) => return Ok(Ok(mark.apply(doc))),
+            Ok(_) => {}
+            Err(code) => return Ok(Err(code)),
+        }
+    }
+}
+
 /// `fleetd status …`: exit 0, 1 when the hub answered in a shape this build does not know, 2 on bad arguments, 3
 /// when the hub refused the key or the call, 4 when it cannot be reached.
 pub async fn status_command(argv: &[String]) -> u8 {
@@ -867,7 +913,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
             return 2;
         }
     };
-    let target = match Target::from_args(&args.hub, "status") {
+    let target = match Target::from_args(&args.hub, args.home.as_deref(), "status") {
         Ok(target) => target,
         Err(code) => return code,
     };
@@ -895,6 +941,22 @@ pub async fn status_command(argv: &[String]) -> u8 {
     let mut doc = match get(&mut client, &scope, &mark).await {
         Ok(Ok(doc)) => doc,
         Ok(Err(code)) => return code,
+        Err(CallError::Refused(_)) if is_draft(&mut client, &args.target).await => {
+            println!("{} is a draft: waiting for the lead's brief", args.target);
+            if !args.watch {
+                return 0;
+            }
+            let mut stop = super::Stop::on_signals();
+            let first = tokio::select! {
+                _ = stop.wait() => return 0,
+                first = first_doc(&mut client, &scope, &mark) => first,
+            };
+            match first {
+                Ok(Ok(doc)) => doc,
+                Ok(Err(code)) => return code,
+                Err(error) => return fail("status", error),
+            }
+        }
         Err(error) => return fail("status", error),
     };
     printer.show(&doc);
@@ -956,6 +1018,7 @@ pub async fn github_webhook_command(argv: &[String]) -> u8 {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
+        ("home", Kind::Str),
         ("url", Kind::Str),
         ("off", Kind::Bool),
     ];
@@ -968,23 +1031,24 @@ pub async fn github_webhook_command(argv: &[String]) -> u8 {
     )
     .and_then(|v| {
         let hub = hub_flags(&v)?;
+        let home = v.string("home").filter(|s| !s.is_empty());
         match (v.string("url").filter(|u| !u.is_empty()), v.flag("off")) {
             (Some(url), false) if url.starts_with("https://") || url.starts_with("http://") => {
-                Ok((hub, Some(url)))
+                Ok((hub, home, Some(url)))
             }
             (Some(url), false) => Err(format!("--url must be an http(s) URL, got '{url}'")),
-            (None, true) => Ok((hub, None)),
+            (None, true) => Ok((hub, home, None)),
             _ => Err("give exactly one of --url <public url>/github and --off".into()),
         }
     });
-    let (hub, url) = match parsed {
+    let (hub, home, url) = match parsed {
         Ok(parsed) => parsed,
         Err(error) => {
             eprint!("fleetd: {error}\n\nusage:\n{GITHUB_WEBHOOK_USAGE}");
             return 2;
         }
     };
-    let target = match Target::from_args(&hub, "hub github-webhook") {
+    let target = match Target::from_args(&hub, home.as_deref(), "hub github-webhook") {
         Ok(target) => target,
         Err(code) => return code,
     };
@@ -1193,5 +1257,86 @@ mod tests {
             not_live_banner(&doc(json!([])), chrono_tz::UTC, "connection refused"),
             "NOT LIVE: reconnecting to the hub (connection refused) · data from 14:02:07"
         );
+    }
+}
+
+#[cfg(test)]
+mod against_a_hub {
+    use std::sync::Arc;
+
+    use crate::clock::SystemClock;
+    use crate::hub::api::{self, HubConfig, Listen};
+    use crate::hub::store::HubDb;
+    use fleetd_contracts::auth::{Grant, KeyKind};
+    use serde_json::json;
+
+    /// Scripts read the exit code: an order just sent (a draft until the lead's brief) is waiting, not refused.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_draft_order_exits_0_and_an_unknown_one_3() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+            queue_ttl_sec: None,
+            router_model: None,
+        };
+        let hub = crate::hub::serve::build_on(
+            HubDb::open_memory().unwrap(),
+            config,
+            Arc::new(SystemClock),
+        )
+        .unwrap();
+        let at = "2026-10-18T10:00:00.000Z";
+        let w = json!({
+            "workstreamId": "W1", "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+            "title": "Checkout redesign",
+            "source": { "text": "Checkout redesign", "channel": "app", "by": "human", "at": at },
+            "state": "draft", "createdAt": at, "updatedAt": at,
+        });
+        hub.db
+            .with(|c| {
+                c.execute(
+                    "INSERT INTO workstreams (machine_id, project_id, state, data) VALUES ('devbox', 'storefront', 'draft', ?)",
+                    [w.to_string()],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let grants: Vec<Grant> =
+            serde_json::from_value(json!([{ "role": "read", "machines": "*" }])).unwrap();
+        let key = hub
+            .auth
+            .create_key("test", &grants, KeyKind::Agent)
+            .unwrap()
+            .key;
+        let key_file = home.path().join("read.key");
+        std::fs::write(&key_file, format!("{key}\n")).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let served = tokio::spawn(crate::hub::http::serve(
+            listener,
+            hub.clone(),
+            Arc::new(api::registry()),
+        ));
+        let status = |order: &str| {
+            let argv: Vec<String> = [
+                order,
+                "--hub",
+                &url,
+                "--key-file",
+                key_file.to_str().unwrap(),
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            async move { super::status_command(&argv).await }
+        };
+        assert_eq!(status("W1").await, 0, "a draft is waiting for its brief");
+        assert_eq!(
+            status("W9").await,
+            3,
+            "an order that doesn't exist is refused"
+        );
+        served.abort();
     }
 }

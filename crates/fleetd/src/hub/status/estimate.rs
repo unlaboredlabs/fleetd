@@ -38,6 +38,9 @@ pub struct ModelData {
     pub order_push: HashMap<String, i64>,
     /// Order → planning share fixed when its plan appeared, and when.
     pub planning: HashMap<String, (f64, i64)>,
+    /// Changes before review whose tier asks for none: their steps skip it. Filled by the caller, which has the
+    /// review rules.
+    pub reviewless: HashSet<String>,
 }
 
 fn json_ids(ids: &[String]) -> String {
@@ -155,6 +158,7 @@ impl ModelData {
             task_push,
             order_push,
             planning,
+            reviewless: HashSet::new(),
         })
     }
 }
@@ -229,6 +233,8 @@ pub struct ModelOut {
     pub critical: Option<UnitKey>,
     /// Each unit's open PR number, for its steps.
     pub prs: HashMap<UnitKey, i64>,
+    /// Units whose PR needs no review.
+    pub no_review: HashSet<UnitKey>,
     /// Plans that appeared since the last read: (order, share, when), to store once.
     pub fix_planning: Vec<(String, f64, i64)>,
     /// When the figure next moves with time alone (in-stage credit, a unit turning slow, planning's bar).
@@ -311,8 +317,9 @@ fn critical(
     best.map(|(k, _)| k.clone())
 }
 
-/// What a unit still waits on, in order: open items it is `after`, then its remaining stages.
-pub fn steps(stage: ItemStage, pr: Option<i64>, after: &[String]) -> Vec<String> {
+/// What a unit still waits on, in order: open items it is `after`, then its remaining stages (review only when its
+/// tier asks for one).
+pub fn steps(stage: ItemStage, pr: Option<i64>, review: bool, after: &[String]) -> Vec<String> {
     let on = |what: &str| pr.map_or_else(|| what.to_owned(), |n| format!("{what} of #{n}"));
     let ci = pr.map_or_else(|| "CI".to_owned(), |n| format!("CI on #{n}"));
     let mut out: Vec<String> = after.to_vec();
@@ -328,7 +335,13 @@ pub fn steps(stage: ItemStage, pr: Option<i64>, after: &[String]) -> Vec<String>
     ];
     let k = stage.index().min(rest.len());
     if stage != ItemStage::Verified {
-        out.extend(rest[k..].iter().cloned());
+        out.extend(
+            rest.iter()
+                .enumerate()
+                .skip(k)
+                .filter(|(i, _)| review || *i != ItemStage::PrOpen.index())
+                .map(|(_, s)| s.clone()),
+        );
     }
     out.truncate(8);
     out
@@ -626,6 +639,7 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     }
     let critical = critical(&counted, &units, &points);
     let mut prs: HashMap<UnitKey, i64> = HashMap::new();
+    let mut no_review: HashSet<UnitKey> = HashSet::new();
     for (key, ch) in &pr_of {
         let open = !matches!(
             ch.state,
@@ -633,6 +647,11 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         );
         if open || !prs.contains_key(key) {
             prs.insert(key.clone(), ch.pr_number.get());
+            if md.reviewless.contains(ch.change_id.as_str()) {
+                no_review.insert(key.clone());
+            } else {
+                no_review.remove(key);
+            }
         }
     }
     slower.sort_by_key(|(_, _, _, ratio)| std::cmp::Reverse(*ratio));
@@ -646,6 +665,7 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         slower,
         critical,
         prs,
+        no_review,
         fix_planning,
         wake_at: wake.get(),
     }

@@ -1,10 +1,8 @@
 //! The prompt table on "What agents are told", from the hub's own registry, so a new or renamed prompt can't be
-//! missing from the docs. A line that is exactly `{{prompt-table}}` in a page's markdown becomes it.
+//! missing from the docs. docsgen writes it between `<!-- prompt-table -->` and `<!-- /prompt-table -->`.
 
 use fleetd::hub::prompts::registry::{ENTRIES, INSTRUCTIONS};
 use fleetd_contracts::prompts::{Enforcement, PromptGroup};
-
-pub const MARKER: &str = "{{prompt-table}}";
 
 const GROUPS: [(PromptGroup, &str); 6] = [
     (PromptGroup::Lead, "Lead"),
@@ -17,7 +15,7 @@ const GROUPS: [(PromptGroup, &str); 6] = [
 
 /// Markdown: one `###` per group, then a row per prompt with its id, when it is sent and the safety rules it
 /// carries (prompt-only ones marked).
-pub fn table() -> String {
+pub fn table(_root: &std::path::Path) -> Result<String, String> {
     let mut md = String::new();
     for (group, title) in GROUPS {
         md.push_str(&format!(
@@ -44,19 +42,19 @@ pub fn table() -> String {
         }
         md.push('\n');
     }
-    md
+    Ok(md.trim_end().to_owned() + "\n")
 }
 
-/// Table-cell safe: a `|` would end the cell.
+/// Table-cell safe: nothing in it reads as markup.
 fn cell(text: &str) -> String {
-    text.replace('|', "\\|")
+    crate::md_text(text)
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn every_prompt_but_the_instructions_has_a_row() {
-        let table = super::table();
+        let table = super::table(std::path::Path::new(".")).unwrap();
         for e in fleetd::hub::prompts::registry::ENTRIES {
             assert_eq!(
                 table.contains(&format!("`{}`", e.id)),

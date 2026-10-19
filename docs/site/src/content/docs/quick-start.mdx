@@ -1,0 +1,177 @@
+---
+title: Quick start
+description: Set up the hub, pair the desktop app and send your first order.
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+You'll set up fleetd on one machine, pair the desktop app, and send a first piece of work.
+
+**Before you start**, have these on the machine:
+
+- macOS or Linux x64.
+- The `claude` CLI, logged in. fleetd uses your own Claude Code setup, including any proxy in `~/.claude/settings.json`.
+- `git`, and the `gh` CLI logged in to GitHub.
+- A GitHub repo to work on. fleetd branches from its default branch and merges back into it; see
+  [Which branch fleetd works on](/docs/projects-and-orders#branches).
+
+<Steps>
+
+1. **Install and run the setup wizard.**
+
+   Run this on the always-on machine that will be your [hub](/docs/glossary#hub), the machine that coordinates all
+   the work:
+
+   ```sh
+   curl -fsSL https://fleetd.sh | sh
+   ```
+
+   The installer starts the wizard, `fleetd init`. Press Enter to take the default at each question. It walks through
+   six parts:
+
+   | Part | What it sets up |
+   |---|---|
+   | 1. This machine | Makes this machine the hub and picks where it listens: your tailnet, your LAN, or this machine only. |
+   | 2. Logins | Checks `claude` and `gh`, and picks the commit author for your agents. |
+   | 3. Hub | Runs the hub as a background service. |
+   | 4. Workers | Picks the [workers](/docs/glossary#worker): the machines that run agents. This machine can be one. |
+   | 5. Project | Adds your first [project](/docs/glossary#project): a git repo on a worker. |
+   | 6. App & check | Prints a pairing code for the desktop app, then runs `fleetd doctor`. |
+
+   Expected output ends like this:
+
+   ```text
+   ◇  fleetd is ready ─────────────────────────────────────╮
+   │                                                       │
+   │  hub       http://hub.your-tailnet.ts.net:4790        │
+   │  workers   homeserver                                 │
+   │  project   ~/src/hello on homeserver                  │
+   │  app       code K4QW-7RNP                             │
+   │  PATH      add: export PATH="$HOME/.local/bin:$PATH"  │
+   ├───────────────────────────────────────────────────────╯
+   ```
+
+   Note the pairing code it prints, such as `K4QW-7RNP`. A line starting with ✗ ends with the command that fixes it. Run `fleetd init` again at any time: it keeps what
+   works and repairs the rest.
+
+2. **Connect a client.**
+
+   Pick the desktop app, or the terminal if this machine has no display. The choice carries through the next steps.
+
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
+
+   On the hub machine, open the app: it pairs with the hub by itself.
+
+   On another computer, install fleetd without the wizard, then open the app:
+
+   ```sh
+   curl -fsSL https://fleetd.sh | sh -s -- --no-init
+   ```
+
+   On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu. On the "Connect to your
+   fleetd hub" screen, enter the hub address and the pairing code from step 1. A code works once, for 15 minutes; run
+   `fleetd pair` on the hub for a new one.
+
+   The app opens on the board, with the cursor in the order box.
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   On the hub, create a [human key](/docs/glossary#human-key) for your terminal and keep it in a file only you can read:
+
+   ```sh
+   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
+   ```
+
+   The key is printed once, so this file is the only copy. Then save the MCP script from
+   [MCP clients](/docs/mcp-clients#script) as `~/mcp.sh`.
+
+   </TabItem>
+   </Tabs>
+
+3. **Send your first order.**
+
+   An [order](/docs/glossary#order) is one line that says what you want.
+
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
+
+   Type it in the order box and press Enter:
+
+   ```text
+   fix the typo in the README
+   ```
+
+   The order appears as a card on the board.
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   Send it with the `intake_submit` tool. `clientRequestId` is any unique string; it makes a retry safe.
+
+   ```sh
+   FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/human.key \
+     sh ~/mcp.sh intake_submit '{"clientRequestId":"first-order","text":"fix the typo in the README"}'
+   ```
+
+   Use the hub address from step 1. The answer names the order, such as `W1`.
+
+   </TabItem>
+   </Tabs>
+
+   The order starts the project's [lead](/docs/glossary#lead): a Claude session that plans the work and runs other
+   agents. It never writes code itself.
+
+4. **Answer its questions.**
+
+   When the lead needs a decision, it sends an [ask](/docs/glossary#ask). Reply in one line, such as `1 go`.
+
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
+
+   Open the inbox with ⌘I (Ctrl+I on Linux) and type the reply. See [Inbox and replies](/docs/desktop-app#reply).
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   ```sh
+   fleetd answer --key-file ~/.fleetd/human.key
+   fleetd answer "1 go" --key-file ~/.fleetd/human.key
+   ```
+
+   The first lists open questions with each choice; the second answers. Asks for secrets need the app.
+
+   </TabItem>
+   </Tabs>
+
+5. **Watch it finish.**
+
+   <Tabs syncKey="client">
+   <TabItem label="Desktop app">
+
+   The card shows the order's phase and every agent at work.
+
+   </TabItem>
+   <TabItem label="Without the app">
+
+   ```sh
+   fleetd status W1 --watch
+   ```
+
+   Until the lead has written the order's brief it says "W1 is a draft: waiting for the lead's brief", and `--watch`
+   then shows the order once the brief exists.
+
+   </TabItem>
+   </Tabs>
+
+   Each pull request goes through review, then the [merge train](/docs/glossary#merge-train) merges it once CI passes.
+   The order is done when the hub has run its checks and they all pass.
+
+</Steps>
+
+## Next steps
+
+- [Concepts](/docs/concepts): how the pieces fit together.
+- [Machines](/docs/machines): add more machines that run agents.
+- [Projects & orders](/docs/projects-and-orders): add repos and give them work.

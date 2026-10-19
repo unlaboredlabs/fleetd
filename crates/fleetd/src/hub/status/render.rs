@@ -13,8 +13,8 @@ use fleetd_contracts::prim::{Count, Int, Line, List, Text};
 use fleetd_contracts::status::{
     CiState, DoneRow, EtaBasis, Gate, GateKind, Headline, HeadlineFacts, HeadlineSource, Health,
     HealthCi, HealthMachine, HealthSlots, HealthUsage, InProgressRow, Marker, MoreCounts, NeedsYou,
-    NextRow, Progress, ScopePart, SleptAt, StaleMark, StaleSource, StatusDoc, StatusEta,
-    StatusScope, StatusSteer,
+    NextRow, Progress, ScopePart, SleptAt, SlotUtilization, StaleMark, StaleSource, StatusDoc,
+    StatusEta, StatusScope, StatusSteer,
 };
 use fleetd_contracts::tasks::{SlotState, TaskId};
 use fleetd_contracts::train::{ChangeId, ChangeState, GitHubRepo};
@@ -70,6 +70,8 @@ pub struct World {
     pub machines: Vec<Machine>,
     pub loads: HashMap<String, NodeLoad>,
     pub slots: SlotState,
+    /// The board's last hour.
+    pub slot_use: crate::hub::slots::usage::Utilization,
     pub asks: Vec<Ask>,
     pub estimates: Vec<EstRow>,
     /// The last day's events of the types risks and health read: (type, stored JSON).
@@ -273,7 +275,7 @@ impl World {
             .collect();
         let failures = item_failures(&items, &recent, &links);
         let steers = crate::hub::steer::store::recent(&hub.db, now - DAY_MS)?;
-        let model = hub.db.with(|c| {
+        let mut model = hub.db.with(|c| {
             Ok(super::estimate::ModelData::read(
                 c,
                 &orders,
@@ -281,6 +283,17 @@ impl World {
                 calibration,
             )?)
         })?;
+        // Only Changes before review need the rule, and reading it reads the order: few, not every Change in view.
+        model.reviewless = model
+            .changes
+            .iter()
+            .filter(|c| {
+                super::model::change_stage(c.state)
+                    == Some(fleetd_contracts::plan::ItemStage::PrOpen)
+            })
+            .filter(|c| hub.reviews.reviews_needed(c) == 0)
+            .map(|c| c.change_id.to_string())
+            .collect();
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -292,6 +305,7 @@ impl World {
             machines,
             loads,
             slots: hub.slots.state(),
+            slot_use: hub.slots.utilization(),
             asks,
             estimates,
             recent,
@@ -738,7 +752,14 @@ pub fn render(
         };
         let steps: Vec<Line<1, 80>> = p
             .filter(|p| !p.verified)
-            .map(|p| super::estimate::steps(p.stage, mo.prs.get(&key).copied(), after))
+            .map(|p| {
+                super::estimate::steps(
+                    p.stage,
+                    mo.prs.get(&key).copied(),
+                    !mo.no_review.contains(&key),
+                    after,
+                )
+            })
             .unwrap_or_default()
             .iter()
             .map(|x| line::<80>(x))
@@ -1368,6 +1389,27 @@ pub fn render(
             })
             .collect(),
         steers_unacked,
+        train_stuck: w
+            .model
+            .changes
+            .iter()
+            .filter(|c| matches!(c.state, ChangeState::Queued | ChangeState::Ready))
+            .filter(|c| {
+                s.orders
+                    .iter()
+                    .any(|o| o.w.workstream_id == c.workstream_id)
+            })
+            .filter_map(|c| {
+                let error = c.last_error.as_ref()?.as_str();
+                (!error.is_empty()).then(|| {
+                    (
+                        c.pr_number.get(),
+                        c.project_ref.machine_id.to_string(),
+                        error.to_owned(),
+                    )
+                })
+            })
+            .collect(),
         slower: mo
             .slower
             .iter()
@@ -1546,6 +1588,11 @@ pub fn render(
                 used: w.slots.used,
                 cap: w.slots.cap,
                 queued: w.slots.queued,
+                utilization: Some(SlotUtilization {
+                    window_ms: Count::unchecked(w.slot_use.window_ms.max(0)),
+                    pct: Int::unchecked(w.slot_use.pct.clamp(0, 100)),
+                    peak: Count::unchecked(w.slot_use.peak.max(0)),
+                }),
             },
         },
         stale: stale_list,

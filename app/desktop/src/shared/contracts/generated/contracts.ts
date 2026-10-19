@@ -1084,6 +1084,8 @@ export type HealthSlots = {
   queued: number;
   running: number;
   used: number;
+  /** How much of the cap was held recently. */
+  utilization?: SlotUtilization;
 };
 
 /** One claude usage window: the highest utilization of that type across machines. */
@@ -1375,7 +1377,7 @@ export type InsightNumber = {
   value: number;
 };
 
-export type InsightRule =
+export type KnownInsightRule =
   | "full_suite_repeat"
   | "repeat_no_change"
   | "failing_repeat"
@@ -1394,7 +1396,13 @@ export type InsightRule =
   | "first_token"
   | "startup"
   | "offline"
-  | "coverage";
+  | "coverage"
+  | "queue_wait"
+  | "contention"
+  | "idle_lead"
+  | "slots_underused";
+/** KnownInsightRule, or a value from a newer hub. */
+export type InsightRule = KnownInsightRule | (string & {});
 
 export type IntakeChannel = "app" | "mcp" | "lead";
 
@@ -2658,7 +2666,8 @@ export type KnownRiskRule =
   | "slipping"
   | "estimate_drift"
   | "steer_unacknowledged"
-  | "slower_than_usual";
+  | "slower_than_usual"
+  | "train_stuck";
 /** KnownRiskRule, or a value from a newer hub. */
 export type RiskRule = KnownRiskRule | (string & {});
 
@@ -2790,6 +2799,19 @@ export type SlotStatePerProject = {
   projectRef: ProjectRef;
   share: number;
   used: number;
+};
+
+/**
+ * Slot use the board measured over the last hour (or since the hub started, when that is later): held slot time,
+ * never a projection. Serial waits behind free slots are `time_insights` findings.
+ */
+export type SlotUtilization = {
+  /** floor(100 · slot time held / slot time the cap offered) over the window. */
+  pct: number;
+  /** The most slots held at once in the window. */
+  peak: number;
+  /** The window measured, at most an hour. */
+  windowMs: number;
 };
 
 /** `source.fresh`. */
