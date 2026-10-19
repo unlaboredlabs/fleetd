@@ -145,6 +145,15 @@ async function main() {
     for (const m of MACHINES) joinNode(HUB_URL, hubHome, m.id);
 
     client = await connectClient(key);
+    // FLEETD_LAB_APP_HANDOFF=<file>: a human key, as the desktop app pairs one, for an /app client watching the run
+    // (app/desktop/fixtures/kit/record.ts records the run's frames and call results into fixtures).
+    const handoff = process.env.FLEETD_LAB_APP_HANDOFF;
+    if (handoff !== undefined) {
+      const human = /fld_[a-z2-7]{20,}/u.exec(cli("hub", "key", "create", "--home", hubHome, "--human", "--name", "recorder"))?.[0];
+      if (human === undefined) throw new Error("hub key create --human printed no key");
+      fs.writeFileSync(handoff, `${JSON.stringify({ hubUrl: HUB_URL, key: human })}\n`, { mode: 0o600 });
+      ok(`app handoff written to ${handoff}`);
+    }
     const callTool = callToolWith(() => client!);
     ok(`MCP client connected; ${(await client.listTools()).tools.length} tools`);
     const cursor = async () => (await callTool("fleetd_status")).body.cursor as number;
