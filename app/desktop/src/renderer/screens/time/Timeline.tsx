@@ -44,6 +44,27 @@ const useSize = (ref: RefObject<HTMLElement | null>): { width: number; height: n
   return size;
 };
 
+const currentDpr = () => window.devicePixelRatio || 1;
+
+/**
+ * Changes of the device pixel ratio (the window moved between a Retina and a 1x display, or the zoom changed): the
+ * media query for the current ratio stops matching, and the canvases repaint at the new backing scale.
+ */
+const watchDpr = (onChange: () => void): (() => void) => {
+  let mq: MediaQueryList | undefined;
+  const arm = () => {
+    mq?.removeEventListener("change", fire);
+    mq = window.matchMedia(`(resolution: ${currentDpr()}dppx)`);
+    mq.addEventListener("change", fire);
+  };
+  function fire() {
+    arm();
+    onChange();
+  }
+  arm();
+  return () => mq?.removeEventListener("change", fire);
+};
+
 const sizeCanvas = (c: HTMLCanvasElement, w: number, h: number, dpr: number) => {
   const pw = Math.max(1, Math.round(w * dpr));
   const ph = Math.max(1, Math.round(h * dpr));
@@ -68,7 +89,7 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
   const outer = useSize(scrollerRef);
   // The canvas covers the visible rows only; the scroller's own height scrolls under it.
   const size = { width: track.width, height: Math.min(outer.height, m.rows.length * ROW_H) };
-  const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  const dpr = useSyncExternalStore(watchDpr, currentDpr);
   const [v0, v1] = view ?? [m.startMs, m.endMs];
   const tickList = useMemo(() => ticks(v0, v1), [v0, v1]);
   // The category colours come from the tokens, so they are read again when the theme changes; patterns are cached.
@@ -242,7 +263,7 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
         <div style={{ width: LABEL_W, flex: "none" }} />
         <div className={cx(s.axisTicks)}>
           {tickList.map((t) => (
-            <span key={t} className={cx(s.tick)} style={{ left: `${((t - v0) / (v1 - v0)) * 100}%` }}>
+            <span key={t} className={cx(s.tick)} style={{ left: ((t - v0) / (v1 - v0)) * size.width }}>
               {v1 - v0 < 10 * 60_000 ? clockMs(t) : clockMs(t).slice(0, 5)}
             </span>
           ))}
