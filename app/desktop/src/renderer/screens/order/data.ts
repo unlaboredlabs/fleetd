@@ -11,7 +11,7 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectLeadStream, selectOrder, selectOrderEvents } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { toast } from "../../ui";
-import type { Streamed } from "./conversation";
+import type { Streamed } from "./conversationModel";
 import { mergeSteer } from "./receipts";
 import { afterCall, reconnectWatcher, redirectId, type CallResult, type Sending } from "./sending";
 
