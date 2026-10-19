@@ -14,6 +14,9 @@ const pages = {
     <h2 class="case">Why you are woken</h2>
     <ul class="case"><li>The human settled 2 of your asks.</li><li>See the answers since your last wake.</li></ul>
     <div class="case scroller">${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} in a list that scrolls</div>`).join("")}</div>
+    <p class="case">A dialog title<span class="sr-only">read aloud to screen readers only, far longer than its one pixel box</span></p>
+    <p class="case">Close<span class="sr-only-inset">a second hidden label, clipped with clip-path instead</span></p>
+    <div class="case scroller"><div class="sticky-head">Opaque sticky header</div>${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} scrolls under the header <button>Open</button></div>`).join("")}</div>
     <div class="case w200" style="overflow-x: auto"><span class="nowrap">A wide line that scrolls sideways inside its own scroller</span></div>
   </div>`,
   // Every marked element must be reported, and nothing else.
@@ -36,6 +39,13 @@ const pages = {
     <p class="case" data-testid="exp-raw-heading">## Why you are woken</p>
     <p class="case" data-testid="exp-raw-bullet">- D3 share.w2_after_w1 = W2 writer starts after W1's PR merges</p>
     <p class="case" data-testid="exp-raw-bold">This is **important** text</p>
+    <div class="case scroller">
+      ${Array.from({ length: 9 }, (_, i) => `<div>Row ${i + 1} in a list that scrolls</div>`).join("")}
+      <div data-testid="exp-overlap-scrolled-a">A row far below the fold</div>
+      <div class="pull-up" data-testid="exp-overlap-scrolled-b">drawn over by the next one</div>
+    </div>
+    <div class="case scroller"><div class="sticky-clear" data-testid="exp-overlap-sticky-a">See-through sticky header</div>${Array.from({ length: 12 }, (_, i) => `<div data-testid="exp-overlap-sticky-b">Row ${i + 1} shows through it</div>`).join("")}</div>
+    <p class="case">Hidden label<span class="sr-only" data-testid="exp-raw-sronly">order eac3e0fe-ec61-4954-4f78-67240a80c42b</span></p>
     <span class="edge-left" data-testid="exp-edge-left">Touching the left edge</span>
     <button class="edge-right" data-testid="exp-edge-right">Right</button>
   </div>`,
