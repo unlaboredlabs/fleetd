@@ -9,6 +9,7 @@ use super::runner::{CheckContext, CheckRunner, ran_by_of};
 use crate::clock::Clock;
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentInput, Incidents};
+use crate::hub::orders::open_work::{CLOSED_ON_PURPOSE, OpenWork, ids, listed};
 use crate::hub::store::{EventLog, NewEvent, StoreError};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
@@ -177,7 +178,7 @@ impl Claims {
 
     /// Stores the claim and acts on it. The workstream is re-read: it may have been stopped while checks ran. Runs with
     /// the lock held and nothing awaited, so a superseding claim cannot cut it off halfway.
-    fn conclude(&self, claim: &Claim) -> Result<(), StoreError> {
+    fn conclude(&self, claim: &Claim, close_over: Option<&str>) -> Result<(), StoreError> {
         self.records.finish(claim)?;
         let Some(w) = self.ports.workstream(&claim.workstream_id) else {
             return Ok(());
@@ -191,10 +192,11 @@ impl Claims {
             if w.state != WorkstreamState::Verifying {
                 return Ok(());
             }
-            // Review fixes spawned while it verified would be cancelled as leftovers once it is done: it stays open.
-            let fixes = self.ports.review_fixes(&w);
-            if !fixes.is_empty() {
-                return self.hold(&w, claim, fixes);
+            // Write work spawned while it verified (a review's fixes) would be dropped once it is done: it stays open,
+            // unless the lead closes over it on purpose.
+            let work = self.ports.open_work(&w);
+            if close_over.is_none() && !work.is_empty() {
+                return self.hold(&w, claim, work);
             }
             let done = Workstream {
                 state: WorkstreamState::Done,
@@ -208,12 +210,15 @@ impl Claims {
                 format!("{label} passed: all {} checks", claim.results.len()),
                 serde_json::json!({ "claimId": claim.claim_id, "workstreamId": w.workstream_id }),
             )?;
-            self.emit(
-                &w,
-                HubEventType::WorkstreamDone,
-                format!("{} is done: {}", w.workstream_id, w.title),
-                serde_json::json!({ "workstreamId": w.workstream_id, "claimId": claim.claim_id }),
-            )?;
+            let mut data =
+                serde_json::json!({ "workstreamId": w.workstream_id, "claimId": claim.claim_id });
+            let mut summary = format!("{} is done: {}", w.workstream_id, w.title);
+            if let Some(why) = close_over.filter(|_| !work.is_empty()) {
+                let reason = format!("{CLOSED_ON_PURPOSE}{why} (dropping {})", listed(&work));
+                summary = format!("{} is done, {reason}", w.workstream_id);
+                data["reason"] = serde_json::json!(reason);
+            }
+            self.emit(&w, HubEventType::WorkstreamDone, summary, data)?;
             return self.estimates.record_done(&w.workstream_id);
         }
         let failures: Vec<CheckResult> = claim
@@ -266,14 +271,14 @@ impl Claims {
         Ok(())
     }
 
-    /// Every check passed while review-fix work is open: back to running, recorded with why, and the lead is told.
-    fn hold(&self, w: &Workstream, claim: &Claim, fixes: Vec<String>) -> Result<(), StoreError> {
+    /// Every check passed while write work has not landed: back to running, recorded with why, and the lead is told.
+    fn hold(&self, w: &Workstream, claim: &Claim, work: Vec<OpenWork>) -> Result<(), StoreError> {
         self.ports.put_workstream(&Workstream {
             state: WorkstreamState::Running,
             updated_at: now_ts(self.clock.as_ref()),
             ..w.clone()
         });
-        let reason = format!("review fixes still open: {}", fixes.join(", "));
+        let reason = format!("work that hasn't landed is still open: {}", listed(&work));
         self.emit(
             w,
             HubEventType::WorkstreamState,
@@ -293,7 +298,7 @@ impl Claims {
             ClaimWake::Held {
                 claim_id: claim.claim_id.clone(),
                 workstream_id: w.workstream_id.clone(),
-                fixes,
+                work,
             },
         );
         Ok(())
@@ -305,6 +310,7 @@ impl Claims {
         claim_id: ClaimId,
         by: String,
         at: Timestamp,
+        close_over: Option<String>,
     ) -> Claim {
         let results = self.run_checks(&w, &claim_id).await;
         let outcome = if results.iter().all(|r| r.result == CheckOutcome::Pass) {
@@ -322,7 +328,7 @@ impl Claims {
         };
         // Waiting for the lock stays abortable, so a superseded claim gives way; once it holds it, it finishes.
         let _held = self.lock.lock().await;
-        if let Err(error) = self.conclude(&claim) {
+        if let Err(error) = self.conclude(&claim, close_over.as_deref()) {
             tracing::warn!(claim_id = %claim.claim_id, %error, "claim not concluded");
         }
         claim
@@ -333,6 +339,7 @@ impl Claims {
         workstream_id: &WorkstreamId,
         by: &str,
         project_ref: Option<&ProjectRef>,
+        close_over: Option<&str>,
     ) -> Result<(ClaimId, JoinHandle<Claim>), Refusal> {
         let _held = self.lock.lock().await;
         let not_found = || {
@@ -377,15 +384,16 @@ impl Claims {
             }
             _ => {}
         }
-        let fixes = self.ports.review_fixes(&w);
-        if !fixes.is_empty() {
+        let work = self.ports.open_work(&w);
+        if close_over.is_none() && !work.is_empty() {
             return Err(invalid(
                 format!(
-                    "{workstream_id} has review fixes still open: {}. It is done only once they land.",
-                    fixes.join(", ")
+                    "{workstream_id} has write work that hasn't landed: {} (ids, for tools only: {}). It is done only once that lands.",
+                    listed(&work),
+                    ids(&work)
                 ),
                 Some(
-                    "Say so in chat in one line. Let them land, then claim again; cancel one only if it truly isn't needed, and say why.",
+                    "Say so in chat in one line, in plain words, no ids. Let it land, then claim again. If some of it is truly not needed or failed for good, claim with closeOver set to why, and say why in chat.",
                 ),
             ));
         }
@@ -419,11 +427,13 @@ impl Claims {
             )
             .map_err(store_refusal)?;
         }
-        let handle =
-            tokio::spawn(
-                self.clone()
-                    .run_claim(verifying, claim_id.clone(), by.to_owned(), at),
-            );
+        let handle = tokio::spawn(self.clone().run_claim(
+            verifying,
+            claim_id.clone(),
+            by.to_owned(),
+            at,
+            close_over.map(str::to_owned),
+        ));
         // This claim supersedes one still running on the same workstream.
         if let Some(previous) = self
             .running
@@ -438,13 +448,17 @@ impl Claims {
 
     /// Starts a claim on the workstream and waits up to the inline wait for its checks. With `project_ref`, refuses
     /// another project's workstream. A new claim supersedes one still running on the same workstream.
+    /// With `close_over`, the workstream may close over its unlanded write work, which is then dropped with that why.
     pub async fn claim_done(
         self: &Arc<Self>,
         workstream_id: &WorkstreamId,
         by: &str,
         project_ref: Option<&ProjectRef>,
+        close_over: Option<&str>,
     ) -> Result<ClaimDoneOutcome, Refusal> {
-        let (claim_id, mut handle) = self.start(workstream_id, by, project_ref).await?;
+        let (claim_id, mut handle) = self
+            .start(workstream_id, by, project_ref, close_over)
+            .await?;
         let inline = tokio::select! {
             joined = &mut handle => Some(joined),
             () = self.clock.sleep(self.inline_wait) => None,
@@ -461,7 +475,7 @@ impl Claims {
                     && state == WorkstreamState::Running
                 {
                     format!(
-                        "Every check passed, but {workstream_id} stays open: review fixes are still open (see the wake). Say so in chat; claim again once they land."
+                        "Every check passed, but {workstream_id} stays open: write work of it hasn't landed (see the wake). Say so in chat in plain words; claim again once it lands."
                     )
                 } else if claim.outcome == ClaimOutcome::Pass {
                     format!(

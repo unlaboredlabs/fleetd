@@ -118,14 +118,16 @@ pub fn claim_held_line(
     set: &PromptSet,
     claim_id: &ClaimId,
     workstream_id: &WorkstreamId,
-    fixes: &[String],
+    work: &[crate::hub::orders::open_work::OpenWork],
 ) -> String {
+    use crate::hub::orders::open_work::{ids, listed};
     set.render(
         "wake.claim_held",
         &[
             ("claimId", claim_id),
             ("workstreamId", workstream_id),
-            ("fixes", &fixes.join(", ")),
+            ("work", &listed(work)),
+            ("ids", &ids(work)),
         ],
     )
 }

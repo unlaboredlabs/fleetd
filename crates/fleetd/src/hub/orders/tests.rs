@@ -225,57 +225,101 @@ fn cards_get_a_short_title() {
 }
 
 #[test]
-fn review_fix_work_is_open_defect_fixes_and_prs_sent_back_by_a_review() {
-    use super::review_fixes::{Fix, select};
-    use crate::hub::valuebar::rules::PrVerdict;
+fn an_orders_open_work_is_its_unlanded_write_work_whatever_it_serves() {
+    use super::open_work::{Item, select};
     let id = fleetd_contracts::ledger::WorkstreamId::new("W14").unwrap();
-    let defect = json!({ "serves": "defect: the share link goes stale after a toggle" });
     let tasks = vec![
-        task("T1", "write", "done", json!({ "serves": "done:0" })),
-        task("T4", "write", "running", defect.clone()),
-        task("T5", "write", "queued", json!({ "serves": "done:0" })),
-        task("T6", "write", "cancelled", defect.clone()),
-        task("T7", "review", "running", json!({})),
+        task(
+            "T1",
+            "write",
+            "done",
+            json!({ "serves": "done:0", "title": "Share card" }),
+        ),
+        // A fix of non-blocking review findings, spawned as serving the brief.
+        task(
+            "T4",
+            "write",
+            "running",
+            json!({ "serves": "done:1", "title": "Fresh link after changes" }),
+        ),
+        // The original writer, continued by a message.
+        task(
+            "T5",
+            "write",
+            "idle",
+            json!({ "serves": "done:0", "title": "Uncap counts" }),
+        ),
+        task(
+            "T6",
+            "write",
+            "failed",
+            json!({ "serves": "defect: unpriced tokens", "title": "Flag unpriced tokens" }),
+        ),
+        task("T7", "write", "cancelled", json!({ "serves": "done:0" })),
+        task("T8", "review", "running", json!({})),
     ];
-    let mut sent_back = change("X1", 11, "T1", "reviewing");
-    sent_back.reviews.clear();
-    let mut merged = change("X2", 12, "T1", "merged");
-    merged.reviews.clear();
-    let mut fix_pr = change("X3", 13, "T4", "ci");
-    fix_pr.reviews.clear();
-    fix_pr.serves =
-        fleetd_contracts::ledger::Serves::new("defect: unpriced tokens are dropped").unwrap();
-    let mut plain = change("X4", 14, "T5", "reviewing");
-    plain.reviews.clear();
-    let verdicts = |c: &Change| match c.pr_number.get() {
-        11 | 12 => vec![PrVerdict {
-            task_id: "T2".into(),
-            sha: "b".repeat(40),
-            blocking: 2,
-        }],
-        _ => vec![PrVerdict {
-            task_id: "T2".into(),
-            sha: "b".repeat(40),
-            blocking: 0,
-        }],
-    };
+    // A review found nothing blocking; it still has not landed.
+    let mut in_review = change("X1", 11, "T5", "reviewing");
+    in_review.reviews.clear();
+    let changes = vec![
+        in_review,
+        change("X2", 12, "T1", "merged"),
+        change("X3", 13, "T4", "ci"),
+        change("X4", 14, "T9", "needs_rebase"),
+    ];
 
-    let open = select(&id, &tasks, &[sent_back, merged, fix_pr, plain], verdicts);
+    let open = select(&id, &tasks, &changes);
     assert_eq!(
-        open.iter().map(|f| f.fix.clone()).collect::<Vec<_>>(),
-        vec![
-            Fix::Task(fleetd_contracts::tasks::TaskId::new("T4").unwrap()),
-            Fix::Pr(fleetd_contracts::train::ChangeId::new("X1").unwrap()),
-            Fix::Pr(fleetd_contracts::train::ChangeId::new("X3").unwrap()),
-        ],
-        "a live defect fix and the PRs a review sent back or that fix a defect; never what landed, ended or only serves the brief"
-    );
-    assert_eq!(
-        open.iter().map(|f| f.line.as_str()).collect::<Vec<_>>(),
+        open.iter().map(|w| w.item.clone()).collect::<Vec<_>>(),
         [
-            "T4 \"T4 work\" (running)",
-            "o/testbed#11 (changes requested)",
-            "o/testbed#13 (fixes a defect)"
+            Item::Task(fleetd_contracts::tasks::TaskId::new("T4").unwrap()),
+            Item::Task(fleetd_contracts::tasks::TaskId::new("T5").unwrap()),
+            Item::Task(fleetd_contracts::tasks::TaskId::new("T6").unwrap()),
+            Item::Pr(fleetd_contracts::train::ChangeId::new("X1").unwrap()),
+            Item::Pr(fleetd_contracts::train::ChangeId::new("X4").unwrap()),
+        ],
+        "never what landed, was cancelled, is on its way in, or isn't write work"
+    );
+    let lines: Vec<&str> = open.iter().map(|w| w.line.as_str()).collect();
+    assert_eq!(
+        lines,
+        [
+            "\"Fresh link after changes\" (running)",
+            "\"Uncap counts\" (waiting for a message)",
+            "\"Flag unpriced tokens\" (failed)",
+            "the pull request for \"Uncap counts\" (in review)",
+            "a pull request in o/testbed (needs a rebase)",
         ]
     );
+    let id_like = regex::Regex::new(r"\b[TXWC][0-9]+\b|#[0-9]+").unwrap();
+    assert!(
+        lines.iter().all(|l| !id_like.is_match(l)),
+        "plain words, no ids: {lines:?}"
+    );
+}
+
+#[test]
+fn the_done_sweep_keeps_unlanded_write_work_and_cancels_the_rest_unless_closed_on_purpose() {
+    use super::open_work::{select, sweep};
+    let id = fleetd_contracts::ledger::WorkstreamId::new("W14").unwrap();
+    let tasks = vec![
+        task("T3", "review", "running", json!({})),
+        task("T4", "write", "running", json!({ "serves": "done:1" })),
+    ];
+    let mut open_pr = change("X1", 11, "T4", "reviewing");
+    open_pr.reviews.clear();
+    let changes = vec![open_pr];
+    let t = |s: &str| fleetd_contracts::tasks::TaskId::new(s).unwrap();
+    let x1 = fleetd_contracts::train::ChangeId::new("X1").unwrap();
+
+    // The W1/T4 sweep: the judge goes, the fix and its PR stay, and the lead is told about them.
+    let kept = sweep(&tasks, select(&id, &tasks, &changes), false);
+    assert_eq!(kept.cancel, [t("T3")]);
+    assert_eq!(kept.keep_prs, [x1]);
+    assert_eq!(kept.kept.len(), 2);
+
+    // Closed on purpose: all of it goes.
+    let dropped = sweep(&tasks, select(&id, &tasks, &changes), true);
+    assert_eq!(dropped.cancel, [t("T3"), t("T4")]);
+    assert!(dropped.keep_prs.is_empty() && dropped.kept.is_empty());
 }

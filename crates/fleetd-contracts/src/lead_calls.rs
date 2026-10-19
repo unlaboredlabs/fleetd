@@ -253,11 +253,16 @@ pub struct TaskCancelCall {
     pub reason: Option<Text<1, 200>>,
 }
 
-/// `fleetd claim done --workstream W1`. Moves the workstream to verifying and runs its frozen done-when checks.
+/// `fleetd claim done --workstream W1 [--close-over "<why>"]`. Moves the workstream to verifying and runs its frozen
+/// done-when checks. It is refused, or the workstream stays open, while write work of it has not landed, unless
+/// `close_over` says why closing over that work is meant; that work is then dropped with this why.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimDoneCall {
     pub workstream_id: WorkstreamId,
+    #[serde(default)]
+    pub close_over: Option<Text<1, 300>>,
 }
 
 /// `fleetd change enqueue <PR URL> [--task T1] [--workstream W1] [--serves s] [--tier S|M|L]`. Absent fields come

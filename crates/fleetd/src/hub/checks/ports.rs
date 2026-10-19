@@ -24,12 +24,11 @@ pub enum ClaimWake {
         claim_id: ClaimId,
         workstream_id: WorkstreamId,
     },
-    /// Every check passed, but review-fix work is still open, so the workstream stays open.
+    /// Every check passed, but write work of it has not landed, so the workstream stays open.
     Held {
         claim_id: ClaimId,
         workstream_id: WorkstreamId,
-        /// One line per open fix.
-        fixes: Vec<String>,
+        work: Vec<crate::hub::orders::open_work::OpenWork>,
     },
 }
 
@@ -128,8 +127,8 @@ pub trait Ports: Send + Sync + 'static {
     fn task(&self, id: &TaskId) -> Option<Task>;
     /// The workstream's tasks, newest first.
     fn tasks_of(&self, project: &ProjectRef, workstream: &WorkstreamId, limit: usize) -> Vec<Task>;
-    /// Its open review-fix work (`orders::review_fixes`), one line each: a workstream never closes over it.
-    fn review_fixes(&self, workstream: &Workstream) -> Vec<String>;
+    /// Its write work that has not landed (`orders::open_work`): a workstream never closes over it by accident.
+    fn open_work(&self, workstream: &Workstream) -> Vec<crate::hub::orders::open_work::OpenWork>;
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
     // ledger: Asks
     fn file_human_ask(&self, ask: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>>;

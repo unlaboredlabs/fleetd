@@ -93,10 +93,10 @@ impl Ports for HubPorts {
             ClaimWake::Held {
                 claim_id,
                 workstream_id,
-                fixes,
+                work,
             } => Trigger::Line {
                 kind: LineKind::ClaimPassed,
-                text: render::claim_held_line(&set, &claim_id, &workstream_id, &fixes),
+                text: render::claim_held_line(&set, &claim_id, &workstream_id, &work),
             },
         };
         hub.leads.wakes.trigger(project, trigger);
@@ -177,18 +177,15 @@ impl Ports for HubPorts {
         };
         logged(hub.tasks.list(&filter), "listing tasks").unwrap_or_default()
     }
-    fn review_fixes(&self, workstream: &Workstream) -> Vec<String> {
+    fn open_work(&self, workstream: &Workstream) -> Vec<crate::hub::orders::open_work::OpenWork> {
         let Some(hub) = self.hub() else {
             return Vec::new();
         };
-        crate::hub::orders::review_fixes::open(
+        crate::hub::orders::open_work::open(
             &hub,
             &workstream.project_ref,
             &workstream.workstream_id,
         )
-        .into_iter()
-        .map(|f| f.line)
-        .collect()
     }
     fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>> {
         Box::pin(async move {

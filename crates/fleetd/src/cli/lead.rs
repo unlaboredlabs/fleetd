@@ -54,7 +54,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              steer a running task (at its next step; --now stops its current step), answer a
              waiting one, or continue an ended one
   task cancel <T> [--reason <r>]
-  claim done --workstream <W>
+  claim done --workstream <W> [--close-over "<why>"]
              fleetd runs the workstream's done-when checks itself; only all of them passing makes
              it done (exit 1 when a check did not pass)
   review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
@@ -556,11 +556,17 @@ pub fn parse_lead_args(
         },
         Some("claim") => {
             if sub != Some("done") || !rest.is_empty() {
-                return Err("expected fleetd claim done --workstream <W>".into());
+                return Err(
+                    "expected fleetd claim done --workstream <W> [--close-over \"<why>\"]".into(),
+                );
             }
-            only(&["workstream"])?;
+            only(&["workstream", "close-over"])?;
             required(&["workstream"])?;
-            json!({ "op": "claim_done", "workstreamId": v.str("workstream") })
+            defined(vec![
+                ("op", s(Some("claim_done"))),
+                ("workstreamId", s(v.str("workstream"))),
+                ("closeOver", s(v.str("close-over"))),
+            ])
         }
         Some("review") => {
             if sub != Some("verdict") || !rest.is_empty() {
@@ -1914,7 +1920,7 @@ mod tests {
             ),
             (
                 &["claim", "W1"],
-                "expected fleetd claim done --workstream <W>",
+                "expected fleetd claim done --workstream <W> [--close-over \"<why>\"]",
             ),
             (&["change", "enqueue"], "--pr is required"),
             (
