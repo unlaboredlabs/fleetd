@@ -1,11 +1,11 @@
 // The frame's window-level wiring: menu clicks, things main asks it to open, notifications, Esc, and the held ⌘
 // that shows the sidebar's jump numbers.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { OpenTarget } from "../../../shared/app";
 import { closeOverlay, runCommand } from "../palette";
 import { onHubEvent } from "./hubFeed";
 import { currentRoute, navigate } from "./navigation";
-import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, type Policy } from "./notifier";
+import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type Policy } from "./notifier";
 import { BOARD, type Route } from "./routes";
 
 const platform = window.fleetd.platform;
@@ -45,26 +45,31 @@ export const useMainProcess = (): void => {
 
 const CHECK_EVERY_MS = 15_000;
 
+// The hub's attention policy as last read; one per window, shared with the other notifications (the Status digest).
+let policy: Policy = FALLBACK_POLICY;
+
+/** Inside the hub's quiet hours now: only urgent items may notify. */
+export const quietNow = (nowMs: number): boolean => quietAt(policy, nowMs);
+
 /**
  * Posts the "needs you" notification the hub's attention rules and policy allow, at most one per coalescing window.
  * The check is a plain timer: it renders nothing, so an idle window doesn't repaint.
  */
 export const useNotifications = (live: boolean): void => {
   const [notifier] = useState(() => new Notifier());
-  const policy = useRef<Policy>(FALLBACK_POLICY);
 
   useEffect(() => {
     if (!live) return;
     let cancelled = false;
     const refresh = async () => {
       const out = await window.fleetd.hub.call("attention_policy", {});
-      if (!cancelled && out.ok) policy.current = policyFrom(out.output) ?? FALLBACK_POLICY;
+      if (!cancelled && out.ok) policy = policyFrom(out.output) ?? FALLBACK_POLICY;
     };
     const check = () => {
       const now = Date.now();
-      if (policyStale(policy.current, now)) void refresh();
+      if (policyStale(policy, now)) void refresh();
       // Until the store exposes the open asks, an ask answered within the window still shows.
-      const due = notifier.due(now, policy.current, () => true);
+      const due = notifier.due(now, policy, () => true);
       if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due });
     };
     void refresh();
@@ -80,7 +85,7 @@ export const useNotifications = (live: boolean): void => {
       offEvents();
       clearInterval(timer);
     };
-  }, [live, notifier, policy]);
+  }, [live, notifier]);
 };
 
 /** Esc closes the inbox, else leaves an order for the board. Menus, sheets and the palette take it first. */
