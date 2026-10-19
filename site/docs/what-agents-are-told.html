@@ -591,7 +591,7 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 </tr>
 <tr>
 <td><code dir="auto">steer.message</code></td>
-<td>per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now</td>
+<td>per steer (steer_send, task message), straight to the agent, at its next tool boundary or now</td>
 <td>asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only)</td>
 </tr>
 <tr>
@@ -606,7 +606,7 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 </tr>
 <tr>
 <td><code dir="auto">wake.order_stopped</code></td>
-<td>per order_stop</td>
+<td>per order that project_stop stops</td>
 <td>does no more work on a stopped order (prompt only)</td>
 </tr>
 <tr>

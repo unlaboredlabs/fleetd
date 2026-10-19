@@ -301,6 +301,34 @@ pub async fn deliver(
     workstream_id: Option<&WorkstreamId>,
 ) -> Result<Vec<String>, ToolError> {
     check(hub, caller, ids)?;
+    place(hub, ids, project, folder, workstream_id).await
+}
+
+/// Marks the attachments as the project's, before they are placed: kept past the unused-upload cleanup, and readable
+/// by anyone who reads the project.
+pub fn claim(hub: &Hub, ids: &[AttachmentId], project: &ProjectRef) -> Result<(), ToolError> {
+    let key = format!("{}/{}", project.machine_id, project.project_id);
+    for id in ids {
+        let n: i64 = id.as_str()[1..].parse().unwrap_or(0);
+        hub.db.with(|c| {
+            c.execute(
+                "UPDATE attachments SET project = ?1 WHERE n = ?2",
+                params![key, n],
+            )?;
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+
+/// [`deliver`] for attachments already checked (a held chat message's, sent later).
+pub async fn place(
+    hub: &Hub,
+    ids: &[AttachmentId],
+    project: &ProjectRef,
+    folder: &str,
+    workstream_id: Option<&WorkstreamId>,
+) -> Result<Vec<String>, ToolError> {
     let mut lines = Vec::new();
     let mut used = std::collections::HashSet::new();
     for id in ids {

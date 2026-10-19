@@ -27,6 +27,8 @@ use crate::hub::store::{StoreError, WaitInput};
 const LEAD_READ_WAIT: Duration = Duration::from_secs(5);
 /// Streamed text is folded into the chat this often.
 const STREAM_TICK: Duration = Duration::from_millis(250);
+/// Held messages are tried again this often, besides on a lead starting and its machine coming online.
+const HELD_RETRY: Duration = Duration::from_secs(60);
 
 fn store_error(e: StoreError) -> ToolError {
     tracing::error!(error = %e, "chat store");
@@ -148,13 +150,15 @@ fn waiting_reason(e: &crate::hub::leads::LeadError) -> String {
     }
 }
 
-/// `chat_send`: the message is stored at once, then goes to the lead. The same clientRequestId returns the stored
-/// message and sends nothing again.
+/// `chat_send`: a person's message is stored at once, held until it is in the lead's session, then sent. The same
+/// clientRequestId returns the stored message, and tries again to send it if it has not gone yet.
 pub async fn send(
     hub: &Arc<Hub>,
     caller: &Caller,
     input: ChatSendInput,
 ) -> Result<ChatSendOutput, ToolError> {
+    // The lead reads it as the human's words, so only a person's device may write it.
+    crate::hub::orders::notes::require_human(caller, "chat_send")?;
     let r = input.project_ref.clone();
     require(caller, Role::Operate, Some(&r.machine_id))?;
     if hub.store.project_get(&r).map_err(store_error)?.is_none() {
@@ -169,60 +173,41 @@ pub async fn send(
         .as_ref()
         .map(|a| a.iter().cloned().collect())
         .unwrap_or_default();
-    attachments::check(hub, caller, &ids)?;
     let request = format!("{}:{}", caller.key_id, input.client_request_id);
-    if let Some(stored) = hub.chat.by_request(&r, &request).map_err(store_error)? {
-        return Ok(ChatSendOutput {
-            message: stored,
-            lead_waiting: None,
-            next: None,
-            truncated: None,
-        });
-    }
-    ensure(hub, &r).await.map_err(store_error)?;
-    let (lead, lead_waiting) = match hub.leads.leads.auto_start(&r).await {
-        AutoStart::Running(lead) | AutoStart::Started(lead) => (Some(lead), None),
-        AutoStart::Off => (
-            None,
-            Some("This project's lead starts only by hand (lead.autoStart: false in its policy). Start it with lead_start; it then reads this message.".to_owned()),
-        ),
-        AutoStart::Held(e) => (None, Some(waiting_reason(&e))),
-    };
-    let delivery = match &lead {
-        Some(l) if l.state == LeadState::Working => ChatDelivery::Steer,
-        Some(l) if l.state == LeadState::Starting => ChatDelivery::Queued,
-        Some(_) => ChatDelivery::Turn,
-        None => ChatDelivery::Queued,
-    };
-    let (mut message, _) = hub
-        .chat
-        .add(
-            &r,
-            NewMessage {
-                author: Some(ChatAuthor::Human),
-                text: input.text.to_string(),
-                attachments: attachments::refs(hub, &ids)?,
-                request: Some(request),
-                by: Some(caller.name.to_string()),
-                delivery: Some(delivery),
-                ..Default::default()
-            },
-        )
-        .map_err(store_error)?;
-    match lead {
-        Some(lead) => {
-            let thread = ThreadRef {
-                machine_id: r.machine_id.clone(),
-                thread_id: lead.thread_id,
-            };
-            let queued = deliver(hub, caller, &r, &thread, &message, &ids).await?;
-            if queued && delivery != ChatDelivery::Queued {
-                message.delivery = Some(ChatDelivery::Queued);
-                hub.chat.put(&message).map_err(store_error)?;
+    let stored = hub.chat.by_request(&r, &request).map_err(store_error)?;
+    let message = match stored {
+        Some(message) => message,
+        None => {
+            attachments::check(hub, caller, &ids)?;
+            ensure(hub, &r).await.map_err(store_error)?;
+            let (message, created) = hub
+                .chat
+                .add(
+                    &r,
+                    NewMessage {
+                        author: Some(ChatAuthor::Human),
+                        text: input.text.to_string(),
+                        attachments: attachments::refs(hub, &ids)?,
+                        request: Some(request),
+                        by: Some(caller.name.to_string()),
+                        delivery: Some(ChatDelivery::Queued),
+                        held: true,
+                        ..Default::default()
+                    },
+                )
+                .map_err(store_error)?;
+            if created {
+                // The project's from now on, so the unused-upload cleanup keeps them and the chat can show them.
+                attachments::claim(hub, &ids, &r)?;
             }
+            message
         }
-        None => hub.chat.hold(&message).map_err(store_error)?,
-    }
+    };
+    let (message, lead_waiting) = if hub.chat.is_held(&message).map_err(store_error)? {
+        go(hub, &r, message).await
+    } else {
+        (message, None)
+    };
     state(hub, &r).map_err(store_error)?;
     Ok(ChatSendOutput {
         message,
@@ -235,25 +220,76 @@ pub async fn send(
     })
 }
 
+/// Sends a held message to the project's lead, starting it if it has none: released once its session or the
+/// offline queue took it, with how it went in; still held, with why, when it couldn't go.
+async fn go(
+    hub: &Arc<Hub>,
+    r: &ProjectRef,
+    mut message: fleetd_contracts::chat::ChatMessage,
+) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
+    let lead = match hub.leads.leads.auto_start(r).await {
+        AutoStart::Running(lead) | AutoStart::Started(lead) => lead,
+        AutoStart::Off => {
+            return (
+                message,
+                Some("This project's lead starts only by hand (lead.autoStart: false in its policy). Start it with lead_start; it then reads this message.".to_owned()),
+            );
+        }
+        AutoStart::Held(e) => return (message, Some(waiting_reason(&e))),
+    };
+    let thread = ThreadRef {
+        machine_id: r.machine_id.clone(),
+        thread_id: lead.thread_id.clone(),
+    };
+    match deliver(hub, r, &thread, &message).await {
+        Ok(queued) => {
+            message.delivery = Some(match lead.state {
+                _ if queued => ChatDelivery::Queued,
+                LeadState::Working => ChatDelivery::Steer,
+                LeadState::Starting => ChatDelivery::Queued,
+                _ => ChatDelivery::Turn,
+            });
+            if let Err(error) = hub
+                .chat
+                .put(&message)
+                .and_then(|()| hub.chat.release(&message))
+            {
+                tracing::warn!(%error, "chat: sent message not released");
+            }
+            (message, None)
+        }
+        Err(e) => (
+            message,
+            Some(format!(
+                "Not sent yet: {}. It goes in as soon as it can.",
+                e.message
+            )),
+        ),
+    }
+}
+
 /// A human's chat message as the lead reads it: fixed wording around the human's own words, not an editable prompt.
 pub fn for_lead(text: &str, files: &str) -> String {
     format!("The human writes in your chat:\n\n{text}{files}")
 }
 
-/// Into the lead's session: a plain send, which starts a turn or joins the running one. True when it waits for the
-/// machine in the offline queue.
+/// Into the lead's session, with its files: a plain send, which starts a turn or joins the running one. True when it
+/// waits for the machine in the offline queue.
 async fn deliver(
     hub: &Arc<Hub>,
-    caller: &Caller,
     r: &ProjectRef,
     thread: &ThreadRef,
     message: &fleetd_contracts::chat::ChatMessage,
-    ids: &[fleetd_contracts::mcp::AttachmentId],
 ) -> Result<bool, ToolError> {
+    let ids: Vec<_> = message
+        .attachments
+        .iter()
+        .map(|a| a.attachment_id.clone())
+        .collect();
     let files = if ids.is_empty() {
         Vec::new()
     } else {
-        attachments::deliver(hub, caller, ids, r, "chat", None).await?
+        attachments::place(hub, &ids, r, "chat", None).await?
     };
     let files = if files.is_empty() {
         String::new()
@@ -270,30 +306,40 @@ async fn deliver(
     Ok(sent.queued)
 }
 
-/// Messages held while the project had no lead go in once it starts, oldest first.
-async fn deliver_held(hub: &Arc<Hub>, r: &ProjectRef) {
-    let Some(thread) = lead_thread(hub, r) else {
-        return;
-    };
+/// Every held message of the project, oldest first; one that can't go stops the rest, so they stay in order.
+pub(super) async fn send_held(hub: &Arc<Hub>, r: &ProjectRef) {
     let held = match hub.chat.held(r) {
         Ok(held) => held,
         Err(error) => return tracing::warn!(%error, "chat: held messages not read"),
     };
     for message in held {
-        let text = for_lead(message.text.as_str(), "");
-        let crid = format!("chat:{}", message.message_id);
-        match hub
-            .queue
-            .send_with(&thread, &text, &crid, None, SendOpts::default())
-            .await
-        {
-            Ok(_) => {
-                if let Err(error) = hub.chat.release(&message) {
-                    tracing::warn!(%error, "chat: held message not released");
-                }
-            }
-            Err(error) => tracing::warn!(%error, "chat: held message not delivered"),
+        let (_, waiting) = go(hub, r, message).await;
+        if let Some(why) = waiting {
+            tracing::info!(project = %r.project_id, %why, "chat: held message waits");
+            break;
         }
+    }
+    if let Err(error) = state(hub, r) {
+        tracing::warn!(%error, "chat: state not told");
+    }
+}
+
+/// A message the offline queue gave up on is held again, to go when it can.
+pub(super) fn expired(hub: &Hub, data: &serde_json::Value) {
+    let Some(id) = data["clientRequestId"]
+        .as_str()
+        .and_then(|c| c.strip_prefix("chat:"))
+    else {
+        return;
+    };
+    match hub.chat.by_id(id) {
+        Ok(Some(message)) => {
+            if let Err(error) = hub.chat.hold(&message) {
+                tracing::warn!(%error, "chat: expired message not held");
+            }
+        }
+        Ok(None) => {}
+        Err(error) => tracing::warn!(%error, "chat: expired message not read"),
     }
 }
 
@@ -497,6 +543,18 @@ pub async fn run(hub: Arc<Hub>) {
             }
         }
     }
+    // Held messages from before a restart, and every minute after, go when they can.
+    let sweeper = {
+        let hub = hub.clone();
+        tokio::spawn(async move {
+            loop {
+                for r in hub.chat.held_projects().unwrap_or_default() {
+                    send_held(&hub, &r).await;
+                }
+                hub.clock.sleep(HELD_RETRY).await;
+            }
+        })
+    };
     let types = vec![
         HubEventType::ThreadStarted,
         HubEventType::ThreadCompleted,
@@ -504,6 +562,8 @@ pub async fn run(hub: Arc<Hub>) {
         HubEventType::ThreadInterrupted,
         HubEventType::ThreadWaiting,
         HubEventType::LeadStarted,
+        HubEventType::MachineOnline,
+        HubEventType::WriteExpired,
     ];
     let mut cursor = hub.events.head();
     loop {
@@ -526,6 +586,23 @@ pub async fn run(hub: Arc<Hub>) {
         };
         cursor = page.cursor;
         for event in page.events {
+            match event.r#type {
+                HubEventType::WriteExpired => {
+                    if let Some(data) = &event.data {
+                        expired(&hub, data);
+                    }
+                    continue;
+                }
+                HubEventType::MachineOnline => {
+                    for r in hub.chat.held_projects().unwrap_or_default() {
+                        if Some(&r.machine_id) == event.machine_id.as_ref() {
+                            send_held(&hub, &r).await;
+                        }
+                    }
+                    continue;
+                }
+                _ => {}
+            }
             let (Some(machine_id), Some(thread_id)) = (event.machine_id, event.thread_id) else {
                 continue;
             };
@@ -537,7 +614,7 @@ pub async fn run(hub: Arc<Hub>) {
                 continue;
             };
             match event.r#type {
-                HubEventType::LeadStarted => deliver_held(&hub, &r).await,
+                HubEventType::LeadStarted => send_held(&hub, &r).await,
                 HubEventType::ThreadStarted => {
                     if let Err(error) = state(&hub, &r) {
                         tracing::warn!(%error, "chat: state not told");
@@ -546,7 +623,7 @@ pub async fn run(hub: Arc<Hub>) {
                 _ => mirror(&hub, &r, &thread).await,
             }
         }
-        if streamer.is_finished() {
+        if streamer.is_finished() || sweeper.is_finished() {
             return;
         }
     }

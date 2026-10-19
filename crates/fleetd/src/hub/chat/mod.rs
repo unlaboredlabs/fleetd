@@ -40,6 +40,8 @@ pub struct NewMessage {
     pub history: Option<ChatHistorySource>,
     pub by: Option<String>,
     pub delivery: Option<ChatDelivery>,
+    /// A human message not yet in the lead's session.
+    pub held: bool,
     /// Defaults to now.
     pub created_ms: Option<i64>,
 }
@@ -220,15 +222,16 @@ impl Chat {
                 |row| row.get(0),
             )?;
             c.execute(
-                "INSERT INTO chat_messages (machine_id, project_id, seq, created_ms, request, source, data)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, '{}')",
+                "INSERT INTO chat_messages (machine_id, project_id, seq, created_ms, request, source, held, data)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '{}')",
                 params![
                     r.machine_id.as_str(),
                     r.project_id.as_str(),
                     seq,
                     created_ms,
                     new.request,
-                    new.source
+                    new.source,
+                    new.held
                 ],
             )?;
             let n = c.last_insert_rowid();
@@ -362,6 +365,54 @@ impl Chat {
         })
     }
 
+    pub fn is_held(&self, message: &ChatMessage) -> Result<bool, StoreError> {
+        let n: i64 = message.message_id.as_str()[1..].parse().unwrap_or(0);
+        self.db.with(|c| {
+            Ok(
+                c.query_row("SELECT held FROM chat_messages WHERE n = ?1", [n], |row| {
+                    row.get(0)
+                })
+                .optional()?
+                .unwrap_or(false),
+            )
+        })
+    }
+
+    /// A message by its id ("m<n>").
+    pub fn by_id(&self, id: &str) -> Result<Option<ChatMessage>, StoreError> {
+        let n: i64 = id
+            .strip_prefix('m')
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0);
+        self.db.with(|c| {
+            let data: Option<String> = c
+                .query_row("SELECT data FROM chat_messages WHERE n = ?1", [n], |row| {
+                    row.get(0)
+                })
+                .optional()?;
+            Ok(data.map(|d| serde_json::from_str(&d)).transpose()?)
+        })
+    }
+
+    /// The projects with a held message.
+    pub fn held_projects(&self) -> Result<Vec<ProjectRef>, StoreError> {
+        self.db.with(|c| {
+            let rows: Vec<(String, String)> = c
+                .prepare_cached(
+                    "SELECT DISTINCT machine_id, project_id FROM chat_messages WHERE held = 1",
+                )?
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows
+                .into_iter()
+                .map(|(m, p)| ProjectRef {
+                    machine_id: fleetd_contracts::ids::MachineId::unchecked(m),
+                    project_id: fleetd_contracts::ids::ProjectId::unchecked(p),
+                })
+                .collect())
+        })
+    }
+
     /// The project's held messages, oldest first.
     pub fn held(&self, r: &ProjectRef) -> Result<Vec<ChatMessage>, StoreError> {
         self.db.with(|c| {
@@ -425,6 +476,11 @@ impl Chat {
     pub fn append(&self, message: &mut ChatMessage, append: &str) -> Result<(), StoreError> {
         if append.is_empty() {
             return Ok(());
+        }
+        // The turn may have ended (and the message been finished) since the caller read it.
+        match self.by_id(message.message_id.as_str())? {
+            Some(now) if now.state == ChatMessageState::Streaming => *message = now,
+            _ => return Ok(()),
         }
         let offset = js_len(message.text.as_str());
         message.text = text_of(&format!("{}{append}", message.text.as_str()));

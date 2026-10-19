@@ -69,6 +69,26 @@ fn person() -> Caller {
     }
 }
 
+fn agent_key() -> Caller {
+    Caller {
+        kind: Some(KeyKind::Agent),
+        ..person()
+    }
+}
+
+fn give_lead(hub: &Hub) {
+    hub.leads
+        .records
+        .lead_put(&StoredLead {
+            project_ref: project(),
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead-thread"),
+            started_at: AT.into(),
+            last_wake_at: None,
+            session_generation: 1,
+        })
+        .unwrap();
+}
+
 fn lead_says(text: &str) -> NewMessage {
     NewMessage {
         author: Some(ChatAuthor::Lead),
@@ -485,6 +505,7 @@ async fn reads_a_real_hubs_past() {
         }
     }
     let (hub, _home) = hub_on(HubDb::open(dir.path()).unwrap());
+    let ids = regex::Regex::new(r"\b[WAT][0-9]+\b").unwrap();
     for p in hub.store.projects_list(None, None).unwrap() {
         let r = ProjectRef {
             machine_id: p.machine_id.clone(),
@@ -509,5 +530,129 @@ async fn reads_a_real_hubs_past() {
                 .all(|w| w[0].created_at.as_str() <= w[1].created_at.as_str())
         );
         assert!(page.iter().all(|m| m.history.is_some()));
+        for m in &page {
+            assert!(
+                !ids.is_match(&m.text) || m.history == Some(ChatHistorySource::Order),
+                "an id in: {}",
+                m.text
+            );
+        }
     }
+}
+
+#[tokio::test]
+async fn only_a_persons_device_writes_as_the_human() {
+    let (hub, _home) = hub();
+    let tools = crate::hub::api::registry();
+    let input = json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": "hi", "clientRequestId": "c1" });
+    let Err(crate::hub::api::CallError::Tool(e)) =
+        tools.call(&hub, &agent_key(), "chat_send", input).await
+    else {
+        panic!("an agent key wrote as the human");
+    };
+    assert_eq!(e.code, fleetd_contracts::mcp::ErrorCode::Forbidden);
+    assert!(
+        hub.chat
+            .page(&project(), None, None, 5)
+            .unwrap()
+            .0
+            .is_empty()
+    );
+}
+
+/// A message stays held until it is in the lead's session or the offline queue: a resend tries again, the sweep
+/// sends it once a lead exists, and one the queue gave up on is held again.
+#[tokio::test]
+async fn a_message_never_goes_missing_on_its_way_to_the_lead() {
+    let (hub, _home) = hub();
+    let r = project();
+    let tools = crate::hub::api::registry();
+    let input = json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": "add dark mode", "clientRequestId": "c1" });
+    let first = tools
+        .call(&hub, &person(), "chat_send", input.clone())
+        .await
+        .unwrap();
+    let id = first["message"]["messageId"].as_str().unwrap().to_owned();
+    let held = || {
+        hub.chat
+            .held(&r)
+            .unwrap()
+            .iter()
+            .map(|m| m.message_id.to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        held(),
+        std::slice::from_ref(&id),
+        "no lead could take it: held"
+    );
+    // The resend finds it held and tries again; still no lead, still held, and still one message.
+    let again = tools
+        .call(&hub, &person(), "chat_send", input.clone())
+        .await
+        .unwrap();
+    assert_eq!(again["message"]["messageId"], id.as_str());
+    assert!(again["leadWaiting"].as_str().is_some());
+    assert_eq!(held(), std::slice::from_ref(&id));
+    // A lead appears (its machine away): the sweep hands the message to the offline queue and releases it.
+    give_lead(&hub);
+    flow::send_held(&hub, &r).await;
+    assert!(held().is_empty());
+    let sent = hub.chat.by_id(&id).unwrap().unwrap();
+    assert_eq!(sent.delivery, Some(ChatDelivery::Queued));
+    // The queue gives up on it: held again, for the next try.
+    flow::expired(
+        &hub,
+        &json!({ "clientRequestId": format!("chat:{id}"), "reason": "ttl" }),
+    );
+    assert_eq!(held(), std::slice::from_ref(&id));
+    // A resend now sends it once more, without a second message.
+    tools
+        .call(&hub, &person(), "chat_send", input)
+        .await
+        .unwrap();
+    assert!(held().is_empty());
+    assert_eq!(hub.chat.page(&r, None, None, 10).unwrap().0.len(), 1);
+}
+
+/// A chat message's files become the project's when it is stored: kept past the unused-upload cleanup, and readable
+/// by another person of the project, not only the uploader.
+#[tokio::test]
+async fn a_messages_attachments_are_the_projects() {
+    use base64::Engine;
+    let (hub, _home) = hub();
+    let tools = crate::hub::api::registry();
+    let put = tools
+        .call(
+            &hub,
+            &person(),
+            "attachment_put",
+            json!({ "name": "shot.png", "mime": "image/png",
+            "dataB64": base64::engine::general_purpose::STANDARD.encode(b"png") }),
+        )
+        .await
+        .unwrap();
+    let file = put["attachmentId"].as_str().unwrap().to_owned();
+    let input = json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": "see this",
+        "attachments": [file], "clientRequestId": "c1" });
+    let sent = tools
+        .call(&hub, &person(), "chat_send", input)
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["attachments"][0]["name"], "shot.png");
+    let other = Caller {
+        key_id: fleetd_contracts::prim::NonEmpty::unchecked("k2"),
+        ..person()
+    };
+    let got = tools
+        .call(
+            &hub,
+            &other,
+            "attachment_get",
+            json!({ "projectRef": { "machineId": "devbox", "projectId": "app" },
+            "attachmentId": file }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(got["bytes"], 3);
 }
