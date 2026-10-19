@@ -88,6 +88,12 @@ describe("events patch what they change", () => {
     expect(s.orderEvents["W2"]).toHaveLength(1);
   });
 
+  it("files an event under every order it names", () => {
+    const s = run([live(), snapshot(1), event(2, "lead.woken", { workstreamIds: ["W1", "W2"] })]);
+    expect(s.orderEvents["W1"]?.map((e) => e.seq)).toEqual([2]);
+    expect(s.orderEvents["W2"]?.map((e) => e.seq)).toEqual([2]);
+  });
+
   it("scoped boards replace only their project's orders", () => {
     let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W9", { projectRef: { machineId: "buildbox", projectId: "acme" } })]);
     s = ingest(s, {

@@ -24,6 +24,7 @@ import {
   type TrainLive,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
+import { ordersNamed } from "./effects";
 import { settled } from "./phase";
 
 /** "machineId/projectId". */
@@ -235,7 +236,8 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
     ...s,
     cursor: event.seq,
     events: pushCapped(s.events, event, RECENT_EVENTS),
-    orderEvents: workstreamId === undefined ? s.orderEvents : withOrderEvent(s.orderEvents, workstreamId, event),
+    // Every order the event names: a lead woken for several orders lists them in data.workstreamIds.
+    orderEvents: ordersNamed(event).reduce((rings, id) => withOrderEvent(rings, id, event), s.orderEvents),
   };
   const askId = dataField(event, "askId");
   switch (event.type) {

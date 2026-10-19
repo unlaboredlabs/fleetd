@@ -1,8 +1,17 @@
 // Call-based reads through TanStack Query, wired to the store: main's frames feed the store, events invalidate the
 // reads they make stale, and results the store holds by entity (board, order, asks) are folded into it.
 import { QueryClient, type Query, type QueryKey } from "@tanstack/react-query";
-import { typedCall, type Call, type RawCall, type ToolInput, type ToolName, type ToolOutput } from "../../../shared/contracts";
+import {
+  typedCall,
+  type Call,
+  type OrderCard,
+  type RawCall,
+  type ToolInput,
+  type ToolName,
+  type ToolOutput,
+} from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
+import type { LiveScope } from "../../../shared/ipc";
 import { effectsOf, matches, type Invalidation } from "./effects";
 import { applyFrame, createDataStore, ingest, type DataStore } from "./store";
 
@@ -23,10 +32,40 @@ export interface HubApi {
   readonly call: RawCall;
   subscribe(listener: (frame: HubFrame) => void): () => void;
   resync(): Promise<void>;
+  live(scope: LiveScope | null): Promise<void>;
+}
+
+/** What the open screen wants live: every open order's lanes (board, machines) and/or one order in focus. */
+export interface LiveWant {
+  readonly board?: boolean | undefined;
+  readonly focus?: string | undefined;
 }
 
 /** How long events coalesce before their refetches go out: a burst (a merge, a batch) costs one round. */
 const INVALIDATE_EVERY_MS = 100;
+
+/** A finished order stays on the board this long after it finished (the GPUI board's hold). */
+export const DONE_HOLD_MS = 10 * 60_000;
+/** The refetch goes out this long after a hold ends, so the hub's `updatedAt >= since` has surely dropped it. */
+const HOLD_MARGIN_MS = 1_000;
+
+/**
+ * When the board must be refetched so a finished order whose hold ran out leaves it: the earliest hold that ends
+ * after `hubNowMs`, in hub time. Undefined when no finished order is held.
+ */
+export const boardRefreshAt = (
+  orders: Readonly<Record<string, OrderCard>> | undefined,
+  hubNowMs: number,
+): number | undefined => {
+  let next: number | undefined;
+  for (const o of Object.values(orders ?? {})) {
+    if (o.state !== "done") continue;
+    const ends = Date.parse(o.updatedAt) + DONE_HOLD_MS;
+    if (Number.isNaN(ends) || ends <= hubNowMs) continue;
+    if (next === undefined || ends < next) next = ends;
+  }
+  return next;
+};
 
 export interface DataLayer {
   readonly store: DataStore;
@@ -37,6 +76,11 @@ export interface DataLayer {
     tool: T,
     input: ToolInput<T>,
   ): { queryKey: QueryKey; queryFn: () => Promise<ToolOutput<T>> };
+  /**
+   * The live subscription, set from the route; the only caller of `hub.live`. An unchanged scope sends nothing.
+   * Main keeps the scope and re-sends it on every reconnect and on window focus, so the layer sends only changes.
+   */
+  setLive(want: LiveWant): void;
   /** Start applying main's frames; returns the stop. */
   start(): () => void;
 }
@@ -57,10 +101,21 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     },
   });
 
+  const hubNowMs = () => now() + (store.getState().live.skewMs ?? 0);
+
+  // A board read without its own includeDoneSince holds finished orders for DONE_HOLD_MS. The window is taken when
+  // the call goes out, not baked into the key, so every refetch (an event's, the hold timer's) uses the current one.
+  const withDoneHold = <T extends ToolName>(tool: T, input: ToolInput<T>): ToolInput<T> => {
+    if (tool !== "orders_board") return input;
+    const board = input as ToolInput<"orders_board">;
+    if (board.includeDoneSince !== undefined) return input;
+    return { ...board, includeDoneSince: new Date(hubNowMs() - DONE_HOLD_MS).toISOString() };
+  };
+
   const toolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>) => ({
     queryKey: callKey(tool, input),
     queryFn: async (): Promise<ToolOutput<T>> => {
-      const outcome = await call(tool, input);
+      const outcome = await call(tool, withDoneHold(tool, input));
       if (!outcome.ok) throw new CallError(outcome.error);
       return outcome.output;
     },
@@ -127,17 +182,51 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     timer ??= setTimeout(flush, INVALIDATE_EVERY_MS);
   };
 
+  let liveSent: string | undefined;
+  const setLive = (want: LiveWant) => {
+    const board = want.board === true;
+    const scope: LiveScope | null =
+      !board && want.focus === undefined ? null : want.focus === undefined ? { board } : { board, focus: want.focus };
+    const key = JSON.stringify(scope);
+    if (key === liveSent) return;
+    liveSent = key;
+    void hub.live(scope);
+  };
+
   return {
     store,
     queryClient,
     call,
     toolQuery,
+    setLive,
     start: () => {
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);
+      // One timer, for the next hold to end: no polling, and none at all while nothing finished is held.
+      let hold: { at: number; timer: ReturnType<typeof setTimeout> } | undefined;
+      const scheduleHold = () => {
+        const at = boardRefreshAt(store.getState().orders, hubNowMs());
+        if (at === hold?.at) return;
+        if (hold !== undefined) clearTimeout(hold.timer);
+        hold =
+          at === undefined
+            ? undefined
+            : {
+                at,
+                timer: setTimeout(() => {
+                  hold = undefined;
+                  void queryClient.invalidateQueries({ queryKey: ["call", "orders_board"] });
+                }, at - hubNowMs() + HOLD_MARGIN_MS),
+              };
+      };
+      const stopHold = store.subscribe((s, prev) => {
+        if (s.orders !== prev.orders) scheduleHold();
+      });
       return () => {
         stop();
         stopCache();
+        stopHold();
+        if (hold !== undefined) clearTimeout(hold.timer);
         if (timer !== undefined) clearTimeout(timer);
       };
     },
