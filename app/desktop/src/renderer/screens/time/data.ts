@@ -1,38 +1,18 @@
-// What the time inspector asks the hub, and how the answers land. Nothing here polls: a running order's open view
-// asks again only on the hub events that change it (spec §7), and stops when the view closes.
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { CallOutcome, HubEvent } from "../../../shared/hub";
-import type { TimeClient } from "./client";
+// What the time inspector reads, all through the app's one data layer (src/renderer/src/data): its queries wait for
+// a fresh connection and refetch when an event makes them stale (data/effects.ts names the time_* reads), so this
+// screen neither subscribes nor polls. Undefined means "not answered yet": the screen shows a skeleton.
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CallError } from "../../src/data/queries";
+import { selectOrderEvents } from "../../src/data/selectors";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import type { HubError, HubEvent } from "../../../shared/hub";
 import { spansInput, type TimeQuery } from "./filters";
-export type { TimeClient };
-import type {
-  Coverage,
-  InsightRule,
-  Span,
-  SpanKind,
-  ThreadWindowInput,
-  ThreadWindowOutput,
-  TimeBreakdownOutput,
-  TimeInsightsOutput,
-  TimeSpansOutput,
-} from "./types";
-
+import { NO_NAMES, type Names } from "./format";
+import type { DataState } from "../../src/data/store";
+import type { AgentRole, Coverage, InsightRule, Span, SpanKind, ThreadWindowOutput, TimeBreakdownOutput, TimeInsightsOutput } from "./types";
 
 export type Answer<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string };
-
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-
-/** A shallow shape check before the answer is trusted: the arrays the screens iterate must be arrays. */
-const shaped = <T>(output: unknown, arrays: readonly string[], objects: readonly string[] = []): Answer<T> =>
-  isObject(output) && arrays.every((k) => Array.isArray(output[k])) && objects.every((k) => isObject(output[k]))
-    ? { ok: true, value: output as T }
-    : { ok: false, error: "Unexpected answer from the hub." };
-
-export const parseBreakdown = (o: unknown) =>
-  shaped<TimeBreakdownOutput>(o, ["byCategory", "topCommands", "repeated", "ciChecks"], ["humanWait", "coverage"]);
-export const parseInsights = (o: unknown) => shaped<TimeInsightsOutput>(o, ["insights"]);
-export const parseSpans = (o: unknown) => shaped<TimeSpansOutput>(o, ["spans"], ["coverage"]);
-export const parseWindow = (o: unknown) => shaped<ThreadWindowOutput>(o, ["items"]);
 
 const SAID: Record<string, string> = {
   offline: "Not connected to the hub. The figures come back when it reconnects.",
@@ -46,15 +26,19 @@ const SAID: Record<string, string> = {
  * What a failed call says on screen: a sentence for the code, plus the hub's own fix when it gave one. The raw
  * message (tool names, inputs) is for logs, never the screen.
  */
-export const errorText = (outcome: Extract<CallOutcome, { ok: false }>): string => {
-  const said = SAID[outcome.error.code] ?? "The hub couldn't answer.";
-  return outcome.error.fix === undefined ? said : `${said} ${outcome.error.fix}`;
+export const errorText = (error: HubError): string => {
+  const said = SAID[error.code] ?? "The hub couldn't answer.";
+  return error.fix === undefined ? said : `${said} ${error.fix}`;
 };
 
-const call = async <T>(client: TimeClient, tool: string, input: unknown, parse: (o: unknown) => Answer<T>): Promise<Answer<T>> => {
-  const outcome = await client.call(tool, input);
-  return outcome.ok ? parse(outcome.output) : { ok: false, error: errorText(outcome) };
-};
+const failure = (error: unknown): Answer<never> => ({
+  ok: false,
+  error: error instanceof CallError ? errorText(error.error) : "The hub couldn't answer.",
+});
+
+/** A query's state as the screens read it: undefined while it is out. */
+const answerOf = <T>(q: { data?: T | undefined; error: unknown; isError: boolean }): Answer<T> | undefined =>
+  q.isError ? failure(q.error) : q.data === undefined ? undefined : { ok: true, value: q.data };
 
 /** Merges a page into spans kept sorted by id; a span sent again (it closed since) replaces the old copy. */
 export const mergeSpans = (spans: readonly Span[], page: readonly Span[]): Span[] => {
@@ -82,96 +66,113 @@ export const resumeAfter = (spans: readonly Span[]): number | undefined => {
 
 const CONCERNS = ["task.", "change.", "ask.", "workstream."];
 
-/** Whether a hub event can change an order's time: its tasks, PRs, asks, or a lead wake that served it. */
-export const eventConcerns = (event: HubEvent, order: string): boolean => {
-  const kind = event.type;
-  if (!CONCERNS.some((p) => kind.startsWith(p)) && kind !== "lead.woken" && kind !== "pr.merged") return false;
-  const data = event["data"];
-  if (!isObject(data)) return false;
-  if (data["workstreamId"] === order) return true;
-  const ids = data["workstreamIds"];
-  return Array.isArray(ids) && ids.includes(order);
-};
+/** Whether an event about an order can add or close its spans (the order's events are already filtered by order). */
+export const changesSpans = (event: HubEvent): boolean =>
+  CONCERNS.some((p) => event.type.startsWith(p)) || event.type === "lead.woken" || event.type === "pr.merged";
+
+const noEvents: readonly HubEvent[] = [];
+const noOrderEvents = () => noEvents;
 
 export interface TimeData {
-  readonly breakdown?: Answer<TimeBreakdownOutput>;
-  readonly insights?: Answer<TimeInsightsOutput>;
+  readonly breakdown?: Answer<TimeBreakdownOutput> | undefined;
+  readonly insights?: Answer<TimeInsightsOutput> | undefined;
   /** The open order's spans, by id; pages keep arriving until `spansDone`. */
   readonly spans: readonly Span[];
   readonly spansDone: boolean;
-  readonly spansError?: string;
+  readonly spansError?: string | undefined;
   /** What the hub knows is missing from those spans. */
-  readonly spansCoverage?: Coverage;
+  readonly spansCoverage?: Coverage | undefined;
 }
 
-const EMPTY: TimeData = { spans: [], spansDone: false };
+const noSpans: readonly Span[] = [];
 
-/** The breakdown, insights and (for an order) every span of a query, refetched on the events that concern it. */
-export const useTimeData = (client: TimeClient, query: TimeQuery): TimeData => {
-  const key = JSON.stringify(query);
-  // Answers are kept with the query they answer, so a new query shows nothing stale while it is asked.
-  const [state, setState] = useState<{ readonly key: string; readonly data: TimeData }>({ key, data: EMPTY });
-  const spansRef = useRef<readonly Span[]>([]);
-
+/** The breakdown, the insights and (for an order) every span, page by page. */
+export const useTimeData = (query: TimeQuery): TimeData => {
+  const layer = useDataLayer();
+  const fresh = useData((s) => s.fresh);
+  const generation = useData((s) => s.generation);
+  const breakdown = useToolQuery("time_breakdown", query.breakdown);
+  const insights = useToolQuery("time_insights", query.insights);
+  const base = spansInput(query, undefined);
+  const order = query.scope.kind === "order" ? query.scope.workstreamId : undefined;
+  // An order's spans come 500 a time by `afterId`. Kept out of the data layer's "call" keys on purpose: an event
+  // there refetches a query whole, which for ~30 pages would mean ~30 calls per event. A snapshot still resets it.
+  const pages = useInfiniteQuery({
+    queryKey: ["time_spans", base],
+    queryFn: async ({ pageParam }) => {
+      const outcome = await layer.call("time_spans", pageParam === undefined ? base : { ...base, afterId: pageParam });
+      if (!outcome.ok) throw new CallError(outcome.error);
+      return outcome.output;
+    },
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (last) => last.nextAfterId,
+    enabled: fresh && query.spans,
+  });
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = pages;
+  // Keyed on the page count too: a fast answer can start and finish a fetch between two commits, so the fetching
+  // flag alone may never be seen to change.
+  const pageCount = pages.data?.pages.length ?? 0;
   useEffect(() => {
-    const flags = { live: true, fetching: false, again: false };
+    if (hasNextPage && !isFetchingNextPage && !isError) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage, pageCount]);
+  const data = pages.data;
+  const loaded = useMemo(() => data?.pages.reduce<Span[]>((all, p) => mergeSpans(all, p.spans), []) ?? noSpans, [data]);
+  const done = data !== undefined && !hasNextPage;
+
+  // Then, as the order's events arrive, only what changed: from just before the oldest open span (GPUI's rule).
+  // Kept with the key it belongs to, so a new query or a new snapshot starts from the pages again.
+  const key = `${JSON.stringify(base)}#${generation}`;
+  const [newer, setNewer] = useState<{ readonly key: string; readonly spans: readonly Span[] }>({ key, spans: noSpans });
+  const extra = newer.key === key ? newer.spans : noSpans;
+  const spans = useMemo(() => (extra.length === 0 ? loaded : mergeSpans(loaded, extra)), [loaded, extra]);
+  const events = useData(order === undefined ? noOrderEvents : selectOrderEvents(order));
+  const seen = useRef<{ key: string; event: HubEvent | undefined }>({ key, event: events.at(-1) });
+  const latest = useRef(spans);
+  useEffect(() => {
+    latest.current = spans;
+  });
+  const busy = useRef({ running: false, again: false });
+  useEffect(() => {
+    if (seen.current.key !== key) seen.current = { key, event: events.at(-1) };
+    const from = seen.current.event === undefined ? 0 : events.lastIndexOf(seen.current.event) + 1;
+    const fresh = events.slice(from);
+    seen.current = { key, event: events.at(-1) };
+    if (!done || !query.spans || !fresh.some(changesSpans)) return;
+    const flags = busy.current;
+    if (flags.running) {
+      flags.again = true;
+      return;
+    }
+    flags.running = true;
     const askedAgain = () => flags.again;
-    spansRef.current = [];
-    const q = JSON.parse(key) as TimeQuery;
-    const set = (f: (d: TimeData) => TimeData) => {
-      if (flags.live) setState((prev) => ({ key, data: f(prev.key === key ? prev.data : EMPTY) }));
-    };
-    const pageFrom = async (after: number | undefined) => {
-      for (;;) {
-        const page = await call(client, "time_spans", spansInput(q, after), parseSpans);
-        if (!flags.live) return;
-        if (!page.ok) {
-          set((d) => ({ ...d, spansError: page.error, spansDone: true }));
-          return;
-        }
-        spansRef.current = mergeSpans(spansRef.current, page.value.spans);
-        const spans = spansRef.current;
-        const done = page.value.nextAfterId === undefined;
-        set((d) => ({ ...d, spans, spansCoverage: page.value.coverage, spansDone: done }));
-        if (done) return;
-        after = page.value.nextAfterId;
-      }
-    };
-    const fetchAll = async (after: number | undefined) => {
-      // One refetch in flight; events that land meanwhile fold into one more.
-      if (flags.fetching) {
-        flags.again = true;
-        return;
-      }
-      flags.fetching = true;
+    void (async () => {
       do {
         flags.again = false;
-        const work: Promise<void>[] = [
-          call(client, "time_breakdown", q.breakdown, parseBreakdown).then((breakdown) => set((d) => ({ ...d, breakdown }))),
-          call(client, "time_insights", q.insights, parseInsights).then((insights) => set((d) => ({ ...d, insights }))),
-        ];
-        if (q.spans) work.push(pageFrom(after));
-        await Promise.all(work);
-        after = resumeAfter(spansRef.current);
-        // Read through a call: an event during the awaits above may have set it.
-      } while (askedAgain() && flags.live);
-      flags.fetching = false;
-    };
-    void fetchAll(undefined);
-    const order = q.scope.kind === "order" ? q.scope.workstreamId : undefined;
-    const unsubscribe =
-      order === undefined
-        ? undefined
-        : client.subscribe((frame) => {
-            if (frame.t === "event" && eventConcerns(frame.event, order)) void fetchAll(resumeAfter(spansRef.current));
-          });
-    return () => {
-      flags.live = false;
-      unsubscribe?.();
-    };
-  }, [client, key]);
+        let after = resumeAfter(latest.current);
+        let got: Span[] = [];
+        for (;;) {
+          const outcome = await layer.call("time_spans", after === undefined ? base : { ...base, afterId: after });
+          if (!outcome.ok) break;
+          got = mergeSpans(got, outcome.output.spans);
+          if (outcome.output.nextAfterId === undefined) break;
+          after = outcome.output.nextAfterId;
+        }
+        setNewer((prev) => ({ key, spans: mergeSpans(prev.key === key ? prev.spans : noSpans, got) }));
+      } while (askedAgain());
+      flags.running = false;
+    })();
+    // `base` is in `key`; the pages being done and the events are what start a refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, done, key]);
 
-  return state.key === key ? state.data : EMPTY;
+  return {
+    breakdown: answerOf(breakdown),
+    insights: answerOf(insights),
+    spans,
+    spansDone: isError || done,
+    spansError: isError ? (failure(pages.error) as { error: string }).error : undefined,
+    spansCoverage: data?.pages.at(-1)?.coverage,
+  };
 };
 
 /** The spans a finding or a breakdown row links to: by rule or kind on the hub, narrowed here to a label or check. */
@@ -181,6 +182,8 @@ export interface Linked {
   readonly kinds?: readonly SpanKind[];
   readonly label?: string;
   readonly check?: string;
+  /** Spans already lit on the timeline: listed from here, never asked again by rule or kind. */
+  readonly ids?: ReadonlySet<number>;
 }
 
 export const linkedKeeps = (l: Linked, s: Span): boolean =>
@@ -188,42 +191,75 @@ export const linkedKeeps = (l: Linked, s: Span): boolean =>
   (l.label === undefined || s.label === l.label) &&
   (l.check === undefined || s.extra?.check === l.check);
 
-/** One ask, answered later; `undefined` while it is out. */
-export const useAsk = <T>(): [Answer<T> | undefined, (p: Promise<Answer<T>> | undefined) => void] => {
-  const [answer, setAnswer] = useState<Answer<T> | undefined>();
-  const gen = useRef(0);
-  const ask = useCallback((p: Promise<Answer<T>> | undefined) => {
-    gen.current += 1;
-    const g = gen.current;
-    setAnswer(undefined);
-    void p?.then((a) => {
-      if (g === gen.current) setAnswer(a);
-    });
-  }, []);
-  return [answer, ask];
-};
-
 /** The spans a highlight lit, oldest first: what "List them" shows, never a fresh query that could differ. */
 export const litSpans = (spans: readonly Span[], ids: ReadonlySet<number>): Span[] =>
   spans.filter((s) => ids.has(s.id)).sort((a, b) => a.startMs - b.startMs || a.id - b.id);
 
-export const askLinked = (client: TimeClient, q: TimeQuery, l: Linked): Promise<Answer<Span[]>> =>
-  call(
-    client,
-    "time_spans",
-    {
-      ...spansInput(q, undefined),
-      ...(l.rule === undefined ? {} : { rule: l.rule }),
-      ...(l.kinds === undefined || l.kinds.length === 0 ? {} : { kinds: l.kinds }),
-    },
-    parseSpans,
-  ).then((a) => (a.ok ? { ok: true, value: a.value.spans.filter((s) => linkedKeeps(l, s)) } : a));
+/** The linked spans' list: the lit ones from `local`, else the hub's first page (500) for the rule or kinds. */
+export const useLinked = (query: TimeQuery, linked: Linked | undefined, local: readonly Span[]): Answer<Span[]> | undefined => {
+  const input = {
+    ...spansInput(query, undefined),
+    ...(linked?.rule === undefined ? {} : { rule: linked.rule }),
+    ...(linked?.kinds === undefined || linked.kinds.length === 0 ? {} : { kinds: [...linked.kinds] }),
+  };
+  const hub = useToolQuery("time_spans", input, { enabled: linked !== undefined && linked.ids === undefined });
+  if (linked === undefined) return undefined;
+  if (linked.ids !== undefined) return { ok: true, value: litSpans(local, linked.ids) };
+  const a = answerOf(hub);
+  return a?.ok === true ? { ok: true, value: a.value.spans.filter((s) => linkedKeeps(linked, s)) } : a;
+};
 
-export const askWindow = (client: TimeClient, input: ThreadWindowInput): Promise<Answer<ThreadWindowOutput>> =>
-  call(client, "thread_window", { before: 10, after: 10, ...input }, parseWindow);
+/** The transcript around one span's item; undefined while asked, or when no span is open. */
+export const useWindow = (span: Span | undefined): Answer<ThreadWindowOutput> | undefined => {
+  const input = { machineId: span?.machineId ?? "", threadId: span?.threadId ?? "", itemId: span?.itemId ?? "", before: 10, after: 10 };
+  const q = useToolQuery("thread_window", input, { enabled: span?.machineId !== undefined && span.threadId !== undefined && span.itemId !== undefined });
+  return span === undefined ? undefined : answerOf(q);
+};
 
-/** The app's own client: everything goes through main (the renderer has no network). */
-export const hubClient = (): TimeClient => ({
-  call: (tool, input) => window.fleetd.hub.call(tool, input),
-  subscribe: (listener) => window.fleetd.hub.subscribe(listener),
-});
+export type NamesInput = Pick<DataState, "fresh" | "orders" | "details" | "projects" | "machines">;
+
+/** What ids are called on screen, from the store: lanes by role, task and title, PRs by number, orders by title. */
+export const namesOf = (s: NamesInput): Names => {
+  if (!s.fresh) return NO_NAMES;
+  const threads = new Map<string, { role: AgentRole; taskId?: string; title: string }>();
+  const leads = new Set<string>();
+  const changes = new Map<string, number>();
+  const orders = new Map<string, { title: string; project: string }>();
+  const lane = (l: { role: AgentRole; taskId?: string | undefined; title: string; threadRef?: { threadId: string } | undefined }) => {
+    if (l.threadRef === undefined) return;
+    threads.set(l.threadRef.threadId, { role: l.role, title: l.title, ...(l.taskId === undefined ? {} : { taskId: l.taskId }) });
+    if (l.role === "lead") leads.add(l.threadRef.threadId);
+  };
+  const projects = Object.values(s.projects);
+  const titleOf = (r: { machineId: string; projectId: string }) =>
+    projects.find((p) => p.machineId === r.machineId && p.projectId === r.projectId)?.title ?? r.projectId;
+  for (const card of Object.values(s.orders ?? {})) {
+    orders.set(card.workstreamId, { title: card.title, project: titleOf(card.projectRef) });
+    card.lanes.forEach(lane);
+    for (const pr of card.prs) changes.set(pr.changeId, pr.number);
+  }
+  for (const d of Object.values(s.details)) {
+    d.doneLanes.forEach(lane);
+    if (d.lead !== undefined) lane(d.lead);
+  }
+  return {
+    threads,
+    leads,
+    changes,
+    orders,
+    projects: projects.map((p) => ({ machineId: p.machineId, projectId: p.projectId, title: p.title })),
+    machines: Object.keys(s.machines),
+  };
+};
+
+/** The names, kept stable until the store's orders, details, projects or machines change. */
+export const useNames = (order: string | undefined): Names => {
+  // An order's finished lanes and its lead come with order_get, which also folds them into the store.
+  useToolQuery("order_get", { workstreamId: order ?? "" }, { enabled: order !== undefined });
+  const fresh = useData((s) => s.fresh);
+  const orders = useData((s) => s.orders);
+  const details = useData((s) => s.details);
+  const projects = useData((s) => s.projects);
+  const machines = useData((s) => s.machines);
+  return useMemo(() => namesOf({ fresh, orders, details, projects, machines }), [fresh, orders, details, projects, machines]);
+};

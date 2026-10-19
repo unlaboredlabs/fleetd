@@ -2,8 +2,6 @@
 // W8 in storefront, is laid down span by span so its lanes tile and its critical path adds up to its wall time; a
 // week of the fleet is made of orders like it. The roll-ups here stand in for the hub's so the numbers on screen
 // agree with the bars; they are fixture data, not the hub's rules. Ported from the GPUI app's time/fixture.rs.
-import type { CallOutcome, HubFrame } from "../../../shared/hub";
-import type { TimeClient } from "./client";
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/time/index.ts).
 import { NO_NAMES, KIND_WORD, fmtDur, type Names } from "./format.ts";
 import {
@@ -749,19 +747,6 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
     }
   };
   return answer;
-};
-
-/** A client that answers the time_* tools from this fixture, for tests and the gallery. */
-export const fixtureClient = (opts: FixtureOptions = {}): TimeClient => {
-  const answer = fixtureAnswers(opts);
-  return {
-    call: (tool, input) => {
-      const output = answer(tool, input);
-      const outcome: CallOutcome = output === undefined ? { ok: false, error: { code: "not_found", message: `No fixture for ${tool}.` } } : { ok: true, output };
-      return Promise.resolve(outcome);
-    },
-    subscribe: (_listener: (frame: HubFrame) => void) => () => undefined,
-  };
 };
 
 const SAYS = [

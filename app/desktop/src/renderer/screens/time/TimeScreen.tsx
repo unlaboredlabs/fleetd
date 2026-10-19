@@ -4,6 +4,8 @@
 // or an approximation rather than a measurement (spec §2f).
 import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { Button, Dot, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
+import { selectConnection } from "../../src/data/selectors";
+import { useData } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { Breakdown } from "./Breakdown";
 import "./commands";
@@ -11,12 +13,12 @@ import { FilterBar } from "./FilterBar";
 import { Insights } from "./Insights";
 import { LinkedSheet, TranscriptSheet } from "./Sheets";
 import { Timeline } from "./Timeline";
-import { askLinked, askWindow, hubClient, linkedKeeps, litSpans, useAsk, useTimeData, type Linked, type TimeClient } from "./data";
+import { linkedKeeps, useLinked, useNames, useTimeData, useWindow, type Linked } from "./data";
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
-import { NO_NAMES, ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence, type Names } from "./format";
+import { ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
 import { buildModel } from "./model";
 import { orderRoute } from "./route";
-import type { Category, Span, ThreadWindowOutput } from "./types";
+import type { Category, Span } from "./types";
 import s from "./Time.module.css";
 
 type TabId = "timeline" | "breakdown" | "insights";
@@ -24,10 +26,6 @@ type TabId = "timeline" | "breakdown" | "insights";
 export interface TimeScreenProps {
   /** The order to open on (its timeline); none opens the fleet's breakdown. */
   readonly order?: string | undefined;
-  /** What ids are called on screen, from the live store. */
-  readonly names?: Names;
-  /** Defaults to the hub through main. */
-  readonly client?: TimeClient;
   /** Opens the order view, at a thread item when one is given. Defaults to the route (#/order/<id>?thread=&item=). */
   readonly onOpenOrder?: (order: string, at?: { readonly threadId: string; readonly itemId: string }) => void;
   /** Opens a CI check's page in the browser. Without one, the link is copied: the renderer opens nothing itself. */
@@ -46,6 +44,8 @@ const copyLink = (url: string) => {
   void copyText(url).then((ok) => toast({ title: ok ? "Link to the check copied" : "Couldn't copy the link", tone: ok ? "success" : "danger" }));
 };
 
+const noSpans: readonly Span[] = [];
+
 interface Highlight {
   readonly ids: ReadonlySet<number>;
   readonly title: string;
@@ -53,10 +53,8 @@ interface Highlight {
 }
 
 export function TimeScreen(props: TimeScreenProps) {
-  const names = props.names ?? NO_NAMES;
   const openOrder = props.onOpenOrder ?? routeToOrder;
   const openUrl = props.onOpenUrl ?? copyLink;
-  const [client] = useState<TimeClient>(() => props.client ?? hubClient());
   const [order, setOrder] = useState(props.order);
   const [filters, setFilters] = useState<Filters>(() => props.initialFilters ?? loadFilters());
   const [nowMs, setNow] = useState(() => props.now ?? Date.now());
@@ -64,9 +62,7 @@ export function TimeScreen(props: TimeScreenProps) {
   const [view, setView] = useState<readonly [number, number] | undefined>();
   const [highlight, setHighlight] = useState<Highlight | undefined>();
   const [linked, setLinked] = useState<Linked | undefined>();
-  const [linkedAnswer, askLinkedSpans] = useAsk<Span[]>();
   const [windowAt, setWindowAt] = useState<Span | undefined>();
-  const [windowAnswer, askThreadWindow] = useAsk<ThreadWindowOutput>();
 
   // The route can re-aim the open screen at another order.
   const [routeOrder, setRouteOrder] = useState(props.order);
@@ -83,7 +79,14 @@ export function TimeScreen(props: TimeScreenProps) {
   const reaim = useCallback(() => setNow(fixedNow ?? Date.now()), [fixedNow]);
 
   const query = useMemo(() => queryOf(filters, order, nowMs), [filters, order, nowMs]);
-  const data = useTimeData(client, query);
+  const data = useTimeData(query);
+  const connection = useData(selectConnection);
+  // Off the hub nothing can be asked; say so rather than show a loading line that never ends.
+  const offline =
+    connection.view === "live" || (connection.view === "skeleton" && connection.reason === undefined)
+      ? undefined
+      : "Not connected to the hub. The figures come back when it reconnects.";
+  const names = useNames(order);
   const breakdown = data.breakdown?.ok === true ? data.breakdown.value : undefined;
   const coverage = data.spansCoverage ?? breakdown?.coverage;
 
@@ -135,14 +138,12 @@ export function TimeScreen(props: TimeScreenProps) {
       return;
     }
     setLinked(l);
-    askLinkedSpans(askLinked(client, query, l));
   };
 
   const listHighlight = () => {
     if (highlight === undefined) return;
-    setLinked(highlight.linked);
     // The lit spans are already here, by id; asking the hub again by rule or kind would list other spans.
-    askLinkedSpans(Promise.resolve({ ok: true, value: litSpans(model?.spans ?? [], highlight.ids) }));
+    setLinked({ ...highlight.linked, ids: highlight.ids });
   };
 
   /** A click on one span: a check's page, else its transcript at that item. */
@@ -153,7 +154,6 @@ export function TimeScreen(props: TimeScreenProps) {
     }
     if (span.machineId === undefined || span.threadId === undefined || span.itemId === undefined) return;
     setWindowAt(span);
-    askThreadWindow(askWindow(client, { machineId: span.machineId, threadId: span.threadId, itemId: span.itemId }));
   };
 
   // While the inspector is open, the palette can drive it.
@@ -175,6 +175,17 @@ export function TimeScreen(props: TimeScreenProps) {
     ],
     [compareOn],
   );
+
+  const linkedAnswer = useLinked(query, linked, model?.spans ?? noSpans);
+  const windowAnswer = useWindow(windowAt);
+
+  const waitingOnHub = offline !== undefined && !data.spansDone;
+  const timelineNote = waitingOnHub
+    ? offline
+    : (data.spansError ??
+      (data.spansDone
+        ? "No spans for this order yet. Spans start when its first agent starts; a machine running an older fleetd records none."
+        : "Loading this order's spans…"));
 
   const onKeyDown = (e: KeyboardEvent) => {
     // Esc closes the innermost thing: the sheets close themselves, then the highlight, then the zoom.
@@ -272,27 +283,25 @@ export function TimeScreen(props: TimeScreenProps) {
             </div>
           ) : null}
           {!data.spansDone && model !== undefined ? (
-            <Text as="p" size="xs" tone="quiet" className={cx(s.loadingLine)}>
-              Loading spans… {data.spans.length} so far
-            </Text>
+            // Busy until every page is in, so nothing (a screenshot, a screen reader) takes half an order as the whole.
+            <div className={cx(s.loadingLine)} aria-busy="true">
+              <Text size="xs" tone="quiet">
+                Loading spans… {data.spans.length} so far
+              </Text>
+            </div>
           ) : null}
           {model !== undefined ? (
             <Timeline model={model} names={names} nowMs={nowMs} view={view} onView={setView} lit={highlight?.ids} onSpan={openSpan} />
           ) : (
-            <div className={cx(s.empty)} data-screen="time.timeline.empty">
-              <Text tone={data.spansError !== undefined ? "danger" : "quiet"}>
-                {data.spansError ??
-                  (data.spansDone
-                    ? "No spans for this order yet. Spans start when its first agent starts; a machine running an older fleetd records none."
-                    : "Loading this order's spans…")}
-              </Text>
+            <div className={cx(s.empty)} data-screen={waitingOnHub ? "time.timeline.offline" : "time.timeline.empty"}>
+              <Text tone={data.spansError !== undefined ? "danger" : "quiet"}>{timelineNote}</Text>
             </div>
           )}
         </TabPanel>
         <TabPanel value="breakdown" className={cx(s.panel)}>
           {data.breakdown === undefined ? (
-            <div className={cx(s.empty)}>
-              <Text tone="quiet">Asking the hub where the time went…</Text>
+            <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.breakdown.offline" })}>
+              <Text tone="quiet">{offline ?? "Asking the hub where the time went…"}</Text>
             </div>
           ) : !data.breakdown.ok ? (
             <div className={cx(s.empty)} data-screen="time.breakdown.error">
@@ -305,8 +314,8 @@ export function TimeScreen(props: TimeScreenProps) {
         </TabPanel>
         <TabPanel value="insights" className={cx(s.panel)}>
           {data.insights === undefined ? (
-            <div className={cx(s.empty)}>
-              <Text tone="quiet">Running the hub&apos;s rules over this period…</Text>
+            <div className={cx(s.empty)} {...(offline === undefined ? {} : { "data-screen": "time.insights.offline" })}>
+              <Text tone="quiet">{offline ?? "Running the hub's rules over this period…"}</Text>
             </div>
           ) : !data.insights.ok ? (
             <div className={cx(s.empty)} data-screen="time.insights.error">

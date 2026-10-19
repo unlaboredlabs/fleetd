@@ -115,8 +115,8 @@ export const screens: readonly Screen[] = [
     route: "#/time",
     fixtures: ["typical", "long-text", "empty"],
   },
-  // With no hub, the breakdown says so in words (time.breakdown.error).
-  { id: "time.breakdown", route: "#/time", fixtures: ["hub-unreachable"], expect: "error" },
+  // With no hub, the breakdown says so in words (time.breakdown.offline): a connection state, not an error page.
+  { id: "time.breakdown", route: "#/time", fixtures: ["hub-unreachable"] },
   // The harness waits for the id before `open`, so the insights entry waits for the screen root, then opens the tab.
   {
     id: "time",

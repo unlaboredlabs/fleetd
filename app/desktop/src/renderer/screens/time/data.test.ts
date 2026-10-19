@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { errorText, eventConcerns, linkedKeeps, litSpans, mergeSpans, parseBreakdown, resumeAfter } from "./data";
-import { fixtureClient } from "./fixture";
+import { changesSpans, errorText, linkedKeeps, litSpans, mergeSpans, namesOf, resumeAfter, type NamesInput } from "./data";
+import { fixtureAnswers } from "./fixture";
 import { DEFAULT_FILTERS, decodeFilters, parseWhen, period, queryOf, spansInput } from "./filters";
 import type { Span, TimeSpansOutput } from "./types";
 
@@ -25,21 +25,14 @@ describe("span pages", () => {
     ]);
   });
 
-  it("resume from just before the oldest open span, else after the newest", () => {
-    expect(resumeAfter([span(1, 5), span(3), span(7)])).toBe(2);
-    expect(resumeAfter([span(1, 5), span(2, 6)])).toBe(2);
-    expect(resumeAfter([])).toBeUndefined();
-  });
 
-  it("page through a 15k-span order from the fixture hub", async () => {
-    const client = fixtureClient({ dense: true });
+  it("page through a 15k-span order from the fixture hub", () => {
+    const answer = fixtureAnswers({ dense: true });
     const q = queryOf(DEFAULT_FILTERS, "W8", Date.parse("2026-10-18T10:30:00.000Z"));
     let after: number | undefined;
     let n = 0;
     for (;;) {
-      const out = await client.call("time_spans", spansInput(q, after));
-      if (!out.ok) throw new Error(out.error.message);
-      const page = out.output as TimeSpansOutput;
+      const page = answer("time_spans", spansInput(q, after)) as TimeSpansOutput;
       n += page.spans.length;
       if (page.nextAfterId === undefined) break;
       after = page.nextAfterId;
@@ -48,15 +41,7 @@ describe("span pages", () => {
   });
 });
 
-const ev = { seq: 1, at: "2026-10-18T10:00:00.000Z", summary: "an event" };
-
-describe("events", () => {
-  it("refetch an order only on the events about it", () => {
-    expect(eventConcerns({ ...ev, type: "task.started", data: { workstreamId: "W8" } }, "W8")).toBe(true);
-    expect(eventConcerns({ ...ev, type: "lead.woken", data: { workstreamIds: ["W3", "W8"] } }, "W8")).toBe(true);
-    expect(eventConcerns({ ...ev, type: "task.started", data: { workstreamId: "W3" } }, "W8")).toBe(false);
-    expect(eventConcerns({ ...ev, type: "machine.up", data: { workstreamId: "W8" } }, "W8")).toBe(false);
-  });
+describe("linked spans", () => {
 
   it("narrow linked spans to one label or check", () => {
     const s: Span = { ...span(1, 2), label: "npm test", extra: { check: "lint" } };
@@ -66,10 +51,6 @@ describe("events", () => {
     expect(linkedKeeps({ title: "", kinds: ["ci.check"] }, s)).toBe(false);
   });
 
-  it("refuse an answer that isn't shaped like a breakdown", () => {
-    expect(parseBreakdown({ wallMs: 1 }).ok).toBe(false);
-    expect(parseBreakdown(null).ok).toBe(false);
-  });
 });
 
 describe("filters", () => {
@@ -117,9 +98,9 @@ describe("filters", () => {
 describe("errors", () => {
   it("say what happened in a sentence, never the raw call", () => {
     const raw = "fixture empty has no answer for time_spans {\"scope\":{}}";
-    expect(errorText({ ok: false, error: { code: "not_found", message: raw } })).toBe("The hub has no time data for this yet.");
-    expect(errorText({ ok: false, error: { code: "offline", message: raw } })).toMatch(/^Not connected/u);
-    expect(errorText({ ok: false, error: { code: "weird", message: raw, fix: "Restart the hub." } })).toBe("The hub couldn't answer. Restart the hub.");
+    expect(errorText({ code: "not_found", message: raw })).toBe("The hub has no time data for this yet.");
+    expect(errorText({ code: "offline", message: raw })).toMatch(/^Not connected/u);
+    expect(errorText({ code: "weird", message: raw, fix: "Restart the hub." })).toBe("The hub couldn't answer. Restart the hub.");
   });
 });
 
@@ -128,5 +109,62 @@ describe("list the lit spans", () => {
     const spans = [span(1, 5), span(2, 6), span(3, 7), span(4, 8)].map((s, i) => ({ ...s, startMs: 40 - i * 10 }));
     expect(litSpans(spans, new Set([2, 4])).map((s) => s.id)).toEqual([4, 2]);
     expect(litSpans(spans, new Set())).toEqual([]);
+  });
+});
+
+describe("names from the store", () => {
+  const lane = (role: string, taskId: string | undefined, title: string, threadId: string) => ({
+    laneId: threadId,
+    role,
+    status: "done",
+    title,
+    threadRef: { machineId: "devbox", threadId },
+    ...(taskId === undefined ? {} : { taskId }),
+  });
+  const state = {
+    fresh: true,
+    machines: { devbox: {} },
+    projects: { "devbox/storefront": { machineId: "devbox", projectId: "storefront", title: "storefront" } },
+    orders: {
+      W8: {
+        workstreamId: "W8",
+        title: "Add three short pages",
+        projectRef: { machineId: "devbox", projectId: "storefront" },
+        lanes: [lane("implementer", "T21", "about page", "s-21")],
+        prs: [{ changeId: "X7", number: 205 }],
+      },
+    },
+    details: { W8: { lead: lane("lead", undefined, "lead", "lead-storefront"), doneLanes: [lane("reviewer", "T25", "review #205", "s-25")], claims: [] } },
+  } as unknown as NamesInput;
+
+  it("names lanes, the lead, PRs and orders from the board and order_get", () => {
+    const n = namesOf(state);
+    expect(n.orders.get("W8")).toEqual({ title: "Add three short pages", project: "storefront" });
+    expect(n.threads.get("s-21")).toEqual({ role: "implementer", taskId: "T21", title: "about page" });
+    expect(n.threads.get("s-25")?.role).toBe("reviewer");
+    expect(n.leads.has("lead-storefront")).toBe(true);
+    expect(n.changes.get("X7")).toBe(205);
+    expect(n.machines).toEqual(["devbox"]);
+  });
+
+  it("names nothing from a store that isn't fresh", () => {
+    expect(namesOf({ ...state, fresh: false }).orders.size).toBe(0);
+  });
+});
+
+describe("updates after the pages", () => {
+  it("resume from just before the oldest open span, else after the newest", () => {
+    expect(resumeAfter([span(1, 5), span(3), span(7)])).toBe(2);
+    expect(resumeAfter([span(1, 5), span(2, 6)])).toBe(2);
+    expect(resumeAfter([])).toBeUndefined();
+  });
+
+  it("ask again only on the order's events that add or close spans", () => {
+    const ev = (type: string) => ({ seq: 1, at: "2026-10-18T10:00:00.000Z", summary: "", type });
+    expect(changesSpans(ev("task.started"))).toBe(true);
+    expect(changesSpans(ev("lead.woken"))).toBe(true);
+    expect(changesSpans(ev("pr.merged"))).toBe(true);
+    expect(changesSpans(ev("thread.started"))).toBe(false);
+    expect(changesSpans(ev("machine.online"))).toBe(false);
   });
 });
