@@ -6,14 +6,16 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { display, isShortcutId } from "../../../shared/shortcuts";
 import { Kbd, Text } from "../../ui";
 import { rank } from "./rank";
-import { GROUP_LABELS, currentTextAction, snapshotItems, subscribeRegistry, subscribeSources, type Command } from "./registry";
+import { GROUP_LABELS, snapshotItems, subscribeRegistry, subscribeSources, type Command } from "./registry";
 import { useReturnFocus } from "./focus";
 import { closeOverlay, noteRecent, readRecent } from "./state";
 import s from "./Palette.module.css";
 
-type Row =
-  | { readonly kind: "item"; readonly item: Command; readonly label: string | undefined }
-  | { readonly kind: "text"; readonly title: string; readonly text: string };
+/** `label` starts a group. */
+interface Row {
+  readonly item: Command;
+  readonly label: string | undefined;
+}
 
 const useItems = (): Command[] => {
   const [items, setItems] = useState(snapshotItems);
@@ -36,16 +38,13 @@ const useItems = (): Command[] => {
 
 const buildRows = (query: string, items: readonly Command[], recent: readonly string[]): Row[] => {
   const ranked = rank(query, items, recent);
-  const rows: Row[] = ranked.recent.map((item, i) => ({ kind: "item", item, label: i === 0 ? "Recent" : undefined }));
+  const rows: Row[] = ranked.recent.map((item, i) => ({ item, label: i === 0 ? "Recent" : undefined }));
   let group: string | undefined;
   for (const item of ranked.matches) {
     const label = GROUP_LABELS[item.group];
-    rows.push({ kind: "item", item, label: label === group ? undefined : label });
+    rows.push({ item, label: label === group ? undefined : label });
     group = label;
   }
-  const text = query.trim();
-  const action = currentTextAction();
-  if (text !== "" && action) rows.push({ kind: "text", title: action.title(text), text });
   return rows;
 };
 
@@ -74,10 +73,6 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
     if (!row) return;
     ranRef.current = true;
     closeOverlay();
-    if (row.kind === "text") {
-      currentTextAction()?.run(row.text);
-      return;
-    }
     noteRecent(row.item.id);
     row.item.run();
   };
@@ -143,10 +138,10 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
                 </div>
               ) : (
                 rows.map((row, i) => {
-                  const keys = row.kind === "item" && isShortcutId(row.item.id) ? display(row.item.id, platform) : undefined;
+                  const keys = isShortcutId(row.item.id) ? display(row.item.id, platform) : undefined;
                   return (
-                    <div key={row.kind === "item" ? row.item.id : "text-action"} className={s.section}>
-                      {row.kind === "item" && row.label !== undefined ? (
+                    <div key={row.item.id} className={s.section}>
+                      {row.label !== undefined ? (
                         <div className={s.groupLabel} role="presentation">
                           {row.label}
                         </div>
@@ -161,14 +156,14 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
                         onClick={() => run(row)}
                       >
                         <div className={s.rowText}>
-                          <Text>{row.kind === "item" ? row.item.title : row.title}</Text>
-                          {row.kind === "item" && row.item.detail ? (
+                          <Text>{row.item.title}</Text>
+                          {row.item.detail ? (
                             <Text size="sm" tone="quiet">
                               {row.item.detail}
                             </Text>
                           ) : null}
                         </div>
-                        {keys !== undefined ? <Kbd>{keys}</Kbd> : row.kind === "text" ? <Kbd>Enter</Kbd> : null}
+                        {keys !== undefined ? <Kbd>{keys}</Kbd> : null}
                       </div>
                     </div>
                   );
