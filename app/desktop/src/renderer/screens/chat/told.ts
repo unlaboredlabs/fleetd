@@ -45,9 +45,8 @@ const GROUP_LABELS: Readonly<Record<PromptGroup, string>> = {
   lead: "Lead",
   tasks: "Tasks",
   reviews_and_checks: "Reviews and checks",
-  wakes_and_messages: "Wakes and messages",
+  messages: "Messages",
   one_shots: "One-shots",
-  playbooks: "Playbooks",
   instructions: "Your instructions",
 };
 const GROUP_ORDER = Object.keys(GROUP_LABELS);
@@ -63,9 +62,8 @@ function groupFromId(id: string): PromptGroup {
   if (head === "lead") return "lead";
   if (head === "task") return "tasks";
   if (head === "review" || head === "judge") return "reviews_and_checks";
-  if (head === "playbook") return "playbooks";
   if (head === "router" || head === "retro" || head === "status") return "one_shots";
-  return "wakes_and_messages";
+  return "messages";
 }
 
 /** "wake.task_result" → "Wake: task result", for a prompt with no registry title. */

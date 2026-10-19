@@ -117,9 +117,8 @@ const HUB_GROUP: Readonly<Record<PromptGroup, GroupKey>> = {
   lead: "lead",
   tasks: "tasks",
   reviews_and_checks: "reviews",
-  wakes_and_messages: "other",
+  messages: "other",
   one_shots: "one-shots",
-  playbooks: "playbooks",
   instructions: "other",
 };
 

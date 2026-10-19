@@ -1,58 +1,18 @@
-//! Explicit prefixes on an intent: a template prefix (`fix:`) skips the router for the template, and a leading
-//! `@<project>` skips it for the project. Either order works: "@lab fix: …" and "fix: @lab …".
+//! A leading `@<project>` on an intent names its project: "@lab add a /health endpoint".
 use std::sync::LazyLock;
 
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::PlaybookName;
 use fleetd_contracts::model::ProjectSummary;
 use regex::Regex;
 
-const TEMPLATE_PREFIXES: [(&str, PlaybookName); 4] = [
-    ("bug", PlaybookName::Bugfix),
-    ("fix", PlaybookName::Bugfix),
-    ("research", PlaybookName::Research),
-    ("finish", PlaybookName::FinishAll),
-];
-
 static MENTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^@([^\s:,]+)[\s:,]*").unwrap());
-static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^([a-z]+)\s*:\s*").unwrap());
 static NON_SLUG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^a-z0-9]+").unwrap());
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ParsedIntent {
-    pub template: Option<PlaybookName>,
-    /// The `<project>` of a leading `@<project>`, as typed.
-    pub project: Option<String>,
-    /// The template prefix as written in lowercase, e.g. "fix:", for the echo.
-    pub prefix: Option<String>,
-}
-
-pub fn parse_intent(text: &str) -> ParsedIntent {
-    let mut rest = text.trim_start();
-    let mut parsed = ParsedIntent::default();
-    for _ in 0..2 {
-        if parsed.project.is_none()
-            && let Some(m) = MENTION.captures(rest)
-        {
-            parsed.project = Some(m[1].to_string());
-            rest = &rest[m[0].len()..];
-            continue;
-        }
-        if parsed.template.is_none()
-            && let Some(m) = WORD.captures(rest)
-        {
-            let word = m[1].to_lowercase();
-            if let Some((name, template)) = TEMPLATE_PREFIXES.iter().find(|(name, _)| *name == word)
-            {
-                parsed.template = Some(*template);
-                parsed.prefix = Some(format!("{name}:"));
-                rest = &rest[m[0].len()..];
-                continue;
-            }
-        }
-        break;
-    }
-    parsed
+/// The `<project>` of a leading `@<project>`, as typed.
+pub fn mentioned_project(text: &str) -> Option<String> {
+    MENTION
+        .captures(text.trim_start())
+        .map(|m| m[1].to_string())
 }
 
 /// Lowercase words joined by "-": "Repo A (lab)" → "repo-a-lab".
@@ -107,77 +67,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prefixes() {
-        use PlaybookName::*;
-        type Case<'a> = (
-            &'a str,
-            Option<PlaybookName>,
-            Option<&'a str>,
-            Option<&'a str>,
-        );
-        let cases: &[Case] = &[
-            (
-                "fix: the lab README has a typo",
-                Some(Bugfix),
-                Some("fix:"),
-                None,
-            ),
-            ("bug: login fails", Some(Bugfix), Some("bug:"), None),
-            ("Fix: capitals work", Some(Bugfix), Some("fix:"), None),
-            (
-                "research:does caching help",
-                Some(Research),
-                Some("research:"),
-                None,
-            ),
-            (
-                "finish: everything in flight",
-                Some(FinishAll),
-                Some("finish:"),
-                None,
-            ),
-            (
-                "  fix :  spaces around the colon",
-                Some(Bugfix),
-                Some("fix:"),
-                None,
-            ),
-            ("@repo-a add a /health endpoint", None, None, Some("repo-a")),
-            (
-                "@Repo-A: add a /health endpoint",
-                None,
-                None,
-                Some("Repo-A"),
-            ),
-            (
-                "@repo-a fix: the README typo",
-                Some(Bugfix),
-                Some("fix:"),
-                Some("repo-a"),
-            ),
-            (
-                "fix: @repo-a the README typo",
-                Some(Bugfix),
-                Some("fix:"),
-                Some("repo-a"),
-            ),
-            ("add a /health endpoint", None, None, None),
-            ("fix the README typo", None, None, None),
-            ("note: not a template", None, None, None),
-            ("fixes: not a template either", None, None, None),
-            ("email me@example.com about it", None, None, None),
-            (
-                "fix: research: only the first prefix counts",
-                Some(Bugfix),
-                Some("fix:"),
-                None,
-            ),
+    fn mentions() {
+        let cases: &[(&str, Option<&str>)] = &[
+            ("@repo-a add a /health endpoint", Some("repo-a")),
+            ("@Repo-A: add a /health endpoint", Some("Repo-A")),
+            ("  @repo-a, the README typo", Some("repo-a")),
+            ("fix: @repo-a the README typo", None),
+            ("add a /health endpoint", None),
+            ("email me@example.com about it", None),
         ];
-        for (text, template, prefix, project) in cases {
-            let parsed = parse_intent(text);
-            assert_eq!(parsed.template, *template, "{text}");
-            assert_eq!(parsed.prefix.as_deref(), *prefix, "{text}");
-            assert_eq!(parsed.project.as_deref(), *project, "{text}");
+        for (text, project) in cases {
+            assert_eq!(mentioned_project(text).as_deref(), *project, "{text}");
         }
     }
 

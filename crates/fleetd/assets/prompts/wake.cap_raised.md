@@ -1,1 +1,0 @@
-- cap raised to {{maxAgents}}: {{free}} slots free. Queued agents already started; start more approved work only into free slots.

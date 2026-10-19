@@ -291,9 +291,6 @@ impl ApprovalHub for Fake {
         };
         Box::pin(async move { Some(p) })
     }
-    fn prompts(&self, _: &str, _: &str) -> crate::hub::prompts::PromptSet {
-        crate::hub::prompts::PromptSet::defaults().clone()
-    }
 }
 
 impl EventLog for Fake {
@@ -444,7 +441,7 @@ async fn no_denies_with_the_answerers_words_and_an_undelivered_answer_goes_back_
         decision,
         PermissionDecision::Deny {
             message: fleetd_contracts::prim::Text::unchecked(
-                "Denied by human:desk (A1): use make clean instead"
+                "Denied: human:desk said no (A1): use make clean instead."
             )
         }
     );
@@ -482,7 +479,7 @@ async fn rules_answer_without_an_ask_and_a_broken_policy_asks_a_person() {
         answers[1].3,
         PermissionDecision::Deny {
             message: fleetd_contracts::prim::Text::unchecked(
-                "Denied by the tools.deny rule `Bash(rm:*)` in .fleetd/policy.yaml."
+                "Denied: the tools.deny rule `Bash(rm:*)` in .fleetd/policy.yaml."
             )
         }
     );
@@ -609,7 +606,7 @@ async fn a_lead_answers_its_tasks_prompts_but_never_its_own() {
         fake.answers.lock().unwrap()[0].3,
         PermissionDecision::Deny {
             message: fleetd_contracts::prim::Text::unchecked(
-                "Denied by agent:lead-key with thread_answer."
+                "Denied: agent:lead-key with thread_answer."
             )
         }
     );
@@ -691,7 +688,7 @@ async fn a_withdrawn_ask_denies_its_prompt_and_reminders_go_on_until_it_is_answe
     assert!(
         message
             .as_str()
-            .starts_with("Not approved: A1 was withdrawn by its lead"),
+            .starts_with("Denied: its lead withdrew A1 before anyone answered it"),
         "{}",
         message.as_str()
     );

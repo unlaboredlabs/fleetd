@@ -317,9 +317,7 @@ impl Tasks {
 
     fn wake_result(&self, task: &Task, result: &TaskResult) {
         let receipts = self.hooks.receipts.get().and_then(|r| r.line(result));
-        let set = self.d.db.prompts().for_lead(&task.project_ref);
         let text = render::task_result_lines(
-            &set,
             task.task_id.as_str(),
             task.title.as_str(),
             result,
@@ -469,12 +467,7 @@ impl Tasks {
         let result = TaskResult {
             status: TaskResultStatus::Failed,
             tail: Text::unchecked(tail_of(
-                &self
-                    .d
-                    .db
-                    .prompts()
-                    .for_lead(&task.project_ref)
-                    .render("wake.task_start_failed", &[("message", &message)]),
+                &format!("fleetd could not start the task: {message}"),
                 render::TAIL_MAX,
             )),
             branch: task.branch.clone(),
@@ -955,9 +948,7 @@ impl Tasks {
                             thread_ref.thread_id.as_str()
                         )
                     });
-                let set = self.d.db.prompts().for_lead(&task.project_ref);
                 let text = render::task_waiting_lines(
-                    &set,
                     task.task_id.as_str(),
                     task.title.as_str(),
                     &question,
@@ -1395,9 +1386,7 @@ impl Tasks {
             ));
         };
         self.asking.lock().unwrap().insert(task_id.clone());
-        let set = self.d.db.prompts().for_lead(&task.project_ref);
-        let text =
-            render::task_waiting_lines(&set, task_id.as_str(), task.title.as_str(), question);
+        let text = render::task_waiting_lines(task_id.as_str(), task.title.as_str(), question);
         self.d
             .ports
             .wake(&task.project_ref, WakeKind::TaskWaiting, text);
@@ -1416,29 +1405,21 @@ const SCAN_LIMIT: usize = 10_000;
 /// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads' TasksHook, set in
 /// `wire`).
 impl Tasks {
-    /// The agents line ("agents: 7 running of 12, 2 queued"), then a line per task.
+    /// A line per task; the agents line is `agents`, at the top of the state block.
     pub fn digest_lines(
         &self,
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
-        let agents = self.d.slots.agents(project_ref);
-        let mut lines = vec![prompts.render(
-            "digest.agents",
-            &[
-                ("running", &agents.running),
-                ("maxAgents", &agents.max_agents),
-                ("queued", &agents.queued),
-            ],
-        )];
         let since = since.map(Timestamp::as_str);
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
-            Ok(tasks) => lines.extend(render::task_digest_lines(prompts, &tasks, since)),
-            Err(error) => tracing::warn!(%error, "tasks: digest lines not read"),
+            Ok(tasks) => render::task_digest_lines(&tasks, since),
+            Err(error) => {
+                tracing::warn!(%error, "tasks: digest lines not read");
+                Vec::new()
+            }
         }
-        lines
     }
 
     /// A task waiting for a slot, as its spawn answers: "queued: 12/12 running, starts when a slot frees, position 3".
@@ -1455,6 +1436,16 @@ impl Tasks {
         Some(format!(
             "queued: {why}, starts when a slot frees, position {position}. fleetd starts it by itself; don't spawn it again."
         ))
+    }
+
+    /// The project's agents against its max agents, from the slot board: the lead's own turns are not agents.
+    pub fn agents(&self, project_ref: &ProjectRef) -> crate::hub::leads::events::AgentsLine {
+        let agents = self.d.slots.agents(project_ref);
+        crate::hub::leads::events::AgentsLine {
+            running: agents.running,
+            cap: agents.max_agents,
+            queued: agents.queued,
+        }
     }
 
     pub fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {

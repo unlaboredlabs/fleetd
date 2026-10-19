@@ -4,6 +4,7 @@
 //! `thread_answer` answers it directly. A prompt that stays open is raised again as attention, so an
 //! approval-required run never waits silently.
 use super::{ApprovalRefused, Approvals, Caller, NodeCommandError, project_of, refuse, s};
+use crate::hub::prompts::fixed::{DenyReason, denied};
 use crate::hub::usage::ports::{HubEvent, NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, parse_ms, system_ms};
 use fleetd_contracts::sessions::{PendingPermission, PermissionDecision};
@@ -438,14 +439,10 @@ impl Approvals {
                 }),
                 Verdict::Deny(rule) => Some(PermissionDecision::Deny {
                     message: fleetd_contracts::prim::Text::unchecked(clip(
-                        &self
-                            .deps
-                            .hub
-                            .prompts(&project.machine_id, thread_id)
-                            .render(
-                                "permission.denied.policy",
-                                &[("rule", &rule), ("policyFile", &POLICY_FILE_PATH)],
-                            ),
+                        &denied(&DenyReason::Policy {
+                            rule,
+                            file: POLICY_FILE_PATH,
+                        }),
                         2000,
                     )),
                 }),
@@ -693,14 +690,7 @@ impl Approvals {
             .pointer("/answer/by")
             .and_then(Value::as_str)
             .unwrap_or("its lead");
-        let message = self
-            .deps
-            .hub
-            .prompts(&t.project.machine_id, &t.thread_id)
-            .render(
-                "permission.denied.withdrawn",
-                &[("askId", &ask_id), ("by", &by)],
-            );
+        let message = denied(&DenyReason::Withdrawn { by, ask: ask_id });
         let machine = &t.project.machine_id;
         let sent = self
             .deps
@@ -763,21 +753,13 @@ impl Approvals {
                 updated_input: None,
             }
         } else {
-            let said = if value == "no" {
-                String::new()
-            } else {
-                format!(": {value}")
-            };
             PermissionDecision::Deny {
                 message: fleetd_contracts::prim::Text::unchecked(clip(
-                    &self
-                        .deps
-                        .hub
-                        .prompts(&open.project.machine_id, &open.thread_id)
-                        .render(
-                            "permission.denied.human",
-                            &[("by", &by), ("askId", &open.ask_id), ("said", &said)],
-                        ),
+                    &denied(&DenyReason::Human {
+                        by,
+                        ask: &open.ask_id,
+                        said: (value != "no").then_some(value),
+                    }),
                     2000,
                 )),
             }
@@ -889,12 +871,9 @@ impl Approvals {
                 updated_input: None,
             }
         } else {
-            let message = input.message.unwrap_or_else(|| {
-                self.deps
-                    .hub
-                    .prompts(m, t)
-                    .render("permission.denied.answer", &[("by", &by)])
-            });
+            let message = input
+                .message
+                .unwrap_or_else(|| denied(&DenyReason::Answer { by: &by }));
             PermissionDecision::Deny {
                 message: fleetd_contracts::prim::Text::unchecked(clip(&message, 2000)),
             }

@@ -21,7 +21,7 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         listen: Default::default(),
         url: None,
         queue_ttl_sec: None,
-        router_model: None,
+        retro_model: None,
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
@@ -198,9 +198,10 @@ async fn every_digest_says_how_many_agents_run_of_the_max_and_wait() {
     for n in 1..=3 {
         running(&hub, n);
     }
-    let set = hub.db.prompts().for_lead(&project());
-    let lines = hub.tasks.digest_lines(&project(), None, 50, &set);
-    assert_eq!(lines[0], "agents: 2 running of 2, 1 queued");
+    assert_eq!(
+        hub.tasks.agents(&project()).to_string(),
+        "agents: 2 running of 2, 1 queued"
+    );
     let mut queued = hub
         .tasks
         .get(&fleetd_contracts::tasks::TaskId::unchecked("T3"))

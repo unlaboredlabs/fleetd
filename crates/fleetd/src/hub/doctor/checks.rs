@@ -199,7 +199,7 @@ pub fn gh_auth(outcome: &CmdOutcome) -> Entry {
 }
 
 /// The hub's claude login fix. Behind a proxy the proxy holds the login. Otherwise `claude auth login`, or a gateway's
-/// variables in `claude.env`, which the hub's service loads (the router passes only those variables on).
+/// variables in `claude.env`, which the hub's service loads (the one-shot runner passes only those variables on).
 pub fn claude_login_fix(proxy: Option<&str>) -> DoctorFix {
     match proxy {
         Some(proxy) => manual(
@@ -217,8 +217,8 @@ pub fn claude_login_fix(proxy: Option<&str>) -> DoctorFix {
     }
 }
 
-/// `claude auth status --json` as the router runs it (same environment, so the same login). The intake router and
-/// the retro reach a model only through this login; without it they can't run.
+/// `claude auth status --json` as the retro runs it (same environment, so the same login). The retro reaches a model
+/// only through this login; without it, it can't run.
 pub fn claude_login(outcome: &CmdOutcome) -> Entry {
     hub_claude_login(outcome, None)
 }
@@ -230,7 +230,7 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
             return hub_entry(
                 "claude_login",
                 Fail,
-                "Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run.",
+                "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
                 Some(manual(
                     "Install Claude Code on the hub machine, then log in",
                     Some("claude auth login".into()),
@@ -264,7 +264,7 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
         return hub_entry(
             "claude_login",
             Fail,
-            "claude on the hub is not logged in; the intake router and the retro can't reach a model.",
+            "claude on the hub is not logged in; the retro can't reach a model.",
             Some(claude_login_fix(proxy)),
         );
     }
@@ -275,9 +275,7 @@ pub fn hub_claude_login(outcome: &CmdOutcome, proxy: Option<&str>) -> Entry {
     hub_entry(
         "claude_login",
         Pass,
-        &format!(
-            "claude on the hub is logged in{method}; the intake router and the retro can run."
-        ),
+        &format!("claude on the hub is logged in{method}; the retro can run."),
         None,
     )
 }
@@ -671,13 +669,13 @@ fn version_entry(
     }
 }
 
-/// The hub's own claude (the intake router and the retro run it): version and protocol, from the probe.
+/// The hub's own claude (the retro runs it): version and protocol, from the probe.
 pub fn hub_claude_version(info: &RunnerInfo) -> Entry {
     match &info.version {
         None => hub_entry(
             "claude_version",
             Fail,
-            "Claude Code (claude) is not on the hub's PATH; the intake router and the retro can't run.",
+            "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
             Some(manual(
                 "Install Claude Code on the hub machine, then log in",
                 Some(CLAUDE_INSTALL.into()),
@@ -1008,7 +1006,7 @@ mod tests {
         };
         assert_eq!(
             message("oauth_token"),
-            "claude on the hub is logged in with a long-lived login token; the intake router and the retro can run."
+            "claude on the hub is logged in with a long-lived login token; the retro can run."
         );
         assert!(message("claude.ai").contains("logged in with a Claude account;"));
         assert!(

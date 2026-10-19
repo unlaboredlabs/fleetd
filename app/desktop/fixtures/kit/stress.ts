@@ -84,7 +84,7 @@ export const manyPrompts = (f: Fixture, total = 72): Fixture => {
   const prompts = arr(obj(f.output("prompts_list", {}))["prompts"]).filter(isObject);
   const template = obj(f.answers("prompt_get")[0]?.output);
   if (prompts.length === 0 || Object.keys(template).length === 0) throw new Error("manyPrompts needs a recorded prompts_list {} and a prompt_get");
-  const groups = ["lead", "tasks", "reviews_and_checks", "wakes_and_messages", "one_shots", "playbooks", "instructions"];
+  const groups = ["lead", "tasks", "reviews_and_checks", "messages", "one_shots", "instructions"];
   for (let n = 0; prompts.length < total; n++) {
     const group = groups[n % groups.length] ?? "lead";
     const id = `${group}.${LONG_PROMPT_KEY.split(".").slice(1, 2 + (n % 5)).join(".")}.v${n}`;

@@ -12,7 +12,7 @@ use fleetd_contracts::ledger::{
 use fleetd_contracts::mcp::ErrorCode;
 
 use super::brief::brief_hash;
-use super::digest::{DigestPlaybook, clip_utf16, state_text};
+use super::digest::{clip_utf16, state_text};
 use super::error::LeadError;
 use super::records::{LeadRecords, NewWorkstream, StoredWorkstream, WorkstreamFilter, is_closed};
 use super::wakes::{LeadWakes, Trigger};
@@ -156,10 +156,6 @@ impl Workstreams {
                 Trigger::Intent {
                     workstream_id: id.clone(),
                     text: input.text,
-                    playbook: pinned.as_ref().map(|p| DigestPlaybook {
-                        name: p.playbook.name.as_str().into(),
-                        lead_instructions: p.playbook.lead_instructions.to_string(),
-                    }),
                 },
             );
         }

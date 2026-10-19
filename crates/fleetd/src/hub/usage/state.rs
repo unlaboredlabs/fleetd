@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 pub const BREAKER_WINDOW_MS: i64 = 10 * 60_000;
 /// The prompt id of the message a parked thread gets at the reset; the hub renders it from the thread's own texts.
-pub const CONTINUE_MESSAGE: &str = "usage.continue";
+pub const CONTINUE_MESSAGE: &str = crate::hub::prompts::fixed::USAGE_CONTINUE;
 const LAST_EVENTS: usize = 10;
 /// Threads listed in one usage.resumed event; the event stays under the log's 2 KB data limit.
 const RESUMED_LISTED: usize = 30;

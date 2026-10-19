@@ -4,13 +4,12 @@
 use fleetd::hub::prompts::registry::{ENTRIES, INSTRUCTIONS};
 use fleetd_contracts::prompts::{Enforcement, PromptGroup};
 
-const GROUPS: [(PromptGroup, &str); 6] = [
+const GROUPS: [(PromptGroup, &str); 5] = [
     (PromptGroup::Lead, "Lead"),
     (PromptGroup::Tasks, "Tasks"),
     (PromptGroup::ReviewsAndChecks, "Reviews and checks"),
-    (PromptGroup::WakesAndMessages, "Wakes and messages"),
+    (PromptGroup::Messages, "Messages"),
     (PromptGroup::OneShots, "One-shots"),
-    (PromptGroup::Playbooks, "Playbooks"),
 ];
 
 /// Markdown: one `###` per group, then a row per prompt with its id, when it is sent and the safety rules it

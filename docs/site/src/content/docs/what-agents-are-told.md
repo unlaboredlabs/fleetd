@@ -10,8 +10,9 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-Every word fleetd sends a model is listed in `fleetd prompts list`, in the app's Settings → Prompts, and in the
-[table at the end of this page](#prompts). You can edit each one.
+The prompts fleetd sends a model are listed in `fleetd prompts list`, in the app's Settings → Prompts, and in the
+[table at the end of this page](#prompts). You can edit each one. Everything else, such as the event lines a lead is
+woken with, is fixed text: see [Not editable](#not-editable).
 
 ## How a session gets its instructions {#how}
 
@@ -21,7 +22,7 @@ There is no hidden system prompt. fleetd's text reaches a model in one of three 
 |---|---|
 | The first message of a session | Leads, tasks, reviewers, judges. |
 | A later message into a session | Wakes, review findings, train news, nudges, [steers](/docs/steering). |
-| The input of a one-shot `claude -p` with no tools | The order router, the retro, the status headline. |
+| The input of a one-shot `claude -p` with no tools | The retro. |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
 
@@ -145,7 +146,7 @@ On the hub machine:
 | `fleetd prompts reset lead.start` | Go back to fleetd's text. |
 
 - A project's version beats the hub-wide one, which beats fleetd's.
-- One-shots and playbooks have only the hub-wide level.
+- One-shots have only the hub-wide level.
 - Your versions are files under `~/.fleetd/hub/prompts/`. Change them with `fleetd prompts edit`, not by hand.
 - From an MCP client: `prompts_list`, `prompt_get`, `prompt_set` (with `dryRun` to see the warnings only) and
   `prompt_reset`.
@@ -174,7 +175,7 @@ fleetd instructions show
 ```
 
 They are added to every lead's first message and every task brief (writers, reviewers and judges), hub-wide first,
-under "Custom instructions from the human". They are not added to the router, the retro or wakes.
+under "Custom instructions from the human". They are not added to the retro or wakes.
 
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
 warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes the default, Yes.
@@ -187,10 +188,15 @@ Your version stays in use.
   merged, Keep mine, or Use the new default.
 - On the hub, `fleetd prompts list` marks it `update`, and `fleetd prompts diff <id>` shows both changes.
 
-:::caution
-An edited playbook gets no notice when fleetd's version changes. After an update, check it with
-`fleetd prompts diff playbook.<name>`.
-:::
+## When fleetd retires a prompt you edited {#retired}
+
+A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
+fleetd keeps it. Settings → Prompts lists it with the prompt that covers it now: copy what you still want into that
+one, then delete the old edit. From an MCP client, `prompts_list` returns these under `orphans`, and `prompt_reset`
+with the old id deletes one.
+
+An edited playbook file is listed the same way. Its review and check rules still apply, but its instructions no longer
+reach the lead: the lead prompt has a section for each kind of work.
 
 ## What a running agent keeps {#pinning}
 
@@ -213,6 +219,40 @@ fleetd prompts show --session <machine>/<thread>
 
 ## Not editable {#not-editable}
 
+### Wake events {#wake-events}
+
+A lead is woken with its project's state, then one line per thing that happened since its last wake:
+
+```
+# project lab (devbox/lab), 2026-10-19T14:02:11.000Z
+agents: 3 running of 6, 1 queued
+
+## Work
+- W2 running (bugfix): flaky login test
+  done when: done:0 test login_flaky passes in acme/app
+
+## Events
+- PR #12 merged as 4f1c2a9e0b7d: https://github.com/acme/app/pull/12 (C4, tier S, serves done:0, by T4)
+- T5 finished: port the parser (branch fleetd/T5-port, PR https://github.com/acme/app/pull/13)
+  > Ported; 2 blockers left for review.
+- T7 waiting for an answer: docs
+  > Which branch should the docs go to?
+- W4 research verdict STOP: candidate 1.2 vs baseline 1.1 (higher is better): improvement 0.1 (go line 5, stop line 2)
+```
+
+Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines quoting an agent. The ids (W2, T5,
+C4) are for the lead's tools; the lead doesn't repeat them to you. The format is fixed in code, so it is the same in
+every project.
+
+### Fixed messages {#fixed}
+
+These are short notices, the same everywhere: the brief of a read-only or review task, a reviewer's note on what
+changed since its last review, "fix your PR" (a rebase, red CI or blocking review findings), a denied tool call with
+its reason, the plan's sizing warning, the pause and resume an agent gets when the max agents drops below it, the
+watchdog's nudge and the note after a usage limit resets.
+
+### Tool texts {#tool-texts}
+
 MCP tool descriptions, fleetd's agent tools included, and what the hub answers back (each `next:` and `fix:`) are
 tied to code: a description must match its tool, and a `next:` must name a real tool or command. See
 [Agent tools](/docs/reference/agent-tools) and the [CLI reference](/docs/reference/cli).
@@ -227,102 +267,33 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the digest | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; never waits idle on an answer (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never asks the same question twice; logs every answer with \`decide\` (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
-| `lead.digest` | the top of the lead's first message and of every wake | the digest is the truth, over the lead's memory (prompt only) |
-| `plan.granularity` | when \`plan\_add\` (or \`plan\_edit\` with a size) gets an item with no size or one bigger than m |  |
+| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; never waits idle on an answer (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never asks the same question twice; logs every answer with \`decide\` (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
 
 ### Tasks
 
 | Id | Sent | Safety rules |
 |---|---|---|
 | `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does; the PR body carries \`Source:\`; does the task itself, no subagents |
-| `task.brief.read` | every read task attempt | changes no files (prompt only); does the task itself, no subagents |
-| `task.brief.review` | every review, verifier and judge task attempt | changes no files (prompt only); does the task itself, no subagents; ends with one review verdict (the \`report\` tool) |
-| `task.train_rebase` | per PR the train could not rebase |  |
-| `task.pause` | per running agent above the new max when a person lowers it and pauses the extras |  |
-| `task.resume` | per paused agent when a slot frees for it |  |
-| `task.train_ci_failed` | per PR whose CI failed or timed out |  |
 
 ### Reviews and checks
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `wake.claim_failed` | per failed done claim |  |
-| `wake.claim_passed` | per claim that passed late |  |
-| `wake.research_verdict.go` | per research claim that went GO |  |
-| `wake.research_verdict.stop` | per research claim that went STOP | STOP is a success (prompt only) |
-| `wake.research_verdict.inconclusive` | per research claim that was inconclusive |  |
 | `review.reviewer` | per PR head per review round, by the tier's rules; Claude or Codex | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
-| `review.delta` | after the reviewer's or verifier's text, when the PR was reviewed at an earlier head |  |
 | `review.verifier` | tier L, per PR head | works in a detached temporary worktree (prompt only); does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
-| `task.review_findings` | per blocking review verdict | never merges; the train does |
 
-### Wakes and messages
+### Messages
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `digest.workstream.no_brief` | each digest, per draft order |  |
-| `digest.finish_all_idle` | each digest, per idle finish-all order |  |
-| `digest.answer.withdrawn` | each digest, per dropped ask |  |
-| `digest.answer.skipped` | each digest, per skipped ask |  |
-| `digest.tasks.running` | each digest, per running task |  |
-| `digest.tasks.idle` | each digest, per idle task |  |
-| `digest.tasks.queued` | each digest, per queued task |  |
-| `digest.agents` | each digest, first line of its tasks section |  |
-| `digest.tasks.ended` | each digest, per task ended since the last wake |  |
-| `digest.train.repo` | each digest, per train |  |
-| `digest.train.merged` | each digest, per merge since the last wake |  |
-| `digest.train.parked` | each digest, per PR needing a rebase or red CI |  |
-| `digest.train.waived` | each digest, per waived PR |  |
-| `wake.frame` | every wake |  |
-| `wake.intent` | per new order |  |
-| `wake.intent.playbook` | per new order with a playbook the digest does not show |  |
-| `wake.intent.playbook_listed` | per new order with a playbook the digest shows |  |
-| `wake.decision` | per decision the human recorded in the project |  |
-| `wake.answers` | per batch of answers |  |
-| `wake.task_result` | per task that completed or failed |  |
-| `wake.task_cancelled` | per cancelled task |  |
-| `wake.task_waiting` | per task waiting on input | brings the human only product, money or irreversible calls (prompt only) |
-| `wake.task_start_failed` | per queued task that failed to start (its result) |  |
-| `wake.train.line` | when the train could not reach a PR's author task |  |
-| `wake.train.left` | per PR the train abandoned |  |
-| `wake.train.merged` | per merge |  |
-| `wake.train.gave_up` | per PR GitHub refused to merge too often |  |
-| `wake.train.refused` | per task PR the train would not take |  |
 | `steer.message` | per steer (steer\_send, order\_note, task message), straight to the agent, at its next tool boundary or now | asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only) |
-| `wake.agent_steer` | per steer\_send to a task, at the lead's next wake (debounced, never an interrupt) |  |
-| `wake.order_refs` | per new order with references or attachments |  |
-| `wake.order_stopped` | per order\_stop | does no more work on a stopped order (prompt only) |
-| `wake.cap_raised` | when a person raises the project's max agents |  |
-| `wake.runnable` | when a slot frees, the lead is idle and approved, unblocked work no task has taken waits; once per change in that work | the lead decides what to start; the hub never spawns (prompt only) |
-| `wake.order_idle` | when the lead ends a turn with a frozen order and nothing under way |  |
-| `wake.scheduled_late` | a wake\_set message that fired late |  |
-| `wake.scheduled_held` | a wake\_set message held by a usage pause |  |
-| `watchdog.nudge` | once per stalled run |  |
-| `usage.continue` | per parked thread when the usage limit resets |  |
-| `permission.denied.policy` | per tool call a tools.deny rule refuses (tool result) |  |
-| `permission.denied.withdrawn` | per tool ask withdrawn before an answer (tool result) | does not retry the call (prompt only) |
-| `permission.denied.human` | per tool ask the human denied (tool result) |  |
-| `permission.denied.answer` | per tool call denied with thread\_answer and no message (tool result) |  |
 
 ### One-shots
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `router` | each order without @project or a template prefix | uses no tools; replies with JSON only (prompt only) |
-| `status.headline` | when a viewed status scope's facts change | uses no tools; replies with one line of at most 160 characters; uses only numbers from the facts; never estimates time |
-| `router.retry` | once per order, after an unusable first answer |  |
 | `retro` | each retro run (at most 2 a day) | uses no tools; at most 3 changes |
-
-### Playbooks
-
-| Id | Sent | Safety rules |
-|---|---|---|
-| `playbook.bugfix` | in the digest and the intake wake, while an order follows it | never merges; the train does |
-| `playbook.feature` | in the digest and the intake wake, while an order follows it | never merges; the train does |
-| `playbook.research` | in the digest and the intake wake, while an order follows it | STOP is a success (prompt only) |
-| `playbook.finish-all` | in the digest and the intake wake, while an order follows it |  |
 
 <!-- /prompt-table -->

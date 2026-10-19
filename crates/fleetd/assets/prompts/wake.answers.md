@@ -1,1 +1,0 @@
-- The human settled {{count}} of your questions; see "Answers since your last wake" above.

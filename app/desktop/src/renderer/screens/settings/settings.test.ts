@@ -27,8 +27,8 @@ import { formatRoute, parseRoute } from "./route";
 const summary = (id: string, extra: Partial<PromptSummary> = {}): PromptSummary => ({
   id,
   title: `Hub title of ${id}`,
-  kind: "wake",
-  group: "wakes_and_messages",
+  kind: "msg",
+  group: "messages",
   sentWhen: "per something",
   scope: "default",
   defaultRef: `${id}@0000000000`,

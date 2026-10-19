@@ -86,7 +86,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "intake_submit",
-        "Give one intent in plain words (e.g. \"fix: the README has a typo\"). Without machineId and projectId, a leading @<project> (title or folder name) picks the project, else a one-shot claude router does; when it cannot, you get an askId for the human to pick the project. Prefixes bug:/fix:, research: and finish: set the template. Creates a draft workstream and wakes the lead, starting it if the project has none; echoes where it went and why. leadWaiting, when present, says why no lead could take it yet and what to do. Idempotent per clientRequestId.",
+        "Give one intent in plain words (e.g. \"fix: the README has a typo\"). Without machineId and projectId, a leading @<project> (title or folder name) picks the project, else the only project you may start work in; otherwise it is refused. Creates a draft workstream and wakes the lead, starting it if the project has none; echoes where it went and why. leadWaiting, when present, says why no lead could take it yet and what to do. Idempotent per clientRequestId.",
     ),
     (
         "workstream_list",
@@ -222,7 +222,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "intake_preview",
-        "Where intake_submit would send this text (an @project prefix, else the router), without creating anything. Cached for 10 minutes.",
+        "Where intake_submit would send this text (the caller's project, an @project prefix, or the hub's only project), without creating anything.",
     ),
     (
         "attachment_put",
@@ -234,7 +234,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompts_list",
-        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, judges, wakes, router, retro, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
+        "Every prompt you can edit (lead, writer brief, reviewer, verifier, judges, steer, retro, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. orphans: your edits to prompts a release retired, with the prompt that covers each now. projectRef: the texts in effect for that project.",
     ),
     (
         "prompt_get",
@@ -246,7 +246,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompt_reset",
-        "Remove a prompt override at one scope; the next one down (project, global, shipped default) is in effect again. Admin keys, or a person's device.",
+        "Remove a prompt override at one scope; the next one down (project, global, shipped default) is in effect again. With a retired id (prompts_list orphans), deletes that edit. Admin keys, or a person's device.",
     ),
     (
         "session_prompt_get",
