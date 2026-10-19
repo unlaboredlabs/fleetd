@@ -1,8 +1,8 @@
 // Claude Code's own subagents are off and agents start only through fleetd (FLEETD_LAB_SLOT=6 `npm run lab nosub`).
 // The doctor says so for lab-a. A haiku lead told to start a subagent with Agent/Task can't: its init has no agent
 // tool, any call it makes is refused, and no subagent starts. Its MCP `spawn_agent` starts a fleetd task that shows as
-// a lane on the order and ran through the slot board. A task's agent gets only report/ask_lead/claim_done, and the hub
-// refuses its spawns and lead calls even from its shell. Two or three tiny lead turns and one task turn.
+// a lane on the order and ran through the slot board. A task's agent gets only report/ask_lead/claim_done, and its own
+// shell can't spawn either, with FLEETD_THREAD_ID unset or forged as the lead's. A few tiny lead turns, two task turns.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -167,24 +167,61 @@ export async function noSubagents(lab: Lab) {
   check(subagentStarts(taskThread).length === 0, "no subagent started in the task");
   ok(`${taskId}'s init: ${fleetdTools.join(", ")}; no agent tool; no subagent started`);
 
-  const asSession = (threadId: string, ...args: Array<string>) => {
+  // A person's own shell (outside every session) makes lead calls as before; claiming a session from it is refused.
+  const shell = (env: Record<string, string>, ...args: Array<string>) => {
     const out = spawnSync(...fleetdCommand(args), {
       cwd: root,
       encoding: "utf8",
-      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE), FLEETD_THREAD_ID: threadId },
+      env: { ...scrubbedEnv(), PWD: root, FLEETD_NODE_SOCK: nodeSock(MACHINE), ...env },
     });
     return { code: out.status, text: `${out.stdout}${out.stderr}` };
   };
-  const spawned = asSession(taskThread, "task", "spawn", "--workstream", workstreamId, "--title", "nested", "--kind", "read", "--prompt", "say hi");
-  check(spawned.code === 3 && spawned.text.includes(`${taskId} is a task`), `a task's shell spawn is refused: ${JSON.stringify(spawned)}`);
-  ok(`${taskId}'s shell \`fleetd task spawn\`: exit 3, ${spawned.text.trim().split("\n")[0]}`);
-  const listed = asSession(taskThread, "task", "list");
-  check(listed.code === 3 && listed.text.includes("task_list is a lead's call"), `a task's task list is refused: ${JSON.stringify(listed)}`);
-  check(asSession(leadThread, "task", "list").code === 0, "the lead's own task list goes through");
-  ok("the hub refuses a task's lead calls and takes the lead's");
+  check(shell({}, "task", "list").code === 0, "a person's own `fleetd task list` goes through");
+  const claimed = shell({ FLEETD_THREAD_ID: leadThread }, "task", "list");
+  check(claimed.code === 3 && claimed.text.includes("does not run in it"), `claiming the lead's session from outside it is refused: ${JSON.stringify(claimed)}`);
+  ok(`a person's shell: task list ok; claiming the lead's session refused (${claimed.text.trim().split("\n")[0]})`);
+
+  // From inside a task: its own shell spawns with FLEETD_THREAD_ID unset and with the lead's id forged. The node names
+  // the session from the process tree, so both are refused. The harness starts this task as a person would.
+  const bin = fleetdCommand([])[0];
+  const nested = (title: string) => `${bin} task spawn --workstream ${workstreamId} --title ${title} --kind read --prompt hi`;
+  const commands = [`env -u FLEETD_THREAD_ID ${nested("nested-unset")}`, `env FLEETD_THREAD_ID=${leadThread} ${nested("nested-forged")}`];
+  const bypass = shell(
+    {},
+    "task", "spawn", "--workstream", workstreamId, "--title", "try nested spawns", "--kind", "read", "--model", MODEL, "--effort", "low",
+    "--prompt",
+    `This is a lab test of fleetd's refusals. Run these two shell commands exactly as written, one at a time, then reply with one line per command: its exit code and first line of output.\n1. ${commands[0]}\n2. ${commands[1]}`,
+  );
+  const bypassId = /^Spawned (T\d+)/mu.exec(bypass.text)?.[1];
+  check(bypass.code === 0 && bypassId, `the harness spawns the bypass task: ${JSON.stringify(bypass)}`);
+  const bypassEnd = await lab.waitEvent(`${bypassId} ends`, TURN_MS, {
+    cursor: started.cursor,
+    types: ["task.completed", "task.failed"],
+    match: (e) => e.data?.taskId === bypassId,
+  });
+  const bypassThread = (await callTool("task_get", { taskId: bypassId })).body.task.threadRef.threadId as string;
+  const msgs = transcript(bypassThread);
+  const results = new Map<string, string>();
+  for (const m of msgs.filter((m) => m.type === "user")) {
+    for (const c of (m.message?.content as Array<Body> | undefined) ?? []) {
+      if (c.type === "tool_result") results.set(c.tool_use_id, JSON.stringify(c.content));
+    }
+  }
+  const runs = msgs
+    .filter((m) => m.type === "assistant")
+    .flatMap((m) => (m.message?.content as Array<Body> | undefined) ?? [])
+    .filter((c) => c.type === "tool_use" && c.name === "Bash" && String(c.input?.command).includes("task spawn"))
+    .map((c) => ({ command: String(c.input.command), said: results.get(c.id) ?? "" }));
+  const unset = runs.find((r) => r.command.includes("env -u FLEETD_THREAD_ID"));
+  const forged = runs.find((r) => r.command.includes(`FLEETD_THREAD_ID=${leadThread}`));
+  check(unset?.said.includes(`${bypassId} is a task, and a task's agent can't start agents`), `unset id refused as the task: ${JSON.stringify(unset)}`);
+  check(forged?.said.includes(`but runs in session ${bypassThread}`), `forged lead id refused: ${JSON.stringify(forged)}`);
+  const spawnedTitles = ((await callTool("tasks_list", { projectRef: ref, limit: 50 })).body.tasks as Array<Body>).map((t) => t.title as string);
+  check(!spawnedTitles.some((t) => t.startsWith("nested")), `no nested task exists: ${JSON.stringify(spawnedTitles)}`);
+  ok(`${bypassId} (${bypassEnd.event.type}) ran both from its shell: FLEETD_THREAD_ID unset → refused as ${bypassId}; forged as the lead → refused; no nested task`);
 
   // Let the result wake run out, so the next scenario finds the lead idle.
   const woken = await lab.waitEvent("the lead's wake with the result", 90_000, { cursor: started.cursor, machineId: MACHINE, types: ["lead.woken"] }).catch(() => undefined);
   if (woken !== undefined) await leadTurnDone(woken.event.seq, "result wake");
-  ok(`nosub used ${leadTurns} lead turns + 1 task turn (${MODEL}, effort low)`);
+  ok(`nosub used ${leadTurns} lead turns + 2 task turns (${MODEL}, effort low)`);
 }
