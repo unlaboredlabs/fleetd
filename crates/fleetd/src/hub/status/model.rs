@@ -5,7 +5,9 @@ use std::collections::HashMap;
 
 use fleetd_contracts::plan::{ItemStage, Size};
 use fleetd_contracts::status::{DropReason, WeightsBasis};
+use fleetd_contracts::train::ChangeState;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// The stages that count, `Planned` (index 0) to `Verified` (index 8).
 pub const STAGES: usize = 9;
@@ -237,6 +239,133 @@ impl ItemFacts {
     }
 }
 
+/// A unit the model credits: a plan item, or an order with no plan items (its tasks and PRs are its stages).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum UnitKey {
+    Item(i64),
+    Order(String),
+}
+
+/// Something fleetd observed about a unit. The caller sends an order's facts to each of its units (an item is
+/// `BriefFrozen` when it is added to an order whose brief is frozen, or when the brief freezes later).
+#[derive(Clone, Debug, PartialEq)]
+pub enum What {
+    Created,
+    BriefFrozen,
+    TaskStarted,
+    /// A linked task pushed its branch (a `git push` or `gh pr create` span).
+    Pushed,
+    /// A linked Change was created (state `queued`) or moved to `state`.
+    ChangeState {
+        change: String,
+        state: ChangeState,
+    },
+    /// fleetd verified it (`plan.verified`, or `workstream.done` for an order).
+    Verified,
+    /// A later check failed: it is no longer verified.
+    Reopened,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Obs {
+    pub at_ms: i64,
+    pub unit: UnitKey,
+    pub what: What,
+}
+
+/// Where a Change puts its item. A failed review, a red CI or a rebase conflict send the item back to "PR open";
+/// a refused or abandoned Change no longer counts.
+pub fn change_stage(state: ChangeState) -> Option<ItemStage> {
+    use ChangeState::*;
+    Some(match state {
+        Queued | Reviewing | NeedsRebase | CiFailed => ItemStage::PrOpen,
+        Ready | Rebasing | Ci => ItemStage::ReviewPassed,
+        Merging => ItemStage::CiGreen,
+        Merged => ItemStage::Merged,
+        Refused | Abandoned => return None,
+    })
+}
+
+#[derive(Default)]
+struct Fold {
+    created: Option<i64>,
+    brief: Option<i64>,
+    started: Option<i64>,
+    pushed: Option<i64>,
+    /// change → (first seen, its stage, entered that stage).
+    changes: HashMap<String, (i64, Option<ItemStage>, i64)>,
+    verified: Option<i64>,
+}
+
+/// Each unit's observed stages as of `until_ms`, from observations in any order. Only what fleetd saw counts: a
+/// stage is listed once it was observed, and a unit that fell back (its Change went back to review or red CI) is
+/// where its Changes are now.
+pub fn observe(obs: &[Obs], until_ms: i64) -> HashMap<UnitKey, ItemFacts> {
+    let mut sorted: Vec<&Obs> = obs.iter().filter(|o| o.at_ms <= until_ms).collect();
+    sorted.sort_by_key(|o| o.at_ms);
+    let mut folds: HashMap<UnitKey, Fold> = HashMap::new();
+    for o in sorted {
+        let f = folds.entry(o.unit.clone()).or_default();
+        let first = |slot: &mut Option<i64>| {
+            slot.get_or_insert(o.at_ms);
+        };
+        match &o.what {
+            What::Created => first(&mut f.created),
+            What::BriefFrozen => first(&mut f.brief),
+            What::TaskStarted => first(&mut f.started),
+            What::Pushed => first(&mut f.pushed),
+            What::ChangeState { change, state } => {
+                let stage = change_stage(*state);
+                let e = f
+                    .changes
+                    .entry(change.clone())
+                    .or_insert((o.at_ms, stage, o.at_ms));
+                if e.1 != stage {
+                    e.1 = stage;
+                    e.2 = o.at_ms;
+                }
+            }
+            What::Verified => first(&mut f.verified),
+            What::Reopened => f.verified = None,
+        }
+    }
+    folds
+        .into_iter()
+        .map(|(k, f)| {
+            let mut reached = Vec::new();
+            let mut push = |s: ItemStage, at: Option<i64>| {
+                if let Some(at) = at {
+                    reached.push((s, at));
+                }
+            };
+            push(ItemStage::Planned, f.created);
+            push(ItemStage::BriefFrozen, f.brief);
+            push(ItemStage::TaskStarted, f.started);
+            push(ItemStage::FirstPush, f.pushed);
+            let live: Vec<&(i64, Option<ItemStage>, i64)> =
+                f.changes.values().filter(|c| c.1.is_some()).collect();
+            if let Some(opened) = live.iter().map(|c| c.0).min() {
+                let (stage, since) = live
+                    .iter()
+                    .filter_map(|c| Some((c.1?, c.2)))
+                    .min_by_key(|(s, at)| (*s, std::cmp::Reverse(*at)))
+                    .unwrap_or((ItemStage::PrOpen, opened));
+                let opened = if stage == ItemStage::PrOpen {
+                    since
+                } else {
+                    opened
+                };
+                push(ItemStage::PrOpen, Some(opened));
+                if stage > ItemStage::PrOpen {
+                    push(stage, Some(since));
+                }
+            }
+            push(ItemStage::Verified, f.verified);
+            (k, ItemFacts { reached })
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ItemProgress {
     pub stage: ItemStage,
@@ -436,6 +565,64 @@ pub struct Cause {
     pub text: String,
 }
 
+/// The drop cause an event is, if any: `data` is the event's `data` object. Scope it to the figure's orders first.
+pub fn cause_of(event_type: &str, data: &Value, at_ms: i64) -> Option<Cause> {
+    let str_of = |k: &str| data.get(k).and_then(Value::as_str);
+    let pr = || {
+        data.get("prNumber").and_then(Value::as_i64).map_or_else(
+            || str_of("changeId").unwrap_or("a PR").to_owned(),
+            |n| format!("#{n}"),
+        )
+    };
+    let (reason, text) = match event_type {
+        "plan.changed" => match str_of("kind")? {
+            "scope" if data.get("deltaSize").and_then(Value::as_i64).unwrap_or(0) > 0 => {
+                (DropReason::ScopeChange, str_of("note")?.to_owned())
+            }
+            "milestone_reopened" => (DropReason::ScopeChange, str_of("note")?.to_owned()),
+            "reopened" => (DropReason::Reopened, str_of("note")?.to_owned()),
+            _ => return None,
+        },
+        "change.ci_failed" => (DropReason::CiFailed, format!("CI failed on {}", pr())),
+        "review.verdict" if data.get("blocking").and_then(Value::as_i64).unwrap_or(0) > 0 => {
+            let n = data.get("blocking").and_then(Value::as_i64).unwrap_or(0);
+            let on = str_of("pr")
+                .and_then(|u| u.rsplit('/').next())
+                .map_or_else(String::new, |n| format!(" on #{n}"));
+            (
+                DropReason::ReviewFailed,
+                format!(
+                    "review found {n} blocking issue{}{on}",
+                    if n == 1 { "" } else { "s" }
+                ),
+            )
+        }
+        "change.state" => {
+            let from = serde_json::from_value::<ChangeState>(data.get("from")?.clone()).ok()?;
+            let to = serde_json::from_value::<ChangeState>(data.get("to")?.clone()).ok()?;
+            if change_stage(to)? >= change_stage(from)? {
+                return None;
+            }
+            match to {
+                ChangeState::CiFailed => (DropReason::CiFailed, format!("CI failed on {}", pr())),
+                ChangeState::NeedsRebase => {
+                    (DropReason::CiFailed, format!("{} needs a rebase", pr()))
+                }
+                _ => (
+                    DropReason::ReviewFailed,
+                    format!("{} went back to review", pr()),
+                ),
+            }
+        }
+        _ => return None,
+    };
+    Some(Cause {
+        at_ms,
+        reason,
+        text: crate::hub::plan::clip(&text, 200),
+    })
+}
+
 /// The next point. The estimate may fall only when a cause was observed since the previous point, and that point
 /// says why; otherwise it holds. Verified likewise falls only on added scope or a reopened item.
 pub fn next_point(
@@ -495,3 +682,367 @@ pub fn changes(last: Option<&Point>, next: &Point) -> bool {
 
 /// Points kept per scope.
 pub const SERIES_CAP: usize = 96;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const M: i64 = MIN;
+
+    fn facts(reached: &[(ItemStage, i64)]) -> ItemFacts {
+        ItemFacts {
+            reached: reached.to_vec(),
+        }
+    }
+
+    fn resolved() -> Resolved {
+        Calibration::default().resolve("p", UnitKind::Item, Size::M)
+    }
+
+    #[test]
+    fn reaching_a_stage_credits_its_cumulative_weight() {
+        let r = resolved();
+        let at = facts(&[
+            (ItemStage::Planned, 0),
+            (ItemStage::BriefFrozen, 0),
+            (ItemStage::PrOpen, 10 * M),
+        ]);
+        let p = item_progress(&at, 10 * M, &r);
+        assert_eq!(p.stage, ItemStage::PrOpen);
+        assert!(
+            (p.credit - r.weights.cum[ItemStage::PrOpen.index()]).abs() < 1e-9,
+            "no time in the stage yet"
+        );
+        let done = facts(&[(ItemStage::PrOpen, 0), (ItemStage::Verified, 5 * M)]);
+        let p = item_progress(&done, 6 * M, &r);
+        assert!(p.verified && p.credit == 1.0 && p.remaining_p50_ms == 0);
+    }
+
+    #[test]
+    fn inside_a_stage_credit_moves_but_never_claims_the_next_stage() {
+        let r = resolved();
+        let k = ItemStage::TaskStarted.index();
+        let usual = r.durations.p50[k];
+        let f = facts(&[(ItemStage::TaskStarted, 0)]);
+        let half = item_progress(&f, usual / 2, &r).credit;
+        let expect = r.weights.cum[k] + r.weights.weight(k + 1) * 0.5;
+        assert!((half - expect).abs() < 1e-6, "{half} vs {expect}");
+        let mut last = 0.0;
+        for t in [0, usual / 4, usual / 2, usual, 3 * usual, 100 * usual] {
+            let c = item_progress(&f, t, &r).credit;
+            assert!(c >= last, "never falls with time");
+            assert!(
+                c < r.weights.cum[k + 1],
+                "never reaches FirstPush unobserved"
+            );
+            last = c;
+        }
+        let capped = r.weights.cum[k] + r.weights.weight(k + 1) * IN_STAGE_CAP;
+        assert!((last - capped).abs() < 1e-9, "the 0.9 cap");
+    }
+
+    #[test]
+    fn past_one_and_a_half_times_the_usual_it_is_slower_than_usual_not_inflated() {
+        let r = resolved();
+        let k = ItemStage::PrOpen.index();
+        let usual = r.durations.p50[k];
+        let f = facts(&[(ItemStage::PrOpen, 0)]);
+        assert!(!item_progress(&f, usual * 3 / 2, &r).slower);
+        let late = item_progress(&f, usual * 3 / 2 + 1, &r);
+        assert!(late.slower);
+        assert!(
+            late.remaining_p50_ms > 0,
+            "an overdue stage still has time left"
+        );
+        assert_eq!(late.credit, item_progress(&f, usual * 10, &r).credit);
+    }
+
+    #[test]
+    fn observations_fold_into_stages_and_a_failed_ci_falls_back() {
+        let item = UnitKey::Item(1);
+        let obs = |at: i64, what: What| Obs {
+            at_ms: at,
+            unit: item.clone(),
+            what,
+        };
+        let cs = |at: i64, change: &str, state: ChangeState| {
+            obs(
+                at,
+                What::ChangeState {
+                    change: change.into(),
+                    state,
+                },
+            )
+        };
+        let all = vec![
+            obs(0, What::Created),
+            obs(1, What::BriefFrozen),
+            obs(2, What::TaskStarted),
+            cs(5, "X1", ChangeState::Queued),
+            cs(6, "X1", ChangeState::Reviewing),
+            cs(8, "X1", ChangeState::Ready),
+            cs(9, "X1", ChangeState::Ci),
+            cs(10, "X1", ChangeState::CiFailed),
+            cs(12, "X1", ChangeState::Reviewing),
+        ];
+        let at = |t: i64| observe(&all, t)[&item].current();
+        assert_eq!(at(2), (ItemStage::TaskStarted, 2));
+        assert_eq!(
+            at(6),
+            (ItemStage::PrOpen, 5),
+            "reviewing keeps the PR-open time"
+        );
+        assert_eq!(
+            at(9),
+            (ItemStage::ReviewPassed, 8),
+            "ready → ci stays in one stage"
+        );
+        assert_eq!(
+            at(10),
+            (ItemStage::PrOpen, 10),
+            "red CI: back to PR open, from now"
+        );
+        assert_eq!(at(12), (ItemStage::PrOpen, 10));
+        let mut two = all.clone();
+        two.push(cs(13, "X1", ChangeState::Merged));
+        two.push(cs(14, "X2", ChangeState::Queued));
+        assert_eq!(
+            observe(&two, 14)[&item].current(),
+            (ItemStage::PrOpen, 14),
+            "every live Change counts"
+        );
+        two.push(cs(15, "X2", ChangeState::Abandoned));
+        assert_eq!(
+            observe(&two, 15)[&item].current(),
+            (ItemStage::Merged, 13),
+            "an abandoned one doesn't"
+        );
+        two.push(obs(16, What::Verified));
+        assert_eq!(observe(&two, 16)[&item].current().0, ItemStage::Verified);
+        two.push(obs(17, What::Reopened));
+        assert_eq!(observe(&two, 17)[&item].current().0, ItemStage::Merged);
+    }
+
+    #[test]
+    fn the_estimate_is_never_100_until_verified_and_planning_counts() {
+        let r = resolved();
+        let unit = |stage: ItemStage, pts: f64| Unit {
+            points: pts,
+            progress: item_progress(&facts(&[(stage, 0)]), 0, &r),
+        };
+        let planning_now = planning(0, None, 5 * M, 0.1, 10 * M);
+        assert!(planning_now.active && (planning_now.credit - 0.5).abs() < 1e-9);
+        let drafting = Group {
+            points: 3.0,
+            planning: Some(planning_now),
+            units: vec![],
+            done: false,
+        };
+        let e = estimate(std::slice::from_ref(&drafting));
+        assert_eq!(
+            (e.pct, e.verified_pct),
+            (5, 0),
+            "half of a 10% planning share, not 0%"
+        );
+        let long = planning(0, None, 100 * M, 0.1, 10 * M);
+        assert!((long.credit - IN_STAGE_CAP).abs() < 1e-9);
+        let planned = Group {
+            points: 4.0,
+            planning: Some(planning(0, Some(10 * M), 20 * M, 0.1, 10 * M)),
+            units: vec![unit(ItemStage::Verified, 1.0), unit(ItemStage::Merged, 3.0)],
+            done: false,
+        };
+        let e = estimate(std::slice::from_ref(&planned));
+        assert!(e.pct <= 99 && e.pct > e.verified_pct);
+        assert_eq!(e.verified_pct, 22, "0.9 × 1/4 of the order");
+        let done = Group {
+            done: true,
+            units: vec![
+                unit(ItemStage::Verified, 1.0),
+                unit(ItemStage::Verified, 3.0),
+            ],
+            ..planned
+        };
+        assert_eq!(
+            estimate(&[done]),
+            Estimate {
+                pct: 100,
+                verified_pct: 100,
+                in_flight_pct: 0
+            }
+        );
+    }
+
+    #[test]
+    fn the_estimate_drops_only_with_a_marker() {
+        let p0 = next_point(None, 40, 20, &[], 0);
+        assert_eq!((p0.pct, p0.verified), (40, 20));
+        let held = next_point(Some(&p0), 35, 20, &[], 60_000);
+        assert_eq!((held.pct, held.drop.clone()), (40, None), "no cause: hold");
+        let old = Cause {
+            at_ms: 0,
+            reason: DropReason::CiFailed,
+            text: "CI failed on #1".into(),
+        };
+        assert_eq!(
+            next_point(Some(&p0), 35, 20, &[old], 60_000).pct,
+            40,
+            "a cause before the last point is spent"
+        );
+        let ci = Cause {
+            at_ms: 30_000,
+            reason: DropReason::CiFailed,
+            text: "CI failed on #212".into(),
+        };
+        let fell = next_point(Some(&p0), 35, 20, std::slice::from_ref(&ci), 60_000);
+        assert_eq!(fell.pct, 35);
+        let d = fell.drop.unwrap();
+        assert_eq!(
+            (d.reason, d.from_pct, d.text.as_str()),
+            (DropReason::CiFailed, 40, "CI failed on #212")
+        );
+        assert_eq!(
+            next_point(Some(&p0), 35, 10, &[ci], 60_000).verified,
+            20,
+            "CI never un-verifies"
+        );
+        let scope = Cause {
+            at_ms: 30_000,
+            reason: DropReason::ScopeChange,
+            text: "+2 items: lab run".into(),
+        };
+        let p = next_point(Some(&p0), 30, 15, &[scope], 60_000);
+        assert_eq!((p.pct, p.verified), (30, 15));
+        assert!(!changes(Some(&p0), &next_point(Some(&p0), 40, 20, &[], 1)));
+    }
+
+    #[test]
+    fn causes_come_from_observed_events_only() {
+        use serde_json::json;
+        let c = cause_of(
+            "change.state",
+            &json!({ "from": "ci", "to": "ci_failed", "prNumber": 212 }),
+            5,
+        )
+        .unwrap();
+        assert_eq!(
+            (c.reason, c.text.as_str()),
+            (DropReason::CiFailed, "CI failed on #212")
+        );
+        let c = cause_of(
+            "change.state",
+            &json!({ "from": "ready", "to": "reviewing", "prNumber": 3 }),
+            5,
+        )
+        .unwrap();
+        assert_eq!(c.reason, DropReason::ReviewFailed);
+        assert!(cause_of("change.state", &json!({ "from": "ready", "to": "ci" }), 5).is_none());
+        assert!(
+            cause_of(
+                "plan.changed",
+                &json!({ "kind": "scope", "deltaSize": -3, "note": "x" }),
+                5
+            )
+            .is_none()
+        );
+        let c = cause_of(
+            "plan.changed",
+            &json!({ "kind": "scope", "deltaSize": 3, "note": "+1 item: y" }),
+            5,
+        );
+        assert_eq!(c.unwrap().reason, DropReason::ScopeChange);
+        let c = cause_of(
+            "review.verdict",
+            &json!({ "blocking": 2, "pr": "https://github.com/a/b/pull/9" }),
+            5,
+        );
+        assert_eq!(c.unwrap().text, "review found 2 blocking issues on #9");
+        assert!(cause_of("review.verdict", &json!({ "blocking": 0 }), 5).is_none());
+    }
+
+    #[test]
+    fn weights_come_from_time_shares_with_fallbacks() {
+        let w = StageWeights::from_shares([0.0, 0.0, 0.1, 0.05, 0.6, 0.7, 0.9, 0.95, 1.0]);
+        assert_eq!(w.cum[0], 0.0);
+        assert_eq!(w.cum[STAGES - 1], 1.0);
+        for k in 1..STAGES {
+            assert!(w.weight(k) >= 0.01 - 1e-12, "stage {k} keeps a floor");
+        }
+        assert!(w.cum[3] >= w.cum[2], "made non-decreasing");
+        assert!(
+            w.weight(4) > w.weight(2),
+            "where the time goes, the weight goes"
+        );
+
+        let measured = |n: i64| Params {
+            weights: Some(w.clone()),
+            weight_samples: n,
+            durations: vec![DurationRow {
+                kind: UnitKind::Item,
+                size: Size::M,
+                durations: StageDurations {
+                    p50: [M; STAGES - 1],
+                    p90: [2 * M; STAGES - 1],
+                    samples: n,
+                },
+            }],
+            planning_share: Some(0.2),
+            planning_p50_ms: Some(4 * M),
+            planning_samples: n,
+        };
+        let mut cal = Calibration {
+            fleet: measured(5),
+            ..Default::default()
+        };
+        cal.projects.insert("p".into(), measured(2));
+        let r = cal.resolve("p", UnitKind::Item, Size::M);
+        assert_eq!(
+            r.basis,
+            WeightsBasis::Fleet,
+            "2 project samples are too few"
+        );
+        assert_eq!(
+            r.durations.p50[0], M,
+            "project durations need 3, fleet has 5"
+        );
+        assert_eq!(cal.planning("p"), (0.2, 4 * M));
+        cal.projects.insert("p".into(), measured(6));
+        assert_eq!(
+            cal.resolve("p", UnitKind::Item, Size::M).basis,
+            WeightsBasis::Project
+        );
+        let none = Calibration::default();
+        let r = none.resolve("p", UnitKind::Order, Size::L);
+        assert_eq!(r.basis, WeightsBasis::Default);
+        assert!(
+            (r.durations.total_p50() - default_total_ms(Size::L)).abs() < 9 * M,
+            "defaults spread by weight"
+        );
+        assert_eq!(
+            none.planning("p"),
+            (DEFAULT_PLANNING_SHARE, DEFAULT_PLANNING_MS)
+        );
+        assert_eq!(
+            cal.resolve("q", UnitKind::Item, Size::S).basis,
+            WeightsBasis::Fleet,
+            "unknown project: fleet"
+        );
+    }
+
+    #[test]
+    fn the_eta_range_spreads_remaining_work_over_slots() {
+        let r = resolved();
+        let p = item_progress(&facts(&[(ItemStage::TaskStarted, 0)]), 0, &r);
+        let units = [&p, &p, &p, &p];
+        let (a50, a90) = scope_eta(&units, 1, (0, 0), 0);
+        let (b50, b90) = scope_eta(&units, 4, (0, 0), 0);
+        assert_eq!(a50, 4 * p.remaining_p50_ms);
+        assert_eq!(b50, p.remaining_p50_ms, "four slots: as long as one item");
+        assert!(a90 >= a50 && b90 >= b50);
+        assert_eq!(
+            scope_eta(&units, 4, (10 * b50, 0), 0).0,
+            10 * b50,
+            "the after-chain floors it"
+        );
+    }
+}
