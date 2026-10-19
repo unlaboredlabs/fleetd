@@ -156,6 +156,38 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
   await holdView(page);
 }
 
+// For a picture of the real window (the macOS traffic lights are native, so a page screenshot can't show them): no
+// viewport override, the window itself at the size, and the page laid out in it. Throws when the screen can't hold
+// that size, rather than labelling a cropped or shrunk window with it. Returns the display's real scale factor.
+export async function setNativeView(app: ElectronApplication, page: Page, size: SizeName, theme: Theme) {
+  const { width, height } = sizes[size];
+  views.delete(page);
+  await (await cdp(page)).send("Emulation.clearDeviceMetricsOverride");
+  const real = await app.evaluate(
+    async ({ BrowserWindow, nativeTheme, screen }, v) => {
+      nativeTheme.themeSource = v.theme;
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win) throw new Error("the app opened no window");
+      if (!win.isVisible()) await new Promise((shown) => win.once("show", () => shown(null)));
+      win.setContentSize(v.width, v.height);
+      for (let i = 0; i < 25; i++) {
+        await new Promise((tick) => setTimeout(tick, 20));
+        const [w = 0, h = 0] = win.getContentSize();
+        if (w === v.width && h === v.height) break;
+      }
+      const [w = 0, h = 0] = win.getContentSize();
+      return { width: w, height: h, scaleFactor: screen.getDisplayMatching(win.getBounds()).scaleFactor };
+    },
+    { width, height, theme },
+  );
+  if (real.width !== width || real.height !== height) {
+    throw new Error(`the window is ${real.width}×${real.height}: this screen can't hold ${size} (${width}×${height})`);
+  }
+  await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+  await page.waitForFunction((v) => window.innerWidth === v.width && window.innerHeight === v.height, { width, height });
+  return real;
+}
+
 // The viewport each page was last set to.
 const views = new WeakMap<Page, { width: number; height: number }>();
 

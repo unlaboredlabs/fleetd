@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { launch, resultsDir, scale, setView, type Shot, settle, show } from "./harness.ts";
+import { launch, resultsDir, setNativeView, type Shot, settle, show } from "./harness.ts";
 import { platformChecks, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
@@ -56,14 +56,17 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
     const dir = path.join(resultsDir, "png");
     mkdirSync(dir, { recursive: true });
     mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
+    // The largest QA size every runner's screen holds (the smallest is 1024×768), shown as the real window lays it
+    // out: no viewport override, which would lay out a wider page than the window and crop it.
+    const size = "small";
     for (const theme of themes) {
-      await setView(app, page, "medium", theme);
+      const real = await setNativeView(app, page, size, theme);
       await settle(page);
       const source = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getMediaSourceId() ?? "");
       // "window:<CGWindowID>:0"
       const windowId = source.split(":")[1];
       if (!windowId) throw new Error(`no window id in "${source}"`);
-      const name = `window--typical--medium--${theme}--darwin@${scale}x`;
+      const name = `window--typical--${size}--${theme}--darwin@${real.scaleFactor}x`;
       const png = path.join("png", `${name}.png`);
       try {
         execFileSync("screencapture", ["-x", "-o", `-l${windowId}`, path.join(resultsDir, png)]);
@@ -71,7 +74,7 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
         // Without the Screen Recording permission this is an extra picture lost, not a QA failure.
         test.skip(true, `screencapture failed: ${String(error)}`);
       }
-      const shot: Shot = { screen: "window", fixture: "typical", size: "medium", theme, scale, platform: "darwin", png, scrolled: [], findings: [] };
+      const shot: Shot = { screen: "window", fixture: "typical", size, theme, scale: real.scaleFactor, platform: "darwin", png, scrolled: [], findings: [] };
       writeFileSync(path.join(resultsDir, "shots", `${name}.json`), JSON.stringify(shot, null, 2));
     }
   } finally {
