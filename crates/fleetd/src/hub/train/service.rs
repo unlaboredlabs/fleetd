@@ -15,7 +15,7 @@ use super::contract::{
     parse_pr_url, state_str, tier_str,
 };
 use super::git::{BLOCKED, GitError, Rebase, TrainGit, default_worktree};
-use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TrainGitHub};
+use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub};
 use super::host::{BoxFut, IncidentInput, TrainHost};
 use super::main_ci::{DriftCounts, GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
@@ -72,7 +72,7 @@ pub struct TrainOptions {
     /// How long CI may take on a rebased head.
     pub ci_timeout: Duration,
     /// How long a head may have no checks at all before the train asks GitHub whether the repo has CI, so a slow CI
-    /// start is not taken for none.
+    /// start is not taken for none (`FLEETD_TRAIN_NO_CI_GRACE_SEC`, default 90).
     pub no_ci_grace: Duration,
     /// How often merged PRs are checked for bypasses.
     pub bypass_every: Duration,
@@ -91,7 +91,13 @@ impl Default for TrainOptions {
         Self {
             poll_interval: Duration::from_secs(15),
             ci_timeout: Duration::from_secs(30 * 60),
-            no_ci_grace: Duration::from_secs(90),
+            no_ci_grace: Duration::from_secs(
+                std::env::var("FLEETD_TRAIN_NO_CI_GRACE_SEC")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .filter(|s| *s > 0)
+                    .unwrap_or(90),
+            ),
             bypass_every: Duration::from_secs(60),
             merge_attempts: 3,
             auto_run: true,
@@ -827,8 +833,11 @@ impl Train {
         }
     }
 
-    /// Whether anything reports CI on `sha` (a commit status other than the train's), or the repo has workflows or
-    /// `base` requires checks. The config is cached per repo and base; a failed read is an error, not "no CI".
+    /// Whether anything reports CI on `sha` (a commit status other than the train's), `base` requires a check other
+    /// than the train's own, or one of the repo's workflows started a run for `sha`. Asked only after the grace
+    /// window, so a run GitHub has yet to create is not taken for none; workflows that never run for this base (a
+    /// `branches-ignore`) are not CI for it. The config is cached per repo and base; a failed read is an error, not
+    /// "no CI".
     async fn has_ci(&self, repo: &str, base: &str, sha: &str) -> Result<bool, GhError> {
         if !self.github.status_contexts(repo, sha).await?.is_empty() {
             return Ok(true);
@@ -847,7 +856,10 @@ impl Train {
                 ci
             }
         };
-        Ok(!ci.workflows.is_empty() || !ci.required_checks.is_empty())
+        if ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT) {
+            return Ok(true);
+        }
+        Ok(!ci.workflows.is_empty() && self.github.workflow_runs(repo, sha).await? > 0)
     }
 
     /// One `ci.check` span per check run of the deciding poll, from GitHub's own stamps; a check still running when

@@ -605,6 +605,22 @@ impl TrainGitHub {
             .collect())
     }
 
+    /// How many workflow runs GitHub has for `sha`, in any state (queued and waiting count).
+    pub async fn workflow_runs(&self, repo: &str, sha: &str) -> Result<i64, GhError> {
+        #[derive(Deserialize)]
+        struct Runs {
+            total_count: i64,
+        }
+        let runs: Runs = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/actions/runs?head_sha={sha}&per_page=1"),
+                &[],
+            )
+            .await?;
+        Ok(runs.total_count)
+    }
+
     /// The repo's workflows and the checks `branch` requires, read as adding a project reads them; any read failing
     /// is an error, never "no CI".
     pub async fn ci_config(&self, repo: &str, branch: &str) -> Result<CiInfo, GhError> {
@@ -680,7 +696,7 @@ mod tests {
     async fn a_304_answers_from_the_body_its_etag_came_with() {
         let (gh, fresh, github) =
             github(vec![(0, OK_200, ""), (1, NOT_MODIFIED, NOT_MODIFIED_ERR)]);
-        let repo = "unlaboredlabs/fleetd-testbed";
+        let repo = "unlaboredlabs/fleetd-lab";
         fresh.expect(&fresh::github(repo), 180_000, 0);
         assert_eq!(github.default_branch(repo).await.unwrap(), "main");
         assert!(
@@ -710,11 +726,7 @@ mod tests {
     async fn a_404_is_an_answer_with_its_status() {
         let (_, _, github) = github(vec![(1, NOT_FOUND, NOT_FOUND_ERR)]);
         let Reply::Err { status, message } = github
-            .call(
-                "GET",
-                "repos/unlaboredlabs/fleetd-testbed/pulls/999999",
-                &[],
-            )
+            .call("GET", "repos/unlaboredlabs/fleetd-lab/pulls/999999", &[])
             .await
             .unwrap()
         else {

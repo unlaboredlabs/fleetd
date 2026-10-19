@@ -60,6 +60,8 @@ fn ws() -> WorkstreamId {
 
 struct FakePull {
     branch: String,
+    /// The branch it merges into: main unless a test opens it on another.
+    base: String,
     body: String,
     state: String,
     merged: bool,
@@ -78,6 +80,14 @@ enum FakeCi {
     Required,
     /// No check runs, and the workflows can't be read.
     Unreadable,
+    /// No workflows; main requires only the train's own `fleetd/train` status.
+    TrainOnly,
+    /// A CI workflow whose run for the head appears from the `run_from`th check-run poll on (never: a workflow that
+    /// does not run for this base), and whose `ci` check is green from the `green_from`th.
+    Workflow {
+        run_from: Option<u32>,
+        green_from: Option<u32>,
+    },
 }
 
 /// GitHub as the train sees it, answered from the origin repo.
@@ -89,6 +99,8 @@ struct FakeGh {
     merges: Mutex<Vec<(i64, String)>>,
     /// Scripted answers to the next merge calls, before the fake merges for real.
     merge_replies: Mutex<Vec<GhOut>>,
+    /// Check-run reads so far, the clock of `FakeCi::Workflow`.
+    polls: Mutex<u32>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -119,11 +131,11 @@ impl FakeGh {
         json!({
             "number": n, "state": p.state, "merged": p.merged, "merge_commit_sha": p.merge_sha, "merged_at": p.merged_at, "body": p.body,
             "head": { "ref": p.branch, "sha": self.head_of(&p.branch).unwrap_or_else(|| "0".repeat(40)), "repo": { "full_name": REPO } },
-            "base": { "ref": "main" },
+            "base": { "ref": p.base },
         })
     }
 
-    /// Squash onto main: main's head as parent, the PR head's tree. Refused like GitHub when the head or main moved.
+    /// Squash onto the base: its head as parent, the PR head's tree. Refused like GitHub when the head or base moved.
     fn merge(&self, n: i64, p: &mut FakePull, sha: &str) -> GhOut {
         if self.head_of(&p.branch).as_deref() != Some(sha) {
             return http_error(
@@ -140,7 +152,7 @@ impl FakeGh {
         {
             return http_error(405, "Required status check \"fleetd/train\" is expected.");
         }
-        let main = self.head_of("main").unwrap();
+        let main = self.head_of(&p.base).unwrap();
         if git(&self.origin, &["merge-base", &main, sha]) != main {
             return http_error(
                 405,
@@ -158,7 +170,10 @@ impl FakeGh {
                 &format!("squash #{n}"),
             ],
         );
-        git(&self.origin, &["update-ref", "refs/heads/main", &squash]);
+        git(
+            &self.origin,
+            &["update-ref", &format!("refs/heads/{}", p.base), &squash],
+        );
         p.merged = true;
         p.state = "closed".into();
         p.merge_sha = Some(squash.clone());
@@ -214,15 +229,35 @@ impl FakeGh {
                     None => http_error(404, "Not Found"),
                 }
             }
-            (["commits", _, "check-runs"], _) if self.ci != FakeCi::Actions => {
-                ok(json!({ "total_count": 0, "check_runs": [] }))
-            }
             (["commits", sha, "check-runs"], _) => {
-                let red =
-                    git_out(&self.origin, &["cat-file", "-e", &format!("{sha}:FAIL")]).is_some();
+                let poll = {
+                    let mut polls = self.polls.lock().unwrap();
+                    *polls += 1;
+                    *polls
+                };
+                let red = match self.ci {
+                    FakeCi::Actions => {
+                        git_out(&self.origin, &["cat-file", "-e", &format!("{sha}:FAIL")]).is_some()
+                    }
+                    FakeCi::Workflow {
+                        green_from: Some(at),
+                        ..
+                    } if poll >= at => false,
+                    _ => return ok(json!({ "total_count": 0, "check_runs": [] })),
+                };
                 ok(
                     json!({ "check_runs": [{ "id": 1, "name": "ci", "status": "completed", "conclusion": if red { "failure" } else { "success" }, "html_url": format!("https://github.com/{REPO}/actions/runs/1") }] }),
                 )
+            }
+            (["actions", "runs"], "GET") => {
+                let started = match self.ci {
+                    FakeCi::Actions => true,
+                    FakeCi::Workflow { run_from, .. } => {
+                        run_from.is_some_and(|at| *self.polls.lock().unwrap() >= at)
+                    }
+                    _ => false,
+                };
+                ok(json!({ "total_count": i32::from(started), "workflow_runs": [] }))
             }
             (["commits", sha, "status"], "GET") => {
                 let statuses = self.statuses.lock().unwrap();
@@ -234,22 +269,26 @@ impl FakeGh {
                 ok(json!({ "total_count": mine.len(), "statuses": mine }))
             }
             (["actions", "workflows"], "GET") => match self.ci {
-                FakeCi::Actions => ok(
+                FakeCi::Actions | FakeCi::Workflow { .. } => ok(
                     json!({ "total_count": 1, "workflows": [{ "name": "CI", "path": ".github/workflows/ci.yml", "state": "active" }] }),
                 ),
                 FakeCi::Unreadable => http_error(403, "Resource not accessible by integration"),
                 // Dependabot's dynamic workflow is GitHub's, not the repo's CI.
-                FakeCi::None | FakeCi::Required => ok(
+                FakeCi::None | FakeCi::Required | FakeCi::TrainOnly => ok(
                     json!({ "total_count": 1, "workflows": [{ "name": "Dependabot Updates", "path": "dynamic/dependabot/dependabot-updates", "state": "active" }] }),
                 ),
             },
-            (["branches", "main"], "GET") => ok(
+            (["branches", ..], "GET") => ok(
                 json!({ "name": "main", "protected": false, "protection": { "enabled": false, "required_status_checks": { "enforcement_level": "off", "contexts": [] } } }),
             ),
-            (["rules", "branches", "main"], "GET") => ok(if self.ci == FakeCi::Required {
-                json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": "build" }] } }])
-            } else {
-                json!([])
+            (["rules", "branches", ..], "GET") => ok(match self.ci {
+                FakeCi::Required => {
+                    json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": "build" }] } }])
+                }
+                FakeCi::TrainOnly => {
+                    json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": TRAIN_CONTEXT }] } }])
+                }
+                _ => json!([]),
             }),
             (["statuses", sha], "POST") => {
                 let get = |k: &str| fields.get(k).copied().unwrap_or_default().to_string();
@@ -591,6 +630,7 @@ impl Kit {
             statuses: Mutex::default(),
             merges: Mutex::default(),
             merge_replies: Mutex::default(),
+            polls: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
             checkout,
@@ -636,7 +676,11 @@ impl Kit {
     }
 
     fn main_file(&self, file: &str) -> Option<String> {
-        git_out(&self.gh.origin, &["show", &format!("main:{file}")])
+        self.file_on("main", file)
+    }
+
+    fn file_on(&self, branch: &str, file: &str) -> Option<String> {
+        git_out(&self.gh.origin, &["show", &format!("{branch}:{file}")])
     }
 
     /// Commits `files` (None deletes) on `branch` from `from` in the author's clone and pushes it. Returns the head.
@@ -681,8 +725,24 @@ impl Kit {
         files: &[(&str, Option<&str>)],
         body: &str,
     ) -> String {
-        self.commit(branch, files, Some("origin/main"));
+        self.open_pr_on("main", number, branch, files, body)
+    }
+
+    /// A PR into `base`, which starts at main when the origin lacks it.
+    fn open_pr_on(
+        &self,
+        base: &str,
+        number: i64,
+        branch: &str,
+        files: &[(&str, Option<&str>)],
+        body: &str,
+    ) -> String {
+        if self.gh.head_of(base).is_none() {
+            git(&self.gh.origin, &["branch", base, "main"]);
+        }
+        self.commit(branch, files, Some(&format!("origin/{base}")));
         let pull = FakePull {
+            base: base.into(),
             branch: branch.into(),
             body: body.into(),
             state: "open".into(),
@@ -1020,6 +1080,137 @@ async fn merges_on_local_checks_when_the_repo_has_no_ci_and_says_so_on_the_merge
             json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks"), "workstreamId": "W1" })
         ]
     );
+}
+
+/// Merges `docs.md` alone and returns the `pr.merged` event's `ci` note, if any.
+async fn merge_docs(kit: &Kit) -> Option<Value> {
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(kit.main_file("docs.md").as_deref(), Some("docs"));
+    kit.host.events_of("pr.merged")[0].get("ci").cloned()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_trains_own_required_status_is_not_ci() {
+    let kit = Kit::with(FakeCi::TrainOnly, one_poll);
+    assert_eq!(
+        merge_docs(&kit).await,
+        Some(json!(format!("no CI on {REPO}: used local checks")))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_workflow_that_never_runs_for_the_head_is_not_ci() {
+    let workflow = FakeCi::Workflow {
+        run_from: None,
+        green_from: None,
+    };
+    let kit = Kit::with(workflow, one_poll);
+    assert_eq!(
+        merge_docs(&kit).await,
+        Some(json!(format!("no CI on {REPO}: used local checks")))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_started_workflow_run_with_no_checks_yet_is_waited_for() {
+    let workflow = FakeCi::Workflow {
+        run_from: Some(1),
+        green_from: None,
+    };
+    let kit = Kit::with(workflow, one_poll);
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branch() {
+    let kit = Kit::new();
+    kit.open_pr_on(
+        "slot/1/main",
+        8,
+        "slot/1/fleetd/T9-other",
+        &[add("other.txt", "other\n")],
+        "Source: done:0",
+    );
+    let first = kit
+        .enqueue("https://github.com/acme/storefront/pull/8".into(), None)
+        .await;
+    let pr = kit.open_pr_on(
+        "slot/1/main",
+        7,
+        "slot/1/fleetd/T1-docs",
+        &[add("docs.md", "docs\n")],
+        "Source: done:0",
+    );
+    let second = kit.enqueue(pr, None).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert!(kit.train.step(REPO).await);
+    for change in [&first, &second] {
+        assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+    }
+    // The second was rebased onto the first's merge on slot/1/main; main never moved.
+    assert_eq!(
+        kit.file_on("slot/1/main", "other.txt").as_deref(),
+        Some("other")
+    );
+    assert_eq!(
+        kit.file_on("slot/1/main", "docs.md").as_deref(),
+        Some("docs")
+    );
+    assert_eq!(kit.main_file("docs.md"), None);
+    assert_eq!(kit.main_file("other.txt"), None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn merges_on_local_checks_into_a_base_its_workflows_ignore() {
+    let workflow = FakeCi::Workflow {
+        run_from: None,
+        green_from: None,
+    };
+    let kit = Kit::with(workflow, one_poll);
+    let pr = kit.open_pr_on(
+        "noci/1/main",
+        7,
+        "noci/1/fleetd/T1-docs",
+        &[add("docs.md", "docs\n")],
+        "Source: done:0",
+    );
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(
+        kit.file_on("noci/1/main", "docs.md").as_deref(),
+        Some("docs")
+    );
+    assert_eq!(kit.main_file("docs.md"), None);
+    assert_eq!(
+        kit.host.events_of("pr.merged")[0]["ci"],
+        json!(format!("no CI on {REPO}: used local checks"))
+    );
+}
+
+/// Right after a push GitHub has no run for the head yet; inside the grace window that is not "no CI".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_github_creates_after_the_push_is_waited_for() {
+    let workflow = FakeCi::Workflow {
+        run_from: Some(2),
+        green_from: Some(4),
+    };
+    let kit = Kit::with(workflow, |o| {
+        o.poll_interval = Duration::ZERO;
+        o.no_ci_grace = Duration::from_secs(60);
+    });
+    assert_eq!(merge_docs(&kit).await, None);
+    assert!(*kit.gh.polls.lock().unwrap() >= 4);
 }
 
 #[tokio::test(flavor = "multi_thread")]
