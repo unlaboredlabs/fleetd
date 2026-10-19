@@ -2,6 +2,7 @@
 // component here (one import, one line), so the router stays the one place routes meet screens.
 import { Suspense } from "react";
 import { EmptyState, GalleryScreen } from "../../ui";
+import { TimeScreen } from "../time/TimeScreen";
 import type { Screen } from "./routes";
 
 /** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
@@ -24,7 +25,7 @@ export function ScreenHost({ screen }: { screen: Screen }) {
     case "machines":
       return <Pending id="machines" title="Machines" />;
     case "time":
-      return <Pending id="time" title="Time" />;
+      return <TimeScreen order={screen.orderId ?? undefined} />;
     case "projects.add":
       return <Pending id="projects.add" title="Add a project" />;
     case "settings":

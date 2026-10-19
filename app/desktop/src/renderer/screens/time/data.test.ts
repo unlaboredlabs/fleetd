@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventConcerns, linkedKeeps, mergeSpans, parseBreakdown, resumeAfter } from "./data";
+import { errorText, eventConcerns, linkedKeeps, mergeSpans, parseBreakdown, resumeAfter } from "./data";
 import { fixtureClient } from "./fixture";
 import { DEFAULT_FILTERS, decodeFilters, parseWhen, period, queryOf, spansInput } from "./filters";
 import type { Span, TimeSpansOutput } from "./types";
@@ -109,5 +109,14 @@ describe("filters", () => {
     expect(decodeFilters(JSON.parse(JSON.stringify(f)))).toEqual(f);
     expect(decodeFilters({})).toEqual(DEFAULT_FILTERS);
     expect(decodeFilters({ range: "decade", role: "boss", machine: 4 })).toEqual(DEFAULT_FILTERS);
+  });
+});
+
+describe("errors", () => {
+  it("say what happened in a sentence, never the raw call", () => {
+    const raw = "fixture empty has no answer for time_spans {\"scope\":{}}";
+    expect(errorText({ ok: false, error: { code: "not_found", message: raw } })).toBe("The hub has no time data for this yet.");
+    expect(errorText({ ok: false, error: { code: "offline", message: raw } })).toMatch(/^Not connected/u);
+    expect(errorText({ ok: false, error: { code: "weird", message: raw, fix: "Restart the hub." } })).toBe("The hub couldn't answer. Restart the hub.");
   });
 });

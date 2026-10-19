@@ -23,7 +23,7 @@ type TabId = "timeline" | "breakdown" | "insights";
 
 export interface TimeScreenProps {
   /** The order to open on (its timeline); none opens the fleet's breakdown. */
-  readonly order?: string;
+  readonly order?: string | undefined;
   /** What ids are called on screen, from the live store. */
   readonly names?: Names;
   /** Defaults to the hub through main. */
@@ -185,7 +185,7 @@ export function TimeScreen(props: TimeScreenProps) {
   };
 
   const orderInfo = order === undefined ? undefined : names.orders.get(order);
-  const title = order === undefined ? "Where the time went" : (orderInfo?.title ?? "This order");
+  const title = order === undefined ? "Where the time went" : (orderInfo?.title ?? `Order ${order}`);
   const figures: string[] = [];
   if (breakdown !== undefined) {
     figures.push(`${order !== undefined ? "wall" : "wall of orders"} ${fmtDur(breakdown.wallMs)}`);

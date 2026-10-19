@@ -12,8 +12,29 @@ const add = (opts: FixtureOptions) => (f: Fixture) => {
   for (const call of timeCalls(opts)) f.answer(call.tool, call.input as JsonObject | undefined, call.outcome.output as JsonValue);
 };
 
+/** An empty hub answers with nothing rather than an error: no spans, no time, no findings. */
+const none = (f: Fixture) => {
+  for (const tool of ["time_spans", "time_breakdown", "time_insights"]) f.drop(tool);
+  const coverage = { complete: true, gaps: [] };
+  f.answer("time_spans", undefined, { spans: [], coverage });
+  f.answer("time_insights", undefined, { insights: [] });
+  f.answer("time_breakdown", undefined, {
+    wallMs: 0,
+    agentMs: 0,
+    byCategory: [],
+    topCommands: [],
+    repeated: [],
+    ciChecks: [],
+    humanWait: { totalMs: 0, n: 0 },
+    retentionDays: 30,
+    storedBytes: 0,
+    coverage,
+  });
+};
+
 export default defineGroup({
   extend: {
+    empty: none,
     typical: add({}),
     "long-text": add({ gaps: true, long: true }),
     "many-agents": add({ agents: 24 }),

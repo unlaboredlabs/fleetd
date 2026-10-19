@@ -34,8 +34,22 @@ export const parseInsights = (o: unknown) => shaped<TimeInsightsOutput>(o, ["ins
 export const parseSpans = (o: unknown) => shaped<TimeSpansOutput>(o, ["spans"], ["coverage"]);
 export const parseWindow = (o: unknown) => shaped<ThreadWindowOutput>(o, ["items"]);
 
-const errorText = (outcome: Extract<CallOutcome, { ok: false }>): string =>
-  outcome.error.fix ? `${outcome.error.message} ${outcome.error.fix}` : outcome.error.message;
+const SAID: Record<string, string> = {
+  offline: "Not connected to the hub. The figures come back when it reconnects.",
+  disconnected: "Not connected to the hub. The figures come back when it reconnects.",
+  timeout: "The hub took too long to answer. Try a shorter range.",
+  forbidden: "This app's key can't read time data on this hub.",
+  not_found: "The hub has no time data for this yet.",
+};
+
+/**
+ * What a failed call says on screen: a sentence for the code, plus the hub's own fix when it gave one. The raw
+ * message (tool names, inputs) is for logs, never the screen.
+ */
+export const errorText = (outcome: Extract<CallOutcome, { ok: false }>): string => {
+  const said = SAID[outcome.error.code] ?? "The hub couldn't answer.";
+  return outcome.error.fix === undefined ? said : `${said} ${outcome.error.fix}`;
+};
 
 const call = async <T>(client: TimeClient, tool: string, input: unknown, parse: (o: unknown) => Answer<T>): Promise<Answer<T>> => {
   const outcome = await client.call(tool, input);

@@ -104,20 +104,18 @@ export const screens: readonly Screen[] = [
     id: "time.timeline",
     route: "#/time/order/W8",
     fixtures: ["typical", "long-text", "many-agents", "time-heavy", "empty"],
-    pending: "F1's ScreenHost mounts TimeScreen and #/time/order/<id> with feat/desktop-shell-ui",
   },
   {
     id: "time.breakdown",
     route: "#/time",
     fixtures: ["typical", "long-text", "empty", "hub-unreachable"],
-    pending: "F1's ScreenHost mounts TimeScreen with feat/desktop-shell-ui",
   },
+  // The harness waits for the id before `open`, so the insights entry waits for the screen root, then opens the tab.
   {
-    id: "time.insights",
+    id: "time",
     route: "#/time",
     fixtures: ["typical", "long-text", "empty"],
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
-    pending: "F1's ScreenHost mounts TimeScreen with feat/desktop-shell-ui",
   },
 ];
 

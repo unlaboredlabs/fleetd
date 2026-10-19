@@ -202,7 +202,7 @@ export const buildModel = (
       name = "lead";
       role = "lead";
     } else if (g.kind === "agent") {
-      name = lane?.title ?? first.taskId ?? "agent";
+      name = lane?.title ?? "agent";
       taskId = lane?.taskId ?? first.taskId;
       role = lane?.role;
     } else if (g.kind === "check") {
