@@ -109,7 +109,8 @@ const plain = (line: string): string =>
 
 /** fleetd's own message to the lead, as one quiet line: why it was woken, or its first line. */
 export function systemHeadline(text: string): string {
-  const why = /^##\s*Why you are woken\s*$/m.exec(text);
+  // A wake lists its reasons under "## Events" (before #242, "## Why you are woken").
+  const why = /^##\s*(?:Why you are woken|Events)\s*$/m.exec(text);
   if (why) {
     const reasons = text
       .slice(why.index + why[0].length)
@@ -123,6 +124,7 @@ export function systemHeadline(text: string): string {
     }
     return "Woken by fleetd";
   }
+  if (/^\s*#\s*(?:fleetd digest|project)\b/.test(text)) return "fleetd's digest of the project";
   const line = text.split("\n").map(plain).find((l) => l.length > 0) ?? "";
   return line.length > 120 ? `${line.slice(0, 119)}…` : line;
 }

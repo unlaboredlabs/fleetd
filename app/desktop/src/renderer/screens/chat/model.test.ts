@@ -85,6 +85,8 @@ describe("the chat's rows", () => {
 
   it("say why fleetd woke the lead in one line", () => {
     expect(systemHeadline("# digest\n\n## Why you are woken\n- T3 finished: the receipt dates. Judge it.\n- A PR merged")).toBe("Woken: T3 finished: the receipt dates (+1 more)");
+    expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\n## Events\n- PR #214 merged")).toBe("Woken: PR #214 merged");
+    expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\nNothing new.")).toBe("fleetd's digest of the project");
     expect(systemHeadline("You seem stalled; continue the task.")).toBe("You seem stalled; continue the task.");
   });
 });
