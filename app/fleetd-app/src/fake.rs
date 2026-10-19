@@ -550,6 +550,192 @@ const SECRETS: &str = "Secrets come through `fleetd ask --kind secret`; ";
 /// Where the fixture's soft length budget sits; the hub's budgets are per prompt.
 const TOO_LONG: usize = 12_000;
 
+/// The rest of the hub's registry, ids, titles and when each is sent, with a stand-in text: the list is as long as
+/// a real hub's, which is what a layout has to survive.
+const MORE: &[(&str, &str, PromptKind, PromptGroup, &str)] = &[
+    ("lead.digest", "Lead: project digest", PromptKind::Wake, PromptGroup::Lead, "the top of the lead's first message and of every wake"),
+    ("digest.workstream.no_brief", "Digest: order without a brief", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per draft order"),
+    (
+        "digest.finish_all_idle",
+        "Digest: finish-all is idle",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "each digest, per idle finish-all order",
+    ),
+    ("digest.answer.withdrawn", "Digest: an ask the human dropped", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per dropped ask"),
+    ("digest.tasks.running", "Digest: running task", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per running task"),
+    ("digest.tasks.idle", "Digest: task waiting for input", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per idle task"),
+    ("digest.tasks.queued", "Digest: queued task", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per queued task"),
+    ("digest.tasks.ended", "Digest: task ended", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per task ended since the last wake"),
+    ("digest.train.repo", "Digest: a repo's merge train", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per train"),
+    ("digest.train.merged", "Digest: merged PR", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per merge since the last wake"),
+    (
+        "digest.train.parked",
+        "Digest: PR back with its author",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "each digest, per PR needing a rebase or red CI",
+    ),
+    ("digest.train.waived", "Digest: waived PR", PromptKind::Wake, PromptGroup::WakesAndMessages, "each digest, per waived PR"),
+    ("wake.frame", "Wake: frame", PromptKind::Wake, PromptGroup::WakesAndMessages, "every wake"),
+    (
+        "wake.intent.playbook",
+        "Wake: the order's playbook",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "per new order with a playbook the digest does not show",
+    ),
+    (
+        "wake.intent.playbook_listed",
+        "Wake: the order's playbook, listed above",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "per new order with a playbook the digest shows",
+    ),
+    ("wake.decision", "Wake: a human decision", PromptKind::Wake, PromptGroup::WakesAndMessages, "per decision the human recorded in the project"),
+    ("wake.answers", "Wake: answers", PromptKind::Wake, PromptGroup::WakesAndMessages, "per batch of answers"),
+    ("wake.task_cancelled", "Wake: task cancelled", PromptKind::Wake, PromptGroup::WakesAndMessages, "per cancelled task"),
+    ("wake.task_waiting", "Wake: task asks a question", PromptKind::Wake, PromptGroup::WakesAndMessages, "per task waiting on input"),
+    (
+        "wake.task_start_failed",
+        "Task could not start",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "per queued task that failed to start (its result)",
+    ),
+    ("wake.claim_failed", "Wake: claim failed", PromptKind::Wake, PromptGroup::ReviewsAndChecks, "per failed done claim"),
+    ("wake.claim_passed", "Wake: claim passed", PromptKind::Wake, PromptGroup::ReviewsAndChecks, "per claim that passed late"),
+    (
+        "wake.train.line",
+        "Wake: train message for the lead",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "when the train could not reach a PR's author task",
+    ),
+    ("wake.train.left", "Wake: PR left the train", PromptKind::Wake, PromptGroup::WakesAndMessages, "per PR the train abandoned"),
+    ("wake.train.merged", "Wake: PR merged", PromptKind::Wake, PromptGroup::WakesAndMessages, "per merge"),
+    ("wake.train.gave_up", "Wake: train gave up", PromptKind::Wake, PromptGroup::WakesAndMessages, "per PR GitHub refused to merge too often"),
+    ("wake.train.refused", "Wake: train refused a PR", PromptKind::Wake, PromptGroup::WakesAndMessages, "per task PR the train would not take"),
+    ("wake.research_verdict.go", "Wake: research verdict GO", PromptKind::Wake, PromptGroup::ReviewsAndChecks, "per research claim that went GO"),
+    (
+        "wake.research_verdict.stop",
+        "Wake: research verdict STOP",
+        PromptKind::Wake,
+        PromptGroup::ReviewsAndChecks,
+        "per research claim that went STOP",
+    ),
+    (
+        "wake.research_verdict.inconclusive",
+        "Wake: research verdict INCONCLUSIVE",
+        PromptKind::Wake,
+        PromptGroup::ReviewsAndChecks,
+        "per research claim that was inconclusive",
+    ),
+    (
+        "steer.message",
+        "A steer: the human's (or the lead's) words mid-run",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "per steer (steer_send, order_note, task message), straight to the agent, at its next tool boundary or now",
+    ),
+    (
+        "wake.agent_steer",
+        "Wake: the human steered one of your tasks directly",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "per steer_send to a task, at the lead's next wake (debounced, never an interrupt)",
+    ),
+    (
+        "wake.order_refs",
+        "Wake: what came with a new order",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "per new order with references or attachments",
+    ),
+    ("wake.order_stopped", "Wake: the human stopped an order", PromptKind::Wake, PromptGroup::WakesAndMessages, "per order_stop"),
+    (
+        "wake.order_idle",
+        "Wake: an order nobody works on",
+        PromptKind::Wake,
+        PromptGroup::WakesAndMessages,
+        "when the lead ends a turn with a frozen order and nothing under way",
+    ),
+    ("wake.scheduled_late", "Scheduled wake, late", PromptKind::Msg, PromptGroup::WakesAndMessages, "a wake_set message that fired late"),
+    (
+        "wake.scheduled_held",
+        "Scheduled wake, held by a usage pause",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "a wake_set message held by a usage pause",
+    ),
+    ("task.brief.read", "Read task: first message", PromptKind::Start, PromptGroup::Tasks, "every read task attempt"),
+    ("task.brief.review", "Review task: first message", PromptKind::Start, PromptGroup::Tasks, "every review, verifier and judge task attempt"),
+    ("review.verifier", "Verifier", PromptKind::Start, PromptGroup::ReviewsAndChecks, "tier L, per PR head"),
+    ("judge", "Judge", PromptKind::Start, PromptGroup::ReviewsAndChecks, "per `judge` done-when check of each claim"),
+    ("judge.research", "Judge, research", PromptKind::Start, PromptGroup::ReviewsAndChecks, "per `judge` check of a research claim"),
+    ("task.review_findings", "Blocking findings to the author", PromptKind::Msg, PromptGroup::ReviewsAndChecks, "per blocking review verdict"),
+    ("task.train_rebase", "PR needs a rebase", PromptKind::Msg, PromptGroup::Tasks, "per PR the train could not rebase"),
+    ("task.train_ci_failed", "PR's CI is red", PromptKind::Msg, PromptGroup::Tasks, "per PR whose CI failed or timed out"),
+    (
+        "usage.continue",
+        "Continue after a usage limit",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "per parked thread when the usage limit resets",
+    ),
+    (
+        "permission.denied.policy",
+        "Tool denied by policy",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "per tool call a tools.deny rule refuses (tool result)",
+    ),
+    (
+        "permission.denied.withdrawn",
+        "Tool ask withdrawn",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "per tool ask withdrawn before an answer (tool result)",
+    ),
+    (
+        "permission.denied.human",
+        "Tool denied by the human",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "per tool ask the human denied (tool result)",
+    ),
+    (
+        "permission.denied.answer",
+        "Tool denied with thread_answer",
+        PromptKind::Msg,
+        PromptGroup::WakesAndMessages,
+        "per tool call denied with thread_answer and no message (tool result)",
+    ),
+    ("router.retry", "Order router, second try", PromptKind::Oneshot, PromptGroup::OneShots, "once per order, after an unusable first answer"),
+    ("retro", "Retro", PromptKind::Oneshot, PromptGroup::OneShots, "each retro run (at most 2 a day)"),
+    (
+        "playbook.feature",
+        "Playbook: feature",
+        PromptKind::Playbook,
+        PromptGroup::Playbooks,
+        "in the digest and the order's wake while a workstream pins the feature playbook",
+    ),
+    (
+        "playbook.research",
+        "Playbook: research",
+        PromptKind::Playbook,
+        PromptGroup::Playbooks,
+        "in the digest and the order's wake while a workstream pins the research playbook",
+    ),
+    (
+        "playbook.finish-all",
+        "Playbook: finish-all",
+        PromptKind::Playbook,
+        PromptGroup::Playbooks,
+        "in the digest and the order's wake while a workstream pins the finish-all playbook",
+    ),
+];
+
 fn storefront() -> (String, String) {
     ("devbox".into(), "storefront".into())
 }
@@ -755,6 +941,20 @@ impl PromptHub {
                 )],
             },
         ];
+        let mut prompts = prompts;
+        prompts.extend(MORE.iter().map(|&(id, title, kind, group, sent_when)| FakePrompt {
+            id,
+            title,
+            kind,
+            group,
+            sent_when,
+            per_project: !matches!(kind, PromptKind::Oneshot | PromptKind::Playbook),
+            default: format!("The shipped text of {id}, sent {sent_when}.\n"),
+            placeholders: Vec::new(),
+            rules: Vec::new(),
+            global: None,
+            projects: Vec::new(),
+        }));
         Self { prompts }
     }
 
@@ -857,6 +1057,23 @@ impl PromptHub {
         if main.id == "lead.start" {
             out.push_str("\n# storefront: current truth, trust it over your memory\nWorkstreams:\n- W14 running: Cart total off by a cent\n");
             for id in ["wake.intent", "wake.task_result", "watchdog.nudge"] {
+                let (text, scope) = get(id).effective(Some(&key));
+                refs.push(SessionPromptRef { id: PromptId::unchecked(id), r#ref: fake_ref(id, &text), scope });
+            }
+        } else {
+            // A task pins every message it may get, as the hub's do: the long ids are what a table has to fit.
+            let pinned = [
+                "steer.message",
+                "task.review_findings",
+                "task.train_ci_failed",
+                "watchdog.nudge",
+                "usage.continue",
+                "permission.denied.policy",
+                "permission.denied.withdrawn",
+                "permission.denied.human",
+                "permission.denied.answer",
+            ];
+            for id in pinned {
                 let (text, scope) = get(id).effective(Some(&key));
                 refs.push(SessionPromptRef { id: PromptId::unchecked(id), r#ref: fake_ref(id, &text), scope });
             }

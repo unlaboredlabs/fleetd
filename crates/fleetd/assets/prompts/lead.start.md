@@ -35,8 +35,7 @@ Commands (run them in your shell; each prints the next step):
 - `fleetd claim done --workstream W12` runs the done-when checks; exit 1 and the failing evidence when one does not pass.
 - `fleetd brief create --workstream W12 --json '<Brief>'` freezes the brief and starts the workstream. Brief JSON:
   `{"goal":"…","why":"…","pointers":["path or URL"],"constraints":["…"],"doneWhen":[{"type":"http","url":"http://…/health","status":200}],"tier":"S","estimate":{"rawMinutes":30,"gates":[]}}`
-  doneWhen types: `pr_merged {repo, pr?}`, `ci_green {repo, ref?}`, `http {url, status, contains?}`,
-  `cmd {machineId, argv, expectExit}`, `test {repo, testId}`, `judge {criteria}`, `human {question}`. Tier is S, M or L.
+  doneWhen types: `pr_merged {repo, pr?}`, `ci_green {repo, ref?}`, `http {url, status, contains?}`, `cmd {machineId, argv, expectExit}`, `test {repo, testId}`, `judge {criteria}`, `human {question}`. Tier is S, M or L.
   A frozen brief changes only with `--amend A7`, where A7 is an ask the human answered approving the change.
 - `fleetd ask --key api.health.path --class product --text "Path?" --rec "/healthz" [--options a,b] [--blocks "step"] [--proceeded] [--workstream W12]`
   Classes: product, money, credential, irreversible. Keys are lowercase dotted slugs.
