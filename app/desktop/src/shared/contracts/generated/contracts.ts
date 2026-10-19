@@ -1671,6 +1671,16 @@ export type LaneStatus =
   | "waiting"
   | "parked";
 
+/** The project's latest merge, as the train recorded it. */
+export type LastMerged = {
+  /** When the train merged it. */
+  at: Timestamp;
+  prNumber?: number;
+  prUrl?: string;
+  /** The work's own title (its writer task's), not the PR's branch. */
+  title: string;
+};
+
 export type Lead = {
   lastWakeAt?: Timestamp;
   /** M4: the lead thread hit a usage limit; derived from the usage layer when read. */
@@ -2476,6 +2486,31 @@ export type ProjectRemoveOutput = {
   truncated?: boolean;
 };
 
+/** What a project is doing, in one word. */
+export type KnownProjectRowState = "working" | "waiting_on_you" | "blocked" | "idle";
+/** KnownProjectRowState, or a value from a newer hub. */
+export type ProjectRowState = KnownProjectRowState | (string & {});
+
+/** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA. */
+export type ProjectStatusRow = {
+  /** Its lead and task sessions holding a slot now. */
+  agentsRunning: number;
+  asOf: Timestamp;
+  /** Blocked only: why, in one line, for the expanded row. */
+  blockedReason?: string;
+  lastMerged?: LastMerged;
+  /**
+   * The project's progress estimate (verified, in flight, planning), without its series. Absent when the project
+   * has nothing to count.
+   */
+  progress?: ProgressEstimate;
+  projectRef: ProjectRef;
+  /** Set when a source the row reads (its machine, its repo on GitHub) went quiet. */
+  stale?: StaleMark;
+  state: ProjectRowState;
+  title: string;
+};
+
 export type ProjectSummary = {
   lastActivityAt: Timestamp;
   machineId: MachineId;
@@ -3251,6 +3286,15 @@ export type StatusGetInput = {
 export type StatusGetOutput = {
   doc: StatusDoc;
   next?: string;
+  truncated?: boolean;
+};
+
+export type StatusProjectsInput = { [key: string]: unknown };
+
+export type StatusProjectsOutput = {
+  next?: string;
+  /** By title. */
+  rows: ProjectStatusRow[];
   truncated?: boolean;
 };
 
@@ -4342,6 +4386,7 @@ export interface ToolMap {
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   status_get: { input: StatusGetInput; output: StatusGetOutput };
+  status_projects: { input: StatusProjectsInput; output: StatusProjectsOutput };
   status_seen: { input: StatusSeenInput; output: StatusSeenOutput };
   status_wait: { input: StatusWaitInput; output: StatusWaitOutput };
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
