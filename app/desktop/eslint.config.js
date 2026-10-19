@@ -16,7 +16,7 @@ export default defineConfig(
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
       "@typescript-eslint/consistent-type-imports": "error",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true }],
       "@typescript-eslint/no-confusing-void-expression": "off",
     },
   },
