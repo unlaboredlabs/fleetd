@@ -35,20 +35,26 @@ function checksScript() {
 export interface Launched {
   app: ElectronApplication;
   page: Page;
+  // Resolves once the fixture's timed frames have all arrived and the page is stable.
+  settled: () => Promise<void>;
   close: () => Promise<void>;
 }
 
-// The fixture's "now", so relative times ("3 min ago") read the same on every run.
-function fixtureNow(file: string) {
+// From the fixture file: its "now", so relative times ("3 min ago") read the same on every run, and its "settleMs",
+// how long after a subscribe its timed frames keep arriving.
+function fixtureMeta(file: string) {
   if (!existsSync(file)) throw new Error(`Fixture ${file} not found: run \`pnpm fixtures\` in app/desktop first.`);
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  if (typeof parsed === "object" && parsed !== null && "now" in parsed && typeof parsed.now === "string") return parsed.now;
-  return undefined;
+  if (typeof parsed !== "object" || parsed === null) return {};
+  return {
+    now: "now" in parsed && typeof parsed.now === "string" ? parsed.now : undefined,
+    settleMs: "settleMs" in parsed && typeof parsed.settleMs === "number" ? parsed.settleMs : 0,
+  };
 }
 
 // `fixture` is required for the app; only the self-test's stand-in window runs without one.
 export async function launch(fixture: FixtureName | undefined, main = appMain): Promise<Launched> {
-  const now = fixture === undefined ? undefined : fixtureNow(path.join(fixturesDir, `${fixture}.json`));
+  const { now, settleMs = 0 } = fixture === undefined ? {} : fixtureMeta(path.join(fixturesDir, `${fixture}.json`));
   const userData = mkdtempSync(path.join(tmpdir(), "fleetd-qa-"));
   // Only what Electron needs: never the user's fleetd home, credentials or the agent's own session variables.
   const env: Record<string, string> = {
@@ -78,9 +84,16 @@ export async function launch(fixture: FixtureName | undefined, main = appMain): 
     await page.clock.setFixedTime(new Date(now));
     await page.reload();
   }
+  // The renderer subscribed on this load, so the fixture's timeline runs from here.
+  const settledAt = Date.now() + settleMs;
   return {
     app,
     page,
+    settled: async () => {
+      const left = settledAt - Date.now();
+      if (left > 0) await new Promise((done) => setTimeout(done, left));
+      await settle(page);
+    },
     close: async () => {
       await app.close();
       rmSync(userData, { recursive: true, force: true });

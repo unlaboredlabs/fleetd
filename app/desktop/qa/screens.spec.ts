@@ -13,12 +13,13 @@ for (const screen of screens) {
   for (const fixture of screen.fixtures) {
     test(`${screen.id} · ${fixture}`, async () => {
       test.fixme(screen.pending !== undefined, screen.pending);
-      const { app, page, close } = await launch(fixture);
+      const { app, page, settled, close } = await launch(fixture);
       try {
         const reserved = await reservedRegions(app);
         const shots: Shot[] = [];
         // Shown once, then resized: a screen opened by an interaction stays open, as it would for a user.
         await show(page, screen.id, screen.route, screen.open);
+        await settled();
         for (const size of screen.sizes ?? (Object.keys(sizes) as (keyof typeof sizes)[])) {
           for (const theme of themes) {
             await setView(app, page, size, theme);
