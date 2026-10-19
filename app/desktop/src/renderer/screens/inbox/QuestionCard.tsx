@@ -2,7 +2,7 @@
 // answer given anywhere reads the same and clears everywhere. Hub data comes from E1's data layer; the only state
 // kept here is what the person did (store.ts).
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Button, Code, cx, IdChip, InlineCode, Input, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
+import { Button, Code, cx, IdChip, InlineCode, Input, RadioCard, RadioGroup, Text, Textarea } from "../../ui";
 import { cardKey, cardOptions, classTag, secretEnvLines, takesFreeText, takesSkip, type CardPick } from "./ask";
 import type { Ask, GatedRunSpec, Machine } from "../../../shared/contracts";
 import { useData, useDataLayer } from "../../src/data/react";
@@ -113,16 +113,17 @@ function Header({ ask, place }: { ask: Ask; place: QuestionCardViewProps["place"
             {ask.number}
           </Text>
         )}
-        <Truncate size="xs" tone="quiet" strong>
+        {/* The project is short and always whole (it wraps); the order title takes what is left and truncates. */}
+        <Text size="xs" tone="quiet" strong className={cx(s.project)}>
           {place.project}
-        </Truncate>
+        </Text>
         {place.order !== null && ask.workstreamId !== undefined ? (
-          <>
+          <span className={s.order}>
             <span className={s.dot} aria-hidden>
               ·
             </span>
             <IdChip label={place.order} id={ask.workstreamId} kind="order" size="xs" tone="quiet" />
-          </>
+          </span>
         ) : null}
         {tag === null ? null : (
           <span className={s.tag} data-tone={ask.class === "credential" ? "warning" : "danger"}>

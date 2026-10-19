@@ -15,6 +15,7 @@ import { setGrouping, useGrouping } from "./grouping";
 import { ActivityLine, Check, LaneRow, Track } from "./parts";
 import { type Present, heldLanes, usePresence } from "./presence";
 import { describe, isWorking, prLabel, prReview, stageTone } from "./words";
+import { NeedsYouStrip, OpenAsksButton } from "../inbox";
 import s from "./Board.module.css";
 
 export interface BoardActions {
@@ -142,6 +143,7 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
           handle={composerHandle}
           autoFocus
         />
+        <NeedsYouStrip limit={2} project={filter} />
       </div>
       <div className={s.list} data-screen={`board.${state}`}>
         {staged ? (
@@ -414,7 +416,15 @@ function OrderCardRow({
           {card.title}
         </Truncate>
         <span className={s.spacer} />
-        {item.chip ? <StatusChip tone={CHIP_TONE[phase]}>{item.label}</StatusChip> : null}
+        {item.chip ? (
+          phase === "waiting_on_you" ? (
+            <OpenAsksButton workstreamId={card.workstreamId}>
+              <StatusChip tone={CHIP_TONE[phase]}>{item.label}</StatusChip>
+            </OpenAsksButton>
+          ) : (
+            <StatusChip tone={CHIP_TONE[phase]}>{item.label}</StatusChip>
+          )
+        ) : null}
         <span className={s.age}>{created === undefined ? "" : fmtAgo(now - created)}</span>
       </div>
       {drawn.length > 0 ? (

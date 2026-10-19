@@ -139,13 +139,21 @@ const batchNumber = (ask: Ask): number => Number(ask.batchId?.slice(1) ?? 0);
  * answered here hides its open copy until the hub catches up; an undone one gives way to it as soon as it is back.
  * Undefined while the asks are loading.
  */
-export const needsYou = (open: readonly InboxItem[] | undefined, ui: InboxUi, workstreamId?: string): Ask[] | undefined => {
+export const needsYou = (
+  open: readonly InboxItem[] | undefined,
+  ui: InboxUi,
+  only?: { readonly workstreamId?: string | undefined; readonly project?: string | undefined },
+): Ask[] | undefined => {
   if (open === undefined) return undefined;
   const openIds = new Set(open.map((i) => i.ask.askId));
   const answered = [...ui.answered.values()].filter((a) => !(a.undone && openIds.has(a.ask.askId))).map((a) => a.ask);
   const answeredIds = new Set(answered.map((a) => a.askId));
   const all = [...open.map((i) => normalizeAsk(i.ask)).filter((a) => !answeredIds.has(a.askId)), ...answered];
-  const mine = workstreamId === undefined ? all : all.filter((a) => a.workstreamId === workstreamId);
+  const mine = all.filter(
+    (a) =>
+      (only?.workstreamId === undefined || a.workstreamId === only.workstreamId) &&
+      (only?.project === undefined || (a.projectRef !== undefined && `${a.projectRef.machineId}/${a.projectRef.projectId}` === only.project)),
+  );
   return mine.sort((a, b) => batchNumber(b) - batchNumber(a) || (a.number ?? 0) - (b.number ?? 0));
 };
 

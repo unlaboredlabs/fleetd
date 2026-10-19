@@ -114,7 +114,9 @@ describe("the inbox's own state over the data layer's asks", () => {
 
   it("is loading while the layer's asks are, and lists one order's asks for the order view", () => {
     expect(needsYou(undefined, emptyUi)).toBeUndefined();
-    expect(ids(needsYou(open, emptyUi, "W2"))).toEqual(["A14", "A15", "A17"]);
+    expect(ids(needsYou(open, emptyUi, { workstreamId: "W2" }))).toEqual(["A14", "A15", "A17"]);
+    expect(ids(needsYou(open, emptyUi, { project: "devbox/storefront" }))).toHaveLength(7);
+    expect(ids(needsYou(open, emptyUi, { project: "buildbox/api" }))).toEqual([]);
   });
 
   it("gives an answer without an undo window (an older hub, an approval) its receipt at once", () => {
