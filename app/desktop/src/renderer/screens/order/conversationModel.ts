@@ -7,7 +7,7 @@
 import type { ActionItem, AgentLane, HubEvent, Steer, TailItem } from "../../../shared/contracts";
 import { plural } from "./format";
 import { type Receipt, receipt, sendingReceipt } from "./receipts";
-import { taskOfTarget, type Sending } from "./sending";
+import { taskOfTarget, unsettled, type Sending } from "./sending";
 
 export type Author = { readonly kind: "you"; readonly keyName?: string } | { readonly kind: "lead" };
 
@@ -140,9 +140,26 @@ export function systemHeadline(text: string): string {
 
 const RECENT = 8;
 
-// The hub cuts tail messages at 2,000 characters with a trailing ellipsis (hub/api/grants.rs TAIL_TEXT).
+/**
+ * A message's start (`head`) joined to its end (`tail`, its last characters) where they overlap; the tail alone
+ * when it holds the whole message. Undefined when the two don't overlap, so they can't be shown as one.
+ */
+export function completeWith(head: string, tail: string): string | undefined {
+  if (tail.startsWith(head) || tail.endsWith(head)) return tail;
+  if (head.endsWith(tail) || head.includes(tail)) return head;
+  // A short overlap could be chance; a dozen characters of the same words is the same message.
+  const min = Math.min(12, tail.length);
+  for (let k = Math.min(head.length, tail.length); k >= min; k--) {
+    if (head.endsWith(tail.slice(0, k))) return head + tail.slice(k);
+  }
+  return undefined;
+}
+
+// A tail message is at most 2,000 UTF-16 units: the hub keeps a long message's END (thread_view.rs tail_of,
+// keep_tail), and the offline cache keeps its start with an ellipsis (tools.rs). Either way part of it is missing.
 const TAIL_TEXT = 2000;
-const isClipped = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
+const cutAtEnd = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
+const isClipped = (text: string): boolean => cutAtEnd(text) || text.length >= TAIL_TEXT;
 
 export interface Streamed {
   readonly messageId: string;
@@ -164,6 +181,11 @@ export interface ConversationInput {
   readonly redirected?: ReadonlySet<string>;
   /** The lead's messages as they streamed in on the live feed, oldest first: in full, where the tail cuts them. */
   readonly streamed?: readonly Streamed[];
+  /**
+   * The end of the lead's latest message (thread_tail's thread.latestMessageTail, its last 4,096 characters) and
+   * when it was written: once the lead is idle, this completes a message the live feed or the tail cut short.
+   */
+  readonly latest?: { readonly text: string; readonly at: string };
   readonly lanes: readonly AgentLane[];
 }
 
@@ -284,10 +306,12 @@ export function buildConversation(input: ConversationInput): Entry[] {
       out.push({ kind: "system", key: keyFor("system", item.at), at: item.at, headline: systemHeadline(item.text), text: item.text });
     } else {
       // The same message from the live feed: in full where the tail cut it, or a part the feed caught.
-      const head = isClipped(item.text) ? item.text.slice(0, -1) : item.text;
+      const head = cutAtEnd(item.text) ? item.text.slice(0, -1) : item.text;
       const recent = assistantSeen++ >= assistantCount - RECENT;
       const same = recent
-        ? streamed.find((m) => !used.has(m.messageId) && m.text.trim() !== "" && (m.text.startsWith(head) || head.startsWith(m.text)))
+        ? streamed.find(
+            (m) => !used.has(m.messageId) && m.text.trim() !== "" && (m.text.startsWith(head) || head.startsWith(m.text) || m.text.endsWith(head)),
+          )
         : undefined;
       if (same) used.add(same.messageId);
       const full = same !== undefined && same.text.length > head.length ? same.text : undefined;
@@ -312,14 +336,36 @@ export function buildConversation(input: ConversationInput): Entry[] {
   // Streamed messages the tail doesn't hold yet (it refetches on the thread's events); the newest is still arriving
   // while the lead works.
   const fresh = streamed.filter((m) => !used.has(m.messageId) && m.text.trim() !== "");
+  const latest = !input.leadWorking && input.latest !== undefined && input.latest.text.trim() !== "" ? input.latest : undefined;
   fresh.forEach((m, i) => {
-    const streaming = input.leadWorking && i === fresh.length - 1;
-    out.push({ kind: "say", key: `live:${m.messageId}`, at: "", author: { kind: "lead" }, text: m.text, ...(streaming ? { streaming } : {}) });
+    const last = i === fresh.length - 1;
+    const streaming = input.leadWorking && last;
+    // Idle, the newest streamed message is finished: its end is the thread's latest message.
+    const done = last && latest ? (completeWith(m.text, latest.text) ?? `${m.text}\n\n…\n\n${latest.text}`) : m.text;
+    out.push({
+      kind: "say",
+      key: `live:${m.messageId}`,
+      at: last && latest ? latest.at : "",
+      author: { kind: "lead" },
+      text: done,
+      ...(streaming ? { streaming } : {}),
+    });
   });
+  // Idle, the lead's newest message is finished, and the thread's latest-message tail holds its true end: the
+  // tail item and the live feed may each have caught it mid-stream (or the hub kept only part of it). Complete it,
+  // whichever of them built the row.
+  if (latest && fresh.length === 0) {
+    for (let k = out.length - 1; k >= 0; k--) {
+      const e = out[k];
+      if (e?.kind !== "say" || e.author.kind !== "lead" || e.to !== undefined) continue;
+      const own = cutAtEnd(e.text) ? e.text.slice(0, -1) : e.text;
+      const full = completeWith(own, latest.text);
+      if (full !== undefined && full !== e.text) out[k] = { kind: "say", key: e.key, at: e.at, author: e.author, text: full };
+      break;
+    }
+  }
 
-  for (const s of input.sending) {
-    // A cut-off steer the hub turns out to have (steers_list after a reconnect) shows once, as the hub's.
-    if (s.state.t !== "failed" && steers.some((st) => sameSteer(st, s))) continue;
+  for (const s of unsettled(input.sending, steers)) {
     const to = taskOfTarget(s.target);
     out.push({
       kind: "say",
@@ -380,17 +426,6 @@ export function splitBlocks(text: string, max = 40): string[] {
   }
   if (cur.length > 0) out.push(cur.join("\n"));
   return out;
-}
-
-// Clocks differ a little between the app and the hub; a steer queued well before the send is an older one.
-const SKEW_MS = 5000;
-
-function sameSteer(st: Steer, s: Sending): boolean {
-  return (
-    st.text === s.text &&
-    taskOfTarget(st.target) === taskOfTarget(s.target) &&
-    Date.parse(st.queuedAt) >= Date.parse(s.at) - SKEW_MS
-  );
 }
 
 const settled = (l: AgentLane): boolean => l.status === "done" || l.status === "failed" || l.status === "cancelled";

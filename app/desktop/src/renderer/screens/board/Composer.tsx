@@ -2,9 +2,10 @@
 // how below (attach, mention, Enter). Enter sends and keeps focus; Shift+Enter adds a line. The rules live in
 // composerLogic.ts; this file is the box.
 import { useEffect, useId, useImperativeHandle, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from "react";
-import { AtSign, Paperclip } from "lucide-react";
+import { AtSign, ChevronDown, Paperclip, X } from "lucide-react";
 import {
   Button,
+  InlineCode,
   Menu,
   MenuContent,
   MenuItem,
@@ -62,8 +63,27 @@ export interface ComposerApi {
   addProject(): void;
 }
 
+export interface Offline {
+  readonly reason: string;
+  /** May hold `code` in backticks. */
+  readonly fix?: string | undefined;
+}
+
+/** A fix as main words it, with `code` in backticks shown as code. */
+const FixText = ({ text }: { text: string }) => (
+  <>
+    {text.split("`").map((part, i) => (i % 2 === 1 ? <InlineCode key={i}>{part}</InlineCode> : part))}
+  </>
+);
+
 export interface ComposerHandle {
   focus(): void;
+  /** Opens the project picker (⌘⇧P). */
+  pickProject(): void;
+  /** Opens the type picker (⌘⇧T). */
+  pickType(): void;
+  /** Opens the file dialog to attach (⌘⇧A). */
+  attach(): void;
   /** Puts text in the box (Edit on a failed order, the palette's "New order: …"). */
   setText(text: string): void;
 }
@@ -75,8 +95,8 @@ export interface ComposerProps {
   readonly lastUsed?: string | undefined;
   readonly orders: readonly { id: string; title: string }[];
   readonly prs: readonly { number: number; url: string; title: string }[];
-  /** Why Send is off, e.g. "Not connected; retrying in 4 s". */
-  readonly offline?: string | undefined;
+  /** Why Send is off: main's own words for the connection (`reason` has no final period) and what to do. */
+  readonly offline?: Offline | undefined;
   readonly api: ComposerApi;
   readonly handle?: Ref<ComposerHandle> | undefined;
   readonly autoFocus?: boolean;
@@ -129,8 +149,13 @@ export function Composer(props: ComposerProps) {
   const nextLocal = useRef(0);
   const pastes = useRef(0);
 
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [typeMenu, setTypeMenu] = useState(false);
   useImperativeHandle(props.handle, () => ({
     focus: () => box.current?.focus(),
+    pickProject: () => setProjectMenu(true),
+    pickType: () => setTypeMenu(true),
+    attach: () => fileInput.current?.click(),
     setText: (t: string) => {
       setText(t);
       box.current?.focus();
@@ -310,13 +335,13 @@ export function Composer(props: ComposerProps) {
       </Text>
       <div className={c.where}>
         <span className={c.quiet}>to</span>
-        <Menu>
+        <Menu open={projectMenu} onOpenChange={setProjectMenu}>
           <MenuTrigger asChild>
             <button type="button" className={c.picker} aria-label="Project">
               <Truncate expand="none" size="xs" tone="inherit">
                 {targetRow?.title ?? "Any project"}
               </Truncate>
-              <span aria-hidden>▾</span>
+              <ChevronDown className={c.chevron} aria-hidden />
             </button>
           </MenuTrigger>
           <MenuContent>
@@ -337,10 +362,10 @@ export function Composer(props: ComposerProps) {
         {targetRow ? <span className={c.quiet}>on {targetRow.machine}{targetRow.offline ? " (offline)" : ""}</span> : null}
         {source ? <span className={c.quiet}>· {source}</span> : null}
         {guessing && chosen === undefined ? <span className={c.quiet}>· guessing…</span> : null}
-        <Menu>
+        <Menu open={typeMenu} onOpenChange={setTypeMenu}>
           <MenuTrigger asChild>
             <button type="button" className={cx(c.picker, c.type)} aria-label="Type">
-              {TEMPLATE_LABEL[kind]} <span aria-hidden>▾</span>
+              {TEMPLATE_LABEL[kind]} <ChevronDown className={c.chevron} aria-hidden />
             </button>
           </MenuTrigger>
           <MenuContent>
@@ -406,7 +431,7 @@ export function Composer(props: ComposerProps) {
                 {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "failed") : "uploading…"}`}
               </Truncate>
               <button type="button" className={c.remove} aria-label={`Remove ${a.name}`} onClick={() => setAttached(attached.filter((x) => x.local !== a.local))}>
-                ×
+                <X className={c.removeIcon} aria-hidden />
               </button>
             </span>
           ))}
@@ -416,7 +441,7 @@ export function Composer(props: ComposerProps) {
                 {r.chip}
               </Truncate>
               <button type="button" className={c.remove} aria-label={`Remove ${r.chip}`} onClick={() => setRefs(refs.filter((x) => x !== r))}>
-                ×
+                <X className={c.removeIcon} aria-hidden />
               </button>
             </span>
           ))}
@@ -461,7 +486,13 @@ export function Composer(props: ComposerProps) {
           </Text>
         ) : props.offline ? (
           <Text size="xs" tone="warning" className={cx(c.error)}>
-            {props.offline}
+            {`${props.offline.reason}.`}
+            {props.offline.fix ? (
+              <>
+                {" "}
+                <FixText text={props.offline.fix} />
+              </>
+            ) : null}
           </Text>
         ) : (
           <span className={c.keys}>Enter send · ⇧Enter newline</span>

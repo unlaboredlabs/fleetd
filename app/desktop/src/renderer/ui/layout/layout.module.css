@@ -43,10 +43,6 @@
   -webkit-app-region: drag;
   user-select: none;
 }
-/* Anything you can click stays clickable inside the drag region. */
-.topBar :is(button, a, input, textarea, select, [role="button"], [role="tab"], [data-no-drag]) {
-  -webkit-app-region: no-drag;
-}
 .topLeading,
 .topTrailing {
   display: flex;

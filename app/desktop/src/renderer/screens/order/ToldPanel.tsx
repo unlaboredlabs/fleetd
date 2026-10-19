@@ -44,8 +44,8 @@ function Body({ prompt, registry, who }: { prompt: SessionPrompt; registry: read
     <div className={s.told} data-screen="order.told">
       <div className={s.receipt}>
         <Text size="xs" tone="quiet">{`${view.context} · started ${started}`}</Text>
-        <IdChip label="Session" id={`${prompt.machineId}/${prompt.threadId}`} kind="thread" size="xs" tone="quiet" />
-        <IdChip label="Text" id={prompt.textSha} kind="text hash" size="xs" tone="quiet" />
+        <IdChip label="Session id" id={`${prompt.machineId}/${prompt.threadId}`} kind="thread" size="xs" tone="quiet" />
+        <IdChip label="Text version" id={prompt.textSha} kind="text hash" size="xs" tone="quiet" />
       </div>
 
       <div className={s.section}>

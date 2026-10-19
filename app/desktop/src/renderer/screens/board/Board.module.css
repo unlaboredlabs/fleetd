@@ -440,6 +440,30 @@
   border-bottom: 1px solid var(--hairline);
   min-width: 0;
 }
+.groupSwitch {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--quiet);
+}
+.groupOption {
+  all: unset;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.groupOption:hover {
+  text-decoration: underline;
+}
+.groupOption[aria-checked="true"] {
+  color: var(--text);
+}
+.groupOption:focus-visible {
+  box-shadow: var(--focus-ring);
+}
 .card {
   display: flex;
   flex-direction: column;
@@ -450,6 +474,11 @@
 }
 .card:hover {
   background: var(--hover);
+}
+.selectedCard,
+.selectedCard:hover {
+  background: var(--selected);
+  border-radius: var(--radius-sm);
 }
 .card:focus-visible {
   outline: none;
@@ -587,6 +616,12 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.machineDot {
+  display: inline-block;
+  margin: 0 var(--space-1-5);
+  vertical-align: middle;
+  line-height: 0;
+}
 .moreChips {
   flex: none;
   color: var(--quiet);
@@ -652,6 +687,8 @@
 .arrow {
   color: var(--faint);
   flex: none;
+  width: 12px;
+  height: 12px;
 }
 .mergedToday {
   flex: none;

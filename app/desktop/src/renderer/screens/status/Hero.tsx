@@ -1,4 +1,5 @@
 import { cx, Text, Tooltip } from "../../ui";
+import { formatRoute } from "../settings/route";
 import type { ProgressPoint, StatusDoc } from "./contracts";
 import { useTween } from "./hooks";
 import {
@@ -37,29 +38,36 @@ export function Hero({ doc, live, now }: { doc: StatusDoc; live: boolean; now: n
   );
 }
 
-/** The number (or "planning") with its meta on one line, and the bar across the full width under it. */
+/** The number (or "planning", or the no-plan sentence) with its meta on one line, and the bar under it. With
+ * nothing to count there is no number and no bar: a 0% would claim a measurement that wasn't made. */
 function FigureBlock({ f, live, meta }: { f: Figure; live: boolean; meta: readonly string[] }) {
   const pct = f.pct ?? 0;
   const shown = useTween(pct, live);
   const k = pct === 0 ? 1 : shown / pct;
+  const lead =
+    f.pct !== null ? (
+      <Text size="display" strong tabular className={cx(s.number)}>
+        {`${Math.round(shown)}%`}
+      </Text>
+    ) : f.planning !== null ? (
+      <Text size="xl" strong>
+        planning
+      </Text>
+    ) : (
+      <Text size="xl" strong>
+        nothing to count yet
+      </Text>
+    );
   return (
     <>
       <div className={cx(s.figureRow)}>
         <div className={cx(s.numberLine)}>
-          {f.planning === null ? (
-            <Text size="display" strong tabular className={cx(s.number)}>
-              {`${Math.round(shown)}%`}
-            </Text>
-          ) : (
-            <Text size="xl" strong>
-              planning
-            </Text>
-          )}
+          {lead}
           {f.planning !== null ? (
             <Text size="xs" tone="quiet">
               the lead is writing the plan; progress counts once it has items
             </Text>
-          ) : f.verifiedNote !== null ? (
+          ) : f.pct !== null && f.verifiedNote !== null ? (
             <Text size="xs" tone="quiet" tabular>
               {f.verifiedNote}
             </Text>
@@ -78,13 +86,13 @@ function FigureBlock({ f, live, meta }: { f: Figure; live: boolean; meta: readon
           ))}
         </div>
       </div>
-      {f.planning === null ? (
+      {f.pct !== null ? (
         <TwoToneBar verified={f.verifiedPct * k} inFlight={f.inFlightPct * k} label={`${pct}% estimated, ${f.verifiedPct}% verified`} />
-      ) : (
-        <div className={cx(s.planningBar)} role="img" aria-label={`planning ${f.planning}% of its usual time`}>
+      ) : f.planning !== null ? (
+        <div className={cx(s.planningBar)} role="img" aria-label={`planning, ${f.planning}%`}>
           <div className={cx(s.barInFlight)} style={{ width: `${f.planning}%` }} />
         </div>
-      )}
+      ) : null}
     </>
   );
 }
@@ -155,6 +163,8 @@ function Sparkline({ series, now }: { series: readonly ProgressPoint[]; now: num
   );
 }
 
+const HEADLINE_PROMPT = formatRoute({ tab: "prompts", prompt: "status.headline" });
+
 function Headline({ doc, live, now }: { doc: StatusDoc; live: boolean; now: number }) {
   const h = doc.headline;
   const generated = h.source === "generated";
@@ -162,12 +172,13 @@ function Headline({ doc, live, now }: { doc: StatusDoc; live: boolean; now: numb
   return (
     <div className={cx(s.headline)}>
       <Text className={cx(s.grow)}>{headlineText(doc, live)}</Text>
-      <Tooltip content={`${why}. Every number in it comes from fleetd; claude only phrases the line.`}>
-        <span className={cx(s.tag)} tabIndex={0}>
+      {/* The line's prompt is transparent and editable (status brief §2): the tag opens it in Settings → Prompts. */}
+      <Tooltip content={`${why}. Every number in it comes from fleetd; claude only phrases the line. Open its prompt.`}>
+        <button type="button" className={cx(s.tag)} onClick={() => (window.location.hash = HEADLINE_PROMPT)}>
           <Text size="xs" tone="quiet">
             {generated ? "generated" : "template"}
           </Text>
-        </span>
+        </button>
       </Tooltip>
     </div>
   );
@@ -184,7 +195,7 @@ function WaitingOn({ doc, now }: { doc: StatusDoc; now: number }) {
         </Text>
         {v.path.length === 0 ? (
           <Text size="xs" tone="quiet">
-            nothing: the work in flight can go on
+            nothing
           </Text>
         ) : (
           <Text strong>{v.path.join(" → ")}</Text>
@@ -195,8 +206,9 @@ function WaitingOn({ doc, now }: { doc: StatusDoc; now: number }) {
           <Text size="xs" tone="quiet">
             blocking
           </Text>
-          {v.blocking.map((b) => (
+          {v.blocking.map((b, i) => (
             <Text key={b.label} size="xs" strong tone="warning">
+              {i > 0 ? <span className={cx(s.quietSpan)}>· </span> : null}
               {b.label}
               {b.since !== null ? <span className={cx(s.quietSpan)}> {b.since}</span> : null}
             </Text>

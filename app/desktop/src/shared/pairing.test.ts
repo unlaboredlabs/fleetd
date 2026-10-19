@@ -68,6 +68,7 @@ describe("versions", () => {
       { name: "devbox", nodeVersion: "0.5.0" },
       { name: "buildbox", nodeVersion: "0.4.9" },
       { name: "laptop", nodeVersion: "unknown" },
+      { name: "spare", nodeVersion: "0.0.0" },
     ];
     expect(olderNodes(machines, "0.5.0")).toEqual(["buildbox"]);
   });

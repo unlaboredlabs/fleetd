@@ -1,6 +1,6 @@
 // The status docs the screenshots use (fixtures/status/docs.ts), by "<scope>[-<variant>]", for the tests: one source
 // for both.
-import { legacyDoc, longTextDoc, planningDoc, statusDoc, type Kind } from "../../../../fixtures/status/docs";
+import { emptyDoc, legacyDoc, longTextDoc, planningDoc, statusDoc, type Kind } from "../../../../fixtures/status/docs";
 import type { StatusDoc } from "./contracts";
 
 const VARIANTS: Record<string, (kind: Kind) => unknown> = {
@@ -9,6 +9,7 @@ const VARIANTS: Record<string, (kind: Kind) => unknown> = {
   planning: (k) => (k === "order" ? planningDoc() : statusDoc(k)),
   legacy: legacyDoc,
   "long-text": longTextDoc,
+  empty: emptyDoc,
 };
 
 /** Every status_get answer the fixtures give, keyed "<variant>/<scope kind>". */

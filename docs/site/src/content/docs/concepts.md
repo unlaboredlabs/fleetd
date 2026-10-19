@@ -103,7 +103,8 @@ same question is never asked twice. See [Approvals & secrets](/docs/approvals-an
 ### Merge train {#merge-train}
 
 Only fleetd merges. Each repo has one train, a queue that rebases each ready pull request, waits for CI on that exact
-commit, and squash-merges it. You can pause a repo's train with the `train_freeze` tool.
+commit, and squash-merges it. Ready PRs that touch different files merge together in one CI run. See
+[Merge train](/docs/merge-train).
 
 A pull request's **tier** sets its reviews:
 
@@ -113,8 +114,8 @@ A pull request's **tier** sets its reviews:
 | M | one clean review |
 | L | two clean reviews and a verifier |
 
-A repo with no CI merges on fleetd's own checks, and the merge says so. Each pull request body needs a `Source:`
-line that names what it serves.
+A PR with no CI merges on fleetd's own checks, and the merge says so. Each pull request body needs a `Source:` line
+that names what it serves.
 
 ### Done, checked {#done}
 

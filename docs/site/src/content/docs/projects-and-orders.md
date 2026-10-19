@@ -69,8 +69,8 @@ fleetd project remove devbox/storefront
 | What | Is |
 |---|---|
 | The base each writer branches from | The checkout's `origin/HEAD`, else its current branch. |
-| A task's branch | `fleetd/T<n>-<slug>`, such as `fleetd/T1-fix-readme-typo`. |
-| Where the merge train merges | Each pull request's base branch. |
+| A task's branch | `fleetd/T<n>-<slug>`, such as `fleetd/T1-fix-readme-typo`. Change the `fleetd/` prefix with `branchPrefix` in the [policy file](/docs/config-and-files#policy). |
+| Where the merge train merges | Each pull request's base branch. See [Merge train](/docs/merge-train). |
 
 The `Default branch:` line that `project add` prints is GitHub's default branch. fleetd uses it to watch main's CI and
 to read its protection rules. To work against another branch, point the checkout's `origin/HEAD` at it on the worker:

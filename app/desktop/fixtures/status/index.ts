@@ -1,4 +1,4 @@
-// The Status view's answers (F6): status_get for the fleet, storefront and W14 (the data layer refetches it on
+// The Status view's answers (F6): status_get for the fleet, storefront and W1 (the data layer refetches it on
 // events; there is no long-poll), and the seen mark. Added to the shared fixtures, plus the states
 // only Status has: stale sources, the lead still planning, a hub without the progress model, and the skeleton.
 import { Fixture } from "../kit/fixture.ts";
@@ -17,10 +17,31 @@ const openAsks = (f: Fixture): string[] => {
   return asks.flatMap((a) => (isObject(a) && typeof a["askId"] === "string" ? [a["askId"]] : []));
 };
 
+/** The tasks the fixture's board runs for W1, so In progress rows join real lanes (what each agent does now). */
+const boardTasks = (f: Fixture): string[] => {
+  const orders = f.answers("orders_board").flatMap((a) => (isObject(a.output) && Array.isArray(a.output["orders"]) ? a.output["orders"] : []));
+  const w1 = orders.find((o) => isObject(o) && o["workstreamId"] === "W1");
+  const lanes = isObject(w1) && Array.isArray(w1["lanes"]) ? w1["lanes"] : [];
+  return lanes.flatMap((l) => (isObject(l) && typeof l["taskId"] === "string" ? [l["taskId"]] : []));
+};
+
+/** In progress rows of W1 run the board's tasks: two lanes on the first row, one on the second. */
+const withBoardTasks = (doc: JsonObject, tasks: readonly string[]): JsonObject => {
+  const rows = doc["inProgress"];
+  if (tasks.length === 0 || !Array.isArray(rows)) return doc;
+  let next = 0;
+  const take = (n: number): string[] => tasks.slice(next, (next += n));
+  return {
+    ...doc,
+    inProgress: rows.map((r, i) => (isObject(r) && r["workstreamId"] === "W1" ? { ...r, taskIds: take(i === 0 ? 2 : 1) } : r)),
+  };
+};
+
 const answer = (f: Fixture, docs: (kind: Kind, asks: readonly string[]) => JsonObject, getDelayMs?: number): void => {
   const asks = openAsks(f);
+  const tasks = boardTasks(f);
   for (const kind of KINDS) {
-    const doc = docs(kind, asks);
+    const doc = withBoardTasks(docs(kind, asks), tasks);
     f.answer("status_get", { scope: SCOPES[kind] }, { doc }, getDelayMs);
   }
   f.answer("status_seen", undefined, { recorded: true });
@@ -48,7 +69,7 @@ export default defineGroup({
   },
   fixtures: (base) => [
     own(base("typical"), "stale", "Status: GitHub stopped answering for acme/storefront on top of the typical picture.", (k, asks) => statusDoc(k, true, asks)),
-    own(base("typical"), "planning", "Status: W14's lead is still planning, so the order shows its planning bar, not 0%.", (k, asks) =>
+    own(base("typical"), "planning", "Status: W1's lead is still planning, so the order shows its planning bar, not 0%.", (k, asks) =>
       k === "order" ? planningDoc() : statusDoc(k, false, asks),
     ),
     own(base("typical"), "legacy", "Status: a hub without the progress model (no estimate, stage credit, critical path or blockers).", (k, asks) => legacyDoc(k, asks)),

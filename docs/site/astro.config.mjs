@@ -36,6 +36,7 @@ export default defineConfig({
           items: [
             "machines",
             "projects-and-orders",
+            "merge-train",
             "steering",
             "approvals-and-secrets",
             "desktop-app",

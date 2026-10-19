@@ -1,6 +1,6 @@
 import { Dot, Text, Tooltip } from "../../ui";
 import type { StaleMark, StatusDoc } from "./contracts";
-import { age, asOf, machineView, staleAge, staleWords, usageView, when } from "./view";
+import { age, asOf, ciUrl, machineView, staleAge, staleWords, usageView, when } from "./view";
 import s from "./status.module.css";
 
 const CI_DOT: Record<string, string> = {
@@ -9,18 +9,37 @@ const CI_DOT: Record<string, string> = {
   pending: "var(--warning)",
 };
 
-/** A part of the strip: its value, its as-of on hover, and a visible stale mark with the reason. */
-function Part({ children, stale, asOfText, now }: { children: React.ReactNode; stale?: StaleMark | undefined; asOfText: string; now: number }) {
+const openMachines = (): void => {
+  window.location.hash = "#/machines";
+};
+
+/** A part of the strip: its value, its as-of on hover, a visible stale mark with the reason, and where it leads
+ * (a repo's CI on GitHub, a machine or its usage on Machines). */
+function Part({
+  children,
+  stale,
+  asOfText,
+  now,
+  onOpen,
+  opens,
+}: {
+  children: React.ReactNode;
+  stale?: StaleMark | undefined;
+  asOfText: string;
+  now: number;
+  onOpen: () => void;
+  opens: string;
+}) {
   return (
-    <Tooltip content={stale ? `${staleWords(stale, now)} (${asOfText})` : asOfText}>
-      <span className={stale ? s.partStale : s.part} tabIndex={0}>
+    <Tooltip content={`${stale ? `${staleWords(stale, now)} (${asOfText})` : asOfText}. ${opens}`}>
+      <button type="button" className={stale ? s.partStale : s.part} onClick={onOpen}>
         {children}
         {stale ? (
           <Text size="xs" strong tone="warning" tabular>
             {staleAge(stale, now)}
           </Text>
         ) : null}
-      </span>
+      </button>
     </Tooltip>
   );
 }
@@ -43,7 +62,14 @@ export function Health({ doc, now }: { doc: StatusDoc; now: number }) {
           </Text>
         ) : (
           h.ci.map((c) => (
-            <Part key={c.repo} stale={c.stale} now={now} asOfText={`GitHub ${asOf(c.asOf, now)}`}>
+            <Part
+              key={c.repo}
+              stale={c.stale}
+              now={now}
+              asOfText={`GitHub ${asOf(c.asOf, now)}`}
+              opens="Opens its runs on GitHub"
+              onOpen={() => void window.fleetd.openExternal(ciUrl(c.repo))}
+            >
               <Dot color={CI_DOT[c.state] ?? "var(--faint)"} label={c.state === "unknown" ? "not checked yet" : c.state} />
               <Text size="xs">{c.repo}</Text>
               {c.state === "red" && c.failing.length > 0 ? (
@@ -78,6 +104,8 @@ export function Health({ doc, now }: { doc: StatusDoc; now: number }) {
               key={m.machineId}
               stale={m.stale}
               now={now}
+              opens="Opens Machines"
+              onOpen={openMachines}
               asOfText={Number.isNaN(seen) ? "never seen" : `last heartbeat ${age(now - seen)} ago`}
             >
               <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} label={m.status} />
@@ -103,6 +131,8 @@ export function Health({ doc, now }: { doc: StatusDoc; now: number }) {
               key={u.row.limitType}
               stale={u.row.stale}
               now={now}
+              opens="Opens Machines"
+              onOpen={openMachines}
               asOfText={`read on ${u.row.machineId} ${asOf(u.row.observedAt, now)}${u.row.resetsAt !== undefined ? `, resets ${when(u.row.resetsAt, now)}` : ""}`}
             >
               <Text size="xs" tabular tone={(u.row.utilization ?? 0) >= 0.9 ? "danger" : "default"}>

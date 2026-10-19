@@ -108,8 +108,10 @@ describe("the ready state", () => {
     expect(full.leadLine).toBe("CI and rules found.");
   });
 
-  it("fills one bar across a clone's phases", () => {
+  it("draws the bar at the percent the label says, per phase", () => {
     expect(progress({ addId: "a", path: "/p", phase: "checking_out", percent: 100 }).fraction).toBe(1);
+    const receiving = progress({ addId: "a", path: "/p", phase: "receiving", percent: 42 });
+    expect([receiving.detail, receiving.fraction]).toEqual(["Receiving objects 42%", 0.42]);
     expect(progress({ addId: "a", path: "/p", phase: "inspecting" })).toEqual({ step: "inspect", detail: "Reading the default branch, CI and merge rules" });
   });
 });

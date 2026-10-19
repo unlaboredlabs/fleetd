@@ -227,6 +227,36 @@ brand!(
     expected = "a repo-relative glob, not an absolute path"
 );
 
+/// What every branch fleetd names starts with, by default.
+pub const DEFAULT_BRANCH_PREFIX: &str = "fleetd/";
+
+/// A git branch name prefix ending in `/`: components of letters, digits, `.`, `_` and `-`, none empty, none starting
+/// with `.` or ending with `.lock`, no `..`, not starting with `-`. Stricter than git, so every task branch under it is
+/// a valid ref.
+fn is_branch_prefix(s: &str) -> bool {
+    let Some(dirs) = s.strip_suffix('/') else {
+        return false;
+    };
+    js_len(s) <= 100
+        && !dirs.is_empty()
+        && !dirs.starts_with('-')
+        && dirs.split('/').all(|c| {
+            !c.is_empty()
+                && !c.starts_with('.')
+                && !c.ends_with(".lock")
+                && !c.contains("..")
+                && c.chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+        })
+}
+
+brand!(
+    /// A branch name prefix such as "fleetd/" or "slot/3/".
+    BranchPrefix,
+    check = is_branch_prefix,
+    expected = "a branch prefix ending in /, such as fleetd/ (letters, digits, . _ - between the slashes)"
+);
+
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -283,6 +313,8 @@ pub struct PolicyFile {
     pub tools: Option<PolicyFileTools>,
     pub lead: Option<PolicyFileLead>,
     pub claude: Option<PolicyFileClaude>,
+    /// What the branches fleetd names start with (default `fleetd/`), for several fleets sharing one repo.
+    pub branch_prefix: Option<BranchPrefix>,
 }
 checked!(PolicyFile, |policy| {
     match policy
@@ -309,6 +341,7 @@ pub fn default_policy() -> PolicyFile {
         tools: None,
         lead: None,
         claude: None,
+        branch_prefix: None,
     }
 }
 
@@ -420,6 +453,27 @@ mod tests {
         ));
         assert!(!accepts::<PolicyFile>(
             json!({ "areas": { "docs": ["docs/**"] }, "defaults": { "effort": "medium-ish" } })
+        ));
+    }
+
+    #[test]
+    fn branch_prefixes_are_ref_safe_and_end_in_a_slash() {
+        for prefix in ["fleetd/", "slot/3/", "noci/1/", "team_a/bots-2/", "v1.2/"] {
+            assert!(BranchPrefix::new(prefix).is_ok(), "{prefix}");
+        }
+        for prefix in [
+            "", "/", "fleetd", "/fleetd/", "slot//3/", "-x/", ".hidden/", "a/.b/", "a..b/",
+            "x.lock/", "a b/", "a~b/", "a^b/", "a:b/", "a?b/", "a*b/", "a[b/", "a\\b/", "a@{b/",
+            "ünï/",
+        ] {
+            assert!(BranchPrefix::new(prefix).is_err(), "{prefix}");
+        }
+        assert!(BranchPrefix::new(format!("{}/", "x".repeat(100))).is_err());
+        assert!(accepts::<PolicyFile>(
+            json!({ "areas": { "all": ["**"] }, "branchPrefix": "slot/3/" })
+        ));
+        assert!(!accepts::<PolicyFile>(
+            json!({ "areas": { "all": ["**"] }, "branchPrefix": "slot 3" })
         ));
     }
 }

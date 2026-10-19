@@ -43,6 +43,7 @@ const setup = (
     },
     now: () => NOW,
     deviceName: () => "devbox",
+    keyStore: { kind: "os", where: "the macOS Keychain" },
   };
   return { service: new PairingService(deps), seen };
 };

@@ -17,9 +17,6 @@
   background: var(--bg);
   -webkit-app-region: drag;
 }
-.head :is(button, a, [role="radio"]) {
-  -webkit-app-region: no-drag;
-}
 .headTitle {
   flex: 1;
   min-width: 0;

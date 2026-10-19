@@ -190,6 +190,12 @@ pub trait TrainHost: Send + Sync + 'static {
         head_sha: &str,
         verdicts: &[PrVerdict],
     ) -> Option<ReviewRefusal>;
+    /// The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); None when the policy can't be
+    /// read now. The train's scratch branches (batches, speculative builds of stacked PRs) live under
+    /// `<prefix>train/`, so fleets sharing one repo never collide.
+    fn branch_prefix<'a>(&'a self, _project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
+        Box::pin(async { Some(fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string()) })
+    }
     /// Where the train's state, CI and git spans go; none in tests.
     fn time(&self) -> Option<crate::hub::time::TimeSink> {
         None

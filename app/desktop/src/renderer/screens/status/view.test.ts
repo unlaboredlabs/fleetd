@@ -1,13 +1,17 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { asGetOutput } from "./contracts";
-import { digestText } from "./digest";
+import { setDigest } from "../settings/prefs";
+import { digestDue, digestText } from "./digest";
 import {
   age,
   figure,
   headlineText,
   limitName,
   machineView,
+  ciUrl,
   needsYouRow,
+  riskTarget,
+  rowLanes,
   nextAgeChange,
   progressRowView,
   scopeFromRoute,
@@ -31,7 +35,7 @@ beforeAll(() => {
 describe("fixtures", () => {
   it("every status fixture decodes as a status_get answer", () => {
     const answers = Object.entries(fixtureAnswers);
-    expect(answers.length).toBe(15);
+    expect(answers.length).toBe(18);
     for (const [name, output] of answers) expect(asGetOutput(output), name).toBeDefined();
   });
 });
@@ -52,6 +56,14 @@ describe("the figure", () => {
     expect(figure(d.progress, d.virtualTier)).toMatchObject({ pct: null, planning: 55, detail: [] });
   });
 
+  it("shows no number when there is nothing to count, with or without the progress model", () => {
+    const empty = fixture("project-empty").progress;
+    expect(figure(empty)).toMatchObject({ pct: null, planning: null, detail: ["No plan items yet: nothing to count."] });
+    const withEstimate = { ...empty, estimate: { pct: 0, verifiedPct: 0, inFlightPct: 0, weights: "default" as const } };
+    expect(figure(withEstimate).pct).toBeNull();
+    expect(digestText(fixture("fleet-empty")).title, "nor in the digest").toBe("fleetd");
+  });
+
   it("never lets the lighter part run past 100", () => {
     const p = { ...fixture("fleet").progress, estimate: { pct: 100, verifiedPct: 97, inFlightPct: 5, weights: "default" } };
     expect(figure(p).inFlightPct).toBe(3);
@@ -63,16 +75,18 @@ describe("the sparkline", () => {
     const series = fixture("fleet").progress.estimate?.series ?? [];
     const g = spark(series, 600, 40);
     expect(g?.drops.map((d) => d.label)).toEqual([
-      "↓ 61% → 55%: CI failed on #212: rust (macos) (CI failed)",
-      "↓ 80% → 74%: +3 items: currency table export added (scope added)",
+      "↓ 61% → 55%: CI failed on #212: rust (macos)",
+      "↓ 80% → 74%: +3 items: currency table export added",
     ]);
     expect(g?.estimate.startsWith("M0 40")).toBe(true);
     expect(g?.estimate.endsWith("L600 8.8"), "ends at 78% at the right edge").toBe(true);
   });
 
-  it("names an unknown drop reason generically", () => {
+  it("explains a drop whose reason this build doesn't know by its text, or generically without one", () => {
     const series = fixture("fleet-long-text").progress.estimate?.series ?? [];
-    expect(spark(series, 600, 40)?.drops.some((d) => d.label.endsWith("(fell back)"))).toBe(true);
+    expect(spark(series, 600, 40)?.drops.some((d) => d.label.includes("Switch the storefront checkout"))).toBe(true);
+    const bare = series.map((p) => (p.drop ? { ...p, drop: { ...p.drop, reason: "reason_from_a_newer_hub", text: "" } } : p));
+    expect(spark(bare, 600, 40)?.drops.every((d) => d.label.endsWith("fell back"))).toBe(true);
   });
 
   it("needs two points", () => {
@@ -201,5 +215,37 @@ describe("needs you", () => {
     expect(needsYouRow(asks, "A2"), "the doc still lists it until status_get refetches").toEqual({ kind: "changed" });
     expect(needsYouRow(asks, "A3")).toEqual({ kind: "changed" });
     expect(needsYouRow(undefined, "A1")).toEqual({ kind: "loading" });
+  });
+});
+
+describe("where things lead", () => {
+  it("sends machine risks to Machines and a blocking ask to the inbox, as the old app did", () => {
+    expect(["machine_offline", "machine_flaky", "usage_high", "blocked_on_you", "ci_red_main", "rule_from_a_newer_hub"].map(riskTarget)).toEqual([
+      "machines",
+      "machines",
+      "machines",
+      "inbox",
+      null,
+      null,
+    ]);
+    expect(ciUrl("acme/storefront")).toBe("https://github.com/acme/storefront/actions");
+  });
+
+  it("joins an in-progress row to its order's lanes by task, in the row's order", () => {
+    const lanes = [{ laneId: "a", taskId: "T2" }, { laneId: "lead" }, { laneId: "b", taskId: "T1" }];
+    expect(rowLanes(lanes, ["T1", "T2"]).map((l) => l.laneId)).toEqual(["b", "a"]);
+    expect(rowLanes(undefined, ["T1"])).toEqual([]);
+  });
+});
+
+describe("the digest toggle", () => {
+  it("is Settings' one toggle: switching it there is what turns the digest on, quiet hours still win", () => {
+    const loud = (): boolean => false;
+    setDigest(false);
+    expect(digestDue(NOW, loud)).toBe(false);
+    setDigest(true);
+    expect(digestDue(NOW, loud)).toBe(true);
+    expect(digestDue(NOW, () => true)).toBe(false);
+    setDigest(false);
   });
 });

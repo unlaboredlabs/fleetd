@@ -67,8 +67,8 @@ writes code.
 
 ## Merge train {#merge-train}
 
-The queue that merges a repo's pull requests one at a time, after CI passes on the exact commit. Only the train
-merges.
+The queue that merges a repo's pull requests after CI passes on the exact commit, in batches when they touch
+different files. Only the train merges. See [Merge train](/docs/merge-train).
 
 ## Node {#node}
 
