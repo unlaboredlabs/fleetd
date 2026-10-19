@@ -36,7 +36,7 @@ export const launch = (options: LaunchOptions = {}): Launched => {
     ...options.env,
   };
   // Only what Electron needs: never the user's fleetd state or the agent's own session variables.
-  for (const key of ["HOME", "PATH", "USER", "TMPDIR", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"]) {
+  for (const key of ["HOME", "PATH", "USER", "TMPDIR", "DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"]) {
     const value = process.env[key];
     if (value !== undefined && env[key] === undefined) env[key] = value;
   }
