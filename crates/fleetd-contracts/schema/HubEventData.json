@@ -90,6 +90,46 @@
       "pattern": "^F[1-9][0-9]*$",
       "type": "string"
     },
+    "AttachmentMime": {
+      "enum": [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "text/plain",
+        "application/pdf"
+      ],
+      "type": "string"
+    },
+    "AttachmentRef": {
+      "description": "A file on a message: what the app shows without fetching it. Its bytes come from `attachment_get`.",
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mime": {
+          "$ref": "#/$defs/AttachmentMime"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "name",
+        "mime",
+        "bytes"
+      ],
+      "type": "object"
+    },
     "BatchId": {
       "pattern": "^B[1-9][0-9]*$",
       "type": "string"
@@ -216,6 +256,11 @@
           "const": "order_outcome",
           "description": "An order's outcome (done, stopped, failed) as a one-line event.",
           "type": "string"
+        },
+        {
+          "const": "question",
+          "description": "A question the lead asked with the retired questions tool, and its answer.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -256,11 +301,10 @@
         "attachments": {
           "default": [],
           "items": {
-            "$ref": "#/$defs/AttachmentId"
+            "$ref": "#/$defs/AttachmentRef"
           },
           "maxItems": 8,
-          "type": "array",
-          "uniqueItems": true
+          "type": "array"
         },
         "author": {
           "$ref": "#/$defs/ChatAuthor"
@@ -380,7 +424,7 @@
       "x-open": true
     },
     "ChatRequestId": {
-      "pattern": "^R[1-9][0-9]*$",
+      "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
     },
     "CiInfo": {
@@ -551,20 +595,10 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`.",
+      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of\n`gated` and `permission`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "argv": {
-          "description": "The exact argv that runs once approved. Absent for a session's permission prompt, which has `tool`.",
-          "items": {
-            "maxLength": 4000,
-            "type": "string"
-          },
-          "maxItems": 64,
-          "minItems": 1,
-          "type": "array"
         },
         "by": {
           "description": "The key name of the person who answered.",
@@ -573,69 +607,44 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
-        "class": {
-          "$ref": "#/$defs/GatedClass"
-        },
-        "cwd": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "type": "string"
-        },
         "exitCode": {
           "format": "int64",
           "type": "integer"
         },
-        "inputSummary": {
-          "maxLength": 2000,
-          "type": "string"
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec",
+          "description": "A gated command: exactly what runs once approved."
         },
         "machineId": {
-          "$ref": "#/$defs/MachineId"
+          "$ref": "#/$defs/MachineId",
+          "description": "Where it runs, or the machine of the session that asks."
+        },
+        "note": {
+          "description": "Why it is open again (\"not run: the node was offline when approved\"), or why it failed without running.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "outputTail": {
           "description": "The end of the output, once it ran.",
           "maxLength": 2000,
           "type": "string"
         },
-        "reason": {
-          "description": "One line: why.",
-          "maxLength": 300,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "A session's permission prompt: the tool and what it would do."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
-        "secretEnv": {
-          "description": "Names only; the values come from the node's own sinks.",
-          "items": {
-            "$ref": "#/$defs/EnvName"
-          },
-          "maxItems": 16,
-          "type": "array"
-        },
         "state": {
           "$ref": "#/$defs/CommandApprovalState"
-        },
-        "timeoutSec": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "tool": {
-          "description": "A permission prompt: the tool the agent wants to use, with `inputSummary`.",
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
         }
       },
       "required": [
         "requestId",
         "machineId",
-        "class",
-        "reason",
         "state"
       ],
       "type": "object"
@@ -722,6 +731,50 @@
         "credential"
       ],
       "type": "string"
+    },
+    "GatedRunSpec": {
+      "description": "Stored with the approve ask and never changed: the human approves exactly these bytes.",
+      "properties": {
+        "argv": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "class": {
+          "$ref": "#/$defs/GatedClass"
+        },
+        "cwd": {
+          "pattern": "^/",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "secretEnv": {
+          "items": {
+            "$ref": "#/$defs/SecretEnvEntry"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "timeoutSec": {
+          "maximum": 1800,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "argv",
+        "class",
+        "reason",
+        "timeoutSec"
+      ],
+      "type": "object"
     },
     "GitHubRepo": {
       "description": "GitHub repository as owner/name",
@@ -1435,6 +1488,26 @@
       ],
       "type": "string"
     },
+    "SecretEnvEntry": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/EnvName"
+        },
+        "secretKey": {
+          "$ref": "#/$defs/DecisionKey"
+        }
+      },
+      "required": [
+        "name",
+        "secretKey"
+      ],
+      "type": "object"
+    },
+    "SecretFingerprint": {
+      "description": "8 lowercase hex characters: the sha256 prefix of the plaintext",
+      "pattern": "^[0-9a-f]{8}$",
+      "type": "string"
+    },
     "SecretRequestItem": {
       "description": "The lead needs a secret. The app shows a masked field; the value never enters the transcript: it is sealed to the\nsink's machine and answered with `secret_submit`, naming `requestId`. Only its fingerprint comes back.",
       "properties": {
@@ -1448,11 +1521,13 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "envName": {
+          "$ref": "#/$defs/EnvName",
+          "description": "An `env:` sink: the variable it writes, when not the one `name` gives (`secrets::secret_env_name`)."
+        },
         "fingerprint": {
-          "description": "Once stored.",
-          "maxLength": 100,
-          "minLength": 1,
-          "type": "string"
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "Once stored."
         },
         "name": {
           "description": "The secret's key, e.g. `stripe.test_key`.",
@@ -1461,14 +1536,18 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "note": {
+          "description": "Why it is open again, or why it could not be stored.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
         },
         "sink": {
-          "description": "Where it lands: `env:<machine>:<absolute path>` or `file:<machine>:<absolute path>`.",
-          "maxLength": 600,
-          "minLength": 1,
-          "type": "string"
+          "$ref": "#/$defs/SecretSink"
         },
         "state": {
           "$ref": "#/$defs/SecretRequestState"
@@ -1498,6 +1577,9 @@
       ],
       "type": "string",
       "x-open": true
+    },
+    "SecretSink": {
+      "type": "string"
     },
     "SourceFreshData": {
       "description": "`source.fresh`.",
@@ -1733,9 +1815,40 @@
       ],
       "type": "string"
     },
+    "ThreadId": {
+      "type": "string"
+    },
     "Timestamp": {
       "format": "date-time",
       "type": "string"
+    },
+    "ToolPermission": {
+      "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
+      "properties": {
+        "requestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "summary": {
+          "description": "The command, the path, or the tool's own description.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "toolName": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "requestId",
+        "toolName",
+        "summary"
+      ],
+      "type": "object"
     },
     "TrainEventData": {
       "description": "The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,\n`change.refused`, `pr.merged`, `train.frozen`, `train.resumed`, `train.blocked`. Which fields each carries is in\n`HubEventType`'s docs.",

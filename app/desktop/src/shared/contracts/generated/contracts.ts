@@ -172,6 +172,22 @@ export type AppServerMessage = {
   t: "chat_delta";
 };
 
+export type ApprovalAnswerInput = {
+  decision: ApprovalDecision;
+  /** A denial's reason, passed to the lead. */
+  message?: string;
+  requestId: ChatRequestId;
+};
+
+export type ApprovalAnswerOutput = {
+  message: ChatMessage;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** The human's answer to a `command_approval`. */
+export type ApprovalDecision = "approve" | "deny";
+
 /** Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40 */
 export type AreaName = string;
 
@@ -302,6 +318,22 @@ export type AsksListOutput = {
   truncated?: boolean;
 };
 
+export type AttachmentGetInput = {
+  attachmentId: AttachmentId;
+  projectRef: ProjectRef;
+};
+
+export type AttachmentGetOutput = {
+  attachmentId: AttachmentId;
+  bytes: number;
+  /** Standard base64. */
+  dataB64: string;
+  mime: AttachmentMime;
+  name: string;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type AttachmentId = string;
 
 export type AttachmentMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "text/plain" | "application/pdf";
@@ -319,6 +351,14 @@ export type AttachmentPutOutput = {
   next?: string;
   sha256: string;
   truncated?: boolean;
+};
+
+/** A file on a message: what the app shows without fetching it. Its bytes come from `attachment_get`. */
+export type AttachmentRef = {
+  attachmentId: AttachmentId;
+  bytes: number;
+  mime: AttachmentMime;
+  name: string;
 };
 
 /**
@@ -506,14 +546,15 @@ export type KnownChatDelivery = "turn" | "steer" | "queued";
 export type ChatDelivery = KnownChatDelivery | (string & {});
 
 /**
- * Streamed text of the subscribed chat's lead message `messageId`: append `append` to its text. `index` counts the
- * frames of one message from 0, so a gap or a repeat shows; on either, read the message with `chat_history`. The
- * `chat.message` event with `state: final` carries the full text.
+ * Streamed text of the subscribed chat's lead message `messageId`. `offset` is the message's text length before
+ * `append`, in UTF-16 units: append when it equals the length the app holds, skip the frame when
+ * `offset + append.length` is within it (already applied, e.g. after a `chat_history` read), and read the message
+ * again otherwise (a gap). The `chat.message` event with `state: final` carries the full text.
  */
 export type ChatDelta = {
   append: string;
-  index: number;
   messageId: ChatMessageId;
+  offset: number;
   projectRef: ProjectRef;
   seq: number;
 };
@@ -540,7 +581,7 @@ export type ChatHistoryOutput = {
  * Where a history message came from, for messages from before the chat existed (a read model; nothing is moved or
  * destroyed). Absent on messages written in the chat.
  */
-export type KnownChatHistorySource = "order" | "note" | "steer" | "lead_message" | "order_outcome";
+export type KnownChatHistorySource = "order" | "note" | "steer" | "lead_message" | "order_outcome" | "question";
 /** KnownChatHistorySource, or a value from a newer hub. */
 export type ChatHistorySource = KnownChatHistorySource | (string & {});
 
@@ -552,7 +593,7 @@ export type ChatItem = SecretRequestItem & {
 };
 
 export type ChatMessage = {
-  attachments?: AttachmentId[];
+  attachments?: AttachmentRef[];
   author: ChatAuthor;
   /** A human message: the key name of the person who wrote it. */
   by?: string;
@@ -766,30 +807,26 @@ export type CloneTarget = {
 
 /**
  * A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the
- * human: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`.
+ * human: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of
+ * `gated` and `permission`.
  */
 export type CommandApprovalItem = {
   answeredAt?: Timestamp;
-  /** The exact argv that runs once approved. Absent for a session's permission prompt, which has `tool`. */
-  argv?: string[];
   /** The key name of the person who answered. */
   by?: string;
-  class: GatedClass;
-  cwd?: string;
   exitCode?: number;
-  inputSummary?: string;
+  /** A gated command: exactly what runs once approved. */
+  gated?: GatedRunSpec;
+  /** Where it runs, or the machine of the session that asks. */
   machineId: MachineId;
+  /** Why it is open again ("not run: the node was offline when approved"), or why it failed without running. */
+  note?: string;
   /** The end of the output, once it ran. */
   outputTail?: string;
-  /** One line: why. */
-  reason: string;
+  /** A session's permission prompt: the tool and what it would do. */
+  permission?: ToolPermission;
   requestId: ChatRequestId;
-  /** Names only; the values come from the node's own sinks. */
-  secretEnv?: EnvName[];
   state: CommandApprovalState;
-  timeoutSec?: number;
-  /** A permission prompt: the tool the agent wants to use, with `inputSummary`. */
-  tool?: string;
 };
 
 export type KnownCommandApprovalState = "open" | "approved" | "denied" | "ran" | "failed";
@@ -2476,6 +2513,22 @@ export type ProjectRemoveOutput = {
   truncated?: boolean;
 };
 
+export type ProjectStopInput = {
+  projectRef: ProjectRef;
+  reason?: string;
+};
+
+export type ProjectStopOutput = {
+  /** Tasks this call cancelled. */
+  cancelled: number;
+  /** The system line it wrote into the chat. */
+  message: ChatMessage;
+  next?: string;
+  /** Orders this call stopped. */
+  stopped: number;
+  truncated?: boolean;
+};
+
 export type ProjectSummary = {
   lastActivityAt: Timestamp;
   machineId: MachineId;
@@ -2884,13 +2937,16 @@ export type SecretRequestItem = {
   answeredAt?: Timestamp;
   /** The key name of the person who answered. */
   by?: string;
+  /** An `env:` sink: the variable it writes, when not the one `name` gives (`secrets::secret_env_name`). */
+  envName?: EnvName;
   /** Once stored. */
-  fingerprint?: string;
+  fingerprint?: SecretFingerprint;
   /** The secret's key, e.g. `stripe.test_key`. */
   name: string;
+  /** Why it is open again, or why it could not be stored. */
+  note?: string;
   requestId: ChatRequestId;
-  /** Where it lands: `env:<machine>:<absolute path>` or `file:<machine>:<absolute path>`. */
-  sink: string;
+  sink: SecretSink;
   state: SecretRequestState;
   /** One line: why the lead needs it. */
   text: string;
@@ -2903,15 +2959,19 @@ export type SecretRequestState = KnownSecretRequestState | (string & {});
 export type SecretSink = string;
 
 export type SecretSubmitInput = {
-  askId: AskId;
+  /** A secret ask (the questions tool). Exactly one of askId and requestId. */
+  askId?: AskId;
+  /** A chat's `secret_request` item. */
+  requestId?: ChatRequestId;
   /** Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine). */
   sealed: SealedSecret;
 };
 
 export type SecretSubmitOutput = {
-  askId: AskId;
+  askId?: AskId;
   fingerprint: SecretFingerprint;
   next?: string;
+  requestId?: ChatRequestId;
   truncated?: boolean;
 };
 
@@ -4297,7 +4357,9 @@ export type WorkstreamState = "draft" | "running" | "converging" | "verifying" |
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {
   actions_list: { input: ActionsListInput; output: ActionsListOutput };
+  approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
   asks_list: { input: AsksListInput; output: AsksListOutput };
+  attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
   attention_policy: { input: AttentionPolicyInput; output: AttentionPolicyOutput };
   cap_set: { input: CapSetInput; output: CapSetOutput };
@@ -4332,6 +4394,7 @@ export interface ToolMap {
   project_get: { input: ProjectGetInput; output: ProjectOutcome };
   project_inspect: { input: ProjectInspectInput; output: ProjectInspectOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
+  project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   projects_list: { input: ProjectsListInput; output: ProjectsListOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
   prompt_reset: { input: PromptResetInput; output: PromptResetOutput };
