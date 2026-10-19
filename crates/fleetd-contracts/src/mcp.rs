@@ -6,14 +6,15 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::auth::Role;
+use crate::chat::ChatRequestId;
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::effort::Effort;
 use crate::events::{HubEvent, HubEventType};
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
-    Ask, AskAnswerKind, AskId, AskState, Batch, BatchId, Decision, DecisionId, DecisionKey,
-    DecisionScope, DecisionSource, DecisionValue, DecisionWhy, IntakeText, Lead, PlaybookName,
-    PlaybookRef, Serves, Workstream, WorkstreamId, WorkstreamState,
+    Decision, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest, IntakeText,
+    Lead, PlaybookName, PlaybookRef, RequestState, Serves, Workstream, WorkstreamId,
+    WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{
@@ -366,30 +367,18 @@ checked!(IntakeSubmitInput, |input| {
     }
     Ok(())
 });
-output!(
-    #[serde(remote = "Self")]
-    IntakeSubmitOutput {
-        workstream_id: Option<WorkstreamId>,
-        /// The router could not place the intent: the human picks the project by answering this ask.
-        ask_id: Option<AskId>,
-        /// Present with workstreamId.
-        echo: Option<IntakeEcho>,
-        /// Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.
-        lead_waiting: Option<String>,
-    }
-);
-checked!(IntakeSubmitOutput, |output| {
-    if output.workstream_id.is_none() == output.ask_id.is_none() {
-        return Err("exactly one of workstreamId and askId".into());
-    }
-    Ok(())
+output!(IntakeSubmitOutput {
+    workstream_id: WorkstreamId,
+    echo: Option<IntakeEcho>,
+    /// Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.
+    lead_waiting: Option<String>,
 });
 
 // intake_preview: where intake_submit would send this text (the `@project` and prefix rules, then the router), without
 // creating anything. Cached by text for 10 minutes.
 input!(IntakePreviewInput { text: IntakeText });
 output!(IntakePreviewOutput {
-    /// Absent: the router could not place it (intake_submit would ask the human).
+    /// Absent: the router could not place it (intake_submit refuses it: name the project).
     echo: Option<IntakeEcho>,
 });
 
@@ -445,7 +434,7 @@ output!(OrdersBoardOutput {
     at: Timestamp,
 });
 
-// order_get: one order with its finished agents, open asks and claims.
+// order_get: one order with its finished agents, open requests and claims.
 input!(OrderGetInput {
     workstream_id: WorkstreamId
 });
@@ -455,7 +444,8 @@ output!(OrderGetOutput {
     lead: Option<AgentLane>,
     /// Newest first.
     done_lanes: List<AgentLane, 0, 30>,
-    asks: List<Ask, 0, 20>,
+    /// Its open secret and approval requests.
+    requests: List<HumanRequest, 0, 20>,
     /// Newest first.
     claims: Option<List<Claim, 0, 20>>,
 });
@@ -632,8 +622,8 @@ input!(WorkstreamGetInput {
 });
 output!(WorkstreamGetOutput {
     workstream: Workstream,
-    /// Its open asks.
-    asks: List<Ask, 0, 50>,
+    /// Its open secret and approval requests.
+    requests: List<HumanRequest, 0, 50>,
     /// Active decisions scoped to it.
     decisions: List<Decision, 0, 50>,
     /// Absent without a raw estimate in the brief.
@@ -671,80 +661,16 @@ output!(InventoryOutput {
     idle: bool,
 });
 
-fn default_open() -> AskState {
-    AskState::Open
-}
-
-// asks_list
-input!(AsksListInput {
-    #[serde(default = "default_open")]
-    state: AskState,
-    batch_id: Option<BatchId>,
+// requests_list: secret and approval requests, newest first.
+input!(RequestsListInput {
+    project_ref: Option<ProjectRef>,
+    /// Absent: every state.
+    state: Option<RequestState>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
 });
-output!(AsksListOutput {
-    /// Newest first.
-    batches: List<Batch, 0, 20>,
-    /// The asks in those batches, by batch then number.
-    asks: List<Ask, 0, 100>,
-});
-
-// inbox_reply
-input!(InboxReplyInput {
-    /// Terse reply such as "1 go 2 nvm 3 recs fine"; a leading "#B<n>" picks the batch.
-    raw: Text<1, 4000>,
-    /// Absent: the latest open batch.
-    batch_id: Option<BatchId>,
-});
-
-/// answered: the ask is answered (a decide ask's decision is written once `undoUntil` passes). skipped: "skip",
-/// the lead keeps its recommendation and no decision is written. later: moved to the next batch. retired: "forget
-/// Dn". pref: "pref:" recorded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum InboxReplyOutcome {
-    Answered,
-    Skipped,
-    Withdrawn,
-    Later,
-    Retired,
-    Pref,
-}
-
-input!(InboxReplyApplied {
-    /// The batch item number; absent for "pref:" and "forget".
-    number: Option<Positive>,
-    ask_id: Option<AskId>,
-    outcome: InboxReplyOutcome,
-    value: Option<String>,
-    /// What the human sees: the picked option's label, the free text, or the kept recommendation's label.
-    label: Option<String>,
-    /// option, text or skip, for a decide ask.
-    kind: Option<AskAnswerKind>,
-    /// Absent while a decide answer's undo window runs.
-    decision_id: Option<DecisionId>,
-    /// Until then `inbox_undo` takes the answer back.
-    undo_until: Option<Timestamp>,
-    /// The written decision's source and by, filled by the hub from the caller (human device or agent key).
-    source: Option<DecisionSource>,
-    by: Option<String>,
-});
-output!(InboxReplyOutput {
-    /// False: nothing changed; see `hint`.
-    parsed: bool,
-    batch_id: Option<BatchId>,
-    /// E.g. "Logged: 1 → go (D12), 2 → dropped".
-    echo: Option<String>,
-    applied: Vec<InboxReplyApplied>,
-    /// How to fix an unparseable reply.
-    hint: Option<String>,
-});
-
-// inbox_undo: takes back a decide answer inside its undo window (`ASK_UNDO_WINDOW_MS`); the ask is open again and
-// the lead never hears of it. After the window it is refused: answer the ask again or record a new decision.
-input!(InboxUndoInput { ask_id: AskId });
-output!(InboxUndoOutput {
-    /// The ask, open again in its batch.
-    ask: Ask,
+output!(RequestsListOutput {
+    requests: List<HumanRequest, 0, 100>,
 });
 
 // decisions_search
@@ -844,7 +770,7 @@ input!(RetroProposalsInput {
 output!(RetroProposalsOutput {
     /// Newest first.
     proposals: List<RetroProposal, 0, 100>,
-    /// The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes are asked.
+    /// The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision.
     apply: bool,
     last_run: Option<RetroRun>,
 });
@@ -892,31 +818,18 @@ output!(UsageResumeOutput {
 });
 
 // secret_submit: human keys only. The hub relays the sealed value to the sink's node and waits for its fingerprint.
-input!(
-    #[serde(remote = "Self")]
-    SecretSubmitInput {
-        /// A secret ask (the questions tool). Exactly one of askId and requestId.
-        ask_id: Option<AskId>,
-        /// A chat's `secret_request` item.
-        request_id: Option<crate::chat::ChatRequestId>,
-        /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
-        sealed: SealedSecret,
-    }
-);
-checked!(SecretSubmitInput, |input| {
-    if input.ask_id.is_some() == input.request_id.is_some() {
-        return Err("give exactly one of askId and requestId".into());
-    }
-    Ok(())
+input!(SecretSubmitInput {
+    request_id: ChatRequestId,
+    /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
+    sealed: SealedSecret,
 });
 output!(SecretSubmitOutput {
-    ask_id: Option<AskId>,
-    request_id: Option<crate::chat::ChatRequestId>,
+    request_id: ChatRequestId,
     fingerprint: SecretFingerprint
 });
 
 // approval_answer: the human approves or denies a chat's `command_approval` item. Human keys only (the handler
-// checks). The item's new state arrives as a `chat.message` event.
+// checks). Returns the request as answered; the item's new state arrives as a `chat.message` event.
 input!(ApprovalAnswerInput {
     request_id: crate::chat::ChatRequestId,
     decision: crate::chat::ApprovalDecision,
@@ -924,7 +837,7 @@ input!(ApprovalAnswerInput {
     message: Option<Text<1, 500>>,
 });
 output!(ApprovalAnswerOutput {
-    message: crate::chat::ChatMessage,
+    request: HumanRequest,
 });
 
 // doctor_list: the latest result of every check this key may read; rerun runs them all now first.
@@ -991,8 +904,8 @@ checked!(ThreadAnswerInput, |input| {
 output!(ThreadAnswerOutput {
     request_id: NonEmpty,
     decision: PermissionAnswer,
-    /// The tool_permission ask this answer closed, if one was open.
-    ask_id: Option<AskId>,
+    /// The approval request this answer closed, if one was open.
+    human_request_id: Option<ChatRequestId>,
 });
 
 brand!(
@@ -1336,9 +1249,7 @@ tools! {
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
     workstream_spawn => WorkstreamSpawn, Operate, WorkstreamSpawnInput, WorkstreamSpawnOutput;
     inventory => Inventory, Read, InventoryInput, InventoryOutput;
-    asks_list => AsksList, Read, AsksListInput, AsksListOutput;
-    inbox_reply => InboxReply, Operate, InboxReplyInput, InboxReplyOutput;
-    inbox_undo => InboxUndo, Operate, InboxUndoInput, InboxUndoOutput;
+    requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
     digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
@@ -1482,10 +1393,6 @@ mod tests {
             decode(json!({ "url": "https://example.com", "clientRequestId": "r1" })).unwrap();
         assert_eq!(serde_json::to_value(&sub).unwrap()["types"], "*");
         assert_eq!(serde_json::to_value(&sub).unwrap()["machines"], "*");
-        assert_eq!(
-            decode::<AsksListInput>(json!({})).unwrap().state,
-            AskState::Open
-        );
         let decoded = McpToolName::IncidentsList.decode_input(json!({})).unwrap();
         assert_eq!(decoded, json!({ "limit": 20, "windowDays": 7 }));
     }
@@ -1526,7 +1433,9 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 79);
+        assert_eq!(McpToolName::ALL.len(), 77);
+        assert_eq!(McpToolName::parse("inbox_reply"), None);
+        assert_eq!(McpToolName::parse("asks_list"), None);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
@@ -1548,10 +1457,10 @@ mod tests {
             "markers": [], "eta": { "samples": 2, "basis": "none" }, "gates": [],
             "headline": { "text": "Nothing running. Nothing needs you.", "source": "template",
                           "at": "2026-10-18T14:02:07.000Z" },
-            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "asked": 0, "scopeItems": 0 },
+            "since": { "merged": 0, "verified": 0, "started": 0, "failed": 0, "scopeItems": 0 },
             "parts": [], "done": [], "inProgress": [],
             "next": [{ "itemId": "P14", "title": "switch default runner", "after": ["P12"] }],
-            "needsYou": { "count": 0, "askIds": [] }, "risks": [],
+            "needsYou": { "count": 0, "requestIds": [] }, "risks": [],
             "health": { "ci": [], "machines": [], "usage": [],
                         "slots": { "running": 0, "used": 0, "cap": 40, "queued": 0 } },
             "stale": [],

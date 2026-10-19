@@ -84,16 +84,6 @@ fn constants() -> Vec<(&'static str, &'static str, Value)> {
             crate::mcp::ATTACHMENT_MAX_BYTES.into(),
         ),
         (
-            "ASK_QUESTION_MAX",
-            "A question line the card shows bold on its own.",
-            crate::ledger::ASK_QUESTION_MAX.into(),
-        ),
-        (
-            "ASK_UNDO_WINDOW_MS",
-            "How long after an answer inbox_undo can take it back.",
-            crate::ledger::ASK_UNDO_WINDOW_MS.into(),
-        ),
-        (
             "SLEPT_SHOWN_MS",
             "How long a machine's sleep stays shown.",
             crate::model::SLEPT_SHOWN_MS.into(),

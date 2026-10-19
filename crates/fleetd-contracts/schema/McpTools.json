@@ -369,18 +369,18 @@
     },
     "ApprovalAnswerOutput": {
       "properties": {
-        "message": {
-          "$ref": "#/$defs/ChatMessage"
-        },
         "next": {
           "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/HumanRequest"
         },
         "truncated": {
           "type": "boolean"
         }
       },
       "required": [
-        "message"
+        "request"
       ],
       "type": "object"
     },
@@ -396,297 +396,6 @@
       "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
       "type": "string"
-    },
-    "Ask": {
-      "properties": {
-        "answer": {
-          "$ref": "#/$defs/AskAnswer"
-        },
-        "askId": {
-          "$ref": "#/$defs/AskId"
-        },
-        "batchId": {
-          "$ref": "#/$defs/BatchId"
-        },
-        "blocks": {
-          "maxLength": 200,
-          "minLength": 1,
-          "type": "string"
-        },
-        "class": {
-          "$ref": "#/$defs/AskClass"
-        },
-        "context": {
-          "description": "One or two lines of background, shown under the question.",
-          "maxLength": 400,
-          "minLength": 1,
-          "type": "string"
-        },
-        "createdAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "decisionId": {
-          "$ref": "#/$defs/DecisionId"
-        },
-        "envName": {
-          "$ref": "#/$defs/EnvName",
-          "description": "secret with an env: sink: the variable it writes, when not the one its key names (`secretEnvName`)."
-        },
-        "evidence": {
-          "description": "What closed or reopened it: \"fingerprint ab12cd34\", a gated run's exit code and output tail, a failed verify.",
-          "maxLength": 2000,
-          "type": "string"
-        },
-        "fingerprint": {
-          "$ref": "#/$defs/SecretFingerprint",
-          "description": "secret: set when the node has written the sink."
-        },
-        "gated": {
-          "$ref": "#/$defs/GatedRunSpec",
-          "description": "Required for approve; immutable once the ask exists."
-        },
-        "key": {
-          "$ref": "#/$defs/DecisionKey"
-        },
-        "kind": {
-          "$ref": "#/$defs/AskKind"
-        },
-        "number": {
-          "description": "Fixed within its batch; never renumbered.",
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "options": {
-          "items": {
-            "$ref": "#/$defs/AskOption"
-          },
-          "maxItems": 6,
-          "type": "array"
-        },
-        "permission": {
-          "$ref": "#/$defs/ToolPermission",
-          "description": "approve: the session prompt it answers, instead of `gated`."
-        },
-        "proceededOnRec": {
-          "description": "The lead carried on with the recommendation; the answer confirms or overrides it.",
-          "type": "boolean"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "Absent only on an `intake.route.*` ask: the human picks the project by answering it."
-        },
-        "recommendation": {
-          "description": "Required for decide. On asks filed since labels, the key of one of `options`.",
-          "maxLength": 2000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "recommendationWhy": {
-          "description": "The lead's one-line reason for its recommendation.",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "sink": {
-          "$ref": "#/$defs/SecretSink",
-          "description": "Required for secret."
-        },
-        "state": {
-          "$ref": "#/$defs/AskState"
-        },
-        "steps": {
-          "description": "Required for do.",
-          "items": {
-            "$ref": "#/$defs/Step"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "text": {
-          "description": "The question. On asks filed since labels, one short line; the background is in `context`.",
-          "maxLength": 500,
-          "minLength": 1,
-          "type": "string"
-        },
-        "verify": {
-          "$ref": "#/$defs/CheckSpec",
-          "description": "do: the check the hub runs once the human ticks it done; a failure reopens the ask with the evidence."
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "askId",
-        "kind",
-        "key",
-        "class",
-        "text",
-        "blocks",
-        "proceededOnRec",
-        "state",
-        "createdAt"
-      ],
-      "type": "object"
-    },
-    "AskAnswer": {
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "by": {
-          "type": "string"
-        },
-        "deliveredAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The receipt: when the lead was woken with this answer. Absent while the undo window runs."
-        },
-        "kind": {
-          "$ref": "#/$defs/AskAnswerKind"
-        },
-        "note": {
-          "description": "The reply's note (\"1 a: because …\"), kept for the decision's why.",
-          "type": "string"
-        },
-        "raw": {
-          "description": "The reply text it was parsed from.",
-          "type": "string"
-        },
-        "source": {
-          "$ref": "#/$defs/DecisionSource",
-          "description": "Who the decision will be recorded as, once the undo window passes."
-        },
-        "undoUntil": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "Until then `inbox_undo` reopens the ask and the lead never hears of the answer."
-        },
-        "value": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "value",
-        "by",
-        "at",
-        "raw"
-      ],
-      "type": "object"
-    },
-    "AskAnswerKind": {
-      "description": "option: one of the ask's options (`value` is its key). text: the human's own words (\"Something else…\"). skip:\n\"Skip for now\", the lead carries on with its recommendation (`value`) and no decision is recorded. Absent on\nanswers recorded before kinds, and for approve, do and secret answers (\"go\", \"done\", \"no\").",
-      "enum": [
-        "option",
-        "text",
-        "skip"
-      ],
-      "type": "string"
-    },
-    "AskClass": {
-      "enum": [
-        "product",
-        "money",
-        "credential",
-        "irreversible"
-      ],
-      "type": "string"
-    },
-    "AskId": {
-      "pattern": "^A[1-9][0-9]*$",
-      "type": "string"
-    },
-    "AskKind": {
-      "description": "decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the\ndesktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.",
-      "enum": [
-        "decide",
-        "do",
-        "secret",
-        "approve"
-      ],
-      "type": "string"
-    },
-    "AskOption": {
-      "description": "One choice of a decide ask. The human reads `label` and `consequence`; `key` is internal and is what gets recorded.",
-      "properties": {
-        "consequence": {
-          "description": "One line, what happens if the human picks it. Absent only on asks stored before labels.",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "key": {
-          "description": "The decision value recorded when the human picks it, e.g. \"public-snapshot\".",
-          "maxLength": 2000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "label": {
-          "description": "A few words, e.g. \"Public snapshot\". Absent only on asks stored before labels: show [`humanize_key`].",
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "key"
-      ],
-      "type": "object"
-    },
-    "AskState": {
-      "enum": [
-        "open",
-        "auto",
-        "answered",
-        "defaulted",
-        "withdrawn"
-      ],
-      "type": "string"
-    },
-    "AsksListInput": {
-      "properties": {
-        "batchId": {
-          "$ref": "#/$defs/BatchId"
-        },
-        "state": {
-          "$ref": "#/$defs/AskState",
-          "default": "open"
-        }
-      },
-      "type": "object"
-    },
-    "AsksListOutput": {
-      "properties": {
-        "asks": {
-          "description": "The asks in those batches, by batch then number.",
-          "items": {
-            "$ref": "#/$defs/Ask"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "batches": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/Batch"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "batches",
-        "asks"
-      ],
-      "type": "object"
     },
     "AttachmentGetInput": {
       "properties": {
@@ -878,60 +587,6 @@
         "quiet"
       ],
       "type": "object"
-    },
-    "Batch": {
-      "properties": {
-        "batchId": {
-          "$ref": "#/$defs/BatchId"
-        },
-        "createdAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "items": {
-          "items": {
-            "$ref": "#/$defs/BatchItem"
-          },
-          "type": "array"
-        },
-        "state": {
-          "$ref": "#/$defs/BatchState"
-        }
-      },
-      "required": [
-        "batchId",
-        "createdAt",
-        "items",
-        "state"
-      ],
-      "type": "object"
-    },
-    "BatchId": {
-      "pattern": "^B[1-9][0-9]*$",
-      "type": "string"
-    },
-    "BatchItem": {
-      "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId"
-        },
-        "number": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "number",
-        "askId"
-      ],
-      "type": "object"
-    },
-    "BatchState": {
-      "enum": [
-        "open",
-        "closed"
-      ],
-      "type": "string"
     },
     "BoxPublicKey": {
       "type": "string"
@@ -2366,10 +2021,6 @@
     },
     "Decision": {
       "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId",
-          "description": "The ask this answers, when it came from one."
-        },
         "at": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -3286,7 +2937,7 @@
       "type": "string"
     },
     "GatedRunSpec": {
-      "description": "Stored with the approve ask and never changed: the human approves exactly these bytes.",
+      "description": "Stored with the approval and never changed: the human approves exactly these bytes.",
       "properties": {
         "argv": {
           "items": {
@@ -3742,8 +3393,6 @@
             "wake.fired",
             "workstream.created",
             "workstream.state",
-            "ask.created",
-            "batch.ready",
             "decision.recorded",
             "lead.started",
             "lead.woken",
@@ -3817,28 +3466,13 @@
           "type": "string"
         },
         {
-          "const": "ask.auto",
-          "description": "An ask was answered from the decision log and never reached a batch.",
+          "const": "request.opened",
+          "description": "A lead needs a person for a secret or an approval; `data` is the request (RequestEventData).",
           "type": "string"
         },
         {
-          "const": "ask.closed",
-          "description": "An open ask stopped being open (answered, withdrawn); `data.askId`, `data.key`, `data.state`, and\n`data.workstreamId` when it was about an order. Everything that counts open asks recomputes on it.",
-          "type": "string"
-        },
-        {
-          "const": "ask.answered",
-          "description": "A decide ask was answered; `data.askId`, `data.undoUntil`. Its decision and the lead's wake follow once the\nundo window passes.",
-          "type": "string"
-        },
-        {
-          "const": "ask.undone",
-          "description": "An answer was taken back inside its undo window; the ask is open again. `data.askId`.",
-          "type": "string"
-        },
-        {
-          "const": "ask.delivered",
-          "description": "The receipt: the lead was woken with the answer. `data.askId`, `data.deliveredAt`, `data.decisionId` (absent\nfor a skip).",
+          "const": "request.updated",
+          "description": "A request changed state (stored, declined, approved, running, done, failed, denied, or open again when it could\nnot run); `data` as request.opened.",
           "type": "string"
         },
         {
@@ -3928,7 +3562,7 @@
         },
         {
           "const": "intake.routed",
-          "description": "Where an intent went; `data.workstreamId` or `data.askId`, `data.template`, `data.reason`, `data.playbook`.",
+          "description": "Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.",
           "type": "string"
         },
         {
@@ -3944,16 +3578,6 @@
         {
           "const": "usage.resumed",
           "description": "M4: parked threads were sent \"continue\" at their reset or on usage_resume; `data.breakerCleared`.",
-          "type": "string"
-        },
-        {
-          "const": "ask.secret_saved",
-          "description": "M8: the node wrote a secret's sink. `data.askId`, `data.fingerprint`, `data.by` (the human who submitted it).",
-          "type": "string"
-        },
-        {
-          "const": "gated.ran",
-          "description": "M8: the node ran an approved command. `data.askId`, `data.exitCode`, `data.timedOut`, `data.by` (the approver).",
           "type": "string"
         },
         {
@@ -4073,6 +3697,68 @@
         }
       ],
       "x-open": true
+    },
+    "HumanRequest": {
+      "description": "One human request, as stored and as every client shows it.",
+      "properties": {
+        "answeredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "answeredBy": {
+          "description": "\"human:<device>\".",
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "evidence": {
+          "description": "What happened: \"fingerprint ab12cd34\", \"exit 0\" and the output tail, or why it did not run.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "gated": {
+          "$ref": "#/$defs/GatedRunSpec",
+          "description": "approval of a gated run: exactly the bytes the node runs."
+        },
+        "kind": {
+          "$ref": "#/$defs/RequestKind"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermission",
+          "description": "approval of a session's tool prompt, instead of a gated run."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "secret": {
+          "$ref": "#/$defs/SecretRequest",
+          "description": "secret only."
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        },
+        "text": {
+          "description": "One line on why the lead needs it.",
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "requestId",
+        "projectRef",
+        "kind",
+        "text",
+        "state",
+        "createdAt"
+      ],
+      "type": "object"
     },
     "HumanWait": {
       "properties": {
@@ -4198,147 +3884,6 @@
       ],
       "type": "object"
     },
-    "InboxReplyApplied": {
-      "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId"
-        },
-        "by": {
-          "type": "string"
-        },
-        "decisionId": {
-          "$ref": "#/$defs/DecisionId",
-          "description": "Absent while a decide answer's undo window runs."
-        },
-        "kind": {
-          "$ref": "#/$defs/AskAnswerKind",
-          "description": "option, text or skip, for a decide ask."
-        },
-        "label": {
-          "description": "What the human sees: the picked option's label, the free text, or the kept recommendation's label.",
-          "type": "string"
-        },
-        "number": {
-          "description": "The batch item number; absent for \"pref:\" and \"forget\".",
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "outcome": {
-          "$ref": "#/$defs/InboxReplyOutcome"
-        },
-        "source": {
-          "$ref": "#/$defs/DecisionSource",
-          "description": "The written decision's source and by, filled by the hub from the caller (human device or agent key)."
-        },
-        "undoUntil": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "Until then `inbox_undo` takes the answer back."
-        },
-        "value": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "outcome"
-      ],
-      "type": "object"
-    },
-    "InboxReplyInput": {
-      "properties": {
-        "batchId": {
-          "$ref": "#/$defs/BatchId",
-          "description": "Absent: the latest open batch."
-        },
-        "raw": {
-          "description": "Terse reply such as \"1 go 2 nvm 3 recs fine\"; a leading \"#B<n>\" picks the batch.",
-          "maxLength": 4000,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "raw"
-      ],
-      "type": "object"
-    },
-    "InboxReplyOutcome": {
-      "description": "answered: the ask is answered (a decide ask's decision is written once `undoUntil` passes). skipped: \"skip\",\nthe lead keeps its recommendation and no decision is written. later: moved to the next batch. retired: \"forget\nDn\". pref: \"pref:\" recorded.",
-      "enum": [
-        "answered",
-        "skipped",
-        "withdrawn",
-        "later",
-        "retired",
-        "pref"
-      ],
-      "type": "string"
-    },
-    "InboxReplyOutput": {
-      "properties": {
-        "applied": {
-          "items": {
-            "$ref": "#/$defs/InboxReplyApplied"
-          },
-          "type": "array"
-        },
-        "batchId": {
-          "$ref": "#/$defs/BatchId"
-        },
-        "echo": {
-          "description": "E.g. \"Logged: 1 → go (D12), 2 → dropped\".",
-          "type": "string"
-        },
-        "hint": {
-          "description": "How to fix an unparseable reply.",
-          "type": "string"
-        },
-        "next": {
-          "type": "string"
-        },
-        "parsed": {
-          "description": "False: nothing changed; see `hint`.",
-          "type": "boolean"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "parsed",
-        "applied"
-      ],
-      "type": "object"
-    },
-    "InboxUndoInput": {
-      "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId"
-        }
-      },
-      "required": [
-        "askId"
-      ],
-      "type": "object"
-    },
-    "InboxUndoOutput": {
-      "properties": {
-        "ask": {
-          "$ref": "#/$defs/Ask",
-          "description": "The ask, open again in its batch."
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "ask"
-      ],
-      "type": "object"
-    },
     "Incident": {
       "description": "Recorded by the hub, never by an agent.",
       "properties": {
@@ -4381,17 +3926,15 @@
       "type": "object"
     },
     "IncidentClass": {
-      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `re_ask`, a human was\nasked about a key that already had an active Decision; `override`, a human replaced a lead's Decision with another\nvalue; `playbook_reverted`, a retro wording change missed its metric and was rolled back.",
+      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was\nrolled back.",
       "oneOf": [
         {
           "enum": [
             "false_claim",
             "polish_loop",
-            "misfiled_ask",
             "out_of_area",
             "stall",
             "policy_bypass",
-            "re_ask",
             "override",
             "playbook_reverted"
           ],
@@ -4400,6 +3943,16 @@
         {
           "const": "estimate_miss",
           "description": "Retired: fleetd no longer scores time estimates. Kept so older incidents still read.",
+          "type": "string"
+        },
+        {
+          "const": "misfiled_ask",
+          "description": "Retired with the questions tool. Kept so older incidents still read.",
+          "type": "string"
+        },
+        {
+          "const": "re_ask",
+          "description": "Retired with the questions tool. Kept so older incidents still read.",
           "type": "string"
         }
       ]
@@ -4652,7 +4205,7 @@
       "properties": {
         "echo": {
           "$ref": "#/$defs/IntakeEcho",
-          "description": "Absent: the router could not place it (intake_submit would ask the human)."
+          "description": "Absent: the router could not place it (intake_submit refuses it: name the project)."
         },
         "next": {
           "type": "string"
@@ -4766,13 +4319,8 @@
     },
     "IntakeSubmitOutput": {
       "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId",
-          "description": "The router could not place the intent: the human picks the project by answering this ask."
-        },
         "echo": {
-          "$ref": "#/$defs/IntakeEcho",
-          "description": "Present with workstreamId."
+          "$ref": "#/$defs/IntakeEcho"
         },
         "leadWaiting": {
           "description": "Why no lead has the order yet, with the fix; absent when the project's lead has it or is starting.",
@@ -4788,6 +4336,9 @@
           "$ref": "#/$defs/WorkstreamId"
         }
       },
+      "required": [
+        "workstreamId"
+      ],
       "type": "object"
     },
     "InventoryInput": {
@@ -5223,12 +4774,6 @@
         "approval_answer.output": {
           "$ref": "#/$defs/ApprovalAnswerOutput"
         },
-        "asks_list.input": {
-          "$ref": "#/$defs/AsksListInput"
-        },
-        "asks_list.output": {
-          "$ref": "#/$defs/AsksListOutput"
-        },
         "attachment_get.input": {
           "$ref": "#/$defs/AttachmentGetInput"
         },
@@ -5324,18 +4869,6 @@
         },
         "github_webhook_set.output": {
           "$ref": "#/$defs/GithubWebhookSetOutput"
-        },
-        "inbox_reply.input": {
-          "$ref": "#/$defs/InboxReplyInput"
-        },
-        "inbox_reply.output": {
-          "$ref": "#/$defs/InboxReplyOutput"
-        },
-        "inbox_undo.input": {
-          "$ref": "#/$defs/InboxUndoInput"
-        },
-        "inbox_undo.output": {
-          "$ref": "#/$defs/InboxUndoOutput"
         },
         "incidents_list.input": {
           "$ref": "#/$defs/IncidentsListInput"
@@ -5474,6 +5007,12 @@
         },
         "prompts_list.output": {
           "$ref": "#/$defs/PromptsListOutput"
+        },
+        "requests_list.input": {
+          "$ref": "#/$defs/RequestsListInput"
+        },
+        "requests_list.output": {
+          "$ref": "#/$defs/RequestsListOutput"
         },
         "retro_proposals.input": {
           "$ref": "#/$defs/RetroProposalsInput"
@@ -5691,8 +5230,6 @@
         "actions_list.output",
         "approval_answer.input",
         "approval_answer.output",
-        "asks_list.input",
-        "asks_list.output",
         "attachment_get.input",
         "attachment_get.output",
         "attachment_put.input",
@@ -5725,10 +5262,6 @@
         "fleetd_status.output",
         "github_webhook_set.input",
         "github_webhook_set.output",
-        "inbox_reply.input",
-        "inbox_reply.output",
-        "inbox_undo.input",
-        "inbox_undo.output",
         "incidents_list.input",
         "incidents_list.output",
         "intake_preview.input",
@@ -5775,6 +5308,8 @@
         "prompt_set.output",
         "prompts_list.input",
         "prompts_list.output",
+        "requests_list.input",
+        "requests_list.output",
         "retro_proposals.input",
         "retro_proposals.output",
         "retro_run.input",
@@ -6016,23 +5551,23 @@
     },
     "NeedsYou": {
       "properties": {
-        "askIds": {
-          "description": "Render with the inbox's one-tap answers.",
-          "items": {
-            "$ref": "#/$defs/AskId"
-          },
-          "maxItems": 10,
-          "type": "array"
-        },
         "count": {
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "requestIds": {
+          "description": "Open secret and approval requests, shown inline in the project's chat.",
+          "items": {
+            "$ref": "#/$defs/ChatRequestId"
+          },
+          "maxItems": 10,
+          "type": "array"
         }
       },
       "required": [
         "count",
-        "askIds"
+        "requestIds"
       ],
       "type": "object"
     },
@@ -6212,13 +5747,6 @@
     },
     "OrderGetOutput": {
       "properties": {
-        "asks": {
-          "items": {
-            "$ref": "#/$defs/Ask"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
         "claims": {
           "description": "Newest first.",
           "items": {
@@ -6245,6 +5773,14 @@
         "order": {
           "$ref": "#/$defs/OrderCard"
         },
+        "requests": {
+          "description": "Its open secret and approval requests.",
+          "items": {
+            "$ref": "#/$defs/HumanRequest"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
         "truncated": {
           "type": "boolean"
         }
@@ -6252,7 +5788,7 @@
       "required": [
         "order",
         "doneLanes",
-        "asks"
+        "requests"
       ],
       "type": "object"
     },
@@ -8321,6 +7857,66 @@
       ],
       "type": "object"
     },
+    "RequestKind": {
+      "description": "What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to\nthe sink's node, never in a transcript), or an approval of a risky command (a gated run, or a session's tool\nprompt). The lead asks everything else in chat.",
+      "enum": [
+        "secret",
+        "approval"
+      ],
+      "type": "string"
+    },
+    "RequestState": {
+      "description": "The state names of the chat items that show it (`SecretRequestState`, `CommandApprovalState`). secret: open →\nstored | withdrawn. approval: open → approved → ran | failed, or open → denied; an approval the node could not run\ngoes back to open with the reason in `evidence`.",
+      "enum": [
+        "open",
+        "stored",
+        "withdrawn",
+        "approved",
+        "denied",
+        "ran",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "RequestsListInput": {
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState",
+          "description": "Absent: every state."
+        }
+      },
+      "type": "object"
+    },
+    "RequestsListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/HumanRequest"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "type": "object"
+    },
     "ResearchOutcome": {
       "description": "STOP is a success: the question was answered.",
       "enum": [
@@ -8406,10 +8002,6 @@
         "appliedAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "askId": {
-          "$ref": "#/$defs/AskId",
-          "description": "The gate Ask, key `playbook.<name>.<hash>`."
-        },
         "at": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -8420,6 +8012,10 @@
         "claimedKind": {
           "$ref": "#/$defs/PlaybookChangeKind",
           "description": "What the model said it was."
+        },
+        "decisionKey": {
+          "$ref": "#/$defs/DecisionKey",
+          "description": "A gate change: the global decision a person records to settle it, `playbook.<name>.<hash>` = apply | reject."
         },
         "diff": {
           "maxLength": 8000,
@@ -8510,19 +8106,26 @@
       "type": "string"
     },
     "RetroProposalState": {
-      "description": "suggested: advise-only, nothing applies. pending: a gate change waiting for the weekly Ask; asked: in it.\nmeasuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person\napproved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.",
-      "enum": [
-        "suggested",
-        "pending",
-        "asked",
-        "measuring",
-        "kept",
-        "reverted",
-        "applied",
-        "rejected",
-        "stale"
-      ],
-      "type": "string"
+      "description": "suggested: advise-only, nothing applies. pending: a gate change waiting for a person to record its decision.\nmeasuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person\napproved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.",
+      "oneOf": [
+        {
+          "enum": [
+            "suggested",
+            "measuring",
+            "kept",
+            "reverted",
+            "applied",
+            "rejected",
+            "stale"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "pending",
+          "description": "\"asked\": rows from before the questions tool went.",
+          "type": "string"
+        }
+      ]
     },
     "RetroProposalsInput": {
       "properties": {
@@ -8541,7 +8144,7 @@
     "RetroProposalsOutput": {
       "properties": {
         "apply": {
-          "description": "The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes are asked.",
+          "description": "The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision.",
           "type": "boolean"
         },
         "lastRun": {
@@ -8912,6 +8515,31 @@
       "pattern": "^[0-9a-f]{8}$",
       "type": "string"
     },
+    "SecretRequest": {
+      "description": "A secret request: the secret's name and where the node writes it.",
+      "properties": {
+        "envName": {
+          "$ref": "#/$defs/EnvName",
+          "description": "An env: sink's variable, when not the one the key names (`secret_env_name`)."
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "Set once the node has written the sink; the value itself never reaches the hub in plain text."
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey",
+          "description": "The secret's name, a dotted slug such as \"stripe.test_key\"."
+        },
+        "sink": {
+          "$ref": "#/$defs/SecretSink"
+        }
+      },
+      "required": [
+        "key",
+        "sink"
+      ],
+      "type": "object"
+    },
     "SecretRequestItem": {
       "description": "The lead needs a secret. The app shows a masked field; the value never enters the transcript: it is sealed to the\nsink's machine and answered with `secret_submit`, naming `requestId`. Only its fingerprint comes back.",
       "properties": {
@@ -8987,13 +8615,8 @@
     },
     "SecretSubmitInput": {
       "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId",
-          "description": "A secret ask (the questions tool). Exactly one of askId and requestId."
-        },
         "requestId": {
-          "$ref": "#/$defs/ChatRequestId",
-          "description": "A chat's `secret_request` item."
+          "$ref": "#/$defs/ChatRequestId"
         },
         "sealed": {
           "$ref": "#/$defs/SealedSecret",
@@ -9001,15 +8624,13 @@
         }
       },
       "required": [
+        "requestId",
         "sealed"
       ],
       "type": "object"
     },
     "SecretSubmitOutput": {
       "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId"
-        },
         "fingerprint": {
           "$ref": "#/$defs/SecretFingerprint"
         },
@@ -9024,6 +8645,7 @@
         }
       },
       "required": [
+        "requestId",
         "fingerprint"
       ],
       "type": "object"
@@ -9134,11 +8756,6 @@
     "Since": {
       "description": "Counts since the reading key last looked at this scope. Zero counts are hidden by clients.",
       "properties": {
-        "asked": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
         "failed": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -9182,7 +8799,6 @@
         "verified",
         "started",
         "failed",
-        "asked",
         "scopeItems"
       ],
       "type": "object"
@@ -10686,49 +10302,6 @@
       ],
       "type": "object"
     },
-    "Step": {
-      "properties": {
-        "command": {
-          "type": "string"
-        },
-        "expect": {
-          "description": "What the human should see when the step worked.",
-          "maxLength": 500,
-          "minLength": 1,
-          "type": "string"
-        },
-        "text": {
-          "maxLength": 500,
-          "minLength": 1,
-          "type": "string"
-        },
-        "where": {
-          "$ref": "#/$defs/StepWhere"
-        }
-      },
-      "required": [
-        "text",
-        "where"
-      ],
-      "type": "object"
-    },
-    "StepPlace": {
-      "enum": [
-        "browser"
-      ],
-      "type": "string"
-    },
-    "StepWhere": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/StepPlace"
-        },
-        {
-          "$ref": "#/$defs/MachineId"
-        }
-      ],
-      "description": "A machineId or \"browser\"."
-    },
     "Subscription": {
       "description": "A webhook push target. Its signing secret is shown once by subscription_set and never returned again.",
       "properties": {
@@ -11325,12 +10898,12 @@
     },
     "ThreadAnswerOutput": {
       "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId",
-          "description": "The tool_permission ask this answer closed, if one was open."
-        },
         "decision": {
           "$ref": "#/$defs/PermissionAnswer"
+        },
+        "humanRequestId": {
+          "$ref": "#/$defs/ChatRequestId",
+          "description": "The approval request this answer closed, if one was open."
         },
         "next": {
           "type": "string"
@@ -12183,7 +11756,7 @@
       "type": "object"
     },
     "ToolPermission": {
-      "description": "An approve ask raised by a session's tool permission prompt (`tool_permission`) instead of a gated command: answering\nit answers the prompt on the project's node. Its machine is the ask's project's.",
+      "description": "An approval raised by a session's tool permission prompt instead of a gated command: answering it answers the prompt\non the project's node. Its machine is the request's project's.",
       "properties": {
         "requestId": {
           "minLength": 1,
@@ -12925,14 +12498,6 @@
     },
     "WorkstreamGetOutput": {
       "properties": {
-        "asks": {
-          "description": "Its open asks.",
-          "items": {
-            "$ref": "#/$defs/Ask"
-          },
-          "maxItems": 50,
-          "type": "array"
-        },
         "claims": {
           "description": "Its claims, newest first.",
           "items": {
@@ -12956,6 +12521,14 @@
         "next": {
           "type": "string"
         },
+        "requests": {
+          "description": "Its open secret and approval requests.",
+          "items": {
+            "$ref": "#/$defs/HumanRequest"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
         "truncated": {
           "type": "boolean"
         },
@@ -12965,7 +12538,7 @@
       },
       "required": [
         "workstream",
-        "asks",
+        "requests",
         "decisions"
       ],
       "type": "object"

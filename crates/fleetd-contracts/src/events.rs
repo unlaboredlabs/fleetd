@@ -2,12 +2,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
+use crate::chat::ChatRequestId;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
-use crate::ledger::{
-    AskClass, AskId, AskKind, AskState, BatchId, BriefHash, DecisionId, DecisionKey, WorkstreamId,
-    WorkstreamState,
-};
-use crate::prim::{Count, Positive, Text};
+use crate::ledger::{BriefHash, RequestKind, RequestState, WorkstreamId, WorkstreamState};
+use crate::prim::{Count, Text};
 use crate::prompts::PromptScope;
 use crate::steer::SteerId;
 use crate::train::{ChangeId, GitHubRepo};
@@ -78,28 +76,13 @@ pub enum HubEventType {
     WorkstreamRunning,
     #[serde(rename = "workstream.state")]
     WorkstreamState,
-    #[serde(rename = "ask.created")]
-    AskCreated,
-    /// An ask was answered from the decision log and never reached a batch.
-    #[serde(rename = "ask.auto")]
-    AskAuto,
-    /// An open ask stopped being open (answered, withdrawn); `data.askId`, `data.key`, `data.state`, and
-    /// `data.workstreamId` when it was about an order. Everything that counts open asks recomputes on it.
-    #[serde(rename = "ask.closed")]
-    AskClosed,
-    /// A decide ask was answered; `data.askId`, `data.undoUntil`. Its decision and the lead's wake follow once the
-    /// undo window passes.
-    #[serde(rename = "ask.answered")]
-    AskAnswered,
-    /// An answer was taken back inside its undo window; the ask is open again. `data.askId`.
-    #[serde(rename = "ask.undone")]
-    AskUndone,
-    /// The receipt: the lead was woken with the answer. `data.askId`, `data.deliveredAt`, `data.decisionId` (absent
-    /// for a skip).
-    #[serde(rename = "ask.delivered")]
-    AskDelivered,
-    #[serde(rename = "batch.ready")]
-    BatchReady,
+    /// A lead needs a person for a secret or an approval; `data` is the request (RequestEventData).
+    #[serde(rename = "request.opened")]
+    RequestOpened,
+    /// A request changed state (stored, declined, approved, running, done, failed, denied, or open again when it could
+    /// not run); `data` as request.opened.
+    #[serde(rename = "request.updated")]
+    RequestUpdated,
     #[serde(rename = "decision.recorded")]
     DecisionRecorded,
     #[serde(rename = "lead.started")]
@@ -169,7 +152,7 @@ pub enum HubEventType {
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
     #[serde(rename = "change.refused")]
     ChangeRefused,
-    /// Where an intent went; `data.workstreamId` or `data.askId`, `data.template`, `data.reason`, `data.playbook`.
+    /// Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.
     #[serde(rename = "intake.routed")]
     IntakeRouted,
     /// A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.
@@ -181,12 +164,6 @@ pub enum HubEventType {
     /// M4: parked threads were sent "continue" at their reset or on usage_resume; `data.breakerCleared`.
     #[serde(rename = "usage.resumed")]
     UsageResumed,
-    /// M8: the node wrote a secret's sink. `data.askId`, `data.fingerprint`, `data.by` (the human who submitted it).
-    #[serde(rename = "ask.secret_saved")]
-    AskSecretSaved,
-    /// M8: the node ran an approved command. `data.askId`, `data.exitCode`, `data.timedOut`, `data.by` (the approver).
-    #[serde(rename = "gated.ran")]
-    GatedRan,
     /// M11: doctor checks changed status; `data.changes` lists `{ id, from, to }` (from absent on the first run).
     #[serde(rename = "doctor.changed")]
     DoctorChanged,
@@ -295,13 +272,8 @@ impl HubEventType {
             Self::WorkstreamCreated => "workstream.created",
             Self::WorkstreamRunning => "workstream.running",
             Self::WorkstreamState => "workstream.state",
-            Self::AskCreated => "ask.created",
-            Self::AskAuto => "ask.auto",
-            Self::AskClosed => "ask.closed",
-            Self::AskAnswered => "ask.answered",
-            Self::AskUndone => "ask.undone",
-            Self::AskDelivered => "ask.delivered",
-            Self::BatchReady => "batch.ready",
+            Self::RequestOpened => "request.opened",
+            Self::RequestUpdated => "request.updated",
             Self::DecisionRecorded => "decision.recorded",
             Self::LeadStarted => "lead.started",
             Self::LeadWoken => "lead.woken",
@@ -331,8 +303,6 @@ impl HubEventType {
             Self::ResearchVerdict => "research.verdict",
             Self::UsageBreaker => "usage.breaker",
             Self::UsageResumed => "usage.resumed",
-            Self::AskSecretSaved => "ask.secret_saved",
-            Self::GatedRan => "gated.ran",
             Self::DoctorChanged => "doctor.changed",
             Self::RetroRan => "retro.ran",
             Self::PlaybookChanged => "playbook.changed",
@@ -428,29 +398,18 @@ pub struct WorkstreamEventData {
     pub by: Option<String>,
 }
 
-/// `ask.created`, `ask.auto`, `ask.closed`, `ask.answered`, `ask.undone`, `ask.delivered`.
+/// `request.opened`, `request.updated`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct AskEventData {
-    pub ask_id: AskId,
-    /// The order it is about, when it is about one (ask.closed always says).
+pub struct RequestEventData {
+    pub request_id: ChatRequestId,
+    pub kind: RequestKind,
+    pub state: RequestState,
+    /// The order it is about, when it is about one.
     pub workstream_id: Option<WorkstreamId>,
-    /// ask.closed: the state it closed in.
-    pub state: Option<AskState>,
-    pub key: Option<DecisionKey>,
-    pub class: Option<AskClass>,
-    pub kind: Option<AskKind>,
-    pub batch_id: Option<BatchId>,
-    pub number: Option<Positive>,
-    /// ask.created: a closed ask opened again (a failed verify, an undone answer).
-    pub reopened: Option<bool>,
-    /// ask.auto and ask.delivered: the decision that answered it (absent on a delivered skip).
-    pub decision_id: Option<DecisionId>,
-    /// ask.answered: until then `inbox_undo` takes the answer back.
-    pub undo_until: Option<Timestamp>,
-    /// ask.delivered: when the lead was woken with the answer.
-    pub delivered_at: Option<Timestamp>,
+    /// Who answered it ("human:<device>"), once someone did.
+    pub by: Option<String>,
 }
 
 /// `claim.passed`, `claim.failed`.

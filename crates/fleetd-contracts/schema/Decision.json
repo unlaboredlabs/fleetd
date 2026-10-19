@@ -1,15 +1,7 @@
 {
   "$defs": {
-    "AskId": {
-      "pattern": "^A[1-9][0-9]*$",
-      "type": "string"
-    },
     "Decision": {
       "properties": {
-        "askId": {
-          "$ref": "#/$defs/AskId",
-          "description": "The ask this answers, when it came from one."
-        },
         "at": {
           "$ref": "#/$defs/Timestamp"
         },

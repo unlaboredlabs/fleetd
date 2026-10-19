@@ -13,7 +13,7 @@ use crate::checked;
 use crate::hello::ProtocolVersion;
 use crate::ids::{MachineId, Timestamp};
 use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
-use crate::ledger::{AskId, DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
+use crate::ledger::{DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
 use crate::model::SleptSpan;
 use crate::prim::{AnyInt, Count, Finite, Int, List, NonEmpty, NonNegative, Text};
 use crate::secrets::{BoxPublicKey, SealedSecret, SecretFingerprint, SecretSink};
@@ -162,7 +162,7 @@ pub struct SecretDeliver {
     /// On this machine.
     pub sink: SecretSink,
     pub sealed: SealedSecret,
-    /// The ask's key; `secret_env` entries name the secret by it.
+    /// The secret's name; `secret_env` entries name the secret by it.
     pub secret_key: DecisionKey,
     /// An env: sink's variable; absent means `secret_env_name(secret_key)`.
     pub env_name: Option<EnvName>,
@@ -185,13 +185,12 @@ checked!(SecretResult, |frame| {
     Ok(())
 });
 
-/// Hub -> node: run an approved ask's stored command, confined like a `cmd_check`.
+/// Hub -> node: run an approved request's stored command, confined like a `cmd_check`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GatedRun {
     pub id: NonEmpty,
-    pub ask_id: AskId,
     pub argv: GatedArgv,
     /// The spec's cwd, or the project workspace when it has none: the node never picks one itself.
     pub cwd: GatedCwd,

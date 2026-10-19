@@ -5,8 +5,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
+use crate::chat::ChatRequestId;
 use crate::ids::{EventSeq, MachineId, ProjectRef, Timestamp};
-use crate::ledger::{AskId, Tier, WorkstreamId};
+use crate::ledger::{Tier, WorkstreamId};
 use crate::model::MachineStatus;
 use crate::plan::{ItemStage, MilestoneId, PlanItemId};
 use crate::prim::{AnyInt, Count, Int, Line, List, NonNegative, Text};
@@ -307,7 +308,6 @@ pub struct Since {
     pub verified: Count,
     pub started: Count,
     pub failed: Count,
-    pub asked: Count,
     /// Net items added (negative: dropped) by scope changes.
     pub scope_items: AnyInt,
 }
@@ -386,8 +386,8 @@ pub struct NextRow {
 #[serde(rename_all = "camelCase")]
 pub struct NeedsYou {
     pub count: Count,
-    /// Render with the inbox's one-tap answers.
-    pub ask_ids: List<AskId, 0, 10>,
+    /// Open secret and approval requests, shown inline in the project's chat.
+    pub request_ids: List<ChatRequestId, 0, 10>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -614,7 +614,6 @@ pub struct HeadlineFacts {
     /// At most 2 gate labels, serial first.
     pub waiting_on: Vec<String>,
     pub needs_you: i64,
-    pub first_ask: Option<String>,
     /// At most 2 risk messages.
     pub risks: Vec<String>,
 }

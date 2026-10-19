@@ -10,10 +10,10 @@ use serde_json::{Map, Value};
 use crate::app::{AppClientMessage, AppServerMessage};
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
-    AskEventData, ClaimEventData, HubEvent, HubEventType, MachineSleptData, PromptChangedData,
+    ClaimEventData, HubEvent, HubEventType, MachineSleptData, PromptChangedData, RequestEventData,
     ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
 };
-use crate::ledger::{Ask, Batch, Decision, Lead, Workstream};
+use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
 use crate::mcp::McpToolName;
 use crate::model::{Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::projects::{CloneProgressData, ProjectAddFailedData, ProjectAddedData};
@@ -91,7 +91,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(ProjectAddFailedData: ProjectAddFailed);
         data!(WorkstreamEventData: WorkstreamCreated, WorkstreamRunning, WorkstreamState, WorkstreamDone);
         data!(WorkstreamNoteData: WorkstreamNote);
-        data!(AskEventData: AskCreated, AskAuto, AskClosed, AskAnswered, AskUndone, AskDelivered);
+        data!(RequestEventData: RequestOpened, RequestUpdated);
         data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled, TaskOutOfArea);
         data!(ClaimEventData: ClaimPassed, ClaimFailed);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
@@ -237,8 +237,7 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
         AppServerMessage,
         Lead,
         Workstream,
-        Ask,
-        Batch,
+        HumanRequest,
         Decision,
         Task,
         SlotState,
