@@ -256,15 +256,46 @@ pub struct NodePolicySource {
     pub ports: Arc<dyn TaskPorts>,
 }
 
-// The listing names positional arguments only, never interpolated. Committed directories, so build output and
-// node_modules never count.
-const DIRS_SCRIPT: &str = concat!(
-    "set -eu\n",
-    "git -c core.quotePath=false ls-tree -d --name-only HEAD\n",
-    "for d in \"$@\"; do git -c core.quotePath=false ls-tree -d --name-only \"HEAD:$d\" 2>/dev/null | sed \"s|^|$d/|\"; done",
-);
+// The listings name positional arguments only, never interpolated, and read committed directories, so build output
+// and node_modules never count. Each is cut short to fit the node's 2000-character output: a folder's children stop at
+// one more than areas.rs takes before it falls back to one area per folder, which is all inference needs to know.
+const TOP_SCRIPT: &str = "git -c core.quotePath=false ls-tree -d --name-only HEAD";
+const EXISTS_SCRIPT: &str =
+    "for d in \"$@\"; do if git cat-file -e \"HEAD:$d\" 2>/dev/null; then echo \"$d\"; fi; done";
+const CHILDREN_SCRIPT: &str =
+    "git -c core.quotePath=false ls-tree -d --name-only \"HEAD:$1\" 2>/dev/null | head -n 41";
 /// What the node keeps of a command's output; a listing that fills it may have lost its first lines.
-const DIRS_OUTPUT_MAX: usize = 2000;
+const OUTPUT_MAX: usize = 2000;
+
+/// The listing's lines, when the command ran and its output is whole.
+fn listed(out: Option<crate::hub::tasks::ports::CmdOutput>) -> Option<Vec<String>> {
+    let out = out?;
+    (out.exit_code == Some(0) && js_len(&out.output_tail) < OUTPUT_MAX).then(|| {
+        out.output_tail
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect()
+    })
+}
+
+impl NodePolicySource {
+    async fn sh(
+        &self,
+        m: &MachineId,
+        root: &str,
+        script: &str,
+        args: &[String],
+    ) -> Option<Vec<String>> {
+        let argv = ["sh", "-c", script, "fleetd-dirs"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(args.iter().cloned())
+            .collect();
+        listed(self.ports.run_command(m, root, argv, 30).await)
+    }
+}
 
 impl PolicySource for NodePolicySource {
     fn root(&self, project_ref: &ProjectRef) -> Result<String, LeadError> {
@@ -310,20 +341,28 @@ impl PolicySource for NodePolicySource {
         parents: Vec<String>,
     ) -> BoxFut<'a, Option<Vec<String>>> {
         Box::pin(async move {
-            let argv = ["sh", "-c", DIRS_SCRIPT, "fleetd-dirs"]
-                .into_iter()
-                .map(str::to_owned)
-                .chain(parents)
-                .collect();
-            let out = self.ports.run_command(machine_id, root, argv, 30).await?;
-            (out.exit_code == Some(0) && js_len(&out.output_tail) < DIRS_OUTPUT_MAX).then(|| {
-                out.output_tail
-                    .lines()
-                    .map(str::trim)
-                    .filter(|l| !l.is_empty())
-                    .map(str::to_owned)
-                    .collect()
-            })
+            // The whole top level when it fits, else just the folders inference looks for.
+            let top = match self.sh(machine_id, root, TOP_SCRIPT, &[]).await {
+                Some(top) => top,
+                None => {
+                    let wanted: Vec<String> = std::iter::once("docs".to_owned())
+                        .chain(parents.iter().cloned())
+                        .collect();
+                    self.sh(machine_id, root, EXISTS_SCRIPT, &wanted).await?
+                }
+            };
+            let present: Vec<String> = parents.into_iter().filter(|p| top.contains(p)).collect();
+            let children = futures_util::future::join_all(
+                present
+                    .iter()
+                    .map(|p| self.sh(machine_id, root, CHILDREN_SCRIPT, std::slice::from_ref(p))),
+            )
+            .await;
+            let mut dirs = top;
+            for (parent, kids) in present.iter().zip(children) {
+                dirs.extend(kids?.into_iter().map(|k| format!("{parent}/{k}")));
+            }
+            Some(dirs)
         })
     }
 }
@@ -393,43 +432,50 @@ impl Policies {
         root: &str,
         now: u128,
     ) -> Result<Resolved, LeadError> {
-        // A read failure (machine offline) is not cached.
-        let result = self.load(project_ref, root).await?;
-        self.cache
-            .lock()
-            .unwrap()
-            .insert(project_ref.clone(), (now, result.clone()));
+        // A read failure (machine offline) is not cached, nor a layout the node couldn't list.
+        let (result, settled) = self.load(project_ref, root).await?;
+        if settled {
+            self.cache
+                .lock()
+                .unwrap()
+                .insert(project_ref.clone(), (now, result.clone()));
+        }
         result
     }
 
-    /// Outer error: the file could not be read. Inner: what the file says, a broken file included.
+    /// Outer error: the file could not be read. Inner: what the file says, a broken file included, and whether the
+    /// answer is settled (false when inference couldn't list the layout and fell back to "all").
     async fn load(
         &self,
         project_ref: &ProjectRef,
         root: &str,
-    ) -> Result<Result<Resolved, LeadError>, LeadError> {
+    ) -> Result<(Result<Resolved, LeadError>, bool), LeadError> {
         let text = self.source.read(project_ref, POLICY_FILE_PATH).await?;
         let policy = match text.as_deref() {
             None => default_policy(),
             Some(text) => match parse_policy(text) {
                 Ok(policy) if sets_areas(text) => {
-                    return Ok(Ok(Resolved {
+                    let resolved = Resolved {
                         policy,
                         inferred: false,
-                    }));
+                    };
+                    return Ok((Ok(resolved), true));
                 }
                 Ok(policy) => policy,
-                Err(e) => return Ok(Err(e)),
+                Err(e) => return Ok((Err(e), true)),
             },
         };
         let mut policy = policy;
-        if let Some(areas) = self.infer(project_ref, root).await {
+        let inferred = self.infer(project_ref, root).await;
+        let settled = inferred.is_some();
+        if let Some(areas) = inferred {
             policy.areas = areas;
         }
-        Ok(Ok(Resolved {
+        let resolved = Resolved {
             policy,
             inferred: true,
-        }))
+        };
+        Ok((Ok(resolved), settled))
     }
 
     /// The areas the repo's layout suggests; `None` when the node can't list it, which leaves "all".
@@ -621,6 +667,8 @@ mod tests {
     #[tokio::test]
     async fn uses_the_default_policy_when_absent_and_caches_for_60_s() {
         let (fake, clock, policies, a) = setup();
+        // A layout with no members: inference settles on the one area.
+        *fake.dirs.lock().unwrap() = Some(Vec::new());
         assert_eq!(policies.get(&a).await.unwrap(), default_policy());
         *fake.text.lock().unwrap() = Some("areas:\n  docs: [docs/**]\n".into());
         clock.advance(Duration::from_secs(59));
@@ -698,10 +746,12 @@ mod tests {
         let resolved = policies.resolve(&a).await.unwrap();
         assert!(!resolved.inferred);
         assert_eq!(serde_json::to_value(resolved.policy).unwrap(), docs_only());
-        // A layout the node can't list leaves the one area.
+        // A layout the node can't list leaves the one area, and is asked again on the next read, not in 60 s.
         *fake.text.lock().unwrap() = None;
         *fake.dirs.lock().unwrap() = None;
         policies.invalidate(&a);
         assert_eq!(policies.get(&a).await.unwrap(), default_policy());
+        workspace(&fake);
+        assert_eq!(policies.get(&a).await.unwrap().areas.len(), 4);
     }
 }
