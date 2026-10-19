@@ -6,7 +6,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Fixture } from "./kit/fixture.ts";
 import { type FixtureGroup, SHARED, type SharedName } from "./kit/group.ts";
+import { findLeaks } from "./kit/leaks.ts";
 import { validateFixture } from "./kit/schema.ts";
+import { loadFixture } from "../src/main/hub/fixture.ts";
 import { buildShared } from "./kit/shared.ts";
 
 const DIR = import.meta.dirname;
@@ -45,10 +47,19 @@ for (const [group, { fixtures }] of groups) {
 
 const names = new Set<string>();
 const problems: Array<string> = [];
+const files = new Map<string, string>();
 for (const f of all) {
   if (names.has(f.name)) problems.push(`two fixtures are named ${f.name}`);
   names.add(f.name);
   problems.push(...validateFixture(f));
+  const json = JSON.stringify(f.toFile());
+  problems.push(...findLeaks(json).map((leak) => `${f.name} leaks ${leak}`));
+  files.set(f.name, json);
+}
+// The committed recordings too: a hand edit must not bring back what the sanitizer took out.
+const RECORDED = path.join(DIR, "recorded");
+for (const file of fs.readdirSync(RECORDED).filter((x) => x.endsWith(".json"))) {
+  problems.push(...findLeaks(fs.readFileSync(path.join(RECORDED, file), "utf8")).map((leak) => `recorded/${file} leaks ${leak}`));
 }
 if (problems.length > 0) {
   for (const p of problems.slice(0, 40)) console.error(p);
@@ -60,6 +71,8 @@ if (problems.length > 0) {
 for (const file of fs.readdirSync(DIR)) if (file.endsWith(".json") && !names.has(file.slice(0, -5))) fs.rmSync(path.join(DIR, file));
 for (const f of all) {
   const pending = [...f.pendingContracts].map(([tool, why]) => ` (${tool} unchecked: ${why})`).join("");
-  fs.writeFileSync(path.join(DIR, `${f.name}.json`), JSON.stringify(f.toFile()));
+  fs.writeFileSync(path.join(DIR, `${f.name}.json`), files.get(f.name) ?? "");
+  // Main's own loader, so a file that builds is a file the app accepts.
+  loadFixture(f.name, DIR);
   console.log(`${f.name}${pending}`);
 }

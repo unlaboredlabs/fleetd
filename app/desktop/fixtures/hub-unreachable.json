@@ -1,1 +1,0 @@
-{"version":1,"name":"hub-unreachable","note":"The saved hub doesn't answer; the app retries.","now":"2026-10-19T10:30:00.000Z","state":{"phase":"retrying","hub":"http://devbox:4790","reason":"connect ECONNREFUSED devbox:4790","retryAt":1792405808000},"frames":[],"calls":[]}
