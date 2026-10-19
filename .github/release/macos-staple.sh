@@ -110,7 +110,8 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   fi
 
   mkdir -p "$work/out"
-  ditto -c -k --keepParent "$app" "$work/out/$asset"
+  # --norsrc, as the release job zips it (see build-release.yml): no `._*` entries for a plain unzip to break the seal.
+  ditto -c -k --keepParent --norsrc "$app" "$work/out/$asset"
   (cd "$work/out" && shasum -a 256 "$asset") > "$work/new"
   awk 'NR == FNR { built[$2] = 1; next } !($2 in built)' "$work/new" "$work/SHA256SUMS" | cat "$work/new" - | sort -k2 > "$work/out/SHA256SUMS"
   cat "$work/out/SHA256SUMS"

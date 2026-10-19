@@ -269,7 +269,7 @@ jobs:
           NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
         run: |
           # The name is what macos-staple.sh looks for in the notary history when Apple outlasts NOTARY_WAIT.
-          ditto -c -k --keepParent dist/fleetd.app "$RUNNER_TEMP/fleetd-desktop-notarize.zip"
+          ditto -c -k --keepParent --norsrc dist/fleetd.app "$RUNNER_TEMP/fleetd-desktop-notarize.zip"
           rc=0
           .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-desktop-notarize.zip" || rc=$?
           if [ "$rc" = 3 ]; then exit 0; fi
@@ -295,10 +295,27 @@ jobs:
         if: always()
         run: .github/release/macos-sign.sh cleanup
       - name: Zip and write latest-mac.yml
+        # --norsrc: no extended attributes, so no inline AppleDouble `._*` entries. ditto and Finder fold those back into
+        # attributes, but a plain `unzip` writes them as files inside the bundle, which breaks its seal ("a sealed
+        # resource is missing or invalid"). The signature, the stapled ticket and symlinks don't live in attributes.
         run: |
-          ditto -c -k --keepParent dist/fleetd.app dist/fleetd-desktop-macos-universal.zip
+          ditto -c -k --keepParent --norsrc dist/fleetd.app dist/fleetd-desktop-macos-universal.zip
           .github/release/update-yml.sh dist/fleetd-desktop-macos-universal.zip "$FLEETD_VERSION" > dist/latest-mac.yml
           cat dist/latest-mac.yml
+      - name: The zip unpacks to a valid app with a plain unzip
+        env:
+          NOTARIZED: ${{ steps.notarize.outputs.stapled }}
+        run: |
+          zip=dist/fleetd-desktop-macos-universal.zip
+          if zipinfo -1 "$zip" | grep -E '(^|/)\._'; then echo "::error::$zip has AppleDouble entries"; exit 1; fi
+          rm -rf "$RUNNER_TEMP/unzip" && mkdir -p "$RUNNER_TEMP/unzip"
+          unzip -q "$zip" -d "$RUNNER_TEMP/unzip"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/unzip/fleetd.app"
+          out="$(spctl -a -vv -t exec "$RUNNER_TEMP/unzip/fleetd.app" 2>&1 || true)"
+          echo "$out"
+          if [ "$NOTARIZED" = true ] && { ! grep -q ': accepted' <<< "$out" || ! grep -q 'source=Notarized Developer ID' <<< "$out"; }; then
+            echo "::error::Gatekeeper doesn't accept the app unzipped with unzip"; exit 1
+          fi
       - name: Launch the signed app and update it from a local feed
         # Squirrel.Mac only takes an update signed like the running app, so ad-hoc builds can't do this.
         if: steps.secrets.outputs.sign == 'true'
@@ -306,6 +323,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/launch"
           ditto dist/fleetd.app "$RUNNER_TEMP/launch/fleetd.app"
           .github/release/desktop-update-check.sh dist/fleetd-desktop-macos-universal.zip "$RUNNER_TEMP/launch/fleetd.app/Contents/MacOS/fleetd"
+      - name: Packaged smoke (on the unpublished test build)
+        # Ad-hoc signed and this runner's architecture only: it never carries our Team ID, stays in
+        # app/desktop/dist-test and is never uploaded. See the desktop-linux job.
+        working-directory: app/desktop
+        run: |
+          pnpm fixtures
+          pnpm build:test
+          CSC_IDENTITY_AUTO_DISCOVERY=false pnpm exec electron-builder --mac --dir --arm64 --publish never -c.directories.output=dist-test \
+            -c.mac.identity=- -c.mac.hardenedRuntime=false -c.extraMetadata.version="$FLEETD_VERSION"
+          node scripts/packaged-smoke.ts dist-test/mac-arm64/fleetd.app/Contents/MacOS/fleetd
       - name: Stage
         run: |
           rm -rf dist/fleetd.app
@@ -376,6 +403,17 @@ jobs:
           DONE_MARKER="update notice: fleetd 99.0.0" xvfb-run -a .github/release/desktop-update-check.sh \
             dist/fleetd-desktop-linux-x86_64.AppImage "$RUNNER_TEMP/deb/opt/fleetd/fleetd-desktop" --no-sandbox
           ls -l dist
+      - name: Debug guard and packaged smoke (on the unpublished test build)
+        # The release package above must refuse every debugging switch; the test build (MAIN_VITE_FLEETD_TEST_BUILD=1)
+        # accepts --remote-debugging-port, so the smoke can drive the packed app and see a module missing from the
+        # asar. It stays in app/desktop/dist-test, outside dist/, and is never uploaded.
+        working-directory: app/desktop
+        run: |
+          pnpm fixtures
+          pnpm build:test
+          pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test -c.extraMetadata.version="$FLEETD_VERSION"
+          node scripts/debug-guard-check.ts --packaged dist/linux-unpacked/fleetd-desktop --test-packaged dist-test/linux-unpacked/fleetd-desktop
+          node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-linux
