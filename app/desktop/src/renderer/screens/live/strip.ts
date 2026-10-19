@@ -4,9 +4,10 @@
 import type { BoardData } from "../../src/data/selectors";
 import { selectBoardData } from "../../src/data/selectors";
 import type { DataState } from "../../src/data/store";
-import type { AgentLane, PrRef } from "../board/contracts";
+import type { AgentLane } from "../board/contracts";
 import { projectKey } from "../board/live";
-import { ROLE_WORD, describe, isFinal, prLabel } from "../board/words";
+import { type Fleet, fleet, groupLabel } from "../board/fleet";
+import { ROLE_WORD, describe, isFinal } from "../board/words";
 
 export interface ProjectRef {
   readonly machineId: string;
@@ -21,6 +22,20 @@ export const projectAgents = (d: BoardData, project: ProjectRef): AgentLane[] =>
   return [...alive.filter((l) => l.status !== "queued"), ...alive.filter((l) => l.status === "queued")];
 };
 
+/**
+ * The project's agents grouped under its PRs: the one place both the folded lines and the unfolded lanes take a
+ * PR's progress from, so a count never changes when the strip unfolds. The finished agents its orders' details list
+ * (order_get) count toward the reviews done.
+ */
+export const projectFleet = (d: BoardData, project: ProjectRef): { readonly lanes: AgentLane[]; readonly fleet: Fleet } => {
+  const key = projectKey(project);
+  const orders = (d.orders ?? []).filter((o) => projectKey(o.card.projectRef) === key);
+  const lanes = projectAgents(d, project);
+  const ids = new Set(lanes.map((l) => l.laneId));
+  const finished = orders.flatMap((o) => d.details[o.card.workstreamId]?.doneLanes ?? []).filter((l) => !ids.has(l.laneId));
+  return { lanes, fleet: fleet(lanes, [...lanes, ...finished], orders.flatMap((o) => o.card.prs)) };
+};
+
 export interface StripLine {
   readonly laneId: string;
   readonly role: AgentLane["role"];
@@ -30,7 +45,7 @@ export interface StripLine {
   /** The machine text after the words (a command, a path), when there is one. */
   readonly machine?: string | undefined;
   readonly tone: "quiet" | "loud" | "warning" | "danger" | "success";
-  /** "#221 · review 1/3" when the agent works on a PR. */
+  /** The PR it works on: its number, link and progress words ("review 1/3"), from the same groups the lanes show. */
   readonly pr?: { readonly number: number; readonly url: string; readonly label: string } | undefined;
 }
 
@@ -42,10 +57,7 @@ export interface Strip {
   readonly lines: readonly StripLine[];
 }
 
-const prOf = (pr: PrRef | undefined): StripLine["pr"] =>
-  pr === undefined ? undefined : { number: pr.number, url: pr.url, label: prLabel(pr) };
-
-export const stripOf = (lanes: readonly AgentLane[]): Strip => ({
+export const stripOf = (lanes: readonly AgentLane[], groups: Fleet["groups"] = []): Strip => ({
   working: lanes.filter((l) => l.status !== "queued" && l.status !== "waiting").length,
   queued: lanes.filter((l) => l.status === "queued").length,
   needsYou: lanes.filter((l) => l.status === "waiting").length,
@@ -58,7 +70,12 @@ export const stripOf = (lanes: readonly AgentLane[]): Strip => ({
       words: line.words,
       machine: line.machine,
       tone: line.tone,
-      pr: prOf(l.pr),
+      pr: (() => {
+        if (l.pr === undefined) return undefined;
+        const n = l.pr.number;
+        const group = groups.find((g) => g.pr.number === n);
+        return { number: n, url: l.pr.url, label: group ? groupLabel(group) : "" };
+      })(),
     };
   }),
 });
@@ -89,7 +106,8 @@ export const selectStrip = (project: ProjectRef): ((s: DataState) => Strip | und
   selector = (s: DataState) => {
     const d = selectBoardData(s);
     if (d.orders === undefined) return undefined;
-    const next = stripOf(projectAgents(d, project));
+    const { lanes, fleet: f } = projectFleet(d, project);
+    const next = stripOf(lanes, f.groups);
     if (last !== undefined && sameStrip(last, next)) return last;
     last = next;
     return next;

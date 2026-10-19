@@ -68,11 +68,14 @@ export const fleet = (rows: readonly AgentLane[], seen: readonly AgentLane[], pr
       // A row drawn now is fresher than one remembered.
       const writer = rows.find(wrote) ?? seen.find(wrote);
       const checkers = seen.filter((l) => isChecker(l.role) && prOf(l) === pr.number);
-      // Counted from the lanes, as the rows show them: the hub's verdict count lags a finished check.
-      const done = checkers.filter((l) => l.status === "done").length;
-      const working = checkers.filter((l) => !isFinal(l.status)).length;
-      const needed = Math.max(pr.reviewsNeeded, 0, checkers.length);
-      // Past review with no checker at work (or none seen: the app joined late): every check is in.
+      // The PR's reviews, one count wherever it shows: what the tier needs (the hub's word), done as the larger of
+      // the hub's clean verdicts and the reviewers seen finishing (the verdict count lags a finished review).
+      // Verifiers and QA are checkers drawn under the PR, not reviews it needs.
+      const reviewers = checkers.filter((l) => l.role === "reviewer");
+      const done = Math.max(pr.reviewsDone, reviewers.filter((l) => l.status === "done").length);
+      const working = reviewers.filter((l) => !isFinal(l.status)).length;
+      const needed = pr.reviewsNeeded > 0 ? pr.reviewsNeeded : reviewers.length;
+      // Past review with no reviewer left at work (or none seen: the app joined late): every review is in.
       const checksDone = pastReview(pr.state) && working === 0 ? needed : Math.min(done, needed);
       return {
         pr,
