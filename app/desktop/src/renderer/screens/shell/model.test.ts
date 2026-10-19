@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connLine, Seen, sidebarOrders, stepOrder, type SidebarProject } from "./model";
+import { connLine, Seen, sidebarOrders, stepOrder, toShellData, type ShellInputs, type SidebarProject } from "./model";
 
 const project = (projectId: string, lastActivityAt: string, orders: Array<string>): SidebarProject => ({
   key: { machineId: "devbox", projectId },
@@ -53,5 +53,45 @@ describe("connLine", () => {
     });
     expect(connLine({ phase: "refused", hub: "http://hub:4790", message: "bad key" }).tone).toBe("danger");
     expect(connLine(null).label).toBe("Starting…");
+  });
+});
+
+describe("toShellData", () => {
+  const storefront = { machineId: "devbox", projectId: "storefront" };
+  const api = { machineId: "buildbox", projectId: "api" };
+  const now = Date.parse("2026-10-19T10:30:00.000Z");
+  const order = (id: string, projectRef: typeof storefront, phase: string, updatedAt: string, lanes: Array<string>, asks = 0) => ({
+    card: { workstreamId: id, title: `Order ${id}`, projectRef, updatedAt },
+    phase: { phase },
+    asks: Array.from({ length: asks }, () => ({})),
+    lanes: lanes.map((status) => ({ status })),
+  });
+  const inputs: ShellInputs = {
+    projects: [
+      { ...storefront, title: "storefront", lastActivityAt: "2026-10-19T10:00:00.000Z" },
+      { ...api, title: "api", lastActivityAt: "2026-10-19T09:00:00.000Z" },
+    ],
+    board: [
+      order("W14", storefront, "waiting_on_you", "2026-10-19T10:20:00.000Z", ["working", "waiting"], 1),
+      order("W12", storefront, "working", "2026-10-19T10:10:00.000Z", ["starting", "done"]),
+      order("W9", storefront, "done", "2026-10-19T10:25:00.000Z", []),
+      order("W3", api, "done", "2026-10-19T09:00:00.000Z", []),
+    ],
+    inbox: [{ ask: { projectRef: storefront } }, { ask: {} }],
+    machines: [{ machine: { status: "online" } }, { machine: { status: "offline" } }],
+    leadStatus: (key) => (key.projectId === "api" ? "stalled" : "working"),
+  };
+
+  it("lists each project's open orders in board order, and recently finished ones for a while", () => {
+    const data = toShellData(inputs, now);
+    expect(data.projects.map((p) => p.orders.map((o) => o.id))).toEqual([["W14", "W12", "W9"], []]);
+  });
+
+  it("counts what needs you, running agents, stalled leads and machines down", () => {
+    const [front, back] = toShellData(inputs, now).projects;
+    expect(front).toMatchObject({ needsYou: 1, running: 2, stalled: false });
+    expect(front?.orders[0]?.needsYou).toBe(true);
+    expect(back).toMatchObject({ needsYou: 0, running: 0, stalled: true });
+    expect(toShellData(inputs, now)).toMatchObject({ machinesDown: 1, needsYou: 2 });
   });
 });
