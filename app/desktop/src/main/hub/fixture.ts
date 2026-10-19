@@ -103,7 +103,9 @@ export class FixtureSource implements HubSource {
     this.#cancelReplay();
     if (this.#file.state.phase !== "live") return;
     let at = 0;
-    for (const { afterMs, ...frame } of this.#file.frames) {
+    for (const { afterMs, ...checked } of this.#file.frames) {
+      // Fixtures are recorded hub frames, checked at the fields main relies on, like a live hub's.
+      const frame = checked as HubFrame;
       at += afterMs ?? 0;
       if (at === 0) this.#emit(frame);
       else this.#replay.push(setTimeout(() => this.#emit(frame), at));
