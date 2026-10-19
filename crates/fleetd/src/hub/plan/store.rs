@@ -39,6 +39,9 @@ pub struct ItemData {
     pub evidence: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drop_reason: Option<String>,
+    /// When it was added (absent on items older than the progress model).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

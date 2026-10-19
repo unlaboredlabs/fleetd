@@ -84,6 +84,23 @@ export const screens: readonly Screen[] = [
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
+  // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
+  {
+    id: "palette",
+    route: "#/",
+    fixtures: ["typical", "long-text", "empty", "many-prompts"],
+    open: (page) => page.keyboard.press("ControlOrMeta+K"),
+  },
+  {
+    id: "palette.reply",
+    route: "#/",
+    fixtures: ["needs-you", "long-text", "empty"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search or reply" }).fill("1 go 2 nvm 3 b");
+    },
+  },
+  { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
