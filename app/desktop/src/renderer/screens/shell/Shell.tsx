@@ -1,14 +1,16 @@
 // The app frame: the top bar (the window's drag region, the traffic lights inset on macOS), the sidebar, the screen
 // the route names, the inbox panel and the strips along the bottom. Navigation is the hash (routes.ts).
 import { PanelLeft, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
-import { EMPTY_SHELL_DATA, Seen, sidebarOrders, type ShellData } from "./model";
+import { leadLaneId, selectBoard, selectInbox, selectMachines, selectNeedsYouCount, selectProjects } from "../../src/data/selectors";
+import { useData } from "../../src/data/react";
+import { Seen, sidebarOrders, toShellData, type ShellData } from "./model";
 import { navigate, useRoute } from "./navigation";
 import type { Route, Screen } from "./routes";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
@@ -18,8 +20,25 @@ import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
 
-/** The frame's view data. E1's store selector replaces this; until then the frame shows its empty states. */
-const useShellData = (): ShellData => EMPTY_SHELL_DATA;
+/** The frame's view data, from the data layer: recomputed only when one of its inputs changed. */
+const useShellData = (): ShellData => {
+  const projects = useData(selectProjects);
+  const board = useData(selectBoard);
+  const inbox = useData(selectInbox);
+  const machines = useData(selectMachines);
+  const lanes = useData((s) => s.live.lanes);
+  return useMemo(
+    () =>
+      toShellData(
+        { projects, board, inbox, machines, leadStatus: (key) => lanes[leadLaneId(key)]?.status },
+        // A finished order drops off when the data next changes, not on a timer, so nothing repaints while idle;
+        // the clock is read once per data change, which is the point of the memo.
+        // eslint-disable-next-line react-hooks/purity
+        Date.now(),
+      ),
+    [projects, board, inbox, machines, lanes],
+  );
+};
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
@@ -27,6 +46,10 @@ export function Shell() {
   const route = useRoute();
   const hub = useHubState();
   const data = useShellData();
+  // Undefined until this connection's asks loaded: a "0" then would claim nothing needs you.
+  const needsYou = useData(selectNeedsYouCount);
+  // Only while they are on their way: with the hub unreachable or refusing, nothing is coming, so no skeleton.
+  const countLoading = needsYou === undefined && (hub?.phase === "live" || hub?.phase === "connecting");
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [seen] = useState(() => new Seen());
   const modHeld = useModHeld();
@@ -37,12 +60,12 @@ export function Shell() {
   useEscape(route);
 
   // What was there when the app connected counts as seen; a project you open is seen up to now.
-  seen.prime(data.projects);
+  if (data.projects !== undefined) seen.prime(data.projects);
   const screen = route.screen;
   useEffect(() => {
     if (screen.id !== "board" || screen.project === null) return;
     const key = screen.project;
-    const open = data.projects.find((p) => p.key.machineId === key.machineId && p.key.projectId === key.projectId);
+    const open = data.projects?.find((p) => p.key.machineId === key.machineId && p.key.projectId === key.projectId);
     if (open !== undefined) seen.mark(open.key, open.lastActivityAt);
   }, [screen, data.projects, seen]);
 
@@ -106,13 +129,22 @@ export function Shell() {
         chrome ? (
           <>
             <Button
-              variant={data.needsYou > 0 ? "secondary" : "quiet"}
-              className={data.needsYou > 0 ? s.needsYou : undefined}
+              variant={needsYou !== undefined && needsYou > 0 ? "secondary" : "quiet"}
+              className={needsYou !== undefined && needsYou > 0 ? s.needsYou : undefined}
+              aria-busy={countLoading}
               shortcut={display("inbox.toggle", platform)}
               aria-pressed={route.inbox !== null}
               onClick={() => setInbox(route.inbox === null ? { askId: null } : null)}
             >
-              {data.needsYou > 0 ? `${String(data.needsYou)} need you` : "Inbox"}
+              {countLoading ? (
+                <>
+                  Inbox <span className={s.countSkeleton} aria-label="Loading" />
+                </>
+              ) : needsYou !== undefined && needsYou > 0 ? (
+                `${String(needsYou)} need you`
+              ) : (
+                "Inbox"
+              )}
             </Button>
             <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
               Commands
@@ -147,7 +179,7 @@ export function Shell() {
               </footer>
             ) : null}
           </div>
-          {chrome && route.inbox !== null ? <InboxPanel count={data.needsYou} askId={route.inbox.askId} onClose={() => setInbox(null)} /> : null}
+          {chrome && route.inbox !== null ? <InboxPanel count={needsYou} askId={route.inbox.askId} onClose={() => setInbox(null)} /> : null}
         </div>
       </AppFrame>
       <PaletteHost />
