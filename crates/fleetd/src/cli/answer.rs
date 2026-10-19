@@ -11,14 +11,14 @@ use super::args::{self, Kind, Spec};
 use super::mcp_client::McpClient;
 use super::steer::{Failure, call, hub_url};
 
-pub const ANSWER_USAGE: &str = r##"  answer --key-file <human key> [--hub <url>]
+pub const ANSWER_USAGE: &str = r##"  answer --key-file <human key> [--hub <url> | --home <dir>]
              the open questions: each choice's label, what happens if you pick it, and the
              lead's recommendation
-  answer "<reply>" --key-file <human key> [--hub <url>]
+  answer "<reply>" --key-file <human key> [--hub <url> | --home <dir>]
              answer them: "1 a", "1-3 go" (take the recommendation), "2: your own answer",
              "3 skip" (skip for now: the lead keeps its recommendation), "4 later", "#B4 1 b".
              A question's answer can be taken back for 10 s
-  answer undo A<n> --key-file <human key> [--hub <url>]
+  answer undo A<n> --key-file <human key> [--hub <url> | --home <dir>]
              take an answer back within 10 s; the question is open again
 "##;
 
@@ -36,6 +36,8 @@ pub enum AnswerCommand {
 pub struct AnswerArgs {
     pub command: AnswerCommand,
     pub hub: Option<String>,
+    /// The hub on this machine's home, when it isn't the default.
+    pub home: Option<String>,
     pub key_file: String,
 }
 
@@ -43,7 +45,11 @@ pub fn parse_answer_args(argv: &[String]) -> Result<AnswerArgs, String> {
     let v = args::parse(
         argv,
         &Spec {
-            options: &[("hub", Kind::Str), ("key-file", Kind::Str)],
+            options: &[
+                ("hub", Kind::Str),
+                ("key-file", Kind::Str),
+                ("home", Kind::Str),
+            ],
             positionals: true,
         },
     )?;
@@ -68,6 +74,7 @@ pub fn parse_answer_args(argv: &[String]) -> Result<AnswerArgs, String> {
     Ok(AnswerArgs {
         command,
         hub: v.string("hub").filter(|s| !s.is_empty()),
+        home: v.string("home").filter(|s| !s.is_empty()),
         key_file,
     })
 }
@@ -191,7 +198,7 @@ async fn run(args: AnswerArgs) -> Result<u8, Failure> {
     let key = std::fs::read_to_string(&args.key_file)
         .map(|k| k.trim().to_owned())
         .map_err(|error| Failure::Refused(format!("cannot read --key-file: {error}")))?;
-    let url = hub_url(args.hub).map_err(Failure::Unreachable)?;
+    let url = hub_url(args.hub, args.home.as_deref()).map_err(Failure::Unreachable)?;
     let mut client =
         McpClient::connect(&url, &key, "fleetd-answer", Duration::from_secs(15)).await?;
     let shape = |error: serde_json::Error| {

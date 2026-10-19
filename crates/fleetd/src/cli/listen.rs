@@ -371,8 +371,7 @@ pub async fn listen_command(argv: &[String]) -> u8 {
             .map(|m| m[0].clone()),
         client: None,
     };
-    let cursor_file = super::home_dir()
-        .join(".fleetd")
+    let cursor_file = crate::home::fleetd_dir()
         .join("listen")
         .join(format!("{name}.cursor"));
     let mut stop = Stop::on_signals();

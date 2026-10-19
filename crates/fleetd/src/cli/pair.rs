@@ -62,7 +62,12 @@ pub fn deep_link(hub: &str, code: &str) -> String {
 }
 
 /// `$XDG_CONFIG_HOME/fleetd/app-pair.json` (default `~/.config`); on macOS `~/Library/Application Support/fleetd/`.
+/// A relocated fleetd dir (`FLEETD_HOME`, `--home`) holds it instead, where the app run with the same
+/// `FLEETD_HOME` looks.
 pub fn app_pair_file() -> PathBuf {
+    if let Some(dir) = crate::home::relocated() {
+        return dir.join("app-pair.json");
+    }
     let home = super::home_dir();
     let dir = if cfg!(target_os = "macos") {
         home.join("Library/Application Support")
@@ -109,7 +114,7 @@ fn local_hub_urls(home: &Path) -> Result<Vec<String>, String> {
 }
 
 /// `--listen` of the hub process that has this home's database open.
-fn running_listen(home: &Path) -> Option<String> {
+pub(crate) fn running_listen(home: &Path) -> Option<String> {
     super::setup::processes_holding(&home.join("hub.sqlite"))
         .into_iter()
         .find_map(|pid| {

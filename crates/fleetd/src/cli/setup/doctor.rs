@@ -67,9 +67,10 @@ pub async fn connect_to(
     let listen = match hub {
         Some(url) => url.trim_end_matches('/').to_owned(),
         None => {
-            let state = read_setup(home)
-                .map_err(again)?
-                .ok_or_else(|| again(format!("{} has no hub set up", home.display())))?;
+            let state = read_setup(home).map_err(again)?.ok_or_else(|| Failure {
+                message: format!("{} has no hub set up", home.display()),
+                fix: super::no_setup_fix(home),
+            })?;
             format!("http://{}", state.listen)
         }
     };

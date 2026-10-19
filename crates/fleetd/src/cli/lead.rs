@@ -12,7 +12,8 @@ use serde_json::{Map, Value, json};
 use super::CliResult;
 use super::args::{self, Kind, Spec};
 
-pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
+/// Under the fleetd dir.
+pub const NODE_SOCKET_PATH: &str = "node/node.sock";
 const SERVES_FIX: &str =
     "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | ask:<id>";
 
@@ -939,7 +940,7 @@ pub fn caller_cwd(pwd: Option<&str>, physical: &Path) -> String {
 pub fn node_socket_path(env_sock: Option<&str>) -> PathBuf {
     match env_sock.filter(|s| !s.is_empty()) {
         Some(sock) => PathBuf::from(sock),
-        None => super::home_dir().join(NODE_SOCKET_PATH),
+        None => crate::home::fleetd_dir().join(NODE_SOCKET_PATH),
     }
 }
 

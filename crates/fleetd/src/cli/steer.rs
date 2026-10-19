@@ -10,14 +10,14 @@ use serde_json::{Value, json};
 use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 
-pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url>]
+pub const STEER_USAGE: &str = r#"  steer <W|T> "<text>" [--now] [--wait] --key-file <human key> [--hub <url> | --home <dir>]
              steer an order's lead (W41) or one agent (T88) mid-run. Plain: it lands at the
              agent's next step, after the tool it is running returns. --now stops that step and
              delivers at once. --wait follows the receipt: exit 0 acknowledged, 1 not
              acknowledged, withdrawn or failed. Without --hub it uses the hub on this machine
-  steer withdraw S<n> --key-file <human key> [--hub <url>]
+  steer withdraw S<n> --key-file <human key> [--hub <url> | --home <dir>]
              take back a steer the agent has not taken in yet
-  steers [W|T] --key-file <human key> [--hub <url>]
+  steers [W|T] --key-file <human key> [--hub <url> | --home <dir>]
              recent steers and their receipts
 "#;
 
@@ -45,6 +45,8 @@ pub enum SteerCommand {
 pub struct SteerArgs {
     pub command: SteerCommand,
     pub hub: Option<String>,
+    /// The hub on this machine's home, when it isn't the default.
+    pub home: Option<String>,
     pub key_file: String,
 }
 
@@ -72,6 +74,7 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
+        ("home", Kind::Str),
         ("now", Kind::Bool),
         ("wait", Kind::Bool),
     ];
@@ -134,6 +137,7 @@ pub fn parse_steer_args(argv: &[String], list: bool) -> Result<SteerArgs, String
     Ok(SteerArgs {
         command,
         hub,
+        home: v.string("home").filter(|s| !s.is_empty()),
         key_file,
     })
 }
@@ -245,12 +249,12 @@ fn client_request_id() -> String {
         .collect()
 }
 
-/// `--hub`, else the hub this machine runs (`fleetd init`).
-pub(super) fn hub_url(hub: Option<String>) -> Result<String, String> {
+/// `--hub`, else the hub this machine runs (`fleetd init`), at `--home` when given.
+pub(super) fn hub_url(hub: Option<String>, home: Option<&str>) -> Result<String, String> {
     if let Some(hub) = hub {
         return Ok(hub);
     }
-    let home = super::hub_key::resolve_home(None)?;
+    let home = super::hub_key::resolve_home(home)?;
     match super::setup::state::read_setup(&home)? {
         Some(state) => Ok(format!("http://{}", state.listen)),
         None => Err(format!(
@@ -374,7 +378,7 @@ async fn run(args: SteerArgs) -> Result<u8, Failure> {
     let key = std::fs::read_to_string(&args.key_file)
         .map(|k| k.trim().to_owned())
         .map_err(|error| Failure::Refused(format!("cannot read --key-file: {error}")))?;
-    let url = hub_url(args.hub).map_err(Failure::Unreachable)?;
+    let url = hub_url(args.hub, args.home.as_deref()).map_err(Failure::Unreachable)?;
     let mut client =
         McpClient::connect(&url, &key, "fleetd-steer", Duration::from_secs(15)).await?;
     match args.command {

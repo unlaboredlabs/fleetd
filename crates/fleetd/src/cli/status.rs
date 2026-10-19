@@ -26,7 +26,7 @@ use super::lead::js_number;
 use super::mcp_client::{McpClient, McpError};
 use super::time::resolve_project;
 
-pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path>]
+pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
              progress (verified plus work in flight), why it fell, the critical path it waits on,
              what is slower than usual, what changed since you last looked, health and risks;
              for an order (W41), a project by id or title (<machine>/<project> when two machines
@@ -35,7 +35,7 @@ pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json
              needs no --hub or --key-file
 "#;
 
-pub const GITHUB_WEBHOOK_USAGE: &str = r#"  hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path>]
+pub const GITHUB_WEBHOOK_USAGE: &str = r#"  hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path> | --home <dir>]
              let GitHub tell the hub about pull requests, checks and pushes on the train's repos
              as they happen (admin key). It needs a URL GitHub can reach that forwards to this hub,
              which fleetd never creates; without one the hub syncs with GitHub on its own
@@ -50,6 +50,8 @@ const BACKOFF: &[u64] = &[1, 2, 5, 10, 30];
 pub struct StatusArgs {
     /// Both, or neither for the hub on this machine.
     pub hub: Option<(String, String)>,
+    /// That hub's home, when it isn't the default.
+    pub home: Option<String>,
     /// The order id or project as given; empty for the fleet.
     pub target: String,
     pub watch: bool,
@@ -72,6 +74,7 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
+        ("home", Kind::Str),
         ("watch", Kind::Bool),
         ("json", Kind::Bool),
     ];
@@ -90,6 +93,7 @@ pub fn parse_status_args(argv: &[String]) -> Result<StatusArgs, String> {
     }
     Ok(StatusArgs {
         hub: hub_flags(&v)?,
+        home: v.string("home").filter(|s| !s.is_empty()),
         target: v.positionals.first().cloned().unwrap_or_default(),
         watch: v.flag("watch"),
         json: v.flag("json"),
@@ -622,7 +626,11 @@ enum Target {
 }
 
 impl Target {
-    fn from_args(hub: &Option<(String, String)>, who: &str) -> Result<Self, u8> {
+    fn from_args(
+        hub: &Option<(String, String)>,
+        home: Option<&str>,
+        who: &str,
+    ) -> Result<Self, u8> {
         match hub {
             Some((url, key_file)) => match std::fs::read_to_string(key_file) {
                 Ok(key) => Ok(Target::Remote {
@@ -634,7 +642,7 @@ impl Target {
                     Err(2)
                 }
             },
-            None => match super::hub_key::resolve_home(None) {
+            None => match super::hub_key::resolve_home(home) {
                 Ok(home) => Ok(Target::Local { home }),
                 Err(message) => {
                     eprintln!(
@@ -779,7 +787,7 @@ fn decode<A: serde::de::DeserializeOwned>(tool: &str, body: Value) -> Result<A, 
     })
 }
 
-/// "Since you last looked here": this machine's own mark per hub and scope, in `~/.fleetd/cli/status-seen.json`
+/// "Since you last looked here": this machine's own mark per hub and scope, in `<fleetd dir>/cli/status-seen.json`
 /// (0600). It is separate from the per-person marks the app keeps on the hub: neither moves the other, so the CLI
 /// needs no person's key and a look in one place never hides news from the other.
 struct Mark {
@@ -791,7 +799,7 @@ struct Mark {
 
 impl Mark {
     fn load(hub: &str, scope: &Value) -> Self {
-        let file = super::home_dir().join(".fleetd/cli/status-seen.json");
+        let file = crate::home::fleetd_dir().join("cli/status-seen.json");
         let scope_key = serde_json::from_value::<StatusScope>(scope.clone())
             .map(|s| s.key())
             .unwrap_or_default();
@@ -867,7 +875,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
             return 2;
         }
     };
-    let target = match Target::from_args(&args.hub, "status") {
+    let target = match Target::from_args(&args.hub, args.home.as_deref(), "status") {
         Ok(target) => target,
         Err(code) => return code,
     };
@@ -956,6 +964,7 @@ pub async fn github_webhook_command(argv: &[String]) -> u8 {
     const OPTIONS: &[(&str, Kind)] = &[
         ("hub", Kind::Str),
         ("key-file", Kind::Str),
+        ("home", Kind::Str),
         ("url", Kind::Str),
         ("off", Kind::Bool),
     ];
@@ -968,23 +977,24 @@ pub async fn github_webhook_command(argv: &[String]) -> u8 {
     )
     .and_then(|v| {
         let hub = hub_flags(&v)?;
+        let home = v.string("home").filter(|s| !s.is_empty());
         match (v.string("url").filter(|u| !u.is_empty()), v.flag("off")) {
             (Some(url), false) if url.starts_with("https://") || url.starts_with("http://") => {
-                Ok((hub, Some(url)))
+                Ok((hub, home, Some(url)))
             }
             (Some(url), false) => Err(format!("--url must be an http(s) URL, got '{url}'")),
-            (None, true) => Ok((hub, None)),
+            (None, true) => Ok((hub, home, None)),
             _ => Err("give exactly one of --url <public url>/github and --off".into()),
         }
     });
-    let (hub, url) = match parsed {
+    let (hub, home, url) = match parsed {
         Ok(parsed) => parsed,
         Err(error) => {
             eprint!("fleetd: {error}\n\nusage:\n{GITHUB_WEBHOOK_USAGE}");
             return 2;
         }
     };
-    let target = match Target::from_args(&hub, "hub github-webhook") {
+    let target = match Target::from_args(&hub, home.as_deref(), "hub github-webhook") {
         Ok(target) => target,
         Err(code) => return code,
     };

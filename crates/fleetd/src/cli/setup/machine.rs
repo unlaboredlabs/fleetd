@@ -231,7 +231,10 @@ pub fn node_unit_facts(file_name: &str, text: &str) -> Option<(String, Option<Gi
 /// The node `fleetd init --join` set up here, if it is enrolled: from its node.json and its unit.
 pub fn joined_here() -> Option<Joined> {
     let dirs = super::local_dirs();
-    let layout = super::machine_plan::machine_layout(&dirs.home);
+    let layout = super::machine_plan::machine_layout_at(
+        &dirs.home,
+        &crate::home::fleetd_dir().to_string_lossy(),
+    );
     let node: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&layout.node_config).ok()?).ok()?;
     if node.get("enrolled") != Some(&serde_json::Value::Bool(true)) {
@@ -389,8 +392,9 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
             Ok(Some(state)) => Some(state),
             Ok(None) => {
                 return fail(&format!(
-                    "{} has no hub set up. Fix: fleetd init",
-                    home.display()
+                    "{} has no hub set up. Fix: {}",
+                    home.display(),
+                    super::no_setup_fix(&home)
                 ));
             }
             Err(message) => return fail(&message),
@@ -522,7 +526,13 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         }
     ));
     say("[probe] read the machine's state (read-only)");
-    let probed = run_ssh(&target, &probe_command(&input.unit_suffix), None).await;
+    let relocated = crate::home::relocated().map(|d| d.to_string_lossy().into_owned());
+    let probed = run_ssh(
+        &target,
+        &probe_command(&input.unit_suffix, relocated.as_deref().filter(|_| local)),
+        None,
+    )
+    .await;
     let facts = match (probed.code, parse_facts(&probed.stdout)) {
         (0, Ok(facts)) => facts,
         (code, parsed) => {
@@ -745,9 +755,11 @@ async fn remove_command(argv: &[String]) -> u8 {
                 config: record.ssh_config.clone(),
                 local: record.local,
             };
+            let relocated = crate::home::relocated().map(|d| d.to_string_lossy().into_owned());
             let steps = plan_machine_remove(
                 record.platform,
                 &record.home,
+                relocated.as_deref().filter(|_| record.local),
                 &record.config_home,
                 record.uid,
                 &record.unit_suffix,

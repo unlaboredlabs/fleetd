@@ -310,6 +310,30 @@ pub fn hub_service_spec(
     }
 }
 
+/// The fix for a hub home without `setup.json`. A hub started there by hand (`fleetd hub start`) keeps running:
+/// `init --no-service` only writes what the CLI needs beside it.
+pub fn no_setup_fix(home: &Path) -> String {
+    no_setup_fix_for(
+        home,
+        resolve_home(None).ok().as_deref(),
+        super::pair::running_listen(home).as_deref(),
+    )
+}
+
+fn no_setup_fix_for(home: &Path, default_home: Option<&Path>, running: Option<&str>) -> String {
+    let home_flag = if default_home == Some(home) {
+        String::new()
+    } else {
+        format!(" --home {}", units::q(&home.to_string_lossy()))
+    };
+    match running {
+        Some(listen) => format!(
+            "a hub you started yourself answers there: fleetd init --no-service{home_flag} --listen {listen}"
+        ),
+        None => format!("fleetd init{home_flag} (it starts the hub and repairs its setup)"),
+    }
+}
+
 /// The running executable, symlinks resolved.
 pub fn current_exe() -> Result<PathBuf, String> {
     std::env::current_exe()
@@ -512,6 +536,18 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
         (Some(old), Some(new)) if old == new => Unit::Same,
         _ => Unit::Changed,
     };
+    // A second fleet on this machine (its own fleetd dir) never takes over the first one's hub service.
+    if plan.with_service
+        && crate::home::relocated().is_some()
+        && let (Some(old), Some(file)) = (&existing, &unit_file)
+        && !old.contains(&home_text)
+    {
+        return Err(Failure {
+            message: format!("{file} runs another fleet's hub"),
+            fix: "give this fleet its own service: fleetd init --unit-suffix <name>, or --no-service to run the hub yourself"
+                .into(),
+        });
+    }
     let holders = processes_holding(&plan.home.join("hub.sqlite"));
     let probe = probe_listen(&listen).await;
     let action = hub_action(
@@ -877,6 +913,27 @@ pub async fn setup_command(command: &str, argv: &[String]) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_home_without_setup_points_at_init_and_keeps_a_hub_run_by_hand() {
+        let default = Path::new("/home/ada/.fleetd/hub");
+        assert_eq!(
+            no_setup_fix_for(default, Some(default), None),
+            "fleetd init (it starts the hub and repairs its setup)"
+        );
+        assert_eq!(
+            no_setup_fix_for(
+                Path::new("/tmp/f/hub"),
+                Some(default),
+                Some("127.0.0.1:4797")
+            ),
+            "a hub you started yourself answers there: fleetd init --no-service --home /tmp/f/hub --listen 127.0.0.1:4797"
+        );
+        assert_eq!(
+            no_setup_fix_for(Path::new("/tmp/my hub"), Some(default), None),
+            "fleetd init --home '/tmp/my hub' (it starts the hub and repairs its setup)"
+        );
+    }
 
     fn action(service: bool, unit: Unit, holders: &[u32], probe: Probe) -> HubAction {
         hub_action(service, unit, holders, &probe, "127.0.0.1:4790", "/h")
