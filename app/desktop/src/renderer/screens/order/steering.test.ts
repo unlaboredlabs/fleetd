@@ -2,7 +2,7 @@
 // redirect can't send twice; a jump to a tool call opens its fold and lights the call.
 import { describe, expect, it } from "vitest";
 import type { Steer, TailItem } from "../../../shared/contracts";
-import { buildConversation, entryIndexAt, jumpTarget, type Entry } from "./conversation";
+import { buildConversation, entryIndexAt, jumpTarget, type Entry } from "./conversationModel";
 import { emptySteering, logView, steeringReducer, type Steering, type SteeringAction } from "./data";
 import { reconnectWatcher, redirectId, redirecting, type Sending } from "./sending";
 
