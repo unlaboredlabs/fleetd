@@ -9,7 +9,7 @@ import { at } from "./ids.ts";
 import { isObject, type JsonObject, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
-import { answerRows, commandApproval, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, setChatState, statusRow, writeChat } from "./chat.ts";
+import { answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, setChatState, statusRow, writeChat } from "./chat.ts";
 import { longChat, QUESTION, STREAMING_SO_FAR, TERSE } from "./chatText.ts";
 import { uuid } from "./ids.ts";
 import { LONG_TITLES, ofLength } from "./text.ts";
@@ -167,8 +167,8 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
     ),
     withChat(copy("chat-attachments", "A screenshot and a log file sent to the lead, and its reply."), [
       ...fromLines(QUESTION),
-      { author: "human", text: "the receipt looks off on mobile, see screenshot + log", attachments: ["F1", "F2"] },
-      { author: "human", text: "", attachments: ["F3"] },
+      { author: "human", text: "the receipt looks off on mobile, see screenshot + log", attachments: [SCREENSHOT, LOG] },
+      { author: "human", text: "", attachments: [SCREENSHOT] },
       { author: "lead", text: "Got both. The date wraps under the total on narrow screens; a writer is fixing the layout." },
     ]),
     withChat(

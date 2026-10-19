@@ -17,11 +17,30 @@ export type Ref = { readonly machineId: string; readonly projectId: string };
 export interface Draft {
   readonly author: "human" | "lead" | "system";
   readonly text: string;
-  readonly attachments?: ReadonlyArray<string>;
+  readonly attachments?: ReadonlyArray<Attachment>;
   readonly state?: "streaming" | "final";
   readonly item?: JsonObject;
   readonly history?: "order" | "note" | "steer" | "lead_message" | "order_outcome";
 }
+
+/** A file sent with a message; `data` is what attachment_get returns for it. */
+export interface Attachment {
+  readonly name: string;
+  readonly mime: "image/png" | "text/plain";
+  readonly data: Buffer;
+}
+
+/** A 2×2 PNG (a real one, so an <img> decodes it) and a short log, the two kinds a screen renders differently. */
+export const SCREENSHOT: Attachment = {
+  name: "receipt-on-mobile.png",
+  mime: "image/png",
+  data: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAF0lEQVR4nGPwqr3x4t0nhhfvPnnV3gAAPIAIz2Y7aggAAAAASUVORK5CYII=", "base64"),
+};
+export const LOG: Attachment = {
+  name: "checkout-tests.log",
+  mime: "text/plain",
+  data: Buffer.from("FAIL storefront-checkout > receipt > wraps the date under the total at 360px\n  expected one line, got two\n"),
+};
 
 export const fromLines = (lines: ReadonlyArray<Line>): Array<Draft> => lines.map((l) => ({ author: l.from === "you" ? "human" : "lead", text: l.text }));
 
@@ -65,20 +84,29 @@ export const setChatState = (f: Fixture, ref: Ref, state: { needsYou: boolean; l
 export const writeChat = (f: Fixture, ref: Ref, drafts: ReadonlyArray<Draft>, opts: { needsYou?: boolean; leadWorking?: boolean } = {}): Array<JsonObject> => {
   // A copied fixture may hold this project's earlier chat: its pages go, so no stale page answers a request.
   for (const a of f.answers("chat_history").filter((x) => obj(x.input?.["projectRef"])["projectId"] === ref.projectId)) f.drop("chat_history", a.input);
+  const projectRef = { ...ref };
+  for (const a of f.answers("attachment_get").filter((x) => obj(x.input?.["projectRef"])["projectId"] === ref.projectId)) f.drop("attachment_get", a.input);
   const end = Date.parse(f.now) - 20_000;
   const step = 95_000;
   let request = 0;
+  let file = 0;
   const messages = drafts.map((d, i): JsonObject => {
     const seq = i + 1;
     const createdAt = new Date(end - (drafts.length - seq) * step).toISOString();
-    const item = d.item === undefined ? undefined : { ...d.item, requestId: d.item["requestId"] ?? `R${String(++request)}` };
+    const item = d.item === undefined ? undefined : { ...d.item, requestId: d.item["requestId"] ?? `Q${String(++request)}` };
+    const attachments = (d.attachments ?? []).map((a) => {
+      const attachmentId = `F${String(++file)}`;
+      const ref = { attachmentId, name: a.name, mime: a.mime, bytes: a.data.length };
+      f.answer("attachment_get", { projectRef: { ...projectRef }, attachmentId }, { ...ref, dataB64: a.data.toString("base64") });
+      return ref;
+    });
     return {
       messageId: `m${String(seq)}`,
       projectRef: { ...ref },
       seq,
       author: d.author,
       text: d.text,
-      attachments: [...(d.attachments ?? [])],
+      attachments,
       createdAt,
       state: d.state ?? "final",
       ...(d.state === "streaming" ? { updatedAt: at(f.now, -2000) } : {}),
@@ -94,7 +122,6 @@ export const writeChat = (f: Fixture, ref: Ref, drafts: ReadonlyArray<Draft>, op
     lastSeq: messages.length,
     ...(typeof last?.["createdAt"] === "string" ? { lastMessageAt: last["createdAt"] } : {}),
   });
-  const projectRef = { ...ref };
   for (let endIndex = messages.length; endIndex > 0 || messages.length === 0; endIndex -= PAGE) {
     const page = messages.slice(Math.max(0, endIndex - PAGE), endIndex);
     const out = { messages: page, moreBefore: endIndex - PAGE > 0, moreAfter: endIndex < messages.length, state };
@@ -113,18 +140,27 @@ export const secretRequest = (state: "open" | "stored", f: Fixture): JsonObject 
   name: "stripe.test_key",
   text: "The checkout tests charge a test card; they need the Stripe test key.",
   sink: "env:devbox:/home/dev/src/storefront/.env.test",
+  envName: "STRIPE_TEST_KEY",
   state,
-  ...(state === "stored" ? { fingerprint: "sha256:9f2c4e1a", answeredAt: at(f.now, -3_600_000), by: "laptop" } : {}),
+  ...(state === "stored" ? { fingerprint: "9f2c4e1a", answeredAt: at(f.now, -3_600_000), by: "laptop" } : {}),
 });
 
+/** A gated command (the exact argv), or with `permission` an agent's tool prompt; ran and denied ones are answered. */
 export const commandApproval = (state: "open" | "ran" | "denied", f: Fixture, permission = false): JsonObject => ({
   kind: "command_approval",
   ...(permission
-    ? { tool: "Bash", inputSummary: "rm -rf build/ && pnpm build --filter storefront" }
-    : { argv: ["pnpm", "--filter", "storefront", "db:migrate", "--env", "production"], cwd: "/home/dev/src/storefront", secretEnv: ["DATABASE_URL"], timeoutSec: 600 }),
+    ? { permission: { requestId: "perm-1", toolName: "Bash", summary: "rm -rf build/ && pnpm build --filter storefront", threadId: uuid("permission thread") } }
+    : {
+        gated: {
+          argv: ["pnpm", "--filter", "storefront", "db:migrate", "--env", "production"],
+          cwd: "/home/dev/src/storefront",
+          class: "irreversible",
+          reason: "Adds the share_snapshots table to the production database.",
+          secretEnv: [{ name: "DATABASE_URL", secretKey: "storefront.database_url" }],
+          timeoutSec: 600,
+        },
+      }),
   machineId: "devbox",
-  class: "irreversible",
-  reason: permission ? "A writer wants to delete the build folder before rebuilding." : "Adds the share_snapshots table to the production database.",
   state,
   ...(state === "ran" ? { exitCode: 0, outputTail: "Applying 20261019_share_snapshots... done\n1 migration applied.", answeredAt: at(f.now, -7_200_000), by: "laptop" } : {}),
   ...(state === "denied" ? { answeredAt: at(f.now, -5_400_000), by: "laptop" } : {}),
