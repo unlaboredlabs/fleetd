@@ -1,7 +1,7 @@
 // The app frame: the top bar (the window's drag region, the traffic lights inset on macOS), the sidebar, the screen
 // the route names, the inbox panel and the strips along the bottom. Navigation is the hash (routes.ts).
 import { PanelLeft, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
 import { useNeedsYouSource } from "../inbox";
@@ -11,9 +11,10 @@ import { quietNow, useEscape, useMainProcess, useMenuState, useModHeld, useNotif
 import { postDigest, useStatusDigest } from "../status/digest";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
-import { leadLaneId, selectBoard, selectInbox, selectMachines, selectNeedsYouCount, selectProjects } from "../../src/data/selectors";
+import { selectNeedsYouCount } from "../../src/data/selectors";
 import { useData, useDataLayer } from "../../src/data/react";
-import { Seen, sidebarOrders, toShellData, type ShellData } from "./model";
+import { Seen, sidebarOrders } from "./model";
+import { useShellData } from "./data";
 import { navigate, useRoute } from "./navigation";
 import type { Route, Screen } from "./routes";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
@@ -22,26 +23,6 @@ import { Sidebar } from "./Sidebar";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
-
-/** The frame's view data, from the data layer: recomputed only when one of its inputs changed. */
-const useShellData = (): ShellData => {
-  const projects = useData(selectProjects);
-  const board = useData(selectBoard);
-  const inbox = useData(selectInbox);
-  const machines = useData(selectMachines);
-  const lanes = useData((s) => s.live.lanes);
-  return useMemo(
-    () =>
-      toShellData(
-        { projects, board, inbox, machines, leadStatus: (key) => lanes[leadLaneId(key)]?.status },
-        // A finished order drops off when the data next changes, not on a timer, so nothing repaints while idle;
-        // the clock is read once per data change, which is the point of the memo.
-        // eslint-disable-next-line react-hooks/purity
-        Date.now(),
-      ),
-    [projects, board, inbox, machines, lanes],
-  );
-};
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 

@@ -2,7 +2,10 @@
 // conversation about this order on the right, with a receipt under every steer, the line for a steer waiting on
 // the lead's next step, and the steer composer at the bottom. Every lane opens its steer box.
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useShellData } from "../shell/data";
+import { sidebarOrders } from "../shell/model";
+import { useOrderCommands } from "./commands";
 import { Button, cx, Dialog, IdChip, StatusChip, Text, Truncate } from "../../ui";
 import { SteerComposer } from "./Composer";
 import { Conversation, InlineText } from "./Conversation";
@@ -86,6 +89,8 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
   const [sheet, setSheet] = useState<SheetAgent | undefined>(undefined);
   const [toldOpen, setToldOpen] = useState<{ thread: ThreadRef; who: ToldWho; name: string }>();
   const [confirmStop, setConfirmStop] = useState(false);
+  const leadInput = useRef<HTMLTextAreaElement>(null);
+  const sidebar = useShellData().projects;
 
   const lead = data.lead;
   const leadWorking = lead?.status === "working" || lead?.status === "starting";
@@ -153,6 +158,38 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       ? { text: "Couldn’t load the lead’s log; it loads again when the hub answers.", error: true }
       : { text: data.logReady ? `The lead hasn’t said anything about ${w} yet.` : "Loading the lead’s log…", error: false };
 
+  const sidebarIds = useMemo(() => sidebarOrders(sidebar), [sidebar]);
+  const go = useCallback((hash: string) => {
+    window.location.hash = hash;
+  }, []);
+  const steerLead = useCallback(() => {
+    setTab("lead");
+    // The lead pane may have just mounted (narrow window): focus after it renders.
+    requestAnimationFrame(() => leadInput.current?.focus());
+  }, []);
+  const pickAgent = useCallback(() => {
+    setTab("fleet");
+    requestAnimationFrame(() => root.current?.querySelector<HTMLElement>("[data-lane]")?.focus());
+  }, []);
+  useOrderCommands(
+    {
+      workstreamId: w,
+      sidebar: sidebarIds,
+      finished,
+      lanes: data.lanes,
+      steers: data.steers,
+      go,
+      askStop: () => setConfirmStop(true),
+      steerLead,
+      pickAgent,
+      steerLane: (lane) => setSheet(agentOf(lane, w)),
+      withdraw: (id) => {
+        if (data.logReady) actions.withdraw(id);
+      },
+    },
+    [w, finished, sidebarIds, data.lanes, data.steers],
+  );
+
   // The hub's words for an unknown order name its internals; say it plainly and keep them behind Copy.
   const failure = typeof data.status === "object" ? data.status : undefined;
   const errorText = failure ? (failure.code === "not_found" ? `${w} isn’t on this hub.` : `Couldn’t load ${w}.`) : undefined;
@@ -185,7 +222,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         </span>
       ) : null}
       <div className={s.headerActions}>
-        <Button variant="ghost" onClick={() => (location.hash = "#/time")}>
+        <Button variant="ghost" onClick={() => (location.hash = `#/time/order/${w}`)}>
           Time
         </Button>
         <Button variant="ghost" onClick={() => (location.hash = `#/status/order/${w}`)}>
@@ -242,6 +279,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       <div className={s.bottom}>
         {waiting ? <InlineText size="xs" tone="quiet" className={cx(s.waiting)} text={waiting} /> : null}
         <SteerComposer
+          inputRef={leadInput}
           who={{ name: "the lead", ref: w }}
           platform={platform}
           label="Steer the lead"
