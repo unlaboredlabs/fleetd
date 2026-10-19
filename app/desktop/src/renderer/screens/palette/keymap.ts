@@ -8,17 +8,25 @@ import { commandFor } from "./registry";
 /** Held down, these step through orders; every other shortcut fires once per press. */
 const REPEATS: ReadonlySet<ShortcutId> = new Set(["order.previous", "order.next"]);
 
-/** The command id a key press should run, or undefined to leave the key alone. */
-export const dispatchable = (event: KeyInput & { readonly repeat: boolean; readonly isComposing: boolean }, platform: Platform): ShortcutId | undefined => {
+/**
+ * The command id a key press should run, or undefined to leave the key alone. While the palette is open its own
+ * keys win (Ctrl+N/P step it, even where Ctrl is Mod), so only ⌘K, which closes it, gets through.
+ */
+export const dispatchable = (
+  event: KeyInput & { readonly repeat: boolean; readonly isComposing: boolean },
+  platform: Platform,
+  paletteOpen = false,
+): ShortcutId | undefined => {
   if (event.isComposing) return undefined;
   const id = shortcutFor(event, platform);
   if (id === undefined || (event.repeat && !REPEATS.has(id))) return undefined;
+  if (paletteOpen && id !== "palette.toggle") return undefined;
   return commandFor(id) ? id : undefined;
 };
 
-export const installKeymap = (platform: Platform, before?: (id: ShortcutId) => void): (() => void) => {
+export const installKeymap = (platform: Platform, paletteOpen: () => boolean, before?: (id: ShortcutId) => void): (() => void) => {
   const onKeyDown = (event: KeyboardEvent) => {
-    const id = dispatchable(event, platform);
+    const id = dispatchable(event, platform, paletteOpen());
     if (id === undefined) return;
     event.preventDefault();
     event.stopPropagation();

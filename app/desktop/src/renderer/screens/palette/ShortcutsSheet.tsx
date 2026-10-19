@@ -4,6 +4,7 @@ import { Dialog as D } from "radix-ui";
 import { X } from "lucide-react";
 import { LOCAL_KEYS, SHORTCUTS, displayKeys, type Platform, type Shortcut, type ShortcutSection } from "../../../shared/shortcuts";
 import { Button, Kbd, Text } from "../../ui";
+import { useReturnFocus } from "./focus";
 import { closeOverlay } from "./state";
 import s from "./Palette.module.css";
 
@@ -22,13 +23,14 @@ const rowsFor = (list: readonly Shortcut[], platform: Platform): { title: string
 
 export function ShortcutsSheet() {
   const platform = window.fleetd.platform;
+  const returnFocus = useReturnFocus();
   const all: readonly Shortcut[] = Object.values(SHORTCUTS);
   const local = Map.groupBy(LOCAL_KEYS, (k) => k.where);
   return (
     <D.Root open onOpenChange={(open) => !open && closeOverlay()}>
       <D.Portal>
         <D.Overlay className={s.backdrop} />
-        <D.Content className={s.sheet} data-screen="shortcuts" aria-describedby={undefined}>
+        <D.Content className={s.sheet} data-screen="shortcuts" aria-describedby={undefined} onCloseAutoFocus={returnFocus}>
           <div className={s.sheetHead}>
             <D.Title className={s.sheetTitle}>Keyboard shortcuts</D.Title>
             <D.Close asChild>

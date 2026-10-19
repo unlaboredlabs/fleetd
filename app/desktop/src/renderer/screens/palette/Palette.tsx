@@ -2,13 +2,14 @@
 // prompt, and that also takes a terse inbox reply ("1 go 2 nvm 3 b"). Up/Down or the mouse pick, Enter or a click
 // runs, Esc or a click outside closes. Typed text nothing matches can become a new order (the last row).
 
-import { Dialog as D, VisuallyHidden } from "radix-ui";
+import { Dialog as D } from "radix-ui";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { display, isShortcutId } from "../../../shared/shortcuts";
 import { Kbd, Text } from "../../ui";
 import { rank } from "./rank";
 import { GROUP_LABELS, currentTextAction, snapshotItems, subscribeRegistry, subscribeSources, type Command } from "./registry";
-import { isReply, namedItems, readReplyOutcome, type ReplyResult } from "./reply";
+import { isReply, planReply, readReplyOutcome, type ReplyResult } from "./reply";
+import { useReturnFocus } from "./focus";
 import { closeOverlay, noteRecent, readRecent } from "./state";
 import s from "./Palette.module.css";
 
@@ -20,8 +21,13 @@ const useItems = (): Command[] => {
   const [items, setItems] = useState(snapshotItems);
   useEffect(() => {
     const refresh = () => setItems(snapshotItems());
-    const offRegistry = subscribeRegistry(refresh);
-    const offSources = subscribeSources(refresh);
+    let offSources = subscribeSources(refresh);
+    // A source registered while the palette is open (a screen mounting) is followed too.
+    const offRegistry = subscribeRegistry(() => {
+      offSources();
+      offSources = subscribeSources(refresh);
+      refresh();
+    });
     return () => {
       offRegistry();
       offSources();
@@ -54,6 +60,10 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
   const [recent] = useState(readRecent);
   const items = useItems();
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // A command that ran may have moved focus on purpose (⌘L to the composer); only a plain close returns it.
+  const ranRef = useRef(false);
+  const returnFocus = useReturnFocus(() => ranRef.current);
 
   const replying = isReply(query);
   const rows = useMemo(() => (replying ? [] : buildRows(query, items, recent)), [replying, query, items, recent]);
@@ -66,6 +76,7 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
 
   const run = (row: Row | undefined) => {
     if (!row) return;
+    ranRef.current = true;
     closeOverlay();
     if (row.kind === "text") {
       currentTextAction()?.run(row.text);
@@ -75,11 +86,15 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
     row.item.run();
   };
 
+  const plan = useMemo(() => (replying ? planReply(query, items) : undefined), [replying, query, items]);
+
   const sendReply = async () => {
     const raw = query.trim();
-    if (raw === "" || reply.sending) return;
+    if (raw === "" || reply.sending || plan?.kind !== "ready") return;
     setReply({ sending: true });
-    const result = readReplyOutcome(await window.fleetd.hub.call("inbox_reply", { raw }));
+    // The batch the preview showed goes with the text, so the hub answers that batch or refuses; never another.
+    const input = plan.batchId === undefined ? { raw } : { raw, batchId: plan.batchId };
+    const result = readReplyOutcome(await window.fleetd.hub.call("inbox_reply", input));
     setReply({ sending: false, result });
     // Answered: clear the field for the next one. Not read: keep the text so it can be fixed.
     if (result.ok) setQuery("");
@@ -100,23 +115,29 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
     }
   };
 
-  const asks = useMemo(() => {
-    if (!replying) return [];
-    const byNumber = new Map(items.flatMap((item) => (item.askNumber === undefined ? [] : [[item.askNumber, item] as const])));
-    return namedItems(query).map((n) => ({ n, item: byNumber.get(n) }));
-  }, [replying, query, items]);
 
   return (
     <D.Root open onOpenChange={(open) => !open && closeOverlay()}>
       <D.Portal>
         <D.Overlay className={s.backdrop} />
-        <D.Content className={s.palette} data-screen={replying ? "palette.reply" : "palette"} aria-describedby={undefined}>
-          <VisuallyHidden.Root>
-            <D.Title>Command palette</D.Title>
-          </VisuallyHidden.Root>
+        {/* Named by aria-label, not a visually hidden title, until the QA overflow check exempts sr-only text (E3). */}
+        <D.Content
+          className={s.palette}
+          data-screen={replying ? "palette.reply" : "palette"}
+          aria-label="Command palette"
+          aria-labelledby={undefined}
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => {
+            // Not autoFocus: Radix must record the element focused before the palette, to return focus to it.
+            event.preventDefault();
+            inputRef.current?.focus();
+          }}
+          onCloseAutoFocus={returnFocus}
+        >
           <div className={s.field}>
             {replying ? <span className={s.mode}>Reply</span> : null}
             <input
+              ref={inputRef}
               className={s.input}
               value={query}
               onChange={(event) => {
@@ -129,9 +150,8 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
               aria-label="Search or reply"
               role="combobox"
               aria-expanded
-              aria-controls={listId}
+              aria-controls={replying ? undefined : listId}
               aria-activedescendant={!replying && rows.length > 0 ? rowId(current) : undefined}
-              autoFocus
               spellCheck={false}
               autoComplete="off"
               maxLength={4000}
@@ -140,9 +160,14 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
 
           {replying || reply.result ? (
             <div className={s.reply} role="status">
-              {replying && asks.length > 0 ? (
-                <ol className={s.asks}>
-                  {asks.map(({ n, item }) => (
+              {plan?.kind === "ambiguous" ? (
+                <Text as="p" tone="warning">
+                  {`Questions from ${plan.batches.length} batches are open, so say which one: start with #${plan.batches.join(" or #")}.`}
+                </Text>
+              ) : null}
+              {plan?.kind === "ready" && plan.items.length > 0 ? (
+                <ol className={s.asks} aria-label={plan.batchId === undefined ? "Questions" : `Questions in ${plan.batchId}`}>
+                  {plan.items.map(({ n, item }) => (
                     <li key={n} className={s.ask}>
                       <span className={s.askNumber}>{n}</span>
                       <Text tone={item ? "default" : "quiet"}>{item ? item.title : "Not an open question right now"}</Text>

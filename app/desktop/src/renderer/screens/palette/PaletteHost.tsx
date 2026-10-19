@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { defaultCommands } from "./defaults";
 import { installKeymap } from "./keymap";
 import { registerCommands } from "./registry";
-import { closeOverlay, useOverlay } from "./state";
+import { closeOverlay, paletteOpen, useOverlay } from "./state";
 import { Palette } from "./Palette";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 
@@ -12,9 +12,11 @@ export function PaletteHost() {
   const overlay = useOverlay();
 
   useEffect(() => {
-    const offDefaults = registerCommands(defaultCommands());
-    // Any other shortcut closes the palette first, so ⌘N from the palette lands on the composer, not behind it.
-    const offKeys = installKeymap(window.fleetd.platform, (id) => {
+    // Default priority: this effect runs after the screens' own (React runs a parent's effects last), and a
+    // built-in must still never shadow a screen's command.
+    const offDefaults = registerCommands(defaultCommands(), "default");
+    // Another shortcut pressed over the shortcuts sheet closes it first, so the command isn't hidden behind it.
+    const offKeys = installKeymap(window.fleetd.platform, paletteOpen, (id) => {
       if (id !== "palette.toggle" && id !== "shortcuts.show") closeOverlay();
     });
     return () => {
