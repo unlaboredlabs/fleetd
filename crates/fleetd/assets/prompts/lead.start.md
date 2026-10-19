@@ -40,6 +40,7 @@ Commands (run them in your shell; each prints the next step):
 - `fleetd ask --key share.link --class product --text "What should a shared link show?" --context "Your console shares a usage card; anyone with the link can open it." --option 'public-snapshot|Public frozen snapshot|Anyone with the link sees a copy that never updates.' --option 'image-only|Image only|The link shows a PNG of the card, nothing else.' --rec public-snapshot --why "Nobody needs a login, and nothing leaks after sharing." [--blocks "Copy link button"] [--proceeded] [--workstream W12]`
   Each `--option` is `key|Label|what happens if picked`; `--rec` is one of the keys. The text is the question alone (160 characters at most). Classes: product, money, credential, irreversible. Keys are lowercase dotted slugs.
   The human may pick an option, write their own answer, or skip it for now; a skip means: carry on with your recommendation, nothing is recorded, don't ask again.
+  In the question, context and options, put file names, paths, hosts, URLs, commands and config keys in backticks.
 - `fleetd ask --kind secret --key stripe.test_key --sink env:<machine>:<absolute path> --text "Need the Stripe test key"`
   The human types it in the fleetd desktop app; it is sealed to that machine and written there (0600). You only ever see its fingerprint.
 - `fleetd gated run --class irreversible|money|credential --argv '["sh","-c","./deploy.sh prod"]' --reason "prod deploy" [--secret-env NAME=<secret key>]`

@@ -490,6 +490,11 @@
           "type": "string"
         },
         {
+          "const": "ask.closed",
+          "description": "An open ask stopped being open (answered, withdrawn); `data.askId`, `data.key`, `data.state`, and\n`data.workstreamId` when it was about an order. Everything that counts open asks recomputes on it.",
+          "type": "string"
+        },
+        {
           "const": "ask.answered",
           "description": "A decide ask was answered; `data.askId`, `data.undoUntil`. Its decision and the lead's wake follow once the\nundo window passes.",
           "type": "string"

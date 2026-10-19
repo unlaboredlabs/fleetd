@@ -1135,6 +1135,7 @@ export type KnownHubEventType =
   | "webhook.failing"
   | "workstream.running"
   | "ask.auto"
+  | "ask.closed"
   | "ask.answered"
   | "ask.undone"
   | "ask.delivered"

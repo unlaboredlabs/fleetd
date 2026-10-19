@@ -2006,6 +2006,24 @@ mod tests {
     }
 
     #[test]
+    fn a_closed_ask_refetches_the_inbox_its_board_and_its_open_order() {
+        // The order card's "needs you · N questions" is the hub's count at the last orders_board: an answer must refetch it.
+        let mut s = synced();
+        s.order = Some(OrderView {
+            workstream_id: "W1".into(),
+            key: Some(("lab-a".into(), "p1".into())),
+            card: None,
+            claims: Vec::new(),
+            loaded: true,
+            error: None,
+            stopping: false,
+        });
+        let e = json!({ "seq": 9, "at": AT, "type": "ask.closed", "summary": "A1 share.public_link answered", "machineId": "lab-a",
+                        "projectId": "p1", "data": { "askId": "A1", "key": "share.public_link", "state": "answered", "workstreamId": "W1" } });
+        assert_eq!(tools_of(&s.apply(hub_event(e))), ["asks_list", "orders_board", "order_get"]);
+    }
+
+    #[test]
     fn order_events_refetch_their_board_and_the_open_order() {
         let mut s = synced();
         let mut e = json!({ "seq": 9, "at": AT, "type": "task.started", "summary": "T31 started", "machineId": "lab-a", "projectId": "p2",

@@ -19,6 +19,7 @@ use fleetd_contracts::mcp::{
 };
 use fleetd_contracts::prim::Positive;
 
+use super::asks::closed_event;
 use super::decisions::recorded_event;
 use super::grammar::{Action, parse_reply, resolve_plan};
 use super::repo::{self, RecordInput, batch_n};
@@ -170,14 +171,18 @@ fn deadline_ms(answer: &AskAnswer) -> i64 {
         .unwrap_or(0)
 }
 
+/// The held-answer events name the order, like ask.closed, so the board refetches its card.
 fn ask_event(
     r#type: HubEventType,
     ask: &Ask,
     now: i64,
     summary: String,
-    data: serde_json::Value,
+    mut data: serde_json::Value,
 ) -> NewEvent {
     let (machine_id, project_id) = project_fields(ask.project_ref.as_ref());
+    if let Some(w) = &ask.workstream_id {
+        data["workstreamId"] = serde_json::json!(w);
+    }
     NewEvent {
         at: Timestamp(iso_at(now)),
         r#type,
@@ -207,8 +212,8 @@ impl Inbox {
         })
     }
 
-    /// The lead-wake code's sink; answers are dropped until one is set. Answers whose undo window passed while the
-    /// hub was down are delivered now.
+    /// The lead-wake code's sink; answers are dropped until one is set (the hub sets it before it serves). Answers
+    /// whose undo window passed while the hub was down are delivered now.
     pub fn set_answer_sink(&self, sink: Arc<dyn AnswerSink>) {
         *self.sink.write().unwrap_or_else(|p| p.into_inner()) = Some(sink);
         self.schedule_delivery(0);
@@ -265,14 +270,6 @@ impl Inbox {
     /// answered, the lead is woken, and `ask.delivered` is the app's receipt. Returns the delivered asks. Answers
     /// still inside their window are left, with a run scheduled for the earliest.
     pub fn deliver_due(&self) -> Result<Vec<Ask>, LedgerError> {
-        if self
-            .sink
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .is_none()
-        {
-            return Ok(Vec::new());
-        }
         let now = self.ctx.now_ms();
         let (delivered, next_due) = self.ctx.write(|db| {
             let mut delivered: Vec<(Ask, Option<Decision>)> = Vec::new();
@@ -333,6 +330,8 @@ impl Inbox {
             if let Some(decision) = &decision {
                 self.ctx.emit(recorded_event(decision, None));
             }
+            // Only now is a held answer final; an undone one never gets here.
+            self.ctx.emit(closed_event(&ask, now));
             self.ctx.emit(ask_event(
                 HubEventType::AskDelivered,
                 &ask,
@@ -686,6 +685,9 @@ impl Inbox {
         };
         for decision in &done.decisions {
             self.ctx.emit(recorded_event(decision, None));
+        }
+        for answer in &done.answers {
+            self.ctx.emit(closed_event(&answer.ask, now));
         }
         if let Some(sink) = self
             .misfiled
