@@ -122,6 +122,22 @@ export type AgentLane = {
 
 export type AgentRole = "lead" | "implementer" | "reader" | "reviewer" | "verifier" | "qa";
 
+/**
+ * `agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its
+ * chat shows.
+ */
+export type AgentsCapData = {
+  from: number;
+  /** Agents told to push their work and wait (`pauseExtras`). */
+  paused?: TaskId[];
+  /** Absent for the fleet cap. */
+  projectRef?: ProjectRef;
+  queued: number;
+  /** The project's agents (or, for the fleet cap, every slot) running and queued just after the change. */
+  running: number;
+  to: number;
+};
+
 export type AppClientMessage = {
   key: string;
   t: "auth";
@@ -387,19 +403,28 @@ export type BriefBudget = {
 export type BriefHash = string;
 
 export type CapSetInput = {
+  /** The fleet cap on running turns, leads' included. Needs an admin key. */
   cap?: number;
-  share?: CapSetShare;
+  project?: CapSetProject;
 };
 
 export type CapSetOutput = {
   next?: string;
+  /** The agents `pauseExtras` paused. */
+  paused?: TaskId[];
   slots: SlotState;
   truncated?: boolean;
 };
 
-export type CapSetShare = {
+export type CapSetProject = {
+  /** 1 up to the fleet cap. */
+  maxAgents: number;
+  /**
+   * Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
+   * frees. Without it they finish their current work.
+   */
+  pauseExtras?: boolean;
   projectRef: ProjectRef;
-  share: number;
 };
 
 /** Which color a span gets in every view, and which breakdown row it adds to. */
@@ -1316,6 +1341,7 @@ export type KnownHubEventType =
   | "digest.ready"
   | "task.queued"
   | "task.out_of_area"
+  | "agents.cap"
   | "lease.stale"
   | "claim.failed"
   | "workstream.done"
@@ -2991,8 +3017,17 @@ export type SlotState = {
 };
 
 export type SlotStatePerProject = {
+  /**
+   * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own
+   * turns don't count. The fleet `cap` until set.
+   */
+  maxAgents: number;
   projectRef: ProjectRef;
-  share: number;
+  /** Its agents waiting for a slot, paused ones included. */
+  queued: number;
+  /** Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it. */
+  running: number;
+  /** Every slot it holds, its lead's turns included. */
   used: number;
 };
 
@@ -4376,6 +4411,7 @@ export interface ToolMap {
 
 /** `HubEvent.data` by event type, for the types whose data has a declared shape. */
 export interface HubEventDataMap {
+  "agents.cap": AgentsCapData;
   "ask.answered": AskEventData;
   "ask.auto": AskEventData;
   "ask.closed": AskEventData;

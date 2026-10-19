@@ -22,7 +22,7 @@ use crate::status::{
     SourceFreshData, SourceStaleData,
 };
 use crate::steer::SteerEventData;
-use crate::tasks::TaskEventData;
+use crate::tasks::{AgentsCapData, TaskEventData};
 use crate::tasks::{SlotState, Task};
 use crate::train::{Change, TrainState};
 use crate::usage::UsageEventData;
@@ -93,6 +93,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(WorkstreamNoteData: WorkstreamNote);
         data!(AskEventData: AskCreated, AskAuto, AskClosed, AskAnswered, AskUndone, AskDelivered);
         data!(TaskEventData: TaskQueued, TaskStarted, TaskCompleted, TaskFailed, TaskCancelled, TaskOutOfArea);
+        data!(AgentsCapData: AgentsCap);
         data!(ClaimEventData: ClaimPassed, ClaimFailed);
         data!(TrainEventData: ChangeQueued, ChangeReady, ChangeNeedsRebase, ChangeCiFailed, ChangeRefused, PrMerged,
             TrainFrozen, TrainResumed, TrainBlocked);

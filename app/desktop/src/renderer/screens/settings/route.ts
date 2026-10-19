@@ -3,8 +3,8 @@
 // and a prompt's update linkable, from the palette, a "default changed" notice or the screenshot suite.
 import { useSyncExternalStore } from "react";
 
-export type Tab = "general" | "prompts" | "instructions";
-export const TABS: ReadonlyArray<Tab> = ["general", "prompts", "instructions"];
+export type Tab = "general" | "agents" | "prompts" | "instructions";
+export const TABS: ReadonlyArray<Tab> = ["general", "agents", "prompts", "instructions"];
 
 export type View = "edit" | "compare" | "update";
 
