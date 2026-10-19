@@ -196,6 +196,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `lead.start` | lead start and every lead\_restart, followed by the digest | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only about product, money, credentials, irreversible (prompt only); secrets only through \`ask\` with kind secret; prod writes, spends and deletes only through \`gated\_run\`; never blocks on a question (\`proceededOnRec\`) (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
+| `lead.areas` | lead start and every lead\_restart, after the first message |  |
 | `lead.digest` | the top of the lead's first message and of every wake | the digest is the truth, over the lead's memory (prompt only) |
 | `plan.granularity` | when \`plan\_add\` (or \`plan\_edit\` with a size) gets an item with no size or one bigger than m |  |
 

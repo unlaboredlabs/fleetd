@@ -319,6 +319,11 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <td>the lead never writes code (prompt only); delegates only with `spawn_agent`, no other agents; asks the human only about product, money, credentials, irreversible (prompt only); secrets only through `ask` with kind secret; prod writes, spends and deletes only through `gated_run`; never blocks on a question (`proceededOnRec`) (prompt only); done only through `claim_done`; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with `amend`; never relaxes a review, CI, train, done-when or approval gate for speed</td>
 </tr>
 <tr>
+<td><code dir="auto">lead.areas</code></td>
+<td>lead start and every lead_restart, after the first message</td>
+<td></td>
+</tr>
+<tr>
 <td><code dir="auto">lead.digest</code></td>
 <td>the top of the lead’s first message and of every wake</td>
 <td>the digest is the truth, over the lead’s memory (prompt only)</td>
