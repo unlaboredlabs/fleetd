@@ -5,7 +5,7 @@ import { bars } from "./bars";
 import type { AgentLane, ChangeState, Spark } from "./contracts";
 import { fmtElapsed, fmtTokens, middleEllipsis, parseMs, shortModel } from "./format";
 import { type Line, type Tone, ROLE_WORD, describe, isFinal, isWorking, trackFill } from "./words";
-import s from "./Board.module.css";
+import s from "./lanes.module.css";
 
 const TONE_CLASS: Partial<Record<Tone, string | undefined>> = {
   warning: s.warning,

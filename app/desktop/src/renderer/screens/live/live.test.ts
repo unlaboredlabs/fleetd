@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage, FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
 import { applyFrame, ingest, initialState } from "../../src/data/store";
-import type { AgentLane, LaneStatus } from "../board/contracts";
+import type { AgentLane, LaneStatus } from "./contracts";
 import { isEventLine } from "./EventLine";
-import { FOLDED_LINES, selectStrip, stripHeadline, stripOf } from "./strip";
+import { groupLabel } from "./fleet";
+import { selectBoardData } from "../../src/data/selectors";
+import { FOLDED_LINES, projectFleet, selectStrip, stripHeadline, stripOf } from "./strip";
 
 const T0 = "2026-10-18T10:00:00.000Z";
 const project = { machineId: "devbox", projectId: "storefront" } as const;
@@ -90,6 +92,33 @@ describe("the live strip", () => {
     expect(many.lines).toHaveLength(20);
     expect(FOLDED_LINES).toBeLessThan(20);
     expect(stripHeadline(many)).toBe("20 agents working");
+  });
+});
+
+describe("review counts (#232 blocker)", () => {
+  it("are the same folded and unfolded: the PR's needed reviews, done counted from the hub and the finished reviewers", () => {
+    const pr = (n: number, done: number) => ({
+      changeId: `X${n}`,
+      repo: "acme/storefront",
+      number: n,
+      url: `https://github.com/acme/storefront/pull/${n}`,
+      state: "reviewing" as const,
+      reviewsDone: done,
+      reviewsNeeded: 3,
+    });
+    const on = (id: string, role: AgentLane["role"], n: number, status: LaneStatus = "working") =>
+      lane(id, status, { role, pr: pr(n, 1) });
+    const lanes = [on("R1", "reviewer", 221), on("R2", "reviewer", 221), on("V1", "verifier", 221), on("V2", "verifier", 221), on("R3", "reviewer", 222)];
+    const order = { ...card("W1", lanes), prs: [pr(221, 1), pr(222, 0)] };
+    let s = state([order]);
+    // One reviewer of #222 already finished: only the order's detail still lists it.
+    s = ingest(s, { tool: "order_get", input: { workstreamId: "W1" }, output: { order, doneLanes: [on("R0", "reviewer", 222, "done")], asks: [] } });
+    const folded = new Map((selectStrip(project)(s)?.lines ?? []).flatMap((l) => (l.pr ? [[l.pr.number, l.pr.label] as const] : [])));
+    const unfolded = new Map(projectFleet(selectBoardData(s), project).fleet.groups.map((g) => [g.pr.number, groupLabel(g)] as const));
+    expect(folded).toEqual(unfolded);
+    // Needed is the PR's 3 reviews, never the number of checker lanes drawn under it.
+    expect(unfolded.get(221)).toBe("review 1/3");
+    expect(unfolded.get(222)).toBe("review 1/3");
   });
 });
 
