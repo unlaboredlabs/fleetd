@@ -94,7 +94,14 @@ impl LeadPorts for HubPorts {
                 client_request_id: input.client_request_id.to_string(),
             };
             executors
-                .launch(&machine_id, &launch, LaunchOptions::default())
+                .launch(
+                    &machine_id,
+                    &launch,
+                    LaunchOptions {
+                        workspace: None,
+                        role: fleetd_contracts::sessions::SessionRole::Lead,
+                    },
+                )
                 .await
                 .map_err(from_executor)
         })

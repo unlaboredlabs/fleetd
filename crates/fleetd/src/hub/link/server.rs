@@ -22,9 +22,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use super::commands::NodeCommands;
-use super::lead_calls::{
-    LeadCaller, LeadCalls, lead_by, op_of, outside_every_project, project_for_cwd,
-};
+use super::lead_calls::{LeadCaller, LeadCalls, lead_by, op_of};
 use crate::clock::Clock;
 use crate::hub::auth::{Auth, AuthError};
 use crate::hub::executor::providers::runner_problem;
@@ -392,9 +390,16 @@ impl NodeLinkServer {
                         .with_fix("try again shortly")
                 })?;
             let cwd = frame.cwd.as_str();
-            let Some(project) = project_for_cwd(&projects, cwd) else {
-                return Err(outside_every_project(machine_id, cwd, &projects));
-            };
+            let thread = frame
+                .thread_id
+                .map(|thread_id| fleetd_contracts::ids::ThreadRef {
+                    machine_id: machine_id.clone(),
+                    thread_id,
+                });
+            let project_ref =
+                self.deps
+                    .lead_calls
+                    .call_project(machine_id, &projects, cwd, thread.as_ref())?;
             let Some(handler) = self.deps.lead_calls.handler(&op_of(&frame.call)) else {
                 return Err(McpToolError::new(
                     ErrorCode::Forbidden,
@@ -402,14 +407,17 @@ impl NodeLinkServer {
                 )
                 .with_fix("carry on without this call and mention it in your next status line"));
             };
-            let project_ref: fleetd_contracts::ids::ProjectRef = serde_json::from_value(json!({
-                "machineId": machine_id, "projectId": project.project_id,
-            }))
-            .expect("a stored project's ref decodes");
+            let agent = self
+                .deps
+                .lead_calls
+                .agent_of(thread.as_ref(), &project_ref)?;
+            crate::hub::tasks::policy::check(&agent, &op_of(&frame.call))?;
             let caller = LeadCaller {
                 by: lead_by(&project_ref),
                 project_ref,
                 cwd: cwd.to_owned(),
+                thread,
+                agent,
             };
             handler.handle(caller, frame.call).await
         }

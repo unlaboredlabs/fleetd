@@ -15,8 +15,12 @@ import { chromium, type Page } from "@playwright/test";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const PORT = 9335;
 const START_MS = 30_000;
-/** The screens this smoke opens: the shell, plus a screen behind a route once the screens are on this branch. */
-const SCREENS: ReadonlyArray<{ id: string; route: string }> = [{ id: "shell", route: "#/" }];
+/** The shell, the board, and an order view (markdown and code highlighting) on the typical fixture. */
+const SCREENS: ReadonlyArray<{ id: string; route: string }> = [
+  { id: "shell", route: "#/" },
+  { id: "board", route: "#/board" },
+  { id: "order", route: "#/order/W1" },
+];
 
 const [binary, ...extra] = process.argv.slice(2);
 if (binary === undefined) throw new Error("usage: node scripts/packaged-smoke.ts <packaged binary> [electron args...]");

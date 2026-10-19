@@ -13,6 +13,7 @@ use tokio::time::Instant;
 
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
+use crate::node::runner::conformance::subagents_problem;
 use crate::node::runner::failure::login_fix;
 
 /// The scheduled probe: version drift, a login that expired, a conformance break after `claude update`.
@@ -32,6 +33,8 @@ pub struct Health {
     auth_failed: Option<AuthMark>,
     /// What the latest session that should have auto memory off showed in its `system/init`.
     auto_memory: Option<bool>,
+    /// Claude's own subagents the latest session's `system/init` still offered.
+    subagent_leaks: Vec<String>,
 }
 
 impl Health {
@@ -40,6 +43,24 @@ impl Health {
         let (probed, _) = self.probed.as_ref()?;
         let mut info = probed.clone();
         info.auto_memory = self.auto_memory;
+        if !self.subagent_leaks.is_empty() {
+            // A live session broke what fleetd guarantees, so no new one starts until a probe says otherwise.
+            let mut leaks = info.subagent_leaks.take().unwrap_or_default();
+            leaks.extend(
+                self.subagent_leaks
+                    .iter()
+                    .filter(|l| !leaks.contains(l))
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+            info.conformance_ok = Some(false);
+            let problem = subagents_problem(&leaks);
+            info.problem = Some(match info.problem.take() {
+                Some(other) => format!("{problem} {other}"),
+                None => problem,
+            });
+            info.subagent_leaks = Some(leaks);
+        }
         if let Some(mark) = &self.auth_failed {
             info.login = LoginStatus::LoggedOut;
             let fix = login_fix(info.proxy.is_some());
@@ -69,8 +90,15 @@ impl Health {
         every.saturating_sub(now.saturating_duration_since(*at))
     }
 
+    /// A session's `system/init` showed these of claude's own subagents (empty: none).
+    pub fn subagents_seen(&mut self, leaks: Vec<String>) {
+        self.subagent_leaks = leaks;
+    }
+
     /// Records a probe that started at `started`.
     pub fn probed(&mut self, info: RunnerInfo, started: Instant) {
+        // A fresh probe of a (perhaps reinstalled) claude starts over; the next session re-checks.
+        self.subagent_leaks.clear();
         if info.login == LoginStatus::LoggedIn
             && self
                 .auth_failed
@@ -125,6 +153,8 @@ mod tests {
             proxy_source: None,
             config_dir: None,
             auto_memory: None,
+            agent_tools: Some(vec!["Task".into()]),
+            subagent_leaks: Some(vec![]),
         }
     }
 

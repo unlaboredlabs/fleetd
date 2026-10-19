@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, ThreadId};
+use fleetd_contracts::ids::{ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{IntakeChannel, WorkstreamId};
 use fleetd_contracts::steer::{DeliveredHow, SteerReceipt};
 use serde_json::json;
@@ -660,6 +660,8 @@ fn plan_call(
         },
         by: "lead:lab-a/p1".into(),
         cwd: "/work/project".into(),
+        thread: None,
+        agent: crate::hub::link::lead_calls::CallerAgent::Lead,
     };
     futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
 }
@@ -841,5 +843,198 @@ async fn the_plan_change_a_steer_made_is_the_one_tagged_with_it() {
             .note
             .as_str()
             .starts_with(&with_steer[0].0[..20.min(with_steer[0].0.len())])
+    );
+}
+
+/// The hub tells a task's agent from the lead by the session a call names, and a task's agent may only report, ask
+/// its lead and claim done: `ask_lead` wakes the lead, and a spawn is refused with the reason.
+#[tokio::test]
+async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spawn() {
+    use crate::hub::link::lead_calls::CallerAgent;
+    use crate::hub::tasks::policy;
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    let thread = |id: &str| ThreadRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        thread_id: ThreadId::unchecked(id),
+    };
+    let p1 = task.project_ref.clone();
+    let agent = |id: Option<&str>, project: &ProjectRef| {
+        lab.hub
+            .lead_calls
+            .agent_of(id.map(thread).as_ref(), project)
+    };
+    let worker = agent(Some("task-thread"), &p1).unwrap();
+    assert_eq!(worker, CallerAgent::Task(task.task_id.clone()));
+    assert_eq!(agent(Some("lead-thread"), &p1), Ok(CallerAgent::Lead));
+    assert_eq!(agent(None, &p1), Ok(CallerAgent::Person));
+    // Fails closed: a session that is no lead or task, and a session acting on another project, are refused.
+    let unknown = agent(Some("someone-else"), &p1).unwrap_err();
+    assert!(
+        unknown
+            .message
+            .contains("neither a project's lead nor a task"),
+        "{}",
+        unknown.message
+    );
+    let other = ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p2"),
+    };
+    let elsewhere = agent(Some("task-thread"), &other).unwrap_err();
+    assert!(
+        elsewhere.message.contains("works for project lab-a/p1"),
+        "{}",
+        elsewhere.message
+    );
+    let refused = policy::check(&worker, "task_spawn").unwrap_err();
+    assert!(
+        refused.message.starts_with("T1 is a task"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(policy::check(&CallerAgent::Lead, "task_spawn"), Ok(()));
+
+    let ask = |agent: CallerAgent| {
+        let call: fleetd_contracts::lead_calls::LeadCall =
+            serde_json::from_value(json!({ "op": "ask_lead", "question": "Postgres or SQLite?" }))
+                .unwrap();
+        let caller = crate::hub::link::LeadCaller {
+            project_ref: task.project_ref.clone(),
+            by: "lead:lab-a/p1".into(),
+            cwd: "/work/project".into(),
+            thread: Some(thread("task-thread")),
+            agent,
+        };
+        let handler = lab.hub.lead_calls.handler("ask_lead").unwrap();
+        futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
+    };
+    assert!(!lab.hub.leads.wakes.pending(&task.project_ref));
+    let Ok(fleetd_contracts::lead_calls::LeadCallResult::AskLead(asked)) = ask(worker) else {
+        panic!("ask_lead from a task was not answered")
+    };
+    assert_eq!(asked.task_id.as_str(), "T1");
+    assert!(
+        lab.hub.leads.wakes.pending(&task.project_ref),
+        "the lead was not woken"
+    );
+    assert_eq!(
+        ask(CallerAgent::Lead).unwrap_err().code,
+        fleetd_contracts::mcp::ErrorCode::Invalid
+    );
+}
+
+/// A writer's session works in a worktree under the node's home, outside every workspace: its calls act on its own
+/// project, known by the session. Without a session such a cwd is still refused, and a session never reaches a
+/// project its machine doesn't have.
+#[tokio::test]
+async fn a_writers_call_from_its_worktree_acts_on_its_own_project() {
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    let machine = MachineId::unchecked("lab-a");
+    let summary = |id: &str, root: &str| -> fleetd_contracts::model::ProjectSummary {
+        serde_json::from_value(json!({
+            "machineId": "lab-a", "projectId": id, "title": id, "workspaceRoot": root,
+            "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": AT,
+        }))
+        .unwrap()
+    };
+    let projects = [summary("p1", "/work/project"), summary("p2", "/work/other")];
+    let thread = |id: &str| ThreadRef {
+        machine_id: machine.clone(),
+        thread_id: ThreadId::unchecked(id),
+    };
+    let calls = &lab.hub.lead_calls;
+    let worktree = "/home/me/.fleetd/node/worktrees/abc/task-thread";
+    assert_eq!(
+        calls.call_project(&machine, &projects, worktree, Some(&thread("task-thread"))),
+        Ok(task.project_ref.clone())
+    );
+    let other = calls
+        .call_project(
+            &machine,
+            &projects,
+            "/work/other/src",
+            Some(&thread("task-thread")),
+        )
+        .unwrap();
+    assert_eq!(
+        other.project_id.as_str(),
+        "p2",
+        "a cwd inside a workspace decides, as before"
+    );
+    let person = calls
+        .call_project(&machine, &projects, worktree, None)
+        .unwrap_err();
+    assert!(
+        person
+            .message
+            .contains("is not inside any project workspace"),
+        "{}",
+        person.message
+    );
+    assert!(
+        calls
+            .call_project(&machine, &projects, worktree, Some(&thread("someone-else")))
+            .is_err()
+    );
+    assert!(
+        calls
+            .call_project(
+                &machine,
+                &projects[1..],
+                worktree,
+                Some(&thread("task-thread"))
+            )
+            .is_err(),
+        "its project is not on this machine"
+    );
+}
+
+/// `stop_agent` frees the slot and leases only once the agent's claude has exited. With the machine away the node
+/// can't stop it, so the task stays running and holding its slot, and the refusal says so.
+#[tokio::test]
+async fn a_cancel_the_node_cannot_carry_out_keeps_the_task_and_its_slot() {
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    lab.hub
+        .slots
+        .acquire(crate::hub::slots::SlotRequest {
+            holder: "T1",
+            project_ref: &task.project_ref,
+            priority: crate::hub::slots::priority_of(task.kind),
+        })
+        .unwrap();
+    let used = lab.hub.slots.state().used.get();
+    assert_eq!(used, 1);
+    let caller = crate::hub::tasks::TaskCaller {
+        project_ref: task.project_ref.clone(),
+        by: "lead:lab-a/p1".into(),
+    };
+    let refused = lab
+        .hub
+        .tasks
+        .cancel(&caller, &task.task_id, None)
+        .await
+        .unwrap_err();
+    assert!(
+        refused
+            .message
+            .contains("T1 could not be stopped (machine lab-a has no live node link)"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(
+        refused.fix.as_deref(),
+        Some("Call stop_agent again shortly.")
+    );
+    assert_eq!(
+        lab.hub.tasks.get(&task.task_id).unwrap().unwrap().state,
+        TaskState::Running
+    );
+    assert_eq!(
+        lab.hub.slots.state().used.get(),
+        used,
+        "the slot stays held"
     );
 }

@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 import type { Plugin } from "vite";
@@ -13,7 +14,8 @@ const devCsp = (): Plugin => ({
 });
 
 export default defineConfig({
-  main: {},
+  // zod is bundled: loading its ESM build file by file took ~25 ms of startup.
+  main: { build: { externalizeDeps: { exclude: ["zod"] } } },
   // A sandboxed preload can't require anything but `electron`, so it is one self-contained CommonJS file.
   preload: {
     build: {
@@ -23,5 +25,8 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react(), devCsp()],
+    // The FLEETD_RECORD encoder is a page of its own (src/main/instrument/record.ts); nothing else loads it.
+    // Minified: a third of the code for the renderer to parse at launch.
+    build: { minify: true, rollupOptions: { input: { index: resolve(import.meta.dirname, "src/renderer/index.html"), recorder: resolve(import.meta.dirname, "src/renderer/demo/recorder.html") } } },
   },
 });

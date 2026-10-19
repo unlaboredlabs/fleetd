@@ -545,8 +545,8 @@ const BUGFIX: &str = "Bugfix. First a repro: a test or cmd check that fails on m
 it passes. One writer per area, a worktree per task. Review by tier: S none, M one reviewer, L plan first. Every PR carries Source: \
 done:<n>. Never merge; the train does. Fix this bug only: no refactors, no polish loops. When the repro passes, claim done. Idle is success.";
 const STATUS_LINE: &str =
-    "- Report a one-line status per workstream with `fleetd status set`. Your status shows as \"lead says\"; only passed checks show as ✓.\n";
-const SECRETS: &str = "Secrets come through `fleetd ask --kind secret`; ";
+    "- Report a one-line status per workstream with `status_set`. Your status shows as \"lead says\"; only passed checks show as ✓.\n";
+const SECRETS: &str = "Secrets come through `ask` with kind secret; ";
 /// Where the fixture's soft length budget sits; the hub's budgets are per prompt.
 const TOO_LONG: usize = 12_000;
 
@@ -755,8 +755,8 @@ impl PromptHub {
         let lead_rules = vec![
             ("never-write-code", "The lead never writes code", "never write code", Prompt),
             ("tasks-only", "Agents start only as fleetd tasks", "only fleetd tasks count", Prompt),
-            ("secrets-via-ask", "Secrets come only through ask --kind secret", "secrets come through", Code),
-            ("gated-run", "Prod writes, spends and deletes only through gated run", "gated run", Code),
+            ("secrets-via-ask", "Secrets come only through ask with kind secret", "secrets come through", Code),
+            ("gated-run", "Prod writes, spends and deletes only through gated_run", "gated_run", Code),
             ("train-merges", "Only the merge train merges", "only fleetd's merge train merges", Code),
             ("no-re-ask", "Never re-ask a key the digest lists", "never re-ask", Prompt),
         ];
@@ -1088,7 +1088,14 @@ impl PromptHub {
             refs,
             disallowed_tools: [
                 "Task",
+                "Agent",
                 "Workflow",
+                "ListAgents",
+                "SendMessage",
+                "TaskStop",
+                "TaskOutput",
+                "TeamCreate",
+                "TeamDelete",
                 "AskUserQuestion",
                 "EnterPlanMode",
                 "ExitPlanMode",

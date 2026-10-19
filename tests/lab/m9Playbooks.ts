@@ -3,7 +3,7 @@
 // without a repro check is refused; (c) a research workstream's claim spawns the hub's judge, whose verdict the
 // harness reports from the shell with baseline and candidate, and the hub computes STOP from the frozen rule; (d) a
 // finish-all workstream on the testbed (no open issues) goes idle with the digest line once its lead, or the harness,
-// runs `fleetd inventory`. The harness's `fleetd` calls run in the project's workspace and cost no turns.
+// calls `inventory`. The harness's `fleetd` calls run in the project's workspace and cost no turns.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -140,7 +140,7 @@ export async function m9Playbooks(lab: Lab) {
     await leadTurnEnds(started.body.threadId, woken.event.seq);
     let state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
     if (state === "idle") {
-      ok(`(d) the testbed lead ran fleetd inventory itself when the order woke it; ${wf} is idle`);
+      ok(`(d) the testbed lead called inventory itself when the order woke it; ${wf} is idle`);
     } else {
       const before = state;
       const inventory = shell(TESTBED).run("inventory");

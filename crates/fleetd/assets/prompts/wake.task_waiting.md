@@ -1,4 +1,4 @@
 - {{taskId}} is waiting for input: {{title}}
   question:
 {{question}}
-  next: answer it with `fleetd task message {{taskId}} "<answer>"`, or `fleetd task cancel {{taskId}}`. Ask the human only if it is a product, money, credential or irreversible call.
+  next: answer it with `message_agent` {taskId: "{{taskId}}"}, or `stop_agent`. Ask the human only if it is a product, money, credential or irreversible call.

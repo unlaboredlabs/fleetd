@@ -9,6 +9,7 @@ use serde_with::skip_serializing_none;
 
 use crate::checked;
 use crate::effort::Effort;
+use crate::ids::ThreadId;
 use crate::ledger::{
     AskBlocks, AskContext, AskId, AskKind, AskOptions, AskRecommendationWhy, AskState, AskSteps,
     AskText, BriefDraft, BriefHash, CheckSpec, Decision, DecisionId, DecisionKey, DecisionValue,
@@ -291,6 +292,13 @@ pub struct WorkstreamSpawnCall {
     pub template: Option<PlaybookName>,
 }
 
+/// A worker's question for its lead (the `ask_lead` MCP tool). The lead is woken with it and answers with
+/// `message_agent`, which reaches the worker as a steer; the worker carries on meanwhile.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AskLeadCall {
+    pub question: Text<1, 4000>,
+}
+
 /// `fleetd inventory`: the project's open work, ranked, as plain text.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct InventoryCall {}
@@ -323,6 +331,7 @@ pub enum LeadCall {
     PlanEdit(PlanEditCall),
     PlanDrop(PlanDropCall),
     PlanShow(PlanShowCall),
+    AskLead(AskLeadCall),
 }
 
 #[skip_serializing_none]
@@ -460,6 +469,14 @@ pub struct InventoryResult {
     pub next: Option<String>,
 }
 
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AskLeadResult {
+    pub task_id: TaskId,
+    pub next: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
@@ -487,15 +504,21 @@ pub enum LeadCallResult {
     PlanEdit(PlanItemResult),
     PlanDrop(PlanItemResult),
     PlanShow(PlanShowResult),
+    AskLead(AskLeadResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LeadCallFrame {
     pub id: NonEmpty,
     /// The caller's absolute working directory.
     pub cwd: AbsolutePath,
     pub call: LeadCall,
+    /// The fleetd session the call comes from (`FLEETD_THREAD_ID`, which the node sets in every session and its MCP
+    /// server). The hub tells a lead from a task by it; absent from a person's own shell.
+    pub thread_id: Option<ThreadId>,
 }
 
 /// Node -> CLI on the local socket, and hub -> node on the link. Exactly one of `result` and `error`.
