@@ -121,7 +121,9 @@ export const useTimeData = (query: TimeQuery): TimeData => {
 
   // Then, as the order's events arrive, only what changed: from just before the oldest open span (GPUI's rule).
   // Kept with the key it belongs to, so a new query or a new snapshot starts from the pages again.
-  const key = `${JSON.stringify(base)}#${generation}`;
+  // Keyed on the connection too: when the link drops the pages reset, and spans topped up over the dead link must
+  // not be drawn on their own; a snapshot (a new generation) starts over as well.
+  const key = `${JSON.stringify(base)}#${generation}#${String(fresh)}`;
   const [newer, setNewer] = useState<{ readonly key: string; readonly spans: readonly Span[] }>({ key, spans: noSpans });
   const extra = newer.key === key ? newer.spans : noSpans;
   const spans = useMemo(() => (extra.length === 0 ? loaded : mergeSpans(loaded, extra)), [loaded, extra]);
