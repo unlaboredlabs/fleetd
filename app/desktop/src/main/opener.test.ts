@@ -6,11 +6,12 @@ const fakeWindow = () => {
   const sent: Array<unknown> = [];
   let closed: (() => void) | undefined;
   let destroyed = false;
+  const shown = { count: 0 };
   const win: OpenerWindow = {
     isDestroyed: () => destroyed,
     isMinimized: () => false,
     restore: () => undefined,
-    show: () => undefined,
+    show: () => (shown.count += 1),
     focus: () => undefined,
     once: (_event, listener) => (closed = listener),
     webContents: {
@@ -22,7 +23,7 @@ const fakeWindow = () => {
     destroyed = true;
     closed?.();
   };
-  return { win, sent, close };
+  return { win, sent, close, shown };
 };
 
 const LINK = "fleetd://pair?hub=http%3A%2F%2F100.64.0.1%3A4790&code=ABCD-2345";
@@ -73,5 +74,26 @@ describe("Opener", () => {
       [IPC.appOpen, { kind: "ask", askId: "A2" }],
       [IPC.appOpen, { kind: "inbox" }],
     ]);
+  });
+
+  it("runs a menu command clicked with the window closed once the new window's page is up, and lets it show itself", () => {
+    const opener = new Opener();
+    const windows: Array<ReturnType<typeof fakeWindow>> = [];
+    opener.setHooks({
+      create: () => {
+        const w = fakeWindow();
+        windows.push(w);
+        opener.attach(w.win);
+      },
+    });
+    opener.command("settings.open");
+    const win = windows[0];
+    expect(win?.shown.count).toBe(0);
+    expect(win?.sent).toEqual([]);
+    opener.ready();
+    expect(win?.sent).toEqual([[IPC.menuCommand, "settings.open"]]);
+    opener.command("board.open");
+    expect(win?.shown.count).toBeGreaterThan(0);
+    expect(win?.sent.at(-1)).toEqual([IPC.menuCommand, "board.open"]);
   });
 });

@@ -28,6 +28,8 @@ export class Opener {
   #window: OpenerWindow | undefined;
   #ready = false;
   #held: Array<OpenTarget> = [];
+  /** A menu command clicked while there was no page to run it. */
+  #heldCommand: string | undefined;
   #hooks: OpenerHooks = {};
 
   /** Called once the app is ready to make windows. */
@@ -54,8 +56,21 @@ export class Opener {
   ready(): void {
     this.#ready = true;
     const held = this.#held;
+    const command = this.#heldCommand;
     this.#held = [];
+    this.#heldCommand = undefined;
     for (const target of held) this.open(target);
+    if (command !== undefined) this.command(command);
+  }
+
+  /** Runs a menu command in the page, opening the window first when macOS has none. */
+  command(id: string): void {
+    const win = this.focus();
+    if (win === undefined || !this.#ready) {
+      this.#heldCommand = id;
+      return;
+    }
+    win.webContents.send(IPC.menuCommand, id);
   }
 
   open(target: OpenTarget): void {
@@ -69,15 +84,20 @@ export class Opener {
     win.webContents.send(IPC.appOpen, target);
   }
 
-  /** Brings the window forward, opening one when there is none (and the app can). */
+  /**
+   * Brings the window forward, opening one when there is none (and the app can). A new window shows itself once it
+   * has painted (ready-to-show), so it isn't shown here.
+   */
   focus(): OpenerWindow | undefined {
-    if (this.#window === undefined || this.#window.isDestroyed()) this.#hooks.create?.();
+    const created = this.#window === undefined || this.#window.isDestroyed();
+    if (created) this.#hooks.create?.();
     const win = this.#window;
     if (win === undefined || win.isDestroyed()) return undefined;
+    this.#hooks.activateApp?.();
+    if (created) return win;
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
-    this.#hooks.activateApp?.();
     return win;
   }
 

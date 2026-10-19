@@ -94,7 +94,7 @@ void app.whenReady().then(() => {
   }
   const hub = new HubService(mode);
   registerIpc(hub, { opener, notifier: new Notifier(opener) });
-  installMenu();
+  installMenu(opener);
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
   app.on("will-quit", () => hub.stop());
