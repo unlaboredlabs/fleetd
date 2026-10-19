@@ -648,6 +648,9 @@
   align-items: center;
   gap: var(--space-1);
   overflow: hidden;
+  /* A backstop: chips are dropped whole before they'd be cut, but nothing here may end without an ellipsis. */
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .chip {
   all: unset;

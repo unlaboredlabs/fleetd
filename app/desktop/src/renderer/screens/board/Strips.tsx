@@ -152,14 +152,23 @@ function Chips({ chips, onOpenPr }: { chips: readonly { chip: PrChip; leaving: b
     const ro = new ResizeObserver(() => {
       const slots = [...el.querySelectorAll<HTMLElement>("[data-chip]")];
       for (const n of slots) n.style.display = "";
-      const fits = (n: HTMLElement, room: number) => n.offsetLeft - el.offsetLeft + n.offsetWidth <= room;
+      // Measured from the rendered boxes, with slack: a font whose metrics differ by a fraction of a pixel (macOS)
+      // must not let the last chip through cut.
+      const room = (reserve: number) => el.getBoundingClientRect().right - reserve - SLACK;
+      const fits = (n: HTMLElement, reserve: number) => n.getBoundingClientRect().right <= room(reserve);
       let hidden = 0;
-      if (!slots.every((n) => fits(n, el.clientWidth))) {
+      if (!slots.every((n) => fits(n, 0))) {
         for (const n of [...slots].reverse()) {
-          if (fits(n, el.clientWidth - MORE_W)) break;
+          if (fits(n, MORE_W)) break;
           n.style.display = "none";
           hidden++;
         }
+      }
+      // Whatever measuring missed, the box itself says: keep dropping from the end while it still overflows.
+      for (const n of [...slots].reverse()) {
+        if (el.scrollWidth <= el.clientWidth || n.style.display === "none") continue;
+        n.style.display = "none";
+        hidden++;
       }
       setMore(hidden);
     });
@@ -189,8 +198,9 @@ function Chips({ chips, onOpenPr }: { chips: readonly { chip: PrChip; leaving: b
   );
 }
 
-/** Room kept for the "+2" after the chips that fit. */
+/** Room kept for the "+2" after the chips that fit, and slack for sub-pixel font differences. */
 const MORE_W = 32;
+const SLACK = 2;
 
 function ChipBody({ chip }: { chip: PrChip }) {
   return (
