@@ -10,8 +10,8 @@ use std::time::Duration;
 use fleetd_contracts::lead_calls::{
     AskCall, AskLeadCall, AskWithdrawCall, BriefCreateCall, ChangeEnqueueCall, ChangeStatusCall,
     ClaimDoneCall, DecideCall, DecisionsSearchCall, GatedRunCall, InventoryCall, LeadCall,
-    StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall, TaskStatusCall,
-    WorkstreamSpawnCall,
+    SliceReadyCall, StatusSetCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
+    TaskStatusCall, WorkstreamSpawnCall,
 };
 use fleetd_contracts::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,
@@ -222,9 +222,11 @@ static TOOLS: &[Tool] = &[
         op: "review_verdict",
         worker: true,
         lead: false,
-        description: "Record your review verdict once, before your final message: the full SHA you reviewed, the \
-                      number of blocking and non-blocking findings and a one-paragraph summary.",
-        schema: inline_schema::<ReviewVerdict>,
+        description: "A reviewer records its verdict once, before its final message: the full SHA it reviewed, the \
+                      number of blocking and non-blocking findings and a one-paragraph summary. A writer reports \
+                      each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once \
+                      while you go on with the next slice.",
+        schema: report_schema,
         human: None,
     },
     Tool {
@@ -247,6 +249,36 @@ static TOOLS: &[Tool] = &[
         human: None,
     },
 ];
+
+/// `report`'s two shapes as one object schema (a tool's input must be an object): a verdict, or `kind: "slice_ready"`
+/// with `prUrl`. `call_of` picks the call by `kind`.
+fn report_schema() -> Value {
+    let mut schema = inline_schema::<ReviewVerdict>();
+    let slice = inline_schema::<SliceReadyCall>();
+    if let (Some(props), Some(extra)) = (
+        schema["properties"].as_object_mut(),
+        slice["properties"].as_object(),
+    ) {
+        props.extend(extra.clone());
+        props.insert(
+            "kind".into(),
+            json!({ "type": "string", "enum": ["verdict", "slice_ready"],
+                "description": "verdict (the default) for a review, slice_ready for a writer's PR that is ready" }),
+        );
+    }
+    if let Some(object) = schema.as_object_mut() {
+        object.remove("required");
+    }
+    schema
+}
+
+/// The op a `report` makes: a writer's ready slice, else a verdict.
+fn report_op(call: &mut serde_json::Map<String, Value>) -> &'static str {
+    match call.remove("kind").as_ref().and_then(Value::as_str) {
+        Some("slice_ready") => "slice_ready",
+        _ => "review_verdict",
+    }
+}
 
 pub fn tools_for(role: Role) -> impl Iterator<Item = &'static Tool> {
     TOOLS.iter().filter(move |t| match role {
@@ -273,7 +305,12 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
         Value::Null => serde_json::Map::new(),
         _ => return Err("The arguments must be an object.".into()),
     };
-    call.insert("op".into(), tool.op.into());
+    let op = if tool.name == "report" {
+        report_op(&mut call)
+    } else {
+        tool.op
+    };
+    call.insert("op".into(), op.into());
     let call = Value::Object(call);
     serde_json::from_value::<LeadCall>(call.clone())
         .map_err(|e| format!("Invalid arguments for {name}: {e}."))?;
@@ -447,6 +484,43 @@ mod tests {
             call_of(Role::Worker, "ask_lead", json!({ "question": "Postgres?" })).unwrap(),
             json!({ "op": "ask_lead", "question": "Postgres?" })
         );
+    }
+
+    #[test]
+    fn report_is_a_verdict_or_a_writers_ready_slice() {
+        let pr = "https://github.com/acme/app/pull/12";
+        assert_eq!(
+            call_of(
+                Role::Worker,
+                "report",
+                json!({ "kind": "slice_ready", "prUrl": pr })
+            )
+            .unwrap(),
+            json!({ "op": "slice_ready", "prUrl": pr })
+        );
+        let sha = "a".repeat(40);
+        let verdict = json!({ "taskId": "T4", "prHeadSha": sha, "blocking": 0, "nonBlocking": 1, "summary": "ok" });
+        assert_eq!(
+            call_of(Role::Worker, "report", verdict.clone()).unwrap()["op"],
+            "review_verdict"
+        );
+        let mut tagged = verdict;
+        tagged["kind"] = json!("verdict");
+        let call = call_of(Role::Worker, "report", tagged).unwrap();
+        assert_eq!(
+            (call["op"].as_str(), call.get("kind")),
+            (Some("review_verdict"), None)
+        );
+        let missing =
+            call_of(Role::Worker, "report", json!({ "kind": "slice_ready" })).unwrap_err();
+        assert!(
+            missing.starts_with("Invalid arguments for report"),
+            "{missing}"
+        );
+        let schema = report_schema();
+        for field in ["kind", "prUrl", "prHeadSha", "summary"] {
+            assert!(schema["properties"].get(field).is_some(), "{field}");
+        }
     }
 
     #[test]
