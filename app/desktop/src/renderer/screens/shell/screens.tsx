@@ -15,7 +15,6 @@ const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then(
 const MachinesScreen = lazy(() => import("../projects/MachinesScreen").then((m) => ({ default: m.MachinesScreen })));
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
-const OrderScreen = lazy(() => import("../order/OrderScreen").then((m) => ({ default: m.OrderScreen })));
 
 /** Holds a screen's place, busy (which the QA gate waits out), while its chunk loads. */
 const Loading = ({ children }: { children: ReactNode }) => <Suspense fallback={<div aria-busy="true" />}>{children}</Suspense>;
@@ -38,13 +37,8 @@ function screenFor(screen: Screen): ReactNode {
     case "board":
       return <BoardScreen project={screen.project} />;
     case "order":
-      return (
-        <OrderScreen
-          key={screen.orderId}
-          id={screen.orderId}
-          {...(screen.at ? { jump: { thread: screen.at.threadId, item: screen.at.itemId } } : {})}
-        />
-      );
+      // The order view is gone (lead-chat spec §3); F1's frame routes projects to their chat instead.
+      return null;
     case "status":
       return <StatusScreen />;
     case "machines":
