@@ -82,6 +82,8 @@ export interface DataState {
   readonly trains: Readonly<Record<string, TrainLive>>;
   /** Open asks (and any ask an event closed since), by askId; undefined until this generation's asks landed. */
   readonly asks?: Readonly<Record<string, Ask>> | undefined;
+  /** The open-asks read failed this generation (after its retries): asks are unknown, not loading. */
+  readonly asksError?: HubError | undefined;
   readonly batches: Readonly<Record<string, Batch>>;
   /** The latest events, oldest first. */
   readonly events: readonly HubEvent[];
@@ -186,6 +188,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           details: {},
           trains: {},
           asks: undefined,
+          asksError: undefined,
           batches: {},
         },
         { refetchAll: true },
@@ -367,6 +370,7 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
       const kept = call.output.truncated === true ? Object.values(s.asks ?? {}).filter((a) => a.state === "open") : [];
       return {
         ...s,
+        asksError: undefined,
         asks: byId([...kept, ...call.output.asks], (a) => a.askId),
         batches: byId(call.output.batches, (b) => b.batchId),
       };
@@ -378,3 +382,26 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
 
 export const createDataStore = () => createStore<DataState>()(initialState);
 export type DataStore = ReturnType<typeof createDataStore>;
+
+/** A read failed for good. Only the open-asks read is the store's business: the board stops waiting on it. */
+export const failRead = (s: DataState, tool: unknown, input: unknown, error: HubError): DataState => {
+  const asks = input as Partial<ToolInput<"asks_list">> | undefined;
+  if (tool !== "asks_list" || asks?.state !== "open" || asks.batchId !== undefined) return s;
+  return { ...s, asksError: error };
+};
+
+const CLOSES: ReadonlySet<string> = new Set(["answered", "skipped", "withdrawn", "retired"]);
+
+/**
+ * The person's own reply, applied the moment the hub confirms it rather than when its event arrives: every ask it
+ * closed leaves the open asks, so counts drop at once. The refetch that follows (and any event) agrees.
+ */
+export const applyReply = (s: DataState, output: ToolOutput<"inbox_reply">): DataState =>
+  output.applied.reduce(
+    (next, a) => (a.askId !== undefined && CLOSES.has(a.outcome) ? patchAsk(next, a.askId, { state: "answered" }) : next),
+    s,
+  );
+
+/** An undone answer: the hub returns the ask, open again. */
+export const applyUndo = (s: DataState, output: ToolOutput<"inbox_undo">): DataState =>
+  s.asks === undefined ? s : { ...s, asks: { ...s.asks, [output.ask.askId]: output.ask } };
