@@ -1,9 +1,9 @@
 ---
 title: MCP clients
-description: Connect Claude Code or another MCP client to the hub, and the tools it can use for orders.
+description: Connect Claude Code or another MCP client to the hub, and the tools it can use to chat with leads.
 ---
 
-You'll connect an MCP client, such as Claude Code on your laptop, to the hub so it can send and follow orders.
+You'll connect an MCP client, such as Claude Code on your laptop, to the hub so it can chat with project leads.
 
 ## Connect Claude Code {#claude-code}
 
@@ -34,7 +34,7 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
-4. In Claude Code, ask it to send an order. It calls `intake_submit`.
+4. In Claude Code, ask it to tell a project's lead something. It calls `chat_send`.
 
 `claude mcp add` writes to your Claude config. `--scope` picks where:
 
@@ -105,22 +105,23 @@ fleetd steers --key-file ~/.fleetd/human.key
 A [human key](/docs/glossary#human-key) (`fleetd hub key create --human`) is for a person's device. Some tools, such
 as stopping an order or steering, need one.
 
-## Tools for orders {#tools}
+## Tools for the chat {#tools}
 
 | Tool | Does | Role |
 |---|---|---|
-| `intake_submit {text, clientRequestId}` | Send an order (optional `attachments`, `refs`). | operate |
-| `intake_preview {text}` | Say where an order would go, without sending it. | operate |
-| `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for an order or note. | operate |
+| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a project's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. | operate |
+| `chat_history {projectRef, before?, after?, limit?}` | A page of a project's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
+| `secret_submit` | Answer a secret item in a chat. | operate, human key |
+| `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
-| `orders_board {projectRef?}` | Open orders with their phase, agents, PRs, asks and trains. | read |
-| `order_get {workstreamId}` | One order, with its lead, finished agents and claims. | read |
-| `order_note {workstreamId, text, urgent?, clientRequestId}` | Add to an order; `urgent` wakes the lead now. | operate, human key |
-| `order_stop {workstreamId}` | Stop an order. | operate, human key |
-| `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views. | read |
+| `workstream_list`, `workstream_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
-`clientRequestId` is any unique string you choose per request. Retrying with the same one doesn't send the order or
-note twice. `events_wait` waits for changes, so a client doesn't need to poll.
+`projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
+`<machineId>/<projectId>`.
+
+`clientRequestId` is any unique string you choose per request. Sending the same one again returns the same message
+instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
+`chat.message` event.
 
 Tools for projects: `project_discover`, `project_inspect`, `project_add {path | url}` and `project_remove`. A clone
 answers with an `addId`, then sends `project.clone_progress` events, then `project.added` or `project.add_failed`.

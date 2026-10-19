@@ -47,11 +47,18 @@ Reply in plain words, or tersely:
 | `2: keep it for two releases` | Answer an item in your own words. |
 
 The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. A project
-waiting for your reply shows a dot in the sidebar.
+shows a dot in the sidebar while the lead's last message waits for your reply, or a secret or approval item is open.
 
 ## Steer while it works {#steer}
 
-Typing while the lead works is steering: your message reaches it at its next step, after the tool it is running.
+A message reaches the lead at once. How depends on what the lead is doing:
+
+| The lead is | Your message |
+|---|---|
+| Idle | Starts its next turn. |
+| Working | Is a steer: it reads it at its next step, after the tool it is running. |
+| Starting, or its machine is away | Waits, and goes in as soon as it can. The chat says why it waits. |
+
 A small receipt under your message shows when it was taken in. See [Steering](/docs/steering).
 
 ## Follow the work {#follow}

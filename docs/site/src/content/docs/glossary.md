@@ -84,7 +84,8 @@ different files. Only the train merges. See [Merge train](/docs/merge-train).
 
 ## Needs-you dot {#needs-you}
 
-The dot on a project in the sidebar: its lead is waiting for your reply.
+The dot on a project in the sidebar: the lead's last message waits for your reply, or a secret or approval item is
+open.
 
 ## Node {#node}
 

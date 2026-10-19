@@ -102,10 +102,13 @@ To keep a lead from starting by itself, set `lead.autoStart: false` in the proje
 Each project has a cap on how many agents run at once, and the fleet has one across all projects. The hub enforces
 both; the lead plans to them.
 
-| Cap | Set it |
-|---|---|
-| Per project | The "agents 6 / 12" control in the project's chat header, or the project's settings. From 1 up to the fleet's slots. |
-| Fleet-wide | The fleet's settings. |
+| Cap | Counts | Default | Set it |
+|---|---|---|---|
+| Per project: Max agents | The project's agents: writers, readers, reviewers, verifiers. Not the lead's own turns. | The fleet cap | The "agents 6 / 12" control in the project's chat header, or the project's settings. From 1 up to the fleet cap. |
+| Fleet-wide | Every running turn, leads included. | | The fleet's settings. Needs an admin key. |
+
+From an [MCP client](/docs/mcp-clients): `cap_set {project: {projectRef, maxAgents, pauseExtras?}}` with an operate
+key, or `cap_set {cap}` for the fleet cap with an admin key.
 
 When the cap is reached:
 
@@ -119,7 +122,7 @@ Changing it while work runs:
 | You | What happens |
 |---|---|
 | Lower the cap | Running agents finish their current work; new ones wait. Nothing is killed. |
-| Lower it and choose "pause the extras now" | Agents over the cap push their work in progress and park until a slot frees. |
+| Lower it and choose "pause the extras now" | Agents over the cap push their work in progress and wait. Each resumes when a slot frees. |
 | Raise the cap | Queued agents start at once, and the lead is told how many slots are free. |
 
 Each change shows as one quiet line in the chat.

@@ -44,10 +44,15 @@ The target machine must be online when you enter the secret. Nothing is queued.
 
 A gated command can use a stored secret as an environment variable. The node reads it from its own files.
 
+From an MCP client, a secret is entered with `secret_submit`, which takes only a human key.
+
 ## Tool permission rules {#tool-rules}
 
-Leads and tasks run with claude's permission prompts off. A project can still allow or deny tools for every session,
-with rules in claude's own syntax in `.fleetd/policy.yaml`:
+Leads and tasks run with claude's permission prompts off. A session started with `thread_launch` and
+`runtimeMode: approval-required` sends each prompt to the chat as an approval item instead: the tool it wants to use and
+a summary of its input, with Approve and Deny.
+
+A project can also allow or deny tools for every session, with rules in claude's own syntax in `.fleetd/policy.yaml`:
 
 ```yaml
 tools:

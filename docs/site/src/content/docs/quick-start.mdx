@@ -99,6 +99,38 @@ You'll install fleetd, open a project in the desktop app, and tell its lead what
 
 </Steps>
 
+## Without the app {#headless}
+
+On a machine with no display, chat with the lead from a script:
+
+1. On the hub, create a key and keep it in a file only you can read:
+
+   ```sh
+   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
+   ```
+
+2. Save the script from [MCP clients](/docs/mcp-clients#script) as `~/mcp.sh`, and find your project's ids:
+
+   ```sh
+   fleetd project list
+   ```
+
+3. Write to the lead, with the ids from `project list` (`<machineId>/<projectId>`):
+
+   ```sh
+   FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/human.key sh ~/mcp.sh chat_send \
+     '{"projectRef":{"machineId":"homeserver","projectId":"<id>"},"text":"fix the typo in the README","clientRequestId":"first"}'
+   ```
+
+4. Read its replies:
+
+   ```sh
+   FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/human.key sh ~/mcp.sh chat_history \
+     '{"projectRef":{"machineId":"homeserver","projectId":"<id>"}}'
+   ```
+
+`fleetd status` shows the project's progress. Secrets need the app.
+
 ## Next steps
 
 - [Concepts](/docs/concepts): how the pieces fit together.
