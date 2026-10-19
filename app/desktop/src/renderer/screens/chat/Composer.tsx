@@ -108,7 +108,7 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
 
   const note = draft.error ?? (draft.offline === true ? "Not connected to the hub, so this wasn’t sent. Send it again once the hub is back." : undefined);
   return (
-    <div className={c.composer} data-composer onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+    <div className={c.composer} data-composer data-screen="chat.composer" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <textarea
         ref={box}
         className={c.input}

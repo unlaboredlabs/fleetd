@@ -48,7 +48,7 @@ function composerSends(f: Fixture): void {
   f.fail("chat_send", { text: CHAT_SENDS.unanswered }, { code: "timeout", message: "The hub didn’t answer chat_send within 15 s." });
   f.fail("chat_send", { text: CHAT_SENDS.offline }, { code: "offline", message: "Not connected to the hub." });
   f.answer("chat_send", { text: CHAT_SENDS.waiting }, { message: sent(5, CHAT_SENDS.waiting), leadWaiting: "devbox is offline; it starts when devbox is back." });
-  f.answer("attachment_put", undefined, { attachmentId: "att-qa-1", bytes: 68, sha256: "0".repeat(64) });
+  f.answer("attachment_put", undefined, { attachmentId: "F1", bytes: 68, sha256: "0".repeat(64) });
   // Still on its way when the shot is taken; the screen doesn't wait for it.
   f.answer("chat_send", { text: CHAT_SENDS.sending }, { message: sent(6, CHAT_SENDS.sending) }, 600_000);
   f.settleAt(f.settleMs ?? 0);
