@@ -4,14 +4,13 @@ import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
 import { HUB, scopeKey, type Scope } from "./editor";
 
-const none: ReadonlyArray<ProjectSummary> = [];
+/** The hub's projects, for the pickers: the snapshot's, kept current by the data layer. Undefined until the
+ * connection is fresh (not an empty list: an empty hub and one still loading must not look alike). */
+export const useProjects = (): ReadonlyArray<ProjectSummary> | undefined => useData(selectProjects);
 
-/** The hub's projects, for the pickers: the snapshot's, kept current by the data layer. */
-export const useProjects = (): ReadonlyArray<ProjectSummary> => useData(selectProjects) ?? none;
-
-export function scopeName(scope: Scope, projects: ReadonlyArray<ProjectSummary>): string {
+export function scopeName(scope: Scope, projects: ReadonlyArray<ProjectSummary> | undefined): string {
   if (scope.kind === "hub") return "Hub-wide";
-  const p = projects.find((x) => x.machineId === scope.ref.machineId && x.projectId === scope.ref.projectId);
+  const p = projects?.find((x) => x.machineId === scope.ref.machineId && x.projectId === scope.ref.projectId);
   return p?.title ?? scope.ref.projectId;
 }
 
@@ -20,11 +19,13 @@ export function ScopeSelect(props: {
   id: string;
   value: Scope | null;
   hubWide?: string;
-  projects: ReadonlyArray<ProjectSummary>;
+  /** Undefined while loading: the picker is disabled and says so. */
+  projects: ReadonlyArray<ProjectSummary> | undefined;
   onChange: (scope: Scope) => void;
   className?: string | undefined;
 }) {
-  const { projects } = props;
+  const projects = props.projects ?? [];
+  const loading = props.projects === undefined;
   const same = (p: ProjectSummary) => projects.filter((q) => q.title === p.title).length > 1;
   const options = [
     ...(props.hubWide ? [{ value: "hub", label: props.hubWide }] : []),
@@ -42,8 +43,9 @@ export function ScopeSelect(props: {
     <Select
       id={props.id}
       {...(props.className ? { className: props.className } : {})}
-      value={value}
-      placeholder="Pick a project"
+      value={loading ? undefined : value}
+      placeholder={loading ? "Loading…" : "Pick a project"}
+      disabled={loading}
       options={options}
       onValueChange={(v) => {
         if (v === "hub") return props.onChange(HUB);

@@ -97,6 +97,19 @@ export function refill(before: Filled | null, now: Filled, editor: string): bool
   return before.ref !== now.ref && editor === before.text;
 }
 
+/** A field and the text it was last filled from; a field you typed in keeps your text when the hub's changes. */
+export interface Draft {
+  readonly from: string;
+  readonly text: string;
+}
+
+/**
+ * What a field shows: everything once the hub has answered for this connection; before that (a reconnect, a
+ * failed re-read) only text you typed and haven't saved, since an untouched one is the last connection's answer.
+ */
+export const shownDraft = (ready: boolean, draft: Draft | null): Draft | null =>
+  ready || (draft !== null && draft.text !== draft.from) ? draft : null;
+
 export const isDirty = (from: Filled | null, editor: string): boolean => from !== null && editor !== from.text;
 
 /** Save is a real choice only when the text differs from what is in effect, is not empty, and nothing is out. */

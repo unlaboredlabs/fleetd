@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Button, Field, Separator, Text, Textarea } from "../../ui";
 import { INSTRUCTIONS, type PromptDetail, type PromptScope } from "./contracts";
-import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
+import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { ConfirmDiscard, ScopeSelect, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
@@ -12,11 +12,6 @@ import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
 
-/** A field and the text it was last filled from; a field you typed in keeps your text when the hub's changes. */
-interface Draft {
-  readonly from: string;
-  readonly text: string;
-}
 
 const fill = (d: Draft | null, saved: string): Draft => (d === null || d.text === d.from ? { from: saved, text: saved } : { from: saved, text: d.text });
 
@@ -51,6 +46,11 @@ export function Instructions({ route }: { route: SettingsRoute }) {
   }, [project?.kind, key]);
 
   const ownDirty = own !== null && own.key === key && own.draft.text !== own.draft.from;
+  // Until the hub has answered for this connection, only what you typed and haven't saved is shown; an untouched
+  // text is the last connection's answer, not the hub's now, so it shows as loading and can't be edited.
+  const shown = (draft: Draft | null) => shownDraft(d !== null, draft);
+  const globalShown = shown(global);
+  const ownShown = shown(own?.key === key ? own.draft : null);
   const pick = (next: Scope) => {
     if (scopeKey(next) === key) return;
     if (ownDirty) setPending(next);
@@ -89,7 +89,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
     );
   }
 
-  const ownDraft = own?.key === key ? own.draft : null;
+  const ownDraft = ownShown;
   const name = project ? scopeName(project, projects) : null;
   return (
     <div className={s.scroll} data-screen="settings.instructions">
@@ -108,23 +108,23 @@ export function Instructions({ route }: { route: SettingsRoute }) {
         <div className={s.stack}>
           <Field label="Every project" description="Sent to every agent on this hub.">
             <Textarea
-              value={global?.text ?? ""}
-              disabled={global === null}
+              value={globalShown?.text ?? ""}
+              disabled={d === null}
               minRows={6}
               maxRows={24}
-              placeholder={global === null ? "Loading…" : "e.g. Keep pull requests under 400 changed lines."}
+              placeholder={d === null ? "Loading…" : "e.g. Keep pull requests under 400 changed lines."}
               onChange={(e) => setGlobal({ from: global?.from ?? "", text: e.target.value })}
             />
           </Field>
           <div className={s.actions}>
             <Button
               variant="primary"
-              disabled={global === null || global.text === global.from || busy !== null}
+              disabled={d === null || global === null || global.text === global.from || busy !== null}
               onClick={() => global && save("global", global.text)}
             >
               {busy === "global" ? "Saving…" : "Save"}
             </Button>
-            <Button variant="ghost" disabled={global === null || global.text === global.from} onClick={() => global && setGlobal({ ...global, text: global.from })}>
+            <Button variant="ghost" disabled={globalShown === null || globalShown.text === globalShown.from} onClick={() => global && setGlobal({ ...global, text: global.from })}>
               Discard changes
             </Button>
           </div>
@@ -145,14 +145,14 @@ export function Instructions({ route }: { route: SettingsRoute }) {
               <Textarea
                 aria-label={`Instructions for ${name ?? "this project"}`}
                 value={ownDraft?.text ?? ""}
-                disabled={ownDraft === null}
+                disabled={d === null}
                 minRows={6}
                 maxRows={24}
-                placeholder={ownDraft === null ? "Loading…" : "e.g. Use pnpm, not npm."}
+                placeholder={d === null ? "Loading…" : "e.g. Use pnpm, not npm."}
                 onChange={(e) => setOwn({ key, draft: { from: ownDraft?.from ?? "", text: e.target.value } })}
               />
               <div className={s.actions}>
-                <Button variant="primary" disabled={!ownDirty || busy !== null} onClick={() => ownDraft && save("project", ownDraft.text)}>
+                <Button variant="primary" disabled={d === null || !ownDirty || busy !== null} onClick={() => ownDraft && save("project", ownDraft.text)}>
                   {busy === "project" ? "Saving…" : "Save"}
                 </Button>
                 <Button variant="ghost" disabled={!ownDirty} onClick={() => ownDraft && setOwn({ key, draft: { ...ownDraft, text: ownDraft.from } })}>

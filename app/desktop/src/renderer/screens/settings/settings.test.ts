@@ -12,6 +12,7 @@ import {
   insertAt,
   parseScope,
   refill,
+  shownDraft,
   startOn,
   synced,
   syncedMerge,
@@ -210,6 +211,17 @@ group("defaults that change under an edit", () => {
     expect(startOn(draft, { prompt: null, for: null })).toMatchObject({ id: "lead.start", ask: null });
     // A clean kept text is no draft: the link just opens.
     expect(startOn({ ...draft, text: draft.filled.text }, { prompt: "router", for: null })).toEqual({ scope: HUB, id: "router", ask: null });
+  });
+});
+
+group("instructions across a reconnect", () => {
+  it("hides the last connection's text until the hub answers again, but keeps what you typed", () => {
+    const untouched = { from: "Keep PRs small.", text: "Keep PRs small." };
+    const typed = { from: "Keep PRs small.", text: "Keep PRs small. Use pnpm." };
+    expect(shownDraft(true, untouched)).toBe(untouched);
+    expect(shownDraft(false, untouched)).toBeNull();
+    expect(shownDraft(false, typed)).toBe(typed);
+    expect(shownDraft(false, null)).toBeNull();
   });
 });
 
