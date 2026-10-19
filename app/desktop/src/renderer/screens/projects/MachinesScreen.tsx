@@ -9,6 +9,8 @@ import { Button, Dot, IdChip, Menu, MenuContent, MenuItem, MenuTrigger, Text, Tr
 import type { Machine, ProjectSummary } from "./contracts";
 import { machineOrder, machineParts, slotsText, type Tone } from "./machineText";
 import { RemoveProjectDialog, type RemoveTarget } from "./RemoveProjectDialog";
+import { SetupChecks } from "./SetupChecks";
+import { HubText } from "./HubText";
 import { tilde } from "./source";
 import { openAddProject, openProject } from "./store";
 import s from "./projects.module.css";
@@ -40,7 +42,9 @@ export function MachinesScreen() {
   const state = machines === undefined ? "machines.loading" : machines.length === 0 ? "machines.empty" : undefined;
 
   return (
-    <div className={s.page} data-screen="machines">
+    // The frame doesn't scroll its screens; this one scrolls itself once the checks make it taller than the window.
+    <div className={s.scroller} data-screen="machines">
+      <div className={s.page}>
       <div className={s.pageHead} {...(state ? { "data-screen": state } : {})}>
         <Text as="h1" size="xl" strong className={s.pageTitle ?? ""}>
           Machines
@@ -75,7 +79,9 @@ export function MachinesScreen() {
           ))}
         </div>
       )}
+      {machines !== undefined ? <SetupChecks now={now} /> : null}
       <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
+      </div>
     </div>
   );
 }
@@ -110,7 +116,7 @@ function MachineCard(props: {
       </div>
       {m.status === "degraded" && m.degradedReason ? (
         <Text size="sm" tone="warning">
-          {m.degradedReason}
+          <HubText>{m.degradedReason}</HubText>
         </Text>
       ) : null}
       {props.projects.length > 0 ? (
