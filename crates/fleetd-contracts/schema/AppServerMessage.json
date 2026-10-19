@@ -315,19 +315,19 @@
       "type": "string"
     },
     "ChatDelta": {
-      "description": "Streamed text of the subscribed chat's lead message `messageId`: append `append` to its text. `index` counts the\nframes of one message from 0, so a gap or a repeat shows; on either, read the message with `chat_history`. The\n`chat.message` event with `state: final` carries the full text.",
+      "description": "Streamed text of the subscribed chat's lead message `messageId`. `offset` is the message's text length before\n`append`, in UTF-16 units: append when it equals the length the app holds, skip the frame when\n`offset + append.length` is within it (already applied, e.g. after a `chat_history` read), and read the message\nagain otherwise (a gap). The `chat.message` event with `state: final` carries the full text.",
       "properties": {
         "append": {
           "maxLength": 4000,
           "type": "string"
         },
-        "index": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "offset": {
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
-        },
-        "messageId": {
-          "$ref": "#/$defs/ChatMessageId"
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -342,7 +342,7 @@
         "projectRef",
         "messageId",
         "seq",
-        "index",
+        "offset",
         "append"
       ],
       "type": "object"

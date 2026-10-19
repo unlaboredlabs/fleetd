@@ -46,9 +46,9 @@ const page = (messages: ChatMessage[], { moreBefore = false, needsYou = false } 
   ok: true,
   output: { messages, moreBefore, moreAfter: false, state: { projectRef: ref, needsYou, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0 } },
 });
-const delta = (messageId: string, index: number, append: string): HubFrame => ({
+const delta = (messageId: string, offset: number, append: string): HubFrame => ({
   t: "chat_delta",
-  delta: { projectRef: ref, messageId, seq: 3, index, append },
+  delta: { projectRef: ref, messageId, seq: 3, offset, append },
 });
 const messageEvent = (seq: number, m: ChatMessage, carry = true): HubFrame =>
   chatEvent(seq, "chat.message", {
@@ -135,7 +135,7 @@ describe("chat history", () => {
     fake.send(delta("m3", 0, "Looking"));
     fake.send(delta("m3", 0, "Looking"));
     expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)).toMatchObject({ id: "m3", text: "Looking", state: "streaming" });
-    fake.send(delta("m3", 5, "!"));
+    fake.send(delta("m3", 50, "!"));
     await Promise.resolve();
     expect(fake.of("chat_history")).toHaveLength(2);
     fake.of("chat_history")[1]?.answer(page([msg(2), msg(3, { text: "Looking at it now", updatedAt: "2026-10-19T10:01:00.000Z" })]));
@@ -189,6 +189,24 @@ describe("sending", () => {
     fake.send(snapshot(9));
     await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(3));
     expect(fake.of("chat_send").map((c) => c.input["clientRequestId"])).toEqual(["c1", "c1", "c1"]);
+  });
+
+  it("sending from a window paged above the latest keeps the person's message, even when the jump's page lacks it", async () => {
+    const { fake, layer } = await connected();
+    layer.store.setState((s) => {
+      const chat = s.chats[KEY];
+      return chat === undefined ? s : { ...s, chats: { ...s.chats, [KEY]: { ...chat, hasNewer: true } } };
+    });
+    const out = layer.chat.send(KEY, { text: "do it" }, "c1");
+    // The jump's read went out before chat_send, so its page doesn't have the message.
+    const jump = fake.of("chat_history").at(-1);
+    expect(jump?.input).toMatchObject({ limit: 50 });
+    const mine = msg(3, { author: "human", text: "do it", clientRequestId: "c1" });
+    fake.send(messageEvent(2, mine));
+    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: mine } });
+    expect(await out).toBe("sent");
+    jump?.answer(page([msg(1), msg(2)]));
+    await vi.waitFor(() => expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]));
   });
 
   it("a cut-off waits as reconnecting; a snapshot while the link stayed up resends nothing", async () => {

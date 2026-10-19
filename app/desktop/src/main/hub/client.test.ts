@@ -265,7 +265,7 @@ describe("HubClient", () => {
     client.chat(project);
     hub.ready();
     expect(hub.sent).toContainEqual({ t: "chat", project });
-    const delta = { projectRef: project, messageId: "m3", seq: 3, index: 0, append: "On it" };
+    const delta = { projectRef: project, messageId: "m3", seq: 3, offset: 0, append: "On it" };
     hub.frame({ t: "chat_delta", ...delta });
     expect(frames.at(-1)).toEqual({ t: "chat_delta", delta });
     hub.close(1006);
