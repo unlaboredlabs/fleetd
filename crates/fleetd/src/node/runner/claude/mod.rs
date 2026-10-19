@@ -22,37 +22,52 @@ use super::{
 };
 use mapper::{Classify, StreamMapper};
 
-/// Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list):
-/// - Claude Code's own subagents, teams and background agents: every agent is a fleetd task with its own session, slot,
-///   worktree, lane, steering and receipts, started through fleetd's MCP tools. `Task` and `Agent` are one tool (init
-///   lists `Task`, the model sees `Agent`; denying either removes both). The probe adds any further such tool the
-///   installed claude has ([`conformance::agent_like`]), so a new one can't slip in.
-/// - AskUserQuestion, EnterPlanMode, ExitPlanMode: nobody sits at a terminal to answer a question or approve a plan,
-///   so a headless run would stall there. Agents use fleetd's `ask` / `ask_lead`.
-/// - CronCreate, CronDelete, CronList, ScheduleWakeup: work is scheduled by fleetd (tasks, wakes), never inside one
-///   claude process that the node may reap or restart.
-/// - EnterWorktree, ExitWorktree: fleetd owns worktrees (one per writer). A session that moves its own cwd can no
-///   longer be resumed, since claude files sessions by cwd.
-pub const ALWAYS_DISALLOWED: &[&str] = &[
-    "Task",
-    "Agent",
-    "Workflow",
-    "ListAgents",
-    "SendMessage",
-    "TaskStop",
-    "TaskOutput",
-    "TeamCreate",
-    "TeamDelete",
-    "AskUserQuestion",
-    "EnterPlanMode",
-    "ExitPlanMode",
-    "CronCreate",
-    "CronDelete",
-    "CronList",
-    "ScheduleWakeup",
-    "EnterWorktree",
-    "ExitWorktree",
-];
+/// Declares `$name`, the list the launch code uses, and `$why`, the same items each with the reason the docs print
+/// (docsgen's "Agent tools" page), from one list so the docs can't drift from what fleetd sets.
+macro_rules! explained {
+    ($(#[$doc:meta])* $name:ident, $why:ident: $t:ty = [$($item:expr => $reason:expr),* $(,)?]) => {
+        $(#[$doc])*
+        pub const $name: &[$t] = &[$($item),*];
+        #[doc = concat!("[`", stringify!($name), "`], each with why.")]
+        pub const $why: &[($t, &str)] = &[$(($item, $reason)),*];
+    };
+}
+
+const WHY_AGENTS: &str = "fleetd manages agents. Every agent is a fleetd task with its own session, slot, worktree, \
+                          lane, steering and receipts, started with spawn_agent.";
+const WHY_TASK: &str = "fleetd manages agents (spawn_agent). Task and Agent are one tool: init lists Task, the model \
+                        sees Agent, and denying either removes both.";
+const WHY_HEADLESS: &str = "Nobody sits at a terminal to answer it, so the run would stall. Agents use ask or \
+                            ask_lead.";
+const WHY_SCHEDULE: &str = "fleetd schedules work (tasks, wakes), never inside one claude process the node may \
+                            restart.";
+const WHY_WORKTREE: &str = "fleetd owns worktrees, one per writer. A session that moves its own folder can't be \
+                            resumed.";
+
+explained! {
+    /// Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list). The probe adds any further
+    /// agent tool the installed claude has ([`conformance::agent_like`]), so a new one can't slip in.
+    ALWAYS_DISALLOWED, DISALLOWED_WHY: &str = [
+        "Task" => WHY_TASK,
+        "Agent" => WHY_TASK,
+        "Workflow" => WHY_AGENTS,
+        "ListAgents" => WHY_AGENTS,
+        "SendMessage" => WHY_AGENTS,
+        "TaskStop" => WHY_AGENTS,
+        "TaskOutput" => WHY_AGENTS,
+        "TeamCreate" => WHY_AGENTS,
+        "TeamDelete" => WHY_AGENTS,
+        "AskUserQuestion" => WHY_HEADLESS,
+        "EnterPlanMode" => WHY_HEADLESS,
+        "ExitPlanMode" => WHY_HEADLESS,
+        "CronCreate" => WHY_SCHEDULE,
+        "CronDelete" => WHY_SCHEDULE,
+        "CronList" => WHY_SCHEDULE,
+        "ScheduleWakeup" => WHY_SCHEDULE,
+        "EnterWorktree" => WHY_WORKTREE,
+        "ExitWorktree" => WHY_WORKTREE,
+    ]
+}
 
 /// The agent tools of claude 2.1.302, all in [`ALWAYS_DISALLOWED`].
 pub const AGENT_TOOLS: &[&str] = &[
@@ -67,25 +82,30 @@ pub const AGENT_TOOLS: &[&str] = &[
     "TeamDelete",
 ];
 
-/// Set in every claude fleetd starts. Each one's effect was checked on 2.1.302 (init, and the request a fake API
-/// endpoint received): background tasks off takes `run_in_background` out of Bash and Agent and refuses it; workflows
-/// off removes the Workflow tool; the other two remove the built-in Explore, Plan and `claude` agents.
-/// `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION=0` and `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=0` are not here: an agent still
-/// launched with them.
-pub const SUBAGENTS_OFF_ENV: &[(&str, &str)] = &[
-    ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
-    ("CLAUDE_CODE_DISABLE_WORKFLOWS", "1"),
-    ("CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "1"),
-    ("CLAUDE_CODE_DISABLE_AGENT_VIEW", "1"),
-];
+explained! {
+    /// Set in every claude fleetd starts. Each one's effect was checked on 2.1.302 (init, and the request a fake API
+    /// endpoint received). `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION=0` and `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=0` are
+    /// not here: an agent still launched with them.
+    SUBAGENTS_OFF_ENV, SUBAGENTS_OFF_ENV_WHY: (&str, &str) = [
+        ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1") =>
+            "Takes run_in_background out of Bash and Agent and refuses it: a background job outlives the turn fleetd \
+             tracks.",
+        ("CLAUDE_CODE_DISABLE_WORKFLOWS", "1") => "Removes the Workflow tool: fleetd manages agents.",
+        ("CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "1") =>
+            "Removes the built-in Explore and Plan agents: fleetd manages agents.",
+        ("CLAUDE_CODE_DISABLE_AGENT_VIEW", "1") => "Removes the built-in claude agent: fleetd manages agents.",
+    ]
+}
 
-/// Never passed on, and blanked in the settings overlay in case the user's settings set them: agent teams, and
-/// coordinator mode, which turns a session into one that only delegates (its tools become Task, ListAgents,
-/// SendMessage, TaskStop, Workflow).
-pub const SUBAGENTS_ON_ENV: &[&str] = &[
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
-    "CLAUDE_CODE_COORDINATOR_MODE",
-];
+explained! {
+    /// Never passed on, and blanked in the settings overlay in case the user's settings set them.
+    SUBAGENTS_ON_ENV, SUBAGENTS_ON_ENV_WHY: &str = [
+        "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" => "Agent teams: fleetd manages agents.",
+        "CLAUDE_CODE_COORDINATOR_MODE" =>
+            "Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, \
+             SendMessage, TaskStop, Workflow).",
+    ]
+}
 
 /// [`SUBAGENTS_OFF_ENV`] and blanked [`SUBAGENTS_ON_ENV`] as a settings `env` object. Flag settings outrank the user's
 /// own settings, whose `env` would otherwise win over the process environment.
@@ -118,16 +138,37 @@ pub fn disallowed_tools<'a>(extra: impl IntoIterator<Item = &'a String>) -> Vec<
 /// notes from one agent's worktree to the next. Both knobs, since either alone has been ignored by some claude
 /// versions. A project opts back in with `claude.autoMemory: true` in its policy file (sessions only).
 pub const AUTO_MEMORY_OFF_ENV: (&str, &str) = ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+pub const AUTO_MEMORY_OFF_WHY: &str = "fleetd owns an agent's context (briefs, decisions, instructions). Notes claude \
+                                       keeps per folder would carry stale, unreviewed text from one agent's worktree \
+                                       to the next. A project opts back in with claude.autoMemory: true in its policy \
+                                       file.";
 /// The same as a `--settings` value, for the one-shot claude runs that take no overlay file.
 pub const AUTO_MEMORY_OFF_SETTINGS: &str = r#"{"autoMemoryEnabled":false}"#;
 
-/// Variables never passed on even if the caller's env has them: claude sets them for its own children and treats a
-/// process that has them as nested inside another session.
-const NESTING_VARS: &[&str] = &[
-    "CLAUDECODE",
-    "CLAUDE_CODE_ENTRYPOINT",
-    "CLAUDE_CODE_SSE_PORT",
-];
+const WHY_NESTING: &str = "claude sets it for its own children and treats a process that has it as nested inside \
+                           another session.";
+
+explained! {
+    /// Variables never passed on to a session, even if the node's env has them.
+    NESTING_VARS, NESTING_VARS_WHY: &str = [
+        "CLAUDECODE" => WHY_NESTING,
+        "CLAUDE_CODE_ENTRYPOINT" => WHY_NESTING,
+        "CLAUDE_CODE_SSE_PORT" => WHY_NESTING,
+    ]
+}
+
+explained! {
+    /// Set in every session's environment or settings overlay, besides [`SUBAGENTS_OFF_ENV`] and auto memory.
+    SESSION_ENV, SESSION_ENV_WHY: (&str, &str) = [
+        ("DISABLE_AUTOUPDATER", "1") =>
+            "Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session.",
+        // Some refusals at startup (a session held by a background job, a CLI too old for the org) then also come
+        // as a `result` with `startup_failure_reason`, not as stderr alone. "Session ID … is already in use" stays
+        // stderr-only (observed on 2.1.302), hence [`session_in_use`].
+        ("CLAUDE_CODE_STARTUP_FAILURE_RESULTS", "1") =>
+            "A refusal at startup arrives as a result fleetd can read, not only as stderr.",
+    ]
+}
 
 pub struct ClaudeRunner {
     /// The `claude` binary, resolved once at node start.
@@ -257,16 +298,13 @@ impl Runner for ClaudeRunner {
                             && !SUBAGENTS_ON_ENV.contains(&k.as_str())
                             && k != process::SESSION_MARKER
                             && k != claude_setup::FLEETD_ENV_SOURCE
-                            && k != "CLAUDE_CODE_STARTUP_FAILURE_RESULTS"
+                            && !SESSION_ENV.iter().any(|(set, _)| set == k)
                     })
                     .map(|(k, v)| (k, v)),
             )
             .envs(SUBAGENTS_OFF_ENV.iter().copied())
+            .envs(SESSION_ENV.iter().copied())
             .env(process::SESSION_MARKER, &marker)
-            // Some refusals at startup (a session held by a background job, a CLI too old for the org) then also come
-            // as a `result` with `startup_failure_reason`, not as stderr alone. "Session ID … is already in use" stays
-            // stderr-only (observed on 2.1.302), hence [`session_in_use`].
-            .env("CLAUDE_CODE_STARTUP_FAILURE_RESULTS", "1")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

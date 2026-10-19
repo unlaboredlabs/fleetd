@@ -6,6 +6,7 @@ import { Button, cx, Input, ScrollArea, StatusChip, Text, Truncate } from "../..
 import { useData, useDataLayer } from "../../src/data/react";
 import { selectInbox } from "../../src/data/selectors";
 import { attentionItems, needsYou, type AttentionItem } from "./model";
+import { useAsksLoad } from "./load";
 import { QuestionCard, useLive } from "./QuestionCard";
 import { inboxUi, useInboxUi } from "./store";
 import s from "./InboxPanel.module.css";
@@ -24,6 +25,7 @@ export function InboxPanel({ askId }: InboxPanelProps) {
   const projects = useData((d) => d.projects);
   const attention = useMemo(() => attentionItems({ attention: hubAttention, events, projects }), [hubAttention, events, projects]);
   const asks = needsYou(open, ui);
+  const load = useAsksLoad();
   const loaded = asks !== undefined;
   const focusId = asks?.some((a) => a.askId === askId) === true ? askId : open?.[0]?.ask.askId;
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -39,10 +41,30 @@ export function InboxPanel({ askId }: InboxPanelProps) {
   }, [open, ui.answered]);
 
   return (
-    <div className={s.panel} data-screen="inbox">
+    <div
+      className={s.panel}
+      data-screen={!loaded && load.error !== undefined ? "inbox.error" : ui.answered.size > 0 ? "inbox.answered" : "inbox"}
+    >
       <ScrollArea className={cx(s.scroll)}>
         <div ref={bodyRef} className={s.body}>
-          {!loaded ? (
+          {!loaded && load.error !== undefined ? (
+            <div role="alert" className={s.failed}>
+              <Text as="p" tone="danger">
+                {`The questions didn't load: ${load.error.message}`}
+              </Text>
+              {load.error.fix === undefined ? null : (
+                <Text as="p" size="sm" tone="quiet">
+                  {load.error.fix}
+                </Text>
+              )}
+              <div>
+                <Button variant="secondary" disabled={load.retrying || !live} onClick={load.retry}>
+                  {load.retrying ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {!loaded && load.error === undefined ? (
             <Text as="p" tone="quiet" className={cx(s.empty)}>
               {live ? "Loading questions…" : "Not connected to the hub. Questions show once it is back."}
             </Text>

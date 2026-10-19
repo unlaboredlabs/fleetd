@@ -64,7 +64,7 @@ describe("the add flow", () => {
     [s] = run(s, event(12, "project.added", added("other")), ok(add, { machineId: "devbox", path: "/p", created: true, addId: "a2" }));
     expect(s.phase.kind).toBe("working");
     [s] = run(s, event(13, "project.clone_progress", { addId: "a2", path: "/p", phase: "receiving", percent: 50, detail: "4.10 MiB | 2.00 MiB/s" }));
-    expect(s.phase).toMatchObject({ kind: "working", job: { step: "clone", detail: "Receiving objects 50% · 4.10 MiB | 2.00 MiB/s", fraction: 0.4 } });
+    expect(s.phase).toMatchObject({ kind: "working", job: { step: "clone", detail: "Receiving objects 50% · 4.10 MiB | 2.00 MiB/s", fraction: 0.5 } });
     [s] = run(s, event(14, "project.added", added("a2")));
     expect(s.phase).toMatchObject({ kind: "ready", ready: { project: { machineId: "devbox", projectId: "p7" }, machine: "devbox-name" } });
   });

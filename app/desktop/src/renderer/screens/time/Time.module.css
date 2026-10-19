@@ -26,18 +26,34 @@
   min-width: 0;
 }
 .head h2 {
-  min-width: 0;
   font-size: var(--text-md);
 }
+/*
+ * At small sizes the secondary items give way first: the project crumb, the figures and the badge shrink to an
+ * ellipsis (each opens its full text), while the title keeps a readable minimum and grows into what is left.
+ */
+.title {
+  flex: 1 1 18em;
+  min-width: min(14em, 40%);
+}
+/* The project before the title: a long project name gives way to the order's title. */
+.crumb {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 25%;
+}
 .figures {
-  flex: none;
-  max-width: 50%;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
 }
 .badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 30%;
 }
 
 .filters {

@@ -450,6 +450,53 @@ export function runChecks(opts: CheckOptions): Finding[] {
     });
   }
 
+  // 5. Drag regions (the macOS hiddenInset title bar). Electron drags the window from the union of every
+  // app-region: drag box minus every no-drag box, whatever is stacked on top, so a control inside OR over a drag box
+  // must sit in a no-drag box (itself or an ancestor) or a click on it drags the window. Linux and Windows draw a
+  // native frame, so this only shows on a Mac, which is why it is checked on every platform here.
+  const regionOf = (el: Element) => {
+    const s = style(el);
+    return s.getPropertyValue("app-region") || s.getPropertyValue("-webkit-app-region") || "none";
+  };
+  const dragBoxes: Rect[] = [];
+  for (const el of document.body.querySelectorAll("*")) {
+    // Not hidden(): a modal marks the page behind it aria-hidden, but Electron still drags from it.
+    if (regionOf(el) !== "drag" || !el.checkVisibility({ checkVisibilityCSS: true })) continue;
+    // Only the part that can be seen: a box scrolled out of its container drags nothing.
+    const r = intersect(rectOf(el.getBoundingClientRect()), el.parentElement ? clipOf(el.parentElement) : viewport);
+    if (!empty(r)) dragBoxes.push(r);
+  }
+  if (dragBoxes.length > 0) {
+    const focusable = document.body.querySelectorAll(
+      // The same list base.css makes no-drag (minus its [data-no-drag] opt-out marker); keep the two in step.
+      "button, a[href], input, textarea, select, summary, label, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='option'], [role='radio'], [role='checkbox'], [role='switch'], [role='combobox'], [role='slider'], [tabindex]:not([tabindex='-1']), [contenteditable='true']",
+    );
+    for (const el of focusable) {
+      if (hidden(el) || screenReaderOnly(el) || exempt(el, "drag")) continue;
+      const clip = style(el).position === "fixed" || !el.parentElement ? viewport : clipOf(el.parentElement);
+      const rect = intersect(rectOf(el.getBoundingClientRect()), clip);
+      const over = dragBoxes.map((d) => intersect(rect, d)).find((hit) => !empty(hit));
+      if (!over) continue;
+      // The nearest box that says either way decides; none, or drag, means the window takes the click.
+      let decided = "none";
+      for (let e: Element | null = el; e && e !== document.documentElement; e = e.parentElement) {
+        const r = regionOf(e);
+        if (r === "drag" || r === "no-drag") {
+          decided = r;
+          break;
+        }
+      }
+      if (decided === "no-drag") continue;
+      findings.push({
+        check: "drag",
+        message: "a control in the title-bar drag region: on macOS a click drags the window (set app-region: no-drag)",
+        text: snippet(el.textContent || el.getAttribute("aria-label") || ""),
+        where: describe(el),
+        box: toBox(over),
+      });
+    }
+  }
+
   return findings;
 }
 
@@ -516,6 +563,7 @@ const COLORS: Record<CheckId, string> = {
   overlap: "#f76b15",
   edge: "#8e4ec6",
   "raw-text": "#0090ff",
+  drag: "#12a594",
 };
 
 // Draws numbered boxes over the findings for the annotated screenshot. CSSOM writes are not inline style attributes,

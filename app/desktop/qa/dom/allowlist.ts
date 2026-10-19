@@ -1,7 +1,7 @@
 // Every exemption from the DOM checks lives here, with the reason. Keep it short: a growing list means a screen is
 // breaking the text rule, and the fix belongs in the screen.
 
-export type CheckId = "overflow" | "overlap" | "edge" | "raw-text";
+export type CheckId = "overflow" | "overlap" | "edge" | "raw-text" | "drag";
 
 export interface Allowance {
   check: CheckId;

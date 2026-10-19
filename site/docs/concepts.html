@@ -36,6 +36,7 @@
 <li><a href="/docs/machines">Machines</a></li>
 <li><a href="/docs/projects-and-orders">Projects &amp; orders</a></li>
 <li><a href="/docs/steering">Steering</a></li>
+<li><a href="/docs/merge-train">Merge train</a></li>
 <li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
 <li><a href="/docs/what-agents-are-told">What agents are told</a></li>
 <li><a href="/docs/desktop-app">The desktop app</a></li>
@@ -45,6 +46,7 @@
 <p>Reference</p>
 <ul>
 <li><a href="/docs/cli">CLI reference</a></li>
+<li><a href="/docs/agent-tools">Agent tools</a></li>
 <li><a href="/docs/config-and-files">Config &amp; files</a></li>
 <li><a href="/docs/security">Security model</a></li>
 <li><a href="/docs/troubleshooting">Troubleshooting</a></li>
@@ -67,7 +69,8 @@ machine is usually a worker too.</p>
 <h2 id="leads">Leads<a class="anchor" href="#leads" aria-label="Link to this section">#</a></h2>
 <p>Each project has one lead: a long-running <code>claude</code> session that turns orders into briefs, splits them into tasks
 for writer and reviewer sessions, and never writes code itself. Leads run on <code>claude-opus-5-5</code> by default. A
-project's first order starts its lead.</p>
+project's first order starts its lead. Leads and tasks reach fleetd through its MCP tools; <a href="/docs/agent-tools">Agent tools</a>
+lists what each role gets and what it can't do.</p>
 <h2 id="orders">Orders<a class="anchor" href="#orders" aria-label="Link to this section">#</a></h2>
 <p>An order is one line of intent, such as <code>fix the typo in the README</code>, sent from the app or with <code>intake_submit</code>
 over MCP. The hub picks the project (a leading <code>@project</code> names it), opens a workstream and wakes the lead. The lead
@@ -80,10 +83,12 @@ than words: approving an exact command, ticking off steps, or entering a secret.
 <a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a>.</p>
 <h2 id="merge-train">Merge train<a class="anchor" href="#merge-train" aria-label="Link to this section">#</a></h2>
 <p>Only fleetd merges. Each writer's PR goes on its repo's train, one serial queue per repo. The train rebases each
-ready change onto its base, waits for CI on that exact head and squash-merges it. A repo with no CI at all (no
-workflows, no required checks) merges on fleetd's own checks, and the merge says so. A change's tier sets its reviews:
+ready change onto its base, waits for CI on that exact head and squash-merges it. A head with no CI (the base requires
+no check but <code>fleetd/train</code>, and no workflow's <code>on:</code> can run for the PR) merges on fleetd's own checks, and the merge
+says so. A change's tier sets its reviews:
 S needs none, M one clean review, L two plus a verifier, each bound to the current patch. A PR body needs a
-<code>Source:</code> line naming what it serves. You can freeze a repo's train with <code>train_freeze</code>.</p>
+<code>Source:</code> line naming what it serves. You can freeze a repo's train with <code>train_freeze</code>. Disjoint ready PRs merge
+together in one CI run, and a PR stacked on another is tested ahead on it; see <a href="/docs/merge-train">Merge train</a>.</p>
 <h2 id="done-checked">Done, checked<a class="anchor" href="#done-checked" aria-label="Link to this section">#</a></h2>
 <p>A lead can't just say "done". <code>fleetd claim done</code> makes the hub run the workstream's done-when checks itself
 (a PR merged, CI green, a command or test on a machine, an HTTP check, a judge, a person), and only all of them

@@ -71,20 +71,29 @@ The lab runs the release binary end to end: a hub and two nodes, driven through 
 which its sessions use as a real machine's sessions use the user's. The lab copies your `claude` login material into
 it (the login variables and `apiKeyHelper` from `~/.claude/settings.json`, and `.credentials.json` if you have one),
 deletes the copies when the run ends, and never writes under your real `~/.claude` or `~/.fleetd`. It isn't run in CI. It costs a
-handful of small `claude` haiku turns, and needs Node 24 or newer to run its TypeScript. The m7 and m9 scenarios also
-use your `gh` login and a public testbed repository.
+handful of small `claude` haiku turns, and needs Node 24 or newer to run its TypeScript. The m7, m9, time, noci and
+demo scenarios also use your `gh` login and the public lab repository `unlaboredlabs/fleetd-lab`.
 
 ```sh
 cargo build --release -p fleetd && npm ci --prefix tests/lab
 FLEETD_LAB_SLOT=7 npm --prefix tests/lab run lab -- m1   # name scenarios, or none for the full suite
 ```
 
-`FLEETD_LAB_SLOT` (0-9) gives each run its own directory and ports, so parallel runs don't collide. Each slot has its
-own testbed repository too (`unlaboredlabs/fleetd-testbed-N`; slots 0 and 9 share `unlaboredlabs/fleetd-testbed`;
-`FLEETD_TESTBED` overrides), so merge-train scenarios run in parallel as well. Create one, with its clone, using
-`node tests/lab/testbed.ts --repo unlaboredlabs/fleetd-testbed-N --clone ~/src/fleetd-lab/slot-N/testbed`. `FLEETD_BIN`
-picks another binary. The lab stops only the processes it started, so it is safe to run next to a fleetd you use day
-to day.
+`FLEETD_LAB_SLOT` (0-9) gives each run its own directory and ports, so parallel runs don't collide. Every slot shares
+the one lab repository and works in its own branch namespace: slot N's train merges into `slot/N/main`, and its task
+branches are `slot/N/fleetd/...` (the lab writes `branchPrefix` into the project's untracked policy file). Before and
+after a run the lab closes the namespace's open PRs, deletes its branches and resets `slot/N/main` to the `seed` tag;
+it never touches another namespace or the repository's `main` (the demo closes only the PRs and branches it made). A
+run leases its namespace with the branch `lease/<namespace>` for up to 4 hours and drops it on exit, so a second run on
+a busy namespace, from any worktree or machine, stops and says which run holds it; an expired lease is taken over. `FLEETD_LAB_NAMESPACE=noci/N` runs in a namespace CI
+never runs for (the repository's `ci` workflow ignores PRs into `noci/**`), for the `noci` scenario:
+`FLEETD_LAB_SLOT=4 FLEETD_LAB_NAMESPACE=noci/4 npm --prefix tests/lab run lab -- noci`. `FLEETD_LAB_REPO` picks
+another repository. Set one up, with its clone, using `node tests/lab/labRepo.ts --repo <owner/name> --clone
+~/src/fleetd-lab/slot-N/lab-repo`: it never creates the repository, and it adds the rulesets (`slot/*/main` requires
+the `ci` check and the `fleetd/train` status, `noci/*/main` only `fleetd/train`, squash merges only). Repository
+admins may bypass those rulesets, and they have no deletion or force-push rule, so the lab can reset a namespace's main;
+that holds for the lab repository only. `FLEETD_BIN` picks another binary. The lab stops only the processes it
+started, so it is safe to run next to a fleetd you use day to day.
 
 `tests/lab` is TypeScript run directly by Node: relative imports with `.ts` extensions and erasable syntax only
 (`npm --prefix tests/lab run typecheck`).

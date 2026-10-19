@@ -5,10 +5,10 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cx, IdChip, InlineCode, Markdown, Text, Tooltip, VirtualList, type TextProps } from "../../ui";
+import { cx, IdChip, InlineCode, Markdown, Text, Tooltip, Truncate, VirtualList, type TextProps } from "../../ui";
 import { foldLabel, jumpTarget, systemHeadline, type Author, type Call, type Entry } from "./conversationModel";
 import { clock, codeRuns, machineCode } from "./format";
-import type { Receipt, ReceiptAct } from "./receipts";
+import { ACT_LABEL, type Receipt, type ReceiptAct } from "./receipts";
 import s from "./order.module.css";
 
 export interface ReceiptHandlers {
@@ -33,16 +33,28 @@ export function InlineText(props: { text: string } & Omit<TextProps, "children">
 }
 
 export function ReceiptLine({ receipt, onAct }: { receipt: Receipt } & ReceiptHandlers) {
-  const act = receipt.act;
   return (
     <div className={cx(s.receipt, s[`tone-${receipt.tone}`])} data-receipt={receipt.stage}>
       <InlineText size="xs" tone="inherit" text={receipt.line} />
-      {receipt.detail ? <IdChip label="Details" id={receipt.detail} kind="error" size="xs" tone="quiet" /> : null}
-      {act ? (
-        <button type="button" className={s.linkButton} onClick={() => onAct(act)}>
-          {act.kind === "withdraw" ? "Withdraw" : "Interrupt and redirect"}
-        </button>
+      {receipt.quote ? (
+        <span className={s.receiptQuote}>
+          {receipt.quote.code === true ? (
+            <Truncate as="code" size="xs" tone="inherit" mono>
+              {receipt.quote.text}
+            </Truncate>
+          ) : (
+            <Truncate size="xs" tone="inherit">
+              {receipt.quote.text}
+            </Truncate>
+          )}
+        </span>
       ) : null}
+      {receipt.detail ? <IdChip label="Details" id={receipt.detail} kind="error" size="xs" tone="quiet" /> : null}
+      {receipt.acts?.map((act) => (
+        <button key={act.kind} type="button" className={s.linkButton} onClick={() => onAct(act)}>
+          {ACT_LABEL[act.kind]}
+        </button>
+      ))}
     </div>
   );
 }
@@ -80,6 +92,26 @@ export function FleetdText({ text }: { text: string }) {
 
 type Lit = { readonly key: string; readonly call?: number | undefined };
 
+/** A merged events line: a train run makes a long one, so it shows three lines with "Show all". */
+function EventsLine({ text }: { text: string }) {
+  const [all, setAll] = useState(false);
+  const long = text.length > 280;
+  return (
+    <div className={s.body}>
+      <div className={cx(long && !all && s.clamp3)}>
+        <InlineText size="xs" tone="quiet" text={text} />
+      </div>
+      {long ? (
+        <button type="button" className={s.linkButton} onClick={() => setAll((a) => !a)}>
+          <Text size="xs" tone="inherit">
+            {all ? "Show less" : "Show all"}
+          </Text>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 const Row = memo(function Row(
   props: { entry: Entry; open: boolean; last: boolean; lit: Lit | undefined; onToggle: (key: string) => void } & ReceiptHandlers,
 ) {
@@ -106,7 +138,7 @@ const Row = memo(function Row(
             {e.to ? <span className={s.to}>to {e.to}, directly</span> : null}
             <Message text={e.text} />
             {e.streaming ? <span className={s.streaming}>Still writing…</span> : null}
-            {e.clipped ? <span className={s.streaming}>The hub sends a message’s first 2,000 characters; the rest is in the thread.</span> : null}
+            {e.clipped ? <span className={s.streaming}>The hub sends 2,000 characters of a long message; the whole of it is in the thread.</span> : null}
             {e.receipt ? <ReceiptLine receipt={e.receipt} onAct={onAct} /> : null}
           </div>
         </div>
@@ -156,7 +188,7 @@ const Row = memo(function Row(
         <div className={cx(s.row, last)} data-entry="events">
           <span className={s.time}>{clock(e.at)}</span>
           <span />
-          <InlineText size="xs" tone="quiet" text={e.text} />
+          <EventsLine text={e.text} />
         </div>
       );
     case "more":
@@ -167,7 +199,7 @@ const Row = memo(function Row(
           <div className={s.body}>
             <Message text={e.text} />
             {e.streaming ? <span className={s.streaming}>Still writing…</span> : null}
-            {e.clipped ? <span className={s.streaming}>The hub sends a message’s first 2,000 characters; the rest is in the thread.</span> : null}
+            {e.clipped ? <span className={s.streaming}>The hub sends 2,000 characters of a long message; the whole of it is in the thread.</span> : null}
             {e.receipt ? <ReceiptLine receipt={e.receipt} onAct={onAct} /> : null}
           </div>
         </div>
@@ -201,9 +233,11 @@ export function Conversation(
     notice?: { text: string; error: boolean };
     /** A transcript jump: scroll to the row holding the item at `at`, open it if it is a fold, light it briefly. */
     focus?: { readonly index: number; readonly at: string } | undefined;
+    /** Changes when a steer is sent from the box below: the log goes to its end, where the steer and its receipt are. */
+    toEnd?: number;
   } & ReceiptHandlers,
 ) {
-  const { entries, onAct, focus } = props;
+  const { entries, onAct, focus, toEnd } = props;
   const [lit, setLit] = useState<Lit | undefined>(undefined);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const onToggle = useCallback((key: string) => {
@@ -234,6 +268,45 @@ export function Conversation(
     // Once per jump target, not on every new row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
+
+  // Open at the newest row. The list starts at the end on its row-height guesses; tall markdown rows then measure
+  // taller and push the end below the fold. Until the reader scrolls (or a jump takes over), keep the end in view as
+  // the rows settle.
+  const listShown = entries.length > 0 || props.notice === undefined;
+  const jumping = focus !== undefined;
+  useEffect(() => {
+    const el = virtualizer.current?.scrollElement;
+    const inner = el?.firstElementChild;
+    if (!listShown || jumping || !el || !inner) return;
+    let pinned = true;
+    const release = () => {
+      pinned = false;
+    };
+    const pin = () => {
+      if (pinned) el.scrollTop = el.scrollHeight;
+    };
+    el.addEventListener("wheel", release, { passive: true });
+    el.addEventListener("pointerdown", release);
+    el.addEventListener("keydown", release);
+    const ro = new ResizeObserver(pin);
+    ro.observe(inner);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("wheel", release);
+      el.removeEventListener("pointerdown", release);
+      el.removeEventListener("keydown", release);
+    };
+  }, [listShown, jumping]);
+
+  useEffect(() => {
+    const v = virtualizer.current;
+    if (toEnd === undefined || toEnd === 0 || !v || entries.length === 0) return;
+    // Back at the end, the list's own follow keeps the receipt in view as it changes.
+    v.scrollToIndex(entries.length - 1, { align: "end" });
+    // Once per send; the row it lands on is already in `entries` (the outbox adds it before the send resolves).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toEnd]);
 
   if (entries.length === 0 && props.notice) {
     return (

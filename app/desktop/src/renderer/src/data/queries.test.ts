@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { boardRefreshAt, createDataLayer, DONE_HOLD_MS, type HubApi } from "./queries";
 import { ask, card, event, live, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
+import { selectNeedsYouCount } from "./selectors";
 
 const fakeHub = () => {
   let listener: (frame: HubFrame) => void = () => undefined;
@@ -132,6 +133,111 @@ describe("data layer", () => {
     expect(fake.calls).toHaveLength(2);
     expect(Object.keys(layer.store.getState().orders ?? {})).toEqual(["W2"]);
     stop();
+  });
+});
+
+describe("the person's own answers", () => {
+  const reply = { parsed: true, applied: [{ askId: "A1", outcome: "answered", label: "Image only", undoUntil: "2026-10-19T10:00:10.000Z" }] };
+
+  const loaded = async () => {
+    vi.useFakeTimers();
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("asks_list", { state: "open" })).subscribe(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    fake.answers[0]?.({ asks: [ask("A1", "W1"), ask("A2", "W1", { number: 2 })], batches: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
+    return { fake, layer, stop };
+  };
+
+  it("drops an answered ask from the counts the moment the hub confirms, and refetches the asks", async () => {
+    const { fake, layer, stop } = await loaded();
+    const out = layer.call("inbox_reply", { raw: "1 a" });
+    fake.answers.at(-1)?.(reply);
+    await out;
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.calls.slice(-1)).toEqual(["asks_list"]);
+    // The hub's own event afterwards changes nothing.
+    fake.send(event(2, "ask.answered", { askId: "A1", workstreamId: "W1" }));
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
+    stop();
+  });
+
+  it("a list read that raced the reply never brings the ask back", async () => {
+    const { fake, layer, stop } = await loaded();
+    // A refetch is in flight (it left before the reply) when the reply lands.
+    void layer.queryClient.invalidateQueries({ queryKey: ["call", "asks_list"] });
+    await vi.advanceTimersByTimeAsync(0);
+    const racing = fake.answers.length - 1;
+    const out = layer.call("inbox_reply", { raw: "1 a" });
+    fake.answers.at(-1)?.(reply);
+    await out;
+    fake.answers[racing]?.({ asks: [ask("A1", "W1"), ask("A2", "W1", { number: 2 })], batches: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
+    // It reruns, and the fresh list agrees.
+    fake.answers.at(-1)?.({ asks: [ask("A2", "W1", { number: 2 })], batches: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(1);
+    stop();
+  });
+
+  it("an order read in flight across an undo doesn't remove the restored ask", async () => {
+    const { fake, layer, stop } = await loaded();
+    const out = layer.call("inbox_reply", { raw: "1 a" });
+    fake.answers.at(-1)?.(reply);
+    await out;
+    await vi.advanceTimersByTimeAsync(0);
+    // The post-answer list drops A1 from the store, so only the undo's own ask names its order.
+    const list = fake.calls.lastIndexOf("asks_list");
+    fake.answers[list]?.({ asks: [ask("A2", "W1", { number: 2 })], batches: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(layer.store.getState().asks?.["A1"]).toBeUndefined();
+    // The order view opens: its read leaves before the undo.
+    const order = new QueryObserver(layer.queryClient, layer.toolQuery("order_get", { workstreamId: "W1" })).subscribe(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    const orderCall = fake.answers.length - 1;
+    const undo = layer.call("inbox_undo", { askId: "A1" });
+    fake.answers.at(-1)?.({ ask: ask("A1", "W1") });
+    await undo;
+    // The order read that left before the undo answers with the order's asks as they were then: A2 only.
+    fake.answers[orderCall]?.({ order: card("W1"), asks: [ask("A2", "W1", { number: 2 })], doneLanes: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
+    order();
+    stop();
+  });
+
+  it("undo puts the ask back at once", async () => {
+    const { fake, layer, stop } = await loaded();
+    const out = layer.call("inbox_reply", { raw: "1 a" });
+    fake.answers.at(-1)?.(reply);
+    await out;
+    const undo = layer.call("inbox_undo", { askId: "A1" });
+    fake.answers.at(-1)?.({ ask: ask("A1", "W1") });
+    await undo;
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
+    fake.send(event(3, "ask.undone", { askId: "A1" }));
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
+    stop();
+  });
+});
+
+describe("asks read failure", () => {
+  it("records a final asks_list error in the store", async () => {
+    const fake = fakeHub();
+    fake.hub = { ...fake.hub, call: () => Promise.resolve({ ok: false, error: { code: "forbidden", message: "no grant" } }) };
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    await expect(layer.queryClient.query(layer.toolQuery("asks_list", { state: "open" }))).rejects.toThrow("no grant");
+    expect(layer.store.getState().asksError).toEqual({ code: "forbidden", message: "no grant" });
   });
 });
 

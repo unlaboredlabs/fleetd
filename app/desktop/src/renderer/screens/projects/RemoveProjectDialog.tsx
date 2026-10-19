@@ -1,9 +1,10 @@
 // Removing a project: project_remove stops its claude processes and forgets it; its files, branches and worktrees
-// stay. Used by the Machines screen and, by import, the sidebar's project menu.
+// stay. Opened from a project's menu on the Machines screen.
 
 import { useState } from "react";
 import { Button, Dialog, Text, toast } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
+import { HubText } from "./HubText";
 import { openAddProject } from "./store";
 
 export interface RemoveTarget {
@@ -64,10 +65,12 @@ export function RemoveProjectDialog({ project, onClose }: { project: RemoveTarge
     >
       {error ? (
         <div role="alert">
-          <Text tone="danger">{error.message}</Text>
+          <Text tone="danger">
+            <HubText>{error.message}</HubText>
+          </Text>
           {error.fix ? (
             <Text as="p" tone="quiet">
-              {error.fix}
+              <HubText>{error.fix}</HubText>
             </Text>
           ) : null}
         </div>

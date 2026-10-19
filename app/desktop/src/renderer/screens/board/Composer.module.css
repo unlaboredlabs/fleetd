@@ -43,6 +43,20 @@
 .picker:focus-visible {
   box-shadow: var(--focus-ring);
 }
+/* Icons, not text glyphs: a glyph like ▾ falls back to another font (a dot on macOS). */
+.chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+.removeIcon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin: 0 auto;
+  stroke-width: 2;
+}
 .type {
   margin-left: var(--space-4);
   flex: none;

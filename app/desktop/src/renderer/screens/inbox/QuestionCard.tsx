@@ -2,10 +2,10 @@
 // answer given anywhere reads the same and clears everywhere. Hub data comes from E1's data layer; the only state
 // kept here is what the person did (store.ts).
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Button, Code, cx, IdChip, InlineCode, Input, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
+import { Button, Code, cx, IdChip, InlineCode, Input, RadioCard, RadioGroup, Text, Textarea } from "../../ui";
 import { cardKey, cardOptions, classTag, secretEnvLines, takesFreeText, takesSkip, type CardPick } from "./ask";
 import type { Ask, GatedRunSpec, Machine } from "../../../shared/contracts";
-import { useData, useDataLayer } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { prose } from "./prose";
 import { askPlace, deliveredAt, secretTarget, type Answered, type SecretTarget } from "./model";
 import { inboxUi, useInboxUi } from "./store";
@@ -21,6 +21,8 @@ export interface QuestionCardViewProps {
   onSecret?: ((field: HTMLInputElement) => void) | undefined;
   place: { readonly project: string; readonly order: string | null };
   answered?: Answered | undefined;
+  /** The receipt is well overdue: the card says the lead hasn't picked the answer up yet. */
+  slow?: boolean | undefined;
   error?: string | undefined;
   /** False while the hub is unreachable: nothing can be sent. */
   live: boolean;
@@ -50,6 +52,42 @@ const useMachines = (): Readonly<Record<string, Machine>> => {
   );
 };
 
+/** True once `at` (epoch ms) has passed; one timer, none when `at` is null. */
+const useAfter = (at: number | null): boolean => {
+  const [passed, setPassed] = useState<number | null>(null);
+  useEffect(() => {
+    if (at === null) return;
+    const id = window.setTimeout(() => setPassed(at), Math.max(0, at - Date.now()));
+    return () => window.clearTimeout(id);
+  }, [at]);
+  return at !== null && passed === at;
+};
+
+/** How long after the undo window an answer may wait for its receipt event before the card reads the ask itself. */
+const RECEIPT_GRACE_MS = 5_000;
+/** After this, the card says the lead hasn't picked it up yet, instead of a "passing it on" that never ends. */
+const RECEIPT_SLOW_MS = 30_000;
+
+/**
+ * When the lead got an answer given here: `ask.delivered` among the layer's events, or, if that event was missed (a
+ * reconnect in between), the stored answer's `deliveredAt`, read once the undo window is a few seconds past. The
+ * read is a layer query, so a later ask event or a resync reads it again.
+ */
+const useReceipt = (ask: Ask, local: Answered | undefined): { at: string | undefined; slow: boolean } => {
+  const fromEvent = useData((d) => deliveredAt(d.events, ask.askId));
+  const waiting = local !== undefined && !local.undone && local.deliveredAt === null && local.undoBy !== null && fromEvent === undefined;
+  const overdue = useAfter(waiting ? local.undoBy + RECEIPT_GRACE_MS : null);
+  const slow = useAfter(waiting ? local.undoBy + RECEIPT_SLOW_MS : null);
+  const read = useToolQuery("asks_list", ask.batchId === undefined ? ANSWERED : { state: "answered", batchId: ask.batchId }, {
+    enabled: waiting && overdue,
+  });
+  const fromRead = read.data?.asks.find((a) => a.askId === ask.askId)?.answer?.deliveredAt;
+  const at = fromEvent ?? fromRead;
+  return { at, slow: waiting && slow && at === undefined };
+};
+
+const ANSWERED = { state: "answered" } as const;
+
 /** A card wired to the data layer (hub data) and the inbox UI state (what the person did). */
 export function QuestionCard({ ask, autoFocus }: { ask: Ask; autoFocus?: boolean }) {
   const ui = useInboxUi();
@@ -59,9 +97,9 @@ export function QuestionCard({ ask, autoFocus }: { ask: Ask; autoFocus?: boolean
   const projects = useData((d) => d.projects);
   const orders = useData((d) => d.orders);
   const machines = useMachines();
-  const delivered = useData((d) => deliveredAt(d.events, ask.askId));
   const local = ui.answered.get(ask.askId);
-  const answered = local === undefined || local.deliveredAt !== null || delivered === undefined ? local : { ...local, undoBy: null, deliveredAt: delivered };
+  const delivered = useReceipt(ask, local);
+  const answered = local === undefined || local.deliveredAt !== null || delivered.at === undefined ? local : { ...local, undoBy: null, deliveredAt: delivered.at };
   const target = ask.kind === "secret" ? secretTarget(machines, ask) : undefined;
   const dismiss = useCallback(() => actions.dismiss(ask.askId), [actions, ask.askId]);
   return (
@@ -73,6 +111,7 @@ export function QuestionCard({ ask, autoFocus }: { ask: Ask; autoFocus?: boolean
         if (target !== undefined) actions.submitSecret(ask, target, field);
       }}
       answered={answered}
+      slow={delivered.slow}
       error={ui.errors.get(ask.askId)}
       live={live}
       autoFocus={autoFocus}
@@ -97,7 +136,14 @@ export function QuestionCardView(props: QuestionCardViewProps) {
       {answered === undefined ? (
         <OpenBody {...props} titleId={titleId} />
       ) : (
-        <AnsweredBody answered={answered} error={props.error} titleId={titleId} onUndo={props.onUndo} onDismiss={props.onDismiss} />
+        <AnsweredBody
+          answered={answered}
+          slow={props.slow === true}
+          error={props.error}
+          titleId={titleId}
+          onUndo={props.onUndo}
+          onDismiss={props.onDismiss}
+        />
       )}
     </section>
   );
@@ -113,16 +159,15 @@ function Header({ ask, place }: { ask: Ask; place: QuestionCardViewProps["place"
             {ask.number}
           </Text>
         )}
-        <Truncate size="xs" tone="quiet" strong>
+        {/* The project is short and always whole (it wraps); the order title takes what is left and truncates. */}
+        {/* The "·" ends the project rather than starting the order, so a wrapped order title never opens with it. */}
+        <Text size="xs" tone="quiet" strong className={cx(s.project, place.order !== null && ask.workstreamId !== undefined && s.beforeOrder)}>
           {place.project}
-        </Truncate>
+        </Text>
         {place.order !== null && ask.workstreamId !== undefined ? (
-          <>
-            <span className={s.dot} aria-hidden>
-              ·
-            </span>
+          <span className={s.order}>
             <IdChip label={place.order} id={ask.workstreamId} kind="order" size="xs" tone="quiet" />
-          </>
+          </span>
         ) : null}
         {tag === null ? null : (
           <span className={s.tag} data-tone={ask.class === "credential" ? "warning" : "danger"}>
@@ -427,6 +472,7 @@ const useCountdown = (until: number | null): number => {
 
 function AnsweredBody(props: {
   answered: Answered;
+  slow: boolean;
   error: string | undefined;
   titleId: string;
   onUndo: () => void;
@@ -445,6 +491,7 @@ function AnsweredBody(props: {
   if (answered.undone) status = "Taking it back…";
   else if (answered.sending) status = "Sending…";
   else if (left > 0) status = `You can undo this for ${left} s.`;
+  else if (answered.deliveredAt === null && props.slow) status = "The lead hasn't picked it up yet; it gets your answer when it next wakes.";
   else if (answered.deliveredAt === null) status = "Passing it to the lead…";
   else if (answered.ask.kind === "secret") {
     status =

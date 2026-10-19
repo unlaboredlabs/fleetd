@@ -1,6 +1,6 @@
 // Words and figures for the time inspector: durations read like the CLI's, and every figure that is a bound, a
 // split or an approximation says so (spec §2f) with the same mark everywhere.
-import type { AgentRole, Category, Coverage, Gap, Span, SpanKind } from "./types";
+import { KIND_CATEGORY, SPAN_KINDS, type AgentRole, type Category, type Coverage, type Gap, type Span, type SpanKind } from "./types.ts";
 
 /** What the hub's ids are called on screen. Built from the live store by whoever mounts the screen. */
 export interface Names {
@@ -278,3 +278,12 @@ export const missingSentence = (m: Missing, c: Coverage): string | undefined => 
   if (m.detailSince !== undefined) reasons.push(`detail since ${m.detailSince}; totals before that come from daily roll-ups`);
   return reasons.join("; ");
 };
+
+/** Envelopes hold their children's time, not their own. */
+const ENVELOPES: readonly SpanKind[] = ["run", "model.message", "tools.parallel"];
+
+/**
+ * The kinds whose spans make up a category, as a breakdown row links them: every kind of it but the envelopes, so
+ * pipeline includes each CI check even though checks carry no exclusive time of their own.
+ */
+export const categoryKinds = (cat: Category): SpanKind[] => SPAN_KINDS.filter((k) => KIND_CATEGORY[k] === cat && !ENVELOPES.includes(k));

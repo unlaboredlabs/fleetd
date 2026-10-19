@@ -205,6 +205,12 @@
 }
 
 /* Machines. */
+.scroller {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
 /* Top-left in whatever frame holds it, never centred in it. */
 .page {
   align-self: start;
@@ -273,4 +279,38 @@
   align-items: center;
   column-gap: var(--space-3);
   min-height: var(--row);
+}
+
+/* Setup checks. */
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.checkGroup {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.checkRow {
+  display: grid;
+  grid-template-columns: 12px minmax(120px, 180px) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.checkBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.command {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

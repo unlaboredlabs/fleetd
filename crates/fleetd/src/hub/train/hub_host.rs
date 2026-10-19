@@ -94,6 +94,22 @@ impl TrainHost for HubHost {
         self.hub().map(|h| h.time.sink())
     }
 
+    fn branch_prefix<'a>(&'a self, project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
+        Box::pin(async move {
+            let policy = self.hub()?.policies.get(project_ref).await;
+            match policy {
+                Ok(policy) => Some(policy.branch_prefix.map_or_else(
+                    || fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string(),
+                    |p| p.as_str().to_string(),
+                )),
+                Err(error) => {
+                    tracing::warn!(?error, "train: policy not read for the branch prefix");
+                    None
+                }
+            }
+        })
+    }
+
     fn task(&self, task_id: &TaskId) -> Option<TaskView> {
         match self.hub()?.tasks.get(task_id) {
             Ok(task) => task.map(task_view),

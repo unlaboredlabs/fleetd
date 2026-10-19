@@ -1,17 +1,16 @@
-// M9 "done when" on lab-a and the public testbed: (a) an intent with a `fix:` prefix and no project goes through one
+// M9 "done when" on lab-a and the public lab repo: (a) an intent with a `fix:` prefix and no project goes through one
 // router run (claude -p, haiku, on the hub) to lab-a's project with the bugfix playbook pinned; (b) a bugfix brief
 // without a repro check is refused; (c) a research workstream's claim spawns the hub's judge, whose verdict the
 // harness reports from the shell with baseline and candidate, and the hub computes STOP from the frozen rule; (d) a
-// finish-all workstream on the testbed (no open issues) goes idle with the digest line once its lead, or the harness,
+// finish-all workstream on the lab repo (no open issues) goes idle with the digest line once its lead, or the harness,
 // calls `inventory`. The harness's `fleetd` calls run in the project's workspace and cost no turns.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { type Body, FINISH_ALL_IDLE, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { removeTestbedProject, TESTBED } from "./m7Train.ts";
+import { CLONE, REPO, removeLabRepoProject } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
-const TESTBED_REPO = "unlaboredlabs/fleetd-testbed";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const QUIET = "Lab run: the harness does the work for this intent; reply to each wake with one short line and run no commands.";
@@ -39,7 +38,7 @@ export async function m9Playbooks(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
   requireGhLogin();
-  const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot !== TESTBED)?.projectId as string;
+  const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot !== CLONE)?.projectId as string;
   check(projectId, `${MACHINE} has a project`);
   const ref = { machineId: MACHINE, projectId };
   const outcome = (await callTool("project_get", ref)).body;
@@ -119,42 +118,42 @@ export async function m9Playbooks(lab: Lab) {
   const verdictEvent = await lab.waitEvent("research.verdict", 10_000, { cursor, types: ["research.verdict"], match: (e) => e.data?.workstreamId === wr });
   ok(`(c) judge ${judge.taskId} (spawned by the hub, ${judge.model}) reported baseline 60 / candidate 58 through the CLI; ${verdictEvent.event.summary}; ${wr} done, outcome ${wrNow.outcome}`);
 
-  // (d) Finish-all on the testbed, which has no open issues.
-  const open = JSON.parse(spawnSync("gh", ["issue", "list", "-R", TESTBED_REPO, "--state", "open", "--json", "number"], { cwd: LAB, encoding: "utf8", env: scrubbedEnv() }).stdout) as Array<Body>;
-  check(open.length === 0, `${TESTBED_REPO} has no open issues: ${JSON.stringify(open)}`);
+  // (d) Finish-all on the lab repo, which has no open issues.
+  const open = JSON.parse(spawnSync("gh", ["issue", "list", "-R", REPO, "--state", "open", "--json", "number"], { cwd: LAB, encoding: "utf8", env: scrubbedEnv() }).stdout) as Array<Body>;
+  check(open.length === 0, `${REPO} has no open issues: ${JSON.stringify(open)}`);
   let wf: string | undefined;
   let tbRef: { machineId: string; projectId: string } | undefined;
   try {
-    const tb = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
+    const tb = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     tbRef = { machineId: MACHINE, projectId: tb };
     // Started first, so the order doesn't start it with the default model; the order then reaches it as a wake.
     cursor = await lab.cursor();
     const started = await callTool("lead_start", { ...tbRef, model: MODEL, effort: "low" });
-    check(!started.isError, `lead_start on the testbed: ${JSON.stringify(started.body)}`);
+    check(!started.isError, `lead_start on the lab repo: ${JSON.stringify(started.body)}`);
     leads.push(started.body.threadId);
     cursor = (await leadTurnEnds(started.body.threadId, cursor)).cursor;
     const f = await callTool("intake_submit", { ...tbRef, text: "finish: everything still open", clientRequestId: randomUUID() });
     check(!f.isError && f.body.echo?.template === "finish-all" && f.body.echo.projectRef.projectId === tb, `finish-all intake: ${JSON.stringify(f.body)}`);
     wf = f.body.workstreamId as string;
-    const woken = await lab.waitEvent("the testbed lead woken with the order", 60_000, { cursor, types: ["lead.woken"], match: (e) => e.threadId === started.body.threadId });
+    const woken = await lab.waitEvent("the lab repo lead woken with the order", 60_000, { cursor, types: ["lead.woken"], match: (e) => e.threadId === started.body.threadId });
     await leadTurnEnds(started.body.threadId, woken.event.seq);
     let state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
     if (state === "idle") {
-      ok(`(d) the testbed lead called inventory itself when the order woke it; ${wf} is idle`);
+      ok(`(d) the lab repo lead called inventory itself when the order woke it; ${wf} is idle`);
     } else {
       const before = state;
-      const inventory = shell(TESTBED).run("inventory");
-      check(inventory.code === 0 && inventory.stdout.includes(FINISH_ALL_IDLE), `fleetd inventory on the testbed: ${JSON.stringify(inventory)}`);
+      const inventory = shell(CLONE).run("inventory");
+      check(inventory.code === 0 && inventory.stdout.includes(FINISH_ALL_IDLE), `fleetd inventory on the lab repo: ${JSON.stringify(inventory)}`);
       state = (await callTool("workstream_get", { workstreamId: wf })).body.workstream.state as string;
       ok(`(d) the lead left ${wf} ${before}; the harness ran fleetd inventory: ${inventory.stdout.trim().replace(/\n/gu, " | ")}`);
     }
     check(state === "idle", `${wf} is idle: ${state}`);
     const digest = (await callTool("digest_get")).body.text as string;
-    const line = digest.split("\n").find((l) => l.startsWith(`Idle: ${wf} fleetd-testbed: `));
+    const line = digest.split("\n").find((l) => l.startsWith(`Idle: ${wf} fleetd-lab: `));
     check(line?.endsWith(`· ${FINISH_ALL_IDLE}`), `the human digest shows ${wf} idle with "${FINISH_ALL_IDLE}": ${digest}`);
     ok(`(d) digest: ${line}`);
   } finally {
-    await removeTestbedProject(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
+    await removeLabRepoProject(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project: ${String(error)}`));
   }
 
   // Let the last lead wakes on lab-a run out, then count every claude turn this scenario cost.

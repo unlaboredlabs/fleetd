@@ -51,6 +51,7 @@
 
 /* Toasts */
 .toastViewport {
+  -webkit-app-region: no-drag;
   position: fixed;
   z-index: 70;
   right: var(--space-4);

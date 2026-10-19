@@ -19,6 +19,8 @@ const pages = {
     <div class="case scroller"><div class="sticky-head">Opaque sticky header</div>${Array.from({ length: 12 }, (_, i) => `<div>Row ${i + 1} scrolls under the header <button>Open</button></div>`).join("")}</div>
     <div class="case pane"><div class="row"><span>W1</span><div class="grow shrinks"><div class="ellipsis">A flex child that may shrink, so its ellipsis shows inside the pane</div></div></div></div>
     <div class="case w200" style="overflow-x: auto"><span class="nowrap">A wide line that scrolls sideways inside its own scroller</span></div>
+    <div class="case drag-bar"><button class="no-drag">Close</button></div>
+    <div class="case drag-stack"><div class="drag-bar"></div><div class="over-bar no-drag"><button>Close</button></div></div>
   </div>`,
   // A route to an order the fixture doesn't have.
   "#/order/W2": `<div class="page" data-screen="order.not-found"><p>This order doesn't exist.</p></div>`,
@@ -53,6 +55,8 @@ const pages = {
     <p class="case">Hidden label<span class="sr-only" data-testid="exp-raw-sronly">order eac3e0fe-ec61-4954-4f78-67240a80c42b</span></p>
     <span class="edge-left" data-testid="exp-edge-left">Touching the left edge</span>
     <button class="edge-right" data-testid="exp-edge-right">Right</button>
+    <div class="case drag-bar"><button data-testid="exp-drag-inside">Close</button></div>
+    <div class="case drag-stack"><div class="drag-bar"></div><div class="over-bar"><button data-testid="exp-drag-over">Close</button></div></div>
   </div>`,
 };
 

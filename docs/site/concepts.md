@@ -23,7 +23,8 @@ machine is usually a worker too.
 
 Each project has one lead: a long-running `claude` session that turns orders into briefs, splits them into tasks
 for writer and reviewer sessions, and never writes code itself. Leads run on `claude-opus-5-5` by default. A
-project's first order starts its lead.
+project's first order starts its lead. Leads and tasks reach fleetd through its MCP tools; [Agent tools](reference/agent-tools.md)
+lists what each role gets and what it can't do.
 
 ## Orders
 
@@ -42,10 +43,12 @@ than words: approving an exact command, ticking off steps, or entering a secret.
 ## Merge train
 
 Only fleetd merges. Each writer's PR goes on its repo's train, one serial queue per repo. The train rebases each
-ready change onto its base, waits for CI on that exact head and squash-merges it. A repo with no CI at all (no
-workflows, no required checks) merges on fleetd's own checks, and the merge says so. A change's tier sets its reviews:
+ready change onto its base, waits for CI on that exact head and squash-merges it. A head with no CI (the base requires
+no check but `fleetd/train`, and no workflow's `on:` can run for the PR) merges on fleetd's own checks, and the merge
+says so. A change's tier sets its reviews:
 S needs none, M one clean review, L two plus a verifier, each bound to the current patch. A PR body needs a
-`Source:` line naming what it serves. You can freeze a repo's train with `train_freeze`.
+`Source:` line naming what it serves. You can freeze a repo's train with `train_freeze`. Disjoint ready PRs merge
+together in one CI run, and a PR stacked on another is tested ahead on it; see [Merge train](merge-train.md).
 
 ## Done, checked
 

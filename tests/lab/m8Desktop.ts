@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import sodium from "libsodium-wrappers";
 import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MACHINES, MODEL, nodeHome, nodeSock, RUN, scrubbedEnv } from "./harness.ts";
-import { TESTBED } from "./m7Train.ts";
+import { CLONE } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -65,8 +65,8 @@ const filesUnder = (dir: string): Array<[string, string]> =>
 export async function m8Desktop(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
-  // The hub keeps m7's deleted testbed project in its list; this scenario uses lab-a's own repo.
-  const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot !== TESTBED)?.projectId as string;
+  // The hub keeps m7's deleted lab repo project in its list; this scenario uses lab-a's own repo.
+  const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === MACHINE && p.workspaceRoot !== CLONE)?.projectId as string;
   check(projectId, `${MACHINE} has a project`);
   const ref = { machineId: MACHINE, projectId };
   const root = (await callTool("project_get", ref)).body.project.workspaceRoot as string;

@@ -2,7 +2,7 @@
 // time went. One filter bar over three tabs: the timeline (an order's lanes), the breakdown and the insights. Every
 // number is the hub's (`time_*` tools); the screen lays them out and says plainly where a figure is a bound, a split
 // or an approximation rather than a measurement (spec §2f).
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Dot, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
 import { selectConnection } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
@@ -16,7 +16,7 @@ import { Timeline } from "./Timeline";
 import { linkedKeeps, useLinked, useNames, useTimeData, useWindow, type Linked } from "./data";
 import { loadFilters, queryOf, saveFilters, type Filters } from "./filters";
 import { ROLE_WORD, fmtDur, isMissingEmpty, missing, missingSentence } from "./format";
-import { buildModel } from "./model";
+import { barsFor, buildModel } from "./model";
 import { orderRoute } from "./route";
 import type { Category, Span } from "./types";
 import s from "./Time.module.css";
@@ -132,7 +132,10 @@ export function TimeScreen(props: TimeScreenProps) {
   /** "Show spans": on an order, its own timeline lit up; elsewhere the hub lists them in a sheet. */
   const showLinked = (l: Linked, ids?: readonly number[]) => {
     if (order !== undefined && model !== undefined) {
-      const set = ids !== undefined && ids.length > 0 ? new Set(ids) : new Set(model.spans.filter((x) => linkedKeeps(l, x)).map((x) => x.id));
+      // Matched spans become the bars that show them (a parallel call lights its group), and the list later lists
+      // exactly these: one set for both.
+      const matched = ids !== undefined && ids.length > 0 ? ids : model.spans.filter((x) => linkedKeeps(l, x)).map((x) => x.id);
+      const set = barsFor(model, matched);
       setHighlight({ ids: set, title: l.title, linked: l });
       setTab("timeline");
       return;
@@ -187,14 +190,23 @@ export function TimeScreen(props: TimeScreenProps) {
         ? "No spans for this order yet. Spans start when its first agent starts; a machine running an older fleetd records none."
         : "Loading this order's spans…"));
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    // Esc closes the innermost thing: the sheets close themselves, then the highlight, then the zoom.
-    if (e.key !== "Escape" || linked !== undefined || windowAt !== undefined) return;
-    if (highlight !== undefined) setHighlight(undefined);
-    else if (view !== undefined) setView(undefined);
-    else return;
-    e.stopPropagation();
-  };
+  // Esc closes the innermost thing: the sheets, menus and the palette close themselves, then the highlight, then the
+  // zoom. On the document, not the screen: after a tab switch or a click on a sheet's row, focus sits on <body>.
+  const sheetOpen = linked !== undefined || windowAt !== undefined;
+  const hasHighlight = highlight !== undefined;
+  const zoomed = view !== undefined;
+  useEffect(() => {
+    if (!hasHighlight && !zoomed) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || sheetOpen) return;
+      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null) return;
+      if (hasHighlight) setHighlight(undefined);
+      else setView(undefined);
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [hasHighlight, zoomed, sheetOpen]);
 
   const orderInfo = order === undefined ? undefined : names.orders.get(order);
   const title = order === undefined ? "Where the time went" : (orderInfo?.title ?? `Order ${order}`);
@@ -219,7 +231,7 @@ export function TimeScreen(props: TimeScreenProps) {
   const orderOf = windowAt?.workstreamId ?? order;
 
   return (
-    <div className={cx(s.screen)} data-screen="time" onKeyDown={onKeyDown}>
+    <div className={cx(s.screen)} data-screen="time">
       <header className={cx(s.head)}>
         {order !== undefined ? (
           <Button variant="ghost" onClick={() => openOrder(order)}>
@@ -227,25 +239,23 @@ export function TimeScreen(props: TimeScreenProps) {
           </Button>
         ) : null}
         {orderInfo !== undefined ? (
-          <Text tone="quiet" className={cx(s.noShrink)}>
-            {orderInfo.project} ›
-          </Text>
+          <Truncate tone="quiet" className={cx(s.crumb)}>{`${orderInfo.project} ›`}</Truncate>
         ) : null}
-        <Truncate strong as="h2">
+        {/* The title has the room first: up to two lines, then an ellipsis that opens the whole title. */}
+        <Truncate strong as="h2" lines={2} className={cx(s.title)}>
           {title}
         </Truncate>
-        <span className={cx(s.grow)} />
         {figures.length > 0 ? (
-          <Text size="xs" tone="quiet" tabular className={cx(s.figures)}>
+          <Truncate size="xs" tone="quiet" tabular className={cx(s.figures)}>
             {figures.join(" · ")}
-          </Text>
+          </Truncate>
         ) : null}
         {badge.length > 0 ? (
           <span className={cx(s.badge)}>
             <Dot color="var(--warning)" />
-            <Text size="xs" tone="warning">
+            <Truncate size="xs" tone="warning">
               {badge.join(" · ")}
-            </Text>
+            </Truncate>
           </span>
         ) : null}
       </header>

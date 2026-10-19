@@ -11,7 +11,8 @@ export type HubState =
   | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number }
   | { readonly phase: "live"; readonly hub: string; readonly protocol: number }
   /** `retryAt` is epoch ms. */
-  | { readonly phase: "retrying"; readonly hub: string; readonly reason: string; readonly retryAt: number }
+  /** `reason`: what went wrong, one sentence without a final period; `fix`: what to do about it. `retryAt` is epoch ms. */
+  | { readonly phase: "retrying"; readonly hub: string; readonly reason: string; readonly fix?: string | undefined; readonly retryAt: number }
   /** The hub refused the key (close 4401 or an auth error). Nothing retries until a new key is saved. */
   | { readonly phase: "refused"; readonly hub: string; readonly message: string };
 

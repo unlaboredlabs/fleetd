@@ -24,6 +24,8 @@ export const IPC = {
   pairRedeem: "pair:redeem",
   /** invoke() → PairOutcome. Main pairs from app-pair.json itself (its code never reaches the page), then deletes it. */
   pairAuto: "pair:auto",
+  /** invoke() → KeyStore. Where the hub key is kept (the OS store, or a 0600 file and why). */
+  pairStore: "pair:store",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
   /** invoke() → string | null. A native folder picker; null when cancelled. */
