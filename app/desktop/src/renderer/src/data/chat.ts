@@ -1,36 +1,58 @@
 // Each project's lead chat: its history pages, the live messages and streamed text, and the person's own messages
-// on their way to the hub. Pure reducers over DataState; the layer (queries.ts) does the calls.
+// on their way to the hub. Pure reducers over DataState; the layer (chat-layer.ts) does the calls.
 //
 // One message, one row. History, `chat.message` events and send answers can all carry the same message, in any
-// order: rows merge by messageId, and the newer copy (updatedAt, then a finished stream over a streaming one) wins,
-// so an older answer never overwrites a newer one.
+// order: rows merge by messageId, and the newer copy (updatedAt, then a final over a streaming one) wins, so an
+// older answer never overwrites a newer one.
 //
 // The person's sends keep the steer rules (screens/order/sending.ts): one clientRequestId per composed message,
 // reused on every resend, so the hub (which dedupes on it) never stores it twice. A call cut off by the link may
 // have reached the hub: it waits and goes again on reconnect, and is never called "not sent".
 import type { HubError } from "../../../shared/hub";
-import type { ChatAttachment, ChatDeltaData, ChatHistoryOutput, ChatMessage } from "./chat-contract";
+import type { ChatDelta, ChatHistoryOutput, ChatMessage, KnownChatAuthor } from "./chat-contract";
 
 /** How many messages a chat keeps in memory; older ones are paged back in from history. */
 export const CHAT_KEEP = 2000;
 export const CHAT_PAGE = 50;
 
+/**
+ * A lead message's streamed text. `index` is the last delta frame applied. A stream joined mid-message (history
+ * already had some of its text) can't be lined up with frames counted from 0: it shows the text it has until the
+ * final message arrives.
+ */
+export interface Stream {
+  readonly text: string;
+  readonly index?: number | undefined;
+}
+
 export interface Chat {
   /** Oldest first, by seq. */
   readonly messages: readonly ChatMessage[];
-  /** The text streamed so far per lead message, until its finished copy arrives. */
-  readonly streams: Readonly<Record<string, string>>;
+  readonly streams: Readonly<Record<string, Stream>>;
+  /** Why the lead doesn't have a sent message yet, from chat_send, by messageId. */
+  readonly leadWaiting: Readonly<Record<string, string>>;
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
   /** The latest page landed this generation. */
   readonly loaded: boolean;
   readonly error?: HubError | undefined;
-  /** A delta arrived past the end of its stream: some text went missing, so the latest page is read again. */
+  /** A delta skipped a frame: some text went missing, so the latest page is read again. */
   readonly gap?: boolean | undefined;
+  /** Messages an event named but didn't carry (over its 2 KB): read one by one, by seq. */
+  readonly missing: readonly number[];
 }
 
-export const emptyChat: Chat = { messages: [], streams: {}, hasOlder: false, loadingOlder: false, loaded: false };
+export const emptyChat: Chat = {
+  messages: [],
+  streams: {},
+  leadWaiting: {},
+  hasOlder: false,
+  loadingOlder: false,
+  loaded: false,
+  missing: [],
+};
 
+const streaming = (m: ChatMessage): boolean => m.state === "streaming";
 const stamp = (m: ChatMessage): string => m.updatedAt ?? m.createdAt;
 
 /** Whether `incoming` should replace `current` (same messageId). */
@@ -38,10 +60,13 @@ const newer = (incoming: ChatMessage, current: ChatMessage): boolean => {
   const a = stamp(incoming);
   const b = stamp(current);
   if (a !== b) return a > b;
-  return current.streaming === true && incoming.streaming !== true;
+  return streaming(current) && !streaming(incoming);
 };
 
-/** Messages folded into a chat. A finished message ends its stream; the chat keeps its newest CHAT_KEEP. */
+const without = <T>(map: Readonly<Record<string, T>>, key: string): Readonly<Record<string, T>> =>
+  key in map ? Object.fromEntries(Object.entries(map).filter(([k]) => k !== key)) : map;
+
+/** Messages folded into a chat. A final message ends its stream; the chat keeps its newest CHAT_KEEP. */
 export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[]): Chat => {
   if (incoming.length === 0) return chat;
   const byId = new Map(chat.messages.map((m) => [m.messageId, m]));
@@ -51,15 +76,17 @@ export const mergeMessages = (chat: Chat, incoming: readonly ChatMessage[]): Cha
     if (current === undefined || newer(m, current)) byId.set(m.messageId, m);
     const kept = byId.get(m.messageId);
     const streamed = streams[m.messageId];
-    // A finished message ends its stream; a streaming copy at least as long as what streamed so far replaces it.
-    if (streamed !== undefined && (kept?.streaming !== true || (kept.text.length >= streamed.length))) {
-      streams = Object.fromEntries(Object.entries(streams).filter(([id]) => id !== m.messageId));
+    // A final message ends its stream; a streaming copy with more text than streamed so far replaces it.
+    if (streamed !== undefined && (kept === undefined || !streaming(kept) || kept.text.length > streamed.text.length)) {
+      streams = without(streams, m.messageId);
     }
   }
-  const sorted = [...byId.values()].sort((a, b) => a.seq - b.seq || a.messageId.localeCompare(b.messageId));
+  const sorted = [...byId.values()].sort((a, b) => a.seq - b.seq);
   const trimmed = sorted.length > CHAT_KEEP;
+  const got = new Set(incoming.map((m) => m.seq));
   return {
     ...chat,
+    missing: chat.missing.some((seq) => got.has(seq)) ? chat.missing.filter((seq) => !got.has(seq)) : chat.missing,
     messages: trimmed ? sorted.slice(sorted.length - CHAT_KEEP) : sorted,
     streams,
     hasOlder: chat.hasOlder || trimmed,
@@ -71,8 +98,8 @@ export const applyHistory = (chat: Chat, page: ChatHistoryOutput, older: boolean
   const merged = mergeMessages(chat, page.messages);
   return {
     ...merged,
-    // The latest page says nothing about what's older than the messages already held from an earlier page.
-    hasOlder: older ? page.hasOlder : chat.loaded ? merged.hasOlder : page.hasOlder,
+    // The latest page says nothing about what's older than messages already held from an earlier page.
+    hasOlder: older ? page.moreBefore : chat.loaded ? merged.hasOlder : page.moreBefore,
     loadingOlder: older ? false : chat.loadingOlder,
     loaded: true,
     error: undefined,
@@ -81,18 +108,21 @@ export const applyHistory = (chat: Chat, page: ChatHistoryOutput, older: boolean
 };
 
 /**
- * Streamed text, idempotent: a delta repeating text already held is ignored, one overlapping its end adds only the
- * rest, and one past the end marks a gap (the latest page is read again). A finished message takes no deltas.
+ * One streamed frame. A repeat is ignored, a skipped frame marks a gap (the latest page is read again), and a final
+ * message takes no more. A stream joined mid-message takes none either (see Stream).
  */
-export const applyDelta = (chat: Chat, d: ChatDeltaData): Chat => {
+export const applyDelta = (chat: Chat, d: ChatDelta): Chat => {
   const message = chat.messages.find((m) => m.messageId === d.messageId);
-  if (message !== undefined && message.streaming !== true) return chat;
-  const text = chat.streams[d.messageId] ?? message?.text ?? "";
-  if (d.offset > text.length) return { ...chat, gap: true };
-  const end = d.offset + d.append.length;
-  if (end <= text.length) return chat;
-  const next = text + d.append.slice(text.length - d.offset);
-  return { ...chat, streams: { ...chat.streams, [d.messageId]: next } };
+  if (message !== undefined && !streaming(message)) return chat;
+  const current = chat.streams[d.messageId];
+  if (current === undefined) {
+    const had = message?.text ?? "";
+    if (d.index === 0 && had === "") return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: d.append, index: 0 } } };
+    return had === "" ? { ...chat, gap: true } : chat;
+  }
+  if (current.index === undefined || d.index <= current.index) return chat;
+  if (d.index > current.index + 1) return { ...chat, gap: true };
+  return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: current.text + d.append, index: d.index } } };
 };
 
 // The person's messages on their way.
@@ -109,7 +139,8 @@ export type SendState =
 export interface ChatSend {
   readonly clientRequestId: string;
   readonly text: string;
-  readonly attachments: readonly ChatAttachment[];
+  /** attachment_put ids. */
+  readonly attachments: readonly string[];
   readonly at: string;
   readonly state: SendState;
   /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
@@ -152,36 +183,54 @@ export const settleSends = (rows: readonly ChatSend[], messages: readonly ChatMe
 // What the chat view lists.
 
 export type ChatItemState = "sent" | "streaming" | "pending" | "reconnecting" | "unanswered" | "failed";
+/** A message; a PR / merge one-liner, system line or migrated history line; or one of the two inline items. */
+export type ChatItemKind = "message" | "event" | "secret" | "gated";
 
 export interface ChatItem {
   /** The messageId; the clientRequestId while the hub doesn't have it yet. */
   readonly id: string;
-  readonly author: ChatMessage["author"];
-  readonly kind: ChatMessage["kind"];
-  /** Markdown; while streaming, the text so far. */
+  /** A newer hub's author shows as a system line. */
+  readonly author: KnownChatAuthor;
+  readonly kind: ChatItemKind;
+  /** Markdown; while streaming, the text so far. Empty on inline items: they read `message.item`. */
   readonly text: string;
   readonly at: string;
-  readonly attachments: readonly ChatAttachment[];
+  /** attachment_put ids. */
+  readonly attachments: readonly string[];
   readonly state: ChatItemState;
   readonly error?: HubError | undefined;
   /** Failed for want of a hub, not refused by one. */
   readonly offline?: boolean | undefined;
   readonly clientRequestId?: string | undefined;
-  /** The hub's message, for the inline items' own fields. */
+  /** How a human message reached the lead (turn, steer, queued). */
+  readonly delivery?: ChatMessage["delivery"] | undefined;
+  /** Why the lead doesn't have it yet, with the fix (chat_send's answer). */
+  readonly leadWaiting?: string | undefined;
+  /** The hub's message: inline items, migrated history and the rest of its fields. */
   readonly message?: ChatMessage | undefined;
 }
 
-const noAttachments: readonly ChatAttachment[] = [];
+const noAttachments: readonly string[] = [];
 
-const messageItem = (m: ChatMessage, streamed: string | undefined): ChatItem => ({
+const authorOf = (a: ChatMessage["author"]): KnownChatAuthor => (a === "human" ? "human" : a === "lead" ? "lead" : "system");
+
+const kindOf = (m: ChatMessage): ChatItemKind => {
+  if (m.item?.kind === "secret_request") return "secret";
+  if (m.item?.kind === "command_approval") return "gated";
+  return m.history !== undefined || authorOf(m.author) === "system" ? "event" : "message";
+};
+
+const messageItem = (m: ChatMessage, chat: Chat): ChatItem => ({
   id: m.messageId,
-  author: m.author,
-  kind: m.kind,
-  text: streamed ?? m.text,
+  author: authorOf(m.author),
+  kind: kindOf(m),
+  text: chat.streams[m.messageId]?.text ?? m.text,
   at: m.createdAt,
   attachments: m.attachments ?? noAttachments,
-  state: m.streaming === true ? "streaming" : "sent",
+  state: streaming(m) ? "streaming" : "sent",
   clientRequestId: m.clientRequestId,
+  delivery: m.delivery,
+  leadWaiting: chat.leadWaiting[m.messageId],
   message: m,
 });
 
@@ -200,11 +249,11 @@ const sendItem = (r: ChatSend): ChatItem => ({
 
 /** The rows, oldest first: the hub's messages, a stream with no message yet as the lead's, then the person's sends. */
 export const chatItems = (chat: Chat, sends: readonly ChatSend[]): readonly ChatItem[] => {
-  const items = chat.messages.map((m) => messageItem(m, chat.streams[m.messageId]));
+  const items = chat.messages.map((m) => messageItem(m, chat));
   const known = new Set(chat.messages.map((m) => m.messageId));
-  for (const [id, text] of Object.entries(chat.streams)) {
+  for (const [id, s] of Object.entries(chat.streams)) {
     if (known.has(id)) continue;
-    items.push({ id, author: "lead", kind: "message", text, at: "", attachments: noAttachments, state: "streaming" });
+    items.push({ id, author: "lead", kind: "message", text: s.text, at: "", attachments: noAttachments, state: "streaming" });
   }
   return [...items, ...sends.map(sendItem)];
 };

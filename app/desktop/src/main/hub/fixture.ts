@@ -196,6 +196,8 @@ export class FixtureSource implements HubSource {
 
   live(): void {}
 
+  chat(): void {}
+
   refreshLive(): void {}
 
   reconnectNow(): void {}

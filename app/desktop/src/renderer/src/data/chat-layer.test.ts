@@ -3,22 +3,27 @@ import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatMessage } from "./chat-contract";
 import { live, snapshot } from "./fixtures.test-util";
 import { createDataLayer, type HubApi } from "./queries";
-import { selectChat, selectNeedsYou } from "./selectors";
+import { selectChat, selectLeadWorking, selectNeedsYou } from "./selectors";
 
 type Answer = { ok: true; output: unknown } | { ok: false; error: HubError };
 
 const fakeHub = () => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const calls: { tool: string; input: Record<string, unknown>; answer: (a: Answer) => void }[] = [];
+  const chats: unknown[] = [];
   const hub: HubApi = {
     call: (tool, input) =>
       new Promise((resolve) => calls.push({ tool, input: input as Record<string, unknown>, answer: resolve })),
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
     live: () => Promise.resolve(),
+    chat: (project) => {
+      chats.push(project);
+      return Promise.resolve();
+    },
   };
   const of = (tool: string) => calls.filter((c) => c.tool === tool);
-  return { hub, send: (f: HubFrame) => listener(f), calls, of };
+  return { hub, send: (f: HubFrame) => listener(f), calls, of, chats };
 };
 
 const KEY = "devbox/storefront";
@@ -28,7 +33,7 @@ const msg = (seq: number, patch: Partial<ChatMessage> = {}): ChatMessage => ({
   projectRef: ref,
   seq,
   author: "lead",
-  kind: "message",
+  state: "final",
   text: `message ${seq}`,
   createdAt: "2026-10-19T10:00:00.000Z",
   ...patch,
@@ -37,10 +42,23 @@ const chatEvent = (seq: number, type: string, data: unknown): HubFrame => ({
   t: "event",
   event: { seq, at: "2026-10-19T10:00:00.000Z", type, summary: type, data },
 });
-const page = (messages: ChatMessage[], patch: Record<string, unknown> = {}): Answer => ({
+const page = (messages: ChatMessage[], { moreBefore = false, needsYou = false } = {}): Answer => ({
   ok: true,
-  output: { messages, hasOlder: false, needsYou: false, ...patch },
+  output: { messages, moreBefore, moreAfter: false, state: { projectRef: ref, needsYou, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0 } },
 });
+const delta = (messageId: string, index: number, append: string): HubFrame => ({
+  t: "chat_delta",
+  delta: { projectRef: ref, messageId, seq: 3, index, append },
+});
+const messageEvent = (seq: number, m: ChatMessage, carry = true): HubFrame =>
+  chatEvent(seq, "chat.message", {
+    projectRef: ref,
+    messageId: m.messageId,
+    seq: m.seq,
+    author: m.author,
+    state: m.state,
+    ...(carry ? { message: m } : {}),
+  });
 const err = (code: string): Answer => ({ ok: false, error: { code, message: code } });
 
 const connected = async () => {
@@ -51,7 +69,7 @@ const connected = async () => {
   fake.send(snapshot(1));
   layer.chat.open(KEY);
   await Promise.resolve();
-  fake.of("chat_history")[0]?.answer(page([msg(1), msg(2)], { hasOlder: true, needsYou: true }));
+  fake.of("chat_history")[0]?.answer(page([msg(1), msg(2)], { moreBefore: true, needsYou: true }));
   await vi.waitFor(() => expect(selectChat(KEY)(layer.store.getState())).toBeDefined());
   return { fake, layer };
 };
@@ -69,7 +87,7 @@ describe("chat history", () => {
     expect(fake.of("chat_history")).toHaveLength(1);
     layer.chat.loadOlder(KEY);
     layer.chat.loadOlder(KEY);
-    expect(fake.of("chat_history").map((c) => c.input["beforeSeq"])).toEqual([undefined, 1]);
+    expect(fake.of("chat_history").map((c) => c.input["before"])).toEqual([undefined, 1]);
     fake.of("chat_history")[1]?.answer(page([msg(0)]));
     await vi.waitFor(() => expect(selectChat(KEY)(layer.store.getState())?.hasOlder).toBe(false));
     expect(items(layer)).toEqual([
@@ -93,17 +111,36 @@ describe("chat history", () => {
     await vi.waitFor(() => expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]));
   });
 
-  it("live messages and deltas merge without duplicates; a gap reads the latest page again", async () => {
+  it("subscribes to the open chat's stream; deltas merge without duplicates; a gap reads the latest page again", async () => {
     const { fake, layer } = await connected();
-    fake.send(chatEvent(2, "chat.message", { message: msg(3, { streaming: true, text: "" }) }));
-    fake.send(chatEvent(3, "chat.delta", { projectRef: ref, messageId: "m3", offset: 0, append: "Looking" }));
-    fake.send(chatEvent(3, "chat.delta", { projectRef: ref, messageId: "m3", offset: 0, append: "Looking" }));
+    expect(fake.chats).toEqual([ref]);
+    fake.send(messageEvent(2, msg(3, { state: "streaming", text: "" })));
+    fake.send(delta("m3", 0, "Looking"));
+    fake.send(delta("m3", 0, "Looking"));
     expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)).toMatchObject({ id: "m3", text: "Looking", state: "streaming" });
-    fake.send(chatEvent(4, "chat.delta", { projectRef: ref, messageId: "m3", offset: 50, append: "!" }));
+    fake.send(delta("m3", 5, "!"));
     await Promise.resolve();
     expect(fake.of("chat_history")).toHaveLength(2);
     fake.of("chat_history")[1]?.answer(page([msg(2), msg(3, { text: "Looking at it now", updatedAt: "2026-10-19T10:01:00.000Z" })]));
     await vi.waitFor(() => expect(items(layer)).toEqual([["m1", "sent"], ["m2", "sent"], ["m3", "sent"]]));
+    layer.chat.close();
+    expect(fake.chats).toEqual([ref, null]);
+  });
+
+  it("a message too big for its event is read by seq", async () => {
+    const { fake, layer } = await connected();
+    fake.send(messageEvent(2, msg(3, { text: "x".repeat(3000) }), false));
+    await Promise.resolve();
+    expect(fake.of("chat_history")[1]?.input).toMatchObject({ after: 2, limit: 1 });
+    fake.of("chat_history")[1]?.answer(page([msg(3, { text: "x".repeat(3000) })]));
+    await vi.waitFor(() => expect(items(layer)?.at(-1)).toEqual(["m3", "sent"]));
+  });
+
+  it("the lead's waiting and working state comes from chat.waiting", async () => {
+    const { fake, layer } = await connected();
+    fake.send(chatEvent(2, "chat.waiting", { projectRef: ref, needsYou: false, leadWorking: true, lastSeq: 2 }));
+    expect(selectNeedsYou(KEY)(layer.store.getState())).toBe(false);
+    expect(selectLeadWorking(KEY)(layer.store.getState())).toBe(true);
   });
 });
 
@@ -114,12 +151,12 @@ describe("sending", () => {
     expect(items(layer)?.at(-1)).toEqual(["c1", "pending"]);
     expect(fake.of("chat_send")[0]?.input).toMatchObject({ clientRequestId: "c1", text: "1 go, 2 rec", projectRef: ref });
     const mine = msg(3, { author: "human", text: "1 go, 2 rec", clientRequestId: "c1" });
-    fake.send(chatEvent(2, "chat.message", { message: mine }));
+    fake.send(messageEvent(2, mine));
     expect(items(layer)?.at(-1)).toEqual(["m3", "sent"]);
-    expect(selectNeedsYou(KEY)(layer.store.getState())).toBe(false);
-    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: mine } });
+    fake.of("chat_send")[0]?.answer({ ok: true, output: { message: mine, leadWaiting: "The lead is starting; it reads this first." } });
     expect(await out).toBe("sent");
     expect(items(layer)?.filter(([id]) => id === "m3" || id === "c1")).toEqual([["m3", "sent"]]);
+    expect(selectChat(KEY)(layer.store.getState())?.items.at(-1)?.leadWaiting).toBe("The lead is starting; it reads this first.");
   });
 
   it("a timeout retries once in the call, then waits as unanswered and goes again on reconnect, same id", async () => {

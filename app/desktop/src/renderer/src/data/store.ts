@@ -6,6 +6,8 @@
 import { createStore } from "zustand/vanilla";
 import {
   dataField,
+  eventData,
+  type HubEventOf,
   type AgentLane,
   type Ask,
   type Batch,
@@ -25,7 +27,7 @@ import {
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
 import { applyDelta, emptyChat, mergeMessages, settleSends, type Chat, type ChatSend } from "./chat";
-import { CHAT_EVENTS, type ChatDeltaData, type ChatMessageData, type ChatNeedsYouData } from "./chat-contract";
+import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
 import { settled } from "./phase";
 
@@ -96,8 +98,8 @@ export interface DataState {
   readonly chats: Readonly<Record<ProjectKey, Chat>>;
   /** The person's messages not yet settled by the hub. Theirs, not the hub's: kept across reconnects. */
   readonly chatSends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
-  /** Per project: the lead is waiting for the person's reply. */
-  readonly needsYou: Readonly<Record<ProjectKey, boolean>>;
+  /** Per project: whether its lead waits on the person, and whether it works. */
+  readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
 }
 
 const RECENT_EVENTS = 200;
@@ -152,7 +154,7 @@ export const initialState = (): DataState => ({
   live: emptyLive,
   chats: {},
   chatSends: {},
-  needsYou: {},
+  chatStates: {},
 });
 
 /** What a frame asks of the query layer besides the state change. */
@@ -202,13 +204,15 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           asksError: undefined,
           batches: {},
           chats: {},
-          needsYou: Object.fromEntries(snap.projects.map((p) => [projectKey(p), snapshotNeedsYou(p)])),
+          chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
         },
         { refetchAll: true },
       ];
     }
     case "event":
       return [applyEvent(s, frame.event), {}];
+    case "chat_delta":
+      return [applyChatDelta(s, frame.delta), {}];
     case "live":
       return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
     case "error":
@@ -216,55 +220,46 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
   }
 };
 
-// STUB until H1's ProjectSummary carries it: read loosely, absent means no.
-const snapshotNeedsYou = (p: ProjectSummary): boolean => (p as { readonly needsYou?: unknown }).needsYou === true;
-
-const asObject = (v: unknown): Readonly<Record<string, unknown>> | undefined =>
-  typeof v === "object" && v !== null ? (v as Readonly<Record<string, unknown>>) : undefined;
-
-const refKey = (v: unknown): ProjectKey | undefined => {
-  const r = asObject(v);
-  return typeof r?.["machineId"] === "string" && typeof r["projectId"] === "string"
-    ? `${r["machineId"]}/${r["projectId"]}`
-    : undefined;
-};
-
-/** The chat events: messages and streamed text into an opened chat, the person's sends settled, needs-you. */
+/** The chat events: messages into an opened chat, the person's sends settled, the lead's waiting/working state. */
 const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
-  const data = asObject(event.data);
   switch (event.type) {
     case CHAT_EVENTS.message: {
-      const message = asObject(data?.["message"]) as ChatMessageData["message"] | undefined;
-      const key = refKey(message?.projectRef);
-      if (message === undefined || key === undefined) return s;
+      const data = eventData<"chat.message">(event as HubEventOf<"chat.message">);
+      if (data === undefined) return s;
+      const key = projectKey(data.projectRef);
       const chat = s.chats[key];
+      const message = data.message;
+      if (message === undefined) {
+        // Too big for the event: read it by seq, unless the chat already has this copy or a newer one.
+        const held = chat?.messages.find((m) => m.messageId === data.messageId);
+        if (chat?.loaded !== true || (held !== undefined && held.state === data.state)) return s;
+        return chat.missing.includes(data.seq) ? s : { ...s, chats: { ...s.chats, [key]: { ...chat, missing: [...chat.missing, data.seq] } } };
+      }
       const sends = s.chatSends[key];
-      const settledSends = sends === undefined ? undefined : settleSends(sends, [message]);
+      const settled = sends === undefined ? undefined : settleSends(sends, [message]);
       return {
         ...s,
         chats: chat?.loaded === true ? { ...s.chats, [key]: mergeMessages(chat, [message]) } : s.chats,
-        chatSends: settledSends === sends || settledSends === undefined ? s.chatSends : { ...s.chatSends, [key]: settledSends },
-        // The person answered: the lead isn't waiting on them any more.
-        needsYou: message.author === "human" ? { ...s.needsYou, [key]: false } : s.needsYou,
+        chatSends: settled === undefined || settled === sends ? s.chatSends : { ...s.chatSends, [key]: settled },
       };
     }
-    case CHAT_EVENTS.delta: {
-      const delta = data as ChatDeltaData | undefined;
-      const key = refKey(delta?.projectRef);
-      const chat = key === undefined ? undefined : s.chats[key];
-      if (delta === undefined || key === undefined || chat?.loaded !== true) return s;
-      if (typeof delta.offset !== "number" || typeof delta.append !== "string") return s;
-      return { ...s, chats: { ...s.chats, [key]: applyDelta(chat, delta) } };
-    }
-    case CHAT_EVENTS.needsYou: {
-      const n = data as ChatNeedsYouData | undefined;
-      const key = refKey(n?.projectRef);
-      if (n === undefined || key === undefined) return s;
-      return { ...s, needsYou: { ...s.needsYou, [key]: n.needsYou } };
+    case CHAT_EVENTS.waiting: {
+      const state = eventData<"chat.waiting">(event as HubEventOf<"chat.waiting">);
+      if (state === undefined) return s;
+      return { ...s, chatStates: { ...s.chatStates, [projectKey(state.projectRef)]: state } };
     }
     default:
       return s;
   }
+};
+
+/** A streamed frame of the subscribed chat. */
+export const applyChatDelta = (s: DataState, d: ChatDelta): DataState => {
+  const key = projectKey(d.projectRef);
+  const chat = s.chats[key];
+  if (chat?.loaded !== true) return s;
+  const next = applyDelta(chat, d);
+  return next === chat ? s : { ...s, chats: { ...s.chats, [key]: next } };
 };
 
 /** A chat's state, created on first touch. */
