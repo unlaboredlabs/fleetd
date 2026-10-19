@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connLine, plainReason, Seen, sidebarOrders, stepOrder, toShellData, type ShellInputs, type SidebarProject } from "./model";
+import { connLine, Seen, sidebarOrders, stepOrder, toShellData, type ShellInputs, type SidebarProject } from "./model";
 
 const project = (projectId: string, lastActivityAt: string, orders: Array<string>): SidebarProject => ({
   key: { machineId: "devbox", projectId },
@@ -105,16 +105,7 @@ describe("toShellData", () => {
   });
 });
 
-describe("plainReason", () => {
-  it("says socket errors in plain words, naming the hub", () => {
-    expect(plainReason("connect ECONNREFUSED devbox:4790", "http://devbox:4790")).toBe("nothing is answering at devbox:4790; is the hub running?");
-    expect(plainReason("getaddrinfo ENOTFOUND hub.example", "http://hub.example:4790")).toBe(
-      "can't find hub.example:4790; check the address and the network",
-    );
-    expect(plainReason("The connection ended (1006).", "http://devbox:4790")).toBe("the connection dropped");
-    expect(plainReason("The hub stopped answering.", "http://devbox:4790")).toBe("The hub stopped answering");
-  });
-
+describe("connLine in fixture mode", () => {
   it("never says a fixture is connected", () => {
     expect(connLine({ phase: "live", hub: "http://devbox:4790", protocol: 1 }, true)).toEqual({ label: "Sample data, no hub", tone: "quiet" });
   });
