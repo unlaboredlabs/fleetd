@@ -13,7 +13,9 @@ import { useEffect, useRef } from "react";
 import type { ShortcutId } from "../../../shared/shortcuts";
 
 /** Listed in this order when nothing is typed; also the tie-break when two items score the same. */
-export const GROUPS = ["needs-you", "orders", "go-to", "actions", "projects", "machines", "settings", "prompts"] as const;
+// Projects first: opening a lead's chat is what the palette is mostly for. "needs-you" and "orders" leave with the
+// inbox and board screens that still register them (A1/A5 delete those).
+export const GROUPS = ["projects", "go-to", "actions", "machines", "settings", "prompts", "needs-you", "orders"] as const;
 export type Group = (typeof GROUPS)[number];
 
 export const GROUP_LABELS: Readonly<Record<Group, string>> = {
@@ -39,9 +41,6 @@ export interface Command {
   readonly keywords?: readonly string[];
   /** Shown only once something is typed: long lists (prompts) and per-item variants ("New order in api"). */
   readonly searchOnly?: boolean;
-  /** Needs-you items: the ask's batch ("B4") and fixed number in it, so a typed reply ("1 go") shows exactly
-   *  the question the hub will answer. From Ask.batch_id and Ask.number. */
-  readonly ask?: { readonly batchId: string; readonly number: number };
   /** Read when the palette opens and when the key is pressed; false hides it and lets the key fall through. */
   readonly enabled?: () => boolean;
   readonly run: () => void;
@@ -54,7 +53,7 @@ export interface Source {
   readonly subscribe?: (onChange: () => void) => () => void;
 }
 
-/** What the palette offers for typed text that is not a reply, as its last row ("New order: <text>"). */
+/** What the palette offers for typed text, as its last row. */
 export interface TextAction {
   readonly title: (text: string) => string;
   readonly run: (text: string) => void;

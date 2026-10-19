@@ -261,6 +261,14 @@ pub enum HubEventType {
     /// A stale source answered again; `data.source`, `data.staleMs`.
     #[serde(rename = "source.fresh")]
     SourceFresh,
+    /// A project's chat got a message, or one of its messages finished streaming or had an inline item change state;
+    /// `data` is `chat::ChatMessageEventData`.
+    #[serde(rename = "chat.message")]
+    ChatMessage,
+    /// A project's chat started or stopped waiting on you, or its lead started or ended a turn; `data` is the
+    /// `chat::ProjectChatState`.
+    #[serde(rename = "chat.waiting")]
+    ChatWaiting,
 }
 
 impl HubEventType {
@@ -351,6 +359,8 @@ impl HubEventType {
             Self::GithubDrift => "github.drift",
             Self::SourceStale => "source.stale",
             Self::SourceFresh => "source.fresh",
+            Self::ChatMessage => "chat.message",
+            Self::ChatWaiting => "chat.waiting",
         }
     }
 }

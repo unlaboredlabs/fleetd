@@ -8,6 +8,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value};
 
 use crate::app::{AppClientMessage, AppServerMessage};
+use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
     AskEventData, ClaimEventData, HubEvent, HubEventType, MachineSleptData, PromptChangedData,
     ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
@@ -104,6 +105,8 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(PlanChangedData: PlanChanged);
         data!(PlanVerifiedData: PlanVerified);
         data!(PromptChangedData: PromptChanged);
+        data!(crate::chat::ChatMessageEventData: ChatMessage);
+        data!(crate::chat::ProjectChatState: ChatWaiting);
         data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
             SteerFailed);
         let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();
@@ -244,6 +247,8 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
         Incident,
         Change,
         TrainState,
+        ChatMessage,
+        ProjectChatState,
     );
     out.insert("McpTools", mcp_tools_document_for(side));
     out.insert("HubEventData", hub_event_data_document_for(side));

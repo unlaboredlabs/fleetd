@@ -21,6 +21,7 @@ const fakeHub = () => {
     subscribe: (l) => ((listener = l), () => undefined),
     resync: resyncs,
     live: lives,
+    chat: () => Promise.resolve(),
   };
   return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs, lives };
 };

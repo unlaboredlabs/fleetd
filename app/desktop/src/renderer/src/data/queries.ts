@@ -11,7 +11,8 @@ import {
   type ToolOutput,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame } from "../../../shared/hub";
-import type { LiveScope } from "../../../shared/ipc";
+import type { ChatScope, LiveScope } from "../../../shared/ipc";
+import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
 import { applyFrame, applyReply, applySlots, applyUndo, createDataStore, failRead, ingest, type DataStore } from "./store";
 
@@ -33,6 +34,7 @@ export interface HubApi {
   subscribe(listener: (frame: HubFrame) => void): () => void;
   resync(): Promise<void>;
   live(scope: LiveScope | null): Promise<void>;
+  chat(project: ChatScope | null): Promise<void>;
 }
 
 /** What the open screen wants live: every open order's lanes (board, machines) and/or one order in focus. */
@@ -81,6 +83,8 @@ export interface DataLayer {
    * Main keeps the scope and re-sends it on every reconnect and on window focus, so the layer sends only changes.
    */
   setLive(want: LiveWant): void;
+  /** The lead chats: history, and the person's messages (chat-layer.ts). */
+  readonly chat: ChatActions;
   /** Start applying main's frames; returns the stop. */
   start(): () => void;
 }
@@ -88,6 +92,7 @@ export interface DataLayer {
 export const createDataLayer = (hub: HubApi, now: () => number = Date.now): DataLayer => {
   const store = createDataStore();
   const typed = typedCall(hub.call);
+  const chat = createChatActions(store, typed, (key) => void hub.chat(key === null ? null : refOf(key)), now);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -250,7 +255,9 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     call,
     toolQuery,
     setLive,
+    chat: chat.actions,
     start: () => {
+      const stopChat = store.subscribe((s, prev) => chat.onState(prev, s));
       const stopCache = queryClient.getQueryCache().subscribe(onCache);
       const stop = hub.subscribe(onFrame);
       // One timer, for the next hold to end: no polling, and none at all while nothing finished is held.
@@ -274,6 +281,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
         if (s.orders !== prev.orders) scheduleHold();
       });
       return () => {
+        stopChat();
         stop();
         stopCache();
         stopHold();

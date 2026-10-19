@@ -131,6 +131,10 @@
       ],
       "type": "string"
     },
+    "AttachmentId": {
+      "pattern": "^F[1-9][0-9]*$",
+      "type": "string"
+    },
     "BatchId": {
       "pattern": "^B[1-9][0-9]*$",
       "type": "string"
@@ -191,6 +195,238 @@
         "to"
       ],
       "type": "object"
+    },
+    "ChatAuthor": {
+      "oneOf": [
+        {
+          "enum": [
+            "human",
+            "lead"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "system",
+          "description": "fleetd itself: one-line events (a PR merged, an agent started, a past order's state).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatDelivery": {
+      "description": "How a human message reached the lead.",
+      "oneOf": [
+        {
+          "const": "turn",
+          "description": "The lead was idle: the message started its next turn.",
+          "type": "string"
+        },
+        {
+          "const": "steer",
+          "description": "The lead was mid-turn: it takes the message at its next step, as a steer.",
+          "type": "string"
+        },
+        {
+          "const": "queued",
+          "description": "The lead is starting, or its machine is away: the message waits and goes in as soon as it can.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatHistorySource": {
+      "description": "Where a history message came from, for messages from before the chat existed (a read model; nothing is moved or\ndestroyed). Absent on messages written in the chat.",
+      "oneOf": [
+        {
+          "const": "order",
+          "description": "An order's text as it was submitted.",
+          "type": "string"
+        },
+        {
+          "const": "note",
+          "description": "A person's note on an order.",
+          "type": "string"
+        },
+        {
+          "const": "steer",
+          "description": "A person's steer to the lead or one of its agents.",
+          "type": "string"
+        },
+        {
+          "const": "lead_message",
+          "description": "What the lead said in its own session.",
+          "type": "string"
+        },
+        {
+          "const": "order_outcome",
+          "description": "An order's outcome (done, stopped, failed) as a one-line event.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatItem": {
+      "description": "The two things a chat can't carry as plain text, shown inline in place of the message text.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SecretRequestItem",
+          "properties": {
+            "kind": {
+              "const": "secret_request",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CommandApprovalItem",
+          "properties": {
+            "kind": {
+              "const": "command_approval",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ChatMessage": {
+      "properties": {
+        "attachments": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AttachmentId"
+          },
+          "maxItems": 8,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "author": {
+          "$ref": "#/$defs/ChatAuthor"
+        },
+        "by": {
+          "description": "A human message: the key name of the person who wrote it.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "clientRequestId": {
+          "description": "A human message: the `clientRequestId` its `chat_send` carried, for the app's optimistic copy.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "delivery": {
+          "$ref": "#/$defs/ChatDelivery",
+          "description": "A human message: how it reached the lead."
+        },
+        "history": {
+          "$ref": "#/$defs/ChatHistorySource",
+          "description": "From before the chat: where this history message came from."
+        },
+        "item": {
+          "$ref": "#/$defs/ChatItem"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ChatMessageState"
+        },
+        "text": {
+          "description": "Markdown. Empty while a streamed message has no text yet, and for an inline `item`.",
+          "maxLength": 100000,
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Set when the text was last appended to, or an item's state changed."
+        }
+      },
+      "required": [
+        "messageId",
+        "projectRef",
+        "seq",
+        "author",
+        "text",
+        "createdAt",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ChatMessageEventData": {
+      "description": "`chat.message` data: on each new message, and again when a streamed message is final or an inline item changes\nstate. `message` is the whole message when it fits the event's 2 KB; otherwise read it with `chat_history`\n(`after: seq - 1`, `limit: 1`).",
+      "properties": {
+        "author": {
+          "$ref": "#/$defs/ChatAuthor"
+        },
+        "message": {
+          "$ref": "#/$defs/ChatMessage"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ChatMessageState"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId",
+        "seq",
+        "author",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ChatMessageId": {
+      "pattern": "^m[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ChatMessageState": {
+      "oneOf": [
+        {
+          "enum": [
+            "final"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "streaming",
+          "description": "The lead is still writing it: `chat_delta` frames append to its text until it is `final`.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatRequestId": {
+      "pattern": "^R[1-9][0-9]*$",
+      "type": "string"
     },
     "CiInfo": {
       "description": "CI the repository runs.",
@@ -359,6 +595,119 @@
       ],
       "type": "object"
     },
+    "CommandApprovalItem": {
+      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`.",
+      "properties": {
+        "answeredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "argv": {
+          "description": "The exact argv that runs once approved. Absent for a session's permission prompt, which has `tool`.",
+          "items": {
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "by": {
+          "description": "The key name of the person who answered.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "class": {
+          "$ref": "#/$defs/GatedClass"
+        },
+        "cwd": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "exitCode": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "inputSummary": {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "outputTail": {
+          "description": "The end of the output, once it ran.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "reason": {
+          "description": "One line: why.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "secretEnv": {
+          "description": "Names only; the values come from the node's own sinks.",
+          "items": {
+            "$ref": "#/$defs/EnvName"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/CommandApprovalState"
+        },
+        "timeoutSec": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tool": {
+          "description": "A permission prompt: the tool the agent wants to use, with `inputSummary`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "machineId",
+        "class",
+        "reason",
+        "state"
+      ],
+      "type": "object"
+    },
+    "CommandApprovalState": {
+      "oneOf": [
+        {
+          "enum": [
+            "open",
+            "approved",
+            "denied"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "ran",
+          "description": "Approved and run: see `exitCode` and `outputTail`.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Approved, and the node could not run it.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "DecisionId": {
       "pattern": "^D[1-9][0-9]*$",
       "type": "string"
@@ -406,6 +755,18 @@
           "type": "string"
         }
       ]
+    },
+    "EnvName": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+      "type": "string"
+    },
+    "GatedClass": {
+      "enum": [
+        "irreversible",
+        "money",
+        "credential"
+      ],
+      "type": "string"
     },
     "GitHubRepo": {
       "description": "GitHub repository as owner/name",
@@ -479,6 +840,12 @@
         },
         "change.state": {
           "$ref": "#/$defs/ChangeStateData"
+        },
+        "chat.message": {
+          "$ref": "#/$defs/ChatMessageEventData"
+        },
+        "chat.waiting": {
+          "$ref": "#/$defs/ProjectChatState"
         },
         "ci.main": {
           "$ref": "#/$defs/CiMainData"
@@ -624,6 +991,8 @@
         "change.ready",
         "change.refused",
         "change.state",
+        "chat.message",
+        "chat.waiting",
         "ci.main",
         "claim.failed",
         "claim.passed",
@@ -933,6 +1302,38 @@
       ],
       "type": "object"
     },
+    "ProjectChatState": {
+      "description": "One chat's state, for the sidebar and the status row.",
+      "properties": {
+        "lastMessageAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastSeq": {
+          "description": "The newest message's `seq`; 0 for an empty chat.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "leadWorking": {
+          "description": "The lead is mid-turn.",
+          "type": "boolean"
+        },
+        "needsYou": {
+          "description": "The lead's last message waits for a human reply, or an inline item is open.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "needsYou",
+        "leadWorking",
+        "lastSeq"
+      ],
+      "type": "object"
+    },
     "ProjectId": {
       "type": "string"
     },
@@ -1082,6 +1483,70 @@
         "project"
       ],
       "type": "string"
+    },
+    "SecretRequestItem": {
+      "description": "The lead needs a secret. The app shows a masked field; the value never enters the transcript: it is sealed to the\nsink's machine and answered with `secret_submit`, naming `requestId`. Only its fingerprint comes back.",
+      "properties": {
+        "answeredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "The key name of the person who answered.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "fingerprint": {
+          "description": "Once stored.",
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "description": "The secret's key, e.g. `stripe.test_key`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ChatRequestId"
+        },
+        "sink": {
+          "description": "Where it lands: `env:<machine>:<absolute path>` or `file:<machine>:<absolute path>`.",
+          "maxLength": 600,
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/SecretRequestState"
+        },
+        "text": {
+          "description": "One line: why the lead needs it.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "name",
+        "text",
+        "sink",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SecretRequestState": {
+      "enum": [
+        "open",
+        "stored",
+        "withdrawn"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "SourceFreshData": {
       "description": "`source.fresh`.",
