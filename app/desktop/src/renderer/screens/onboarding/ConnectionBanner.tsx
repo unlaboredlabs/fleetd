@@ -40,7 +40,9 @@ function Reconnecting({ reach }: { reach: Reaching }) {
   const when = seconds === null || seconds === 0 ? "Reconnecting…" : `Trying again in ${seconds} s.`;
   return (
     <div className={s.banner} data-tone="warning" role="status" data-banner="reconnecting">
-      <Text tabular>{reach.reason === null ? `Connecting to ${reach.hub}…` : `Lost the hub: ${reach.reason} ${when}`}</Text>
+      <Text tone="warning" tabular>
+        {reach.reason === null ? `Connecting to ${reach.hub}…` : `Lost the hub: ${reach.reason.replace(/\.$/u, "")}. ${when}`}
+      </Text>
     </div>
   );
 }

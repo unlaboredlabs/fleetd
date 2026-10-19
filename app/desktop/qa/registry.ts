@@ -6,10 +6,14 @@
 //      harness waits for either.
 //   2. Add an entry below: the id, the hash route that shows it, and the fixtures it must survive: the stress
 //      fixtures that touch its data (long-text, many-*), plus empty and the error states it renders.
+//      A screen whose route ends on an error or not-found state ("<id>.error", "<id>.not-found") fails, unless
+//      the entry says `expect: "error"`; register error fixtures as a separate entry with that field.
 //   3. A screen with no route of its own gets `open`, using keys, roles and labels rather than CSS classes:
 //        { id: "palette", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") }
 //        { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] }
 // Fixtures are E3b's, built by `pnpm fixtures` into app/desktop/fixtures/<name>.json.
+// Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
+// qa-results/index.html.
 
 import type { Page } from "@playwright/test";
 
@@ -48,14 +52,34 @@ export interface Screen {
   open?: (page: Page) => Promise<void>;
   // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
   pending?: string;
+  // The route is meant to land on an error or not-found state ("<id>.error"). Without this, such a state fails the
+  // test: a route to a missing entity would otherwise check an empty error page and pass.
+  expect?: "error";
 }
+
+const gallerySections = [
+  "tokens",
+  "text",
+  "buttons",
+  "fields",
+  "choices",
+  "overlays",
+  "tabs",
+  "status",
+  "markdown",
+  "code",
+  "diff",
+  "table",
+  "list",
+  "layout",
+] as const;
 
 export const screens: readonly Screen[] = [
   // E0/F1: the frame (top bar, sidebar) around the default route, and the connection states it shows.
   {
     id: "shell",
     route: "#/",
-    fixtures: ["empty", "typical", "hub-unreachable", "pairing-failed", "node-too-old"],
+    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
   },
   // F10: connecting to a hub. pairing-failed: the form after the hub refused the saved key, with the fix;
   // hub-unreachable: retrying, with the reason and the countdown. #/onboarding?key opens on the key path.
@@ -63,20 +87,36 @@ export const screens: readonly Screen[] = [
     id: "onboarding",
     route: "#/onboarding",
     fixtures: ["pairing-failed", "hub-unreachable"],
-    pending: "E3b's fixtures (feat/desktop-fixtures) aren't on this base yet",
   },
   {
     id: "onboarding.key",
     route: "#/onboarding?key",
     fixtures: ["pairing-failed"],
-    pending: "E3b's fixtures (feat/desktop-fixtures) aren't on this base yet",
   },
-  // E2: every design-system primitive with stress content, so the primitives pass before any screen uses them.
-  { id: "gallery", route: "#/gallery", fixtures: ["typical"], pending: "E2's gallery (feat/desktop-ui) has not landed" },
+  // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
+  // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
+  ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
+  // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
+  {
+    id: "palette",
+    route: "#/",
+    fixtures: ["typical", "long-text", "empty", "many-prompts"],
+    open: (page) => page.keyboard.press("ControlOrMeta+K"),
+  },
+  {
+    id: "palette.reply",
+    route: "#/",
+    fixtures: ["needs-you", "long-text", "empty"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search or reply" }).fill("1 go 2 nvm 3 b");
+    },
+  },
+  { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
 ];
 
 // Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
 export const platformChecks: Record<"appMenu", boolean> = {
   // F1: the macOS app menu, with an Edit menu wired to the text actions.
-  appMenu: false,
+  appMenu: true,
 };

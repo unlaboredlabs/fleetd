@@ -38,6 +38,7 @@ describe("findRawText", () => {
       "08:15:17 on 2026-10-19, order W12 task T3 ask A4 steer S1",
       "e.g. fleetd.sh, app-pair.json, version v1.2.3, Node.js",
       "A follow-up for end-to-end tests that are up-to-date",
+      "Usage over the last-7-days window",
       "Worked for 3s · 1 tool call",
       "defaced decade 1234567",
       "https://github.com/acme/storefront/pull/12",

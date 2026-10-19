@@ -16,6 +16,7 @@ use crate::{brand, literal};
 #[serde(rename_all = "snake_case")]
 pub enum RetroMetricClass {
     FalseClaim,
+    /// Retired: fleetd no longer scores time estimates. Kept so older proposals still read.
     EstimateMiss,
     PolishLoop,
     MisfiledAsk,
@@ -68,7 +69,6 @@ pub struct RetroSnapshot {
     #[schemars(with = "crate::prim::NullOr<Finite>")]
     pub target: Option<Finite>,
     pub false_claim: Count,
-    pub estimate_miss: Count,
     pub polish_loop: Count,
     #[schemars(with = "crate::prim::NullOr<Finite>")]
     pub agent_minutes_per_done: Option<Finite>,
@@ -188,7 +188,8 @@ mod tests {
 
     #[test]
     fn snapshot_keeps_its_nulls() {
-        let json = r#"{"target":null,"false_claim":2,"estimate_miss":0,"polish_loop":1,"agent_minutes_per_done":null}"#;
+        let json =
+            r#"{"target":null,"false_claim":2,"polish_loop":1,"agent_minutes_per_done":null}"#;
         let snapshot: RetroSnapshot = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&snapshot).unwrap(), json);
     }

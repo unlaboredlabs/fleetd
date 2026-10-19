@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareVersions, hubOrigin, normalizeCode, olderNodes, parseDeepLink, protocolFit, readAppPair } from "./pairing";
+import { compareVersions, hubOrigin, normalizeCode, olderNodes, protocolFit, readAppPair } from "./pairing";
 
 describe("normalizeCode", () => {
   it("takes any case, spacing and hyphens, and Crockford look-alikes, as the hub does", () => {
@@ -31,22 +31,6 @@ describe("hubOrigin", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.failure.fix).toContain("127.0.0.1:4790");
     }
-  });
-});
-
-describe("parseDeepLink", () => {
-  it("reads the url-encoded hub and the code", () => {
-    expect(parseDeepLink("fleetd://pair?hub=http%3A%2F%2F100.64.0.1%3A4790&code=ABCD-2345")).toEqual({
-      hub: "http://100.64.0.1:4790",
-      code: "ABCD-2345",
-    });
-    expect(parseDeepLink("fleetd://pair/?code=X&hub=h")).toEqual({ hub: "h", code: "X" });
-  });
-
-  it("ignores other links and missing parts", () => {
-    expect(parseDeepLink("fleetd://pair?hub=h")).toBeNull();
-    expect(parseDeepLink("fleetd://other?hub=h&code=X")).toBeNull();
-    expect(parseDeepLink("https://pair?hub=h&code=X")).toBeNull();
   });
 });
 

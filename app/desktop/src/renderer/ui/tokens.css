@@ -20,13 +20,15 @@
   --selected: #00000012;
   --hairline: #e6e6e2;
   --border: #cfcfca;
+  /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
+     on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
+  --control-border: #7a7a75;
   --text: #1c1c1a;
   --quiet: #63635d;
   --faint: #96968f;
   --accent: #2360c4;
   --accent-fill: #2360c4;
   --on-accent: #ffffff;
-  --ring: #2360c447;
   --success: #287142;
   --warning: #8c5a00;
   --danger: #b63531;
@@ -65,13 +67,13 @@
   --selected: #ffffff17;
   --hairline: #323230;
   --border: #4a4a46;
+  --control-border: #8a8a85;
   --text: #ededea;
   --quiet: #ababa5;
   --faint: #74746e;
   --accent: #79abf5;
   --accent-fill: #2e69cc;
   --on-accent: #ffffff;
-  --ring: #76a9f560;
   --success: #6cc28a;
   --warning: #e3aa4a;
   --danger: #f38c88;
@@ -143,7 +145,6 @@
   --radius-md: 6px;
   --radius-lg: 10px;
 
-  --focus-ring: 0 0 0 3px var(--ring);
   /* Floating surfaces only (menus, popovers, dialogs): one soft shadow, no glow. */
   --float-shadow: 0 8px 28px var(--shadow), 0 0 0 1px var(--hairline);
 

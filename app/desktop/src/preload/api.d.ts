@@ -1,4 +1,6 @@
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
+import type { NotifyRequest, OpenTarget } from "../shared/app";
+import type { MenuCommand } from "../shared/menu";
+import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome } from "../shared/hub";
 import type { LiveScope } from "../shared/ipc";
 import type { PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
@@ -9,6 +11,11 @@ export interface FleetdApi {
   readonly fixture: string | null;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
   copy(text: string): Promise<void>;
+  /**
+   * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back
+   * as `{ ok: false, message }` saying why; it never rejects.
+   */
+  openExternal(url: string): Promise<OpenOutcome>;
   readonly hub: {
     state(): Promise<HubState>;
     /**
@@ -33,6 +40,18 @@ export interface FleetdApi {
     redeem(request: PairRequest): Promise<PairOutcome>;
     /** Pairs from app-pair.json in main, only while no key is saved; the code never comes here. */
     auto(): Promise<PairOutcome>;
+  };
+  readonly app: {
+    /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */
+    onMenuCommand(listener: (id: string) => void): () => void;
+    /**
+     * Clicked notifications and fleetd:// links. Targets that arrived before the first listener (a link that
+     * launched the app) are delivered to it. Returns the unsubscribe.
+     */
+    onOpen(listener: (target: OpenTarget) => void): () => void;
+    notify(request: NotifyRequest): Promise<void>;
+    /** The menu commands enabled now; main greys out the other menu items. */
+    setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
   };
 }
 

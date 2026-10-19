@@ -30,14 +30,15 @@ export function Dot({ color, label }: { color: string; label?: string }) {
 }
 
 /** A dot plus a short status word. Needs-you is set in full-weight text; failure words are danger. */
-export function StatusChip({ tone, children }: { tone: StatusTone; children: string }) {
+/** `inRow` inside a clickable row or button: a cut label then only tooltips, so the click stays the row's. */
+export function StatusChip({ tone, children, inRow }: { tone: StatusTone; children: string; inRow?: boolean }) {
   return (
     <span
       className={cx(s.chip, tone === "needs-you" && s.strong)}
       style={tone === "failed" ? { color: "var(--danger)" } : undefined}
     >
       <Dot color={DOT[tone]} />
-      <Truncate expand="none" size="xs" tone="inherit" strong={tone === "needs-you"}>
+      <Truncate expand={inRow ? "none" : "popover"} size="xs" tone="inherit" strong={tone === "needs-you"}>
         {children}
       </Truncate>
     </span>
@@ -63,11 +64,11 @@ export function roleTint(role: AgentRole): string {
 }
 
 /** The role word in its tint; give it a fixed width in a lane so the activity column lines up. */
-export function RoleTag({ role, width, children }: { role: AgentRole; width?: number; children?: string }) {
+export function RoleTag({ role, width, children, inRow }: { role: AgentRole; width?: number; children?: string; inRow?: boolean }) {
   const style: CSSProperties = { color: roleTint(role), ...(width ? { width, flex: "none" } : {}) };
   return (
     <span className={s.chip} style={style}>
-      <Truncate expand="none" size="xs" tone="inherit">
+      <Truncate expand={inRow ? "none" : "popover"} size="xs" tone="inherit">
         {children ?? role}
       </Truncate>
     </span>

@@ -89,19 +89,6 @@ export const hubOrigin = (input: string): { ok: true; origin: string } | { ok: f
   return { ok: true, origin: url.origin };
 };
 
-/**
- * `fleetd://pair?hub=<url-encoded>&code=<code>` → the hub and code, or null for any other link. The link only fills
- * the connect screen; it never pairs by itself, since any web page can open one.
- */
-export const parseDeepLink = (link: string): { readonly hub: string; readonly code: string } | null => {
-  const match = /^fleetd:\/\/pair\/?\?(.*)$/iu.exec(link.trim());
-  if (match === null) return null;
-  const query = new URLSearchParams(match[1]);
-  const hub = query.get("hub")?.trim() ?? "";
-  const code = query.get("code")?.trim() ?? "";
-  return hub !== "" && code !== "" ? { hub, code } : null;
-};
-
 /** Reads app-pair.json's text; null unless it names a hub and a code. `nowMs` decides `expired`. */
 export const readAppPair = (text: string, nowMs: number): AppPair | null => {
   const parsed = z

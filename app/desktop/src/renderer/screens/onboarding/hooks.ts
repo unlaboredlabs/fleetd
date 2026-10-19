@@ -3,21 +3,8 @@ import type { HubState } from "../../../shared/hub";
 import type { Probe } from "../../../shared/pairing";
 import { reaching, type Reaching } from "./form";
 
-/**
- * The hub connection's state from main. Until the shared store (E1) carries it, this listens on its own; note each
- * subscribe makes main send a fresh snapshot, so mount it once per screen, not per row.
- */
-export const useHubState = (): HubState | null => {
-  const [state, setState] = useState<HubState | null>(null);
-  useEffect(
-    () =>
-      window.fleetd.hub.subscribe((frame) => {
-        if (frame.t === "state") setState(frame.state);
-      }),
-    [],
-  );
-  return state;
-};
+/** The frame's one hub subscription (each extra subscribe would make main send a fresh snapshot). */
+export { useHubState } from "../shell/hubFeed";
 
 /** The connection on its way to the hub, holding the last failure's reason across attempts (see `reaching`). */
 export const useReaching = (state: HubState | null): Reaching | null => {
