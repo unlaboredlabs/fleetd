@@ -574,14 +574,15 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
       lab,
       fleetd(
         "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--serves", `defect: ${title}`, "--areas", "all", "--model", MODEL, "--effort", "low",
-        "--prompt", "Run the shell command `sleep 90` once, then reply with the single word OK. Change no files.",
+        "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
       ),
       `spawn the fix "${title}"`,
     );
   const workstreamState = async (w: string) => (await lab.callTool("workstream_get", { workstreamId: w })).body.workstream?.state as string | undefined;
 
-  // A. A claim while a fix is open is refused, and the fix keeps running.
-  const wa = await quietOrder(lab, ref, fleetd, "chat lab: a claim with a fix open", slow);
+  // A. A claim while a fix is open is refused, and the fix keeps running. Its done-when passes at once, so the
+  // close-over below concludes while the fix still runs.
+  const wa = await quietOrder(lab, ref, fleetd, "chat lab: a claim with a fix open", [{ type: "cmd", machineId: ref.machineId, argv: ["true"], expectExit: 0 }]);
   let from = await lab.cursor();
   const ta = spawnFix(wa, "share link goes stale");
   const refused = fleetd("claim", "done", "--workstream", wa);
@@ -599,7 +600,8 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
   // The one deliberate way out: closing over the fix, which says what it drops.
   from = await lab.cursor();
   const over = await shellAsync(ref.machineId, CLONE, "claim", "done", "--workstream", wa, "--close-over", "lab: the fix is not needed");
-  const closed = await lab.waitEvent(`${wa} closed on purpose`, 120_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === wa });
+  check(over.code === 0, `claim done --close-over: exit ${over.code}: ${over.text.trim().split("\n")[0]}`);
+  const closed = await lab.waitEvent(`${wa} closed on purpose`, 60_000, { cursor: from, types: ["workstream.done"], match: (e) => e.data?.workstreamId === wa });
   check(String(closed.event.data.reason).startsWith("closed on purpose: lab: the fix is not needed") && String(closed.event.data.reason).includes('"share link goes stale"'), `the close names what it drops: ${JSON.stringify(closed.event.data)}`);
   const dropped = await lab.waitEvent(`${ta} cancelled by the close`, 30_000, { cursor: from, types: ["task.cancelled"], match: (e) => e.data?.taskId === ta });
   check(/^Cancelled: .* was closed on purpose/u.test(String(dropped.event.data?.reason ?? dropped.event.summary)), `the cancel says why: ${JSON.stringify(dropped.event)}`);
@@ -662,15 +664,26 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
       lab,
       fleetd(
         "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--serves", "done:0", "--model", MODEL, "--effort", "low",
-        "--prompt", `Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". Then push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: done:0". Reply with the PR URL.`,
+        "--prompt",
+        `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
+          `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: done:0". ` +
+          `3. Call the report tool with kind "slice_ready" and prUrl set to that PR's URL. 4. Run \`sleep 30\` with your Bash tool and wait for it. 5. Reply with the PR URL.`,
       ),
       "spawn the writer",
     );
+    // Queued before the review exists: plain order would start it first when the writer's slot frees.
     const [waiter] = spawnSleepers(lab, fleetd, w, "waits at cap 1", 1, 5);
     check((await taskGet(lab, waiter!.taskId)).state === "queued", `${waiter!.taskId} waits behind ${writer} at max agents 1`);
+    const writerEnd = await lab.waitEvent(`${writer} ends`, TURN_MS * 2, { cursor: from, types: TASK_ENDS, match: (e) => e.data?.taskId === writer });
     const review = await nextTask(lab, ref, from, `the review of ${writer}'s PR starts`, CI_MS + TURN_MS * 2, (t) => t.kind === "review");
-    const waiterStart = (await eventsSince(lab, from, ["task.started"])).find((e) => e.data?.taskId === waiter!.taskId);
-    check(waiterStart === undefined || waiterStart.seq > review.seq, `the gating review (seq ${review.seq}) started before the queued agent (seq ${waiterStart?.seq})`);
+    const seen = await eventsSince(lab, from, ["task.queued", "task.started"]);
+    const reviewQueued = seen.find((e) => e.type === "task.queued" && e.data?.taskId === review.task.taskId);
+    check(
+      reviewQueued !== undefined && reviewQueued.seq < writerEnd.event.seq,
+      `the review was waiting when ${writer}'s slot freed (queued at ${reviewQueued?.seq}, ${writer} ended at ${writerEnd.event.seq}); without that, the writer did not report slice_ready and the order isn't tested`,
+    );
+    const waiterStart = seen.find((e) => e.type === "task.started" && e.data?.taskId === waiter!.taskId);
+    check(waiterStart === undefined || waiterStart.seq > review.seq, `the gating review (started seq ${review.seq}) went before the agent queued earlier (started seq ${waiterStart?.seq})`);
     const merged = await lab.waitEvent(`${writer}'s PR merges at max agents 1`, CI_MS + TURN_MS * 3, { cursor: from, types: ["pr.merged"], match: (e) => e.data?.repo === REPO });
     await lab.waitEvent(`${waiter!.taskId} ends`, TURN_MS * 2, { cursor: from, types: TASK_ENDS, match: (e) => e.data?.taskId === waiter!.taskId });
     const sessions = await eventsSince(lab, from, ["task.started", ...TASK_ENDS]);
@@ -776,7 +789,7 @@ async function historyPart(lab: Lab) {
   await withHub(prechat, async (call) => {
     const placed = await call("intake_submit", { ...ref, text: orderText, clientRequestId: randomUUID() });
     check(!placed.isError, `the pre-chat build takes the order: ${JSON.stringify(placed.body)}`);
-    const noted = await call("order_note", { workstreamId: placed.body.workstreamId, text: noteText });
+    const noted = await call("order_note", { workstreamId: placed.body.workstreamId, text: noteText, clientRequestId: randomUUID() });
     check(!noted.isError, `the pre-chat build takes the note: ${JSON.stringify(noted.body)}`);
   });
   ok("pre-chat hub: an order and a note placed by a person");
@@ -816,7 +829,7 @@ async function areasPart(lab: Lab, ref: Ref) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--model", MODEL, "--effort", "low",
+        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--serves", `defect: package ${area} has no lab note`, "--model", MODEL, "--effort", "low",
         "--prompt", `Run \`sleep 10\`, then append the line "chat lab" to packages/${area}/README.md and commit it with the message "chat lab: ${area}". Reply with the commit hash.`,
       ),
       `task spawn --areas ${area}`,
@@ -842,7 +855,11 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   const { check, ok } = lab;
   need("cap_set");
   const fleetd = shellIn(ref.machineId, LOCAL_REPO);
+  let current: number | undefined;
+  /** Sets the project's max agents; each change is one agents.cap event (setting the same value is none). */
   const setMax = async (n: number) => {
+    check(n !== current, `max agents is already ${n}`);
+    current = n;
     const from = await lab.cursor();
     const set = await lab.callTool("cap_set", { project: { projectRef: ref, maxAgents: n } });
     check(!set.isError, `cap_set ${n}: ${JSON.stringify(set.body)}`);
@@ -903,8 +920,7 @@ async function capPart(lab: Lab, chat: Chat, ref: Ref, need: (t: string) => void
   check(endedFirst >= 2, `the late spawn started only once fewer than 3 ran (${endedFirst} of the 4 ended first)`);
   ok(`2. 12 → 3 mid-run: all four finished, none killed; ${late!.taskId} waited until ${endedFirst} had ended`);
 
-  // 3. 3 → 12: the queued agents start at once; one quiet chat line; the lead hears "cap raised".
-  await setMax(3);
+  // 3. 3 → 12 (still 3 from step 2): the queued agents start at once; one quiet chat line; the lead hears "cap raised".
   const lead = await chat.send(`${QUIET} You're this project's lead for the max agents test.`);
   await chat.reply(lead, "the lead is up");
   const leadThread = await chat.leadThread();
