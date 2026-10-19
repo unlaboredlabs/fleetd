@@ -51,46 +51,54 @@ export const git = (...args: Array<string>) => run("git", args);
 const gh = (...args: Array<string>) => run("gh", args, LAB);
 const ghJson = <A = Body>(...args: Array<string>): A => JSON.parse(gh(...args)) as A;
 
-/** A run holds its namespace through a tag `lease/<namespace>` on a commit whose message says until when. */
-const LEASE_TAG = `lease/${NAMESPACE}`;
+/**
+ * A run holds its namespace through the branch `lease/<namespace>` on a commit whose message says until when. A branch,
+ * not a tag: GitHub moves a branch without force only as a fast-forward, which makes the takeover a compare-and-swap.
+ */
+const LEASE_REF = `heads/lease/${NAMESPACE}`;
 const LEASE_MS = 4 * 60 * 60_000;
 let lease: string | undefined;
 
 /**
  * Takes this run's lease on the namespace, once per run, or stops: creating the tag is atomic, so a second run on a
  * busy namespace (another worktree, another machine) refuses instead of mixing its PRs into this one's. An expired
- * lease (a run killed before its cleanup) is taken over. Released when the process exits.
+ * lease (a run killed before its cleanup) is taken over by compare-and-swap: the new lease commit's parent is the
+ * expired one, and the tag moves only as a fast-forward, so of two runs taking over the same lease one wins. Released
+ * when the process exits. Not renewed: a run longer than LEASE_MS may lose it.
  */
 const leaseNamespace = () => {
   if (lease !== undefined) return;
-  const until = new Date(Date.now() + LEASE_MS).toISOString();
   const tree = ghJson("api", `repos/${REPO}/commits/${SEED}`).commit.tree.sha as string;
-  const message = `lab lease ${NAMESPACE} run ${randomUUID()} until ${until}`;
-  const sha = ghJson("api", "-X", "POST", `repos/${REPO}/git/commits`, "-f", `message=${message}`, "-f", `tree=${tree}`).sha as string;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const out = spawnSync("gh", ["api", "-X", "POST", `repos/${REPO}/git/refs`, "-f", `ref=refs/tags/${LEASE_TAG}`, "-f", `sha=${sha}`, "--silent"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
-    if (out.status === 0) {
-      lease = sha;
-      process.once("exit", releaseNamespace);
-      return;
-    }
-    if (!/already exists|HTTP 422/u.test(out.stderr)) throw new Error(`leasing ${NAMESPACE}: ${out.stderr.trim()}`);
-    const held = ghJson("api", `repos/${REPO}/git/ref/tags/${LEASE_TAG}`).object.sha as string;
-    const holder = ghJson("api", `repos/${REPO}/git/commits/${held}`).message as string;
-    if (!(Date.parse(/ until (\S+)$/u.exec(holder)?.[1] ?? "") < Date.now())) {
-      throw new Error(
-        `${NAMESPACE} on ${REPO} is in use (${holder}); pick another FLEETD_LAB_SLOT, or if no run holds it: gh api -X DELETE repos/${REPO}/git/refs/tags/${LEASE_TAG}`,
-      );
-    }
-    spawnSync("gh", ["api", "-X", "DELETE", `repos/${REPO}/git/refs/tags/${LEASE_TAG}`], { cwd: LAB, env: scrubbedEnv() });
-  }
-  throw new Error(`could not lease ${NAMESPACE} on ${REPO}: another run took it first`);
+  const commit = (parent?: string) => {
+    const message = `lab lease ${NAMESPACE} run ${randomUUID()} until ${new Date(Date.now() + LEASE_MS).toISOString()}`;
+    const args = ["api", "-X", "POST", `repos/${REPO}/git/commits`, "-f", `message=${message}`, "-f", `tree=${tree}`];
+    if (parent !== undefined) args.push("-f", `parents[]=${parent}`);
+    return ghJson(...args).sha as string;
+  };
+  const api = (...args: Array<string>) => spawnSync("gh", ["api", ...args, "--silent"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
+  const take = (sha: string) => {
+    lease = sha;
+    process.once("exit", releaseNamespace);
+  };
+  const fresh = commit();
+  const created = api("-X", "POST", `repos/${REPO}/git/refs`, "-f", `ref=refs/${LEASE_REF}`, "-f", `sha=${fresh}`);
+  if (created.status === 0) return take(fresh);
+  if (!/already exists|HTTP 422/u.test(created.stderr)) throw new Error(`leasing ${NAMESPACE}: ${created.stderr.trim()}`);
+  const held = ghJson("api", `repos/${REPO}/git/ref/${LEASE_REF}`).object.sha as string;
+  const holder = ghJson("api", `repos/${REPO}/git/commits/${held}`).message as string;
+  const busy = () =>
+    new Error(`${NAMESPACE} on ${REPO} is in use (${holder}); pick another FLEETD_LAB_SLOT, or if no run holds it: gh api -X DELETE repos/${REPO}/git/refs/${LEASE_REF}`);
+  if (!(Date.parse(/ until (\S+)$/u.exec(holder)?.[1] ?? "") < Date.now())) throw busy();
+  const next = commit(held);
+  const moved = api("-X", "PATCH", `repos/${REPO}/git/refs/${LEASE_REF}`, "-f", `sha=${next}`, "-F", "force=false");
+  if (moved.status !== 0) throw busy();
+  take(next);
 };
 
 /** Drops this run's lease, unless another run has since taken over an expired one. */
 const releaseNamespace = () => {
-  const held = spawnSync("gh", ["api", `repos/${REPO}/git/ref/tags/${LEASE_TAG}`, "--jq", ".object.sha"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
-  if (held.status === 0 && held.stdout.trim() === lease) spawnSync("gh", ["api", "-X", "DELETE", `repos/${REPO}/git/refs/tags/${LEASE_TAG}`], { cwd: LAB, env: scrubbedEnv() });
+  const held = spawnSync("gh", ["api", `repos/${REPO}/git/ref/${LEASE_REF}`, "--jq", ".object.sha"], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
+  if (held.status === 0 && held.stdout.trim() === lease) spawnSync("gh", ["api", "-X", "DELETE", `repos/${REPO}/git/refs/${LEASE_REF}`], { cwd: LAB, env: scrubbedEnv() });
 };
 
 /**

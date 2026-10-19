@@ -86,8 +86,8 @@ the one lab repository and works in its own branch namespace: slot N's train mer
 branches are `slot/N/fleetd/...` (the lab writes `branchPrefix` into the project's untracked policy file). Before and
 after a run the lab closes the namespace's open PRs, deletes its branches and resets `slot/N/main` to the `seed` tag;
 it never touches another namespace or the repository's `main` (the demo closes only the PRs and branches it made). A
-run leases its namespace with the tag `lease/<namespace>` for up to 4 hours and drops it on exit, so a second run on a
-busy namespace, from any worktree or machine, stops and says which run holds it; an expired lease is taken over. `FLEETD_LAB_NAMESPACE=noci/N` runs in a namespace CI
+run leases its namespace with the branch `lease/<namespace>` for up to 4 hours and drops it on exit, so a second run on
+a busy namespace, from any worktree or machine, stops and says which run holds it; an expired lease is taken over. `FLEETD_LAB_NAMESPACE=noci/N` runs in a namespace CI
 never runs for (the repository's `ci` workflow ignores PRs into `noci/**`), for the `noci` scenario:
 `FLEETD_LAB_SLOT=4 FLEETD_LAB_NAMESPACE=noci/4 npm --prefix tests/lab run lab -- noci`. `FLEETD_LAB_REPO` picks
 another repository. Set one up, with its clone, using `node tests/lab/labRepo.ts --repo <owner/name> --clone
