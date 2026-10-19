@@ -19,14 +19,22 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
    created key_tjw34bxe (fld_mwrgw4, operate:*). The key above is shown only once.
    ```
 
-2. Add the hub's MCP endpoint, `<hub url>/mcp`, to Claude Code:
+2. Copy the key to the machine that runs Claude Code, readable only by you. For example, from that machine:
+
+   ```sh
+   (umask 077; ssh hub 'cat ~/.fleetd/agent.key' > ~/.fleetd/agent.key)
+   ```
+
+   `hub` is the hub machine's SSH name. Create `~/.fleetd` first if this machine has no fleetd.
+
+3. Add the hub's MCP endpoint, `<hub url>/mcp`, to Claude Code:
 
    ```sh
    claude mcp add --transport http fleetd http://hub.your-tailnet.ts.net:4790/mcp \
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
-3. In Claude Code, ask it to send an order. It calls `intake_submit`.
+4. In Claude Code, ask it to send an order. It calls `intake_submit`.
 
 `claude mcp add` writes to your Claude config. `--scope` picks where:
 
@@ -44,7 +52,7 @@ script does both. Save it as `mcp.sh`:
 ```sh
 #!/bin/sh
 # mcp.sh <tool> '<json arguments>'
-URL=${FLEETD_HUB:-http://127.0.0.1:4790}/mcp
+URL=${FLEETD_HUB:-http://hub.your-tailnet.ts.net:4790}/mcp
 AUTH="Authorization: Bearer $(cat "$FLEETD_KEY_FILE")"
 post() { curl -s "$URL" -H "$AUTH" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" "$@"; }
 SID=$(post -D - -o /dev/null -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"script","version":"1"}}}' | tr -d '\r' | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}')
@@ -55,7 +63,7 @@ post -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"to
 Then call a tool:
 
 ```sh
-FLEETD_HUB=http://127.0.0.1:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh orders_board '{}'
+FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh orders_board '{}'
 ```
 
 Expected output starts like this:
@@ -66,8 +74,13 @@ Expected output starts like this:
 
 ## Use a key from the CLI {#key-file}
 
-`fleetd status`, `time`, `answer`, `steer` and `steers` take a key file with `--key-file`, and a hub with `--hub`. On
-the hub machine they need neither. `answer` and `steer` need a [human key](/docs/glossary#human-key):
+| Command | Needs |
+|---|---|
+| `fleetd status`, `fleetd time` | Nothing on the hub machine. Elsewhere, `--hub <url> --key-file <file>`. |
+| `fleetd answer`, `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
+| `fleetd listen`, `fleetd retro` | Always `--hub <url>` and `--key-file <file>`. |
+
+To make a human key file on the hub:
 
 ```sh
 (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)

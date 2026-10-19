@@ -40,7 +40,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
 | Run as | Hub log | Node log |
 |---|---|---|
 | A service (`fleetd init`, `fleetd machine add`) | `~/.fleetd/hub/hub.log` | `~/.fleetd/logs/node.log` |
-| By hand (`fleetd hub start`, `fleetd node join` or `node run`) | stdout | stdout |
+| By hand (`fleetd hub start`, `fleetd node join` or `node run`) | The terminal | The terminal |
 
 ## node.json {#node-json}
 
@@ -185,7 +185,7 @@ To try fleetd next to a fleet you already run, run a test hub and node by hand, 
    With no terminal (`</dev/null`), `init` only writes the hub's setup, `$T/hub/setup.json`, and starts nothing. A hub
    started without it can't be used by `fleetd doctor` or `fleetd project add`: they report "… has no hub set up".
 
-2. Start the hub. Keep the terminal open; it logs to stdout.
+2. Start the hub. Keep the terminal open; it logs there.
 
    ```sh
    fleetd hub start --home $T/hub --listen 127.0.0.1:4797
@@ -215,9 +215,11 @@ Stop the hub and node with Ctrl+C. Delete `$T` to remove the test fleet.
 |---|---|
 | `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions` | `--home`, the hub's home. Default: `~/.fleetd/hub`. |
 | `node join`, `node run` | `--home`, the node's home. Default: `~/.fleetd/node`. |
-| `status`, `time`, `answer`, `steer`, `steers`, `listen`, `retro` | `--hub` and `--key-file`. Without them, the hub at `~/.fleetd/hub`. |
+| `status`, `time` | `--hub` and `--key-file`, both optional. Without them, the hub at `~/.fleetd/hub`. |
+| `answer`, `steer`, `steers` | `--key-file`, always. `--hub` is optional: without it, the hub at `~/.fleetd/hub`. |
+| `listen`, `retro` | `--hub` and `--key-file`, always. |
 | `init` | Also reads `~/.fleetd/node/node.json`, as above. |
-| `pair` | Also writes the app's hand-off, `app-pair.json`, under `$XDG_CONFIG_HOME/fleetd` (default `~/.config/fleetd`). |
+| `pair` | Also writes the app's hand-off, `app-pair.json`, under `$XDG_CONFIG_HOME/fleetd` (default `~/.config/fleetd`; macOS: `~/Library/Application Support/fleetd`). |
 | Lead-side commands (`claim`, `change`, `plan`, …) | The node socket in `FLEETD_NODE_SOCK`. Default: `~/.fleetd/node/node.sock`. Sessions get it set. |
 
 ## Ports and addresses {#ports}

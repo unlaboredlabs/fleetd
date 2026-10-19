@@ -111,11 +111,11 @@ You'll set up fleetd on one machine, pair the desktop app, and send a first piec
    Send it with the `intake_submit` tool. `clientRequestId` is any unique string; it makes a retry safe.
 
    ```sh
-   FLEETD_HUB=http://127.0.0.1:4790 FLEETD_KEY_FILE=~/.fleetd/human.key \
+   FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/human.key \
      sh ~/mcp.sh intake_submit '{"clientRequestId":"first-order","text":"fix the typo in the README"}'
    ```
 
-   The answer names the order, such as `W1`. Use your hub's address if it isn't on `127.0.0.1`.
+   Use the hub address from step 1. The answer names the order, such as `W1`.
 
    </TabItem>
    </Tabs>

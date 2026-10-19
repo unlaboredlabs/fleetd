@@ -54,7 +54,7 @@ same checks. The tables below give each check's id in brackets, such as `[claude
 | "claude on the hub is not logged in" `[claude_login]` | The hub's own `claude` (used by the router and the retro) is logged out. | `claude auth login`, or through your proxy. For a gateway or token, see [claude.env](/docs/config-and-files#claude-env). |
 | "The hub's address `http://…` is not HTTPS" `[https]` | The hub listens on plain HTTP outside loopback or a tailnet. | Serve it over HTTPS, then point fleetd at it (below). |
 | "The hub has no address set up", or `setup.json` is unreadable `[https]` | `~/.fleetd/hub/setup.json` is missing or broken. | Same as above: `fleetd init --url <https address>`. |
-| "… has no hub set up" `[exit 4]` | The hub was started by hand without `fleetd init` first, so its home has no `setup.json`. | `fleetd init --no-service --home <home> --listen <host:port>`, then start the hub again. See [Run a second fleet](/docs/config-and-files#second-fleet). |
+| "… has no hub set up" `[exit 4]` | The hub was started by hand without `fleetd init` first, so its home has no `setup.json`. | Run step 1 of [Run a second fleet](/docs/config-and-files#second-fleet) with that `--home` and `--listen`: `HOME=$(mktemp -d) fleetd init --home <home> --no-service --listen <host:port> </dev/null`. |
 
 This is what doctor shows when the hub is down:
 
@@ -144,8 +144,8 @@ systemctl --user restart fleetd-node.service    # a node, on that machine
 
 | Log | Where |
 |---|---|
-| Hub | `~/.fleetd/hub/hub.log`. Run by hand: stdout. |
-| Node | `~/.fleetd/logs/node.log`. Run by hand: stdout. |
+| Hub | `~/.fleetd/hub/hub.log`. Run by hand: the terminal. |
+| Node | `~/.fleetd/logs/node.log`. Run by hand: the terminal. |
 
 ## An order is stuck {#stuck}
 

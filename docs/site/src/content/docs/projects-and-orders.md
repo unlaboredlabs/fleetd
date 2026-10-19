@@ -72,8 +72,8 @@ fleetd project remove devbox/storefront
 | A task's branch | `fleetd/T<n>-<slug>`, such as `fleetd/T1-fix-readme-typo`. |
 | Where the merge train merges | Each pull request's base branch. |
 
-The `Default branch:` line that `project add` prints is GitHub's default branch. fleetd uses it only to watch main's
-CI. To work against another branch, point the checkout's `origin/HEAD` at it on the worker:
+The `Default branch:` line that `project add` prints is GitHub's default branch. fleetd uses it to watch main's CI and
+to read its protection rules. To work against another branch, point the checkout's `origin/HEAD` at it on the worker:
 
 ```sh
 git remote set-head origin release
@@ -111,7 +111,16 @@ For example, to try fleetd cheaply on a test project:
 1. Before its first order, call
    `lead_start {"machineId":"devbox","projectId":"<id>","model":"claude-haiku-5-5","effort":"low"}`. `fleetd project
    list` shows the ids.
-2. Commit `.fleetd/policy.yaml` with `defaults: {model: claude-haiku-5-5, effort: low}` to the default branch.
+2. Commit this `.fleetd/policy.yaml` to the default branch. `areas` is required in every policy file; `all` lets
+   writers touch the whole repo.
+
+   ```yaml
+   areas:
+     all: ["**"]
+   defaults:
+     model: claude-haiku-5-5
+     effort: low
+   ```
 
 ## Send an order {#send}
 
