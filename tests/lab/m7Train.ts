@@ -1,6 +1,6 @@
-// M7 "done when" 1-5 on lab-a against the public testbed unlaboredlabs/fleetd-testbed (CI fails iff a file FAIL exists;
-// main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a second project on lab-a,
-// with its policy file kept untracked, so nothing but the train ever lands on main. With the train frozen by a
+// M7 "done when" 1-5 on lab-a against the public lab repo unlaboredlabs/fleetd-lab, in this slot's namespace (CI fails
+// iff a file FAIL exists; slot/<n>/main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a
+// second project on lab-a, with its policy file kept untracked, so nothing but the train ever lands on the base. With the train frozen by a
 // Decision, two M-tier writers (areas alpha, beta, files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
 // PR that conflicts with alpha's and one that adds FAIL. A harness PR without `Source:` is refused at enqueue. Thawed
 // with train_freeze, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
@@ -13,18 +13,22 @@ import path from "node:path";
 import { type Body, fleetdCommand, LAB, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, sessionText, SLOT } from "./harness.ts";
 
 const MACHINE = "lab-a";
-// One testbed repo per lab slot, so slots run the train in parallel: slots 0 and 9 (the demo) share the original,
-// slot N uses fleetd-testbed-N. FLEETD_TESTBED overrides; tests/lab/testbed.ts creates a missing one.
-export const REPO =
-  process.env.FLEETD_TESTBED ?? (SLOT === 0 || SLOT === 9 ? "unlaboredlabs/fleetd-testbed" : `unlaboredlabs/fleetd-testbed-${SLOT}`);
-export const TESTBED = path.join(LAB, "testbed");
+// One lab repo for every slot; each slot runs the train in parallel in its own branch namespace: its base
+// `<namespace>/main` and its task branches `<namespace>/fleetd/…`. FLEETD_LAB_REPO and FLEETD_LAB_NAMESPACE override
+// (`noci/<n>` is a base CI never runs for); tests/lab/labRepo.ts sets the repo up and clones it.
+export const REPO = process.env.FLEETD_LAB_REPO ?? "unlaboredlabs/fleetd-lab";
+export const NAMESPACE = process.env.FLEETD_LAB_NAMESPACE ?? `slot/${SLOT}`;
+if (!/^(slot|noci)\/\d$/u.test(NAMESPACE)) throw new Error(`FLEETD_LAB_NAMESPACE must be slot/<n> or noci/<n>, got ${NAMESPACE}`);
+export const BASE = `${NAMESPACE}/main`;
+export const BRANCH_PREFIX = `${NAMESPACE}/fleetd/`;
+/** The tag a namespace's main is reset to after each run. */
+const SEED = "seed";
+export const CLONE = path.join(LAB, "lab-repo");
 const TURN_MS = 240_000;
 const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const FREEZE_KEY = `policy.freeze.${REPO.replace("/", ".")}`;
-/** Branch prefixes this scenario pushes to the testbed, cleaned up before and after. */
-const OURS = ["fleetd/", "lab-m7/"];
-// Each run writes under its own directory, since main keeps what earlier runs merged.
+// Each run writes under its own directory, so a file from an earlier run never conflicts.
 const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const ALPHA = `${DIR}/alpha.md`;
 const BETA = `${DIR}/beta.md`;
@@ -40,50 +44,77 @@ defaults:
   effort: low
 `;
 
-const run = (cmd: string, args: ReadonlyArray<string>, cwd = TESTBED) =>
+const run = (cmd: string, args: ReadonlyArray<string>, cwd = CLONE) =>
   execFileSync(cmd, args, { cwd, env: scrubbedEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 export const git = (...args: Array<string>) => run("git", args);
 // Outside the clone, so `--delete-branch` deletes only the remote branch, never a task's checked-out local one.
 const gh = (...args: Array<string>) => run("gh", args, LAB);
 const ghJson = <A = Body>(...args: Array<string>): A => JSON.parse(gh(...args)) as A;
 
-/** Open PRs and remote branches an earlier run of this scenario left on the testbed; never main. */
-export const cleanTestbed = () => {
-  for (const pr of ghJson<Array<Body>>("pr", "list", "-R", REPO, "--state", "open", "--json", "number,headRefName")) {
-    if (OURS.some((p) => (pr.headRefName as string).startsWith(p))) gh("pr", "close", String(pr.number), "-R", REPO, "--delete-branch");
+/**
+ * This slot's namespace back to the seed: its open PRs closed, its branches deleted, and its main reset to the seed
+ * tag (created when missing). Never another namespace, never the repo's main. Admins bypass the namespace rulesets.
+ */
+export const resetNamespace = () => {
+  const ours = (ref: string) => ref.startsWith(`${NAMESPACE}/`);
+  for (const pr of ghJson<Array<Body>>("pr", "list", "-R", REPO, "--state", "open", "--limit", "200", "--json", "number,headRefName,baseRefName")) {
+    if (ours(pr.headRefName as string) || pr.baseRefName === BASE) gh("pr", "close", String(pr.number), "-R", REPO, "--delete-branch");
   }
-  const branches = ghJson<Array<Body>>("api", `repos/${REPO}/branches?per_page=100`).map((b) => b.name as string);
-  for (const branch of branches) {
-    if (branch === "main" || !OURS.some((p) => branch.startsWith(p))) continue;
+  const refs = ghJson<Array<Body>>("api", `repos/${REPO}/git/matching-refs/heads/${NAMESPACE}/?per_page=100`).map((r) => (r.ref as string).slice("refs/heads/".length));
+  for (const branch of refs.filter((b) => b !== BASE && ours(b))) {
     // GitHub may delete a merged or closed PR's branch between the listing and here; gone is what we want.
     const out = spawnSync("gh", ["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${branch}`], { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
     if (out.status !== 0 && !/Reference does not exist|Not Found|HTTP 422/u.test(out.stderr)) throw new Error(`deleting ${branch}: ${out.stderr.trim()}`);
   }
+  seedBase(refs.includes(BASE));
 };
 
-/** The lab clone at origin/main, without task worktrees or branches from an earlier run, and with the policy file. */
+/** Points the namespace's main at the seed tag: moved when it `exists`, else created. */
+const seedBase = (exists: boolean) => {
+  const seed = ghJson("api", `repos/${REPO}/commits/${SEED}`).sha as string;
+  if (exists) gh("api", "-X", "PATCH", `repos/${REPO}/git/refs/heads/${BASE}`, "-f", `sha=${seed}`, "-F", "force=true", "--silent");
+  else gh("api", "-X", "POST", `repos/${REPO}/git/refs`, "-f", `ref=refs/heads/${BASE}`, "-f", `sha=${seed}`, "--silent");
+};
+
+/**
+ * The lab clone on the namespace's main at origin, without task worktrees or branches from an earlier run, and with the
+ * policy file, whose `branchPrefix` keeps task branches in the namespace. origin/HEAD names the base, as the node reads
+ * a project's base branch from it.
+ */
 export const prepareCheckout = (policy = POLICY) => {
+  if (spawnSync("git", ["ls-remote", "--exit-code", "origin", `refs/heads/${BASE}`], { cwd: CLONE, env: scrubbedEnv() }).status !== 0) seedBase(false);
   git("fetch", "-q", "--prune", "origin");
   // An earlier run's machine homes, and the task worktrees in them, are gone; git forgets those first.
   git("worktree", "prune");
   for (const entry of git("worktree", "list", "--porcelain").split("\n\n")) {
     const wt = /^worktree (.+)$/mu.exec(entry)?.[1];
-    if (wt !== undefined && /^branch refs\/heads\/fleetd\//mu.test(entry)) git("worktree", "remove", "--force", wt);
+    if (wt !== undefined && entry.includes(`\nbranch refs/heads/${BRANCH_PREFIX}`)) git("worktree", "remove", "--force", wt);
   }
   git("worktree", "prune");
-  git("checkout", "-q", "--force", "main");
-  git("reset", "-q", "--hard", "origin/main");
-  for (const branch of git("branch", "--list", "fleetd/*", "lab-m7/*", "--format=%(refname:short)").split("\n").filter(Boolean)) git("branch", "-D", branch);
-  const exclude = path.join(TESTBED, ".git/info/exclude");
+  git("checkout", "-q", "--force", "-B", BASE, `origin/${BASE}`);
+  git("remote", "set-head", "origin", BASE);
+  for (const branch of git("branch", "--list", `${NAMESPACE}/*`, "--format=%(refname:short)").split("\n").filter((b) => b !== "" && b !== BASE)) git("branch", "-D", branch);
+  const exclude = path.join(CLONE, ".git/info/exclude");
   if (!fs.readFileSync(exclude, "utf8").includes(".fleetd/")) fs.appendFileSync(exclude, "\n.fleetd/\n");
-  fs.mkdirSync(path.join(TESTBED, ".fleetd"), { recursive: true });
-  fs.writeFileSync(path.join(TESTBED, ".fleetd/policy.yaml"), policy);
+  fs.mkdirSync(path.join(CLONE, ".fleetd"), { recursive: true });
+  fs.writeFileSync(path.join(CLONE, ".fleetd/policy.yaml"), `${policy}branchPrefix: ${BRANCH_PREFIX}\n`);
 };
 
-/** Removes lab-a's testbed project if one is registered, so scenarios that take lab-a's project find repo-a. */
-export const removeTestbedProject = async (lab: Pick<Lab, "callTool">) => {
+/** The lab clone is a clone of REPO, else the scenario stops with how to make one. */
+export const checkClone = (check: Lab["check"]) => {
+  const setup = `node tests/lab/labRepo.ts --repo ${REPO} --clone ${CLONE}`;
+  check(fs.existsSync(path.join(CLONE, ".git")), `${CLONE} is a clone of ${REPO} (run ${setup})`);
+  const origin = git("remote", "get-url", "origin");
+  check(origin.replace(/\.git$/u, "").endsWith(REPO), `${CLONE} is a clone of ${origin}, not ${REPO} (move it aside and run ${setup})`);
+};
+
+/** `gh api` path of a file on the namespace's main. */
+export const onBase = (file: string) => `repos/${REPO}/contents/${file}?ref=${encodeURIComponent(BASE)}`;
+
+/** Removes lab-a's lab repo project if one is registered, so scenarios that take lab-a's project find repo-a. */
+export const removeLabRepoProject = async (lab: Pick<Lab, "callTool">) => {
   const listed = (await lab.callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>;
-  for (const p of listed.filter((p) => p.workspaceRoot === TESTBED)) {
+  for (const p of listed.filter((p) => p.workspaceRoot === CLONE)) {
     const removed = await lab.callTool("project_remove", { machineId: MACHINE, projectId: p.projectId });
     if (removed.isError) throw new Error(`project_remove ${p.projectId}: ${JSON.stringify(removed.body)}`);
   }
@@ -93,27 +124,24 @@ export async function m7Train(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
   requireGhLogin();
-  const setup = `node tests/lab/testbed.ts --repo ${REPO} --clone ${TESTBED}`;
-  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run ${setup})`);
-  const origin = git("remote", "get-url", "origin");
-  check(origin.replace(/\.git$/u, "").endsWith(REPO), `${TESTBED} is a clone of ${origin}, not ${REPO} (move it aside and run ${setup})`);
-  cleanTestbed();
+  check(NAMESPACE.startsWith("slot/"), `m7 needs CI: run it in a slot/<n> namespace, not ${NAMESPACE}`);
+  checkClone(check);
+  resetNamespace();
   prepareCheckout();
-  ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked .fleetd/policy.yaml (alpha, beta, gamma, ci); no fleetd/* branches on ${REPO}`);
+  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")} (the seed); untracked .fleetd/policy.yaml (alpha, beta, gamma, ci; branches under ${BRANCH_PREFIX}); nothing else in ${NAMESPACE}/ on ${REPO}`);
 
   const scenarioStart = await lab.cursor();
-  const opened: Array<number> = [];
   try {
-    // The testbed as a second project on lab-a.
-    const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
+    // The lab repo as a second project on lab-a.
+    const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    ok(`project_add: ${projectId} on ${MACHINE} at ${TESTBED}`);
+    ok(`project_add: ${projectId} on ${MACHINE} at ${CLONE}`);
 
     const fleetd = (...args: Array<string>) => {
       const out = spawnSync(...fleetdCommand(args), {
-        cwd: TESTBED,
+        cwd: CLONE,
         encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: TESTBED, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
+        env: { ...scrubbedEnv(), PWD: CLONE, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
       });
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
@@ -137,7 +165,7 @@ export async function m7Train(lab: Lab) {
     };
     const quiet = "Lab run: the harness spawns every task; reply to each wake with one short line, run no commands.";
     // One check per PR, so each reviewer judges its PR against its own check. Node-run checks: a claim costs no turns.
-    const onMain = (file: string) => ["gh", "api", `repos/${REPO}/contents/${file}`, "--silent"];
+    const onMain = (file: string) => ["gh", "api", onBase(file), "--silent"];
     const cmd = (argv: Array<string>) => ({ type: "cmd", machineId: MACHINE, argv, expectExit: 0 });
     const wm = await workstream(`${quiet} Add alpha.md and beta.md in two PRs.`, {
       goal: `two independent PRs: one adds ${ALPHA}, the other adds ${BETA}`,
@@ -149,8 +177,8 @@ export async function m7Train(lab: Lab) {
       goal: `one PR that adds the line gamma to ${ALPHA}, and one that adds FAIL and so must never merge`,
       why: "the M7 lab scenario",
       doneWhen: [
-        cmd(["sh", "-c", `gh api repos/${REPO}/contents/${ALPHA} -H 'Accept: application/vnd.github.raw' | grep -qx gamma`]),
-        cmd(["sh", "-c", `! gh api repos/${REPO}/contents/FAIL --silent`]),
+        cmd(["sh", "-c", `gh api '${onBase(ALPHA)}' -H 'Accept: application/vnd.github.raw' | grep -qx gamma`]),
+        cmd(["sh", "-c", `! gh api '${onBase("FAIL")}' --silent`]),
       ],
       tier: "S",
     });
@@ -162,15 +190,15 @@ export async function m7Train(lab: Lab) {
     ok(`5. ${freeze.body.decision.decisionId} ${FREEZE_KEY} = true`);
 
     // 4. A PR without a Source: line is refused at enqueue with the fix text.
-    git("checkout", "-q", "-b", "lab-m7/no-source", "origin/main");
-    fs.writeFileSync(path.join(TESTBED, "no-source.md"), "no source\n");
+    const bare = `${NAMESPACE}/lab-m7/no-source`;
+    git("checkout", "-q", "-b", bare, `origin/${BASE}`);
+    fs.writeFileSync(path.join(CLONE, "no-source.md"), "no source\n");
     git("add", "no-source.md");
     git("commit", "-q", "-m", "lab: a PR without a Source line");
-    git("push", "-q", "origin", "HEAD:refs/heads/lab-m7/no-source");
-    git("checkout", "-q", "main");
-    const bareUrl = gh("pr", "create", "-R", REPO, "--base", "main", "--head", "lab-m7/no-source", "--title", "lab: no Source line", "--body", "Adds a file.");
+    git("push", "-q", "origin", `HEAD:refs/heads/${bare}`);
+    git("checkout", "-q", BASE);
+    const bareUrl = gh("pr", "create", "-R", REPO, "--base", BASE, "--head", bare, "--title", "lab: no Source line", "--body", "Adds a file.");
     const bareNumber = Number(/\/pull\/(\d+)$/u.exec(bareUrl)?.[1]);
-    opened.push(bareNumber);
     const refused = fleetd("change", "enqueue", "--pr", bareUrl, "--workstream", wm);
     check(refused.code === 3 && refused.stderr.includes("has no 'Source:' line") && refused.stderr.includes("Next: add 'Source: done:0' to the PR body"), `enqueue without Source: ${JSON.stringify(refused)}`);
     ok(`4. fleetd change enqueue ${bareUrl} refused (exit 3): ${refused.stderr.trim().replace(/\n/gu, " | ")}`);
@@ -190,8 +218,9 @@ export async function m7Train(lab: Lab) {
       check(end.event.type === "task.completed", `${taskId} completed: ${end.event.summary}`);
       const prUrl = (await task(taskId)).result?.prUrl as string | undefined;
       check(prUrl?.startsWith(`https://github.com/${REPO}/pull/`), `${taskId}'s result names its PR: ${JSON.stringify((await task(taskId)).result)}`);
+      const pr = ghJson("pr", "view", prUrl!, "--json", "headRefName,baseRefName");
+      check(pr.baseRefName === BASE && (pr.headRefName as string).startsWith(BRANCH_PREFIX), `${prUrl} is ${pr.headRefName} into ${pr.baseRefName}, in ${NAMESPACE}`);
       const q = await lab.waitEvent(`${taskId}'s PR enqueued`, 60_000, { cursor: from, types: ["change.queued"], match: (e) => prUrl!.endsWith(`/pull/${e.data?.prNumber}`) });
-      opened.push(q.event.data.prNumber as number);
       return { taskId, prUrl: prUrl!, changeId: q.event.data.changeId as string };
     };
 
@@ -211,7 +240,7 @@ export async function m7Train(lab: Lab) {
       ALPHA,
       "gamma",
       "done:0",
-      ` If you are later told this PR conflicts: run \`git fetch origin\` and \`git rebase origin/main\`; make ${ALPHA} exactly two lines, \`alpha\` then \`gamma\`; \`git add ${ALPHA}\`; \`GIT_EDITOR=true git rebase --continue\`; \`git push --force-with-lease\`; then reply with one word: resolved.`,
+      ` If you are later told this PR conflicts: run \`git fetch origin\` and \`git rebase origin/${BASE}\`; make ${ALPHA} exactly two lines, \`alpha\` then \`gamma\`; \`git add ${ALPHA}\`; \`GIT_EDITOR=true git rebase --continue\`; \`git push --force-with-lease\`; then reply with one word: resolved.`,
     ));
     const d = spawn(ws, "ci", "done:1", "add FAIL", writer("FAIL", "red", "done:1", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
     const cc = await queued(c, cursor);
@@ -283,8 +312,8 @@ export async function m7Train(lab: Lab) {
 
     // 2. The author resolved and pushed; the train merges the new head.
     const m3 = await mergedOf(cc, CI_MS + TURN_MS);
-    const mainAlpha = gh("api", `repos/${REPO}/contents/${ALPHA}`, "-H", "Accept: application/vnd.github.raw");
-    ok(`2. ${c} resolved the conflict; pr.merged ${cc.changeId} (#${m3.data.prNumber}); ${ALPHA} on main: ${JSON.stringify(mainAlpha)}`);
+    const mainAlpha = gh("api", onBase(ALPHA), "-H", "Accept: application/vnd.github.raw");
+    ok(`2. ${c} resolved the conflict; pr.merged ${cc.changeId} (#${m3.data.prNumber}); ${ALPHA} on ${BASE}: ${JSON.stringify(mainAlpha)}`);
 
     // 3. Once the author has acknowledged, the red PR is closed; it was never merged.
     await lab.waitEvent(`${d} ends its second turn`, TURN_MS, { cursor: red.cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === d });
@@ -324,10 +353,9 @@ export async function m7Train(lab: Lab) {
     ok(`M7 used ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${leadTurns + taskTurns} claude turns (${MODEL}, effort low)`);
     check(leadTurns + taskTurns <= 20, `M7 stays within 20 claude turns (${leadTurns + taskTurns})`);
   } finally {
-    // Never main and never the repo: only this run's PRs and branches, the lab project and its policy file.
-    for (const n of opened) spawnSync("gh", ["pr", "close", String(n), "-R", REPO, "--delete-branch"], { cwd: LAB, env: scrubbedEnv(), stdio: "ignore" });
-    cleanTestbed();
-    await removeTestbedProject(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
-    fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
+    // Only this slot's namespace, never the repo's main: its PRs, branches and main, the lab project and its policy file.
+    resetNamespace();
+    await removeLabRepoProject(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project: ${String(error)}`));
+    fs.rmSync(path.join(CLONE, ".fleetd"), { recursive: true, force: true });
   }
 }

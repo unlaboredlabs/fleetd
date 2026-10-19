@@ -27,4 +27,4 @@ X-Ratelimit-Resource: core
 X-Ratelimit-Used: 66
 X-Xss-Protection: 0
 
-{"default_branch":"main","full_name":"unlaboredlabs/fleetd-testbed"}
+{"default_branch":"main","full_name":"unlaboredlabs/fleetd-lab"}

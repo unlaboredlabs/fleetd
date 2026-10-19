@@ -20,7 +20,7 @@ GitHub: https://github.com/unlaboredlabs/fleetd
 
 
 ONE ORDER, ITS FLEET
-A lab run against the public fleetd-testbed repo: three writers opened a PR
+A lab run against the public fleetd-lab repo: three writers opened a PR
 each, and every PR now has two reviewers and a verifier on it. Each row is an
 agent at work, grouped under the PR it checks. Image: fleet-board.png
 
@@ -103,24 +103,24 @@ What you get at 09:00 and 18:00 when that's all there is:
 
 
 "DONE" IS CHECKED BY FLEETD
-Merge-train events from a lab run against the public fleetd-testbed repo
-(https://github.com/unlaboredlabs/fleetd-testbed), 18 Oct 2026, UTC. The hub's
+Merge-train events from a lab run against the public fleetd-lab repo
+(https://github.com/unlaboredlabs/fleetd-lab), 18 Oct 2026, UTC. The hub's
 own summaries, with the commit status the train posts before each merge.
 
-22:21:22  change.queued   X1 queued: unlaboredlabs/fleetd-testbed#124 (tier L, done:1)
-22:21:25  change.queued   X2 queued: unlaboredlabs/fleetd-testbed#125 (tier L, done:2)
+22:21:22  change.queued   X1 queued: unlaboredlabs/fleetd-lab#124 (tier L, done:1)
+22:21:25  change.queued   X2 queued: unlaboredlabs/fleetd-lab#125 (tier L, done:2)
 22:21:33  review.verdict  T4 review verdict at ad899ecd4930: 0 blocking, 1 non-blocking
 22:21:35  review.verdict  T5 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking
 22:21:37  review.verdict  T8 review verdict at bbd67b733334: 0 blocking, 0 non-blocking
 22:21:38  review.verdict  T9 review verdict at bbd67b733334: 0 blocking, 0 non-blocking
 22:21:38  review.verdict  T6 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking
-22:21:40  change.ready    X1 ready for the train: unlaboredlabs/fleetd-testbed#124
+22:21:40  change.ready    X1 ready for the train: unlaboredlabs/fleetd-lab#124
 22:21:43  fleetd/train    X1: rebased onto main, CI green   [commit status on ad899ec]
 22:21:44  review.verdict  T7 review verdict at bbd67b733334: 0 blocking, 1 non-blocking
-22:21:44  change.ready    X2 ready for the train: unlaboredlabs/fleetd-testbed#125
-22:21:47  pr.merged       X1 merged: unlaboredlabs/fleetd-testbed#124 as a3dbc17d67bf
+22:21:44  change.ready    X2 ready for the train: unlaboredlabs/fleetd-lab#125
+22:21:47  pr.merged       X1 merged: unlaboredlabs/fleetd-lab#124 as a3dbc17d67bf
 22:22:07  fleetd/train    X2: rebased onto main, CI green   [commit status on 7d4a144]
-22:22:11  pr.merged       X2 merged: unlaboredlabs/fleetd-testbed#125 as bf102d28ae7d
+22:22:11  pr.merged       X2 merged: unlaboredlabs/fleetd-lab#125 as bf102d28ae7d
 
 
 SETUP IS A HUB AND YOUR MACHINES

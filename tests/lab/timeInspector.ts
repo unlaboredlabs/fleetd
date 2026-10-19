@@ -1,16 +1,15 @@
-// The agent time inspector on one real order, on lab-a against the public testbed unlaboredlabs/fleetd-testbed (the M7
-// setup and its `ci` check). A tier-S order with one writer goes through the merge train while the lead's gated run
+// The agent time inspector on one real order, on lab-a against the public lab repo unlaboredlabs/fleetd-lab in this
+// slot's namespace (the M7 setup and its `ci` check). A tier-S order with one writer goes through the merge train while the lead's gated run
 // waits 15 s for a human key's Approve. Then the order's timeline must add up: the critical path covers the order's
 // wall time exactly and the wall matches submit-to-done, every run is tiled by its spans, the `ci` check span is
 // GitHub's own interval inside `change.ci`, the approval wait is a `wait.ask` span of the right length, coverage is
-// complete, and `fleetd time <W>` prints it. About 6 haiku turns. It never runs cleanTestbed (other slots may have
-// PRs open there): it closes only its own PR and deletes only its own branch.
+// complete, and `fleetd time <W>` prints it. About 6 haiku turns. It resets only its own namespace, before and after.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { type Body, cli, fleetdCommand, HUB_PORT, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv } from "./harness.ts";
-import { prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
+import { BASE, checkClone, CLONE, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -28,7 +27,7 @@ defaults:
 const tiles = (sum: number, wall: number) => Math.abs(sum - wall) <= Math.max(250, wall / 100);
 
 const gh = (...args: Array<string>) => {
-  const out = spawnSync("gh", args, { cwd: path.dirname(TESTBED), env: scrubbedEnv(), encoding: "utf8" });
+  const out = spawnSync("gh", args, { cwd: path.dirname(CLONE), env: scrubbedEnv(), encoding: "utf8" });
   if (out.status !== 0) throw new Error(`gh ${args.slice(0, 3).join(" ")}: ${out.stderr.trim()}`);
   return out.stdout.trim();
 };
@@ -66,23 +65,24 @@ export async function timeInspector(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
   requireGhLogin();
-  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (run node tests/lab/testbed.ts --clone ${TESTBED})`);
+  check(NAMESPACE.startsWith("slot/"), `time needs CI: run it in a slot/<n> namespace, not ${NAMESPACE}`);
+  checkClone(check);
+  resetNamespace();
   prepareCheckout(POLICY);
   fs.rmSync(lab.dir, { recursive: true, force: true });
   fs.mkdirSync(lab.dir, { recursive: true });
   const scenarioStart = await lab.cursor();
   const since = new Date().toISOString();
   let prUrl: string | undefined;
-  let branch: string | undefined;
   let app: Awaited<ReturnType<typeof appSession>> | undefined;
   try {
-    const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
+    const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
     const fleetd = (...args: Array<string>) => {
       const out = spawnSync(...fleetdCommand(args), {
-        cwd: TESTBED,
+        cwd: CLONE,
         encoding: "utf8",
-        env: { ...scrubbedEnv(), PWD: TESTBED, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
+        env: { ...scrubbedEnv(), PWD: CLONE, FLEETD_NODE_SOCK: nodeSock(MACHINE) },
       });
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
@@ -106,7 +106,7 @@ export async function timeInspector(lab: Lab) {
       why: "the time inspector lab scenario",
       pointers: [],
       constraints: [],
-      doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["gh", "api", `repos/${REPO}/contents/${FILE}`, "--silent"], expectExit: 0 }],
+      doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(FILE), "--silent"], expectExit: 0 }],
       tier: "S",
       estimate: { rawMinutes: 5, gates: [] },
     };
@@ -147,7 +147,8 @@ export async function timeInspector(lab: Lab) {
     check(end.event.type === "task.completed", `${taskId} completed: ${end.event.summary}`);
     prUrl = ((await callTool("task_get", { taskId })).body.task as Body).result?.prUrl as string | undefined;
     check(prUrl?.startsWith(`https://github.com/${REPO}/pull/`), `${taskId} names its PR: ${prUrl}`);
-    branch = JSON.parse(gh("pr", "view", prUrl!, "--json", "headRefName")).headRefName as string;
+    const pr = JSON.parse(gh("pr", "view", prUrl!, "--json", "headRefName,baseRefName")) as Body;
+    check(pr.baseRefName === BASE && (pr.headRefName as string).startsWith(`${NAMESPACE}/fleetd/`), `${prUrl} is ${pr.headRefName} into ${pr.baseRefName}, in ${NAMESPACE}`);
     const queued = await lab.waitEvent(`${taskId}'s PR enqueued`, 60_000, { cursor, types: ["change.queued"], match: (e) => prUrl!.endsWith(`/pull/${e.data?.prNumber}`) });
     const changeId = queued.event.data.changeId as string;
     const changeLane = `change:${REPO}#${queued.event.data.prNumber}`;
@@ -281,11 +282,10 @@ export async function timeInspector(lab: Lab) {
     check(turns <= 10, `time stays within 10 claude turns (${turns})`);
   } finally {
     app?.close();
-    // Only this run's PR and branch; never main, never anyone else's.
-    if (prUrl !== undefined) spawnSync("gh", ["pr", "close", prUrl, "--delete-branch"], { cwd: path.dirname(TESTBED), env: scrubbedEnv(), stdio: "ignore" });
-    if (branch !== undefined) spawnSync("gh", ["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${branch}`], { cwd: path.dirname(TESTBED), env: scrubbedEnv(), stdio: "ignore" });
-    // project_remove refuses while the project's sessions are live; then the testbed project stays for this run only.
-    await removeTestbedProject(lab).catch((error: unknown) => lab.log(`could not remove the testbed project (expected while its sessions are live): ${String(error)}`));
-    fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
+    // Only this slot's namespace; never the repo's main, never another slot's.
+    resetNamespace();
+    // project_remove refuses while the project's sessions are live; then the lab repo project stays for this run only.
+    await removeLabRepoProject(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project (expected while its sessions are live): ${String(error)}`));
+    fs.rmSync(path.join(CLONE, ".fleetd"), { recursive: true, force: true });
   }
 }

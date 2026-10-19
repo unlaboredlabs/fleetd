@@ -4,7 +4,7 @@
 // the lead's or the harness's, passes and records actual vs estimate. A tool-less task that says "tests pass" reaches
 // the lead as unverified; a writer without --serves and a verdict from a non-review task are refused. The same-SHA
 // review rule needs a real PR head from GitHub, so a unit test covers it (tasks/LeadTaskCalls.test.ts) until M7's
-// testbed. The harness's `fleetd` calls run in the project's workspace, as the lead's shell would, so they cost no
+// lab repo. The harness's `fleetd` calls run in the project's workspace, as the lead's shell would, so they cost no
 // turns; wakes and tasks are haiku at low effort.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";

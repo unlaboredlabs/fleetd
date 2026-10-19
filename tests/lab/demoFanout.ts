@@ -1,4 +1,4 @@
-// The app demo: one order, a fleet. On lab-a against the public testbed unlaboredlabs/fleetd-testbed (as M7), a person
+// The app demo: one order, a fleet. On lab-a against the public lab repo unlaboredlabs/fleetd-lab (as M7), a person
 // gives one tier-L order through the app's /app protocol with a human key: three short pages, one writer each. The
 // lead (a real haiku turn) freezes the brief and spawns the writers; each PR gets two reviewers and a verifier; the
 // train merges them. The harness only observes: it never spawns a task, so everything the recording shows is work the
@@ -17,15 +17,15 @@
 // it (FLEETD_DEMO_TYPE); clip.mp4 runs from just before the first key to 3 s after the last merge, fleetd.mp4 is the
 // whole capture. Then it stops the app by its PID, which finishes both. scripts/demo-mac.sh runs it so on a Mac.
 //
-// It closes and deletes only the PRs and branches it made, so a run on another machine against the same testbed is
-// left alone. Task ids, and so branch names, restart at T1 with every run, so they are written to LAB/demo-testbed.ledger
+// It closes and deletes only the PRs and branches it made, so a run on another machine in the same namespace is left
+// alone, and it never resets the namespace. Task ids, and so branch names, restart at T1 with every run, so they are written to LAB/demo.ledger
 // as they appear, and a run reclaims whatever an interrupted one left listed there before it starts (and Ctrl-C runs
 // the same cleanup, through onCleanup).
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { type Body, cli, detached, HUB_PORT, LAB, type Lab, MODEL, onCleanup, recordPid, requireGhLogin, scrubbedEnv, sleep } from "./harness.ts";
-import { git, prepareCheckout, REPO, removeTestbedProject, TESTBED } from "./m7Train.ts";
+import { BASE, BRANCH_PREFIX, checkClone, CLONE, git, prepareCheckout, REPO, removeLabRepoProject } from "./m7Train.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -88,12 +88,12 @@ const slugOf = (title: string) => {
   return slug !== "" ? slug : (words[0]?.slice(0, 40) ?? "task");
 };
 
-/** One line per PR (`pr <n>`) and branch (`branch <name>`) this lab made on the testbed; scripts/demo-mac.sh reads it too. */
-const LEDGER = path.join(LAB, "demo-testbed.ledger");
+/** One line per PR (`pr <n>`) and branch (`branch <name>`) this lab made on the lab repo; scripts/demo-mac.sh reads it too. */
+const LEDGER = path.join(LAB, "demo.ledger");
 const note = (line: string) => fs.appendFileSync(LEDGER, `${line}\n`);
 
 /** Closes and deletes everything the ledger lists, then empties it. Gone already is fine. */
-const reclaimTestbed = (lab: Pick<Lab, "log">) => {
+const reclaim = (lab: Pick<Lab, "log">) => {
   if (!fs.existsSync(LEDGER)) return;
   const gh = (...args: Array<string>) => spawnSync("gh", args, { cwd: LAB, env: scrubbedEnv(), encoding: "utf8" });
   const lines = [...new Set(fs.readFileSync(LEDGER, "utf8").split("\n").filter(Boolean))];
@@ -105,7 +105,7 @@ const reclaimTestbed = (lab: Pick<Lab, "log">) => {
     if (kind === "branch") gh("api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${value}`);
   }
   fs.rmSync(LEDGER, { force: true });
-  lab.log(`reclaimed ${lines.length} testbed PRs and branches from ${LEDGER}`);
+  lab.log(`reclaimed ${lines.length} lab repo PRs and branches from ${LEDGER}`);
 };
 
 /** Notes every task's branch and every queued or refused PR in the ledger as the hub reports them, until stopped. */
@@ -118,7 +118,7 @@ const watchLedger = (lab: Lab, from: number) => {
         if (e.type === "task.started") {
           // A write task's event names its branch; else it is derived, as the hub derives it.
           const task = e.data?.branch === undefined ? ((await lab.callTool("task_get", { taskId: e.data.taskId })).body.task as Body) : undefined;
-          note(`branch ${e.data?.branch ?? `fleetd/${task!.taskId}-${slugOf(task!.title as string)}`}`);
+          note(`branch ${e.data?.branch ?? `${BRANCH_PREFIX}${task!.taskId}-${slugOf(task!.title as string)}`}`);
         } else {
           const n = e.data?.prNumber ?? Number(/\/pull\/(\d+)$/u.exec(String(e.data?.prUrl ?? ""))?.[1]);
           if (Number.isInteger(n) && n > 0) note(`pr ${n}`);
@@ -167,13 +167,13 @@ const stopApp = async (lab: Lab, child: ChildProcess) => {
 
 /**
  * The node refuses to remove a project while one of its threads runs, and a late task result can wake the lead again,
- * so: interrupt every running or waiting thread of the testbed project, try the removal, and repeat for up to 2 min.
+ * so: interrupt every running or waiting thread of the lab repo project, try the removal, and repeat for up to 2 min.
  */
 const quiesceAndRemove = async (lab: Lab) => {
   const deadline = Date.now() + 120_000;
   for (;;) {
     const listed = (await lab.callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>;
-    const project = listed.find((p) => p.workspaceRoot === TESTBED);
+    const project = listed.find((p) => p.workspaceRoot === CLONE);
     if (project === undefined) return;
     const outcome = (await lab.callTool("project_get", { machineId: MACHINE, projectId: project.projectId })).body;
     // project_get lists the lead's thread; task threads come from their tasks.
@@ -186,7 +186,7 @@ const quiesceAndRemove = async (lab: Lab) => {
       await lab.callTool("thread_interrupt", { machineId: MACHINE, threadId, clientRequestId: `demo-stop-${threadId}-${Date.now()}` });
     }
     try {
-      await removeTestbedProject(lab);
+      await removeLabRepoProject(lab);
       return;
     } catch (error) {
       if (Date.now() > deadline) throw error;
@@ -199,10 +199,10 @@ export async function demoFanout(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
   requireGhLogin();
-  check(fs.existsSync(path.join(TESTBED, ".git")), `${TESTBED} is a clone of ${REPO} (git clone https://github.com/${REPO} ${TESTBED})`);
-  reclaimTestbed(lab);
+  checkClone(check);
+  reclaim(lab);
   prepareCheckout(POLICY);
-  ok(`${TESTBED} at origin/main ${git("rev-parse", "--short", "HEAD")}; untracked policy with areas ${PAGES.join(", ")} under ${DIR}`);
+  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")}; untracked policy with areas ${PAGES.join(", ")} under ${DIR}`);
   fs.rmSync(lab.dir, { recursive: true, force: true });
   fs.mkdirSync(lab.dir, { recursive: true });
   const timeline = path.join(lab.dir, "timeline.jsonl");
@@ -221,10 +221,10 @@ export async function demoFanout(lab: Lab) {
     app?.close();
     if (desktop !== undefined) await stopApp(lab, desktop);
     await stopWatch();
-    reclaimTestbed(lab);
+    reclaim(lab);
   });
   try {
-    const projectId = await lab.addProject(MACHINE, TESTBED, "fleetd-testbed");
+    const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
     // The train must be thawed: an earlier M7 run may have left the freeze decision behind.
     const thaw = await callTool("train_freeze", { repo: REPO, frozen: false });
@@ -244,7 +244,7 @@ export async function demoFanout(lab: Lab) {
     const orderCursor = await lab.cursor();
     if (process.env.FLEETD_DEMO_APP) {
       // The app types the order itself (FLEETD_DEMO_TYPE), its clip opening just before the first key.
-      desktop = await startApp(lab, process.env.FLEETD_DEMO_APP, key!, record, `@fleetd-testbed ${ORDER}`);
+      desktop = await startApp(lab, process.env.FLEETD_DEMO_APP, key!, record, `@fleetd-lab ${ORDER}`);
       mark("app recording", { record });
     }
     const fromApp = process.env.FLEETD_DEMO_ORDER === "app" || desktop !== undefined;
@@ -394,7 +394,7 @@ export async function demoFanout(lab: Lab) {
     mark("turns", { lead: leadTurns, tasks: taskTurns, byTask: tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`) });
   } finally {
     await cleanup();
-    await quiesceAndRemove(lab).catch((error: unknown) => lab.log(`could not remove the testbed project: ${String(error)}`));
-    fs.rmSync(path.join(TESTBED, ".fleetd"), { recursive: true, force: true });
+    await quiesceAndRemove(lab).catch((error: unknown) => lab.log(`could not remove the lab repo project: ${String(error)}`));
+    fs.rmSync(path.join(CLONE, ".fleetd"), { recursive: true, force: true });
   }
 }
