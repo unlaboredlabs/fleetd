@@ -571,7 +571,9 @@ export type CiMainData = {
   state: CiState;
 };
 
-export type CiState = "green" | "red" | "pending" | "unknown";
+export type KnownCiState = "green" | "red" | "pending" | "unknown";
+/** KnownCiState, or a value from a newer hub. */
+export type CiState = KnownCiState | (string & {});
 
 export type Claim = {
   at: Timestamp;
@@ -842,6 +844,10 @@ export type DoneRow = {
 
 export type DriftKind = "outside_fleetd" | "missed_webhook";
 
+export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened";
+/** KnownDropReason, or a value from a newer hub. */
+export type DropReason = KnownDropReason | (string & {});
+
 export type Effort = "low" | "medium" | "high" | "max";
 
 /** Who keeps a safety rule when the prompt no longer says it. */
@@ -867,7 +873,9 @@ export type Eta = {
   samples: number;
 };
 
-export type EtaBasis = "fleet" | "order" | "project" | "none";
+export type KnownEtaBasis = "fleet" | "order" | "project" | "none";
+/** KnownEtaBasis, or a value from a newer hub. */
+export type EtaBasis = KnownEtaBasis | (string & {});
 
 /** `current − original`, split into what scope added and what speed lost. */
 export type EtaSlip = {
@@ -956,7 +964,9 @@ export type Gate = {
   workstreamId?: WorkstreamId;
 };
 
-export type GateKind = "plan" | "live" | "phase";
+export type KnownGateKind = "plan" | "live" | "phase";
+/** KnownGateKind, or a value from a newer hub. */
+export type GateKind = KnownGateKind | (string & {});
 
 export type GatedClass = "irreversible" | "money" | "credential";
 
@@ -1033,7 +1043,9 @@ export type Headline = {
   text: string;
 };
 
-export type HeadlineSource = "generated" | "template";
+export type KnownHeadlineSource = "generated" | "template";
+/** KnownHeadlineSource, or a value from a newer hub. */
+export type HeadlineSource = KnownHeadlineSource | (string & {});
 
 export type Health = {
   ci: HealthCi[];
@@ -1196,19 +1208,34 @@ export type HumanWait = {
 };
 
 export type InProgressRow = {
+  /** Open items that wait on it. */
+  blocking?: PlanItemId[];
   changeIds: ChangeId[];
-  /** started + the median duration of done items of its size. */
+  /** Share of the item's size credited to the estimate. */
+  creditPct?: number;
+  /** It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it. */
+  critical?: boolean;
+  /** Retired with the ETA: always absent. */
   eta?: Timestamp;
   gate?: string;
   itemId?: PlanItemId;
-  /** Minutes past `eta`. */
+  /** Retired with the ETA: always absent. */
   overdueMinutes?: number;
+  /** Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage. */
+  slowerThanUsual?: boolean;
+  /** The furthest stage fleetd observed for the item. */
+  stage?: ItemStage;
   stale?: StaleMark;
   /** The order's latest steers, newest first, on its first in-progress row only. */
   steers?: StatusSteer[];
   /** Join to the live feed's lanes for what each agent is doing now. */
   taskIds: TaskId[];
   title: string;
+  /**
+   * What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.
+   * ["review of #12", "CI on #12", "merge", "done-when checks"].
+   */
+  waitingOn?: string[];
   workstreamId: WorkstreamId;
 };
 
@@ -1445,6 +1472,20 @@ export type InventoryOutput = {
   truncated?: boolean;
 };
 
+/** The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it. */
+export type KnownItemStage =
+  | "planned"
+  | "brief_frozen"
+  | "task_started"
+  | "first_push"
+  | "pr_open"
+  | "review_passed"
+  | "ci_green"
+  | "merged"
+  | "verified";
+/** KnownItemStage, or a value from a newer hub. */
+export type ItemStage = KnownItemStage | (string & {});
+
 export type KindTotal = {
   kind: SpanKind;
   ms: number;
@@ -1661,6 +1702,7 @@ export type MilestoneState = "open" | "done";
 export type MilestoneView = {
   createdAt: Timestamp;
   doneAt?: Timestamp;
+  /** Retired with the ETA: always absent. */
   eta?: StatusEta;
   /** The first item's time; scope changes within 10 minutes of it carry no marker. */
   firstItemAt?: Timestamp;
@@ -1911,6 +1953,7 @@ export type PlanGetInput = {
 
 /** A plan as `plan show` and `plan_get` return it: derived state, figures and markers. */
 export type PlanGetOutput = {
+  /** Retired with the ETA: always absent. */
   eta?: StatusEta;
   items: PlanItem[];
   /** Newest first. */
@@ -1968,6 +2011,17 @@ export type PlanVerifiedData = {
   workstreamId?: WorkstreamId;
 };
 
+/** Planning counts: while the lead plans (no plan items yet) it has its own small bar, not 0%. */
+export type PlanningState = {
+  /** The lead is still planning: the order has no plan items yet. */
+  active: boolean;
+  /** The planning bar: elapsed over the usual planning time, at most 90 while active, 100 once the plan exists. */
+  pct: number;
+  /** Planning's share of the order's work, fixed when the plan appears. */
+  sharePct: number;
+  since: Timestamp;
+};
+
 export type PlaybookChangeKind = "wording" | "gate";
 
 /** The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. */
@@ -2009,6 +2063,8 @@ export type Progress = {
   asOf: Timestamp;
   /** Must items done and in the figure. */
   done: number;
+  /** The estimate the headline shows: verified work plus credit for the observed stages of work in flight. */
+  estimate?: ProgressEstimate;
   /** The latest scope change, e.g. "↓ from 80% · +3 items: time inspector added". */
   marker?: Marker;
   /** floor(100 · must points done / must points open or done); the polish figure when there are no must items. */
@@ -2019,6 +2075,42 @@ export type Progress = {
   polishTotal: number;
   stale?: StaleMark;
   total: number;
+};
+
+/** Why the estimate fell, shown as a marker on the sparkline. */
+export type ProgressDrop = {
+  fromPct: number;
+  reason: DropReason;
+  /** "CI failed on #212", "+2 items: time inspector added". */
+  text: string;
+};
+
+/**
+ * The headline estimate and its two-tone bar: solid is what fleetd verified, lighter is in-flight credit. Every
+ * stage it credits is one fleetd observed (an event, a PR or a CI state), never an agent's word.
+ */
+export type ProgressEstimate = {
+  /** The lighter part: credit for open items' reached stages, smoothed within the current stage. */
+  inFlightPct: number;
+  /** verified + in flight, floored; 100 only when everything is verified. */
+  pct: number;
+  /** Present for an order while its lead plans, and after (with its fixed share). */
+  planning?: PlanningState;
+  /** The doc's own scope only: the estimate over time, oldest first. A drop carries its reason. */
+  series?: ProgressPoint[];
+  /** The solid part: must points verified over must points (planning share included once fixed). */
+  verifiedPct: number;
+  /** Where the stage weights came from. */
+  weights: WeightsBasis;
+};
+
+/** One point of the progress series. */
+export type ProgressPoint = {
+  at: Timestamp;
+  /** Set when the estimate fell at this point; it never falls without one. */
+  drop?: ProgressDrop;
+  pct: number;
+  verifiedPct: number;
 };
 
 /** `HubEvent.data` on `project.add_failed`: a clone that was accepted, then failed. */
@@ -2548,14 +2640,14 @@ export type Risk = {
   rule: RiskRule;
 };
 
-export type RiskLevel = "warning" | "danger";
+export type KnownRiskLevel = "danger" | "warning";
+/** KnownRiskLevel, or a value from a newer hub. */
+export type RiskLevel = KnownRiskLevel | (string & {});
 
-export type RiskRule =
+export type KnownRiskRule =
   | "ci_red_main"
   | "machine_offline"
   | "blocked_on_you"
-  | "slipping"
-  | "estimate_drift"
   | "riskiest_item"
   | "ci_red_repeat"
   | "machine_flaky"
@@ -2563,7 +2655,12 @@ export type RiskRule =
   | "slots_full"
   | "github_drift"
   | "no_plan"
-  | "steer_unacknowledged";
+  | "slipping"
+  | "estimate_drift"
+  | "steer_unacknowledged"
+  | "slower_than_usual";
+/** KnownRiskRule, or a value from a newer hub. */
+export type RiskRule = KnownRiskRule | (string & {});
 
 export type RuntimeMode = "full-access" | "approval-required";
 
@@ -2580,6 +2677,7 @@ export type SafetyRule = {
 
 /** A child figure: the fleet's projects, a project's milestones, an order's milestones. */
 export type ScopePart = {
+  /** Retired with the ETA: always absent. */
   eta?: Timestamp;
   milestoneId?: MilestoneId;
   progress: Progress;
@@ -2905,7 +3003,11 @@ export type StatusDoc = {
   virtualTier?: Tier;
 };
 
-/** ETA from measured throughput; the lead's own estimate only as a comparison. */
+/**
+ * Retired: fleetd shows no time estimates (progress, the critical path and "slower than usual" instead). The hub
+ * sends `{ samples: 0, basis: "none" }` so apps from before the change still decode the doc; every other field is
+ * absent.
+ */
 export type StatusEta = {
   basis: EtaBasis;
   /** The serial chain that sets `current` when it is later than throughput says, e.g. "P12 full lab run". */
@@ -3848,6 +3950,10 @@ export type WebhookKind = "webhook";
 export type WebhookUrl = string;
 
 export type Weight = "must" | "polish";
+
+export type KnownWeightsBasis = "project" | "fleet" | "default";
+/** KnownWeightsBasis, or a value from a newer hub. */
+export type WeightsBasis = KnownWeightsBasis | (string & {});
 
 export type Workstream = {
   /** Absent while draft. */

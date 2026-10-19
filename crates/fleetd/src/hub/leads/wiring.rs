@@ -298,9 +298,6 @@ impl EstimatesHook for EstimatesFromArea {
     fn eta(&self, workstream: &fleetd_contracts::ledger::Workstream) -> Option<Eta> {
         self.0.eta(workstream).ok().flatten()
     }
-    fn eta_text(&self, eta: &Eta) -> String {
-        crate::hub::estimates::eta_text(eta)
-    }
     fn record_done(&self, workstream_id: &WorkstreamId) {
         if let Err(error) = self.0.record_done(workstream_id) {
             tracing::warn!(%error, "estimate not recorded");
@@ -423,7 +420,6 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
                         id.to_string(),
                         crate::hub::ledger::digest_text::WorkstreamFacts {
                             passed: facts.passed.len(),
-                            eta: facts.eta,
                         },
                     )
                 })
