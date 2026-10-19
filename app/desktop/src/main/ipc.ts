@@ -1,6 +1,8 @@
-import { clipboard, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
+import type { OpenOutcome } from "../shared/hub";
+import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
 import { isOwnPage } from "./security";
 
@@ -32,4 +34,14 @@ export const registerIpc = (hub: HubService): void => {
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
+  handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
+    const checked = externalUrl(url);
+    if (!checked.ok) return checked;
+    try {
+      await shell.openExternal(checked.url);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: `The browser didn't open: ${String(error)}` };
+    }
+  });
 };
