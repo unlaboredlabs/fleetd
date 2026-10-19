@@ -120,11 +120,7 @@ impl Train {
     /// `<prefix>train/<name>`: a scratch branch in the namespace of the project that owns the repo's train; None
     /// while its policy can't be read, since guessing could write outside its namespace.
     pub(super) async fn scratch_branch(&self, change: &Change, name: &str) -> Option<String> {
-        let owner = self
-            .records
-            .train(&change.repo)
-            .map(|t| t.project_ref)
-            .unwrap_or_else(|| change.project_ref.clone());
+        let owner = self.train_project(&change.repo, &change.project_ref);
         let prefix = self.host.branch_prefix(&owner).await?;
         Some(format!("{prefix}train/{name}"))
     }
@@ -132,6 +128,7 @@ impl Train {
     /// `<prefix>train/` of the project that owns the repo's train.
     pub(super) async fn scratch_prefix(&self, repo: &str) -> Option<String> {
         let owner = self.records.train(repo)?.project_ref;
+        let owner = self.train_project(repo, &owner);
         let prefix = self.host.branch_prefix(&owner).await?;
         Some(format!("{prefix}train/"))
     }
