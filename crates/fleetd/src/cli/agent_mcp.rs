@@ -45,6 +45,15 @@ pub struct Tool {
     pub human: Option<&'static str>,
 }
 
+impl Tool {
+    /// Whether calling this tool can make the lead call `op`: its own, or for `report` a writer's ready slice too.
+    pub fn makes(&self, op: &str) -> bool {
+        self.op == op || (self.name == "report" && op == SLICE_READY)
+    }
+}
+
+const SLICE_READY: &str = "slice_ready";
+
 const fn lead(
     name: &'static str,
     op: &'static str,
@@ -275,7 +284,7 @@ fn report_schema() -> Value {
 /// The op a `report` makes: a writer's ready slice, else a verdict.
 fn report_op(call: &mut serde_json::Map<String, Value>) -> &'static str {
     match call.remove("kind").as_ref().and_then(Value::as_str) {
-        Some("slice_ready") => "slice_ready",
+        Some(SLICE_READY) => SLICE_READY,
         _ => "review_verdict",
     }
 }
