@@ -16,8 +16,9 @@ Open it in the [desktop app](desktop-app.md#status) with ⌘. (Ctrl+. on Linux),
 ```console
 $ fleetd status storefront
 storefront  70%  polish 2/5    as of 14:02:07 (live)
-  [████████████▒▒░░░░░░] 61% verified + 9% in flight · 11 of 18 required items verified
-  ↓ from 69% · +3 items: checkout redesign added (14:00)
+  [████████████▒▒░░░░░░] 61% verified + 9% in flight
+  11 of 18 required items verified
+  ↓ from 74% · +3 items: checkout redesign added (14:00)
   ↓ from 66% · CI failed on #212 (13:20)
   Switching payments to the new provider, waiting on the full test run. Nothing needs you.   [generated]
   waiting on: P12 full test run: review of #212 → CI on #212 → merge   holds up P14, P16

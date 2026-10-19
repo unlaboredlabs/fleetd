@@ -16,8 +16,8 @@ use fleetd_contracts::mcp::{StatusGetOutput, StatusWaitOutput};
 use fleetd_contracts::model::MachineStatus;
 use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::status::{
-    CiState, DropReason, HeadlineSource, Health, InProgressRow, Marker, Progress, RiskLevel, Since,
-    StaleMark, StatusDoc, StatusScope,
+    CiState, HeadlineSource, Health, InProgressRow, Marker, Progress, RiskLevel, Since, StaleMark,
+    StatusDoc, StatusScope,
 };
 use serde_json::{Value, json};
 
@@ -28,8 +28,9 @@ use super::time::resolve_project;
 
 pub const STATUS_USAGE: &str = r#"  status [<order>|<project>] [--watch] [--json] [--hub <url> --key-file <path>]
              progress (verified plus work in flight), why it fell, the critical path it waits on,
-             what is slower than usual, what changed since you last looked, health and risks; for an order (W41), a project by id or title
-             (<machine>/<project> when two machines have one), or the whole fleet. --watch prints
+             what is slower than usual, what changed since you last looked, health and risks;
+             for an order (W41), a project by id or title (<machine>/<project> when two machines
+             have one), or the whole fleet. --watch prints
              each new version as the hub sends it; stale parts say so. On the hub machine it
              needs no --hub or --key-file
 "#;
@@ -399,17 +400,16 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
         .virtual_tier
         .map(|t| format!(", no plan: counts as one {t:?} item"))
         .unwrap_or_default();
-    let figure = match &p.estimate {
-        Some(e) => format!(
-            "{} {}% verified + {}% in flight · ",
+    if let Some(e) = &p.estimate {
+        out.push(format!(
+            "  {} {}% verified + {}% in flight",
             bar(e.verified_pct.get(), e.in_flight_pct.get()),
             e.verified_pct.get(),
             e.in_flight_pct.get()
-        ),
-        None => String::new(),
-    };
+        ));
+    }
     out.push(format!(
-        "  {figure}{} of {} required items verified{tier}{}",
+        "  {} of {} required items verified{tier}{}",
         p.done.get(),
         p.total.get(),
         p.stale
@@ -425,26 +425,37 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
             planning.pct.get()
         ));
     }
-    for marker in doc.markers.iter() {
-        out.push(format!("  {}", marker_text(marker, p.pct.get(), &c)));
-    }
-    // Scope changes already show as markers; the other drops say why the number fell.
-    let drops = p
-        .estimate
-        .iter()
-        .flat_map(|e| e.series.iter().flatten())
-        .rev();
-    for point in drops
-        .filter_map(|pt| pt.drop.as_ref().map(|d| (pt, d)))
-        .filter(|(_, d)| d.reason != DropReason::ScopeChange)
-        .take(3)
-    {
-        out.push(format!(
-            "  ↓ from {}% · {} ({})",
-            point.1.from_pct.get(),
-            point.1.text,
-            c.at(&point.0.at)
-        ));
+    match &p.estimate {
+        // The drops are on the estimate's scale, like the number; a marker's pctBefore is the verified figure, so
+        // with an estimate a marker shows only its text, and not at all when a drop already says it.
+        Some(e) => {
+            let drops: Vec<_> = e
+                .series
+                .iter()
+                .flatten()
+                .rev()
+                .filter_map(|pt| pt.drop.as_ref().map(|d| (pt, d)))
+                .take(3)
+                .collect();
+            for (point, drop) in &drops {
+                out.push(format!(
+                    "  ↓ from {}% · {} ({})",
+                    drop.from_pct.get(),
+                    drop.text,
+                    c.at(&point.at)
+                ));
+            }
+            for marker in doc.markers.iter() {
+                if !drops.iter().any(|(_, d)| d.text == marker.text) {
+                    out.push(format!("  {} ({})", marker.text, c.at(&marker.at)));
+                }
+            }
+        }
+        None => {
+            for marker in doc.markers.iter() {
+                out.push(format!("  {}", marker_text(marker, pct, &c)));
+            }
+        }
     }
     let tag = match (doc.headline.source, &doc.headline.reason) {
         (HeadlineSource::Generated, _) => "[generated]".to_owned(),
@@ -1144,8 +1155,8 @@ mod tests {
         let text = render(&d, chrono_tz::UTC);
         assert!(text.starts_with("storefront  70%  polish 2/5"), "{text}");
         for want in [
-            "  [████████████▒▒░░░░░░] 61% verified + 9% in flight · 11 of 18 required items verified",
-            "  ↓ from 66% · CI failed on #212 (13:20)",
+            "  [████████████▒▒░░░░░░] 61% verified + 9% in flight\n  11 of 18 required items verified",
+            "  ↓ from 69% · +3 items: time inspector added (14:00)\n  ↓ from 66% · CI failed on #212 (13:20)",
             "  waiting on: P12 full lab run: review of #212 → CI on #212 → merge   holds up P14, P16",
             "        P12 full lab run   T88   critical path   waiting on review of #212 → CI on #212 → merge   holds up P14, P16   SLOWER THAN USUAL",
         ] {
@@ -1154,7 +1165,11 @@ mod tests {
         assert_eq!(
             text.matches("+3 items: time inspector added").count(),
             1,
-            "a scope change shows once, as its marker"
+            "a scope change shows once, as its drop"
+        );
+        assert!(
+            !text.contains("↓ from 61%"),
+            "a marker's verified figure never sits beside the estimate"
         );
         assert!(
             !text.contains("P12 full lab run (serial)"),
