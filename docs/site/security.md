@@ -25,7 +25,8 @@ fleetd is built for one person or a small team running their own fleet.
 - **The node socket trusts the node's OS user.** Lead-side commands reach the hub through `~/.fleetd/node/node.sock`
   (mode 0600), and the hub attributes each call to the project whose workspace contains the caller's working
   directory. Any process running as that user can act as any project's lead on that machine. Run agents you don't
-  trust as a different user.
+  trust as a different user. Each call also names the fleetd session it comes from (every session and its tools set
+  it), which is how the hub refuses a task's spawns; a process that drops the name is treated as you.
 
 ## Secrets and commands
 

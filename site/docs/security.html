@@ -73,7 +73,8 @@ every update. Only human keys answer secret, approve and checklist asks, so no a
 <li><strong>The node socket trusts the node's OS user.</strong> Lead-side commands reach the hub through <code>~/.fleetd/node/node.sock</code>
 (mode 0600), and the hub attributes each call to the project whose workspace contains the caller's working
 directory. Any process running as that user can act as any project's lead on that machine. Run agents you don't
-trust as a different user.</li>
+trust as a different user. Each call also names the fleetd session it comes from (every session and its tools set
+it), which is how the hub refuses a task's spawns; a process that drops the name is treated as you.</li>
 </ul>
 <h2 id="secrets-and-commands">Secrets and commands<a class="anchor" href="#secrets-and-commands" aria-label="Link to this section">#</a></h2>
 <ul>

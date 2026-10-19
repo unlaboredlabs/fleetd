@@ -78,6 +78,27 @@ the decisions and your instructions, all of which you can read here, not from no
 worktree. <code>fleetd doctor</code> shows "claude auto memory off" for each machine once a session has run there. A project
 turns it back on for its sessions with <code>claude: { autoMemory: true }</code> in its
 <a href="/docs/config-and-files#policy">policy file</a>.</p>
+<h2 id="no-subagents">Claude's own subagents are off<a class="anchor" href="#no-subagents" aria-label="Link to this section">#</a></h2>
+<p>Every agent in fleetd is a fleetd agent: its own session, slot, worktree, lane, steering and receipts. So fleetd turns
+Claude Code's own subagent system off in every claude it starts, and gives agents fleetd's tools instead. Your
+<code>~/.claude</code> is left alone; this applies to fleetd's sessions only.</p>
+<ul>
+<li>Claude's agent, team and background-task tools (Agent/Task, Workflow, ListAgents, SendMessage, TaskStop and any
+like them the installed claude has) are denied. fleetd reads the installed claude's tool list when it checks the
+runner, so a tool a new claude version adds is denied too.</li>
+<li>Its built-in Explore, Plan and <code>claude</code> agents and background shell commands are switched off. Two built-in
+agents (general-purpose, statusline-setup) and your own agents from <code>~/.claude/agents</code> still appear in claude's
+list, since no setting removes them, but nothing can start them.</li>
+<li><code>fleetd doctor</code> shows "Claude subagents off (fleetd manages agents)" for each machine. If a session ever offers one
+of them anyway, the check fails, no new session starts on that machine and the fix is to install the claude version
+fleetd was tested with.</li>
+</ul>
+<p>Leads and tasks reach fleetd through MCP tools from a <code>fleetd</code> server in their session, not through the shell. A lead
+gets <code>spawn_agent</code>, <code>message_agent</code>, <code>agent_status</code>, <code>list_agents</code> and <code>stop_agent</code>, plus <code>ask</code>, <code>decide</code>, <code>brief</code>,
+<code>claim_done</code>, <code>plan_*</code>, <code>gated_run</code> and the rest of what it used to run as <code>fleetd</code> commands. A task gets three:
+<code>report</code> (a review verdict), <code>ask_lead</code> and <code>claim_done</code>. Results come back in the lead's next wake, never by polling.
+The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents, and a lead has at most
+32 tasks open at once. A refusal says why and what to do instead. The lead-side <code>fleetd</code> commands stay for you.</p>
 <h2 id="safety">Safety rules: code or prompt<a class="anchor" href="#safety" aria-label="Link to this section">#</a></h2>
 <p>Most rules don't depend on the prompt. fleetd enforces them in code whatever the text says: secrets are sealed to a
 machine, gated commands wait for your tap, only the train merges, and done is decided by the hub running the checks.
@@ -135,21 +156,21 @@ the tools it never gets. On the hub machine, the message alone:</p>
 <pre class="code sh" data-copy><code><span class="l">fleetd prompts show --session &lt;machine&gt;/&lt;thread&gt;</span></code></pre>
 <p><code>session_prompt_get</code> returns the same to an MCP client. Later messages are in the lead's conversation.</p>
 <h2 id="not-editable-tool-descriptions-and-cli-replies">Not editable: tool descriptions and CLI replies<a class="anchor" href="#not-editable-tool-descriptions-and-cli-replies" aria-label="Link to this section">#</a></h2>
-<p>MCP tool descriptions and what the lead-side CLI prints back (each <code>next:</code> and <code>fix:</code>) are the other half of a
-protocol with code: a description must match its tool, a <code>next:</code> must name a real command. See the
+<p>MCP tool descriptions (fleetd's agent tools included) and what the hub answers back (each <code>next:</code> and <code>fix:</code>) are the
+other half of a protocol with code: a description must match its tool, a <code>next:</code> must name a real tool or command. See the
 <a href="/docs/cli">CLI reference</a> and the <a href="/docs/projects-and-orders#tools">order tools</a>.</p>
 <h2 id="prompts">Every prompt<a class="anchor" href="#prompts" aria-label="Link to this section">#</a></h2>
 <p>Generated from the registry in the binary this site was built with. <code>fleetd prompts show &lt;id&gt;</code> prints one.</p>
 <h3 id="lead">Lead<a class="anchor" href="#lead" aria-label="Link to this section">#</a></h3>
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
-<tr><td><code>lead.start</code></td><td>lead start and every lead_restart, followed by the digest</td><td>the lead never writes code (prompt only); delegates only with <code>fleetd task spawn</code>, no other agents (prompt only); asks the human only about product, money, credentials, irreversible (prompt only); secrets only through <code>fleetd ask --kind secret</code>; prod writes, spends and deletes only through <code>fleetd gated run</code>; never blocks on a question (<code>--proceeded</code>) (prompt only); done only through <code>fleetd claim done</code>; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with <code>--amend</code></td></tr>
+<tr><td><code>lead.start</code></td><td>lead start and every lead_restart, followed by the digest</td><td>the lead never writes code (prompt only); delegates only with <code>spawn_agent</code>, no other agents; asks the human only about product, money, credentials, irreversible (prompt only); secrets only through <code>ask</code> with kind secret; prod writes, spends and deletes only through <code>gated_run</code>; never blocks on a question (<code>proceededOnRec</code>) (prompt only); done only through <code>claim_done</code>; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with <code>amend</code></td></tr>
 <tr><td><code>lead.digest</code></td><td>the top of the lead's first message and of every wake</td><td>the digest is the truth, over the lead's memory (prompt only)</td></tr>
 </tbody></table></div>
 <h3 id="tasks">Tasks<a class="anchor" href="#tasks" aria-label="Link to this section">#</a></h3>
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
 <tr><td><code>task.brief.write</code></td><td>every write task attempt</td><td>changes only its areas; never merges; the train does; the PR body carries <code>Source:</code>; does the task itself, no subagents</td></tr>
 <tr><td><code>task.brief.read</code></td><td>every read task attempt</td><td>changes no files (prompt only); does the task itself, no subagents</td></tr>
-<tr><td><code>task.brief.review</code></td><td>every review, verifier and judge task attempt</td><td>changes no files (prompt only); does the task itself, no subagents; ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>task.brief.review</code></td><td>every review, verifier and judge task attempt</td><td>changes no files (prompt only); does the task itself, no subagents; ends with one review verdict (the <code>report</code> tool)</td></tr>
 <tr><td><code>task.train_rebase</code></td><td>per PR the train could not rebase</td><td></td></tr>
 <tr><td><code>task.train_ci_failed</code></td><td>per PR whose CI failed or timed out</td><td></td></tr>
 </tbody></table></div>
@@ -160,10 +181,10 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <tr><td><code>wake.research_verdict.go</code></td><td>per research claim that went GO</td><td></td></tr>
 <tr><td><code>wake.research_verdict.stop</code></td><td>per research claim that went STOP</td><td>STOP is a success (prompt only)</td></tr>
 <tr><td><code>wake.research_verdict.inconclusive</code></td><td>per research claim that was inconclusive</td><td></td></tr>
-<tr><td><code>review.reviewer</code></td><td>per PR head per review round, by the tier's rules; Claude or Codex</td><td>does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
-<tr><td><code>review.verifier</code></td><td>tier L, per PR head</td><td>works in a detached temporary worktree (prompt only); does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
-<tr><td><code>judge</code></td><td>per <code>judge</code> done-when check of each claim</td><td>trusts no claim in the artifacts (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
-<tr><td><code>judge.research</code></td><td>per <code>judge</code> check of a research claim</td><td>trusts no claim in the artifacts (prompt only); ends with one <code>fleetd review verdict</code></td></tr>
+<tr><td><code>review.reviewer</code></td><td>per PR head per review round, by the tier's rules; Claude or Codex</td><td>does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the <code>report</code> tool)</td></tr>
+<tr><td><code>review.verifier</code></td><td>tier L, per PR head</td><td>works in a detached temporary worktree (prompt only); does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the <code>report</code> tool)</td></tr>
+<tr><td><code>judge</code></td><td>per <code>judge</code> done-when check of each claim</td><td>trusts no claim in the artifacts (prompt only); ends with one review verdict (the <code>report</code> tool)</td></tr>
+<tr><td><code>judge.research</code></td><td>per <code>judge</code> check of a research claim</td><td>trusts no claim in the artifacts (prompt only); ends with one review verdict (the <code>report</code> tool)</td></tr>
 <tr><td><code>task.review_findings</code></td><td>per blocking review verdict</td><td>never merges; the train does</td></tr>
 </tbody></table></div>
 <h3 id="wakes-and-messages">Wakes and messages<a class="anchor" href="#wakes-and-messages" aria-label="Link to this section">#</a></h3>
@@ -235,6 +256,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <li><a href="#how-a-session-gets-its-instructions">How a session gets its instructions</a></li>
 <li><a href="#no-time">No time estimates</a></li>
 <li><a href="#auto-memory">Claude's auto memory is off</a></li>
+<li><a href="#no-subagents">Claude's own subagents are off</a></li>
 <li><a href="#safety">Safety rules: code or prompt</a></li>
 <li><a href="#edit-a-prompt">Edit a prompt</a></li>
 <li><a href="#instructions">Your own instructions</a></li>
