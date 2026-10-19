@@ -1,0 +1,98 @@
+name: Desktop QA
+
+# The desktop app's QA gate: every registered screen (app/desktop/qa/registry.ts) x fixture, at three window sizes in
+# light and dark, with the DOM checks failing the job on any finding (overflow without wrap/ellipsis, overlapping
+# text or rows, content within 8 px of the window edge, raw ids/hashes/keys/markdown outside code). Linux runs it at
+# scale 1; macOS runs it at scale 2 with the platform bits (traffic lights, menu, fonts, a shot of the real window).
+# The contact sheet (index.html), the PNGs with their annotated overlays and findings.json are the run's artifact.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            scale: 1
+          - os: macos-latest
+            scale: 2
+    name: qa (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app/desktop
+    env:
+      QA_SCALE: ${{ matrix.scale }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Scope
+        # Runs when app/desktop or this workflow changed; otherwise reports success at once, so it can be required.
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          if [ "${{ github.event_name }}" != workflow_dispatch ] && git rev-parse -q --verify HEAD^1 >/dev/null \
+            && git diff --quiet HEAD^1 HEAD -- app/desktop .github/workflows/desktop-qa.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/electron
+            ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('app/desktop/pnpm-lock.yaml') }}
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.scope.outputs.run == 'true'
+        # Electron fetches its binary on first launch; fetch it here so the first test isn't timed on a download.
+        run: pnpm exec install-electron
+      - if: steps.scope.outputs.run == 'true'
+        # Build output of app/desktop/fixtures, validated against the contracts' JSON Schemas.
+        run: pnpm fixtures
+      - if: steps.scope.outputs.run == 'true'
+        # The app with the design-system gallery bundled, which release builds leave out.
+        run: pnpm qa:build
+      - if: steps.scope.outputs.run == 'true'
+        name: Self-test of the DOM checks
+        run: pnpm qa:selftest
+      - if: steps.scope.outputs.run == 'true'
+        name: Screens
+        run: pnpm qa
+      - if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-qa-${{ runner.os }}
+          path: |
+            app/desktop/qa-results/
+            app/desktop/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
