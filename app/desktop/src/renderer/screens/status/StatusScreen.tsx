@@ -5,12 +5,11 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { Button, cx, Dot, Text } from "../../ui";
 import type { StatusDoc, StatusScope } from "./contracts";
-import { useHubNow, useStatusSession } from "./hooks";
+import { useHubNow, useStatus } from "./hooks";
 import { Health } from "./Health";
 import { Hero } from "./Hero";
 import { Sections } from "./Sections";
-import { phase, type Phase, type StatusSession } from "./session";
-import { statusController } from "./controller";
+import { phase, type Phase, type StatusRead } from "./session";
 import { agesOnScreen, clock, scopeFromRoute, scopeRoute, sourceName, staleAge } from "./view";
 import s from "./status.module.css";
 
@@ -27,23 +26,24 @@ export const go = (scope: StatusScope): void => {
 export function StatusScreen() {
   const hash = useSyncExternalStore(subscribeHash, () => window.location.hash);
   const route = (hash.split("?")[0] ?? "").split("/").slice(0, 5).join("/");
-  // One scope object per route, so the session reopens only when the route means another scope.
+  // One scope object per route, so the query and the look restart only when the route means another scope.
   const scope = useMemo<StatusScope>(() => scopeFromRoute(route) ?? { kind: "fleet" }, [route]);
-  const session = useStatusSession(scope);
-  const p = phase(session);
-  const doc = p === "live" || p === "notLive" ? session.doc : null;
-  const now = useHubNow(session, (n) => (doc ? agesOnScreen(doc, n) : []));
+  const read = useStatus(scope);
+  const p = phase(read);
+  const doc = read.doc ?? null;
+  const now = useHubNow(read, (n) => (doc ? agesOnScreen(doc, n) : []));
 
   return (
     <div className={cx(s.screen)} data-screen={`status.${scope.kind}`} data-phase={p}>
-      <Header scope={scope} doc={doc} phase={p} linkUp={session.linkUp} />
+      <Header scope={scope} doc={doc} phase={p} linkUp={read.fresh} />
       <div className={cx(s.body)}>
         <div className={cx(s.measure)}>
-          <Banner session={session} phase={p} />
+          <Banner read={read} phase={p} />
           {doc ? (
             <>
               <StaleList doc={doc} now={now} />
-              <Hero doc={doc} live={p === "live"} session={`${String(session.session)}:${route}`} now={now} />
+              {/* Keyed by route: a scope switch mounts a new hero, whose first paint never tweens. */}
+              <Hero key={route} doc={doc} live={p === "live"} now={now} />
               <Health doc={doc} now={now} />
               <Sections doc={doc} now={now} />
             </>
@@ -105,24 +105,22 @@ function Header({ scope, doc, phase: p, linkUp }: { scope: StatusScope; doc: Sta
   );
 }
 
-/** Why the view isn't live: the link, a failed answer (with Retry), a lost wait, or the first sync. */
-function Banner({ session, phase: p }: { session: StatusSession; phase: Phase }) {
-  if (p === "live" || p === "closed") return null;
-  const from = session.doc ? ` · data from ${clock(session.doc.now)}` : "";
-  const text = !session.linkUp
-    ? `Not live: reconnecting to the hub${from}`
-    : session.error !== null
-      ? `Not live: ${session.error}${from}`
-      : p === "skeleton"
-        ? "Syncing with the hub. Numbers show once it answers."
-        : `Not live${from}`;
-  const warn = p === "notLive" || session.error !== null || !session.linkUp;
+/** Why the view isn't live: the link, a failed read (with Retry), or the first sync after (re)connecting. */
+function Banner({ read, phase: p }: { read: StatusRead & { retry: () => void }; phase: Phase }) {
+  if (p === "live") return null;
+  const from = read.doc ? ` · data from ${clock(read.doc.now)}` : "";
+  const text = !read.fresh
+    ? "Not live: reconnecting to the hub. Numbers show once it has answered."
+    : read.error !== null
+      ? `Not live: the hub's status answer failed: ${read.error}${from}`
+      : "Syncing with the hub. Numbers show once it answers.";
+  const warn = !read.fresh || read.error !== null;
   return (
     <div className={warn ? s.bannerWarn : s.banner} role={warn ? "alert" : "status"}>
       <Dot color={warn ? "var(--warning)" : "var(--faint)"} />
       <Text className={cx(s.grow)}>{text}</Text>
-      {session.retry ? (
-        <Button variant="secondary" onClick={() => statusController().retry()}>
+      {read.fresh && read.error !== null ? (
+        <Button variant="secondary" onClick={read.retry}>
           Retry
         </Button>
       ) : null}

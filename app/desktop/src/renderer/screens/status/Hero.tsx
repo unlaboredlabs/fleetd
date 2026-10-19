@@ -17,12 +17,12 @@ import s from "./status.module.css";
 
 /** The number, its bars, the sparkline, the headline, what it waits on and since-you-last-looked. No time
  * estimates anywhere (notes/no-time-product-brief.md): state, and measured ages only. */
-export function Hero({ doc, live, session, now }: { doc: StatusDoc; live: boolean; session: string; now: number }) {
+export function Hero({ doc, live, now }: { doc: StatusDoc; live: boolean; now: number }) {
   const f = figure(doc.progress, doc.virtualTier);
   const stale = doc.progress.stale;
   return (
     <section className={stale ? s.heroStale : s.hero} aria-label="Progress">
-      <FigureBlock f={f} session={session} live={live} meta={[...f.detail, asOf(doc.progress.asOf, now)]} />
+      <FigureBlock f={f} live={live} meta={[...f.detail, asOf(doc.progress.asOf, now)]} />
       {stale ? (
         <Text size="xs" tone="warning">
           {staleWords(stale, now)}
@@ -38,10 +38,9 @@ export function Hero({ doc, live, session, now }: { doc: StatusDoc; live: boolea
 }
 
 /** The number (or "planning") with its meta on one line, and the bar across the full width under it. */
-function FigureBlock({ f, session, live, meta }: { f: Figure; session: string; live: boolean; meta: readonly string[] }) {
+function FigureBlock({ f, live, meta }: { f: Figure; live: boolean; meta: readonly string[] }) {
   const pct = f.pct ?? 0;
-  // The figure tweens only while live; a not-live gap is its own session (session.ts bumps it).
-  const shown = useTween(pct, live ? session : `${session}:still`);
+  const shown = useTween(pct, live);
   const k = pct === 0 ? 1 : shown / pct;
   return (
     <>

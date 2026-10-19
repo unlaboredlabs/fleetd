@@ -2,9 +2,9 @@
 // `digest.ready` (09:00/18:00) the app asks a FRESH `status_get {fleet}` (never a kept doc) and posts one
 // notification. "Since" counts from the previous digest, not the reader's seen mark: a notification is not a look.
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useData, useDataLayer } from "../../src/data/react";
 import { asGetOutput, type StatusDoc } from "./contracts";
-import { onHubEvent } from "./controller";
 import { figure, headlineText } from "./view";
 
 const PREF = "fleetd.status.digest";
@@ -56,20 +56,32 @@ export const postDigest = ({ title, body }: { title: string; body: string }): vo
   void window.fleetd.app.notify({ tag: "digest", title: clip(title, 120), body: clip(body, 400), target: { kind: "status" } });
 };
 
+const latestDigest = (events: readonly { readonly seq: number; readonly type: string }[]): number | undefined =>
+  events.findLast((e) => e.type === "digest.ready")?.seq;
+
+/** Mounted once by the shell. `post` shows a system notification; `quiet` is the hub's quiet hours. The digest is a
+ * fresh status_get through the data layer, never a kept doc; nothing is posted from an old or failed answer: no
+ * digest beats a wrong one. A digest.ready already in the stream when the app connected is not news. */
 export const useStatusDigest = (post: (n: { title: string; body: string }) => void, quiet: (nowMs: number) => boolean): void => {
-  useEffect(
-    () =>
-      onHubEvent((event) => {
-        if (event.type !== "digest.ready" || !digestEnabled() || quiet(Date.now())) return;
-        const last = Number(localStorage.getItem(LAST_SEQ) ?? Number.NaN);
-        const input = Number.isFinite(last) ? { scope: { kind: "fleet" }, sinceSeq: last } : { scope: { kind: "fleet" } };
-        void window.fleetd.hub.call("status_get", input, { timeoutMs: 30_000 }).then((outcome) => {
-          const out = outcome.ok ? asGetOutput(outcome.output) : undefined;
-          if (!out) return;
-          localStorage.setItem(LAST_SEQ, String(out.doc.seq));
-          post(digestText(out.doc));
-        });
-      }),
-    [post, quiet],
-  );
+  const layer = useDataLayer();
+  const latest = useData((s) => (s.fresh ? latestDigest(s.events) : undefined));
+  const handled = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (latest === undefined) return;
+    const first = handled.current === undefined;
+    if (!first && latest <= (handled.current ?? 0)) return;
+    handled.current = latest;
+    if (first || !digestEnabled() || quiet(Date.now())) return;
+    const last = Number(localStorage.getItem(LAST_SEQ) ?? Number.NaN);
+    const input = Number.isFinite(last) ? { scope: { kind: "fleet" as const }, sinceSeq: last } : { scope: { kind: "fleet" as const } };
+    void layer.queryClient
+      .query(layer.toolQuery("status_get", input))
+      .then((output) => {
+        const out = asGetOutput(output);
+        if (!out) return;
+        localStorage.setItem(LAST_SEQ, String(out.doc.seq));
+        post(digestText(out.doc));
+      })
+      .catch(() => undefined);
+  }, [latest, layer, post, quiet]);
 };

@@ -41,6 +41,9 @@ describe("event effects", () => {
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
     expect(tools(e("prompt.changed"))).toContain("prompts_list");
+    // Status's health strip: a machine going quiet or sleeping, a usage reading.
+    expect(tools(e("machine.slept", undefined, { machineId: "devbox" }))).toContain("status_get");
+    expect(tools(e("usage.updated"))).toContain("status_get");
   });
 
   it("matches queries by their input's fields", () => {
