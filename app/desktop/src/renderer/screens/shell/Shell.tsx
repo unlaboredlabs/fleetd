@@ -7,8 +7,7 @@ import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, EmptyState, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
-import { quietNow, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
-import { postDigest, useStatusDigest } from "../status/digest";
+import { useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
 import { homeProject, projectId, stepProject } from "./model";
@@ -50,7 +49,6 @@ export function Shell() {
   useMainProcess();
   useMenuState();
   useNotifications(hub?.phase === "live");
-  useStatusDigest(postDigest, quietNow);
 
   const open = screen.id === "project" ? screen.project : null;
   useEffect(() => {

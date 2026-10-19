@@ -17,7 +17,7 @@ export interface EventEffects {
 const ORDER_PREFIXES = ["workstream.", "task.", "change.", "claim.", "ask.", "steer.", "train.", "plan."];
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken", "batch.ready"]);
 const ASK_TYPES = new Set(["batch.ready", "decision.recorded", "gated.ran"]);
-const STATUS_TYPES = new Set(["ci.main", "github.drift", "source.stale", "source.fresh", "digest.ready"]);
+const STATUS_TYPES = new Set(["ci.main", "github.drift", "source.stale", "source.fresh"]);
 /** Status's health strip shows machines (online, slept, last seen) and claude usage too. */
 const STATUS_PREFIXES = ["machine.", "usage."];
 // What changes an order's time, as the GPUI inspector refetched it. thread.* is left out: it fires constantly, and
@@ -56,8 +56,9 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type.startsWith("steer.")) {
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
   }
-  if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "plan_get" });
-  else if (startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" });
+  // Status's per-project rows read the same facts as the status doc.
+  if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "status_projects" }, { tool: "plan_get" });
+  else if (startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" }, { tool: "status_projects" });
   // Only the open order's time reads: they are scoped `{ kind: "order", workstreamId }`, matched inside `scope`.
   // time_spans is paged; its view fetches new pages itself, so it is not refetched whole here.
   if (startsWithAny(type, TIME_PREFIXES) || TIME_TYPES.has(type)) {

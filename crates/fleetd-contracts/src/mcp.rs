@@ -31,7 +31,7 @@ use crate::prompts::{
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
-use crate::status::{StatusDoc, StatusScope};
+use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::subscriptions::{Subscription, SubscriptionMachines, SubscriptionTypes, WebhookUrl};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
@@ -1132,6 +1132,12 @@ output!(StatusWaitOutput {
     unchanged: Option<bool>,
     version: Count,
 });
+// status_projects: one row per project the key reads, for the Status screen.
+input!(StatusProjectsInput {});
+output!(StatusProjectsOutput {
+    /// By title.
+    rows: List<ProjectStatusRow, 0, 200>,
+});
 input!(StatusSeenInput {
     scope: StatusScope,
     seq: EventSeq
@@ -1342,6 +1348,7 @@ tools! {
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
     status_wait => StatusWait, Read, StatusWaitInput, StatusWaitOutput;
     status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
+    status_projects => StatusProjects, Read, StatusProjectsInput, StatusProjectsOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     github_webhook_set => GithubWebhookSet, Admin, GithubWebhookSetInput, GithubWebhookSetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.

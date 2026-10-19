@@ -35,20 +35,10 @@ export type ShortcutId = keyof typeof SHORTCUTS;
 
 export const isShortcutId = (id: string): id is ShortcutId => Object.hasOwn(SHORTCUTS, id);
 
-/**
- * Keys a focused component handles itself (a question card, the palette list). They are listed so the sheet shows
- * them; nothing dispatches them globally.
- */
+/** Keys a focused component handles itself. They are listed so the sheet shows them; nothing dispatches them globally. */
 export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: readonly string[]; readonly title: string }[] = [
-  { where: "A question that needs you", keys: ["1–9"], title: "Pick that option" },
-  { where: "A question that needs you", keys: ["Enter"], title: "Take the recommendation" },
-  { where: "A question that needs you", keys: ["N"], title: "Answer No" },
   { where: "Command palette", keys: ["↑", "↓"], title: "Move the selection" },
   { where: "Command palette", keys: ["Enter"], title: "Run it" },
-  { where: "Command palette", keys: ["1 go 2 nvm"], title: "Reply to the inbox by number" },
-  { where: "The board", keys: ["↑", "↓"], title: "Move between orders" },
-  { where: "The board", keys: ["J", "K"], title: "Move between orders" },
-  { where: "The board", keys: ["Enter"], title: "Open the selected order" },
   { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
 ];
 
