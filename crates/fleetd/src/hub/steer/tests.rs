@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, ThreadId};
+use fleetd_contracts::ids::{ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{IntakeChannel, WorkstreamId};
 use fleetd_contracts::steer::{DeliveredHow, SteerReceipt};
 use serde_json::json;
@@ -660,6 +660,8 @@ fn plan_call(
         },
         by: "lead:lab-a/p1".into(),
         cwd: "/work/project".into(),
+        thread: None,
+        agent: crate::hub::link::lead_calls::CallerAgent::Lead,
     };
     futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
 }
@@ -841,5 +843,61 @@ async fn the_plan_change_a_steer_made_is_the_one_tagged_with_it() {
             .note
             .as_str()
             .starts_with(&with_steer[0].0[..20.min(with_steer[0].0.len())])
+    );
+}
+
+/// The hub tells a task's agent from the lead by the session a call names, and a task's agent may only report, ask
+/// its lead and claim done: `ask_lead` wakes the lead, and a spawn is refused with the reason.
+#[tokio::test]
+async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spawn() {
+    use crate::hub::link::lead_calls::CallerAgent;
+    use crate::hub::tasks::policy;
+    let lab = lab();
+    let task = running_task(&lab.hub, "p1");
+    let thread = |id: &str| ThreadRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        thread_id: ThreadId::unchecked(id),
+    };
+    let worker = lab.hub.lead_calls.agent_of(Some(&thread("task-thread")));
+    assert_eq!(worker, CallerAgent::Task(task.task_id.clone()));
+    assert_eq!(
+        lab.hub.lead_calls.agent_of(Some(&thread("lead-thread"))),
+        CallerAgent::Lead
+    );
+    assert_eq!(lab.hub.lead_calls.agent_of(None), CallerAgent::Person);
+    let refused = policy::check(&worker, "task_spawn").unwrap_err();
+    assert!(
+        refused.message.starts_with("T1 is a task"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(policy::check(&CallerAgent::Lead, "task_spawn"), Ok(()));
+
+    let ask = |agent: CallerAgent| {
+        let call: fleetd_contracts::lead_calls::LeadCall =
+            serde_json::from_value(json!({ "op": "ask_lead", "question": "Postgres or SQLite?" }))
+                .unwrap();
+        let caller = crate::hub::link::LeadCaller {
+            project_ref: task.project_ref.clone(),
+            by: "lead:lab-a/p1".into(),
+            cwd: "/work/project".into(),
+            thread: Some(thread("task-thread")),
+            agent,
+        };
+        let handler = lab.hub.lead_calls.handler("ask_lead").unwrap();
+        futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
+    };
+    assert!(!lab.hub.leads.wakes.pending(&task.project_ref));
+    let Ok(fleetd_contracts::lead_calls::LeadCallResult::AskLead(asked)) = ask(worker) else {
+        panic!("ask_lead from a task was not answered")
+    };
+    assert_eq!(asked.task_id.as_str(), "T1");
+    assert!(
+        lab.hub.leads.wakes.pending(&task.project_ref),
+        "the lead was not woken"
+    );
+    assert_eq!(
+        ask(CallerAgent::Lead).unwrap_err().code,
+        fleetd_contracts::mcp::ErrorCode::Invalid
     );
 }

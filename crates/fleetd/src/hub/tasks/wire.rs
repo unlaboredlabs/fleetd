@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef, Timestamp};
-use fleetd_contracts::lead_calls::LeadCall;
+use fleetd_contracts::lead_calls::{AskLeadResult, LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
@@ -24,7 +24,7 @@ use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions}
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook, TasksHook};
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::link::commands::CommandInput;
-use crate::hub::link::lead_calls::LeadCallFuture;
+use crate::hub::link::lead_calls::{AgentDirectory, CallerAgent, LeadCallFuture};
 use crate::hub::link::{LeadCallHandler, LeadCaller, NodeCommands};
 
 fn port_error(error: ExecutorError) -> PortError {
@@ -93,7 +93,10 @@ impl TaskPorts for HubTaskPorts {
                         .map_err(|_| PortError::Failed("a worktree needs a branch".into()))?,
                 }),
             };
-            let options = LaunchOptions { workspace };
+            let options = LaunchOptions {
+                workspace,
+                role: fleetd_contracts::sessions::SessionRole::Worker,
+            };
             self.executors
                 .launch(machine_id, &input, options)
                 .await
@@ -278,6 +281,20 @@ impl LeadCallHandler for Calls {
     fn handle(&self, caller: LeadCaller, call: LeadCall) -> LeadCallFuture {
         let tasks = Arc::clone(&self.0);
         Box::pin(async move {
+            if let LeadCall::AskLead(ask) = &call {
+                let CallerAgent::Task(task_id) = &caller.agent else {
+                    return Err(super::policy::check(&caller.agent, "ask_lead").unwrap_err());
+                };
+                let task = tasks.ask_lead(task_id, ask.question.as_str())?;
+                return Ok(LeadCallResult::AskLead(AskLeadResult {
+                    task_id: task.task_id,
+                    next: Some(
+                        "Asked. Carry on with what you can; your lead's answer arrives as a message. If you can't \
+                         go on without it, end your turn with what you have: the answer continues this thread."
+                            .into(),
+                    ),
+                }));
+            }
             let caller = TaskCaller {
                 project_ref: caller.project_ref,
                 by: caller.by,
@@ -287,15 +304,29 @@ impl LeadCallHandler for Calls {
     }
 }
 
-pub const LEAD_CALL_OPS: [&str; 5] = [
+pub const LEAD_CALL_OPS: [&str; 6] = [
     "task_spawn",
     "task_list",
     "task_status",
     "task_message",
     "task_cancel",
+    "ask_lead",
 ];
 
+/// Tells the hub's lead-call handling which sessions are tasks' agents.
+struct Directory(Arc<Tasks>);
+
+impl AgentDirectory for Directory {
+    fn agent_of(&self, thread: &ThreadRef) -> CallerAgent {
+        self.0
+            .task_of_thread(thread)
+            .map_or(CallerAgent::Lead, CallerAgent::Task)
+    }
+}
+
 pub fn register_lead_calls(hub: &Arc<Hub>) {
+    hub.lead_calls
+        .set_directory(Arc::new(Directory(Arc::clone(&hub.tasks))));
     let calls: Arc<dyn LeadCallHandler> = Arc::new(Calls(Arc::clone(&hub.tasks)));
     for op in LEAD_CALL_OPS {
         hub.lead_calls.register(op, Arc::clone(&calls));

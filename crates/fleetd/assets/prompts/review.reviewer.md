@@ -7,5 +7,5 @@ Rules for tier {{tier}}:
 - It serves {{serves}} only: the other done-when checks are other PRs' work, never a finding here.
 - One round: report everything you find now. A verdict with 0 blocking ends review for this patch.
 - Do not change, commit or push anything.
-Finish with exactly one command, filled in:
-fleetd review verdict --task <your task id, from the first line> --sha {{headSha}} --blocking <n> --non-blocking <n> --summary "<each blocking finding as path:line and what is wrong, then the non-blocking ones>"
+Finish by calling the `report` tool once, filled in:
+{taskId: <your task id, from the first line>, prHeadSha: "{{headSha}}", blocking: <n>, nonBlocking: <n>, summary: "<each blocking finding as path:line and what is wrong, then the non-blocking ones>"}

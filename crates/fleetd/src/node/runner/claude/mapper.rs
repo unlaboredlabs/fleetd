@@ -24,7 +24,7 @@ use super::protocol::{
 };
 use super::spans::SpanBuilder;
 use crate::node::runner::conformance::{
-    SEND_NOW_CAPABILITY, auto_memory_on, missing_init_capabilities,
+    SEND_NOW_CAPABILITY, auto_memory_on, missing_init_capabilities, subagent_leaks,
 };
 use crate::node::runner::failure::FailureEvidence;
 use crate::node::runner::{ExitInfo, RateLimit, RunOutcome, RunnerEvent};
@@ -488,6 +488,10 @@ impl StreamMapper {
                 }
                 events.push(RunnerEvent::Init {
                     auto_memory: auto_memory_on(system.memory_paths.as_ref()),
+                    subagent_leaks: subagent_leaks(
+                        system.tools.as_deref().unwrap_or_default(),
+                        system.agents.as_deref().unwrap_or_default(),
+                    ),
                     version: system.claude_code_version.unwrap_or_default(),
                     model: system.model.unwrap_or_default(),
                     cwd: system.cwd.unwrap_or_default(),

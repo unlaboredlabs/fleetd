@@ -148,6 +148,8 @@ pub struct LaunchInput {
 pub struct LaunchOptions {
     /// Default: the project root. Tasks launch writers in a new worktree on their own branch.
     pub workspace: Option<SessionWorkspace>,
+    /// Leads and tasks get fleetd's agent MCP tools for their role; a thread a person starts gets none.
+    pub role: fleetd_contracts::sessions::SessionRole,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1332,6 +1334,7 @@ impl Executors {
             allowed_tools: rules.allow,
             disallowed_tools: rules.deny,
             auto_memory: rules.auto_memory,
+            role: options.role,
         };
         self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
             .await?;

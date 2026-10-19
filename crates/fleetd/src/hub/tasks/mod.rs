@@ -5,6 +5,7 @@
 pub mod branch_diff;
 pub mod glob;
 pub mod hooks;
+pub mod policy;
 pub mod ports;
 pub mod records;
 pub mod render;
@@ -1048,6 +1049,12 @@ impl Tasks {
             ));
         }
         self.budget_check(&ws)?;
+        let counts = self
+            .db(|c| TaskRecords::counts(c, r))
+            .map_err(store_error)?;
+        policy::check_fan_out(
+            (counts.queued.get() + counts.running.get() + counts.idle.get()) as usize,
+        )?;
         if let Some(item) = &input.item {
             let mut refused = None;
             self.d
@@ -1322,6 +1329,36 @@ impl Tasks {
 
     pub fn get(&self, task_id: &TaskId) -> Result<Option<Task>, StoreError> {
         Ok(self.db(|c| TaskRecords::get(c, task_id))?.map(|s| s.task))
+    }
+
+    /// The task whose agent runs in `thread`, if one does.
+    pub fn task_of_thread(&self, thread: &ThreadRef) -> Option<TaskId> {
+        match self.db(|c| TaskRecords::by_thread(c, thread)) {
+            Ok(found) => found.map(|s| s.task.task_id),
+            Err(error) => {
+                tracing::error!(%error, "tasks: thread lookup failed");
+                None
+            }
+        }
+    }
+
+    /// A task's agent asks its lead (`ask_lead`): the lead is woken with the question, as with a task waiting for
+    /// input, and answers with `message_agent`, which reaches the task as a steer.
+    pub fn ask_lead(&self, task_id: &TaskId, question: &str) -> Result<Task, TaskError> {
+        let Some(task) = self.get(task_id).map_err(store_error)? else {
+            return Err(lead_error(
+                ErrorCode::NotFound,
+                format!("No task {}.", task_id.as_str()),
+                None,
+            ));
+        };
+        let set = self.d.db.prompts().for_lead(&task.project_ref);
+        let text =
+            render::task_waiting_lines(&set, task_id.as_str(), task.title.as_str(), question);
+        self.d
+            .ports
+            .wake(&task.project_ref, WakeKind::TaskWaiting, text);
+        Ok(task)
     }
 
     /// Newest first.

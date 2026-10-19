@@ -1562,6 +1562,8 @@ pub fn format_result(result: &Value) -> String {
 pub struct LeadDeps<'a> {
     pub pwd: Option<String>,
     pub sock: Option<String>,
+    /// `FLEETD_THREAD_ID`: set inside a fleetd session, so the hub knows which agent is calling.
+    pub thread: Option<String>,
     pub cwd: PathBuf,
     pub send: &'a dyn Fn(&Path, &Value) -> Result<Value, String>,
     pub read_file: &'a dyn Fn(&str) -> std::io::Result<String>,
@@ -1573,13 +1575,7 @@ pub fn lead_command(argv: &[String], deps: &LeadDeps) -> CliResult {
         Ok(call) => call,
         Err(message) => return usage(&message),
     };
-    let frame = json!({
-        "t": "lead_call",
-        "id": format!("cli-{}", std::process::id()),
-        "cwd": caller_cwd(deps.pwd.as_deref(), &deps.cwd),
-        "call": call,
-    });
-    let answer = match (deps.send)(&node_socket_path(deps.sock.as_deref()), &frame) {
+    let answer = match send_call(call, deps) {
         Ok(answer) => answer,
         Err(unreachable) => return CliResult::err(4, format!("fleetd: {unreachable}\n")),
     };
@@ -1611,17 +1607,39 @@ pub fn lead_command(argv: &[String], deps: &LeadDeps) -> CliResult {
     }
 }
 
+/// One lead call (`{"op": …, …}`) to the hub through the node; the answer frame, or why the node could not be asked.
+pub fn send_call(call: Value, deps: &LeadDeps) -> Result<Value, String> {
+    let mut frame = json!({
+        "t": "lead_call",
+        "id": format!("cli-{}", std::process::id()),
+        "cwd": caller_cwd(deps.pwd.as_deref(), &deps.cwd),
+        "call": call,
+    });
+    if let Some(thread) = deps.thread.as_deref().filter(|t| !t.is_empty()) {
+        frame["threadId"] = thread.into();
+    }
+    (deps.send)(&node_socket_path(deps.sock.as_deref()), &frame)
+}
+
 pub fn run(argv: &[String]) -> CliResult {
     let send = |socket: &Path, frame: &Value| send_to_node(socket, frame, Duration::from_secs(60));
     let read_file = |file: &str| std::fs::read_to_string(file);
-    let deps = LeadDeps {
+    lead_command(argv, &env_deps(&send, &read_file))
+}
+
+/// The real process's [`LeadDeps`].
+pub fn env_deps<'a>(
+    send: &'a dyn Fn(&Path, &Value) -> Result<Value, String>,
+    read_file: &'a dyn Fn(&str) -> std::io::Result<String>,
+) -> LeadDeps<'a> {
+    LeadDeps {
         pwd: std::env::var("PWD").ok(),
         sock: std::env::var("FLEETD_NODE_SOCK").ok(),
+        thread: std::env::var("FLEETD_THREAD_ID").ok(),
         cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
-        send: &send,
-        read_file: &read_file,
-    };
-    lead_command(argv, &deps)
+        send,
+        read_file,
+    }
 }
 
 #[cfg(test)]
@@ -2114,6 +2132,7 @@ mod tests {
         let deps = LeadDeps {
             pwd: None,
             sock: Some("/tmp/n.sock".into()),
+            thread: None,
             cwd: "/src/api".into(),
             send: &send,
             read_file: &read_file,

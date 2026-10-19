@@ -3,22 +3,31 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
-use fleetd_contracts::ids::{MachineId, ProjectRef};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::ProjectSummary;
 
 use super::cwd;
+pub use crate::hub::tasks::policy::CallerAgent;
 
-/// Who a lead-side call came from, as decided by the hub from the node link and the caller's cwd.
+/// Who a lead-side call came from, as decided by the hub from the node link, the caller's cwd and the session it names.
 #[derive(Debug, Clone)]
 pub struct LeadCaller {
     pub project_ref: ProjectRef,
     /// `lead:<machineId>/<projectId>`, recorded as `by` on whatever the call writes.
     pub by: String,
     pub cwd: String,
+    /// The session the call names (`FLEETD_THREAD_ID`), on the calling machine.
+    pub thread: Option<ThreadRef>,
+    pub agent: CallerAgent,
+}
+
+/// Tells which of fleetd's agents a session is; the tasks area provides it.
+pub trait AgentDirectory: Send + Sync + 'static {
+    fn agent_of(&self, thread: &ThreadRef) -> CallerAgent;
 }
 
 /// The hub said no; `fix` tells the lead what to do instead. Sent to the CLI as the result frame's error.
@@ -45,9 +54,23 @@ where
 #[derive(Default)]
 pub struct LeadCalls {
     handlers: RwLock<HashMap<String, Arc<dyn LeadCallHandler>>>,
+    directory: OnceLock<Arc<dyn AgentDirectory>>,
 }
 
 impl LeadCalls {
+    pub fn set_directory(&self, directory: Arc<dyn AgentDirectory>) {
+        let _ = self.directory.set(directory);
+    }
+
+    /// The agent behind `thread`; without a thread, a person.
+    pub fn agent_of(&self, thread: Option<&ThreadRef>) -> CallerAgent {
+        match (thread, self.directory.get()) {
+            (None, _) => CallerAgent::Person,
+            (Some(thread), Some(directory)) => directory.agent_of(thread),
+            (Some(_), None) => CallerAgent::Lead,
+        }
+    }
+
     pub fn register(&self, op: &str, handler: Arc<dyn LeadCallHandler>) {
         self.handlers
             .write()

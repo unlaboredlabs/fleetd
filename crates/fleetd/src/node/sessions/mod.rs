@@ -30,14 +30,14 @@ use fleetd_contracts::sessions::{
     MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo,
     RunStatus, RunUsage, RunnerInfo, SendAccepted, SendMode, SendNow, SessionCall,
     SessionCallFrame, SessionChanges, SessionError, SessionErrorCode, SessionLaunch, SessionOutput,
-    SessionReplyFrame, SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
-    ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot,
+    SessionReplyFrame, SessionResult, SessionRole, SessionStatus, SessionSummary, SessionWorkspace,
+    ThreadEvent, ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot,
 };
 use fleetd_contracts::steer::SteerTag;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
-use super::runner::claude::{ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV};
+use super::runner::claude::{ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, subagents_off_settings_env};
 use super::runner::claude_setup;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
@@ -52,7 +52,6 @@ use state::EndCause;
 /// What the node sends after a retryable failure (Overloaded, Network) to continue the same run.
 pub const CONTINUE_PROMPT: &str = "Continue where you left off.";
 /// fleetd's own MCP servers (none yet: leads and agents call the `fleetd` CLI). The user's own servers load too.
-const MCP_CONFIG: &str = "{\"mcpServers\":{}}\n";
 const SNAPSHOT_WINDOW: usize = 200;
 const TRANSCRIPT_CAP: u64 = 20 * 1024 * 1024;
 const DELTA_EVERY: Duration = Duration::from_millis(100);
@@ -214,12 +213,35 @@ pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
 /// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), the subagent cap, the tools
 /// fleetd never gives an agent, and auto memory off unless the project opted in ([`AUTO_MEMORY_OFF_ENV`]).
+/// The session's `--mcp-config`: fleetd's own agent MCP server (`fleetd agent-mcp`, this binary) for a lead or a
+/// worker, scoped to the role; nothing for a plain thread. The server reaches the hub through this node's socket, as the
+/// CLI does, and names the session so the hub can tell a lead from a task.
+fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
+    let servers = match role.cli_arg() {
+        None => serde_json::json!({}),
+        Some(role) => {
+            let exe = std::env::current_exe()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "fleetd".into());
+            serde_json::json!({ "fleetd": {
+                "type": "stdio",
+                "command": exe,
+                "args": ["agent-mcp", "--role", role],
+                "env": {
+                    "FLEETD_NODE_SOCK": sock.to_string_lossy(),
+                    "FLEETD_THREAD_ID": session_id,
+                },
+            }})
+        }
+    };
+    format!("{}\n", serde_json::json!({ "mcpServers": servers }))
+}
+
 fn settings_overlay(auto_memory: bool) -> String {
+    let mut env = subagents_off_settings_env();
+    env.insert("DISABLE_AUTOUPDATER".into(), "1".into());
     let mut overlay = serde_json::json!({
-        "env": {
-            "DISABLE_AUTOUPDATER": "1",
-            "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "2",
-        },
+        "env": env,
         "permissions": { "deny": ALWAYS_DISALLOWED },
     });
     if !auto_memory {
@@ -1091,6 +1113,7 @@ impl SessionService {
                 allowed_tools: launch.allowed_tools.clone(),
                 disallowed_tools: launch.disallowed_tools.clone(),
                 auto_memory: launch.auto_memory,
+                role: launch.role,
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -1318,9 +1341,8 @@ impl SessionService {
         let dir = config.home.join("sessions").join(id);
         super::config::mkdir_private(&dir)?;
         let mcp = dir.join("mcp.json");
-        if !mcp.exists() {
-            std::fs::write(&mcp, MCP_CONFIG)?;
-        }
+        let sock = super::lead::lead_socket_path(&config.home);
+        std::fs::write(&mcp, mcp_config(row.local.role, &sock, id))?;
         let settings = dir.join("settings.json");
         std::fs::write(&settings, settings_overlay(row.local.auto_memory))?;
         let transcripts = config.home.join("transcripts");
@@ -1329,12 +1351,7 @@ impl SessionService {
         state::cap_transcript(&transcript, TRANSCRIPT_CAP)?;
 
         let mut env = config.runner_env();
-        let sock = super::lead::lead_socket_path(&config.home);
         env.extend([
-            (
-                "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS".to_owned(),
-                "2".to_owned(),
-            ),
             (
                 "FLEETD_NODE_SOCK".to_owned(),
                 sock.to_string_lossy().into_owned(),
@@ -1570,7 +1587,19 @@ impl SessionService {
                     }
                 }
                 RunnerEvent::RateLimit(limit) => self.remember_limit(limit),
-                RunnerEvent::Init { auto_memory, .. } => {
+                RunnerEvent::Init {
+                    auto_memory,
+                    subagent_leaks,
+                    ..
+                } => {
+                    if !subagent_leaks.is_empty() {
+                        tracing::error!(
+                            session = %id,
+                            ?subagent_leaks,
+                            "claude still offers its own subagents despite fleetd's deny list and knobs"
+                        );
+                    }
+                    self.health_changed(|h| h.subagents_seen(subagent_leaks));
                     // A project that opted back in proves nothing about fleetd's knobs.
                     if !self.session(&id).is_ok_and(|row| row.local.auto_memory) {
                         if auto_memory {
