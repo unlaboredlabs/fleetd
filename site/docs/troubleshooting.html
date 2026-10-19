@@ -154,7 +154,7 @@ same checks. The tables below give each check’s id in brackets, such as <code 
 <tr>
 <td>“… has no hub set up” <code dir="auto">[exit 4]</code></td>
 <td>The hub was started by hand without <code dir="auto">fleetd init</code> first, so its home has no <code dir="auto">setup.json</code>.</td>
-<td><code dir="auto">fleetd init --no-service --home &lt;home&gt; --listen &lt;host:port&gt;</code>, then start the hub again. See <a href="/docs/config-and-files#second-fleet">Run a second fleet</a>.</td>
+<td>Run step 1 of <a href="/docs/config-and-files#second-fleet">Run a second fleet</a> with that <code dir="auto">--home</code> and <code dir="auto">--listen</code>: <code dir="auto">HOME=$(mktemp -d) fleetd init --home &lt;home&gt; --no-service --listen &lt;host:port&gt; &lt;/dev/null</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -351,11 +351,11 @@ fixed. fleetd turns claude’s auto-updater off for its own sessions.</p>
 <tbody>
 <tr>
 <td>Hub</td>
-<td><code dir="auto">~/.fleetd/hub/hub.log</code>. Run by hand: stdout.</td>
+<td><code dir="auto">~/.fleetd/hub/hub.log</code>. Run by hand: the terminal.</td>
 </tr>
 <tr>
 <td>Node</td>
-<td><code dir="auto">~/.fleetd/logs/node.log</code>. Run by hand: stdout.</td>
+<td><code dir="auto">~/.fleetd/logs/node.log</code>. Run by hand: the terminal.</td>
 </tr>
 </tbody>
 </table>

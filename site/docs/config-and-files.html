@@ -96,8 +96,8 @@
 </tr>
 <tr>
 <td>By hand (<code dir="auto">fleetd hub start</code>, <code dir="auto">fleetd node join</code> or <code dir="auto">node run</code>)</td>
-<td>stdout</td>
-<td>stdout</td>
+<td>The terminal</td>
+<td>The terminal</td>
 </tr>
 </tbody>
 </table>
@@ -324,7 +324,7 @@ worker it repairs that worker instead. A throwaway <code dir="auto">HOME</code> 
 started without it can’t be used by <code dir="auto">fleetd doctor</code> or <code dir="auto">fleetd project add</code>: they report “… has no hub set up”.</p>
 </li>
 <li>
-<p>Start the hub. Keep the terminal open; it logs to stdout.</p>
+<p>Start the hub. Keep the terminal open; it logs there.</p>
 <div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">hub</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">start</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--home</span><span style="--0:#E1E4E8;--1:#24292E"> $T</span><span style="--0:#9ECBFF;--1:#032F62">/hub</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--listen</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">127.0.0.1:4797</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd hub start --home $T/hub --listen 127.0.0.1:4797"><div></div></button></div></figure></div>
 </li>
 <li>
@@ -355,8 +355,16 @@ started without it can’t be used by <code dir="auto">fleetd doctor</code> or <
 <td><code dir="auto">--home</code>, the node’s home. Default: <code dir="auto">~/.fleetd/node</code>.</td>
 </tr>
 <tr>
-<td><code dir="auto">status</code>, <code dir="auto">time</code>, <code dir="auto">answer</code>, <code dir="auto">steer</code>, <code dir="auto">steers</code>, <code dir="auto">listen</code>, <code dir="auto">retro</code></td>
-<td><code dir="auto">--hub</code> and <code dir="auto">--key-file</code>. Without them, the hub at <code dir="auto">~/.fleetd/hub</code>.</td>
+<td><code dir="auto">status</code>, <code dir="auto">time</code></td>
+<td><code dir="auto">--hub</code> and <code dir="auto">--key-file</code>, both optional. Without them, the hub at <code dir="auto">~/.fleetd/hub</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">answer</code>, <code dir="auto">steer</code>, <code dir="auto">steers</code></td>
+<td><code dir="auto">--key-file</code>, always. <code dir="auto">--hub</code> is optional: without it, the hub at <code dir="auto">~/.fleetd/hub</code>.</td>
+</tr>
+<tr>
+<td><code dir="auto">listen</code>, <code dir="auto">retro</code></td>
+<td><code dir="auto">--hub</code> and <code dir="auto">--key-file</code>, always.</td>
 </tr>
 <tr>
 <td><code dir="auto">init</code></td>
@@ -364,7 +372,7 @@ started without it can’t be used by <code dir="auto">fleetd doctor</code> or <
 </tr>
 <tr>
 <td><code dir="auto">pair</code></td>
-<td>Also writes the app’s hand-off, <code dir="auto">app-pair.json</code>, under <code dir="auto">$XDG_CONFIG_HOME/fleetd</code> (default <code dir="auto">~/.config/fleetd</code>).</td>
+<td>Also writes the app’s hand-off, <code dir="auto">app-pair.json</code>, under <code dir="auto">$XDG_CONFIG_HOME/fleetd</code> (default <code dir="auto">~/.config/fleetd</code>; macOS: <code dir="auto">~/Library/Application Support/fleetd</code>).</td>
 </tr>
 <tr>
 <td>Lead-side commands (<code dir="auto">claim</code>, <code dir="auto">change</code>, <code dir="auto">plan</code>, …)</td>
