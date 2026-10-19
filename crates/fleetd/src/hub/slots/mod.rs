@@ -403,6 +403,11 @@ impl Slots {
         Ok(self.state())
     }
 
+    /// Slots the project's tasks could take now ([`Board::room`]).
+    pub fn room(&self, r: &ProjectRef) -> i64 {
+        self.board().room(r)
+    }
+
     pub fn state(&self) -> SlotState {
         slot_state(self.board().state())
     }
