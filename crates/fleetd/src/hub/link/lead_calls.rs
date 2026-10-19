@@ -27,7 +27,9 @@ pub struct LeadCaller {
 
 /// Tells which of fleetd's agents a session is; the tasks area provides it.
 pub trait AgentDirectory: Send + Sync + 'static {
-    fn agent_of(&self, thread: &ThreadRef) -> CallerAgent;
+    /// The agent running in `thread` and the project it works for. A session that is neither a project's lead nor a
+    /// task, and a lookup that failed, are refusals.
+    fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError>;
 }
 
 /// The hub said no; `fix` tells the lead what to do instead. Sent to the CLI as the result frame's error.
@@ -62,13 +64,36 @@ impl LeadCalls {
         let _ = self.directory.set(directory);
     }
 
-    /// The agent behind `thread`; without a thread, a person.
-    pub fn agent_of(&self, thread: Option<&ThreadRef>) -> CallerAgent {
-        match (thread, self.directory.get()) {
-            (None, _) => CallerAgent::Person,
-            (Some(thread), Some(directory)) => directory.agent_of(thread),
-            (Some(_), None) => CallerAgent::Lead,
+    /// The agent behind a call the node attributed to `thread` (none: a person's own shell, outside every session),
+    /// made from `project`'s workspace. Fails closed: an unknown session, a failed lookup, or a session acting on
+    /// another project than its own is refused.
+    pub fn agent_of(
+        &self,
+        thread: Option<&ThreadRef>,
+        project: &ProjectRef,
+    ) -> Result<CallerAgent, McpToolError> {
+        let Some(thread) = thread else {
+            return Ok(CallerAgent::Person);
+        };
+        let Some(directory) = self.directory.get() else {
+            return Err(McpToolError::new(
+                ErrorCode::Failed,
+                "the hub cannot tell which agent this session is yet",
+            )
+            .with_fix("try again shortly"));
+        };
+        let (agent, own) = directory.agent_of(thread)?;
+        if &own != project {
+            return Err(McpToolError::new(
+                ErrorCode::Forbidden,
+                format!(
+                    "this session works for project {}/{}, not for the project its working directory is in",
+                    own.machine_id, own.project_id
+                ),
+            )
+            .with_fix("act only on your own project, from its workspace"));
         }
+        Ok(agent)
     }
 
     pub fn register(&self, op: &str, handler: Arc<dyn LeadCallHandler>) {

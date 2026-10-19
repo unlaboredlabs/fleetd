@@ -7,6 +7,7 @@ use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef, Timestamp};
 use fleetd_contracts::lead_calls::{AskLeadResult, LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
+use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::SessionWorkspace;
@@ -313,20 +314,60 @@ pub const LEAD_CALL_OPS: [&str; 6] = [
     "ask_lead",
 ];
 
-/// Tells the hub's lead-call handling which sessions are tasks' agents.
-struct Directory(Arc<Tasks>);
+/// Tells the hub's lead-call handling which sessions are tasks' agents and which are leads.
+struct Directory {
+    tasks: Arc<Tasks>,
+    hub: Weak<Hub>,
+}
 
 impl AgentDirectory for Directory {
-    fn agent_of(&self, thread: &ThreadRef) -> CallerAgent {
-        self.0
+    fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError> {
+        let failed = |error: String| {
+            tracing::error!(%error, "lead call: agent lookup failed");
+            McpToolError::new(
+                ErrorCode::Failed,
+                "the hub failed while checking who made this call",
+            )
+            .with_fix("try again shortly")
+        };
+        if let Some(task) = self
+            .tasks
             .task_of_thread(thread)
-            .map_or(CallerAgent::Lead, CallerAgent::Task)
+            .map_err(|e| failed(e.to_string()))?
+        {
+            return Ok((CallerAgent::Task(task.task_id), task.project_ref));
+        }
+        let hub = self
+            .hub
+            .upgrade()
+            .ok_or_else(|| failed("the hub is shutting down".into()))?;
+        let leads = hub
+            .leads
+            .records
+            .leads_list()
+            .map_err(|e| failed(e.to_string()))?;
+        match leads
+            .into_iter()
+            .find(|l| l.project_ref.machine_id == thread.machine_id && l.thread_id == thread.thread_id)
+        {
+            Some(lead) => Ok((CallerAgent::Lead, lead.project_ref)),
+            None => Err(McpToolError::new(
+                ErrorCode::Forbidden,
+                format!(
+                    "session {} is neither a project's lead nor a task, so it can't make fleetd's lead calls",
+                    thread.thread_id
+                ),
+            )
+            .with_fix("a person runs these commands from their own shell; agents use their fleetd tools")),
+        }
     }
 }
 
 pub fn register_lead_calls(hub: &Arc<Hub>) {
-    hub.lead_calls
-        .set_directory(Arc::new(Directory(Arc::clone(&hub.tasks))));
+    hub.lead_calls.set_directory(Arc::new(Directory {
+        tasks: Arc::clone(&hub.tasks),
+        hub: Arc::downgrade(hub),
+    }));
     let calls: Arc<dyn LeadCallHandler> = Arc::new(Calls(Arc::clone(&hub.tasks)));
     for op in LEAD_CALL_OPS {
         hub.lead_calls.register(op, Arc::clone(&calls));

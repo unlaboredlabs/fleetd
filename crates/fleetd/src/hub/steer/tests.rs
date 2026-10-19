@@ -858,13 +858,35 @@ async fn a_tasks_agent_is_a_worker_its_question_wakes_the_lead_and_it_cannot_spa
         machine_id: MachineId::unchecked("lab-a"),
         thread_id: ThreadId::unchecked(id),
     };
-    let worker = lab.hub.lead_calls.agent_of(Some(&thread("task-thread")));
+    let p1 = task.project_ref.clone();
+    let agent = |id: Option<&str>, project: &ProjectRef| {
+        lab.hub
+            .lead_calls
+            .agent_of(id.map(thread).as_ref(), project)
+    };
+    let worker = agent(Some("task-thread"), &p1).unwrap();
     assert_eq!(worker, CallerAgent::Task(task.task_id.clone()));
-    assert_eq!(
-        lab.hub.lead_calls.agent_of(Some(&thread("lead-thread"))),
-        CallerAgent::Lead
+    assert_eq!(agent(Some("lead-thread"), &p1), Ok(CallerAgent::Lead));
+    assert_eq!(agent(None, &p1), Ok(CallerAgent::Person));
+    // Fails closed: a session that is no lead or task, and a session acting on another project, are refused.
+    let unknown = agent(Some("someone-else"), &p1).unwrap_err();
+    assert!(
+        unknown
+            .message
+            .contains("neither a project's lead nor a task"),
+        "{}",
+        unknown.message
     );
-    assert_eq!(lab.hub.lead_calls.agent_of(None), CallerAgent::Person);
+    let other = ProjectRef {
+        machine_id: MachineId::unchecked("lab-a"),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p2"),
+    };
+    let elsewhere = agent(Some("task-thread"), &other).unwrap_err();
+    assert!(
+        elsewhere.message.contains("works for project lab-a/p1"),
+        "{}",
+        elsewhere.message
+    );
     let refused = policy::check(&worker, "task_spawn").unwrap_err();
     assert!(
         refused.message.starts_with("T1 is a task"),

@@ -12,11 +12,13 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::config::mkdir_private;
+use super::runner::process::PeerSession;
 use super::util::AbortOnDrop;
 use super::wire::{
     ErrorCode, LeadCallFrame, LeadResultFrame, LeadSocketFrame, McpToolError, NodeToHub, Text,
     to_json,
 };
+use fleetd_contracts::ids::ThreadId;
 
 pub fn lead_socket_path(home: &Path) -> PathBuf {
     home.join("node.sock")
@@ -184,9 +186,61 @@ fn decode_call(line: &str) -> Result<LeadCallFrame, String> {
     }
 }
 
+/// Which session a calling process runs in, from its pid (blocking).
+pub type Identify = Arc<dyn Fn(i32) -> PeerSession + Send + Sync>;
+
+/// Names the session a call comes from by where its process runs, never by what the frame claims: the hub tells a
+/// lead from a task by it. A frame naming another session than its process runs in, or naming one from outside every
+/// session, is refused; so is a call whose process can't be told.
+pub fn attribute(
+    mut frame: LeadCallFrame,
+    peer: Option<PeerSession>,
+) -> Result<LeadCallFrame, LeadResultFrame> {
+    let refuse = |message: String, fix: &str| {
+        Err(error_frame(
+            frame.id.as_str(),
+            McpToolError::new(ErrorCode::Forbidden, message).with_fix(fix),
+        ))
+    };
+    let claimed = frame.thread_id.as_ref().map(|t| t.as_str().to_owned());
+    match peer {
+        None => refuse(
+            "the node could not tell which process made this call".into(),
+            "run fleetd from a normal shell on this machine",
+        ),
+        Some(PeerSession::Detached(session)) => refuse(
+            format!(
+                "this call comes from a process session {session} left running in the background"
+            ),
+            "make the call from the session itself, through its fleetd tools",
+        ),
+        Some(PeerSession::Session(session)) => {
+            if claimed.as_ref().is_some_and(|c| *c != session) {
+                return refuse(
+                    format!(
+                        "this call names session {} but runs in session {session}",
+                        claimed.unwrap_or_default()
+                    ),
+                    "use your own fleetd tools; a session acts only as itself",
+                );
+            }
+            frame.thread_id = Some(ThreadId::unchecked(session));
+            Ok(frame)
+        }
+        Some(PeerSession::Outside) => match claimed {
+            Some(c) => refuse(
+                format!("this call names fleetd session {c} but does not run in it"),
+                "unset FLEETD_THREAD_ID to act as yourself",
+            ),
+            None => Ok(frame),
+        },
+    }
+}
+
 /// Reads one line, answers it with one line, and closes. Half-open: a CLI that ends its side after writing still
 /// gets the answer.
-async fn serve_connection(mut conn: UnixStream, relay: LeadRelay) {
+async fn serve_connection(mut conn: UnixStream, relay: LeadRelay, identify: Identify) {
+    let pid = conn.peer_cred().ok().and_then(|c| c.pid());
     let mut buffer: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 8192];
     let line = loop {
@@ -215,7 +269,18 @@ async fn serve_connection(mut conn: UnixStream, relay: LeadRelay) {
         }
     };
     let answer = match decode_call(&line) {
-        Ok(frame) => relay.call(frame).await,
+        Ok(frame) => {
+            let peer = match pid {
+                Some(pid) => tokio::task::spawn_blocking(move || identify(pid))
+                    .await
+                    .ok(),
+                None => None,
+            };
+            match attribute(frame, peer) {
+                Ok(frame) => relay.call(frame).await,
+                Err(refused) => refused,
+            }
+        }
         Err(why) => bad_frame(&format!("not a lead_call frame: {why}")),
     };
     reply(&mut conn, &answer).await;
@@ -262,8 +327,13 @@ impl Drop for LeadSocket {
 }
 
 /// Serves lead-side CLI calls on a unix socket (mode 0600, in the node's 0700 home). Every process of the node's OS
-/// user can call it; the hub decides which project a call belongs to from its cwd.
-pub async fn serve_lead_socket(path: PathBuf, relay: LeadRelay) -> Result<LeadSocket, String> {
+/// user can call it; the node names the session a call's process runs in ([`attribute`]) and the hub decides which
+/// project it belongs to.
+pub async fn serve_lead_socket(
+    path: PathBuf,
+    relay: LeadRelay,
+    identify: Identify,
+) -> Result<LeadSocket, String> {
     let parent = path.parent().unwrap_or(Path::new("/"));
     mkdir_private(parent).map_err(|_| format!("cannot create {}", parent.display()))?;
     clear_stale_socket(&path).await?;
@@ -276,7 +346,7 @@ pub async fn serve_lead_socket(path: PathBuf, relay: LeadRelay) -> Result<LeadSo
             let mut connections = tokio::task::JoinSet::new();
             while let Ok((conn, _)) = listener.accept().await {
                 while connections.try_join_next().is_some() {}
-                connections.spawn(serve_connection(conn, relay.clone()));
+                connections.spawn(serve_connection(conn, relay.clone(), identify.clone()));
             }
         })),
     };
@@ -284,4 +354,59 @@ pub async fn serve_lead_socket(path: PathBuf, relay: LeadRelay) -> Result<LeadSo
         .map_err(|_| format!("cannot restrict {} to mode 0600", path.display()))?;
     tracing::info!(socket_path = %path.display(), "lead socket listening");
     Ok(serving)
+}
+
+#[cfg(test)]
+mod attribution_tests {
+    use super::*;
+
+    fn frame(thread: Option<&str>) -> LeadCallFrame {
+        let mut value = serde_json::json!({
+            "id": "cli-1", "cwd": "/w", "call": { "op": "task_list" },
+        });
+        if let Some(t) = thread {
+            value["threadId"] = t.into();
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn named(r: Result<LeadCallFrame, LeadResultFrame>) -> Result<Option<String>, String> {
+        r.map(|f| f.thread_id.map(|t| t.as_str().to_owned()))
+            .map_err(|e| e.error.unwrap().message)
+    }
+
+    #[test]
+    fn the_session_comes_from_the_process_never_from_the_frame() {
+        let task = || Some(PeerSession::Session("task-1".into()));
+        // A task's process is the task whether it names itself or nothing (FLEETD_THREAD_ID unset).
+        assert_eq!(
+            named(attribute(frame(None), task())),
+            Ok(Some("task-1".into()))
+        );
+        assert_eq!(
+            named(attribute(frame(Some("task-1")), task())),
+            Ok(Some("task-1".into()))
+        );
+        // Naming the lead's session from a task's process is refused.
+        let forged = named(attribute(frame(Some("lead-1")), task())).unwrap_err();
+        assert!(
+            forged.contains("names session lead-1 but runs in session task-1"),
+            "{forged}"
+        );
+        // A person's shell names nothing; naming a session from outside it, a detached child or an unknown process
+        // is refused.
+        assert_eq!(
+            named(attribute(frame(None), Some(PeerSession::Outside))),
+            Ok(None)
+        );
+        assert!(named(attribute(frame(Some("lead-1")), Some(PeerSession::Outside))).is_err());
+        assert!(
+            named(attribute(
+                frame(None),
+                Some(PeerSession::Detached("task-1".into()))
+            ))
+            .is_err()
+        );
+        assert!(named(attribute(frame(None), None)).is_err());
+    }
 }

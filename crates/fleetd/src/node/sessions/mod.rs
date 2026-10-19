@@ -601,6 +601,17 @@ impl SessionService {
         Ok(service)
     }
 
+    /// Which session a process calling the node's socket runs in (blocking: it reads the process table).
+    pub fn peer_session(&self, pid: i32) -> super::runner::process::PeerSession {
+        let roots = self
+            .st()
+            .live
+            .iter()
+            .map(|(id, live)| (live.pid as i32, id.clone()))
+            .collect();
+        super::runner::process::peer_session(&super::runner::process::table(), pid, &roots)
+    }
+
     fn st(&self) -> MutexGuard<'_, State> {
         self.inner.state.lock().unwrap_or_else(|p| p.into_inner())
     }

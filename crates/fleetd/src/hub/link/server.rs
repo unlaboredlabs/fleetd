@@ -412,7 +412,10 @@ impl NodeLinkServer {
                     machine_id: machine_id.clone(),
                     thread_id,
                 });
-            let agent = self.deps.lead_calls.agent_of(thread.as_ref());
+            let agent = self
+                .deps
+                .lead_calls
+                .agent_of(thread.as_ref(), &project_ref)?;
             crate::hub::tasks::policy::check(&agent, &op_of(&frame.call))?;
             let caller = LeadCaller {
                 by: lead_by(&project_ref),

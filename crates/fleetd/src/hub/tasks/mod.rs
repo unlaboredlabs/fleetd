@@ -1332,14 +1332,10 @@ impl Tasks {
     }
 
     /// The task whose agent runs in `thread`, if one does.
-    pub fn task_of_thread(&self, thread: &ThreadRef) -> Option<TaskId> {
-        match self.db(|c| TaskRecords::by_thread(c, thread)) {
-            Ok(found) => found.map(|s| s.task.task_id),
-            Err(error) => {
-                tracing::error!(%error, "tasks: thread lookup failed");
-                None
-            }
-        }
+    pub fn task_of_thread(&self, thread: &ThreadRef) -> Result<Option<Task>, StoreError> {
+        Ok(self
+            .db(|c| TaskRecords::by_thread(c, thread))?
+            .map(|s| s.task))
     }
 
     /// A task's agent asks its lead (`ask_lead`): the lead is woken with the question, as with a task waiting for
