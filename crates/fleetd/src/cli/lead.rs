@@ -18,8 +18,11 @@ const SERVES_FIX: &str =
 
 pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <A>]
              freeze the brief of a draft workstream and start it
-  ask --key <k> --class <product|money|credential|irreversible> --text <t> --rec <r>
-      [--options a,b] [--blocks "<step>"] [--proceeded] [--workstream <W>]
+  ask --key <k> --class <product|money|credential|irreversible> --text "<short question>"
+      [--context "<1-2 lines of background>"] --option '<key>|<Label>|<what happens if picked>'
+      --option '...' (2 to 6) --rec <option key> --why "<one line: why you recommend it>"
+      [--blocks "<step>"] [--proceeded] [--workstream <W>]
+             the human sees the labels and consequences as choices; keys are only recorded
   ask --kind do --key <k> --class <c> --text <t> --step '<json>' [--step '<json>' ...]
       [--verify '<check json>']
              a step is {"text","where":"<machine>|browser","command"?,"expect"?}; --verify is a
@@ -39,7 +42,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L] [--estimate <min>]
+      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
       [--serves done:<n>|issue:<ref>|defect:<text>|ask:<A>] [--pr <url>] [--qa] [--item P<n>]
              delegate work to a subagent; writers need --areas and --serves and get their own
              branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
@@ -71,11 +74,12 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
       [--position <n>] [--why "<note>"] [--steer S<n>]
   plan drop P<n> (--why "<reason>" | --steer S<n>)
   plan show [--workstream <W>]
-             keep the project's plan: milestones of must or polish items sized s, m or l. Link
-             work with --item; only fleetd marks an item done, once its PRs merged through the
-             train and its done-when checks passed. Changing scope after a milestone's first 10
-             minutes needs --why, and the status view shows it as a marker. --steer S<n> says the
-             human's steer asked for it: it stands in for --why and acknowledges the steer
+             keep the project's plan: milestones of must or polish items sized s, m or l
+             (relative size, never hours). Link work with --item; only fleetd marks an item
+             done, once its PRs merged through the train and its done-when checks passed.
+             Changing scope after a milestone's first 10 minutes needs --why, and the status
+             view shows it as a marker. --steer S<n> says the human's steer asked for it: it
+             stands in for --why and acknowledges the steer
   inventory  the project's open work ranked: failing checks, open issues (gh), open asks and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
@@ -126,6 +130,8 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("text", Kind::Str),
     ("rec", Kind::Str),
     ("options", Kind::Str),
+    ("option", Kind::Multi),
+    ("context", Kind::Str),
     ("step", Kind::Multi),
     ("blocks", Kind::Str),
     ("proceeded", Kind::Bool),
@@ -139,7 +145,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("model", Kind::Str),
     ("effort", Kind::Str),
     ("tier", Kind::Str),
-    ("estimate", Kind::Str),
     ("serves", Kind::Str),
     ("pr", Kind::Str),
     ("qa", Kind::Bool),
@@ -208,14 +213,6 @@ fn s(value: Option<&str>) -> Option<Value> {
 
 fn all_digits(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// `/^\d+(\.\d+)?$/`
-fn is_minutes(text: &str) -> bool {
-    match text.split_once('.') {
-        Some((whole, frac)) => all_digits(whole) && all_digits(frac),
-        None => all_digits(text),
-    }
 }
 
 /// `/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i`
@@ -335,7 +332,10 @@ pub fn parse_lead_args(
                     "class",
                     "text",
                     "rec",
+                    "why",
                     "options",
+                    "option",
+                    "context",
                     "step",
                     "verify",
                     "sink",
@@ -369,6 +369,34 @@ pub fn parse_lead_args(
                     .str("verify")
                     .map(|text| parse_json("--verify", text))
                     .transpose()?;
+                // `key|Label|what happens`: the label and consequence may hold commas; only the first two '|' split.
+                let mut options: Vec<Value> = v
+                    .multi("option")
+                    .iter()
+                    .map(|o| {
+                        let mut parts = o.splitn(3, '|').map(str::trim);
+                        defined(vec![
+                            ("key", parts.next().map(|k| Value::String(k.to_owned()))),
+                            (
+                                "label",
+                                parts
+                                    .next()
+                                    .filter(|l| !l.is_empty())
+                                    .map(|l| Value::String(l.to_owned())),
+                            ),
+                            (
+                                "consequence",
+                                parts
+                                    .next()
+                                    .filter(|c| !c.is_empty())
+                                    .map(|c| Value::String(c.to_owned())),
+                            ),
+                        ])
+                    })
+                    .collect();
+                if let Some(bare) = v.str("options") {
+                    options.extend(split_list(bare));
+                }
                 let mut steps = Vec::new();
                 for (i, step) in v.multi("step").iter().enumerate() {
                     steps.push(parse_json(&format!("--step {}", i + 1), step)?);
@@ -379,10 +407,12 @@ pub fn parse_lead_args(
                     ("key", s(v.str("key"))),
                     ("class", s(class)),
                     ("text", s(v.str("text"))),
+                    ("context", s(v.str("context"))),
                     ("recommendation", s(v.str("rec"))),
+                    ("recommendationWhy", s(v.str("why"))),
                     (
                         "options",
-                        v.str("options").map(|o| Value::Array(split_list(o))),
+                        (!options.is_empty()).then_some(Value::Array(options)),
                     ),
                     ("steps", (!steps.is_empty()).then_some(Value::Array(steps))),
                     ("verify", verify),
@@ -452,18 +482,12 @@ pub fn parse_lead_args(
                     "model",
                     "effort",
                     "tier",
-                    "estimate",
                     "serves",
                     "pr",
                     "qa",
                     "item",
                 ])?;
                 required(&["workstream", "title", "prompt"])?;
-                if let Some(estimate) = v.str("estimate")
-                    && !is_minutes(estimate)
-                {
-                    return Err(format!("--estimate is minutes, got '{estimate}'"));
-                }
                 // The contract refuses it too, but this says it in one plain line.
                 if v.str("kind").unwrap_or("write") == "write" && v.str("serves").is_none() {
                     return Err(format!("a write task needs --serves: {SERVES_FIX}"));
@@ -478,7 +502,6 @@ pub fn parse_lead_args(
                     ("model", s(v.str("model"))),
                     ("effort", s(v.str("effort"))),
                     ("tier", s(v.str("tier"))),
-                    ("estimateMinutes", v.str("estimate").map(number)),
                     ("serves", s(v.str("serves"))),
                     ("pr", s(v.str("pr"))),
                     ("qa", v.flag("qa").then_some(Value::Bool(true))),
@@ -1677,16 +1700,46 @@ mod tests {
             "product",
             "--text",
             "Path?",
+            "--context",
+            "The load balancer probes it.",
             "--rec",
             "/healthz",
-            "--options",
-            "/healthz, /health",
+            "--why",
+            "The probe expects it.",
+            "--option",
+            "/healthz|/healthz|Matches the probe, no config change.",
+            "--option",
+            "/health | Shorter | The probe config changes too, then it works|",
         ])
         .unwrap();
         assert_eq!(ask["kind"], "decide");
         assert_eq!(ask["blocks"], "nothing");
         assert_eq!(ask["proceededOnRec"], false);
-        assert_eq!(ask["options"], json!(["/healthz", "/health"]));
+        assert_eq!(ask["context"], "The load balancer probes it.");
+        assert_eq!(ask["recommendationWhy"], "The probe expects it.");
+        assert_eq!(
+            ask["options"],
+            json!([
+                { "key": "/healthz", "label": "/healthz", "consequence": "Matches the probe, no config change." },
+                { "key": "/health", "label": "Shorter", "consequence": "The probe config changes too, then it works|" }
+            ])
+        );
+        // The old bare form still parses; the hub then refuses it with the command to send instead.
+        let bare = parse(&[
+            "ask",
+            "--key",
+            "a.b",
+            "--class",
+            "product",
+            "--text",
+            "t",
+            "--rec",
+            "x",
+            "--options",
+            "x, y",
+        ])
+        .unwrap();
+        assert_eq!(bare["options"], json!([{ "key": "x" }, { "key": "y" }]));
         assert_eq!(
             parse(&["decide", "--key", "a.b", "--value", "v"]).unwrap()["scope"],
             "workstream"

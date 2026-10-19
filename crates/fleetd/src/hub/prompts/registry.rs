@@ -246,6 +246,16 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "digest.answer.skipped",
+        Wake,
+        WakesAndMessages,
+        Lead,
+        "Digest: an ask the human skipped for now",
+        "each digest, per skipped ask",
+        "askId!=the ask, A<n>; key!=its decision key; value!=your recommendation, with its label",
+        &[]
+    ),
+    entry!(
         "digest.tasks.running",
         Wake,
         WakesAndMessages,

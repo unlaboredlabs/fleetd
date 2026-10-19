@@ -2,13 +2,14 @@
 title: Status
 section: Using fleetd
 order: 72
-description: How far along an order, a project or the fleet is, when it will be done, and what it waits on, never stale.
+description: How far along an order, a project or the fleet is, what it waits on and what is slower than usual, never stale.
 ---
 
-Status answers "how far along is this, and when will it be done?" for one order, one project or the whole fleet: a
-progress number fleetd verified itself, an ETA from measured speed, what the work waits on, what changed since you
+Status answers "how far along is this, and what is it waiting on?" for one order, one project or the whole fleet: a
+progress number fleetd verified itself, what the work waits on, what is slower than usual, what changed since you
 last looked, the fleet's health and the risks worth knowing. Every part says how fresh it is, and a part that isn't
-live says so.
+live says so. It never shows a finish time: agents are bad at judging time, so fleetd shows state instead and keeps
+them working as fast as they can.
 
 Open it in the [desktop app](desktop-app.md#status) with ⌘. (Ctrl+. on Linux), or from a terminal on the hub machine:
 
@@ -18,13 +19,13 @@ storefront  61%  polish 2/5    as of 14:02:07 (live)
   11 of 18 required items verified
   ↓ from 69% · +3 items: checkout redesign added (14:00)
   Switching payments to the new provider, waiting on the full test run. Nothing needs you.   [generated]
-  eta Thu 14:00   planned Wed 18:00 (+6h scope, +14h slower)   4.1 pts/busy h, 18 samples
-  waiting on  P12 full test run (serial); CI on #212
+  waiting on: P12 full test run (serial) → CI on #212
   since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items
 health  main CI acme/storefront green as of 14:01:50 · 2 of 2 machines online · claude 58% 5h 41% wk · 8 running, slots 8/40
 risks   check `e2e (safari)` failed on 2 PRs today
-doing   P12 full test run   T88   eta 14:40
-        P15 provider cutover   T90   review of #212   eta 15:10
+        slower than usual: review of #212
+doing   P12 full test run   T88
+        P15 provider cutover   T90   review of #212
 next    P14 switch the default provider (after P12), P16 docs page
 done    P9 webhook outbox   #208 merged by the train 13:12 · check 2 passed C7
 ```
@@ -64,23 +65,18 @@ next to the number:
 Items the hub closes itself get a marker too: open items of an order that finished without linking them ("−2 items:
 closed with W41, not separately verified"), or of an order that was stopped.
 
-## How the ETA is measured
+## What it waits on
 
-The ETA comes from how fast fleetd actually verified work over the last 7 days, never from the lead's guess:
+"Waiting on" is the work's critical path: up to three things it is blocked by right now, serial ones first, such as an
+item others wait on (`--after`), a review, CI on a PR, the merge train, your answer to an ask, a free slot, or a
+machine that's offline. Each row under `doing` names its own blocker too.
 
-- **Speed** is points verified per busy hour. Busy time is when orders were running, so a quiet weekend doesn't make
-  the fleet look slow, and CI, reviews and waiting on you are all inside it.
-- **Samples:** an ETA needs 5 verified items. An order with fewer borrows its project's speed, shared among the
-  project's running orders, then the fleet's. Below 5 anywhere, the view says "measuring: 2 of 5 verified" instead of
-  guessing.
-- **Serial work:** when items must happen one after another (`--after`), the ETA is at least the length of that chain,
-  and the view names the item that sets it.
-- **Planned vs current:** an order or milestone keeps its first ETA as "planned". When the current ETA is later, the
-  difference is split into what scope added and what slower speed cost: "planned Wed 18:00 (+6h scope, +14h slower)".
-- When the lead's own estimate is far from the measured one, both show, and the measured one wins.
+An item that has spent much longer than usual in its current stage (in review, in CI, waiting to merge) is listed
+under risks as "slower than usual", measured against how long that stage normally takes in this project.
 
-"Waiting on" names up to three things the work is blocked by right now, serial ones first: an item others wait on,
-CI on a PR, the merge train, your answer to an ask, a free slot, or a machine that's offline.
+Status never shows an ETA or a finish time. Durations it has measured, such as how long a CI run took or how long ago
+a machine was last seen, are observations and do show; the [time inspector](time-inspector.md) breaks a run down
+into them.
 
 ## Since you last looked
 
@@ -133,7 +129,8 @@ sooner: a lost or forged delivery can't change what it records.
 ## The headline
 
 The sentence under the number is written by Claude (haiku, through your `claude` login on the hub, no tools) from a
-short list of facts fleetd computed: the number, what's in progress, what it waits on, the ETA and the top risks. Every
+short list of facts fleetd computed: the number, what's in progress, what it waits on and the top risks. It never
+mentions time. Every
 number in it must appear in those facts, or it's thrown away. It's rewritten only for views someone has open, at most
 once a minute per view and 300 times a day.
 

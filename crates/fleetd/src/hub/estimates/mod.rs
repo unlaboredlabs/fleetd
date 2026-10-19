@@ -1,17 +1,16 @@
 //! Estimates vs actuals. When a workstream with a raw estimate starts running, its tier's ratio is saved as
 //! `ratioAtStart`; when it is done, the wall-clock minutes since then are its actual. A tier's ratio is the median
-//! actual/raw of its latest done workstreams (calibration.rs), and an actual over twice the raw is an incident.
+//! actual/raw of its latest done workstreams (calibration.rs).
 pub mod calibration;
 
 use crate::clock::Clock;
 use crate::hub::checks::ports::Ports;
-use crate::hub::incidents::{IncidentInput, Incidents};
 use crate::hub::store::{EventLog, HubDb, StoreError, WaitInput, now_ms};
-use calibration::{Calibration, MISS_RATIO, WINDOW, calibrate, eta_of, round1};
+use calibration::{Calibration, WINDOW, calibrate, eta_of, round1};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ledger::{Tier, Workstream, WorkstreamEstimateActual, WorkstreamId};
 use fleetd_contracts::prim::{NonNegative, PositiveNumber};
-use fleetd_contracts::verification::{Eta, IncidentClass};
+use fleetd_contracts::verification::Eta;
 use rusqlite::OptionalExtension;
 use std::sync::Arc;
 
@@ -20,7 +19,6 @@ pub use calibration::eta_text;
 pub struct Estimates {
     db: Arc<HubDb>,
     ports: Arc<dyn Ports>,
-    incidents: Arc<Incidents>,
     clock: Arc<dyn Clock>,
 }
 
@@ -32,44 +30,23 @@ fn tier_name(tier: Tier) -> &'static str {
     }
 }
 
-/// JS `String(n)` for the evidence lines: integers without ".0".
-fn num(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < 1e15 {
-        format!("{}", n as i64)
-    } else {
-        format!("{n}")
-    }
-}
-
 struct Row {
-    tier: String,
-    raw_minutes: f64,
     ratio_at_start: f64,
     started_ms: i64,
     done_ms: Option<i64>,
 }
 
 impl Estimates {
-    pub fn new(
-        db: Arc<HubDb>,
-        ports: Arc<dyn Ports>,
-        incidents: Arc<Incidents>,
-        clock: Arc<dyn Clock>,
-    ) -> Self {
-        Self {
-            db,
-            ports,
-            incidents,
-            clock,
-        }
+    pub fn new(db: Arc<HubDb>, ports: Arc<dyn Ports>, clock: Arc<dyn Clock>) -> Self {
+        Self { db, ports, clock }
     }
 
     fn row(&self, id: &WorkstreamId) -> Result<Option<Row>, StoreError> {
         self.db.with(|conn| {
             Ok(conn
-                .prepare_cached("SELECT tier, raw_minutes, ratio_at_start, started_ms, done_ms FROM estimates WHERE workstream_id = ?")?
+                .prepare_cached("SELECT ratio_at_start, started_ms, done_ms FROM estimates WHERE workstream_id = ?")?
                 .query_row([id.as_str()], |r| {
-                    Ok(Row { tier: r.get(0)?, raw_minutes: r.get(1)?, ratio_at_start: r.get(2)?, started_ms: r.get(3)?, done_ms: r.get(4)? })
+                    Ok(Row { ratio_at_start: r.get(0)?, started_ms: r.get(1)?, done_ms: r.get(2)? })
                 })
                 .optional()?)
         })
@@ -143,8 +120,7 @@ impl Estimates {
         Ok(())
     }
 
-    /// Stores `actualMinutes`, records `estimate_miss` past 2x the raw. Once per workstream; no-op if it never started
-    /// the clock.
+    /// Stores `actualMinutes`. Once per workstream; no-op if it never started the clock.
     pub fn record_done(&self, id: &WorkstreamId) -> Result<(), StoreError> {
         let Some(row) = self.row(id)? else {
             return Ok(());
@@ -166,34 +142,6 @@ impl Estimates {
                 ratio_at_start: PositiveNumber::unchecked(row.ratio_at_start),
             },
         );
-        let raw = row.raw_minutes;
-        if raw <= 0.0 || actual_minutes / raw <= MISS_RATIO {
-            return Ok(());
-        }
-        let Some(workstream) = self.ports.workstream(id) else {
-            return Ok(());
-        };
-        self.incidents.record(IncidentInput {
-            class: IncidentClass::EstimateMiss,
-            project_ref: workstream.project_ref,
-            workstream_id: Some(id.clone()),
-            task_id: None,
-            evidence: vec![
-                format!(
-                    "{id} (tier {}) took {} min against a raw estimate of {} min: {}x, over the {}x limit.",
-                    row.tier,
-                    num(actual_minutes),
-                    num(raw),
-                    num(round1(actual_minutes / raw)),
-                    num(MISS_RATIO)
-                ),
-                format!(
-                    "The calibrated estimate at start was {} min (ratio {}).",
-                    num(round1(raw * row.ratio_at_start)),
-                    num(row.ratio_at_start)
-                ),
-            ],
-        })?;
         Ok(())
     }
 

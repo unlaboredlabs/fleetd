@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::{
-    Ask, CheckSpec, Decision, DecisionScope, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
+    Ask, AskAnswerKind, AskState, CheckSpec, Decision, DecisionScope, PlaybookRef, Workstream,
+    WorkstreamId, WorkstreamState,
 };
 
 use super::ports::Answer;
@@ -290,6 +291,29 @@ fn answer_line(set: &PromptSet, answer: &Answer) -> String {
         .as_deref()
         .or(answer.decision.as_ref().map(|d| d.value.as_ref()))
         .unwrap_or("");
+    // The human reads labels; the lead gets the key it filed plus the label the human picked.
+    let label = ask
+        .options
+        .iter()
+        .flatten()
+        .find(|o| o.key.as_str() == value)
+        .and_then(|o| o.label.as_ref())
+        .map(|l| format!(" (\"{l}\")"))
+        .unwrap_or_default();
+    if ask.state == AskState::Defaulted {
+        return set.render(
+            "digest.answer.skipped",
+            &[
+                ("askId", &ask.ask_id),
+                ("key", &ask.key),
+                ("value", &format!("{}{label}", one_line(value, 300))),
+            ],
+        );
+    }
+    let own_words = ask
+        .answer
+        .as_ref()
+        .is_some_and(|a| a.kind == Some(AskAnswerKind::Text));
     let decision = answer
         .decision
         .as_ref()
@@ -301,9 +325,14 @@ fn answer_line(set: &PromptSet, answer: &Answer) -> String {
         .map(|e| format!("; {}", one_line(e.as_ref(), 600)))
         .unwrap_or_default();
     format!(
-        "- {} {} → {}{decision}{evidence}",
+        "- {} {} → {}{}{label}{decision}{evidence}",
         ask.ask_id,
         ask.key,
+        if own_words {
+            "in the human's own words: "
+        } else {
+            ""
+        },
         one_line(value, 300)
     )
 }

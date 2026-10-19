@@ -8,6 +8,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { askCard } from "./askCard.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
 import { FAILURE_SCENARIOS } from "./failure/index.ts";
@@ -89,6 +90,8 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // One order on the testbed through the train, with a human-approved gated run: its timeline must add up. After m9,
   // whose router must not see the testbed project.
   { name: "time", run: timeInspector },
+  // A real lead writes its own labelled ask; the answer goes through the undo window. Only when named.
+  { name: "ask", run: askCard, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.
   { name: "demo", run: demoFanout, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.

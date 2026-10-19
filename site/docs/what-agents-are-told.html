@@ -64,6 +64,13 @@ with no tools (the router, the retro). Your own claude setup applies as usual un
 <p>A <a href="/docs/steering">steer</a> reaches the agent as one short message from you, wrapped in the <code>steer.message</code> prompt,
 which asks it to begin its reply with the steer's id. When you steer an agent directly, its lead hears about it in a
 wake line (<code>wake.agent_steer</code>).</p>
+<h2 id="no-time">No time estimates<a class="anchor" href="#no-time" aria-label="Link to this section">#</a></h2>
+<p>Agents are bad at judging time, so fleetd never asks one for an estimate. No prompt asks for an ETA, a duration or
+"this should take", and leads are told never to put one in a brief, an ask, a status line, a plan or a summary. Plan
+items and research budgets are sized S, M or L instead. In place of a clock, leads work for throughput: keep every
+slot busy, run work that touches separate areas in parallel, judge each slice as it lands, put each finished PR on the
+train at once, and never sit idle while work is runnable. What fleetd measures (CI runs, span durations, ages) is
+shown as measured; see <a href="/docs/status">Status</a>.</p>
 <h2 id="auto-memory">Claude's auto memory is off<a class="anchor" href="#auto-memory" aria-label="Link to this section">#</a></h2>
 <p>Claude Code can keep its own notes per folder ("auto memory") and read them back in later sessions. fleetd turns that
 off in every claude it starts, whatever your <code>~/.claude/settings.json</code> says: what an agent knows comes from its brief,
@@ -165,6 +172,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <tr><td><code>digest.workstream.no_brief</code></td><td>each digest, per draft order</td><td></td></tr>
 <tr><td><code>digest.finish_all_idle</code></td><td>each digest, per idle finish-all order</td><td></td></tr>
 <tr><td><code>digest.answer.withdrawn</code></td><td>each digest, per dropped ask</td><td></td></tr>
+<tr><td><code>digest.answer.skipped</code></td><td>each digest, per skipped ask</td><td></td></tr>
 <tr><td><code>digest.tasks.running</code></td><td>each digest, per running task</td><td></td></tr>
 <tr><td><code>digest.tasks.idle</code></td><td>each digest, per idle task</td><td></td></tr>
 <tr><td><code>digest.tasks.queued</code></td><td>each digest, per queued task</td><td></td></tr>
@@ -226,6 +234,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <p>On this page</p>
 <ul>
 <li><a href="#how-a-session-gets-its-instructions">How a session gets its instructions</a></li>
+<li><a href="#no-time">No time estimates</a></li>
 <li><a href="#auto-memory">Claude's auto memory is off</a></li>
 <li><a href="#safety">Safety rules: code or prompt</a></li>
 <li><a href="#edit-a-prompt">Edit a prompt</a></li>

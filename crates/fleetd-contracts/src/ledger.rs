@@ -349,6 +349,9 @@ brand!(
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BriefBudget {
+    /// How big a research spend the lead allows, relative like plan sizes; never a time guess.
+    pub size: Option<Tier>,
+    /// Older briefs only; a lead now gives `size`.
     pub agent_hours: Option<PositiveNumber>,
 }
 
@@ -658,7 +661,87 @@ pub fn ask_blocks_nothing() -> AskBlocks {
     Text::unchecked("nothing")
 }
 
-pub type AskOptions = List<DecisionValue, 0, 6>;
+/// One choice of a decide ask. The human reads `label` and `consequence`; `key` is internal and is what gets recorded.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AskOption {
+    /// The decision value recorded when the human picks it, e.g. "public-snapshot".
+    pub key: DecisionValue,
+    /// A few words, e.g. "Public snapshot". Absent only on asks stored before labels: show [`humanize_key`].
+    pub label: Option<AskOptionLabel>,
+    /// One line, what happens if the human picks it. Absent only on asks stored before labels.
+    pub consequence: Option<AskConsequence>,
+}
+
+pub type AskOptionLabel = Line<1, 80>;
+pub type AskConsequence = Line<1, 200>;
+
+impl AskOption {
+    /// An option stored before labels: its key alone.
+    pub fn bare(key: DecisionValue) -> Self {
+        Self {
+            key,
+            label: None,
+            consequence: None,
+        }
+    }
+
+    /// What to show the human: the label, or the humanized key on an old ask.
+    pub fn display_label(&self) -> String {
+        match &self.label {
+            Some(label) => label.to_string(),
+            None => humanize_key(&self.key),
+        }
+    }
+}
+
+// Asks stored before labels have their options as plain strings.
+impl<'de> Deserialize<'de> for AskOption {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Labelled {
+            key: DecisionValue,
+            label: Option<AskOptionLabel>,
+            consequence: Option<AskConsequence>,
+        }
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Stored {
+            Bare(DecisionValue),
+            Labelled(Labelled),
+        }
+        Ok(match Stored::deserialize(d)? {
+            Stored::Bare(key) => AskOption::bare(key),
+            Stored::Labelled(o) => AskOption {
+                key: o.key,
+                label: o.label,
+                consequence: o.consequence,
+            },
+        })
+    }
+}
+
+/// "a-monthly-vs-week" -> "A monthly vs week": an old ask's slug as a readable label. Text that is not a slug
+/// (it has spaces or capitals already) is kept as it is.
+pub fn humanize_key(key: &str) -> String {
+    let slug = !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.'));
+    if !slug {
+        return key.to_string();
+    }
+    let words = key.replace(['-', '_', '.'], " ");
+    let mut chars = words.trim().chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => key.to_string(),
+    }
+}
+
+pub type AskOptions = List<AskOption, 0, 6>;
 pub type AskSteps = List<Step, 0, 20>;
 
 // Approve asks (M8): a command the node runs from these stored bytes, only after a human answers "go".
@@ -858,6 +941,26 @@ pub fn ask_project_rule(project_ref: Option<&ProjectRef>, key: &str) -> Result<(
     Ok(())
 }
 
+/// A question line the card shows bold on its own; longer background goes in `context`.
+pub const ASK_QUESTION_MAX: usize = 160;
+pub type AskContext = Text<1, 400>;
+pub type AskRecommendationWhy = Line<1, 200>;
+
+/// How long after an answer `inbox_undo` can take it back. The lead hears of the answer only once this has passed.
+pub const ASK_UNDO_WINDOW_MS: i64 = 10_000;
+
+/// option: one of the ask's options (`value` is its key). text: the human's own words ("Something else…"). skip:
+/// "Skip for now", the lead carries on with its recommendation (`value`) and no decision is recorded. Absent on
+/// answers recorded before kinds, and for approve, do and secret answers ("go", "done", "no").
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AskAnswerKind {
+    Option,
+    Text,
+    Skip,
+}
+
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AskAnswer {
@@ -866,6 +969,35 @@ pub struct AskAnswer {
     pub at: Timestamp,
     /// The reply text it was parsed from.
     pub raw: String,
+    pub kind: Option<AskAnswerKind>,
+    /// The reply's note ("1 a: because …"), kept for the decision's why.
+    pub note: Option<String>,
+    /// Who the decision will be recorded as, once the undo window passes.
+    pub source: Option<DecisionSource>,
+    /// Until then `inbox_undo` reopens the ask and the lead never hears of the answer.
+    pub undo_until: Option<Timestamp>,
+    /// The receipt: when the lead was woken with this answer. Absent while the undo window runs.
+    pub delivered_at: Option<Timestamp>,
+}
+
+impl AskAnswer {
+    /// "You chose: <this>": the picked option's label, the human's own words, or the recommendation kept by a skip.
+    pub fn display(&self, ask: &Ask) -> String {
+        let label = |key: &str| {
+            ask.options
+                .iter()
+                .flatten()
+                .find(|o| o.key.as_str() == key)
+                .map_or_else(|| humanize_key(key), AskOption::display_label)
+        };
+        match self.kind {
+            Some(AskAnswerKind::Text) => self.value.clone(),
+            Some(AskAnswerKind::Skip) => {
+                format!("Skipped for now (lead keeps: {})", label(&self.value))
+            }
+            _ => label(&self.value),
+        }
+    }
 }
 
 #[skip_serializing_none]
@@ -879,10 +1011,15 @@ pub struct Ask {
     pub kind: AskKind,
     pub key: DecisionKey,
     pub class: AskClass,
+    /// The question. On asks filed since labels, one short line; the background is in `context`.
     pub text: AskText,
+    /// One or two lines of background, shown under the question.
+    pub context: Option<AskContext>,
     pub options: Option<AskOptions>,
-    /// Required for decide.
+    /// Required for decide. On asks filed since labels, the key of one of `options`.
     pub recommendation: Option<DecisionValue>,
+    /// The lead's one-line reason for its recommendation.
+    pub recommendation_why: Option<AskRecommendationWhy>,
     /// Required for do.
     pub steps: Option<AskSteps>,
     /// do: the check the hub runs once the human ticks it done; a failure reopens the ask with the evidence.
@@ -910,6 +1047,25 @@ pub struct Ask {
     pub decision_id: Option<DecisionId>,
     pub created_at: Timestamp,
 }
+impl Ask {
+    /// The options as the card lists them: the recommended one first, then the rest, never twice. An old ask whose
+    /// recommendation is free text and not one of its options gets it as a bare first option. Empty for asks
+    /// without options or a recommendation (do, secret, approve).
+    pub fn choices(&self) -> Vec<AskOption> {
+        let options: Vec<AskOption> = self.options.iter().flatten().cloned().collect();
+        let Some(rec) = &self.recommendation else {
+            return options;
+        };
+        let (recommended, rest): (Vec<_>, Vec<_>) =
+            options.into_iter().partition(|o| o.key == *rec);
+        let first = recommended
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| AskOption::bare(rec.clone()));
+        std::iter::once(first).chain(rest).collect()
+    }
+}
+
 checked!(Ask, |ask| {
     ask_kind_rule(
         ask.kind,
@@ -1016,6 +1172,62 @@ mod tests {
         }
         assert!(accepts::<Step>(json!({ "text": "t", "where": "browser" })));
         assert!(!accepts::<Step>(json!({ "text": "t", "where": "My Mac" })));
+    }
+
+    fn decide_ask(options: Value, rec: &str) -> Ask {
+        serde_json::from_value(json!({
+            "askId": "A1", "projectRef": { "machineId": "forge", "projectId": "p" }, "kind": "decide",
+            "key": "share.link", "class": "product", "text": "What does the share link show?",
+            "options": options, "recommendation": rec, "blocks": "nothing", "proceededOnRec": false,
+            "state": "open", "createdAt": "2026-10-19T00:00:00.000Z"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn old_asks_with_bare_options_still_read_and_get_humanized_labels() {
+        let ask = decide_ask(json!(["public-snapshot", "image-only"]), "public-snapshot");
+        let choices = ask.choices();
+        assert_eq!(choices.len(), 2, "the recommendation is not listed twice");
+        assert_eq!(choices[0].display_label(), "Public snapshot");
+        assert_eq!(choices[0].consequence, None);
+        assert_eq!(choices[1].display_label(), "Image only");
+        // Stored text that is not a slug stays as it is; a free-text recommendation becomes the first choice.
+        assert_eq!(humanize_key("Keep the old URL"), "Keep the old URL");
+        let ask = decide_ask(json!(["a-monthly-vs-week"]), "a weekly plan, prorated");
+        let labels: Vec<String> = ask.choices().iter().map(AskOption::display_label).collect();
+        assert_eq!(labels, ["a weekly plan, prorated", "A monthly vs week"]);
+    }
+
+    #[test]
+    fn labelled_options_round_trip_and_the_recommendation_comes_first() {
+        let ask = decide_ask(
+            json!([
+                { "key": "image-only", "label": "Image only", "consequence": "The link shows a PNG, nothing else." },
+                { "key": "public-snapshot", "label": "Public snapshot", "consequence": "Anyone with the link sees a frozen copy." }
+            ]),
+            "public-snapshot",
+        );
+        let choices = ask.choices();
+        assert_eq!(choices[0].key.as_str(), "public-snapshot");
+        assert_eq!(choices[1].display_label(), "Image only");
+        let back: Ask = serde_json::from_value(serde_json::to_value(&ask).unwrap()).unwrap();
+        assert_eq!(back, ask);
+        let skip = AskAnswer {
+            value: "public-snapshot".into(),
+            by: "human:mac".into(),
+            at: Timestamp("2026-10-19T00:00:00.000Z".into()),
+            raw: "1 skip".into(),
+            kind: Some(AskAnswerKind::Skip),
+            note: None,
+            source: None,
+            undo_until: None,
+            delivered_at: None,
+        };
+        assert_eq!(
+            skip.display(&ask),
+            "Skipped for now (lead keeps: Public snapshot)"
+        );
     }
 
     #[test]

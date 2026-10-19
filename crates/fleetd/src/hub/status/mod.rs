@@ -47,6 +47,10 @@ const FOLLOWED: &[HubEventType] = &[
     HubEventType::AskCreated,
     HubEventType::AskAuto,
     HubEventType::AskClosed,
+    // A held answer takes its ask out of "needs you" at once, an undo puts it back, and the commit closes it.
+    HubEventType::AskAnswered,
+    HubEventType::AskUndone,
+    HubEventType::AskDelivered,
     HubEventType::BatchReady,
     HubEventType::DecisionRecorded,
     HubEventType::TaskQueued,

@@ -692,3 +692,20 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
         !text.contains("p50") && !text.contains("overdueMinutes") && !text.contains("\"current\"")
     );
 }
+
+/// Needs you counts open asks; every event that opens or closes one, including a held answer and its undo, must mark
+/// the status doc dirty or a live view keeps a skipped ask listed or an undone one missing.
+#[test]
+fn every_event_that_opens_or_closes_an_ask_is_followed() {
+    use fleetd_contracts::events::HubEventType as E;
+    for t in [
+        E::AskCreated,
+        E::AskAuto,
+        E::AskClosed,
+        E::AskAnswered,
+        E::AskUndone,
+        E::AskDelivered,
+    ] {
+        assert!(super::FOLLOWED.contains(&t), "{}", t.as_str());
+    }
+}
