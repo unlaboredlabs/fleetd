@@ -2,12 +2,13 @@
 import "./debug-guard";
 import { isAbsolute, join } from "node:path";
 import tls from "node:tls";
-import { app, BrowserWindow, nativeTheme, powerMonitor } from "electron";
+import { app, BrowserWindow, nativeTheme, powerMonitor, session } from "electron";
 import { RELEASE_BUILD } from "./build";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
+import { instrument } from "./instrument";
 import { registerIpc } from "./ipc";
 import { installMenu } from "./menu";
 import { Notifier } from "./notify";
@@ -33,6 +34,9 @@ const FLEETD_DIR = fleetdHome !== undefined && isAbsolute(fleetdHome) ? fleetdHo
 // Chromium's own state (caches, local storage) stays in a subdirectory, unless the caller chose one.
 if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(FLEETD_DIR, "desktop"));
 
+// Idle memory (perf/budgets.ts): the network service runs in this process, not a utility process of its own. Pages
+// load only app:// and the hub socket is Node's, so it carries next to nothing.
+app.commandLine.appendSwitch("enable-features", "NetworkServiceInProcess2");
 harden();
 const opener = new Opener();
 // A second launch hands its fleetd:// link to the running instance and quits before opening anything. The lock is
@@ -83,6 +87,7 @@ const createWindow = (mode: HubMode): BrowserWindow => {
   });
   trackPlacement(win);
   opener.attach(win);
+  instrument(win);
   void win.loadURL(pageUrl());
   return win;
 };
@@ -90,6 +95,8 @@ const createWindow = (mode: HubMode): BrowserWindow => {
 void app.whenReady().then(() => {
   if (!primary) return;
   lockSession(join(import.meta.dirname, "../renderer"));
+  // Every window has spellcheck off; this keeps the session from setting up (and fetching) dictionaries anyway.
+  session.defaultSession.setSpellCheckerEnabled(false);
   let mode: HubMode;
   try {
     mode = hubMode();
