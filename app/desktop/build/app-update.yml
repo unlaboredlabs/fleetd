@@ -1,0 +1,4 @@
+# electron-updater reads this file only for the name of its download cache directory. The feed is set in
+# src/main/updater.ts (it depends on the channel), and electron-builder writes no app-update.yml because the build
+# has no publish config (the macOS build packs a bare .app).
+updaterCacheDirName: fleetd-updater

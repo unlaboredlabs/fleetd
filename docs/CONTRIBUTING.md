@@ -47,6 +47,10 @@ hub with `fixtures/<name>.json` (or an absolute path; `FLEETD_FIXTURE_DIR` moves
 - `src/shared`: the IPC channels (`channels.ts`) and the schema main checks every renderer request against
   (`ipc.ts`). A new channel goes in both, then in `src/main/ipc.ts` and the preload.
 - `src/renderer`: the React app.
+- Releases: `electron-builder.yml` packs the built app (a universal, Developer ID-signed `fleetd.app`, an AppImage and
+  a deb) in `build-release.yml`'s `desktop-*` jobs, which run while the repo variable `FLEETD_RELEASE_DESKTOP` is
+  `true` or a dispatch of Nightly asks for them. The app updates itself from `latest-mac.yml` / `latest-linux.yml` on
+  the release (`src/main/updater.ts`); `FLEETD_APP=electron` makes the installer fetch it.
 
 ## Checks
 

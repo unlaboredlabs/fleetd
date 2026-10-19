@@ -7,6 +7,7 @@ import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
 import { harden, lockSession, pageUrl } from "./security";
+import { startUpdater } from "./updater";
 
 /** Height of the renderer's top bar; the macOS traffic lights are centred in it. */
 const TOP_BAR = 44;
@@ -80,6 +81,7 @@ void app.whenReady().then(() => {
   powerMonitor.on("resume", () => hub.systemResumed());
   app.on("will-quit", () => hub.stop());
   createWindow(mode);
+  startUpdater();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });

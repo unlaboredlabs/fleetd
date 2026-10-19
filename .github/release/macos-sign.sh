@@ -13,6 +13,8 @@
 #   macos-sign.sh enabled             prints true when the signing secrets are set (else logs and prints false)
 #   macos-sign.sh keychain            a temporary keychain with the identity, on this job's search list
 #   macos-sign.sh sign <path>...      a .app (nested code first, never --deep) or bare binaries
+#   macos-sign.sh verify <path>...    checks a signature: Team ID, hardened runtime, team-based requirement (the
+#                                     desktop app is signed by electron-builder, with this job's keychain)
 #   macos-sign.sh notarize <zip>      submits and waits: 0 Accepted, 3 still in progress, else fails with Apple's log
 #   macos-sign.sh cleanup             deletes the keychain and any decoded key material (run it with always())
 set -euo pipefail
@@ -24,6 +26,14 @@ p8="$tmp/fleetd-notary.p8"
 entitlements="$here/../../app/packaging/fleetd.entitlements"
 
 die() { echo "::error::$*"; exit 1; }
+verify() {
+  codesign --verify --deep --strict --verbose=2 "$1"
+  codesign -dvv "$1" 2>&1 | grep -E '^(Identifier|Format|TeamIdentifier|Runtime Version|Timestamp)='
+  codesign -dvv "$1" 2>&1 | grep -q '^TeamIdentifier=[A-Z0-9]\{10\}$' || die "$1 has no Team ID"
+  codesign -dvv "$1" 2>&1 | grep -q 'flags=0x10000(runtime)' || die "$1 lacks the hardened runtime"
+  codesign -d -r- "$1" 2>&1 | grep '^designated'
+  codesign -d -r- "$1" 2>&1 | grep -q 'certificate leaf\[subject.OU\]' || die "$1 has no team-based designated requirement"
+}
 
 case "${1:-}" in
 enabled)
@@ -53,14 +63,6 @@ keychain)
 
 sign)
   shift
-  verify() {
-    codesign --verify --strict --verbose=2 "$1"
-    codesign -dvv "$1" 2>&1 | grep -E '^(Identifier|Format|TeamIdentifier|Runtime Version|Timestamp)='
-    codesign -dvv "$1" 2>&1 | grep -q '^TeamIdentifier=[A-Z0-9]\{10\}$' || die "$1 has no Team ID"
-    codesign -dvv "$1" 2>&1 | grep -q 'flags=0x10000(runtime)' || die "$1 lacks the hardened runtime"
-    codesign -d -r- "$1" 2>&1 | grep '^designated'
-    codesign -d -r- "$1" 2>&1 | grep -q 'certificate leaf\[subject.OU\]' || die "$1 has no team-based designated requirement"
-  }
   sign() { codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" "$@"; }
   for path in "$@"; do
     if [ -d "$path" ]; then
@@ -77,6 +79,11 @@ sign)
     fi
     verify "$path"
   done
+  ;;
+
+verify)
+  shift
+  for path in "$@"; do verify "$path"; done
   ;;
 
 notarize)
@@ -115,7 +122,7 @@ cleanup)
   ;;
 
 *)
-  echo "usage: macos-sign.sh enabled|keychain|sign <path>...|notarize <zip>|cleanup" >&2
+  echo "usage: macos-sign.sh enabled|keychain|sign <path>...|verify <path>...|notarize <zip>|cleanup" >&2
   exit 2
   ;;
 esac

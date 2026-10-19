@@ -19,6 +19,10 @@ on:
         description: build the app even when app/ is unchanged since the last nightly
         type: boolean
         default: false
+      desktop:
+        description: also build the Electron app (app/desktop) and its update feed; off until it replaces fleetd-app
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,7 +50,9 @@ jobs:
           else
             base="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
             base="${base#v}"
-            version="${base:-0.0.0}-nightly.$(date -u +%Y%m%d).${GITHUB_SHA::7}"
+            # Valid semver that orders by build time, which the desktop app's updater compares: one numeric
+            # minute stamp (no leading zero), and the commit as build metadata (a hash can start with 0).
+            version="${base:-0.0.0}-nightly.$(date -u +%Y%m%d%H%M)+${GITHUB_SHA::7}"
           fi
           # crates/fleetd lands during the Rust port; until then there is no CLI to build.
           has_cli=false
@@ -306,8 +312,170 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  desktop-macos:
+    needs: plan
+    # The Electron app, behind the `desktop` input until it replaces fleetd-app. Same runs as app-macos: builds that
+    # publish and manual dispatches (a dispatch from a branch proves signing, notarization and the update feed).
+    if: inputs.desktop && needs.plan.outputs.build-app == 'true' && (inputs.publish || github.event_name == 'workflow_dispatch')
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
+      MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+      NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - name: Build
+        working-directory: app/desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Signing secrets
+        id: secrets
+        run: |
+          echo "sign=$(.github/release/macos-sign.sh enabled)" >> "$GITHUB_OUTPUT"
+          notarize=false
+          if [ -n "$NOTARY_KEY_ID" ] && [ -n "$NOTARY_ISSUER" ] && [ -n "$NOTARY_KEY_P8_BASE64" ]; then notarize=true; fi
+          echo "notarize=$notarize" >> "$GITHUB_OUTPUT"
+      - name: Signing keychain
+        if: steps.secrets.outputs.sign == 'true'
+        run: .github/release/macos-sign.sh keychain
+      - name: Package a universal fleetd.app
+        working-directory: app/desktop
+        env:
+          SIGN: ${{ steps.secrets.outputs.sign }}
+        run: |
+          short="${FLEETD_VERSION%%[-+]*}"
+          args=(--mac --publish never -c.extraMetadata.version="$FLEETD_VERSION" -c.buildVersion="$short" -c.mac.bundleShortVersion="$short")
+          if [ "$SIGN" = true ]; then
+            # electron-builder signs with the identity from the keychain above (it's on this job's search list) and
+            # wants the name without its certificate-type prefix.
+            export CSC_NAME="${MACOS_SIGN_IDENTITY#Developer ID Application: }"
+          else
+            # Forks: an ad-hoc signature, which library validation under the hardened runtime would refuse.
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            args+=(-c.mac.identity=- -c.mac.hardenedRuntime=false)
+          fi
+          pnpm exec electron-builder "${args[@]}"
+          mkdir -p ../../dist
+          mv dist/mac-universal/fleetd.app ../../dist/fleetd.app
+          lipo -info ../../dist/fleetd.app/Contents/MacOS/fleetd
+          plutil -p ../../dist/fleetd.app/Contents/Info.plist | grep -E 'CFBundle(Identifier|ShortVersionString|Version|URLSchemes)' -A1
+      - name: Check the signature
+        if: steps.secrets.outputs.sign == 'true'
+        run: |
+          .github/release/macos-sign.sh verify dist/fleetd.app
+          codesign -d --entitlements - --xml dist/fleetd.app | plutil -p -
+      - name: Notarize and staple
+        id: notarize
+        if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
+        run: |
+          # The name is what macos-staple.sh looks for in the notary history when Apple outlasts NOTARY_WAIT.
+          ditto -c -k --keepParent dist/fleetd.app "$RUNNER_TEMP/fleetd-desktop-notarize.zip"
+          rc=0
+          .github/release/macos-sign.sh notarize "$RUNNER_TEMP/fleetd-desktop-notarize.zip" || rc=$?
+          if [ "$rc" = 3 ]; then exit 0; fi
+          [ "$rc" = 0 ] || exit "$rc"
+          xcrun stapler staple dist/fleetd.app
+          xcrun stapler validate dist/fleetd.app
+          echo "stapled=true" >> "$GITHUB_OUTPUT"
+      - name: Gatekeeper
+        if: steps.secrets.outputs.sign == 'true'
+        env:
+          NOTARIZED: ${{ steps.notarize.outputs.stapled }}
+        run: |
+          out="$(spctl -a -vv -t exec dist/fleetd.app 2>&1 || true)"
+          echo "$out"
+          if [ "$NOTARIZED" = true ]; then
+            if ! echo "$out" | grep -q ': accepted' || ! echo "$out" | grep -q 'source=Notarized Developer ID'; then
+              echo "::error::Gatekeeper doesn't accept the notarized app"; exit 1
+            fi
+          else
+            echo "not notarized yet: Gatekeeper rejecting a downloaded copy is expected"
+          fi
+      - name: Remove the signing keychain
+        if: always()
+        run: .github/release/macos-sign.sh cleanup
+      - name: Zip and write latest-mac.yml
+        run: |
+          ditto -c -k --keepParent dist/fleetd.app dist/fleetd-desktop-macos-universal.zip
+          .github/release/update-yml.sh dist/fleetd-desktop-macos-universal.zip "$FLEETD_VERSION" > dist/latest-mac.yml
+          cat dist/latest-mac.yml
+      - name: Launch the signed app and update it from a local feed
+        # Squirrel.Mac only takes an update signed like the running app, so ad-hoc builds can't do this.
+        if: steps.secrets.outputs.sign == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/launch"
+          ditto dist/fleetd.app "$RUNNER_TEMP/launch/fleetd.app"
+          .github/release/desktop-update-check.sh dist/fleetd-desktop-macos-universal.zip "$RUNNER_TEMP/launch/fleetd.app/Contents/MacOS/fleetd"
+      - name: Stage
+        run: |
+          rm -rf dist/fleetd.app
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-macos
+          path: dist/
+          if-no-files-found: error
+
+  desktop-linux:
+    needs: plan
+    if: inputs.desktop && needs.plan.outputs.build-app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FLEETD_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - name: Build, then package an AppImage and a deb
+        working-directory: app/desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm exec electron-builder --linux --publish never -c.extraMetadata.version="$FLEETD_VERSION"
+          mkdir -p ../../dist
+          mv dist/fleetd-desktop-linux-x86_64.AppImage dist/fleetd-desktop-linux-amd64.deb ../../dist/
+          dpkg-deb -I ../../dist/fleetd-desktop-linux-amd64.deb | grep -E '^ (Package|Version|Depends):'
+      - name: Write latest-linux.yml
+        # The AppImage only: the deb is updated by the installer or the package manager (see src/main/updater.ts).
+        run: |
+          .github/release/update-yml.sh dist/fleetd-desktop-linux-x86_64.AppImage "$FLEETD_VERSION" > dist/latest-linux.yml
+          cat dist/latest-linux.yml
+      - name: Launch the AppImage and update it from a local feed
+        run: |
+          cp dist/fleetd-desktop-linux-x86_64.AppImage "$RUNNER_TEMP/fleetd.AppImage"
+          # No FUSE or display on the runner; Ubuntu's AppArmor refuses Chromium's user-namespace sandbox.
+          .github/release/desktop-update-check.sh dist/fleetd-desktop-linux-x86_64.AppImage \
+            "$RUNNER_TEMP/fleetd.AppImage" --appimage-extract-and-run --no-sandbox --ozone-platform=headless
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux
+          path: dist/
+          if-no-files-found: error
+
   publish:
-    needs: [plan, cli, cli-macos, app-macos, app-linux]
+    needs: [plan, cli, cli-macos, app-macos, app-linux, desktop-macos, desktop-linux]
     # Skipped builds (no CLI yet, app unchanged) must not skip publishing; failed or cancelled ones must.
     if: >-
       always() && inputs.publish && needs.plan.result == 'success' &&
