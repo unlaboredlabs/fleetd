@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SlotState } from "../../../shared/contracts";
-import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote } from "./agents";
+import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote } from "./agentsModel";
 
 const storefront = { machineId: "devbox", projectId: "storefront" };
 const billing = { machineId: "devbox", projectId: "billing" };
@@ -31,6 +31,7 @@ describe("max agents", () => {
     expect(extrasOver(6, 4)).toBe(2);
     expect(extrasOver(2, 4)).toBe(0);
     expect(changeLine(a, 4)).toBe("6 running now, 2 over the new max: they finish their current work, and new agents wait until fewer than 4 run.");
+    expect(changeLine(a, 1)).toMatch(/new agents wait until none is running\.$/u);
     expect(changeLine(a, 9)).toBe("Up to 9 at once. 2 of the 2 waiting can start now.");
     expect(changeLine(projectAgents(slots, billing), 6)).toBe("Up to 6 at once. New agents wait while 6 run.");
     expect(pauseLine(2)).toMatch(/^Pause the 2 extras now/u);
