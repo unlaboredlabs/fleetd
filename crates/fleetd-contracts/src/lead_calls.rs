@@ -556,13 +556,13 @@ mod tests {
         };
         assert!(
             call(with(
-                serde_json::json!({ "sink": "env:forge:/srv/app/.env", "envName": "STRIPE_KEY" })
+                serde_json::json!({ "sink": "env:devbox:/srv/app/.env", "envName": "STRIPE_KEY" })
             ))
             .is_ok()
         );
         assert!(
             call(with(
-                serde_json::json!({ "sink": "file:forge:/srv/app/key", "envName": "STRIPE_KEY" })
+                serde_json::json!({ "sink": "file:devbox:/srv/app/key", "envName": "STRIPE_KEY" })
             ))
             .is_err()
         );

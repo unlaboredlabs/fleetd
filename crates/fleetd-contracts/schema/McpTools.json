@@ -3525,7 +3525,8 @@
           "description": "A stale source answered again; `data.source`, `data.staleMs`.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "HumanWait": {
       "properties": {
@@ -8935,7 +8936,7 @@
       "description": "Why a part is not live: its source went quiet past its cadence.",
       "properties": {
         "reason": {
-          "description": "\"no heartbeat from forge for 4m\", \"GitHub not reached for 4m: …\".",
+          "description": "\"no heartbeat from devbox for 4m\", \"GitHub not reached for 4m: …\".",
           "maxLength": 200,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -9230,7 +9231,7 @@
       "type": "object"
     },
     "StatusScope": {
-      "description": "What a status doc covers. `key()` is the form stored per human key (\"fleet\", \"project:forge/p1\", \"order:W41\").",
+      "description": "What a status doc covers. `key()` is the form stored per human key (\"fleet\", \"project:devbox/p1\", \"order:W41\").",
       "oneOf": [
         {
           "properties": {

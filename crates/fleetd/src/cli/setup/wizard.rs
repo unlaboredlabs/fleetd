@@ -453,7 +453,7 @@ async fn join_hub(opts: &InitOptions, ui: &Ui, list: &mut Checklist) -> Result<u
                 list,
                 "Hub address",
                 "",
-                "http://forge.tailnet.ts.net:4790",
+                "http://devbox.tailnet.ts.net:4790",
                 |s| {
                     reqwest::Url::parse(s)
                         .map(|_| ())

@@ -18,7 +18,7 @@ use crate::train::{ChangeId, ChangeState, GitHubRepo};
 /// Done items an ETA needs before it is shown (as in `hub/estimates`).
 pub const MIN_SAMPLES: i64 = 5;
 
-/// What a status doc covers. `key()` is the form stored per human key ("fleet", "project:forge/p1", "order:W41").
+/// What a status doc covers. `key()` is the form stored per human key ("fleet", "project:devbox/p1", "order:W41").
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StatusScope {
@@ -54,7 +54,7 @@ impl StatusScope {
 pub struct StaleMark {
     /// The source's last good signal (a heartbeat, a GitHub answer, a train pass).
     pub since: Timestamp,
-    /// "no heartbeat from forge for 4m", "GitHub not reached for 4m: …".
+    /// "no heartbeat from devbox for 4m", "GitHub not reached for 4m: …".
     pub reason: Line<1, 200>,
 }
 

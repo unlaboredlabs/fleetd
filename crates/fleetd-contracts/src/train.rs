@@ -178,10 +178,10 @@ mod tests {
     fn change() -> Value {
         json!({
             "changeId": "X1",
-            "projectRef": { "machineId": "forge", "projectId": "p1" },
-            "repo": "wynn-dev/fleetd-testbed",
+            "projectRef": { "machineId": "devbox", "projectId": "p1" },
+            "repo": "acme/storefront",
             "prNumber": 7,
-            "prUrl": "https://github.com/wynn-dev/fleetd-testbed/pull/7",
+            "prUrl": "https://github.com/acme/storefront/pull/7",
             "branch": "fleetd/T1-add-file",
             "taskId": "T1",
             "workstreamId": "W1",
@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn repos_are_owner_slash_name() {
         for repo in [
-            "wynn-dev/fleetd",
+            "acme/storefront-api",
             "Microsoft/TypeScript",
             "o/r.js",
             "o/.github",
@@ -244,9 +244,9 @@ mod tests {
     #[test]
     fn pr_urls_are_only_github_pull_urls() {
         assert_eq!(
-            parse_pr_url("https://github.com/wynn-dev/fleetd/pull/12"),
+            parse_pr_url("https://github.com/acme/storefront-api/pull/12"),
             Some(ParsedPrUrl {
-                repo: "wynn-dev/fleetd".into(),
+                repo: "acme/storefront-api".into(),
                 pr_number: 12
             })
         );
@@ -270,12 +270,12 @@ mod tests {
     fn change_pr_url_names_the_same_repo_and_number() {
         assert!(accepts_change(json!({})));
         assert!(accepts_change(
-            json!({ "prUrl": "https://github.com/Wynn-Dev/fleetd-testbed/pull/7" })
+            json!({ "prUrl": "https://github.com/Acme/Storefront/pull/7" })
         ));
         assert!(!accepts_change(json!({ "prNumber": 8 })));
-        assert!(!accepts_change(json!({ "repo": "wynn-dev/fleetd" })));
+        assert!(!accepts_change(json!({ "repo": "acme/storefront-api" })));
         assert!(!accepts_change(
-            json!({ "prNumber": 0, "prUrl": "https://github.com/wynn-dev/fleetd-testbed/pull/0" })
+            json!({ "prNumber": 0, "prUrl": "https://github.com/acme/storefront/pull/0" })
         ));
         let decoded: Change = serde_json::from_value(change()).unwrap();
         assert_eq!(serde_json::to_value(&decoded).unwrap(), change());

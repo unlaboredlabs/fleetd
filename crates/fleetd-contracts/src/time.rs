@@ -424,6 +424,7 @@ pub struct CommandStat {
     pub failed: Count,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RepeatStat {

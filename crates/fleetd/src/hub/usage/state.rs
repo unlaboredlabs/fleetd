@@ -669,10 +669,10 @@ mod tests {
                 task_id: p.task_id.clone(),
             })
             .collect();
-        let resumed = resumed_event("lab-a", &iso(24 * HOUR), &sent, true, "wynn").unwrap();
+        let resumed = resumed_event("lab-a", &iso(24 * HOUR), &sent, true, "ada").unwrap();
         assert_eq!(
             resumed.summary,
-            "Usage pause on lab-a lifted (usage_resume by wynn); sent \"continue\" to 1 parked thread"
+            "Usage pause on lab-a lifted (usage_resume by ada); sent \"continue\" to 1 parked thread"
         );
         s.apply(&appended(3, resumed), None);
         assert!(s.gate("lab-a", 24 * HOUR).is_none());

@@ -1,0 +1,1469 @@
+{
+  "$defs": {
+    "AskClass": {
+      "enum": [
+        "product",
+        "money",
+        "credential",
+        "irreversible"
+      ],
+      "type": "string"
+    },
+    "AskEventData": {
+      "description": "`ask.created`, `ask.auto`, `ask.closed`, `ask.answered`, `ask.undone`, `ask.delivered`.",
+      "properties": {
+        "askId": {
+          "$ref": "#/$defs/AskId"
+        },
+        "batchId": {
+          "$ref": "#/$defs/BatchId"
+        },
+        "class": {
+          "$ref": "#/$defs/AskClass"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId",
+          "description": "ask.auto and ask.delivered: the decision that answered it (absent on a delivered skip)."
+        },
+        "deliveredAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "ask.delivered: when the lead was woken with the answer."
+        },
+        "key": {
+          "$ref": "#/$defs/DecisionKey"
+        },
+        "kind": {
+          "$ref": "#/$defs/AskKind"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "reopened": {
+          "description": "ask.created: a closed ask opened again (a failed verify, an undone answer).",
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/AskState",
+          "description": "ask.closed: the state it closed in."
+        },
+        "undoUntil": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "ask.answered: until then `inbox_undo` takes the answer back."
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The order it is about, when it is about one (ask.closed always says)."
+        }
+      },
+      "required": [
+        "askId"
+      ],
+      "type": "object"
+    },
+    "AskId": {
+      "pattern": "^A[1-9][0-9]*$",
+      "type": "string"
+    },
+    "AskKind": {
+      "description": "decide: a product call. do: hand steps for the human, optionally re-checked by `verify`. secret: a value the\ndesktop app seals to the sink's node. approve: a stored command the node runs after a human approves it.",
+      "enum": [
+        "decide",
+        "do",
+        "secret",
+        "approve"
+      ],
+      "type": "string"
+    },
+    "AskState": {
+      "enum": [
+        "open",
+        "auto",
+        "answered",
+        "defaulted",
+        "withdrawn"
+      ],
+      "type": "string"
+    },
+    "BatchId": {
+      "pattern": "^B[1-9][0-9]*$",
+      "type": "string"
+    },
+    "BriefHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "ChangeId": {
+      "pattern": "^X[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ChangeState": {
+      "enum": [
+        "queued",
+        "reviewing",
+        "ready",
+        "rebasing",
+        "ci",
+        "merging",
+        "merged",
+        "needs_rebase",
+        "ci_failed",
+        "refused",
+        "abandoned"
+      ],
+      "type": "string"
+    },
+    "ChangeStateData": {
+      "description": "`change.state`: every train state change.",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "from": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "prNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "to": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "changeId",
+        "repo",
+        "prNumber",
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "CiInfo": {
+      "description": "CI the repository runs.",
+      "properties": {
+        "requiredChecks": {
+          "description": "Status checks the default branch requires, from branch protection and rulesets.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workflows": {
+          "description": "Active GitHub Actions workflows by name (from `.github/workflows` on a checkout without GitHub access).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "workflows",
+        "requiredChecks"
+      ],
+      "type": "object"
+    },
+    "CiMainData": {
+      "description": "`ci.main`: main-branch CI of a train repo changed state.",
+      "properties": {
+        "failing": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/CiState"
+        }
+      },
+      "required": [
+        "repo",
+        "sha",
+        "state",
+        "failing"
+      ],
+      "type": "object"
+    },
+    "CiState": {
+      "oneOf": [
+        {
+          "enum": [
+            "green",
+            "red",
+            "pending"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "Not fetched since the hub started. Also what a state this build doesn't know decodes as.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ClaimEventData": {
+      "description": "`claim.passed`, `claim.failed`.",
+      "properties": {
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "failing": {
+          "description": "claim.failed: the done-when indexes that did not pass.",
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "claimId",
+        "workstreamId"
+      ],
+      "type": "object"
+    },
+    "ClaimId": {
+      "pattern": "^C[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ClonePhase": {
+      "oneOf": [
+        {
+          "const": "starting",
+          "description": "Before git reports anything.",
+          "type": "string"
+        },
+        {
+          "const": "receiving",
+          "description": "\"Receiving objects\".",
+          "type": "string"
+        },
+        {
+          "const": "resolving",
+          "description": "\"Resolving deltas\".",
+          "type": "string"
+        },
+        {
+          "const": "checking_out",
+          "description": "\"Updating files\".",
+          "type": "string"
+        },
+        {
+          "const": "inspecting",
+          "description": "The clone finished; the hub reads the default branch, CI and merge rules.",
+          "type": "string"
+        }
+      ]
+    },
+    "CloneProgressData": {
+      "description": "`HubEvent.data` on `project.clone_progress`: on each phase change and its 100 %, else every 5 percent at most once\na second.",
+      "properties": {
+        "addId": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "detail": {
+          "description": "As git prints it, e.g. \"12.40 MiB | 3.10 MiB/s\".",
+          "maxLength": 120,
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute, on the event's machine.",
+          "type": "string"
+        },
+        "percent": {
+          "description": "Of this phase.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "phase": {
+          "$ref": "#/$defs/ClonePhase"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "addId",
+        "path",
+        "phase"
+      ],
+      "type": "object"
+    },
+    "DecisionId": {
+      "pattern": "^D[1-9][0-9]*$",
+      "type": "string"
+    },
+    "DecisionKey": {
+      "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
+      "type": "string"
+    },
+    "DeliveredHow": {
+      "description": "How a delivered steer was taken in.",
+      "oneOf": [
+        {
+          "const": "turn",
+          "description": "It started a turn while the agent was idle.",
+          "type": "string"
+        },
+        {
+          "const": "boundary",
+          "description": "After the running tool returned.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "⌘Enter stopped the running step (`stoppedTool` names it).",
+          "type": "string"
+        },
+        {
+          "const": "joined",
+          "description": "An older claude merged it into the running turn; the ack rule catches a miss.",
+          "type": "string"
+        }
+      ]
+    },
+    "DriftKind": {
+      "oneOf": [
+        {
+          "const": "outside_fleetd",
+          "description": "A PR merged or closed outside the train, or the base moved by a non-train push.",
+          "type": "string"
+        },
+        {
+          "const": "missed_webhook",
+          "description": "Webhooks are on and reconciliation saw a change no delivery announced.",
+          "type": "string"
+        }
+      ]
+    },
+    "GitHubRepo": {
+      "description": "GitHub repository as owner/name",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})$",
+      "type": "string"
+    },
+    "GithubDriftData": {
+      "description": "`github.drift`.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/DriftKind"
+        },
+        "lagMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "what": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "kind",
+        "what"
+      ],
+      "type": "object"
+    },
+    "HubEventData": {
+      "properties": {
+        "ask.answered": {
+          "$ref": "#/$defs/AskEventData"
+        },
+        "ask.auto": {
+          "$ref": "#/$defs/AskEventData"
+        },
+        "ask.closed": {
+          "$ref": "#/$defs/AskEventData"
+        },
+        "ask.created": {
+          "$ref": "#/$defs/AskEventData"
+        },
+        "ask.delivered": {
+          "$ref": "#/$defs/AskEventData"
+        },
+        "ask.undone": {
+          "$ref": "#/$defs/AskEventData"
+        },
+        "change.ci_failed": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "change.needs_rebase": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "change.queued": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "change.ready": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "change.refused": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "change.state": {
+          "$ref": "#/$defs/ChangeStateData"
+        },
+        "ci.main": {
+          "$ref": "#/$defs/CiMainData"
+        },
+        "claim.failed": {
+          "$ref": "#/$defs/ClaimEventData"
+        },
+        "claim.passed": {
+          "$ref": "#/$defs/ClaimEventData"
+        },
+        "github.drift": {
+          "$ref": "#/$defs/GithubDriftData"
+        },
+        "machine.slept": {
+          "$ref": "#/$defs/MachineSleptData"
+        },
+        "plan.changed": {
+          "$ref": "#/$defs/PlanChangedData"
+        },
+        "plan.verified": {
+          "$ref": "#/$defs/PlanVerifiedData"
+        },
+        "pr.merged": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "project.add_failed": {
+          "$ref": "#/$defs/ProjectAddFailedData"
+        },
+        "project.added": {
+          "$ref": "#/$defs/ProjectAddedData"
+        },
+        "project.clone_progress": {
+          "$ref": "#/$defs/CloneProgressData"
+        },
+        "prompt.changed": {
+          "$ref": "#/$defs/PromptChangedData"
+        },
+        "source.fresh": {
+          "$ref": "#/$defs/SourceFreshData"
+        },
+        "source.stale": {
+          "$ref": "#/$defs/SourceStaleData"
+        },
+        "steer.acknowledged": {
+          "$ref": "#/$defs/SteerEventData"
+        },
+        "steer.delivered": {
+          "$ref": "#/$defs/SteerEventData"
+        },
+        "steer.failed": {
+          "$ref": "#/$defs/SteerEventData"
+        },
+        "steer.queued": {
+          "$ref": "#/$defs/SteerEventData"
+        },
+        "steer.unacknowledged": {
+          "$ref": "#/$defs/SteerEventData"
+        },
+        "steer.withdrawn": {
+          "$ref": "#/$defs/SteerEventData"
+        },
+        "task.cancelled": {
+          "$ref": "#/$defs/TaskEventData"
+        },
+        "task.completed": {
+          "$ref": "#/$defs/TaskEventData"
+        },
+        "task.failed": {
+          "$ref": "#/$defs/TaskEventData"
+        },
+        "task.out_of_area": {
+          "$ref": "#/$defs/TaskEventData"
+        },
+        "task.queued": {
+          "$ref": "#/$defs/TaskEventData"
+        },
+        "task.started": {
+          "$ref": "#/$defs/TaskEventData"
+        },
+        "thread.completed": {
+          "$ref": "#/$defs/ThreadEventData"
+        },
+        "thread.failed": {
+          "$ref": "#/$defs/ThreadEventData"
+        },
+        "thread.interrupted": {
+          "$ref": "#/$defs/ThreadEventData"
+        },
+        "thread.stalled": {
+          "$ref": "#/$defs/ThreadEventData"
+        },
+        "thread.started": {
+          "$ref": "#/$defs/ThreadEventData"
+        },
+        "thread.usage_limited": {
+          "$ref": "#/$defs/UsageEventData"
+        },
+        "thread.waiting": {
+          "$ref": "#/$defs/ThreadEventData"
+        },
+        "train.blocked": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "train.frozen": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "train.resumed": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "usage.breaker": {
+          "$ref": "#/$defs/UsageEventData"
+        },
+        "usage.resumed": {
+          "$ref": "#/$defs/UsageEventData"
+        },
+        "workstream.created": {
+          "$ref": "#/$defs/WorkstreamEventData"
+        },
+        "workstream.done": {
+          "$ref": "#/$defs/WorkstreamEventData"
+        },
+        "workstream.note": {
+          "$ref": "#/$defs/WorkstreamNoteData"
+        },
+        "workstream.running": {
+          "$ref": "#/$defs/WorkstreamEventData"
+        },
+        "workstream.state": {
+          "$ref": "#/$defs/WorkstreamEventData"
+        }
+      },
+      "required": [
+        "ask.answered",
+        "ask.auto",
+        "ask.closed",
+        "ask.created",
+        "ask.delivered",
+        "ask.undone",
+        "change.ci_failed",
+        "change.needs_rebase",
+        "change.queued",
+        "change.ready",
+        "change.refused",
+        "change.state",
+        "ci.main",
+        "claim.failed",
+        "claim.passed",
+        "github.drift",
+        "machine.slept",
+        "plan.changed",
+        "plan.verified",
+        "pr.merged",
+        "project.add_failed",
+        "project.added",
+        "project.clone_progress",
+        "prompt.changed",
+        "source.fresh",
+        "source.stale",
+        "steer.acknowledged",
+        "steer.delivered",
+        "steer.failed",
+        "steer.queued",
+        "steer.unacknowledged",
+        "steer.withdrawn",
+        "task.cancelled",
+        "task.completed",
+        "task.failed",
+        "task.out_of_area",
+        "task.queued",
+        "task.started",
+        "thread.completed",
+        "thread.failed",
+        "thread.interrupted",
+        "thread.stalled",
+        "thread.started",
+        "thread.usage_limited",
+        "thread.waiting",
+        "train.blocked",
+        "train.frozen",
+        "train.resumed",
+        "usage.breaker",
+        "usage.resumed",
+        "workstream.created",
+        "workstream.done",
+        "workstream.note",
+        "workstream.running",
+        "workstream.state"
+      ],
+      "type": "object"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "MachineSleptData": {
+      "description": "`machine.slept`: epoch milliseconds.",
+      "properties": {
+        "fromMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "toMs": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fromMs",
+        "toMs"
+      ],
+      "type": "object"
+    },
+    "MergeRules": {
+      "description": "How the default branch may be merged into.",
+      "properties": {
+        "protected": {
+          "description": "Branch protection or an active ruleset applies to the default branch.",
+          "type": "boolean"
+        },
+        "requiredReviews": {
+          "description": "Approving reviews a pull request needs.",
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rulesets": {
+          "description": "Active rulesets that apply to the default branch, by name.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "squashAllowed": {
+          "description": "Absent when gh could not read the repository settings.",
+          "type": "boolean"
+        },
+        "strict": {
+          "description": "Pull requests must be up to date with the base before merging.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "protected",
+        "rulesets"
+      ],
+      "type": "object"
+    },
+    "MilestoneId": {
+      "pattern": "^M[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ParkedCounts": {
+      "properties": {
+        "leads": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tasks": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "leads",
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "PlanChangeKind": {
+      "oneOf": [
+        {
+          "const": "scope",
+          "description": "A lead's add, edit or drop that moved an open milestone's total after its planning window.",
+          "type": "string"
+        },
+        {
+          "const": "reopened",
+          "description": "A later claim failed a check a done item listed.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "Items dropped by the hub when their order finished, stopped or failed.",
+          "type": "string"
+        },
+        {
+          "const": "milestone_done",
+          "description": "A milestone finished and left the project's figure.",
+          "type": "string"
+        },
+        {
+          "const": "milestone_reopened",
+          "description": "An item was added to a done milestone.",
+          "type": "string"
+        }
+      ]
+    },
+    "PlanChangedData": {
+      "description": "`plan.changed`: a marker was written.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "`lead:<projectRef>`, a key id, or `hub`.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "deltaItems": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "deltaSize": {
+          "description": "In points.",
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/PlanChangeKind"
+        },
+        "milestoneId": {
+          "$ref": "#/$defs/MilestoneId"
+        },
+        "note": {
+          "description": "\"+3 items: time inspector added\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "pctAfter": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pctBefore": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "kind",
+        "milestoneId",
+        "at",
+        "by",
+        "deltaItems",
+        "deltaSize",
+        "note"
+      ],
+      "type": "object"
+    },
+    "PlanItemId": {
+      "pattern": "^P[1-9][0-9]*$",
+      "type": "string"
+    },
+    "PlanVerifiedData": {
+      "description": "`plan.verified`: the hub marked an item done.",
+      "properties": {
+        "evidence": {
+          "type": "string"
+        },
+        "itemId": {
+          "$ref": "#/$defs/PlanItemId"
+        },
+        "milestoneId": {
+          "$ref": "#/$defs/MilestoneId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "itemId",
+        "milestoneId",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "ProjectAddFailedData": {
+      "description": "`HubEvent.data` on `project.add_failed`: a clone that was accepted, then failed.",
+      "properties": {
+        "addId": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/ProjectProblemCode"
+        },
+        "fix": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "addId",
+        "path",
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ProjectAddedData": {
+      "description": "`HubEvent.data` on `project.added`, for every add (a path or a clone).",
+      "properties": {
+        "addId": {
+          "description": "Absent when the add registered an existing directory.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "created": {
+          "description": "False when the directory was already a project.",
+          "type": "boolean"
+        },
+        "inspect": {
+          "$ref": "#/$defs/ProjectInspect",
+          "description": "Long lists are cut so the event fits the log's 2 KB of data; `project_inspect` returns them whole."
+        },
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "path",
+        "created",
+        "inspect"
+      ],
+      "type": "object"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectInspect": {
+      "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
+      "properties": {
+        "ci": {
+          "$ref": "#/$defs/CiInfo"
+        },
+        "defaultBranch": {
+          "type": "string"
+        },
+        "leadNeeds": {
+          "description": "One line for a person, e.g. \"no CI found: the merge train will only use local checks\".",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "merge": {
+          "$ref": "#/$defs/MergeRules"
+        },
+        "notes": {
+          "description": "What could not be read, e.g. \"branch rules need admin access on acme/storefront\".",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo",
+          "description": "Absent for a checkout without a GitHub remote."
+        }
+      },
+      "required": [
+        "ci",
+        "merge",
+        "leadNeeds",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "ProjectProblemCode": {
+      "oneOf": [
+        {
+          "enum": [
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "machine_offline",
+          "description": "The machine's node is not connected.",
+          "type": "string"
+        },
+        {
+          "const": "no_worker",
+          "description": "No connected machine runs agents.",
+          "type": "string"
+        },
+        {
+          "const": "gh_unavailable",
+          "description": "gh is missing or logged out where it ran.",
+          "type": "string"
+        },
+        {
+          "const": "gh_no_access",
+          "description": "gh is logged in but cannot see the repository (private, renamed, or a typo).",
+          "type": "string"
+        },
+        {
+          "const": "path_missing",
+          "description": "The path does not exist on the machine.",
+          "type": "string"
+        },
+        {
+          "const": "not_a_git_repo",
+          "description": "The path exists but is not a git checkout.",
+          "type": "string"
+        },
+        {
+          "const": "dest_exists",
+          "description": "The clone destination exists. `CloneTarget.sameRemote` says whether it is already this repository.",
+          "type": "string"
+        },
+        {
+          "const": "clone_failed",
+          "description": "git clone failed; the message is git's own last line.",
+          "type": "string"
+        },
+        {
+          "const": "node_too_old",
+          "description": "The machine's node is older than this hub and cannot do this.",
+          "type": "string"
+        }
+      ]
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "PromptChangedData": {
+      "description": "`prompt.changed`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "ref": {
+          "description": "Absent on a reset.",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/PromptScope"
+        },
+        "warnings": {
+          "description": "The warnings' codes.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "PromptScope": {
+      "description": "Which text is meant: the one shipped in the binary, the hub-wide override, or one project's override.",
+      "enum": [
+        "default",
+        "global",
+        "project"
+      ],
+      "type": "string"
+    },
+    "SourceFreshData": {
+      "description": "`source.fresh`.",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "staleMs": {
+          "description": "How long it was stale.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "staleMs"
+      ],
+      "type": "object"
+    },
+    "SourceStaleData": {
+      "description": "`source.stale`.",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "sinceMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "sinceMs",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "SteerBy": {
+      "description": "Who sent a steer.",
+      "oneOf": [
+        {
+          "properties": {
+            "keyName": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "human",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "keyName"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "lead",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SteerEventData": {
+      "description": "Fields `HubEvent.data` carries on `steer.*` events.",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/SteerBy"
+        },
+        "excerpt": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "how": {
+          "$ref": "#/$defs/DeliveredHow"
+        },
+        "mode": {
+          "$ref": "#/$defs/SteerMode"
+        },
+        "reason": {
+          "description": "steer.failed: why.",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/SteerStage"
+        },
+        "steerId": {
+          "$ref": "#/$defs/SteerId"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "text": {
+          "description": "steer.queued: the first 120 characters, the mode and who sent it.",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "steerId",
+        "workstreamId",
+        "stage"
+      ],
+      "type": "object"
+    },
+    "SteerId": {
+      "pattern": "^S[1-9][0-9]*$",
+      "type": "string"
+    },
+    "SteerMode": {
+      "description": "How a steer reaches a running agent.",
+      "oneOf": [
+        {
+          "const": "queue",
+          "description": "Enter, \"add to the lead's queue\": taken in at the agent's next tool boundary, as its own turn. Never cuts a\nrunning tool.",
+          "type": "string"
+        },
+        {
+          "const": "now",
+          "description": "⌘Enter, \"interrupt and redirect now\": stops the current step and delivers at once.",
+          "type": "string"
+        }
+      ]
+    },
+    "SteerStage": {
+      "oneOf": [
+        {
+          "enum": [
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "queued",
+          "description": "The hub stored it, or put it in the offline queue.",
+          "type": "string"
+        },
+        {
+          "const": "delivered",
+          "description": "claude's context took it in (`command_lifecycle started`).",
+          "type": "string"
+        },
+        {
+          "const": "acknowledged",
+          "description": "The agent's reply named its id, or a lead call did (`--steer S12`).",
+          "type": "string"
+        },
+        {
+          "const": "unacknowledged",
+          "description": "Its run ended with no reply naming it.",
+          "type": "string"
+        },
+        {
+          "const": "withdrawn",
+          "description": "Dropped while still queued.",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "The machine stayed offline past the queue's TTL.",
+          "type": "string"
+        }
+      ]
+    },
+    "TaskEventData": {
+      "description": "Fields `HubEvent.data` carries on `task.*` events.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "paths": {
+          "description": "task.out_of_area: the first 20 paths outside the leased globs.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "queuedReason": {
+          "type": "string"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "type": "object"
+    },
+    "TaskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ThreadEventData": {
+      "description": "Fields `HubEvent.data` may carry on `thread.*` events, alongside whatever else the hub adds.",
+      "properties": {
+        "late": {
+          "description": "The run ended while the hub was down and this event was emitted on its return.",
+          "type": "boolean"
+        },
+        "reason": {
+          "$ref": "#/$defs/ThreadEventReason"
+        },
+        "runId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ThreadEventReason": {
+      "enum": [
+        "stalled",
+        "usage_limit",
+        "interrupted"
+      ],
+      "type": "string"
+    },
+    "Timestamp": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "TrainEventData": {
+      "description": "The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,\n`change.refused`, `pr.merged`, `train.frozen`, `train.resumed`, `train.blocked`. Which fields each carries is in\n`HubEventType`'s docs.",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "checks": {
+          "description": "change.ci_failed: the failing check names.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ci": {
+          "description": "pr.merged on a repo with no CI: what fleetd checked instead.",
+          "type": "string"
+        },
+        "error": {
+          "description": "train.blocked: what a person has to move.",
+          "type": "string"
+        },
+        "fix": {
+          "type": "string"
+        },
+        "logUrl": {
+          "type": "string"
+        },
+        "mergedSha": {
+          "type": "string"
+        },
+        "paths": {
+          "description": "change.needs_rebase: the conflicting paths.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prUrl": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "UsageClass": {
+      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy cooldown, with a reset. `rate_limit`: a 429.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
+      "enum": [
+        "usage_limit",
+        "rate_limit",
+        "pool_exhausted"
+      ],
+      "type": "string"
+    },
+    "UsageEventData": {
+      "description": "Fields `HubEvent.data` carries on usage.breaker and usage.resumed.",
+      "properties": {
+        "breakerCleared": {
+          "description": "usage.resumed: the breaker was open and is now closed.",
+          "type": "boolean"
+        },
+        "by": {
+          "description": "usage.resumed: \"reset\", or who ran usage_resume.",
+          "type": "string"
+        },
+        "class": {
+          "$ref": "#/$defs/UsageClass"
+        },
+        "model": {
+          "type": "string"
+        },
+        "parked": {
+          "$ref": "#/$defs/ParkedCounts"
+        },
+        "threads": {
+          "description": "usage.resumed: the threads sent \"continue\", in the order they were sent.",
+          "items": {
+            "$ref": "#/$defs/UsageEventThread"
+          },
+          "type": "array"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "type": "object"
+    },
+    "UsageEventThread": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "WorkstreamEventData": {
+      "description": "`workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`.",
+      "properties": {
+        "briefHash": {
+          "$ref": "#/$defs/BriefHash",
+          "description": "workstream.running: the frozen brief."
+        },
+        "by": {
+          "type": "string"
+        },
+        "claimId": {
+          "$ref": "#/$defs/ClaimId",
+          "description": "workstream.state (verifying) and workstream.done: the claim that moved it."
+        },
+        "reason": {
+          "description": "workstream.state (stopped): why, and who.",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkstreamState",
+          "description": "workstream.state: the new state."
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId"
+      ],
+      "type": "object"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
+    },
+    "WorkstreamNoteData": {
+      "description": "`workstream.note`.",
+      "properties": {
+        "clientRequestId": {
+          "type": "string"
+        },
+        "steerId": {
+          "$ref": "#/$defs/SteerId",
+          "description": "The steer the note became."
+        },
+        "text": {
+          "description": "The first 200 characters.",
+          "type": "string"
+        },
+        "urgent": {
+          "type": "boolean"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId"
+      ],
+      "type": "object"
+    },
+    "WorkstreamState": {
+      "enum": [
+        "draft",
+        "running",
+        "converging",
+        "verifying",
+        "done",
+        "idle",
+        "stopped",
+        "failed"
+      ],
+      "type": "string"
+    }
+  },
+  "$ref": "#/$defs/HubEventData",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
