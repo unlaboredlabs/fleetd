@@ -245,11 +245,11 @@ impl Shell {
                         .child(div().text_size(px(size::XS)).text_color(t.quiet).child("recommended"));
                 }
                 for (i, option) in ask.options.iter().flatten().enumerate().take(6) {
-                    if ask.recommendation.as_deref() == Some(option.as_str()) {
+                    if ask.recommendation.as_deref() == Some(option.key.as_str()) {
                         continue;
                     }
                     let letter = (b'a' + i as u8) as char;
-                    buttons = buttons.child(reply(clip(option, 48), format!("{number} {letter}"), Variant::Secondary, cx));
+                    buttons = buttons.child(reply(clip(&option.display_label(), 48), format!("{number} {letter}"), Variant::Secondary, cx));
                 }
                 buttons = buttons.child(reply("No".into(), format!("{number} no"), Variant::Ghost, cx));
             }

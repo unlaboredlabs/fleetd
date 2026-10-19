@@ -534,7 +534,7 @@ pub fn resolve_plan(
                         "Item {number} has no option {}.",
                         &LETTERS[*index..*index + 1]
                     )),
-                    Some(option) => answer(actions, option.to_string()),
+                    Some(option) => answer(actions, option.key.to_string()),
                 }
             }
             Verb::Done => {
