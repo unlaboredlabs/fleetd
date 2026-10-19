@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",
+    "@tanstack/react-query": "5.104.4",
     "@tanstack/react-virtual": "3.14.21",
     "libsodium-wrappers": "0.8.4",
     "lucide-react": "1.59.0",
@@ -34,7 +35,8 @@
     "remark-gfm": "4.0.1",
     "shiki": "4.5.0",
     "ws": "8.22.0",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "zustand": "5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
