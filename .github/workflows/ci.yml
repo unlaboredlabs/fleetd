@@ -60,7 +60,8 @@ jobs:
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
     # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
     # landing page for a browser and install.sh for curl; site/docs is the docs' current build; every link on the site
-    # resolves; and no tracked file names a maintainer's own machine, login or home directory.
+    # resolves; no tracked file names a maintainer's own machine, login or home directory; and the landing page's figure
+    # callouts don't overlap at any width.
     needs: rust-crates
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -93,6 +94,10 @@ jobs:
         run: node .github/personal-check.mjs
       - name: Internal links and anchors
         run: node .github/docs-links.mjs
+      - name: Figure callouts don't collide
+        # Renders site/home.html in the runner's google-chrome at 390 to 1920 px wide and fails when two callout notes
+        # of a figure overlap or one leaves the viewport.
+        run: node .github/site-layout-check.mjs
 
   site-external-links:
     # Every external link on fleetd.sh and its docs answers (10 s a try, two tries). Links into this repo on GitHub

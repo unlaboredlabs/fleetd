@@ -74,16 +74,33 @@ p{margin:0}
 .frame{grid-row:2;position:relative;container-type:inline-size;--ar:.642857}
 .shot{display:block;border-radius:7px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.14),0 18px 40px -22px rgba(0,0,0,.45)}
 .shot img{display:block;width:100%;height:auto;aspect-ratio:14/9}
-.notes{list-style:none;margin:0;padding:0}
-.notes li{position:absolute;left:0;right:0;height:0;top:calc(var(--y)*var(--ar)*1cqw)}
+/* A note hangs from its leader unless the note above it reaches lower: notes are floats that clear each other, and
+   each li sits at its --y (its margins undo the one before), so a note's top is the lower of the two. A note pushed
+   down gets an elbow in the gutter (.note::before, whose upright the li's clip-path stops at the leader); each later
+   note's elbow is further from the notes (--k), so leaders never cross. "up" notes hang where they are aimed. */
+.notes{list-style:none;margin:0;padding:0;position:absolute;top:0;left:0;right:0;display:flow-root}
+.notes li{position:relative;padding-top:1px;margin:calc(var(--y)*var(--ar)*1cqw) 0 calc(-1*var(--y)*var(--ar)*1cqw - 1px);--k:5;
+  --e:calc(100% + var(--g) - 10px - var(--k)*7px);
+  clip-path:polygon(-20px -20px,calc(var(--e) - .5px) -20px,calc(var(--e) - .5px) -.5px,calc(var(--e) + 1.5px) -.5px,calc(var(--e) + 1.5px) -20px,calc(100% + var(--g) + var(--notes) + 20px) -20px,calc(100% + var(--g) + var(--notes) + 20px) 9999px,-20px 9999px)}
+.notes li:nth-child(1){--k:1}
+.notes li:nth-child(2){--k:2}
+.notes li:nth-child(3){--k:3}
+.notes li:nth-child(4){--k:4}
+.notes li.up{position:absolute;left:0;right:0;top:calc(var(--y)*var(--ar)*1cqw);margin:0;padding:0;clip-path:none;--k:0}
 .pin{position:absolute;left:calc(var(--x)*1cqw);top:0;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--mark);box-shadow:0 0 0 2px var(--paper)}
 .pin i{display:none}
-.notes li::before{content:"";position:absolute;top:-.5px;height:0;border-top:1px solid var(--mark);left:calc(var(--x)*1cqw);right:calc(-1*var(--g) + 10px)}
-.note{position:absolute;left:calc(100% + var(--g));width:var(--notes);top:-11px;display:flex;gap:10px;font-size:14px;line-height:22px}
-.up .note{top:auto;bottom:-11px}
+.notes li::before{content:"";position:absolute;top:-.5px;height:0;border-top:1px solid var(--mark);left:calc(var(--x)*1cqw);right:calc(-1*var(--g) + 10px + var(--k)*7px)}
+.note{float:left;clear:left;position:relative;margin:-12px 0 22px calc(100% + var(--g));width:var(--notes);display:flex;gap:10px;font-size:14px;line-height:22px}
+.note::before{content:"";box-sizing:border-box;position:absolute;right:calc(100% + 10px);bottom:calc(100% - 11.5px);width:calc(var(--k)*7px);height:9999px;border:solid var(--mark);border-width:0 0 1px 1px}
+.up .note{float:none;position:absolute;margin:0;left:calc(100% + var(--g));bottom:-11px}
+.up .note::before{content:none}
 .n{color:var(--mark);font-weight:500;font-variant-numeric:tabular-nums;flex:none}
-.fig.l .notes li::before{left:calc(-1*var(--g) + 10px);right:auto;width:calc(var(--x)*1cqw + var(--g) - 10px)}
-.fig.l .note{left:auto;right:calc(100% + var(--g));flex-direction:row-reverse}
+.fig.l .notes li{--e:calc(10px - var(--g) + var(--k)*7px);clip-path:polygon(calc(100% + 20px) -20px,calc(var(--e) + .5px) -20px,calc(var(--e) + .5px) -.5px,calc(var(--e) - 1.5px) -.5px,calc(var(--e) - 1.5px) -20px,calc(-20px - var(--g) - var(--notes)) -20px,calc(-20px - var(--g) - var(--notes)) 9999px,calc(100% + 20px) 9999px)}
+.fig.l .notes li.up{clip-path:none}
+.fig.l .notes li::before{left:calc(-1*var(--g) + 10px + var(--k)*7px);right:auto;width:calc(var(--x)*1cqw + var(--g) - 10px - var(--k)*7px)}
+.fig.l .note{float:right;clear:right;margin:-12px calc(100% + var(--g)) 22px 0;flex-direction:row-reverse}
+.fig.l .note::before{right:auto;left:calc(100% + 10px);border-width:0 1px 1px 0}
+.fig.l .up .note{left:auto;right:calc(100% + var(--g));margin:0}
 .fig.l .note>span:last-child{flex:1}
 .note code{font-size:12.5px;white-space:nowrap}
 .note code.q{display:block;white-space:normal;margin-top:2px}
@@ -128,10 +145,10 @@ p{margin:0}
   .install{max-width:36em}
   .fig,.fig.l{display:block}
   .cap{margin-bottom:14px}
-  .notes{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)}
-  .notes li{position:static;height:auto}
-  .notes li::before{display:none}
-  .note,.fig.l .note{position:static;width:auto;flex-direction:row;text-align:left}
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-top:20px;padding-top:14px;border-top:1px solid var(--rule);position:static}
+  .notes li,.notes li.up,.fig.l .notes li{position:static;height:auto;margin:0;padding:0;clip-path:none}
+  .notes li::before,.note::before{display:none}
+  .note,.fig.l .note,.up .note{position:static;float:none;margin:0;width:auto;flex-direction:row;text-align:left}
   .pin{top:calc(var(--y)*var(--ar)*1cqw)}
   .pin i{display:block;position:absolute;left:9px;bottom:4px;font:500 11px/1 var(--sans);font-style:normal;color:var(--mark);background:var(--paper);padding:3px 4px 2px;border-radius:3px;font-variant-numeric:tabular-nums}
   .sec{grid-template-columns:1fr}
