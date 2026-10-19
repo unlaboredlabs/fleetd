@@ -15,9 +15,9 @@ On the hub machine the app pairs by itself. On another computer, print a code on
 
 ```console capture=pair
 $ fleetd pair
-Pairing code: 38X0-57P8  (single use, valid until 2026-10-18T22:43:43.690Z)
+Pairing code: PMJW-Q2J7  (single use, valid until 2026-10-19T16:02:14.452Z)
 Hub address:  http://127.0.0.1:4778
-Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&code=38X0-57P8
+Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&code=PMJW-Q2J7
 
 The fleetd app on this machine pairs by itself when it opens. On another device, open the
 app and enter the code and hub address above, or open the link there.
@@ -33,7 +33,7 @@ the palette pairs with another.
 The app opens on the board, ready to type: say what the fleet should do and press Enter. The board shows what needs
 you and every open order with its agents, PRs and how far along the merge train each is.
 
-![The board with one order on it: three PRs, each with the agent that wrote it and two reviewers and a verifier at work under it.](/docs/img/board.png)
+![The board with one order on it: three PRs, each with two reviewers and a verifier at work under it, and the merge train below.](/docs/img/board.png)
 
 - **Project**: the project picker (⌘⇧P) or a leading `@project `. Without one, the hub picks and says why.
 - **Type**: the type picker (⌘⇧T), or a prefix: `fix:` or `bug:`, `research:`, `finish:`. The default is a feature.
@@ -62,7 +62,7 @@ the conversation talks to the lead:
 Each steer shows whether it was queued, delivered and acknowledged ([Receipts](steering.md#receipts)); a queued one
 can be withdrawn. Pick an agent to steer that agent instead. A stopped order isn't reopened.
 
-![An order with steers in its conversation: one acknowledged with the lead's reply, one not acknowledged, one still queued with Withdraw, and the steer box under them.](/docs/img/steering.png)
+![An order's fleet with the steer sheet open for its verifier: what it was told, its last items, and the box that steers it.](/docs/img/steering.png)
 
 ## Status {#status}
 

@@ -34,12 +34,10 @@ The callout positions (`--x`, `--y`) and the hand-written callout text are not g
 ids on the page that its run didn't produce, and you re-aim the callouts if the app's layout moved.
 
 `fleet-board.png`, the board at the top of the page, and the app shots in the docs (`site/docs/img/`) are the app's
-screens on sanitized lab recordings (`app/desktop/fixtures/recorded`) at 1400x900@2x in the light theme, without the
-sample-data banner. `app/desktop/qa/site.ts` lists them; `pnpm qa:build && pnpm site:shots` in `app/desktop` writes
-them into `site/`.
-
-Every app image on the site is marked `recapture` there while it still shows the earlier app. They are re-shot last,
-once the screens are final: re-shoot each, re-aim the landing page's callouts, then drop the mark.
+screens on E3b's fixtures, which are sanitized lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x in the light
+theme, without the sample-data banner. `app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm
+site:shots` in `app/desktop` writes them into `site/`. Re-shoot them when what those screens show changes, and keep
+the captions and alt texts true to the picture.
 
 ## Docs (fleetd.sh/docs)
 

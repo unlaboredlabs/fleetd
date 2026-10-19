@@ -56,9 +56,9 @@ const REPLY = "1 go 2 nvm 3 b";
 
 /** What the lead is told to run: the asks are arranged, the filing, batching and answering are real. */
 const ASK_MESSAGE = `Run these three commands in your shell, one after the other, exactly as written, then stop:
-fleetd ask --key site.pricing.headline --class product --text "Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?" --rec "Pay for machines, not seats"
-fleetd ask --key deps.moment --class product --text "Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?" --rec "drop moment"
-fleetd ask --key billing.team.trial --class money --text "Free trial length for the Team plan?" --options "7 days,14 days,30 days" --rec "7 days" --blocks "the Team plan launch"`;
+fleetd ask --key site.pricing.headline --class product --text "Pricing page headline: the copy review left two variants in site/pricing.md. Ship A?" --context "Both variants are in site/pricing.md; the Team plan launch uses the one picked." --option 'a|Pay for machines, not seats|the page leads with A' --option 'b|One price per machine. Every agent included.|the page leads with B' --rec a --why "A is shorter and names the pricing model in five words"
+fleetd ask --key deps.moment --class product --text "Drop the moment dependency and format invoice and receipt dates with the built-in Intl API instead?" --context "moment is only used in src/dates.js, for two formats." --option 'drop|Drop moment|dates format through Intl; one dependency fewer' --option 'keep|Keep moment|nothing changes' --rec drop --why "Intl covers both formats and moment is in maintenance mode"
+fleetd ask --key billing.team.trial --class money --text "Free trial length for the Team plan?" --option '7|7 days|trials end after a week' --option '14|14 days|trials end after two weeks' --option '30|30 days|trials end after a month' --rec 7 --why "a week is enough to try it on one repo" --blocks "the Team plan launch"`;
 
 /** The demo project the lead works in. */
 const STOREFRONT: Record<string, string> = {

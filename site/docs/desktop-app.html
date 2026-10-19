@@ -62,9 +62,9 @@ too.</p>
 <h2 id="pair-it-with-the-hub">Pair it with the hub<a class="anchor" href="#pair-it-with-the-hub" aria-label="Link to this section">#</a></h2>
 <p>On the hub machine the app pairs by itself. On another computer, print a code on the hub:</p>
 <pre class="code console" data-copy data-capture="pair"><code><span class="c">$ fleetd pair</span>
-<span class="o">Pairing code: 38X0-57P8  (single use, valid until 2026-10-18T22:43:43.690Z)
+<span class="o">Pairing code: PMJW-Q2J7  (single use, valid until 2026-10-19T16:02:14.452Z)
 Hub address:  http://127.0.0.1:4778
-Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&amp;code=38X0-57P8
+Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&amp;code=PMJW-Q2J7
 
 The fleetd app on this machine pairs by itself when it opens. On another device, open the
 app and enter the code and hub address above, or open the link there.</span></code></pre>
@@ -75,7 +75,7 @@ the palette pairs with another.</p>
 <h2 id="composer">Give work<a class="anchor" href="#composer" aria-label="Link to this section">#</a></h2>
 <p>The app opens on the board, ready to type: say what the fleet should do and press Enter. The board shows what needs
 you and every open order with its agents, PRs and how far along the merge train each is.</p>
-<p><img src="/docs/img/board.png" alt="The board with one order on it: three PRs, each with the agent that wrote it and two reviewers and a verifier at work under it." /></p>
+<p><img src="/docs/img/board.png" alt="The board with one order on it: three PRs, each with two reviewers and a verifier at work under it, and the merge train below." /></p>
 <ul>
 <li><strong>Project</strong>: the project picker (⌘⇧P) or a leading <code>@project </code>. Without one, the hub picks and says why.</li>
 <li><strong>Type</strong>: the type picker (⌘⇧T), or a prefix: <code>fix:</code> or <code>bug:</code>, <code>research:</code>, <code>finish:</code>. The default is a feature.</li>
@@ -98,7 +98,7 @@ the conversation talks to the lead:</p>
 </tbody></table></div>
 <p>Each steer shows whether it was queued, delivered and acknowledged (<a href="/docs/steering#receipts">Receipts</a>); a queued one
 can be withdrawn. Pick an agent to steer that agent instead. A stopped order isn't reopened.</p>
-<p><img src="/docs/img/steering.png" alt="An order with steers in its conversation: one acknowledged with the lead&#39;s reply, one not acknowledged, one still queued with Withdraw, and the steer box under them." /></p>
+<p><img src="/docs/img/steering.png" alt="An order&#39;s fleet with the steer sheet open for its verifier: what it was told, its last items, and the box that steers it." /></p>
 <h2 id="status">Status<a class="anchor" href="#status" aria-label="Link to this section">#</a></h2>
 <p>⌘. shows Status for what you're looking at: the open order, the selected project, or the whole fleet. It shows the
 progress fleetd verified, what the work waits on, what changed since you last looked, health, what needs you and
