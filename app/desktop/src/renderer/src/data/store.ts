@@ -24,6 +24,7 @@ import {
   type TrainLive,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
+import { settled } from "./phase";
 
 /** "machineId/projectId". */
 export type ProjectKey = string;
@@ -270,7 +271,7 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
   if (!keepLanes) {
     const next: Record<string, string> = {};
     for (const [id, lane] of Object.entries(lanes)) {
-      const at = live.ended[id] ?? (FINAL.has(lane.status) ? frame.at : undefined);
+      const at = live.ended[id] ?? (settled(lane.status) ? frame.at : undefined);
       if (at !== undefined) next[id] = at;
     }
     const was = Object.keys(live.ended);
@@ -293,8 +294,6 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
     stale: false,
   };
 };
-
-const FINAL: ReadonlySet<string> = new Set(["done", "failed", "cancelled"]);
 
 type Ingest = {
   [T in ToolName]: { readonly tool: T; readonly input: ToolInput<T>; readonly output: ToolOutput<T> };

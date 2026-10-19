@@ -277,18 +277,22 @@ export interface BoardData {
   readonly stale: boolean;
 }
 
+const noDetails: DataState["details"] = {};
+const noLanes: DataState["live"]["lanes"] = {};
+
 /** Everything the board and its strips draw, from one place. */
 export const selectBoardData = memo(
   (s) =>
     [
       selectConnection(s),
       selectBoard(s),
-      s.details,
-      s.live.lanes,
+      // Gated like every hub-data selector: nothing from a connection that isn't fresh.
+      s.fresh ? s.details : noDetails,
+      s.fresh ? s.live.lanes : noLanes,
       selectProjects(s),
       selectMachines(s),
       selectTrains(s),
-      s.live.slots ?? s.slots,
+      s.fresh ? (s.live.slots ?? s.slots) : undefined,
       s.live.skewMs ?? 0,
       s.live.stale,
     ],
