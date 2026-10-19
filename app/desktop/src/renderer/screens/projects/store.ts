@@ -59,8 +59,18 @@ const dispatch = (msg: AddMsg) => {
   for (const c of calls) run(c);
 };
 
+/** Each step's call goes through the data layer, whose `call` is the one way to the hub. */
 const run = (c: Call) => {
-  void window.fleetd.hub.call(c.tool, c.input, { timeoutMs: CALL_MS }).then((outcome) => dispatch({ t: "answer", call: c, outcome }));
+  const data = layer;
+  if (data === undefined) return;
+  const options = { timeoutMs: CALL_MS };
+  const answer =
+    c.tool === "project_add"
+      ? data.call("project_add", c.input, options)
+      : c.tool === "project_inspect"
+        ? data.call("project_inspect", c.input, options)
+        : data.call("events_wait", c.input, options);
+  void answer.then((outcome) => dispatch({ t: "answer", call: c, outcome }));
 };
 
 /** The sheet is hidden while an add ends: say so in a toast that brings it back. */

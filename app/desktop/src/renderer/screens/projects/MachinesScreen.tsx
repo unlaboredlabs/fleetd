@@ -29,7 +29,8 @@ const useMinute = (): number => {
 export function MachinesScreen() {
   const views = useData(selectMachines);
   const projects = useData(selectProjects);
-  const slots = useData((d) => d.live.slots ?? d.slots);
+  // Like the machines: nothing from a connection that is gone, so no old slot count beside "Waiting for the hub".
+  const slots = useData((d) => (d.fresh ? (d.live.slots ?? d.slots) : undefined));
   const live = useData((d) => d.hub.phase === "live");
   const now = useMinute() + (useData((d) => d.live.skewMs) ?? 0);
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);

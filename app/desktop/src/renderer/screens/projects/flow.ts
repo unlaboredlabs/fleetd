@@ -3,6 +3,7 @@
 // come before the answer that names its addId: those wait in `early`. A dropped connection loses the answer and any
 // events sent meanwhile, so after the next snapshot the add is looked up again from where it started (`since`).
 
+import type { ToolInput } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import {
   ADD_EVENTS,
@@ -58,12 +59,12 @@ export const initialAdd: AddState = { phase: { kind: "pick" }, awaiting: false, 
 
 export type Purpose = "add" | "inspect" | "recover";
 
-export interface Call {
-  readonly purpose: Purpose;
-  readonly gen: number;
-  readonly tool: string;
-  readonly input: Readonly<Record<string, unknown>>;
-}
+/** A step's call, typed against the contracts so it goes through the data layer's typed `call`. */
+export type Call = { readonly purpose: Purpose; readonly gen: number } & (
+  | { readonly tool: "project_add"; readonly input: ToolInput<"project_add"> }
+  | { readonly tool: "project_inspect"; readonly input: ToolInput<"project_inspect"> }
+  | { readonly tool: "events_wait"; readonly input: ToolInput<"events_wait"> }
+);
 
 export type Outcome = { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError };
 
@@ -127,7 +128,6 @@ const owns = (s: AddState, e: HubEvent): boolean => {
   return r.kind === "clone" ? str(e.data, "repo") === r.repo : e.type === "project.added" && str(e.data, "path") === r.path;
 };
 
-const call = (s: AddState, purpose: Purpose, tool: string, input: Readonly<Record<string, unknown>>): Call => ({ purpose, gen: s.gen, tool, input });
 
 const addInput = (r: Request): ProjectAddInput =>
   r.kind === "clone" ? { machineId: r.machineId, url: r.repo, ...(r.useExisting ? { useExisting: true } : {}) } : { machineId: r.machineId, path: r.path };
@@ -137,7 +137,7 @@ const holdAndInspect = (s: AddState, f: Failure): Step_ => {
   const r = s.request;
   if (r?.kind === "clone" && !r.useExisting && s.live) {
     const held = { ...s, held: f };
-    return [held, [call(held, "inspect", "project_inspect", { machineId: r.machineId, url: r.repo })]];
+    return [held, [{ purpose: "inspect", gen: held.gen, tool: "project_inspect", input: { machineId: r.machineId, url: r.repo } }]];
   }
   return [fail(s, f), []];
 };
@@ -179,7 +179,7 @@ const recover = (s: AddState): Step_ => {
   if (!s.lost || s.request === undefined) return [s, []];
   const next = waiting({ ...s, lost: false }, "Reconnected; looking up where the add got to.");
   const input = { ...(s.since === undefined ? {} : { cursor: s.since }), types: [...ADD_EVENTS], machineId: s.request.machineId, timeoutSec: 0 };
-  return [next, [call(next, "recover", "events_wait", input)]];
+  return [next, [{ purpose: "recover", gen: next.gen, tool: "events_wait", input }]];
 };
 
 export const active = (s: AddState): boolean => s.request !== undefined && (s.awaiting || s.addId !== undefined || s.held !== undefined || s.lost);
@@ -219,7 +219,7 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
         ...(s.seen === undefined ? {} : { seen: s.seen, since: s.seen }),
       };
       if (!s.live) return [waiting({ ...base, awaiting: false, lost: true }, LOST), []];
-      return [base, [call(base, "add", "project_add", { ...addInput(r) })]];
+      return [base, [{ purpose: "add", gen: base.gen, tool: "project_add", input: addInput(r) }]];
     }
     case "event": {
       const seq = msg.event.seq;

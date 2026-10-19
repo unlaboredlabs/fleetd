@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { Button, Dialog, Text, toast } from "../../ui";
-import { useData } from "../../src/data/react";
+import { useData, useDataLayer } from "../../src/data/react";
 import { openAddProject } from "./store";
 
 export interface RemoveTarget {
@@ -14,6 +14,7 @@ export interface RemoveTarget {
 }
 
 export function RemoveProjectDialog({ project, onClose }: { project: RemoveTarget | null; onClose: () => void }) {
+  const data = useDataLayer();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; fix?: string } | null>(null);
   const machine = useData((d) => (project ? (d.machines[project.machineId]?.name ?? project.machineId) : ""));
@@ -27,7 +28,7 @@ export function RemoveProjectDialog({ project, onClose }: { project: RemoveTarge
   const remove = async (p: RemoveTarget) => {
     setBusy(true);
     setError(null);
-    const out = await window.fleetd.hub.call("project_remove", { machineId: p.machineId, projectId: p.projectId });
+    const out = await data.call("project_remove", { machineId: p.machineId, projectId: p.projectId });
     setBusy(false);
     if (!out.ok) {
       setError(out.error.fix ? { message: out.error.message, fix: out.error.fix } : { message: out.error.message });
