@@ -120,6 +120,29 @@ impl TrainHost for HubHost {
         }
     }
 
+    fn running_writers(&self, project_ref: &ProjectRef) -> Vec<(TaskId, String)> {
+        let Some(hub) = self.hub() else {
+            return Vec::new();
+        };
+        let filter = crate::hub::tasks::TaskFilter {
+            project_ref: Some(project_ref.clone()),
+            state: Some(fleetd_contracts::tasks::TaskState::Running),
+            workstream_id: None,
+            limit: 100,
+        };
+        match hub.tasks.list(&filter) {
+            Ok(tasks) => tasks
+                .into_iter()
+                .filter(|t| t.kind == fleetd_contracts::tasks::TaskKind::Write)
+                .filter_map(|t| Some((t.task_id, t.branch?.to_string())))
+                .collect(),
+            Err(error) => {
+                tracing::warn!(%error, "train: running writers not read");
+                Vec::new()
+            }
+        }
+    }
+
     fn message_task<'a>(
         &'a self,
         project_ref: &'a ProjectRef,

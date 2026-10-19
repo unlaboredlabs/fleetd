@@ -23,10 +23,17 @@ wake line (`wake.agent_steer`).
 
 Agents are bad at judging time, so fleetd never asks one for an estimate. No prompt asks for an ETA, a duration or
 "this should take", and leads are told never to put one in a brief, an ask, a status line, a plan or a summary. Plan
-items and research budgets are sized S, M or L instead. In place of a clock, leads work for throughput: keep every
-slot busy, run work that touches separate areas in parallel, judge each slice as it lands, put each finished PR on the
-train at once, and never sit idle while work is runnable. What fleetd measures (CI runs, span durations, ages) is
+items and research budgets are sized S, M or L instead. What fleetd measures (CI runs, span durations, ages) is
 shown as measured; see [Status](status.md).
+
+## Max efficiency without compromising {#efficiency}
+
+In place of a clock, leads are told to work for throughput: keep every slot busy, run work that touches separate areas
+in parallel, have each slice reviewed as it lands, put each finished PR on the train at once, and end a turn only to
+wait on their agents or when nothing approved can run. They are also told that no gate relaxes for speed: reviews,
+CI, the train, done-when checks and your approvals stay exactly as they are, and no filler work is made up to fill a
+slot. fleetd backs this up with two wakes, never with a spawn of its own ([How the lead schedules
+work](projects-and-orders.md#scheduling)).
 
 ## Claude's auto memory is off {#auto-memory}
 
@@ -56,7 +63,7 @@ Claude Code's own subagent system off in every claude it starts, and gives agent
 Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their session, not through the shell. A lead
 gets `spawn_agent`, `message_agent`, `agent_status`, `list_agents` and `stop_agent`, plus `ask`, `decide`, `brief`,
 `claim_done`, `plan_*`, `gated_run` and the rest of what it used to run as `fleetd` commands. A task gets three:
-`report` (a review verdict), `ask_lead` and `claim_done`. Results come back in the lead's next wake, never by polling.
+`report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. Results come back in the lead's next wake, never by polling.
 The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents, and a lead has at most
 32 tasks open at once. A refusal says why and what to do instead. The lead-side `fleetd` commands stay for you.
 [Agent tools](reference/agent-tools.md) lists every tool with its parameters, the blocked Claude Code tools and the

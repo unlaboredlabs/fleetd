@@ -199,6 +199,12 @@ pub const ENTRIES: &[Entry] = &[
                 r"`amend`",
                 Code
             ),
+            (
+                "gates-never-relax",
+                "never relaxes a review, CI, train, done-when or approval gate for speed",
+                r"Gates never relax",
+                Code
+            ),
         ]
     ),
     entry!(
@@ -597,6 +603,21 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
+        "wake.runnable",
+        Wake,
+        WakesAndMessages,
+        Lead,
+        "Wake: a free slot and approved work",
+        "when a slot frees, the lead is idle and approved, unblocked work no task has taken waits; once per change in that work",
+        "items!=the next items, by id, title, order and size; room!=slots the project's tasks could take now",
+        &[(
+            "lead-decides",
+            "the lead decides what to start; the hub never spawns",
+            r"you decide",
+            Prompt
+        )]
+    ),
+    entry!(
         "wake.order_idle",
         Wake,
         WakesAndMessages,
@@ -694,6 +715,16 @@ pub const ENTRIES: &[Entry] = &[
             READ_ONLY,
             VERDICT,
         ]
+    ),
+    entry!(
+        "review.delta",
+        Start,
+        ReviewsAndChecks,
+        Task,
+        "Reviewer: what changed since the last review",
+        "after the reviewer's or verifier's text, when the PR was reviewed at an earlier head",
+        "reviewedSha!=the head reviewed before; headSha!=the head reviewed now; serves=what the PR serves",
+        &[]
     ),
     entry!(
         "review.verifier",

@@ -1,0 +1,1 @@
+This PR was reviewed before, at {{reviewedSha}}. Start from what changed since: fetch that commit too (`git fetch origin {{reviewedSha}}`) and read `git range-diff {{reviewedSha}}...{{headSha}}`; if it can't be fetched, review the whole diff. The bar is the same: blocking only for what is wrong, unsafe or fails {{serves}}, including an earlier blocking finding that is not fixed.
