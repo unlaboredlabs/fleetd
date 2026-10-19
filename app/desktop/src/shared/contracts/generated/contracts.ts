@@ -221,8 +221,12 @@ export type AskAnswer = {
   /** The receipt: when the lead was woken with this answer. Absent while the undo window runs. */
   deliveredAt?: Timestamp;
   kind?: AskAnswerKind;
+  /** The reply's note ("1 a: because …"), kept for the decision's why. */
+  note?: string;
   /** The reply text it was parsed from. */
   raw: string;
+  /** Who the decision will be recorded as, once the undo window passes. */
+  source?: DecisionSource;
   /** Until then `inbox_undo` reopens the ask and the lead never hears of the answer. */
   undoUntil?: Timestamp;
   value: string;
