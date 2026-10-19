@@ -93,6 +93,22 @@
             "board"
           ],
           "type": "object"
+        },
+        {
+          "description": "Subscribe to `chat_delta` frames of one project's chat, replacing any earlier one; without `project`, stop.\nSend it again after a reconnect.",
+          "properties": {
+            "project": {
+              "$ref": "#/$defs/ProjectRef"
+            },
+            "t": {
+              "const": "chat",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -100,6 +116,29 @@
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "ProjectId": {
+      "type": "string"
+    },
+    "ProjectRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
     },
     "WorkstreamId": {
       "pattern": "^W[1-9][0-9]*$",

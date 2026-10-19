@@ -41,6 +41,12 @@ pub enum AppClientMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<WorkstreamId>,
     },
+    /// Subscribe to `chat_delta` frames of one project's chat, replacing any earlier one; without `project`, stop.
+    /// Send it again after a reconnect.
+    Chat {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<crate::ids::ProjectRef>,
+    },
 }
 
 /// A `call` failed, or (without `id`) the session did.
@@ -72,4 +78,6 @@ pub enum AppServerMessage {
     Error(AppError),
     /// On the live subscription only. Ephemeral: a slow link drops intermediate frames.
     Live(LiveFrame),
+    /// On the chat subscription only: the lead's reply as it streams. Ephemeral and never replayed.
+    ChatDelta(crate::chat::ChatDelta),
 }
