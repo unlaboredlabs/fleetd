@@ -24,6 +24,7 @@ import {
   type TrainLive,
 } from "../../../shared/contracts";
 import type { HubError, HubFrame, HubState } from "../../../shared/hub";
+import { settled } from "./phase";
 
 /** "machineId/projectId". */
 export type ProjectKey = string;
@@ -40,6 +41,12 @@ export interface OrderDetail {
 
 export interface LiveState {
   readonly lanes: Readonly<Record<string, LiveLane>>;
+  /**
+   * When the feed first said each lane finished (the frame's hub time). A board card still lists a lane the feed
+   * just finished, without an end time; this is its end time until the hub's own arrives, so its clock stops and its
+   * check can hold for a moment before it leaves.
+   */
+  readonly ended: Readonly<Record<string, string>>;
   /** The tail of the message each lane is writing. */
   readonly text: Readonly<Record<string, { readonly messageId: string; readonly text: string }>>;
   readonly machines: Readonly<Record<string, MachineLive>>;
@@ -83,7 +90,7 @@ const ORDER_EVENTS = 100;
 const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
 
-const emptyLive: LiveState = { lanes: {}, text: {}, machines: {}, stale: true };
+const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, stale: true };
 
 export const initialState = (): DataState => ({
   hub: { phase: "connecting", hub: "", attempt: 0 },
@@ -249,10 +256,27 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
   const seen = Number.isNaN(at) ? undefined : at - nowMs;
   const skewMs =
     seen === undefined ? live.skewMs : !frame.full && live.skewMs !== undefined ? Math.max(live.skewMs, seen) : seen;
-  const lanes: Record<string, LiveLane> = frame.full ? {} : { ...live.lanes };
-  for (const lane of frame.lanes) {
-    const spark = lane.spark ?? live.lanes[lane.laneId]?.spark;
-    lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
+  // A delta that names no lane (streamed text, a machine) leaves the lanes as they were, identity included, so
+  // nothing that reads only lanes recomputes.
+  const keepLanes = !frame.full && frame.lanes.length === 0;
+  const lanes: Record<string, LiveLane> = keepLanes ? live.lanes : frame.full ? {} : { ...live.lanes };
+  if (!keepLanes) {
+    for (const lane of frame.lanes) {
+      const spark = lane.spark ?? live.lanes[lane.laneId]?.spark;
+      lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
+    }
+  }
+  // Kept for lanes still in scope; a lane's first finished frame sets it. Unchanged entries keep the old object.
+  let ended = live.ended;
+  if (!keepLanes) {
+    const next: Record<string, string> = {};
+    for (const [id, lane] of Object.entries(lanes)) {
+      const at = live.ended[id] ?? (settled(lane.status) ? frame.at : undefined);
+      if (at !== undefined) next[id] = at;
+    }
+    const was = Object.keys(live.ended);
+    const same = was.length === Object.keys(next).length && was.every((id) => next[id] === live.ended[id]);
+    if (!same) ended = next;
   }
   const text: Record<string, { messageId: string; text: string }> = frame.full ? {} : { ...live.text };
   for (const t of frame.text ?? []) {
@@ -262,6 +286,7 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
   }
   return {
     lanes,
+    ended,
     text,
     machines: frame.machines === undefined ? live.machines : byId(frame.machines, (m) => m.machineId),
     slots: frame.slots ?? live.slots,

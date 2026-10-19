@@ -5,6 +5,8 @@ import { EmptyState, GalleryScreen } from "../../ui";
 import { OnboardingScreen } from "../onboarding";
 import { InboxPanel } from "../inbox";
 import { SettingsScreen } from "../settings/SettingsScreen";
+import { BoardScreen } from "../board/BoardScreen";
+import { BoardStrips } from "../board/Strips";
 import type { Screen } from "./routes";
 
 /** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
@@ -19,7 +21,7 @@ function Pending({ id, title }: { id: string; title: string }) {
 export function ScreenHost({ screen }: { screen: Screen }) {
   switch (screen.id) {
     case "board":
-      return <Pending id="board" title="Board" />;
+      return <BoardScreen project={screen.project} />;
     case "order":
       return <Pending id="order" title="Order" />;
     case "status":
@@ -52,6 +54,6 @@ export function InboxBody({ askId }: { askId: string | null; onClose: () => void
 }
 
 /** The machine and train strips along the bottom (F2). Renders nothing until there is something to show. */
-export function StripsBody(_props: { onOpenMachines: () => void }) {
-  return null;
+export function StripsBody(props: { onOpenMachines: () => void }) {
+  return <BoardStrips onOpenMachines={props.onOpenMachines} />;
 }

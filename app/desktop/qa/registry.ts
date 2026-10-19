@@ -30,6 +30,8 @@ export const fixtures = [
   "node-too-old",
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
+  "board-stage",
+  "board-finish",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -97,6 +99,13 @@ export const screens: readonly Screen[] = [
   },
   // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
   { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
+  // F2: the board (#/ and #/board). board.empty, board.list, board.stage and board.finish are its states: the stage
+  // and finish fixtures put one order on it mid-run and after every PR merged.
+  {
+    id: "board",
+    route: "#/board",
+    fixtures: ["empty", "typical", "long-text", "many-agents", "needs-you", "board-stage", "board-finish"],
+  },
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
