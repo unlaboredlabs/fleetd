@@ -44,7 +44,13 @@ const launchSpec = (home: string) => ({
 const show = async (page: Page, id: string, route: string): Promise<void> => {
   await page.evaluate(`window.location.hash = ${JSON.stringify(route)}`);
   await page.locator(`[data-screen="${id}"], [data-screen^="${id}."]`).first().waitFor({ state: "visible", timeout: 15_000 });
-  await page.waitForFunction("!document.querySelector(\"[aria-busy='true']\")", undefined, { timeout: 15_000 });
+  // Polled with page.evaluate (CDP's Runtime.evaluate): waitForFunction evaluates its predicate with eval in the page,
+  // which the app's CSP (no 'unsafe-eval') refuses.
+  const until = Date.now() + 15_000;
+  while (!(await page.evaluate<boolean>("!document.querySelector(\"[aria-busy='true']\")"))) {
+    if (Date.now() > until) throw new Error(`${id} stayed busy`);
+    await new Promise((done) => setTimeout(done, 100));
+  }
 };
 
 const waitForEndpoint = async (): Promise<void> => {
