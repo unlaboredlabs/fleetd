@@ -271,10 +271,10 @@ pub struct Gate {
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
 pub enum HeadlineSource {
-    /// Phrased by the `status.headline` prompt from the current facts.
+    /// Phrased by a model from the facts. Only older hubs wrote these.
     Generated,
-    /// The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit. Also what a
-    /// source this build doesn't know decodes as.
+    /// The deterministic template, the only source this hub writes. Also what a source this build doesn't know decodes
+    /// as.
     #[serde(other)]
     Template,
 }
@@ -286,9 +286,9 @@ pub struct Headline {
     /// Starts with "Not live: …" when a source the scope depends on is stale; the hub writes that clause.
     pub text: Line<1, 400>,
     pub source: HeadlineSource,
-    /// Why the template shows: "facts changed, rewriting", "claude unavailable: …", "daily limit".
+    /// Why the template shows, from older hubs that also generated lines.
     pub reason: Option<Line<1, 200>>,
-    /// The prompt version that wrote a generated line, `status.headline@<sha10>`.
+    /// The prompt version that wrote a generated line, from older hubs.
     pub prompt_ref: Option<PromptRef>,
     pub at: Timestamp,
 }

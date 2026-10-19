@@ -206,7 +206,7 @@ struct Router {
 }
 
 fn router() -> Result<Router, String> {
-    let args = fleetd::hub::intake::router::one_shot_args("m");
+    let args = fleetd::hub::intake::oneshot::one_shot_args("m");
     let has = |flag: &str| args.iter().any(|a| a == flag);
     let mismatch = |why: &str| {
         format!(
@@ -981,19 +981,19 @@ mod tests {
     /// "Every claude fleetd starts" on the page covers the router's one-shot too.
     #[test]
     fn the_router_gets_the_same_deny_list_and_switches() {
-        use fleetd::hub::intake::router;
-        let args = router::one_shot_args("m");
+        use fleetd::hub::intake::oneshot;
+        let args = oneshot::one_shot_args("m");
         for (tool, _) in DISALLOWED_WHY {
             assert!(args.iter().any(|a| a == tool), "{tool}");
         }
-        let env = router::router_env(&Default::default());
+        let env = oneshot::one_shot_env(&Default::default());
         for ((name, value), _) in SUBAGENTS_OFF_ENV_WHY
             .iter()
             .chain([&(AUTO_MEMORY_OFF_ENV, "")])
         {
             assert!(env.iter().any(|(k, v)| k == name && v == value), "{name}");
         }
-        let settings: Value = serde_json::from_str(&router::one_shot_settings()).unwrap();
+        let settings: Value = serde_json::from_str(&oneshot::one_shot_settings()).unwrap();
         for (name, _) in SUBAGENTS_ON_ENV_WHY {
             assert_eq!(settings["env"][name], "", "{name}");
         }

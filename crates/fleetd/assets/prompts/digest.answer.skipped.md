@@ -1,1 +1,0 @@
-- {{askId}} {{key}}: the human skipped it for now; carry on with your recommendation ({{value}}). No decision was recorded, so do not log one and do not ask again unless something changes.

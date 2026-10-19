@@ -4,7 +4,7 @@ use super::service::UsageOwners;
 use super::state::{Owner, ParkedKind, ParkedThread};
 use super::wire::{OpsPorts, convert};
 use crate::hub::incidents::{IncidentFilter, IncidentInput};
-use crate::hub::intake::router::OneShot;
+use crate::hub::intake::oneshot::OneShot;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::ledger::{AskInput, DecisionFilter};
 use crate::hub::retro::metrics::RetroWork;

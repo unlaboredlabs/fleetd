@@ -326,8 +326,6 @@ pub fn build_on(
         crate::hub::leads::AreaOptions {
             home: &config.home,
             leads: Default::default(),
-            router_model: config.router_model.clone(),
-            env: std::env::vars().collect(),
         },
     )?;
     crate::hub::leads::wiring::wire_area(

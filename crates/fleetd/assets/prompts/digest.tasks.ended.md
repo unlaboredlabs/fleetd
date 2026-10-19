@@ -1,1 +1,0 @@
-- {{taskId}} {{state}} since your last wake: {{title}}{{result}}
