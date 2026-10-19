@@ -92,9 +92,25 @@ export async function m3Loop(lab: Lab) {
   ok(`asks_list: ${ask!.askId} api.health.path is item ${ask!.number} of ${ask!.batchId} (${listed.asks.length} open; batch.ready seq ${ready.event.seq})`);
 
   // The reply is held for its 10 s undo window, then becomes Decision D1 and reaches the lead inline in its next wake.
+  const phaseOf = async () =>
+    ((await callTool("orders_board", { projectRef: ref })).body.orders as Array<Body>).find((o) => o.workstreamId === workstreamId)?.phase;
+  const asked = await phaseOf();
+  const replyFrom = await lab.cursor();
   const replied = (await callTool("inbox_reply", { raw: `${ask!.number} go` })).body;
   check(replied.parsed && replied.echo === `Logged: ${ask!.number} → /healthz (undo for 10 s)`, `inbox_reply: ${JSON.stringify(replied)}`);
-  await lab.waitEvent("ask.delivered", 60_000, { cursor, types: ["ask.delivered"] });
+  // The app refetches the order card on the ask's own event: the card leaves "needs you" within 1 s of the answer.
+  const answeredAt = Date.now();
+  const held = await lab.waitEvent(`ask.answered for ${ask!.askId}`, 1_000, { cursor: replyFrom, types: ["ask.answered"], match: (e) => e.data?.askId === ask!.askId });
+  const answeredPhase = await phaseOf();
+  const tookMs = Date.now() - answeredAt;
+  check(
+    asked === "waiting_on_you" && held.event.data.workstreamId === workstreamId && answeredPhase !== "waiting_on_you" && tookMs <= 1_000,
+    `the order card leaves needs you within 1 s of the answer: ${asked} -> ${answeredPhase} in ${tookMs} ms (${JSON.stringify(held.event)})`,
+  );
+  ok(`${workstreamId}'s card: ${asked} -> ${answeredPhase} ${tookMs} ms after the answer (ask.answered seq ${held.event.seq})`);
+  // Once the undo window passes the answer is final: ask.closed, then the decision.
+  const closed = await lab.waitEvent(`ask.closed for ${ask!.askId}`, 60_000, { cursor: replyFrom, types: ["ask.closed"], match: (e) => e.data?.askId === ask!.askId });
+  check(closed.event.data.workstreamId === workstreamId, `ask.closed names the order: ${JSON.stringify(closed.event)}`);
   const decision = (await callTool("decisions_search", { query: "api.health.path" })).body.decisions[0];
   check(decision?.key === "api.health.path" && decision.value === "/healthz" && decision.source === "agent", `decision: ${JSON.stringify(decision)}`);
   ok(`inbox_reply "${ask!.number} go": ${replied.echo}; D1 by ${decision.by} (source ${decision.source})`);
