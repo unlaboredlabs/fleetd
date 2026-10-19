@@ -1,33 +1,61 @@
 // A stand-in for the hub's Settings tools, answering the way the hub does: the real registry of this fleetd (ids,
-// titles, placeholders, safety rules and default texts, from registry.json), hub-wide and per-project edits, dry-run
-// warnings, and one edit made against an older default so the Update view has something to show. Used by the unit
-// tests and as the screen's fixture data. Projects are the fixture's own (acme/storefront on devbox).
-import type {
-  Placeholder,
-  PromptDetail,
-  PromptOverride,
-  PromptScope,
-  PromptSummary,
-  PromptVersion,
-  PromptWarning,
-  ProjectRef,
-  ProjectSummary,
-  SafetyRule,
-} from "../contracts";
-import { INSTRUCTIONS } from "../contracts";
-import registry from "./registry.json";
+// titles, placeholders, safety rules and default texts, from src/renderer/screens/settings/fixture/registry.json,
+// which the Settings tests also read), hub-wide and per-project edits, dry-run warnings, and one edit made against an
+// older default so the Update view has something to show. The settings fixtures record its answers; the preview and
+// tests can drive it directly. Projects are the fixture's own (acme/* on devbox and buildbox).
+//
+// Shapes follow fleetd_contracts::prompts; `pnpm fixtures` validates every recorded answer against the schema.
 
-interface Entry {
+export const INSTRUCTIONS = "instructions";
+
+type Scope = "default" | "global" | "project";
+type Enforced = "code" | "prompt";
+
+interface Placeholder {
+  name: string;
+  required: boolean;
+  description: string;
+}
+
+interface Rule {
   id: string;
-  kind: PromptSummary["kind"];
-  group: PromptSummary["group"];
+  label: string;
+  needle: string;
+  enforced: Enforced;
+}
+
+interface Warning {
+  code: "placeholder_missing" | "placeholder_unknown" | "safety_rule_missing" | "too_long";
+  message: string;
+  placeholder?: string;
+  rule?: string;
+  enforced?: Enforced;
+}
+
+interface Version {
+  ref: string;
+  text: string;
+}
+
+export interface ProjectRef {
+  machineId: string;
+  projectId: string;
+}
+
+/** One entry of registry.json. */
+export interface RegistryEntry {
+  id: string;
+  kind: string;
+  group: string;
   title: string;
   sentWhen: string;
   perProject: boolean;
   placeholders: Placeholder[];
-  rules: Array<Omit<SafetyRule, "present">>;
+  rules: Rule[];
   text: string;
 }
+
+type Entry = RegistryEntry;
 
 interface Edit {
   text: string;
@@ -40,7 +68,7 @@ interface Prompt extends Entry {
   projects: Map<string, Edit>;
 }
 
-export const PROJECTS: ReadonlyArray<ProjectSummary> = [
+export const PROJECTS: ReadonlyArray<ProjectRef & { title: string }> = [
   { machineId: "devbox", projectId: "storefront", title: "acme/storefront" },
   { machineId: "devbox", projectId: "docs-site", title: "acme/docs-site" },
   { machineId: "buildbox", projectId: "payments-api", title: "acme/payments-api, the service behind checkout and refunds" },
@@ -70,9 +98,8 @@ export class PromptHub {
   /** Set to make every call fail as if the hub dropped; the tests and the error fixtures use it. */
   offline = false;
 
-  constructor() {
-    const entries = registry.prompts as Entry[];
-    this.prompts = entries.map((e) => ({ ...e, global: null, projects: new Map() }));
+  constructor(registry: ReadonlyArray<RegistryEntry>) {
+    this.prompts = registry.map((e) => ({ ...e, global: null, projects: new Map() }));
     this.prompts.push({
       id: INSTRUCTIONS,
       kind: "instructions",
@@ -153,23 +180,23 @@ export class PromptHub {
     }
   }
 
-  private version(p: Prompt, text: string): PromptVersion {
+  private version(p: Prompt, text: string): Version {
     return { ref: refOf(p.id, text), text };
   }
 
-  private override(p: Prompt, e: Edit | null | undefined): PromptOverride | undefined {
+  private override(p: Prompt, e: Edit | null | undefined): (Version & { base?: string }) | undefined {
     if (!e) return undefined;
     return { ref: refOf(p.id, e.text), text: e.text, ...(e.base !== null ? { base: refOf(p.id, e.base) } : {}) };
   }
 
-  private effective(p: Prompt, key: string | null): [string, PromptScope, Edit | null] {
+  private effective(p: Prompt, key: string | null): [string, Scope, Edit | null] {
     const own = key && p.perProject ? p.projects.get(key) : undefined;
     if (own) return [own.text, "project", own];
     if (p.global) return [p.global.text, "global", p.global];
     return [p.text, "default", null];
   }
 
-  private summary(p: Prompt, key: string | null): PromptSummary {
+  private summary(p: Prompt, key: string | null) {
     const [text, scope, edit] = this.effective(p, key);
     return {
       id: p.id,
@@ -184,7 +211,7 @@ export class PromptHub {
     };
   }
 
-  private detail(p: Prompt, key: string | null): PromptDetail {
+  private detail(p: Prompt, key: string | null) {
     const [text, scope, edit] = this.effective(p, key);
     const stale = edit !== null && edit.base !== null && edit.base !== p.text && p.id !== INSTRUCTIONS;
     const global = this.override(p, p.global);
@@ -219,8 +246,8 @@ export class PromptHub {
     };
   }
 
-  private warnings(p: Prompt, text: string): PromptWarning[] {
-    const out: PromptWarning[] = [];
+  private warnings(p: Prompt, text: string): Warning[] {
+    const out: Warning[] = [];
     const used = new Set([...text.matchAll(/\{\{(\w+)\}\}/gu)].map((m) => m[1] ?? ""));
     for (const ph of p.placeholders) {
       if (ph.required && !used.has(ph.name)) {
