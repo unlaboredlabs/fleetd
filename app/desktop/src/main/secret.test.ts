@@ -36,9 +36,9 @@ describe("sealing a secret ask's value", () => {
 
   it("submits only the sealed box and returns only the fingerprint", async () => {
     const sent: unknown[] = [];
-    const out = await submitSecret({ requestId: "R7", boxPubKey: rust.publicKey, value: "hunter2" }, (tool, input) => {
+    const out = await submitSecret({ requestId: "Q7", boxPubKey: rust.publicKey, value: "hunter2" }, (tool, input) => {
       sent.push(tool, input);
-      return Promise.resolve({ ok: true, output: { requestId: "R7", fingerprint: "ab12cd34" } });
+      return Promise.resolve({ ok: true, output: { requestId: "Q7", fingerprint: "ab12cd34" } });
     });
     expect(out).toEqual({ ok: true, fingerprint: "ab12cd34" });
     expect(sent[0]).toBe("secret_submit");

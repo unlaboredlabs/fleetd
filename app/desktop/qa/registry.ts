@@ -75,6 +75,8 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
+  // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
+  "inline-items",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -205,13 +207,16 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-long", "chat-streaming", "chat-attachments", "chat-waiting", "chat-empty", "typical", "long-text", "empty", "hub-unreachable"],
     pending: "A2 messages (F3), A3 composer (F4) and fixtures/chat (E3b)",
   },
-  // A5 (F5): the two inline items: the masked secret field, and the exact gated command with Approve / Deny.
+  // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
+  // with Approve / Deny (and ran, failed, open again after the node was offline, a denied tool permission, running).
+  { id: "chat", route: CHAT, fixtures: ["inline-items"], variant: "inline" },
+  // ...and E3b's own chat fixtures with an item in a longer conversation.
   {
     id: "chat",
     route: CHAT,
     fixtures: ["chat-secret", "chat-gated", "long-text"],
-    variant: "inline",
-    pending: "A5 inline secret and gated command (F5) and fixtures/chat (E3b)",
+    variant: "inline-chat",
+    pending: "fixtures/chat (E3b)",
   },
   // A9 (F9): Max agents in the chat header, at the cap with work queued (Settings has it under settings.agents).
   {
