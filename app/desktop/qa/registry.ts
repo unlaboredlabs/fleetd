@@ -33,6 +33,7 @@ export const fixtures = [
   "node-too-old",
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
+  "settings-agents",
   "board-stage",
   "board-finish",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
@@ -257,6 +258,8 @@ export const screens: readonly Screen[] = [
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
   // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
+  // Max agents: the fleet cap and each project's slider.
+  { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
   {
     id: "settings.prompts",
