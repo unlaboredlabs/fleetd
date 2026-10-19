@@ -9,6 +9,11 @@ Used in `src/renderer/ui/diff/` (the diff parser's shapes and its raw-text fallb
 an "N unchanged lines" separator, add/delete tints mixed over the code surface), adapted from
 `apps/web/src/lib/diffRendering.ts` and the diff panel.
 
+Also in `src/renderer/screens/order/`: the follow-up composer's key resolution and its primary/secondary send
+actions (`packages/client-runtime/src/state/composerDispatch.ts`, `apps/web/src/components/chat/ComposerPrimaryActions.tsx`
+→ `composer.ts`, `Composer.tsx`); the work log's folding of tool-call runs and the timeline's follow-at-end rule
+(`apps/web/src/components/chat/MessagesTimeline.logic.ts` → `conversation.ts`, `Conversation.tsx`).
+
 ```
 MIT License
 
