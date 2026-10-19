@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../shared/hub";
-import { FixtureSource, loadFixture, matches, type FixtureFile } from "./fixture";
+import { FixtureSource, fixtureRequest, loadFixture, matches, type FixtureFile } from "./fixture";
 
 const base: FixtureFile = {
   version: 1,
@@ -41,6 +41,20 @@ describe("matches", () => {
     expect(matches({ a: [1] }, { a: [1, 2] })).toBe(false);
     expect(matches({ a: null }, { a: undefined })).toBe(false);
     expect(matches({}, "x")).toBe(false);
+  });
+});
+
+describe("fixtureRequest", () => {
+  it("takes FLEETD_FIXTURE in a development build", () => {
+    expect(fixtureRequest({ FLEETD_FIXTURE: "board-busy" }, false)).toEqual({ kind: "fixture", name: "board-busy" });
+    expect(fixtureRequest({}, false)).toEqual({ kind: "none" });
+    expect(fixtureRequest({ FLEETD_FIXTURE: "" }, true)).toEqual({ kind: "none" });
+  });
+
+  it("ignores a stray FLEETD_FIXTURE in a packaged app unless FLEETD_DEV_FIXTURES=1 is set too", () => {
+    expect(fixtureRequest({ FLEETD_FIXTURE: "board-busy" }, true).kind).toBe("ignored");
+    expect(fixtureRequest({ FLEETD_FIXTURE: "board-busy", FLEETD_DEV_FIXTURES: "yes" }, true).kind).toBe("ignored");
+    expect(fixtureRequest({ FLEETD_FIXTURE: "board-busy", FLEETD_DEV_FIXTURES: "1" }, true)).toEqual({ kind: "fixture", name: "board-busy" });
   });
 });
 

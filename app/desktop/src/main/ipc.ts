@@ -2,14 +2,12 @@ import { clipboard, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
-import { rendererOrigin } from "./security";
+import { isOwnPage } from "./security";
 
-/** Only our own top-level page may call main; a subframe or a navigated-away page can't. */
+/** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
 const trustedSender = (event: IpcMainInvokeEvent): boolean => {
   const frame = event.senderFrame;
-  if (frame === null || frame !== event.sender.mainFrame) return false;
-  const origin = rendererOrigin();
-  return origin === "file://" ? frame.url.startsWith("file://") : frame.url.startsWith(`${origin}/`);
+  return frame !== null && frame === event.sender.mainFrame && isOwnPage(frame.url);
 };
 
 const handle = <C extends InvokeChannel>(
