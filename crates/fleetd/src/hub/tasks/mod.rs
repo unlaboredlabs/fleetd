@@ -1390,23 +1390,25 @@ impl Tasks {
         }
     }
 
-    /// The project's agents against its share of the slots: running holds a slot now, queued waits for one.
+    /// The project's agents against its share of the slots. Counted from tasks, not slot use, which includes the
+    /// lead's own turns.
     pub fn agents(&self, project_ref: &ProjectRef) -> crate::hub::leads::events::AgentsLine {
         let slots = self.d.slots.state();
-        let mine = slots
+        let cap = slots
             .per_project
             .iter()
-            .find(|p| &p.project_ref == project_ref);
-        let queued = self
+            .find(|p| &p.project_ref == project_ref)
+            .map_or(slots.cap.get(), |p| p.share.get());
+        let (running, queued) = self
             .db(|c| TaskRecords::counts(c, project_ref))
-            .map(|c| c.queued.get())
+            .map(|c| (c.running.get() + c.idle.get(), c.queued.get()))
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "tasks: counts not read");
-                0
+                (0, 0)
             });
         crate::hub::leads::events::AgentsLine {
-            running: mine.map_or(0, |p| p.used.get()),
-            cap: mine.map_or(slots.cap.get(), |p| p.share.get()),
+            running,
+            cap,
             queued,
         }
     }
