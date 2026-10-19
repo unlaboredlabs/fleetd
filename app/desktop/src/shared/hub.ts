@@ -8,7 +8,7 @@ export type LiveFrame = { readonly full: boolean } & Readonly<Record<string, unk
 
 /** The connection as the UI should present it. The key itself never leaves main. */
 export type HubState =
-  | { readonly phase: "unpaired"; readonly note?: string }
+  | { readonly phase: "unpaired"; readonly note?: string | undefined }
   | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number }
   | { readonly phase: "live"; readonly hub: string; readonly protocol: number }
   /** `retryAt` is epoch ms. */
@@ -20,7 +20,7 @@ export interface HubError {
   /** A hub ErrorCode (`invalid`, `forbidden`, `not_found`, …) or one of the shell's own: `timeout`, `offline`, `disconnected`. */
   readonly code: string;
   readonly message: string;
-  readonly fix?: string;
+  readonly fix?: string | undefined;
 }
 
 export type CallOutcome = { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError };
