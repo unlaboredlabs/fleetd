@@ -248,7 +248,7 @@ export async function show(page: Page, screenId: string, route: string, open?: (
     await settle(page);
     await open(page);
   }
-  // A screen marks its sub-states as "<id>.<state>" (board.empty), so either form means it is up.
+  // A screen marks its sub-states as "<id>.<state>" (chat.loading), so either form means it is up.
   await page
     .locator(`[data-screen="${screenId}"], [data-screen^="${screenId}."]`)
     .first()
