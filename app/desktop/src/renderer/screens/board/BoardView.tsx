@@ -1,6 +1,7 @@
 // The board, drawn from a BoardModel: the docked composer, then either the one open order on the stage or the
 // orders grouped by project, then the train and machine strips. Rows come from model.ts; this file draws them.
-import { useEffect, useState, type Ref } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type Ref } from "react";
+import type { Virtualizer } from "@tanstack/react-virtual";
 import { Button, StatusChip, Text, Truncate, VirtualList, cx, type StatusTone } from "../../ui";
 import { peekNow, useNow } from "./clock";
 import { Composer, type ComposerApi, type ComposerHandle } from "./Composer";
@@ -9,7 +10,8 @@ import type { AgentLane, OrderPhase } from "./contracts";
 import { groupLabel, nowLane, reviewProgress, writtenIn } from "./fleet";
 import { fmtAgo, fmtElapsed, parseMs } from "./format";
 import { type ProjectKey, hubNow, needsClock, seenLanes } from "./live";
-import { type BoardModel, type Held, type Item, type SentOrder, itemKey, leadNote, listItems, projectsOf, sameHeld, stableOrder, stageItems, stagedOrder } from "./model";
+import { BUCKET_LABEL, type BoardModel, type Held, type Item, type SentOrder, itemKey, leadNote, listItems, projectsOf, sameHeld, stableOrder, stageItems, stagedOrder, underStage } from "./model";
+import { setGrouping, useGrouping } from "./grouping";
 import { ActivityLine, Check, LaneRow, Track } from "./parts";
 import { type Present, heldLanes, usePresence } from "./presence";
 import { describe, isWorking, prLabel, prReview, stageTone } from "./words";
@@ -24,6 +26,8 @@ export interface BoardActions {
   /** Takes a failed order off the board; its text goes back in the composer. */
   readonly edit: (requestId: string) => string | undefined;
   readonly openPr?: ((url: string) => void) | undefined;
+  /** Reads the board again after it failed. */
+  readonly retryBoard?: (() => void) | undefined;
 }
 
 export interface BoardViewProps {
@@ -40,6 +44,12 @@ export interface BoardViewProps {
 }
 
 const EMPTY: readonly AgentLane[] = [];
+
+/** The order ↑/↓ (or j/k) selected on the board; Enter opens it. */
+const Selected = createContext<string | undefined>(undefined);
+
+const typing = (t: EventTarget | null): boolean =>
+  t instanceof HTMLElement && (t.isContentEditable || t.closest("input, textarea, select, [role=menu], [role=dialog], [role=listbox]") !== null);
 const NO_ITEMS: readonly Item[] = [];
 
 const CHIP_TONE: Record<OrderPhase, StatusTone> = {
@@ -68,13 +78,46 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
   useEffect(() => onStage?.(stagedId), [onStage, stagedId]);
   // The list holds its order while you look (stableOrder); the previous order is kept as state.
   const [held, setHeld] = useState<Held | undefined>(undefined);
-  const listed = staged ? undefined : stableOrder(listItems(model, now, filter), held);
+  const grouping = useGrouping();
+  const listed = staged ? undefined : stableOrder(listItems(model, now, filter, grouping), held);
   if (listed && !sameHeld(listed.held, held)) setHeld(listed.held);
-  const items: Item[] = staged ? stageItems(model, staged, drawn, seen) : (listed?.items ?? []);
+  const items: Item[] = staged ? [...stageItems(model, staged, drawn, seen), ...underStage(model, staged, now, filter)] : (listed?.items ?? []);
   // Rows come and go with motion on the stage only. Its rows are few (a card lists at most 12 agents), while the
   // order list is long and virtual, where a row changing height under the virtualizer would move the rows around it.
   const present = usePresence(staged ? items : NO_ITEMS, itemKey);
-  const state = staged ? (items.some((i) => i.kind === "finish") ? "finish" : "stage") : items.some((i) => i.kind === "empty") ? "empty" : "list";
+  const state = staged ? (items.some((i) => i.kind === "finish") ? "finish" : "stage") : items.some((i) => i.kind === "error") ? "error" : items.some((i) => i.kind === "empty") ? "empty" : "list";
+
+  // ↑/↓ and j/k move through the orders in the order shown, Enter opens one; not while typing or in a menu.
+  const orderIds = items.flatMap((i) => (i.kind === "card" ? [i.card.workstreamId] : i.kind === "stageTitle" ? [i.card.workstreamId] : []));
+  const [selected, setSelected] = useState<string | undefined>(undefined);
+  const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+  const keys = useRef({ orderIds, selected, items, open: actions.openOrder });
+  useEffect(() => {
+    keys.current = { orderIds, selected, items, open: actions.openOrder };
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+      const { orderIds: ids, selected: at, items: shown, open } = keys.current;
+      if (e.key === "Enter" && at !== undefined) {
+        e.preventDefault();
+        open(at);
+        return;
+      }
+      const by = e.key === "ArrowDown" || e.key === "j" ? 1 : e.key === "ArrowUp" || e.key === "k" ? -1 : 0;
+      if (by === 0 || ids.length === 0) return;
+      e.preventDefault();
+      const now = at === undefined ? -1 : ids.indexOf(at);
+      const next = ids[now < 0 ? (by > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, now + by))];
+      if (next === undefined) return;
+      setSelected(next);
+      const index = shown.findIndex((i) => i.kind === "card" && i.card.workstreamId === next);
+      if (index >= 0) virtualizer.current?.scrollToIndex(index, { align: "auto" });
+      document.querySelector(`[data-order="${CSS.escape(next)}"]`)?.scrollIntoView({ block: "nearest" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const targets: Target[] = projectsOf(d) ?? [];
   const cards = (d.orders ?? []).map((o) => o.card);
@@ -85,6 +128,7 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
   );
 
   return (
+    <Selected.Provider value={selected}>
     <div className={s.board} data-screen="board">
       <div className={cx(s.top, s.col)}>
         <Composer
@@ -109,6 +153,7 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
           </div>
         ) : (
           <VirtualList
+            virtualizerRef={virtualizer}
             items={items}
             getKey={itemKey}
             estimateSize={32}
@@ -123,6 +168,7 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
         )}
       </div>
     </div>
+    </Selected.Provider>
   );
 }
 
@@ -168,6 +214,17 @@ function ItemView({
       return <Empty why={item.why} addProject={actions.addProject} />;
     case "routing":
       return <div className={s.routing}>Routing…</div>;
+    case "error":
+      return (
+        <div className={s.empty} role="alert">
+          <Text tone="danger">{`Couldn't load the board: ${item.message}`}</Text>
+          {actions.retryBoard ? (
+            <Button variant="secondary" onClick={actions.retryBoard}>
+              Try again
+            </Button>
+          ) : null}
+        </div>
+      );
     case "project":
       return (
         <div className={s.projectHeader}>
@@ -175,6 +232,14 @@ function ItemView({
           <Truncate size="xs" tone="quiet" expand="none">
             {item.facts}
           </Truncate>
+          {item.first ? <GroupSwitch /> : null}
+        </div>
+      );
+    case "bucket":
+      return (
+        <div className={s.projectHeader}>
+          <Text strong>{BUCKET_LABEL[item.bucket]}</Text>
+          {item.first ? <GroupSwitch /> : null}
         </div>
       );
     case "sent":
@@ -243,6 +308,21 @@ function ItemView({
   }
 }
 
+/** "Group: Project | Status" on the list's first header, as ⌘⇧G and View → Group by switch it. */
+function GroupSwitch() {
+  const grouping = useGrouping();
+  return (
+    <span className={s.groupSwitch} role="radiogroup" aria-label="Group orders by">
+      <span>Group:</span>
+      {(["project", "status"] as const).map((g) => (
+        <button key={g} type="button" role="radio" aria-checked={grouping === g} className={s.groupOption} onClick={() => setGrouping(g)}>
+          {g === "project" ? "Project" : "Status"}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 /** A row on its way out is gone for readers and the keyboard while it collapses. */
 const leavingProps = (leaving: boolean) => (leaving ? { "aria-hidden": true, inert: true } : {});
 
@@ -271,7 +351,7 @@ function StageTitle({ item, open }: { item: Extract<Item, { kind: "stageTitle" }
   const { card, lead } = item;
   const leadWorking = lead ? isWorking(lead.status) : false;
   return (
-    <div className={s.stageTitle}>
+    <div className={cx(s.stageTitle, useContext(Selected) === card.workstreamId && s.selectedCard)} data-order={card.workstreamId}>
       <div className={s.titleRow}>
         <span className={s.wid}>{card.workstreamId}</span>
         <button type="button" onClick={() => open(card.workstreamId)} aria-label={`Open ${card.title}`}>
@@ -318,7 +398,8 @@ function OrderCardRow({
   const created = parseMs(card.createdAt);
   return (
     <div
-      className={s.card}
+      className={cx(s.card, useContext(Selected) === card.workstreamId && s.selectedCard)}
+      aria-current={useContext(Selected) === card.workstreamId ? true : undefined}
       role="button"
       tabIndex={0}
       data-order={card.workstreamId}

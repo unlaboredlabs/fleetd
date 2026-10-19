@@ -9,7 +9,7 @@ import type { AgentLane, LaneStatus, LiveFrame, LiveLane, OrderCard, PrRef, Trai
 import { finishHeadline, finished, fleet, groupLabel, hold, phaseLabel, reviewProgress, stagePick, writtenIn } from "./fleet";
 import { fmtElapsed, fmtTokens, middleEllipsis, shortModel } from "./format";
 import { machinesNow, needsClock, seenLanes, selectStrips, slotUse } from "./live";
-import { type BoardModel, itemKey, listItems, stableOrder, stageItems, stagedOrder } from "./model";
+import { type BoardModel, itemKey, listItems, stableOrder, stageItems, stagedOrder, underStage } from "./model";
 import { heldLanes } from "./presence";
 import { noteMerged, visibleChips } from "./Strips";
 import { describe, fleetActivity, machineParts, slotsText } from "./words";
@@ -433,5 +433,45 @@ group("redraws (#188 data port)", () => {
     const [s2] = frameIn(s1, { t: "live", frame: frame(3, false, [live("T1", "working", { activity })]) }, ms(3));
     expect(selectBoardData(s2)).not.toBe(selectBoardData(s1));
     expect(selectStrips(s2)).toBe(strips);
+  });
+});
+
+group("group by status (parity: GPUI board.rs)", () => {
+  const w = (id: string, lanes: AgentLane[], extra: Partial<OrderCard> = {}) => card(id, lanes, extra);
+  const heads = (items: ReturnType<typeof listItems>) =>
+    items.flatMap((i) => (i.kind === "bucket" ? [`[${i.bucket}]`] : i.kind === "card" ? [i.card.workstreamId] : []));
+
+  it("lists one group per status, in attention order, needing you first", () => {
+    const m = model({
+      orders: [w("W1", [lane("T1", "working")]), w("W2", [], { prs: [pr(5, "ci")] }), w("W3", [lane("T3", "working")])],
+      asks: [askOf("A1", "W3")],
+    });
+    expect(heads(listItems(m, ms(10), undefined, "status"))).toEqual(["[needs-you]", "W3", "[working]", "W1", "[review-and-merge]", "W2"]);
+  });
+
+  it("a card that moves to another group goes under it, though the list otherwise holds still", () => {
+    const working = model({ orders: [w("W1", [lane("T1", "working")]), w("W2", [lane("T2", "working")], { updatedAt: at(1) })] });
+    const first = stableOrder(listItems(working, ms(10), undefined, "status"), undefined);
+    const moved = model({ orders: [w("W1", [], { prs: [pr(5, "ci")] }), w("W2", [lane("T2", "working")], { updatedAt: at(1) })] });
+    const second = stableOrder(listItems(moved, ms(20), undefined, "status"), first.held);
+    expect(heads(second.items)).toEqual(["[working]", "W2", "[review-and-merge]", "W1"]);
+    // Switching grouping re-sorts too: every card has a new header.
+    const byProject = stableOrder(listItems(moved, ms(20), undefined, "project"), second.held);
+    expect(byProject.items.map(itemKey)).toEqual(listItems(moved, ms(20), undefined, "project").map(itemKey));
+  });
+});
+
+group("board parity review", () => {
+  it("2: orders that finished within the hold stay listed under the staged order", () => {
+    const m = model({ orders: [card("W14", [lane("T1", "working")]), card("W13", [], { phase: "done", state: "done", updatedAt: at(-150) })] });
+    const staged = stagedOrder(m, ms(0));
+    expect(staged?.card.workstreamId).toBe("W14");
+    if (!staged) return;
+    expect(underStage(m, staged, ms(0)).flatMap((i) => (i.kind === "card" ? [i.card.workstreamId] : []))).toEqual(["W13"]);
+  });
+
+  it("3: a failed board read says so, with no lying \"Loading\"", () => {
+    const m: BoardModel = { ...model({ orders: undefined }), boardError: "the hub timed out" };
+    expect(listItems(m, ms(0))).toEqual([{ kind: "error", message: "the hub timed out" }]);
   });
 });

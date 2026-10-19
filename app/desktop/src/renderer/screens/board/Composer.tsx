@@ -64,6 +64,12 @@ export interface ComposerApi {
 
 export interface ComposerHandle {
   focus(): void;
+  /** Opens the project picker (⌘⇧P). */
+  pickProject(): void;
+  /** Opens the type picker (⌘⇧T). */
+  pickType(): void;
+  /** Opens the file dialog to attach (⌘⇧A). */
+  attach(): void;
   /** Puts text in the box (Edit on a failed order, the palette's "New order: …"). */
   setText(text: string): void;
 }
@@ -129,8 +135,13 @@ export function Composer(props: ComposerProps) {
   const nextLocal = useRef(0);
   const pastes = useRef(0);
 
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [typeMenu, setTypeMenu] = useState(false);
   useImperativeHandle(props.handle, () => ({
     focus: () => box.current?.focus(),
+    pickProject: () => setProjectMenu(true),
+    pickType: () => setTypeMenu(true),
+    attach: () => fileInput.current?.click(),
     setText: (t: string) => {
       setText(t);
       box.current?.focus();
@@ -310,7 +321,7 @@ export function Composer(props: ComposerProps) {
       </Text>
       <div className={c.where}>
         <span className={c.quiet}>to</span>
-        <Menu>
+        <Menu open={projectMenu} onOpenChange={setProjectMenu}>
           <MenuTrigger asChild>
             <button type="button" className={c.picker} aria-label="Project">
               <Truncate expand="none" size="xs" tone="inherit">
@@ -337,7 +348,7 @@ export function Composer(props: ComposerProps) {
         {targetRow ? <span className={c.quiet}>on {targetRow.machine}{targetRow.offline ? " (offline)" : ""}</span> : null}
         {source ? <span className={c.quiet}>· {source}</span> : null}
         {guessing && chosen === undefined ? <span className={c.quiet}>· guessing…</span> : null}
-        <Menu>
+        <Menu open={typeMenu} onOpenChange={setTypeMenu}>
           <MenuTrigger asChild>
             <button type="button" className={cx(c.picker, c.type)} aria-label="Type">
               {TEMPLATE_LABEL[kind]} <span aria-hidden>▾</span>

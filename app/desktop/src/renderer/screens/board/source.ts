@@ -4,6 +4,7 @@
 import { useMemo, useReducer, useState } from "react";
 import type { IntakeSubmitInput, PlaybookName } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
+import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectBoardData } from "../../src/data/selectors";
 import type { ComposerApi, Draft } from "./Composer";
@@ -43,7 +44,11 @@ let lastUsed: ProjectKey | undefined;
 export interface BoardSource {
   readonly model: BoardModel;
   readonly composer: ComposerApi;
-  readonly actions: { readonly retry: (requestId: string) => void; readonly edit: (requestId: string) => string | undefined };
+  readonly actions: {
+    readonly retry: (requestId: string) => void;
+    readonly edit: (requestId: string) => string | undefined;
+    readonly retryBoard: () => void;
+  };
   readonly lastUsed: ProjectKey | undefined;
   /** Why Send is off, when the hub isn't live. */
   readonly offline: string | undefined;
@@ -57,6 +62,9 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
   const [sent, dispatch] = useReducer(reduce, { orders: [], drafts: new Map() });
   const [watched, watch] = useState<string | undefined>(undefined);
   useToolQuery("order_get", { workstreamId: watched ?? "" }, { enabled: watched !== undefined });
+  // The same read the data layer keeps loaded (same key, one query): here for its error and a retry.
+  const board = useToolQuery("orders_board", {});
+  const boardError = board.isError ? (board.error instanceof CallError ? message(board.error.error) : board.error.message) : undefined;
 
   const submit = useMemo(
     () => (order: SentOrder, draft: DraftParts) => {
@@ -122,8 +130,9 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
         dispatch({ t: "unsend", requestId });
         return order?.text;
       },
+      retryBoard: () => void board.refetch(),
     }),
-    [sent, submit],
+    [sent, submit, board],
   );
 
   const c = data.connection;
@@ -135,5 +144,5 @@ export const useBoardSource = (addProject: () => void): BoardSource => {
         : c.view === "skeleton" && c.reason !== undefined
           ? `Not connected: ${c.reason}`
           : "Not connected to the hub.";
-  return { model: { data, sent: sent.orders }, composer, actions, watch, lastUsed, offline };
+  return { model: { data, sent: sent.orders, boardError }, composer, actions, watch, lastUsed, offline };
 };
