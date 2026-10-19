@@ -71,6 +71,15 @@ describe.each([
     for (const token of SYNTAX) expect(contrast(get(token), get("sidebar")), token).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("control edges and the focus outline reach 3:1 on every surface (WCAG 1.4.11)", () => {
+    for (const [surface, bg] of surfaces) {
+      if (surface.startsWith("diff")) continue;
+      expect(contrast(get("control-border"), bg), `control edge on ${surface}`).toBeGreaterThanOrEqual(3);
+      // The focus outline is drawn in the accent (base.css :focus-visible).
+      expect(contrast(get("accent"), bg), `focus outline on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("the primary button label passes AA and faint stays visible", () => {
     expect(contrast(get("on-accent"), get("accent-fill"))).toBeGreaterThanOrEqual(4.5);
     for (const [, bg] of bases) expect(contrast(get("faint"), bg)).toBeGreaterThanOrEqual(2.5);

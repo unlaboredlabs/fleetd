@@ -83,8 +83,9 @@ ol {
   outline: none;
 }
 :focus-visible {
-  box-shadow: var(--focus-ring);
-  border-radius: var(--radius-sm);
+  /* An outline in the accent (4.5:1 on every surface), not a shadow, so hover and active fills can't hide it. */
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 ::selection {
