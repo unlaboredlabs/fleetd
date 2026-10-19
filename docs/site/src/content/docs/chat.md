@@ -59,7 +59,7 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | The lead is | Your message |
 |---|---|
 | Idle | Starts its next turn. |
-| Working | Is a steer: it reads it at its next step, after the tool it is running. |
+| Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
 | Starting, or its machine is away | Waits, and goes in as soon as it can. The chat says why it waits. |
 
 A small receipt under your message shows when it was taken in. See [Steering](/docs/steering).
@@ -88,7 +88,7 @@ Two things never go through plain chat text:
 
 | Item | What you see | What you do |
 |---|---|---|
-| A secret the lead needs | A masked field naming the machine and where the value goes | Type the value. It never enters the chat. |
+| A secret the lead needs | A masked field naming the machine and where the value goes | Paste or type the value and click "Save secret". It never enters the chat. |
 | A risky command | The exact command, why, and where it runs | Approve or Deny. |
 
 See [Secrets & approvals](/docs/approvals-and-secrets).
