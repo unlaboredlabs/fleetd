@@ -197,6 +197,11 @@ impl Session {
         };
         match message {
             AppClientMessage::Auth { .. } => unreachable!("handled above"),
+            AppClientMessage::Chat { .. } => {
+                let later = ToolError::new(ErrorCode::Invalid, "This hub streams no chat yet.")
+                    .with_fix("Read the chat with chat_history.");
+                self.send(error_frame(&later, None));
+            }
             AppClientMessage::Call { id, tool, input } => {
                 // Reap finished calls so the in-flight count is current.
                 while self.calls.try_join_next().is_some() {}
