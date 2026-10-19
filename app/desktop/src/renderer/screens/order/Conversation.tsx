@@ -208,18 +208,6 @@ export function Conversation(
   }, []);
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
 
-  // The streaming message grows in place; VirtualList follows new rows, this follows the growth.
-  const lastEntry = entries.at(-1);
-  const growing = (lastEntry?.kind === "say" || lastEntry?.kind === "more") && lastEntry.streaming ? lastEntry.text.length + entries.length : 0;
-  useEffect(() => {
-    const v = virtualizer.current;
-    const el = v?.scrollElement;
-    if (!v || !el || growing === 0) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight > 80) return;
-    const frame = requestAnimationFrame(() => v.scrollToIndex(entries.length - 1, { align: "end" }));
-    return () => cancelAnimationFrame(frame);
-  }, [growing, entries.length]);
-
   const focusKey = focus === undefined ? undefined : entries[focus]?.key;
   useEffect(() => {
     const v = virtualizer.current;
