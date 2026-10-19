@@ -286,6 +286,20 @@
             "t"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ChatDelta",
+          "description": "On the chat subscription only: the lead's reply as it streams. Ephemeral and never replayed.",
+          "properties": {
+            "t": {
+              "const": "chat_delta",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -298,6 +312,43 @@
       "type": "string"
     },
     "BoxPublicKey": {
+      "type": "string"
+    },
+    "ChatDelta": {
+      "description": "Streamed text of the subscribed chat's lead message `messageId`. `offset` is the message's text length before\n`append`, in UTF-16 units: append when it equals the length the app holds, skip the frame when\n`offset + append.length` is within it (already applied, e.g. after a `chat_history` read), and read the message\nagain otherwise (a gap). The `chat.message` event with `state: final` carries the full text.",
+      "properties": {
+        "append": {
+          "maxLength": 4000,
+          "type": "string"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "offset": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId",
+        "seq",
+        "offset",
+        "append"
+      ],
+      "type": "object"
+    },
+    "ChatMessageId": {
+      "pattern": "^m[1-9][0-9]*$",
       "type": "string"
     },
     "ErrorCode": {
@@ -323,6 +374,14 @@
             "$ref": "#/$defs/HubEvent"
           },
           "maxItems": 10,
+          "type": "array"
+        },
+        "chats": {
+          "description": "Each project's chat: whether its lead waits on you, whether it works. Absent from hubs without chat.",
+          "items": {
+            "$ref": "#/$defs/ProjectChatState"
+          },
+          "maxItems": 50,
           "type": "array"
         },
         "cursor": {
@@ -728,6 +787,16 @@
           "const": "source.fresh",
           "description": "A stale source answered again; `data.source`, `data.staleMs`.",
           "type": "string"
+        },
+        {
+          "const": "chat.message",
+          "description": "A project's chat got a message, or one of its messages finished streaming or had an inline item change state;\n`data` is `chat::ChatMessageEventData`.",
+          "type": "string"
+        },
+        {
+          "const": "chat.waiting",
+          "description": "A project's chat started or stopped waiting on you, or its lead started or ended a turn; `data` is the\n`chat::ProjectChatState`.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -1025,6 +1094,38 @@
       "required": [
         "cpus",
         "load1"
+      ],
+      "type": "object"
+    },
+    "ProjectChatState": {
+      "description": "One chat's state, for the sidebar and the status row.",
+      "properties": {
+        "lastMessageAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lastSeq": {
+          "description": "The newest message's `seq`; 0 for an empty chat.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "leadWorking": {
+          "description": "The lead is mid-turn.",
+          "type": "boolean"
+        },
+        "needsYou": {
+          "description": "The lead's last message waits for a human reply, or an inline item is open.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "needsYou",
+        "leadWorking",
+        "lastSeq"
       ],
       "type": "object"
     },

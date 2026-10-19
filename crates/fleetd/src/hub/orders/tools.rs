@@ -27,6 +27,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("order_stop", order_stop);
     tools.add("intake_preview", intake_preview);
     tools.add("attachment_put", attachment_put);
+    tools.add("attachment_get", attachment_get);
     tools.add("project_files", project_files);
 }
 
@@ -191,6 +192,14 @@ async fn attachment_put(
     input: AttachmentPutInput,
 ) -> Result<AttachmentPutOutput, ToolError> {
     crate::hub::intake::attachments::put(&hub, &caller, input).await
+}
+
+async fn attachment_get(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: fleetd_contracts::mcp::AttachmentGetInput,
+) -> Result<fleetd_contracts::mcp::AttachmentGetOutput, ToolError> {
+    crate::hub::intake::attachments::get(&hub, &caller, input).await
 }
 
 async fn project_files(
