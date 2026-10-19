@@ -1,0 +1,146 @@
+---
+title: Machines
+description: Add workers to the hub, log in their Claude, remove them, and check their health.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. Run every command
+on this page on the hub unless it says otherwise.
+
+A worker needs the `claude` CLI, and for now the same OS and CPU as the hub.
+
+## Pick how to add it
+
+| The machine is | Use |
+|---|---|
+| Reachable from the hub over SSH | [`fleetd machine add <ssh-host>`](#ssh) |
+| The hub machine itself | [`fleetd machine add --local`](#local) |
+| Behind NAT, or has no SSH from the hub (a laptop) | [`fleetd pair --worker <name>`](#join) |
+
+## Add a machine over SSH {#ssh}
+
+1. See the plan without changing anything:
+
+   ```console capture=machine-add
+   $ fleetd machine add builder-1 --dry-run
+   dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
+   [probe] read the machine's state (read-only)
+   [1/5] create fleetd's directories
+   [2/5] install fleetd 0.0.0
+   [3/5] write the node service
+   [4/5] enroll the node with a one-time token (sent on stdin)
+   [5/5] (re)start the node
+   [hub] wait until builder-1 is online
+   [exit 0]
+   ```
+
+2. Run it for real:
+
+   ```sh
+   fleetd machine add builder-1
+   ```
+
+   It copies the hub's own fleetd to the machine, enrolls its [node](/docs/glossary#node), runs the node as a user
+   service, and waits until the machine is online. It prints each remote command before it runs it.
+
+The host name can be anything in `~/.ssh/config` or on your tailnet. You can also run `fleetd init` again and pick the
+machine from a list.
+
+It is safe to run again: a real run reads the machine's state first and skips what is done.
+
+## Add the hub machine {#local}
+
+```sh
+fleetd machine add --local
+```
+
+The same steps, run on this machine without SSH. `fleetd init` does this when you pick "(this machine)". Run it again
+to repair the hub machine's node.
+
+## Add a machine the hub can't reach {#join}
+
+1. On the hub, print a join command for the new machine:
+
+   ```sh
+   fleetd pair --worker laptop
+   ```
+
+   Expected output:
+
+   ```text
+   On laptop, run:
+
+     curl -fsSL https://fleetd.sh | sh && ~/.local/bin/fleetd init --join http://hub.your-tailnet.ts.net:4790 --code <code> --machine-id laptop --git-identity 'ada-lovelace <1234567+ada-lovelace@users.noreply.github.com>'
+
+   The code works once, until 2026-10-18T13:35:46.366Z. laptop needs claude installed and must reach the hub at that address.
+   ```
+
+2. Paste the printed command into a terminal on the new machine.
+
+The code works once, for 15 minutes. The new machine must reach the hub's address.
+
+To repair the worker later, run the same command again. `--rejoin` enrolls it again with a new code.
+
+## Log in Claude on a worker {#claude}
+
+Sessions use the worker's own claude setup in `~/.claude`. If `claude` works in your shell there, it works for
+fleetd: your login, a proxy in `~/.claude/settings.json`, and your MCP servers.
+
+If it isn't logged in, log in on the worker as you normally do:
+
+```sh
+claude auth login
+```
+
+Behind a proxy, log in through your proxy instead. To give a worker's sessions their own claude profile, see
+[The Claude login](/docs/config-and-files#claude).
+
+## Remove a machine {#remove}
+
+```sh
+fleetd machine remove builder-1
+```
+
+It stops and removes the node's service on that machine, and revokes its key on the hub.
+
+| Option | Also does |
+|---|---|
+| `--purge` | Deletes `~/.fleetd/node` and `~/.fleetd/claude.env` on that machine. Your own `~/.claude` stays. |
+
+For a machine that joined with `fleetd pair --worker`, only the key is revoked:
+
+```text
+laptop was not set up by fleetd machine add from this hub, so only its key is revoked here; stop its node by hand.
+revoked laptop's node key; the hub refuses that node from now on.
+```
+
+Stop its node on that machine yourself:
+
+<Tabs syncKey="os">
+<TabItem label="macOS">
+
+```sh
+launchctl bootout gui/$(id -u)/sh.fleetd.node
+```
+
+</TabItem>
+<TabItem label="Linux">
+
+```sh
+systemctl --user disable --now fleetd-node.service
+```
+
+</TabItem>
+</Tabs>
+
+## Check health {#health}
+
+```sh
+fleetd doctor
+```
+
+It checks the hub and every machine: online, claude version and login, commit identity, disk space, sleep when idle,
+and the usage breaker. Each problem comes with the command that fixes it.
+
+The app's Machines screen shows the same checks. Every finding and its fix: [Troubleshooting](/docs/troubleshooting).

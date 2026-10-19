@@ -277,6 +277,16 @@ impl FakeGh {
         let number = |s: Option<&&str>| s.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
         match (parts.as_slice(), method) {
             ([], "GET") => ok(json!({ "default_branch": "main" })),
+            (["pulls"], "GET") if query.contains("state=open") && !query.contains("head=") => {
+                let pulls = self.pulls.lock().unwrap();
+                ok(Value::Array(
+                    pulls
+                        .iter()
+                        .filter(|(_, p)| p.state == "open")
+                        .map(|(n, p)| self.pull_json(*n, p))
+                        .collect(),
+                ))
+            }
             (["pulls"], "GET") if query.contains("head=") => {
                 let head = query
                     .split('&')
@@ -504,7 +514,11 @@ impl FakeGh {
 impl GhRunner for FakeGh {
     fn run(&self, args: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
         let out = self.answer(&args);
-        Box::pin(async move { Ok(out) })
+        // Like a real `gh` call, an answer is a suspension point, so racing callers interleave.
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            Ok(out)
+        })
     }
 }
 
@@ -520,6 +534,11 @@ struct FakeHost {
     wakes: Mutex<Vec<String>>,
     /// The node's cmdRoots, when a test sets them: commands elsewhere are refused as the node refuses them.
     cmd_roots: Mutex<Option<Vec<String>>>,
+    /// Reviewers the real review gate asked for, and the refusal the spawn path answers with, if any.
+    review_spawns: Mutex<Vec<ReviewSpawn>>,
+    spawn_refusal: Mutex<Option<String>>,
+    /// Running write tasks' branches, by task id.
+    branches: Mutex<HashMap<String, String>>,
 }
 
 impl FakeHost {
@@ -571,6 +590,20 @@ impl TrainHost for FakeHost {
     fn task(&self, task_id: &TaskId) -> Option<TaskView> {
         self.tasks.lock().unwrap().get(task_id.as_str()).cloned()
     }
+    fn running_writers(&self, _: &ProjectRef) -> Vec<(TaskId, String)> {
+        let tasks = self.tasks.lock().unwrap();
+        self.branches
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(id, _)| {
+                tasks
+                    .get(*id)
+                    .is_some_and(|t| t.state == "running" && t.kind == "write")
+            })
+            .map(|(id, b)| (TaskId::unchecked(id), b.clone()))
+            .collect()
+    }
     fn message_task<'a>(
         &'a self,
         _: &'a ProjectRef,
@@ -581,8 +614,29 @@ impl TrainHost for FakeHost {
         self.sends.lock().unwrap().push((task_id.to_string(), text));
         Box::pin(async { Ok(()) })
     }
-    fn spawn_review(&self, _: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>> {
-        Box::pin(async { Err("no reviews in train tests".into()) })
+    fn spawn_review(&self, spawn: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>> {
+        let refused = self.spawn_refusal.lock().unwrap().clone();
+        let mut spawns = self.review_spawns.lock().unwrap();
+        let answer = match refused {
+            Some(why) => Err(why),
+            None => Ok(TaskView {
+                task_id: TaskId::unchecked(format!("T{}", 50 + spawns.len())),
+                project_ref: spawn.project_ref.clone(),
+                workstream_id: spawn.workstream_id.clone(),
+                kind: "review".into(),
+                state: "running".into(),
+                serves: Some(spawn.serves.clone()),
+                tier: Some(spawn.tier),
+                pr_url: Some(spawn.pr.clone()),
+                receipt_commands: 0,
+                claims_unverified: false,
+                result_tail: None,
+            }),
+        };
+        if answer.is_ok() {
+            spawns.push(spawn);
+        }
+        Box::pin(async move { answer })
     }
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<WorkstreamView> {
         (*workstream_id == ws()).then(|| WorkstreamView {
@@ -783,6 +837,15 @@ impl Kit {
     }
 
     fn with(ci: FakeCi, tweak: impl FnOnce(&mut TrainOptions)) -> Kit {
+        Kit::build(ci, tweak, false)
+    }
+
+    /// With the hub's own review gate in place of the fake one.
+    fn with_reviews() -> Kit {
+        Kit::build(FakeCi::Actions, |_| {}, true)
+    }
+
+    fn build(ci: FakeCi, tweak: impl FnOnce(&mut TrainOptions), real_reviews: bool) -> Kit {
         static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
             "fleetd-train-{}-{}",
@@ -855,25 +918,40 @@ impl Kit {
             appended: Notify::new(),
             wakes: Mutex::default(),
             cmd_roots: Mutex::default(),
+            review_spawns: Mutex::default(),
+            spawn_refusal: Mutex::default(),
+            branches: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
         let worktree = dir.join("train-wt").display().to_string();
         let mut options = TrainOptions {
             auto_run: false,
             bypass_every: Duration::ZERO,
+            ready_every: Duration::ZERO,
             worktree_for: Arc::new(move |_| worktree.clone()),
             ..TrainOptions::default()
         };
         tweak(&mut options);
         let gate_for_train = gate.clone();
-        let train = Train::new(
-            host.clone(),
-            Arc::new(SystemClock),
-            db,
-            gh.clone(),
-            options,
-            |_| gate_for_train,
-        );
+        let train = if real_reviews {
+            crate::hub::reviews::service::build(
+                host.clone(),
+                Arc::new(SystemClock),
+                db,
+                gh.clone(),
+                options,
+            )
+            .0
+        } else {
+            Train::new(
+                host.clone(),
+                Arc::new(SystemClock),
+                db,
+                gh.clone(),
+                options,
+                |_| gate_for_train,
+            )
+        };
         train.start();
         Kit {
             _dir: TempDir(dir),
@@ -2565,6 +2643,264 @@ async fn a_speculative_build_follows_its_parents_new_head_not_the_childs_stale_c
         "rebuilt on the parent's new head: {log:?}"
     );
     assert!(merged_prs(&kit).is_empty());
+}
+
+impl Kit {
+    fn running_task(&self, id: &str, kind: &str) -> TaskId {
+        let task = TaskView {
+            task_id: TaskId::unchecked(id),
+            project_ref: project(),
+            workstream_id: ws(),
+            kind: kind.into(),
+            state: "running".into(),
+            serves: Some("done:0".into()),
+            tier: Some(Tier::M),
+            pr_url: None,
+            receipt_commands: 0,
+            claims_unverified: false,
+            result_tail: None,
+        };
+        self.host.tasks.lock().unwrap().insert(id.into(), task);
+        TaskId::unchecked(id)
+    }
+}
+
+/// A writer's ready slice goes to the review gate while the writer still runs, once per head, and only through every
+/// check `change_enqueue` makes: the gate keeps it from merging until its reviews are in.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_the_gates() {
+    use super::calls::slice_ready;
+    use fleetd_contracts::lead_calls::SliceReadyCall;
+    let kit = Kit::new();
+    let writer = kit.running_task("T1", "write");
+    let slice = |pr: &str| SliceReadyCall {
+        pr_url: GitHubPrUrl::unchecked(pr),
+    };
+
+    let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")], "Source: done:0");
+    let (change, next) = slice_ready(&kit.train, &project(), &writer, slice(&first))
+        .await
+        .unwrap();
+    assert_eq!(
+        (change.state, change.task_id.as_ref(), change.tier),
+        (ChangeState::Reviewing, Some(&writer), Tier::M)
+    );
+    assert!(next.starts_with("go on with your next slice"), "{next}");
+    assert_eq!(
+        kit.gate.reviewed.lock().unwrap().len(),
+        1,
+        "reviewed at once"
+    );
+    // The writer reports the same head again: the same Change, no second round.
+    let (again, _) = slice_ready(&kit.train, &project(), &writer, slice(&first))
+        .await
+        .unwrap();
+    assert_eq!(again.change_id, change.change_id);
+    assert_eq!(kit.gate.reviewed.lock().unwrap().len(), 1);
+    // Pending reviews hold it: it is never ready, so never merged, without them.
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+
+    // The next slice gets its own review while the first still waits on its own.
+    let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")], "Source: done:0");
+    let (other, _) = slice_ready(&kit.train, &project(), &writer, slice(&second))
+        .await
+        .unwrap();
+    assert_ne!(other.change_id, change.change_id);
+    assert_eq!(kit.gate.reviewed.lock().unwrap().len(), 2);
+
+    // The train's checks still refuse: no Source line, and a reviewer is no writer.
+    let bare = kit.open_pr(9, "slice-3", &[add("a3.txt", "c\n")], "No source.");
+    let refused = slice_ready(&kit.train, &project(), &writer, slice(&bare))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.fix.as_deref(),
+        Some("add 'Source: done:0' to the PR body")
+    );
+    let reviewer = kit.running_task("T2", "review");
+    let not_writer = slice_ready(&kit.train, &project(), &reviewer, slice(&second))
+        .await
+        .unwrap_err();
+    assert!(
+        not_writer.message.contains("not a write task"),
+        "{}",
+        not_writer.message
+    );
+    assert_eq!(kit.gate.reviewed.lock().unwrap().len(), 2);
+}
+
+/// The order's review policy picks the reviewers of a ready slice (tier M: one reviewer, spawned by the gate through
+/// the tasks' spawn path), once per head. When that path refuses (the lead's fan-out limit), nothing is waived: the
+/// slice stays in review and can't merge.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_it_through() {
+    use super::calls::slice_ready;
+    use fleetd_contracts::lead_calls::SliceReadyCall;
+    let kit = Kit::with_reviews();
+    let writer = kit.running_task("T1", "write");
+    let slice = |pr: &str| SliceReadyCall {
+        pr_url: GitHubPrUrl::unchecked(pr),
+    };
+    let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")], "Source: done:0");
+    let (change, _) = slice_ready(&kit.train, &project(), &writer, slice(&first))
+        .await
+        .unwrap();
+    let spawned: Vec<(String, &str, Tier)> = kit
+        .host
+        .review_spawns
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| (s.pr.clone(), s.by, s.tier))
+        .collect();
+    assert_eq!(spawned, [(first.clone(), "hub:reviews", Tier::M)]);
+    slice_ready(&kit.train, &project(), &writer, slice(&first))
+        .await
+        .unwrap();
+    assert_eq!(
+        kit.host.review_spawns.lock().unwrap().len(),
+        1,
+        "once per head"
+    );
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+
+    *kit.host.spawn_refusal.lock().unwrap() = Some(
+        "This project already has 32 open tasks, the most one lead may have at once (32).".into(),
+    );
+    let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")], "Source: done:0");
+    let (held, _) = slice_ready(&kit.train, &project(), &writer, slice(&second))
+        .await
+        .unwrap();
+    let held = kit.get(&held.change_id);
+    assert_eq!(held.state, ChangeState::Reviewing);
+    assert!(
+        held.last_error.as_ref().is_some_and(|e| e
+            .as_str()
+            .contains("could not spawn the reviewer: This project already has 32")),
+        "{:?}",
+        held.last_error
+    );
+    assert_eq!(kit.host.review_spawns.lock().unwrap().len(), 1);
+}
+
+/// A running writer's draft PR marked ready is a ready slice, found on the train's own pass (no webhook): it goes to
+/// the review gate once per head. A PR that was never a draft waits for the writer's result as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_head() {
+    let kit = Kit::new();
+    let writer = kit.running_task("T1", "write");
+    kit.host
+        .branches
+        .lock()
+        .unwrap()
+        .insert("T1".into(), "fleetd/T1-slice".into());
+    let pr = kit.open_pr(
+        7,
+        "fleetd/T1-slice",
+        &[add("a1.txt", "a\n")],
+        "Source: done:0",
+    );
+    // A second train change keeps the repo's train (and its pass) alive.
+    let other = kit.open_pr(3, "other", &[add("o.txt", "o\n")], "Source: done:0");
+    kit.enqueue(other, None).await;
+    kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = true;
+    let reviewed = || {
+        kit.gate
+            .reviewed
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| c.pr_number.get() == 7)
+            .count()
+    };
+
+    kit.train.step(REPO).await;
+    assert_eq!(reviewed(), 0, "a draft is not a slice yet");
+    kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = false;
+    kit.train.step(REPO).await;
+    assert_eq!(reviewed(), 1, "marked ready: reviewed at once");
+    let change = kit
+        .train
+        .list(&ListFilter {
+            limit: 10,
+            ..Default::default()
+        })
+        .into_iter()
+        .find(|c| c.pr_url.as_str() == pr)
+        .unwrap();
+    assert_eq!(
+        (change.state, change.task_id.as_ref()),
+        (ChangeState::Reviewing, Some(&writer))
+    );
+    kit.train.step(REPO).await;
+    assert_eq!(reviewed(), 1, "once per head");
+
+    // Opened ready, never seen as a draft: left for the writer's result.
+    kit.host
+        .branches
+        .lock()
+        .unwrap()
+        .insert("T1".into(), "fleetd/T1-later".into());
+    kit.open_pr(
+        8,
+        "fleetd/T1-later",
+        &[add("a2.txt", "b\n")],
+        "Source: done:0",
+    );
+    kit.train.step(REPO).await;
+    assert!(
+        kit.train
+            .list(&ListFilter {
+                limit: 10,
+                ..Default::default()
+            })
+            .iter()
+            .all(|c| c.pr_number.get() != 8)
+    );
+}
+
+/// A writer's report, its result and the draft-ready pass may enqueue one PR at once: one Change, one review round.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
+    use super::calls::slice_ready;
+    use fleetd_contracts::lead_calls::SliceReadyCall;
+    let kit = Kit::with_reviews();
+    let writer = kit.running_task("T1", "write");
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")], "Source: done:0");
+    let call = || SliceReadyCall {
+        pr_url: GitHubPrUrl::unchecked(pr.clone()),
+    };
+    let input = || ChangeEnqueueCall {
+        task_id: Some(writer.clone()),
+        ..enqueue_call(pr.clone(), None)
+    };
+    let r = project();
+    let (a, b, c, d) = tokio::join!(
+        slice_ready(&kit.train, &r, &writer, call()),
+        slice_ready(&kit.train, &r, &writer, call()),
+        kit.train.enqueue(&r, input()),
+        kit.train.enqueue(&r, input()),
+    );
+    let ids: std::collections::HashSet<String> = [
+        a.unwrap().0.change_id,
+        b.unwrap().0.change_id,
+        c.unwrap().change_id,
+        d.unwrap().change_id,
+    ]
+    .into_iter()
+    .map(|id| id.to_string())
+    .collect();
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    let listed = kit.train.list(&ListFilter {
+        limit: 10,
+        ..Default::default()
+    });
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        kit.host.review_spawns.lock().unwrap().len(),
+        1,
+        "one review round"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

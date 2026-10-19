@@ -221,13 +221,19 @@ pub use crate::hub::executor::providers::{codex_instance, other_codex};
 
 /// A reviewer's or verifier's prompt: the PR diff ref and the tier rules. Tasks adds the brief's goal and done-when.
 /// Never the author's narrative, so the PR description and comments are off limits too.
-pub fn review_prompt(set: &PromptSet, change: &Change, role: ReviewRole) -> String {
+/// `reviewed` is the head an earlier round reviewed, if any: a re-review starts from what changed since.
+pub fn review_prompt(
+    set: &PromptSet,
+    change: &Change,
+    role: ReviewRole,
+    reviewed: Option<&str>,
+) -> String {
     let id = if role == ReviewRole::Verifier {
         "review.verifier"
     } else {
         "review.reviewer"
     };
-    set.render(
+    let text = set.render(
         id,
         &[
             ("prUrl", &change.pr_url),
@@ -237,7 +243,21 @@ pub fn review_prompt(set: &PromptSet, change: &Change, role: ReviewRole) -> Stri
             ("headSha", &change.head_sha),
             ("serves", &change.serves),
         ],
-    )
+    );
+    match reviewed.filter(|sha| *sha != change.head_sha.as_str()) {
+        Some(sha) => {
+            let delta = set.render(
+                "review.delta",
+                &[
+                    ("reviewedSha", &sha),
+                    ("headSha", &change.head_sha),
+                    ("serves", &change.serves),
+                ],
+            );
+            format!("{text}\n\n{delta}")
+        }
+        None => text,
+    }
 }
 
 pub struct FindingsVerdict<'a> {
@@ -532,5 +552,40 @@ mod tests {
         );
         assert!(codex_instance(&[claude.clone(), theirs.clone()]).is_none());
         assert_eq!(other_codex(&[claude, theirs, codex]), ["codex"]);
+    }
+}
+
+#[cfg(test)]
+mod delta_tests {
+    use super::*;
+
+    fn change(head: &str) -> Change {
+        serde_json::from_value(serde_json::json!({
+            "changeId": "X1", "projectRef": { "machineId": "m", "projectId": "p" }, "repo": "acme/app",
+            "prNumber": 7, "prUrl": "https://github.com/acme/app/pull/7", "branch": "fleetd/T1",
+            "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": head, "state": "reviewing",
+            "reviews": [], "createdAt": "2026-10-19T10:00:00.000Z", "updatedAt": "2026-10-19T10:00:00.000Z",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_re_review_starts_from_the_delta_at_the_same_bar() {
+        let (old, new) = ("a".repeat(40), "b".repeat(40));
+        let set = PromptSet::defaults();
+        let first = review_prompt(set, &change(&new), ReviewRole::Reviewer, None);
+        assert!(!first.contains("reviewed before"));
+        let again = review_prompt(set, &change(&new), ReviewRole::Reviewer, Some(&old));
+        assert!(again.starts_with(&first), "the full review text stays");
+        assert!(
+            again.contains(&format!("git range-diff {old}...{new}")),
+            "{again}"
+        );
+        assert!(again.contains("blocking only for what is wrong, unsafe or fails done:0"));
+        // The same head reviewed again is no delta.
+        assert_eq!(
+            review_prompt(set, &change(&new), ReviewRole::Reviewer, Some(&new)),
+            first
+        );
     }
 }

@@ -299,6 +299,14 @@ pub struct AskLeadCall {
     pub question: Text<1, 4000>,
 }
 
+/// A writer's slice is ready (the `report` MCP tool with `kind: "slice_ready"`): its PR goes on the train now, so the
+/// order's reviewers start on it while the writer works on. The writer is the task the calling session runs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SliceReadyCall {
+    pub pr_url: GitHubPrUrl,
+}
+
 /// `fleetd inventory`: the project's open work, ranked, as plain text.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct InventoryCall {}
@@ -332,6 +340,7 @@ pub enum LeadCall {
     PlanDrop(PlanDropCall),
     PlanShow(PlanShowCall),
     AskLead(AskLeadCall),
+    SliceReady(SliceReadyCall),
 }
 
 #[skip_serializing_none]
@@ -505,6 +514,7 @@ pub enum LeadCallResult {
     PlanDrop(PlanItemResult),
     PlanShow(PlanShowResult),
     AskLead(AskLeadResult),
+    SliceReady(ChangeResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

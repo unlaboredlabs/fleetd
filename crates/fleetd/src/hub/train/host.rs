@@ -121,6 +121,8 @@ pub struct ReviewRefusal {
 
 pub trait TrainHost: Send + Sync + 'static {
     fn task(&self, task_id: &TaskId) -> Option<TaskView>;
+    /// The project's running write tasks with their branches, whose PRs the train watches for a draft marked ready.
+    fn running_writers(&self, project_ref: &ProjectRef) -> Vec<(TaskId, String)>;
     /// Tasks.message from `by`; the error is its message.
     fn message_task<'a>(
         &'a self,

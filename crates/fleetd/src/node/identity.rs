@@ -215,6 +215,12 @@ mod tests {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| manifest.join("../../tests/lab/node_modules/libsodium-wrappers"));
         if !sodium.exists() {
+            // CI's `rust` job installs tests/lab, so a missing package there is a broken setup, not a skip.
+            assert!(
+                std::env::var_os("FLEETD_REQUIRE_NODE_SEAL").is_none(),
+                "no libsodium-wrappers at {}",
+                sodium.display()
+            );
             eprintln!(
                 "skipped libsodium opening a Rust-sealed box: no libsodium-wrappers at {} (set LIBSODIUM_WRAPPERS)",
                 sodium.display()

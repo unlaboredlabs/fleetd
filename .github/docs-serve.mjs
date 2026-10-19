@@ -6,9 +6,10 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../site");
 const port = Number(process.argv[2] ?? 4791);
-const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".sh": "text/plain; charset=utf-8" };
+const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".xml": "application/xml", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".sh": "text/plain; charset=utf-8" };
 
-/** The file a clean URL names: /docs -> docs/index.html, /docs/x -> docs/x.html, / -> home.html. */
+/** The file a clean URL names: /docs -> docs/index.html, /docs/x -> docs/x.html, /docs/reference/x ->
+ * docs/reference/x.html, / -> home.html. */
 export function resolve(urlPath) {
   const clean = decodeURIComponent(urlPath).replace(/\/+$/u, "");
   const candidates = clean === "" ? ["home.html"] : [clean, `${clean}.html`, `${clean}/index.html`];

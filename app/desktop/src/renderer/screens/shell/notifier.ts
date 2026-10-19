@@ -1,7 +1,7 @@
 // "Needs you" notifications. The hub marks events with `attention` (its rules, not ours); this decides when the OS
 // may show one: at most one per the hub's coalescing window with the rest folded in as "+N more", and inside the
 // hub's quiet windows only urgent items. No clock and no I/O, so it is unit-tested; the shell posts what `due`
-// returns. Ported from the GPUI app's notify.rs.
+// returns.
 import type { NotifyTarget } from "../../../shared/app";
 
 /** When the hub's attention_policy can't be read (an older hub): the hub's own defaults, minus quiet hours. */

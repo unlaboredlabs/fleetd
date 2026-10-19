@@ -1,0 +1,122 @@
+---
+title: Install
+description: Install the fleetd CLI, and the desktop app on a machine with a display.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+You'll install fleetd with one command. It works the same on every machine.
+
+```sh
+curl -fsSL https://fleetd.sh | sh
+```
+
+In a terminal, the installer then starts the setup wizard, `fleetd init`. Continue with [Quick start](/docs/quick-start).
+
+## Requirements
+
+| | Needed on | Notes |
+|---|---|---|
+| macOS (Apple silicon or Intel) or Linux x64 | every machine | The desktop app needs macOS 12 or newer. On an older Mac the installer stops without changing anything; install the CLI only with `--no-app`. |
+| `claude` CLI, logged in | every machine that runs agents | Your own Claude Code login. `fleetd init` checks it. |
+| `git` | the [hub](/docs/glossary#hub) | |
+| `gh` CLI, logged in | the hub | fleetd opens and merges pull requests with it. |
+
+`fleetd init` checks each one and prints the install command for anything missing.
+
+## What gets installed
+
+<Tabs syncKey="os">
+<TabItem label="macOS">
+
+| What | Where |
+|---|---|
+| The CLI | `~/.fleetd/bin/fleetd`, linked from `~/.local/bin/fleetd` |
+| The desktop app | `~/Applications/fleetd.app` |
+
+</TabItem>
+<TabItem label="Linux">
+
+| What | Where |
+|---|---|
+| The CLI | `~/.fleetd/bin/fleetd`, linked from `~/.local/bin/fleetd` |
+| The desktop app (only with a display) | `~/.local/share/fleetd/app/fleetd-desktop.AppImage`, with an entry in your app menu |
+
+</TabItem>
+</Tabs>
+
+- The installer needs no `sudo`.
+- Every download is checked against the release's `SHA256SUMS`.
+- Running it again replaces what it installed.
+- Only `fleetd init` sets up services.
+- The desktop app updates itself. Installed over an earlier fleetd app, it replaces it and keeps its pairing.
+
+To read the script first, open [fleetd.sh/install.sh](https://fleetd.sh/install.sh).
+
+## Options
+
+Pass options after `sh -s --`:
+
+| Option | Does |
+|---|---|
+| `--app` | Install the desktop app on Linux even without a display. |
+| `--no-app` | Install the CLI only. |
+| `--no-init` | Install, but don't start the setup wizard. |
+| `--uninstall` | Remove the CLI and the app. See [Updating & uninstall](/docs/updating-and-uninstall). |
+
+For example, to install without the wizard:
+
+```sh
+curl -fsSL https://fleetd.sh | sh -s -- --no-init
+```
+
+Expected output:
+
+```text
+fleetd: installed the CLI: ~/.fleetd/bin/fleetd
+fleetd: installed the app: ~/.local/share/fleetd/app/fleetd-desktop.AppImage (menu entry: ~/.local/share/applications/fleetd-desktop.desktop)
+
+Next, run:
+  fleetd init
+```
+
+:::note
+Releases are nightly builds for now. `FLEETD_CHANNEL=stable` picks the stable channel once it has a release.
+:::
+
+## Check the install
+
+```sh
+fleetd version
+```
+
+Expected output:
+
+```text
+fleetd 0.0.0-nightly.20261018.832ba8f (protocol 1)
+```
+
+If your shell can't find `fleetd`, add `~/.local/bin` to your `PATH`:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+## Build from source {#from-source}
+
+With a Rust toolchain:
+
+```sh
+git clone https://github.com/unlaboredlabs/fleetd
+cd fleetd
+cargo build --release --locked -p fleetd
+```
+
+The CLI is `target/release/fleetd`. Copy it to `~/.local/bin/fleetd`, or run it from there. A worker you add with
+`fleetd machine add` gets a copy of the hub's binary, so build once on the hub. Building the desktop app is covered in
+[CONTRIBUTING](https://github.com/unlaboredlabs/fleetd/blob/main/docs/CONTRIBUTING.md).
+
+## Already have a fleet on this machine? {#second-fleet}
+
+To try fleetd next to a fleet you already run, don't run the installer's wizard. Follow
+[Run a second fleet on one machine](/docs/config-and-files#second-fleet) instead.

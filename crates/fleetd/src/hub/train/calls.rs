@@ -1,12 +1,13 @@
-//! The lead's `fleetd change enqueue|status` (`change_enqueue`, `change_status`). The
-//! caller is already attributed to a project by its cwd; both act only within that project.
-//! Both are registered in link's `LeadCalls` by [`register_lead_calls`].
+//! The lead's `change_enqueue` and `change_status`, and a writer's `report` of a ready slice (`slice_ready`). The
+//! caller is already attributed to a project by its cwd; each acts only within that project.
+//! All are registered in link's `LeadCalls` by [`register_lead_calls`].
 use super::contract::{Change, ChangeEnqueueCall, ChangeId, ChangeState, ProjectRef};
 use super::service::{Train, TrainError};
 use crate::hub::api::Hub;
-use crate::hub::link::lead_calls::LeadCallFuture;
+use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture};
 use crate::hub::link::{LeadCaller, LeadCalls};
-use fleetd_contracts::lead_calls::{ChangeResult, LeadCall, LeadCallResult};
+use fleetd_contracts::lead_calls::{ChangeResult, LeadCall, LeadCallResult, SliceReadyCall};
+use fleetd_contracts::tasks::TaskId;
 use std::sync::{Arc, Weak};
 
 /// Registers `change_enqueue` and `change_status` in the hub's `LeadCalls`. The handler holds the hub weakly, since
@@ -52,6 +53,17 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                     }
                     LeadCall::ChangeStatus(c) => change_status(&hub.train, r, &c.change_id)
                         .map(|c| LeadCallResult::ChangeStatus(result(c))),
+                    LeadCall::SliceReady(c) => match &caller.agent {
+                        CallerAgent::Task(task_id) => slice_ready(&hub.train, r, task_id, c)
+                            .await
+                            .map(|c| LeadCallResult::SliceReady(result(c))),
+                        _ => Err(TrainError {
+                            code: "invalid",
+                            message: "A ready slice is reported by the writer that pushed it."
+                                .into(),
+                            fix: Some("Put a PR on the train with change_enqueue.".into()),
+                        }),
+                    },
                     other => Err(TrainError {
                         code: "invalid",
                         message: format!(
@@ -67,7 +79,46 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     );
     let calls: &LeadCalls = &hub.lead_calls;
     calls.register("change_enqueue", handler.clone());
-    calls.register("change_status", handler);
+    calls.register("change_status", handler.clone());
+    calls.register("slice_ready", handler);
+}
+
+/// A writer's `report` with `kind: "slice_ready"`: the PR goes on the train now, as its task's, so the review gate
+/// starts the order's reviewers on it at once. Every check of `change_enqueue` applies (Source line, tier, open PR in
+/// the project's repo); the same PR again is the same Change, so a slice is reviewed once per head.
+pub async fn slice_ready(
+    train: &Train,
+    project_ref: &ProjectRef,
+    task_id: &TaskId,
+    call: SliceReadyCall,
+) -> Result<(Change, String), TrainError> {
+    let writer = train
+        .host()
+        .task(task_id)
+        .filter(|t| t.project_ref == *project_ref);
+    if !writer.as_ref().is_some_and(|t| t.kind == "write") {
+        return Err(TrainError {
+            code: "invalid",
+            message: format!("{task_id} is not a write task, and only a writer's PR is a slice."),
+            fix: Some("A reviewer reports its verdict with report and no kind.".into()),
+        });
+    }
+    let input = ChangeEnqueueCall {
+        task_id: Some(task_id.clone()),
+        pr_url: call.pr_url,
+        workstream_id: None,
+        serves: None,
+        tier: None,
+        item: None,
+    };
+    let change = train.enqueue(project_ref, input).await?;
+    let next = match change.state {
+        ChangeState::Refused | ChangeState::Abandoned => change_next(&change),
+        _ => "go on with your next slice: its review has started, and blocking findings arrive as a message. \
+              Push fixes to the same branch; a new head is reviewed again."
+            .into(),
+    };
+    Ok((change, next))
 }
 
 /// What the lead does next about a Change: almost always nothing, since the train and reviews move it on.

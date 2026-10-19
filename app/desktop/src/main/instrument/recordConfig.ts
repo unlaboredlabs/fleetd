@@ -1,5 +1,4 @@
-// FLEETD_RECORD=<dir>[,fps], parsed exactly as the GPUI app parsed it (app/fleetd-app/src/record.rs), so the lab
-// driver and scripts/demo-mac.sh drive either app the same way.
+// FLEETD_RECORD=<dir>[,fps], as the lab driver (tests/lab/demoFanout.ts) and scripts/demo-mac.sh set it.
 import type { Lights } from "../../shared/recorder";
 
 const DEFAULT_FPS = 30;

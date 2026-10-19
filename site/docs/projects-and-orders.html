@@ -1,175 +1,339 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Projects &amp; orders · fleetd docs</title>
-<meta name="description" content="Add a project, send an order, follow it, and see how &quot;done&quot; is checked.">
-<meta name="color-scheme" content="light dark">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/docs/docs.css?v=d81aa191">
-<script src="/docs/docs.js?v=1cc74a7d" defer></script>
-</head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-<header class="top">
-  <a class="mark" href="/">fleetd</a><a class="crumb" href="/docs">docs</a>
-  <div class="search" role="search">
-    <input id="q" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
-    <ul id="hits" role="listbox" hidden></ul>
-  </div>
-  <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
-  <button class="menu" type="button" aria-controls="side" aria-expanded="false">Menu</button>
-</header>
-<div class="wrap">
-<nav class="side" id="side" aria-label="Docs">
-<p>Get started</p>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Projects & orders | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/projects-and-orders.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Projects &amp; orders"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/projects-and-orders.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="Add a project, send it an order, follow the order, and see how &quot;done&quot; is checked."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Add a project, send it an order, follow the order, and see how &quot;done&quot; is checked."/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/docs/_astro/print.ehPL0gv-.css" media="print"><link rel="stylesheet" href="/docs/_astro/index.Df6hsKY8.css"><style>@layer starlight.components{svg:where(.astro-hkc32dio){color:var(--sl-icon-color);font-size:var(--sl-icon-size,1em);width:1em;height:1em;overflow:visible}}
+</style><script type="module" src="/docs/_astro/page.cNngjUgL.js"></script></head><body class="astro-g5ptsecz"><a class="sl-skip-link astro-qb7clj6f" href="#_top">Skip to content</a><div class="page sl-flex astro-yntsjkba"><header class="header astro-yntsjkba"><div class="header astro-by6fddyj"><div class="title-wrapper sl-flex astro-by6fddyj"><a href="/docs/index.html" class="site-title sl-flex astro-6rvad3va"><img class="astro-6rvad3va" alt src="/docs/_astro/icon.BdYr-TZB.svg" width="1024" height="1024"><span class="astro-6rvad3va" translate="no">fleetd docs</span></a></div><div class="sl-flex print:hidden astro-by6fddyj"><site-search class="astro-by6fddyj astro-b5kgnn7o" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}" data-strip-trailing-slash><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-b5kgnn7o"><svg aria-hidden="true" class="astro-b5kgnn7o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-b5kgnn7o" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-b5kgnn7o" style="display: none;"><kbd class="astro-b5kgnn7o">Ctrl</kbd><kbd class="astro-b5kgnn7o">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-b5kgnn7o"><div class="dialog-frame sl-flex astro-b5kgnn7o"><button data-close-modal class="sl-flex md:sl-hidden astro-b5kgnn7o">Cancel</button><div class="search-container astro-b5kgnn7o"><div id="starlight__search" class="astro-b5kgnn7o"></div></div></div></dialog></site-search><script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script><script type="module" src="/docs/_astro/Search.astro_astro_type_script_index_0_lang.DrbjDjUC.js"></script></div><div class="sl-hidden md:sl-flex print:hidden right-group astro-by6fddyj"><div class="sl-flex social-icons astro-by6fddyj"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script><script type="module">var e=`starlight-theme`,t=e=>e===`auto`||e===`dark`||e===`light`?e:`auto`,n=()=>t(typeof localStorage<`u`&&localStorage.getItem(e));function r(t){typeof localStorage<`u`&&localStorage.setItem(e,t===`light`||t===`dark`?t:``)}var i=()=>matchMedia(`(prefers-color-scheme: light)`).matches?`light`:`dark`;function a(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e===`auto`?i():e,r(e)}matchMedia(`(prefers-color-scheme: light)`).addEventListener(`change`,()=>{n()===`auto`&&a(`auto`)});var o=class extends HTMLElement{constructor(){super(),a(n()),this.querySelector(`select`)?.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&a(t(e.currentTarget.value))})}};customElements.define(`starlight-theme-select`,o);</script><script type="module">var e=class extends HTMLElement{constructor(){super();let e=this.querySelector(`select`);e&&(e.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=e.currentTarget.value)}),window.addEventListener(`pageshow`,t=>{if(!t.persisted)return;let n=e.querySelector(`option[selected]`)?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}};customElements.define(`starlight-lang-select`,e);</script></div></div></header><nav class="sidebar print:hidden astro-yntsjkba" aria-label="Main"><button popovertarget="starlight__sidebar" class="sl-menu-button sl-flex md:sl-hidden print:hidden astro-r2osgdlg"><svg aria-hidden="true" class="open-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg><svg aria-hidden="true" class="close-menu astro-r2osgdlg astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg><span class="sr-only astro-r2osgdlg">Menu</span></button><script type="module">var e=class extends HTMLElement{constructor(){super();let e=matchMedia(`(min-width: 50em)`),t=()=>{this.popover=e.matches?null:`auto`};t(),e.addEventListener(`change`,()=>t()),this.addEventListener(`toggle`,({newState:e})=>this.trapFocus(e===`open`))}trapFocus(e){document.querySelectorAll(`.main-frame, .sl-skip-link`).forEach(t=>{t.toggleAttribute(`inert`,e)})}};customElements.define(`sl-sidebar-pane`,e);</script><sl-sidebar-pane popover id="starlight__sidebar" class="sidebar-pane astro-yntsjkba"><div class="sidebar-content sl-flex astro-yntsjkba"><sl-sidebar-state-persist data-hash="19o6qwi" class="astro-ipdry5cl"><script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script><ul class="top-level astro-rmhv4bp6"><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Get started</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="0"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/install.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Install</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/quick-start.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Quick start</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/concepts.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Concepts</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Use fleetd</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="1"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/machines.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Machines</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/projects-and-orders.html" aria-current="page" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Projects &amp; orders</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/merge-train.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Merge train</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/steering.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Steering</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/approvals-and-secrets.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Approvals &amp; secrets</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/desktop-app.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">The desktop app</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/status.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Status</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/time-inspector.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Where time went</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/what-agents-are-told.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">What agents are told</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/mcp-clients.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">MCP clients</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Reference</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="2"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/reference/cli.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">CLI reference</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/reference/agent-tools.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Agent tools</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/config-and-files.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Config &amp; files</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/security.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Security model</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/glossary.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Glossary</span></a></li></ul></details></li><li class="astro-rmhv4bp6"><details open class="astro-rmhv4bp6"><summary class="astro-rmhv4bp6"><span class="group-label astro-rmhv4bp6"><span class="large astro-rmhv4bp6">Help</span></span><svg aria-hidden="true" class="caret astro-rmhv4bp6 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="3"></sl-sidebar-restore><ul class="astro-rmhv4bp6"><li class="astro-rmhv4bp6"><a href="/docs/troubleshooting.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Troubleshooting</span></a></li><li class="astro-rmhv4bp6"><a href="/docs/updating-and-uninstall.html" class="astro-rmhv4bp6"><span class="astro-rmhv4bp6">Updating &amp; uninstall</span></a></li></ul></details></li></ul><script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-p4azlveh"><div class="social-icons astro-p4azlveh"><a href="https://github.com/unlaboredlabs/fleetd" rel="me" class="sl-flex astro-n2mnl6yq"><span class="sr-only astro-n2mnl6yq">GitHub</span><svg aria-hidden="true" class="astro-n2mnl6yq astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.83 1.24 1.83 1.24 1.08 1.83 2.81 1.3 3.5 1 .1-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3Z"/></svg></a></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-2z5xp7gb"><span class="sr-only astro-2z5xp7gb">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-2z5xp7gb"><option value="dark" class="astro-2z5xp7gb">Dark</option><option value="light" class="astro-2z5xp7gb">Light</option><option value="auto" selected class="astro-2z5xp7gb">Auto</option></select><svg aria-hidden="true" class="icon caret astro-2z5xp7gb astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script></div></div></div></sl-sidebar-pane></nav><div class="main-frame astro-yntsjkba"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-lrzkfocr"><aside class="right-sidebar-container print:hidden astro-lrzkfocr"><div class="right-sidebar astro-lrzkfocr"><div class="lg:sl-hidden astro-qok35upx"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-66cqc7ze"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-66cqc7ze"><details id="starlight__mobile-toc" class="astro-66cqc7ze"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-66cqc7ze"><span class="toggle sl-flex astro-66cqc7ze">On this page<svg aria-hidden="true" class="caret astro-66cqc7ze astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-66cqc7ze"></span></summary><div class="dropdown astro-66cqc7ze"><ul class="isMobile astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#add-a-project" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Add a project</span></a><ul class="isMobile astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-you-can-pass" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What you can pass</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#list-and-remove-projects" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">List and remove projects</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#branches" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Which branch fleetd works on</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#its-lead" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Its lead</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#models" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Models and cost</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#send" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Send an order</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#follow" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Follow it</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#scheduling" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">How the lead schedules work</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#steer" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Change or stop it</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#answer" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Answer its questions</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#done" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Done, checked</span></a></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/docs/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.C3fM4Kra.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-qok35upx"><div class="sl-container astro-qok35upx"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-jugkfwgx" style="--depth: 0;"><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#_top" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Overview</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#add-a-project" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Add a project</span></a><ul class="astro-jugkfwgx" style="--depth: 1;"><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#what-you-can-pass" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">What you can pass</span></a></li><li style="--depth: 1;" class="astro-jugkfwgx"><a href="#list-and-remove-projects" style="--depth: 1;" class="astro-jugkfwgx"><span style="--depth: 1;" class="astro-jugkfwgx">List and remove projects</span></a></li></ul></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#branches" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Which branch fleetd works on</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#its-lead" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Its lead</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#models" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Models and cost</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#send" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Send an order</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#follow" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Follow it</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#scheduling" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">How the lead schedules work</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#steer" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Change or stop it</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#answer" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Answer its questions</span></a></li><li style="--depth: 0;" class="astro-jugkfwgx"><a href="#done" style="--depth: 0;" class="astro-jugkfwgx"><span style="--depth: 0;" class="astro-jugkfwgx">Done, checked</span></a></li></ul></nav></starlight-toc><script type="module" src="/docs/_astro/TableOfContents.astro_astro_type_script_index_0_lang.BpJaGz7G.js"></script></div></div></div></aside><div class="main-pane astro-lrzkfocr"><main data-pagefind-body class="astro-g5ptsecz" lang="en" dir="ltr"><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><h1 id="_top" class="astro-bebwqqxs">Projects &amp; orders</h1></div></div><div class="content-panel astro-a7po4psb"><div class="sl-container astro-a7po4psb"><div class="sl-markdown-content"><p>You’ll add a repo as a <a href="/docs/glossary#project">project</a>, send it work, and follow that work to merged pull requests.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="add-a-project">Add a project</h2><a class="sl-anchor-link" href="#add-a-project"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Add a project”</span></a></div>
+<ol>
+<li>
+<p>Add a GitHub repo. fleetd clones it onto a worker:</p>
+<div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">add</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">https://github.com/acme/storefront</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd project add https://github.com/acme/storefront"><div></div></button></div></figure></div>
+<p>Expected output:</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">cloning into /home/me/src/storefront on devbox</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#e1e4e8;--1:#24292e">  </span></span><span style="--0:#e1e4e8;--1:#24292e">starting</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#e1e4e8;--1:#24292e">  </span></span><span style="--0:#e1e4e8;--1:#24292e">receiving</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#e1e4e8;--1:#24292e">  </span></span><span style="--0:#e1e4e8;--1:#24292e">resolving</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#e1e4e8;--1:#24292e">  </span></span><span style="--0:#e1e4e8;--1:#24292e">inspecting</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">✓ ~/src/storefront cloned and added on devbox</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">Lead needs: no CI found: the merge train will only use local checks</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">Default branch: main</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">CI: none; required checks: none</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">Merge: unprotected, squash allowed</span></div></div><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">Give it an order in the app's composer, or from any agent with intake_submit; its lead starts with the first one.</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="cloning into /home/me/src/storefront on devbox  starting  receiving  resolving  inspecting✓ ~/src/storefront cloned and added on devboxLead needs: no CI found: the merge train will only use local checksDefault branch: mainCI: none; required checks: noneMerge: unprotected, squash allowedGive it an order in the app&#x27;s composer, or from any agent with intake_submit; its lead starts with the first one."><div></div></button></div></figure></div>
+</li>
+<li>
+<p>Read the <code dir="auto">Lead needs:</code> line. It names anything to fix on GitHub before the first pull request, such as
+<code dir="auto">squash merges are off on acme/storefront</code>.</p>
+</li>
+</ol>
+<div class="sl-heading-wrapper level-h3"><h3 id="what-you-can-pass">What you can pass</h3><a class="sl-anchor-link" href="#what-you-can-pass"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What you can pass”</span></a></div>
+<table>
+<thead>
+<tr>
+<th>You pass</th>
+<th>fleetd does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A GitHub URL or <code dir="auto">owner/repo</code></td>
+<td>Clones it onto the least busy online worker, into <code dir="auto">~/src</code> (or <code dir="auto">~/code</code>, <code dir="auto">~/projects</code>).</td>
+</tr>
+<tr>
+<td>A path, such as <code dir="auto">~/src/storefront</code></td>
+<td>Adds that existing checkout on this machine.</td>
+</tr>
+<tr>
+<td>Nothing, in a terminal</td>
+<td>Lists checkouts on every worker and your repos from <code dir="auto">gh repo list</code>, to pick from.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">--machine &lt;id&gt;</code></td>
+<td>Clone to, or look for the path on, that worker.</td>
+</tr>
+<tr>
+<td><code dir="auto">--dest &lt;dir&gt;</code></td>
+<td>Clone into that folder.</td>
+</tr>
+<tr>
+<td><code dir="auto">--use-existing</code></td>
+<td>Add the folder’s checkout when it already holds the same repo. Without a terminal, this is how you accept it.</td>
+</tr>
+</tbody>
+</table>
+<aside aria-label="Checkouts must be under your home directory" class="starlight-aside starlight-aside--caution"><p class="starlight-aside__title" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" class="starlight-aside__icon"><path d="M12 16a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm10.67 1.47-8.05-14a3 3 0 0 0-5.24 0l-8 14A3 3 0 0 0 3.94 22h16.12a3 3 0 0 0 2.61-4.53Zm-1.73 2a1 1 0 0 1-.88.51H3.94a1 1 0 0 1-.88-.51 1 1 0 0 1 0-1l8-14a1 1 0 0 1 1.78 0l8.05 14a1 1 0 0 1 .05 1.02v-.02ZM12 8a1 1 0 0 0-1 1v4a1 1 0 0 0 2 0V9a1 1 0 0 0-1-1Z"/></svg>Checkouts must be under your home directory</p><div class="starlight-aside__content"><p>A node runs commands only under its <code dir="auto">cmdRoots</code>, which default to your home directory. <code dir="auto">fleetd project add</code> refuses a
+checkout elsewhere, such as in <code dir="auto">/tmp</code>, and says how to fix it: list its folder in <code dir="auto">cmdRoots</code> in
+<a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node. A new <code dir="auto">--dest</code> folder counts where it will be.</p></div></aside>
+<p>fleetd reads GitHub through <code dir="auto">gh</code> on the hub machine. A private repo clones on any worker where <code dir="auto">gh auth login</code> was run.
+When something is in the way, such as an offline worker or a folder that exists, it prints the command that fixes it.</p>
+<div class="sl-heading-wrapper level-h3"><h3 id="list-and-remove-projects">List and remove projects</h3><a class="sl-anchor-link" href="#list-and-remove-projects"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “List and remove projects”</span></a></div>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">list</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">remove</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">devbox/storefront</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd project listfleetd project remove devbox/storefront"><div></div></button></div></figure></div>
+<p><code dir="auto">list</code> prints each project as <code dir="auto">&lt;machineId&gt;/&lt;projectId&gt;</code>, its title and its folder. <code dir="auto">remove</code> stops the project’s agents and forgets it. Its files, branches and worktrees stay.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="branches">Which branch fleetd works on</h2><a class="sl-anchor-link" href="#branches"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Which branch fleetd works on”</span></a></div>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The base each writer branches from</td>
+<td>The checkout’s <code dir="auto">origin/HEAD</code>, else its current branch.</td>
+</tr>
+<tr>
+<td>A task’s branch</td>
+<td><code dir="auto">fleetd/T&lt;n&gt;-&lt;slug&gt;</code>, such as <code dir="auto">fleetd/T1-fix-readme-typo</code>. Change the <code dir="auto">fleetd/</code> prefix with <code dir="auto">branchPrefix</code> in the <a href="/docs/config-and-files#policy">policy file</a>.</td>
+</tr>
+<tr>
+<td>Where the merge train merges</td>
+<td>Each pull request’s base branch. See <a href="/docs/merge-train">Merge train</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code dir="auto">Default branch:</code> line that <code dir="auto">project add</code> prints is GitHub’s default branch. fleetd uses it to watch main’s CI and
+to read its protection rules. To work against another branch, point the checkout’s <code dir="auto">origin/HEAD</code> at it on the worker:</p>
+<div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">git</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">remote</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">set-head</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">origin</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">release</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="git remote set-head origin release"><div></div></button></div></figure></div>
+<div class="sl-heading-wrapper level-h2"><h2 id="its-lead">Its lead</h2><a class="sl-anchor-link" href="#its-lead"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Its lead”</span></a></div>
+<p>Each project has one <a href="/docs/glossary#lead">lead</a>. The project’s first order starts it: there is nothing to start by
+hand.</p>
+<p>If the lead can’t start, the order waits and the app says why. Common causes:</p>
+<table>
+<thead>
+<tr>
+<th>Cause</th>
+<th>Fix, on the worker</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">claude</code> is logged out</td>
+<td><code dir="auto">claude auth login</code></td>
+</tr>
+<tr>
+<td><code dir="auto">claude</code> is outside the supported versions</td>
+<td>See <a href="/docs/troubleshooting#claude">claude versions</a></td>
+</tr>
+<tr>
+<td>The worker is offline</td>
+<td>See <a href="/docs/troubleshooting#machines">Machines</a></td>
+</tr>
+</tbody>
+</table>
+<p>Once the worker is back with a working <code dir="auto">claude</code>, the lead starts and picks up every waiting order.</p>
+<p>To keep a lead from starting by itself, set <code dir="auto">lead.autoStart: false</code> in the project’s
+<a href="/docs/config-and-files#policy">policy file</a>. Orders then wait for <code dir="auto">lead_start</code>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="models">Models and cost</h2><a class="sl-anchor-link" href="#models"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Models and cost”</span></a></div>
+<p>By default the lead and every task run on <code dir="auto">claude-opus-5-5</code> at high effort.</p>
+<table>
+<thead>
+<tr>
+<th>To change</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The lead’s model and effort</td>
+<td>Call <code dir="auto">lead_start {machineId, projectId, model, effort}</code> from an <a href="/docs/mcp-clients">MCP client</a> before the project’s first order. They are saved for the project.</td>
+</tr>
+<tr>
+<td>The tasks’ model and effort</td>
+<td>Set <code dir="auto">defaults.model</code> and <code dir="auto">defaults.effort</code> in the project’s <a href="/docs/config-and-files#policy">policy file</a>, committed to the default branch.</td>
+</tr>
+</tbody>
+</table>
+<p>For example, to try fleetd cheaply on a test project:</p>
+<ol>
+<li>
+<p>Before its first order, call
+<code dir="auto">lead_start {"machineId":"devbox","projectId":"&lt;id&gt;","model":"claude-haiku-5-5","effort":"low"}</code>. <code dir="auto">fleetd project list</code> shows the ids.</p>
+</li>
+<li>
+<p>Commit this <code dir="auto">.fleetd/policy.yaml</code> to the default branch. <code dir="auto">areas</code> is required in every policy file; <code dir="auto">all</code> lets
+writers touch the whole repo.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#85E89D;--1:#1E7734">areas</span><span style="--0:#E1E4E8;--1:#24292E">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#85E89D;--1:#1E7734">all</span><span style="--0:#E1E4E8;--1:#24292E">: [</span><span style="--0:#9ECBFF;--1:#032F62">"**"</span><span style="--0:#E1E4E8;--1:#24292E">]</span></div></div><div class="ec-line"><div class="code"><span style="--0:#85E89D;--1:#1E7734">defaults</span><span style="--0:#E1E4E8;--1:#24292E">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#85E89D;--1:#1E7734">model</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">claude-haiku-5-5</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#85E89D;--1:#1E7734">effort</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">low</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="areas:  all: [&quot;**&quot;]defaults:  model: claude-haiku-5-5  effort: low"><div></div></button></div></figure></div>
+</li>
+</ol>
+<div class="sl-heading-wrapper level-h2"><h2 id="send">Send an order</h2><a class="sl-anchor-link" href="#send"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Send an order”</span></a></div>
+<p>In the desktop app, type one line in the board’s order box and press Enter. See <a href="/docs/desktop-app#composer">Give work</a>.</p>
+<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="text"><code><div class="ec-line"><div class="code"><span style="--0:#e1e4e8;--1:#24292e">@storefront fix: checkout button is misaligned on mobile Safari</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="@storefront fix: checkout button is misaligned on mobile Safari"><div></div></button></div></figure></div>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">@storefront</code></td>
+<td>Optional. The project. Without it, the hub picks one or asks you.</td>
+</tr>
+<tr>
+<td><code dir="auto">fix:</code></td>
+<td>Optional. The <a href="/docs/glossary#playbook">playbook</a>: <code dir="auto">fix:</code> or <code dir="auto">bug:</code>, <code dir="auto">research:</code>, <code dir="auto">finish:</code>. The default is a feature.</td>
+</tr>
+<tr>
+<td>The rest</td>
+<td>What you want, in your words.</td>
+</tr>
+</tbody>
+</table>
+<p>You can attach screenshots or files, and <code dir="auto">@</code>-mention files, orders and PRs. The lead gets them with the order.</p>
+<p>From an <a href="/docs/mcp-clients">MCP client</a>, <code dir="auto">intake_submit {text, clientRequestId}</code> sends an order, and
+<code dir="auto">intake_preview {text}</code> shows where it would go.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="follow">Follow it</h2><a class="sl-anchor-link" href="#follow"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Follow it”</span></a></div>
+<p>The lead writes a <a href="/docs/glossary#brief">brief</a>, runs writer and reviewer tasks on your workers, and puts each pull
+request on the <a href="/docs/glossary#merge-train">merge train</a>.</p>
 <ul>
-<li><a href="/docs/install">Install</a></li>
-<li><a href="/docs/quick-start">Quick start</a></li>
-<li><a href="/docs/concepts">Concepts</a></li>
+<li>The board shows every order’s phase and live agents.</li>
+<li>Open an order to see its PRs, checks and the lead’s conversation. See <a href="/docs/desktop-app#order">Follow an order</a>.</li>
+<li>From a terminal: <code dir="auto">fleetd status W41</code>. See <a href="/docs/status">Status</a>.</li>
 </ul>
-<p>Using fleetd</p>
-<ul>
-<li><a href="/docs/machines">Machines</a></li>
-<li><a href="/docs/projects-and-orders" aria-current="page">Projects &amp; orders</a></li>
-<li><a href="/docs/steering">Steering</a></li>
-<li><a href="/docs/merge-train">Merge train</a></li>
-<li><a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a></li>
-<li><a href="/docs/what-agents-are-told">What agents are told</a></li>
-<li><a href="/docs/desktop-app">The desktop app</a></li>
-<li><a href="/docs/status">Status</a></li>
-<li><a href="/docs/time-inspector">Where time went</a></li>
-</ul>
-<p>Reference</p>
-<ul>
-<li><a href="/docs/cli">CLI reference</a></li>
-<li><a href="/docs/agent-tools">Agent tools</a></li>
-<li><a href="/docs/config-and-files">Config &amp; files</a></li>
-<li><a href="/docs/security">Security model</a></li>
-<li><a href="/docs/troubleshooting">Troubleshooting</a></li>
-<li><a href="/docs/updating-and-uninstall">Updating &amp; uninstall</a></li>
-</ul>
-</nav>
-<main class="doc" id="main">
-<p class="kicker">Using fleetd</p>
-<h1>Projects &amp; orders</h1>
-<h2 id="add-a-project">Add a project<a class="anchor" href="#add-a-project" aria-label="Link to this section">#</a></h2>
-<pre class="code console" data-copy><code><span class="c">$ fleetd project add https://github.com/acme/storefront</span>
-<span class="o">cloning into /home/me/src/storefront on devbox
-  starting
-  receiving
-  resolving
-  inspecting
-✓ ~/src/storefront cloned and added on devbox
-Lead needs: no CI found: the merge train will only use local checks
-Default branch: main
-CI: none; required checks: none
-Merge: unprotected, squash allowed</span></code></pre>
-<p>Give it a GitHub URL (or <code>owner/repo</code>) to clone the repo onto a worker, or a path to add a checkout that is already
-there: <code>fleetd project add ~/src/storefront</code>. With nothing after <code>add</code>, in a terminal, it lists what it finds to pick
-from: checkouts under <code>~/src</code>, <code>~/code</code>, <code>~/projects</code>, <code>~/dev</code> and similar on every worker, and your repos and your
-orgs' repos from <code>gh repo list</code>.</p>
-<ul>
-<li><strong>Where.</strong> A clone goes to the least busy online worker, into its <code>~/src</code> (or <code>~/code</code>, <code>~/projects</code>), unless you
-pass <code>--machine &lt;id&gt;</code> or <code>--dest &lt;dir&gt;</code>. A path is on this machine unless you pass <code>--machine</code>. A checkout must be
-under your home directory, or under a directory listed in <code>cmdRoots</code> in the worker's <code>node.json</code> (see
-<a href="/docs/config-and-files#fleetd">Config &amp; files</a>): the node runs the merge train's git only there, so <code>fleetd project add</code> refuses one outside.</li>
-<li><strong>What the lead will need.</strong> Before it clones, fleetd reads the repo's default branch, its CI (workflows and the
-checks the default branch requires) and its merge rules (branch protection, rulesets, whether squash merges are
-allowed), and says in one line what that means, such as <code>no CI found: the merge train will only use local checks</code>
-or <code>squash merges are off on acme/storefront</code>. Fix those on GitHub before the first PR.</li>
-<li><strong>Already cloned.</strong> When the folder it would clone into already holds the same repo, <code>fleetd project add</code> offers
-to add that checkout; without a terminal, pass <code>--use-existing</code>.</li>
-<li><strong>gh.</strong> fleetd reads GitHub through <code>gh</code> on the hub machine; <code>gh repo list</code> falls back to the worker when the hub's
-<code>gh</code> is logged out. A private repo clones on any worker where <code>gh auth login</code> was run.</li>
-</ul>
-<p>When something is in the way (the worker is offline, the path is not a git repo, <code>gh</code> can't see the repo, the folder
-exists), it says so with the command that fixes it. <code>fleetd project list</code> shows your projects, and <code>fleetd project remove &lt;machine&gt;/&lt;project&gt;</code> stops a project's threads and forgets it; its files, branches and worktrees stay.</p>
-<p>Agents do the same through MCP: <code>project_discover</code>, <code>project_inspect</code>, <code>project_add {path | url}</code> (a clone answers
-with an <code>addId</code>, then <code>project.clone_progress</code> events, then <code>project.added</code> or <code>project.add_failed</code>) and
-<code>project_remove</code>.</p>
-<h2 id="its-lead">Its lead<a class="anchor" href="#its-lead" aria-label="Link to this section">#</a></h2>
-<p>Each project has one lead, and the project's first order starts it: there is nothing to start by hand. The lead's
-first message lists the order, and the app shows the lead starting.</p>
-<p>If the lead can't start, because <code>claude</code> on the worker is logged out or outside the supported version range, or the
-worker is offline, the order waits. The app's reply says why and what to run on the worker. Once the worker comes back
-online with a usable <code>claude</code>, its lead starts and picks up every waiting order.</p>
-<p>To choose the lead's model and effort, or to start it before any order, call <code>lead_start {machineId, projectId, model, effort}</code> from an MCP client; the model and effort are saved for the project (default <code>claude-opus-5-5</code>, high). To keep
-a project's lead from starting by itself, set <code>lead.autoStart: false</code> in its <a href="/docs/config-and-files#policy">policy file</a>:
-orders then wait until <code>lead_start</code>, and the reply says so.</p>
-<h2 id="connect-an-mcp-client">Connect an MCP client<a class="anchor" href="#connect-an-mcp-client" aria-label="Link to this section">#</a></h2>
-<p>The hub's MCP endpoint is <code>&lt;hub url&gt;/mcp</code>. Give the client an agent key, shown once:</p>
-<pre class="code console" data-copy><code><span class="c">$ fleetd hub key create --name ci-bot --role operate --machines '*'</span>
-<span class="o">fld_&lt;key&gt;
-created key_tjw34bxe (fld_mwrgw4, operate:*). The key above is shown only once.</span></code></pre>
-<p>For Claude Code:</p>
-<pre class="code sh" data-copy><code><span class="l">claude mcp add --transport http fleetd http://hub.your-tailnet.ts.net:4790/mcp --header &quot;Authorization: Bearer fld_&lt;key&gt;&quot;</span></code></pre>
-<p>Roles are <code>read</code>, <code>operate</code> and <code>admin</code>, on every machine (<code>'*'</code>) or a list. <code>fleetd hub key list</code> shows keys and
-<code>fleetd hub key revoke &lt;keyId&gt;</code> ends one at once.</p>
-<h2 id="send-an-order">Send an order<a class="anchor" href="#send-an-order" aria-label="Link to this section">#</a></h2>
-<p>In the app, type one line in the board's composer and press Enter (<a href="/docs/desktop-app#composer">Give work</a>). Pick the
-project, or leave it to the hub, which reads a leading <code>@project</code>, else asks a quick router, else asks you. A prefix
-picks the playbook: <code>fix:</code> or <code>bug:</code>, <code>research:</code>, <code>finish:</code>. Attach screenshots or files, or <code>@</code>-mention files,
-orders and PRs; the lead gets them with the order.</p>
-<p>From an MCP client: <code>intake_submit {text}</code>; <code>intake_preview {text}</code> says where it would go without sending it.</p>
-<h2 id="follow-it">Follow it<a class="anchor" href="#follow-it" aria-label="Link to this section">#</a></h2>
-<p>The lead freezes a brief, runs writer and reviewer tasks on your workers, and puts each PR on the merge train. The
-board shows every order's phase and live agents; open one for its PRs, checks and the lead's conversation
-(<a href="/docs/desktop-app#order">Follow an order</a>).</p>
-<h2 id="add-to-it-steer-it-stop-it">Add to it, steer it, stop it<a class="anchor" href="#add-to-it-steer-it-stop-it" aria-label="Link to this section">#</a></h2>
-<p>In the order, Enter adds your words to the lead's queue: it takes them in at its next step, after the tool it is
-running. ⌘Enter (Ctrl+Enter) interrupts and redirects: its current step stops and it reads you at once. Each steer
-gets a receipt, and any agent in the order can be steered the same way: see <a href="/docs/steering">Steering</a>.
-Stop cancels the order's running and queued agents and withdraws its asks; merged PRs stay. A stopped order stays
-stopped: send it again as a new order.</p>
-<h2 id="answer-its-questions">Answer its questions<a class="anchor" href="#answer-its-questions" aria-label="Link to this section">#</a></h2>
-<p>Questions land in the inbox (⌘I), numbered. Reply in one line, such as <code>1 go 2 nvm 3 b</code>: see
-<a href="/docs/desktop-app#reply">the reply grammar</a>. Commands and secrets have their own flow:
+<div class="sl-heading-wrapper level-h2"><h2 id="scheduling">How the lead schedules work</h2><a class="sl-anchor-link" href="#scheduling"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “How the lead schedules work”</span></a></div>
+<p>The lead plans each order as small items, sized S, M or L, some waiting <code dir="auto">after</code> others. It starts every item it can
+in parallel while slots are free. fleetd keeps that going, but never starts work by itself:</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A free slot is offered</td>
+<td>When a slot frees and the lead is idle, fleetd wakes it with the plan items that can start: brief frozen, not waiting on an open item, no task or PR yet. A finish-all order with room for another child is offered too. If nothing qualifies, the lead stays idle.</td>
+</tr>
+<tr>
+<td>Once per change</td>
+<td>A lead hears about the same runnable work once. It is told again only when that changes: an item is taken, done, added or unblocked.</td>
+</tr>
+<tr>
+<td>Slices are reviewed as they land</td>
+<td>A writer reports each finished PR (<code dir="auto">report</code>, kind <code dir="auto">slice_ready</code>), or marks its draft PR ready on GitHub. fleetd puts it on the train and starts its reviewers right away, while the writer goes on. A new commit is reviewed again from what changed.</td>
+</tr>
+</tbody>
+</table>
+<p>No gate relaxes. Every PR still gets its tier’s reviews and green CI and goes through the train, done is still decided
+by the done-when checks, and anything that needs your approval still waits for it. The reviewers fleetd starts count
+against the slots and the lead’s limit of 32 open tasks like any task.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="steer">Change or stop it</h2><a class="sl-anchor-link" href="#steer"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Change or stop it”</span></a></div>
+<table>
+<thead>
+<tr>
+<th>You want to</th>
+<th>In the order view</th>
+<th>The lead</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Add something</td>
+<td>Type it, press Enter</td>
+<td>Reads it at its next step.</td>
+</tr>
+<tr>
+<td>Redirect it now</td>
+<td>Type it, press ⌘Enter (Ctrl+Enter)</td>
+<td>Stops its current step and reads it at once.</td>
+</tr>
+<tr>
+<td>Stop the order</td>
+<td>“Stop”, then confirm</td>
+<td>Cancels running and queued agents, withdraws its asks. Merged PRs stay.</td>
+</tr>
+</tbody>
+</table>
+<p>A stopped order stays stopped. To retry, send it again as a new order. You can steer any agent, not only the lead: see
+<a href="/docs/steering">Steering</a>.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="answer">Answer its questions</h2><a class="sl-anchor-link" href="#answer"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Answer its questions”</span></a></div>
+<p>Questions land in the inbox (⌘I), numbered. Reply in one line, such as <code dir="auto">1 go 2 nvm 3 b</code>. See
+<a href="/docs/desktop-app#reply">the reply format</a>. Commands and secrets have their own flow:
 <a href="/docs/approvals-and-secrets">Approvals &amp; secrets</a>.</p>
-<h2 id="done-checked">Done, checked<a class="anchor" href="#done-checked" aria-label="Link to this section">#</a></h2>
-<p>The lead reports done with <code>fleetd claim done</code>. The hub then runs the brief's done-when checks itself, and only all of
-them passing makes the workstream done. A failure wakes the lead with the exit code and output. <code>claims_list</code> shows
-every claim with its evidence.</p>
-<p>A done order cleans up after itself: its PRs still waiting (queued, in review, ready, needing a rebase, or with failed
-CI) are closed on GitHub with a comment saying why, and its leftover tasks are cancelled. A PR the train is already
-rebasing, checking or merging is left to land.</p>
-<h2 id="tools">MCP tools for orders<a class="anchor" href="#tools" aria-label="Link to this section">#</a></h2>
-<div class="table"><table><thead><tr><th>Tool</th><th>Does</th><th>Role</th></tr></thead><tbody>
-<tr><td><code>intake_submit {text}</code></td><td>send an order (optional <code>attachments</code>, <code>refs</code>)</td><td>operate</td></tr>
-<tr><td><code>intake_preview {text}</code></td><td>where it would go, without sending</td><td>operate</td></tr>
-<tr><td><code>attachment_put {name, mime, dataB64}</code></td><td>upload a file (image, text or PDF, at most 5 MiB) for an order or note</td><td>operate</td></tr>
-<tr><td><code>project_files {machineId, projectId, query}</code></td><td>a project's files for <code>@</code>-mentions</td><td>read</td></tr>
-<tr><td><code>orders_board {projectRef?}</code></td><td>open orders with their phase, agents, PRs, asks and the trains</td><td>read</td></tr>
-<tr><td><code>order_get {workstreamId}</code></td><td>one order, plus its lead, finished agents and claims</td><td>read</td></tr>
-<tr><td><code>order_note {workstreamId, text, urgent?}</code></td><td>add to an order; <code>urgent</code> wakes the lead now</td><td>operate, human key</td></tr>
-<tr><td><code>order_stop {workstreamId}</code></td><td>stop an order</td><td>operate, human key</td></tr>
-<tr><td><code>workstream_list</code>, <code>workstream_get</code>, <code>thread_tail</code>, <code>fleetd_status</code></td><td>the lower-level views</td><td>read</td></tr>
-</tbody></table></div>
-<p><code>events_wait</code> long-polls for changes instead of polling. A human key is a person's paired device, not an agent key.</p>
-<nav class="pn" aria-label="Previous and next">
-<a class="prev" href="/docs/machines"><span>Previous</span>Machines</a>
-<a class="next" href="/docs/steering"><span>Next</span>Steering</a>
-</nav>
-<p class="edit"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/projects-and-orders.md">Edit this page</a></p>
-</main>
-<aside class="toc" aria-label="On this page">
-<p>On this page</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="done">Done, checked</h2><a class="sl-anchor-link" href="#done"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Done, checked”</span></a></div>
+<ol>
+<li>The lead calls <code dir="auto">claim_done</code>.</li>
+<li>The hub runs the brief’s done-when checks itself.</li>
+<li>Only all of them passing makes the order done. A failure wakes the lead with the exit code and output.</li>
+</ol>
+<p><code dir="auto">claims_list</code> shows every claim with its evidence.</p>
+<p>A done order cleans up after itself:</p>
 <ul>
-<li><a href="#add-a-project">Add a project</a></li>
-<li><a href="#its-lead">Its lead</a></li>
-<li><a href="#connect-an-mcp-client">Connect an MCP client</a></li>
-<li><a href="#send-an-order">Send an order</a></li>
-<li><a href="#follow-it">Follow it</a></li>
-<li><a href="#add-to-it-steer-it-stop-it">Add to it, steer it, stop it</a></li>
-<li><a href="#answer-its-questions">Answer its questions</a></li>
-<li><a href="#done-checked">Done, checked</a></li>
-<li><a href="#tools">MCP tools for orders</a></li>
+<li>Its pull requests still waiting (queued, in review, needing a rebase, or with failed CI) are closed on GitHub with a
+comment saying why.</li>
+<li>Its leftover tasks are cancelled.</li>
+<li>A pull request the train is already rebasing, checking or merging is left to land.</li>
 </ul>
-</aside>
-</div>
-<footer class="end"><span>fleetd · MIT</span><a href="/">fleetd.sh</a></footer>
-</body>
-</html>
+</div><footer class="sl-flex astro-ddtxxk7k"><div class="meta sl-flex astro-ddtxxk7k"><a href="https://github.com/unlaboredlabs/fleetd/edit/main/docs/site/src/content/docs/projects-and-orders.md" class="sl-flex print:hidden astro-qlekgd3o"><svg aria-hidden="true" class="astro-qlekgd3o astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.2em;"><path d="M22 7.24a1 1 0 0 0-.29-.71l-4.24-4.24a1 1 0 0 0-1.1-.22 1 1 0 0 0-.32.22l-2.83 2.83L2.29 16.05a1 1 0 0 0-.29.71V21a1 1 0 0 0 1 1h4.24a1 1 0 0 0 .76-.29l10.87-10.93L21.71 8c.1-.1.17-.2.22-.33a1 1 0 0 0 0-.24v-.14l.07-.05ZM6.83 20H4v-2.83l9.93-9.93 2.83 2.83L6.83 20ZM18.17 8.66l-2.83-2.83 1.42-1.41 2.82 2.82-1.41 1.42Z"/></svg>Edit page</a></div><div class="pagination-links print:hidden astro-b5raizh3" dir="ltr"><a href="/docs/machines.html" rel="prev" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-b5raizh3">Previous<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Machines</span></span></a><a href="/docs/merge-train.html" rel="next" class="astro-b5raizh3"><svg aria-hidden="true" class="astro-b5raizh3 astro-hkc32dio" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-b5raizh3">Next<br class="astro-b5raizh3"><span class="link-title astro-b5raizh3">Merge train</span></span></a></div></footer></div></div></main></div></div></div></div></body></html>

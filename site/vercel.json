@@ -4,6 +4,13 @@
   "github": {
     "silent": true
   },
+  "redirects": [
+    {
+      "source": "/docs/cli",
+      "destination": "/docs/reference/cli",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/",

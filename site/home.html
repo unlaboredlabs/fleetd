@@ -177,9 +177,9 @@ p{margin:0}
 
 <figure class="w fig" style="--ar:.642857" aria-labelledby="f0">
   <figcaption class="cap" id="f0"><b>One order, its fleet.</b>
-    <p>A lab run against the public fleetd-lab repo: three writers opened a PR each, and every PR now has two reviewers and a verifier on it. Each row is an agent at work, grouped under the PR it checks.</p></figcaption>
+    <p>Recorded from a lab hub: three writers opened a PR each, and every PR now has two reviewers and a verifier on it. Each row is an agent at work, grouped under the PR it checks.</p></figcaption>
   <div class="frame">
-    <a class="shot" href="/fleet-board.png"><img src="/fleet-board.png" width="2800" height="1800" alt="The fleetd app’s board with one order on the stage: PRs #124, #125 and #126, each written by its own agent and each with two reviewers and a verifier under it, what each is doing now, how long, and a bar of its recent work."></a>
+    <a class="shot" href="/fleet-board.png"><img src="/fleet-board.png" width="2800" height="1800" alt="The fleetd app’s board with one order on the stage: PRs #221, #222 and #223, each written by its own agent and each with two reviewers and a verifier under it, what each is doing now, how long, and a bar of its recent work."></a>
   </div>
 </figure>
 
@@ -192,11 +192,11 @@ p{margin:0}
   <div class="frame">
     <a class="shot" href="/capture-inbox.png"><img src="/capture-inbox.png" width="2800" height="1800" alt="The fleetd app with its inbox panel open: three numbered asks, each with its recommendation as a button, and a reply field at the bottom."></a>
     <ol class="notes">
-      <li class="flip" style="--x:75.6;--y:6"><span class="pin"><i>10</i></span><p class="note"><span class="n">10</span><span>The inbox panel (Ctrl+I): every ask that needs you, numbered, wherever you are in the app.</span></p></li>
-      <li class="flip" style="--x:78.9;--y:10.6"><span class="pin"><i>12</i></span><p class="note"><span class="n">12</span><span>Ask 1, filed by the lead with <code>fleetd ask --class product</code>: its class and the project it came from.</span></p></li>
-      <li class="flip up" style="--x:97.5;--y:37.4"><span class="pin"><i>14</i></span><p class="note"><span class="n">14</span><span>A money ask says what it holds up, here the Team plan launch.</span></p></li>
-      <li class="flip" style="--x:77.6;--y:43.5"><span class="pin"><i>16</i></span><p class="note"><span class="n">16</span><span>Each ask leads with the lead’s recommendation, 7 days, then the other options it offered, and No.</span></p></li>
-      <li class="flip up" style="--x:82.5;--y:97"><span class="pin"><i>18</i></span><p class="note"><span class="n">18</span><span>The whole reply is one line. <code>1 go 2 nvm 3 b</code>: ship the headline, drop the moment change, take the second option, 14 days.</span></p></li>
+      <li class="flip" style="--x:72.6;--y:7.2"><span class="pin"><i>10</i></span><p class="note"><span class="n">10</span><span>The inbox panel (Ctrl+I): every ask that needs you, numbered, wherever you are in the app.</span></p></li>
+      <li class="flip" style="--x:72.5;--y:12.1"><span class="pin"><i>12</i></span><p class="note"><span class="n">12</span><span>Ask 1, filed by the lead with <code>fleetd ask</code>, and the project it came from.</span></p></li>
+      <li class="" style="--x:59;--y:23.1"><span class="pin"><i>14</i></span><p class="note"><span class="n">14</span><span>The board shows the first ask too; the rest wait in the inbox, here the money ask on the Team plan launch.</span></p></li>
+      <li class="flip" style="--x:78.6;--y:27.6"><span class="pin"><i>16</i></span><p class="note"><span class="n">16</span><span>Each ask leads with the lead’s recommendation and why, then the other options with what each does, and Something else.</span></p></li>
+      <li class="flip up" style="--x:82.3;--y:97.1"><span class="pin"><i>18</i></span><p class="note"><span class="n">18</span><span>The whole reply is one line. <code>1 go 2 nvm 3 b</code>: ship the headline, drop the moment change, take the second option, 14 days.</span></p></li>
     </ol>
   </div>
 </figure>
@@ -207,8 +207,8 @@ p{margin:0}
   <div class="frame">
     <a class="shot" href="/capture-reply.png"><img src="/capture-reply.png" width="2800" height="1800" loading="lazy" alt="The fleetd app’s inbox panel after the reply: empty, with a line at the bottom logging each answer as a decision."></a>
     <ol class="notes">
-      <li class="flip" style="--x:79.5;--y:11.2"><span class="pin"><i>20</i></span><p class="note"><span class="n">20</span><span>Nothing needs you: leads decide everything that isn’t a product, money, credential or irreversible call.</span></p></li>
-      <li class="up" style="--x:32.5;--y:95"><span class="pin"><i>22</i></span><p class="note"><span class="n">22</span><span>What the reply did, as the app logs it: answers 1 and 3 became decisions D1 and D2, and ask 2 was dropped.</span></p></li>
+      <li class="flip" style="--x:73.8;--y:12.4"><span class="pin"><i>20</i></span><p class="note"><span class="n">20</span><span>Nothing needs you: leads decide everything that isn’t a product, money, credential or irreversible call.</span></p></li>
+      <li class="flip up" style="--x:84;--y:95.6"><span class="pin"><i>22</i></span><p class="note"><span class="n">22</span><span>What the reply did, as the app logs it: answers 1 and 3 are logged, ask 2 is dropped, and each answer can be taken back for 10 seconds.</span></p></li>
     </ol>
   </div>
 </figure>
@@ -230,8 +230,9 @@ p{margin:0}
     <div class="digest">
       <p class="quote">And what you get at 09:00 and 18:00 when that’s all there is:</p>
       <!-- capture:digest -->
-      <pre class="lines"><span class="c">fleetd digest · Sun 18 Oct, 22:28</span>
-<span class="o">Nothing needs you · 0 running · 0 done</span></pre>
+      <pre class="lines"><span class="c">fleetd digest · Mon 19 Oct, 15:47</span>
+<span class="o">Nothing needs you · 0 running · 0 done
+Decided without you (1): deps.moment=Dropped by the human; do not pursue rem… (D3) · reply "forget D3" to undo one</span></pre>
       <!-- /capture:digest -->
     </div>
   </div>
@@ -244,20 +245,15 @@ p{margin:0}
   </div>
   <ol class="train">
     <!-- capture:train -->
-    <li><span class="t">22:21:22</span><span class="e">change.queued</span><span class="s">X1 queued: unlaboredlabs/fleetd-lab#124 (tier L, done:1)</span></li>
-    <li><span class="t">22:21:25</span><span class="e">change.queued</span><span class="s">X2 queued: unlaboredlabs/fleetd-lab#125 (tier L, done:2)</span></li>
-    <li><span class="t">22:21:33</span><span class="e">review.verdict</span><span class="s">T4 review verdict at ad899ecd4930: 0 blocking, 1 non-blocking</span></li>
-    <li><span class="t">22:21:35</span><span class="e">review.verdict</span><span class="s">T5 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking</span></li>
-    <li><span class="t">22:21:37</span><span class="e">review.verdict</span><span class="s">T8 review verdict at bbd67b733334: 0 blocking, 0 non-blocking</span></li>
-    <li><span class="t">22:21:38</span><span class="e">review.verdict</span><span class="s">T9 review verdict at bbd67b733334: 0 blocking, 0 non-blocking</span></li>
-    <li><span class="t">22:21:38</span><span class="e">review.verdict</span><span class="s">T6 review verdict at ad899ecd4930: 0 blocking, 0 non-blocking</span></li>
-    <li><span class="t">22:21:40</span><span class="e">change.ready</span><span class="s">X1 ready for the train: unlaboredlabs/fleetd-lab#124</span></li>
-    <li><span class="t">22:21:43</span><span class="e">fleetd/train</span><span class="s">X1: rebased onto main, CI green <span class="x">· commit status on ad899ec</span></span></li>
-    <li><span class="t">22:21:44</span><span class="e">review.verdict</span><span class="s">T7 review verdict at bbd67b733334: 0 blocking, 1 non-blocking</span></li>
-    <li><span class="t">22:21:44</span><span class="e">change.ready</span><span class="s">X2 ready for the train: unlaboredlabs/fleetd-lab#125</span></li>
-    <li class="ok"><span class="t">22:21:47</span><span class="e">pr.merged</span><span class="s">X1 merged: unlaboredlabs/fleetd-lab#124 as a3dbc17d67bf</span></li>
-    <li><span class="t">22:22:07</span><span class="e">fleetd/train</span><span class="s">X2: rebased onto main, CI green <span class="x">· commit status on 7d4a144</span></span></li>
-    <li class="ok"><span class="t">22:22:11</span><span class="e">pr.merged</span><span class="s">X2 merged: unlaboredlabs/fleetd-lab#125 as bf102d28ae7d</span></li>
+    <li><span class="t">13:15:17</span><span class="e">change.queued</span><span class="s">X1 queued: unlaboredlabs/fleetd-lab#160 (tier S, done:0)</span></li>
+    <li><span class="t">13:15:17</span><span class="e">change.ready</span><span class="s">X1 ready for the train: unlaboredlabs/fleetd-lab#160</span></li>
+    <li><span class="t">13:15:18</span><span class="e">change.queued</span><span class="s">X2 queued: unlaboredlabs/fleetd-lab#161 (tier S, done:0)</span></li>
+    <li><span class="t">13:15:18</span><span class="e">change.ready</span><span class="s">X2 ready for the train: unlaboredlabs/fleetd-lab#161</span></li>
+    <li><span class="t">13:15:21</span><span class="e">train.frozen</span><span class="s">Train for unlaboredlabs/fleetd-lab frozen: train batch lab: hold until every PR is green</span></li>
+    <li><span class="t">13:15:42</span><span class="e">train.resumed</span><span class="s">Train for unlaboredlabs/fleetd-lab resumed</span></li>
+    <li class="ok"><span class="t">13:16:14</span><span class="e">pr.merged</span><span class="s">X1 merged: unlaboredlabs/fleetd-lab#160 as 2220967ee70a in batch #163</span></li>
+    <li class="ok"><span class="t">13:16:17</span><span class="e">pr.merged</span><span class="s">X2 merged: unlaboredlabs/fleetd-lab#161 as 2220967ee70a in batch #163</span></li>
+    <li class="bad"><span class="t">13:18:23</span><span class="e">change.ci_failed</span><span class="s">X6 CI failed on dda108b7c6b8: ci (failure) (log: …)</span></li>
     <!-- /capture:train -->
   </ol>
 </section>
@@ -291,9 +287,9 @@ Project  5/6
 –  project needs the hub running
 
 App &amp; check  6/6
-✓  pairing code 8VF5-GD48 · one use, 15 min
+✓  pairing code SX7P-ZHTP · one use, 15 min
   In the fleetd app, enter http://hub.your-tailnet.ts.net:4791 and the code, or open:
-  fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4791&amp;code=8VF5-GD48
+  fleetd://pair?hub=http%3A%2F%2Fhub.your-tailnet.ts.net%3A4791&amp;code=SX7P-ZHTP
 
 1 step(s) need you:
   start the hub, then run fleetd init again: fleetd hub start --home ~/.fleetd/hub --listen &lt;tailnet-ip&gt;:4791
