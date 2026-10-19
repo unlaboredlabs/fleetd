@@ -865,6 +865,44 @@ async fn get(
     Ok(decode::<StatusGetOutput>("status_get", body).map(|out| mark.apply(out.doc)))
 }
 
+/// A just-sent order has no status doc until the lead writes its brief: that is waiting, not a refusal.
+async fn is_draft(client: &mut McpClient, target: &str) -> bool {
+    if WorkstreamId::new(target).is_err() {
+        return false;
+    }
+    call(
+        client,
+        "order_get",
+        json!({ "workstreamId": target }),
+        Duration::from_secs(30),
+    )
+    .await
+    .is_ok_and(|body| body.pointer("/order/state").and_then(Value::as_str) == Some("draft"))
+}
+
+/// Waits for a scope's first doc (a draft order's, once its brief exists).
+async fn first_doc(
+    client: &mut McpClient,
+    scope: &Value,
+    mark: &Mark,
+) -> Result<Result<StatusDoc, u8>, CallError> {
+    loop {
+        let wait = mark.input(json!({ "scope": scope, "timeoutSec": WAIT_SEC }));
+        let body = call(
+            client,
+            "status_wait",
+            wait,
+            Duration::from_secs(WAIT_SEC + 15),
+        )
+        .await?;
+        match decode::<StatusWaitOutput>("status_wait", body) {
+            Ok(StatusWaitOutput { doc: Some(doc), .. }) => return Ok(Ok(mark.apply(doc))),
+            Ok(_) => {}
+            Err(code) => return Ok(Err(code)),
+        }
+    }
+}
+
 /// `fleetd status …`: exit 0, 1 when the hub answered in a shape this build does not know, 2 on bad arguments, 3
 /// when the hub refused the key or the call, 4 when it cannot be reached.
 pub async fn status_command(argv: &[String]) -> u8 {
@@ -903,6 +941,22 @@ pub async fn status_command(argv: &[String]) -> u8 {
     let mut doc = match get(&mut client, &scope, &mark).await {
         Ok(Ok(doc)) => doc,
         Ok(Err(code)) => return code,
+        Err(CallError::Refused(_)) if is_draft(&mut client, &args.target).await => {
+            println!("{} is a draft: waiting for the lead's brief", args.target);
+            if !args.watch {
+                return 0;
+            }
+            let mut stop = super::Stop::on_signals();
+            let first = tokio::select! {
+                _ = stop.wait() => return 0,
+                first = first_doc(&mut client, &scope, &mark) => first,
+            };
+            match first {
+                Ok(Ok(doc)) => doc,
+                Ok(Err(code)) => return code,
+                Err(error) => return fail("status", error),
+            }
+        }
         Err(error) => return fail("status", error),
     };
     printer.show(&doc);

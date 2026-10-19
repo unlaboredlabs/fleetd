@@ -892,3 +892,30 @@ async fn a_pr_held_by_the_train_shows_the_real_wait_and_the_fix() {
         stuck[0].message.as_str()
     );
 }
+
+/// An order just sent has no doc until its brief exists: it says so instead of "nothing to show".
+#[tokio::test]
+async fn a_draft_order_is_waiting_for_its_brief() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    set_order_state(&hub, "draft");
+    let scope = StatusScope::Order {
+        workstream_id: WorkstreamId::unchecked("W1"),
+    };
+    assert!(hub.status.get(&hub, &person(), &scope, None).is_none());
+    let refused = super::tools::not_found(&hub, &scope);
+    assert_eq!(
+        (refused.code, refused.message.as_str()),
+        (
+            ErrorCode::NotFound,
+            "W1 is a draft: waiting for the lead's brief."
+        )
+    );
+    let missing = super::tools::not_found(
+        &hub,
+        &StatusScope::Order {
+            workstream_id: WorkstreamId::unchecked("W9"),
+        },
+    );
+    assert!(missing.message.starts_with("Nothing to show"));
+}
