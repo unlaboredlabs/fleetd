@@ -7,10 +7,12 @@ import { closeOverlay, commandFor, runCommand } from "../palette";
 // Not in the palette's public surface yet; the menu needs to hear when commands come and go.
 import { subscribeRegistry } from "../palette/registry";
 import type { HubEvent } from "../../../shared/hub";
-import { useToolQuery } from "../../src/data/react";
+import { useDataLayer, useToolQuery } from "../../src/data/react";
+import { selectNeedsYou } from "../../src/data/selectors";
 import { useHubEvents } from "./hubFeed";
 import { navigate } from "./navigation";
 import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, type Policy } from "./notifier";
+import { projectId } from "./model";
 import type { Screen } from "./routes";
 
 const platform = window.fleetd.platform;
@@ -90,10 +92,11 @@ let policy: Policy = FALLBACK_POLICY;
  */
 export const useNotifications = (live: boolean): void => {
   const [notifier] = useState(() => new Notifier());
+  const { store } = useDataLayer();
   const [check] = useState(() => () => {
     const now = Date.now();
-    // Every project counts as still needing you until the chat layer's needs-you state lands (A7 selectNeedsYou).
-    const due = notifier.due(now, policy, () => true);
+    // A project you have answered meanwhile is dropped; one whose state isn't known yet stays.
+    const due = notifier.due(now, policy, (p) => selectNeedsYou(projectId(p))(store.getState()) !== false);
     if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due });
   });
   const [onEvent] = useState(() => (event: HubEvent) => {

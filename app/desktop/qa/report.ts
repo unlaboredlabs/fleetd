@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Shot } from "./harness.ts";
 import { resultsDir } from "./harness.ts";
-import { screens } from "./registry.ts";
+import { label, screens } from "./registry.ts";
 
 export interface Pending {
   screen: string;
@@ -15,7 +15,7 @@ export interface Pending {
 
 // Registered but skipped: named in every summary, so "0 findings" never hides a screen that wasn't shot.
 export const pendingScreens = (): Pending[] =>
-  screens.flatMap((s) => (s.pending === undefined ? [] : [{ screen: s.id, fixtures: s.fixtures, reason: s.pending }]));
+  screens.flatMap((s) => (s.pending === undefined ? [] : [{ screen: label(s), fixtures: s.fixtures, reason: s.pending }]));
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c);

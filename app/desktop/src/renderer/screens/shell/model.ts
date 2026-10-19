@@ -22,15 +22,21 @@ export interface ProjectRowIn {
   readonly running: number;
 }
 
-/** Undefined until this connection's projects loaded (startup, and after every link drop): not "no projects". */
+/**
+ * Undefined until this connection's projects loaded (startup, and after every link drop): not "no projects".
+ * Alphabetical, whatever the layer's order: a project never moves as its agents start and stop, so ⌘1–9 and the
+ * mouse keep their target; its state shows only as its marks.
+ */
 export const toSidebar = (rows: ReadonlyArray<ProjectRowIn> | undefined): ReadonlyArray<SidebarProject> | undefined =>
-  rows?.map((r) => ({
-    key: { machineId: r.project.machineId, projectId: r.project.projectId },
-    title: r.project.title,
-    needsYou: r.needsYou,
-    working: r.working,
-    running: r.running,
-  }));
+  rows
+    ?.map((r) => ({
+      key: { machineId: r.project.machineId, projectId: r.project.projectId },
+      title: r.project.title,
+      needsYou: r.needsYou,
+      working: r.working,
+      running: r.running,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title) || projectId(a.key).localeCompare(projectId(b.key)));
 
 export const projectId = (key: ProjectKey): string => `${key.machineId}/${key.projectId}`;
 

@@ -1,0 +1,230 @@
+/* An agent's lane: role tint on the edge, what it's doing, its clock, activity bars and tokens. No motion but a
+   new bucket sliding in, once. */
+/* Tones */
+.warning {
+  color: var(--warning);
+}
+.danger {
+  color: var(--danger);
+}
+.success {
+  color: var(--success);
+}
+.loud {
+  color: var(--text);
+}
+.quietText {
+  color: var(--quiet);
+}
+.stale {
+  font-style: italic;
+  color: var(--quiet);
+}
+
+.check {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  fill: none;
+  stroke: var(--success);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  transition: color var(--dur-fast) linear;
+}
+.faintDot {
+  color: var(--faint);
+}
+
+/* Lane rows */
+.lane {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+}
+.stageLane {
+  height: 32px;
+}
+.cardLane {
+  height: 24px;
+  font-size: var(--text-xs);
+}
+.clickable {
+  cursor: pointer;
+}
+.clickable:hover {
+  background: var(--hover);
+}
+.clickable:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.edge {
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--tint);
+  opacity: 0.35;
+  transition: opacity var(--dur-fast) linear;
+}
+.cardLane .edge {
+  width: 2px;
+}
+.edgeSolid {
+  opacity: 1;
+}
+
+.mark {
+  flex: none;
+  width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.laneTitle {
+  flex: none;
+  width: 150px;
+}
+.model {
+  flex: none;
+  width: 56px;
+}
+
+.activity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.words {
+  flex: none;
+}
+/* Takes the line's room so it has a width to cut to; a cut command keeps its program and its target. */
+.machine {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.step {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--quiet);
+}
+
+.clock,
+.tokens {
+  flex: none;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.clock {
+  width: 44px;
+}
+.tokens {
+  width: 44px;
+  color: var(--quiet);
+}
+
+/* Activity bars: the newest bucket in the full tint, older ones receding, a quiet bucket a 1 px baseline. */
+.bars {
+  flex: none;
+  position: relative;
+  width: 120px;
+  height: 22px;
+  overflow: hidden;
+}
+.cardLane .bars {
+  width: 72px;
+  height: 14px;
+}
+.plot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--slots), 1fr);
+  gap: 1px;
+  align-items: end;
+}
+.shift {
+  animation: shift var(--dur-base) var(--ease-out);
+}
+@keyframes shift {
+  from {
+    transform: translateX(calc(100% / var(--slots)));
+  }
+}
+.slot {
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.bar {
+  width: 100%;
+  background: var(--tint);
+  opacity: 0.55;
+  border-radius: 1px 1px 0 0;
+}
+.newest {
+  opacity: 1;
+}
+.baseline {
+  height: 1px;
+  opacity: 0.3;
+}
+
+/* PR track: three short segments. A step fills in once (a transition on the value, never a loop). */
+.track {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+.segment {
+  width: 12px;
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.fill {
+  display: block;
+  height: 100%;
+  background: var(--quiet);
+  transform-origin: left;
+  transition: transform 240ms var(--ease-out);
+}
+.merged .fill {
+  background: var(--success);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}

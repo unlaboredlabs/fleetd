@@ -82,7 +82,7 @@ describe("a project's draft", () => {
     d.attach("devbox/api", [new File(["png"], "shot.png", { type: "image/png" }), new File([new Uint8Array([0xff, 0xfe, 0x00])], "blob.bin")]);
     await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached.every((a) => a.upload !== undefined)).toBe(true));
     const draft = d.store.getState()["devbox/api"];
-    expect(draft?.attached.map((a) => [a.name, a.upload])).toEqual([["shot.png", { ok: true, id: "att-1", mime: "image/png" }]]);
+    expect(draft?.attached.map((a) => [a.name, a.upload])).toEqual([["shot.png", { ok: true, ref: { attachmentId: "att-1", name: "shot.png", mime: "image/png", bytes: 3 } }]]);
     expect(draft?.error).toMatch(/blob.bin: only images, text and PDF/);
   });
 

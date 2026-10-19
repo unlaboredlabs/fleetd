@@ -1,7 +1,7 @@
-// The board's vocabulary: one word per status, role and PR stage, and the lines built from them. Amber is "needs
+// The lanes' vocabulary: one word per status, role and PR stage, and the lines built from them. Amber is "needs
 // you", danger only on failure words, and everything that is just working stays quiet.
-import type { AgentLane, AgentRole, ChangeState, LaneStatus, LoginLimit, MachineLive, OrderPhase, PrRef } from "./contracts";
-import { fmtAgo, fmtElapsed, parseMs } from "./format";
+import type { AgentLane, AgentRole, ChangeState, LaneStatus } from "./contracts";
+import { fmtElapsed, parseMs } from "./format";
 
 export type Tone = "quiet" | "loud" | "warning" | "danger" | "success";
 
@@ -108,30 +108,6 @@ export const describe = (lane: AgentLane): Line => {
   }
 };
 
-/**
- * What the fleet is doing, from the lanes drawn: "3 writing · 2 reviewing · 1 verifying", each running agent
- * counted by what its role does, the ones that need you or failed first. Empty when no lane is at work.
- */
-export const fleetActivity = (lanes: readonly AgentLane[]): string => {
-  const count = (pred: (l: AgentLane) => boolean) => lanes.filter(pred).length;
-  const byRole = (roles: readonly AgentRole[]) => count((l) => isWorking(l.status) && roles.includes(l.role));
-  const parts: [number, string][] = [
-    [count((l) => l.status === "waiting"), "need you"],
-    [count((l) => l.status === "failed"), "failed"],
-    [byRole(["implementer"]), "writing"],
-    [byRole(["reader"]), "reading"],
-    [byRole(["reviewer"]), "reviewing"],
-    [byRole(["verifier", "qa"]), "verifying"],
-    [byRole(["lead"]), "planning"],
-    [count((l) => l.status === "stalled"), "stalled"],
-    [count((l) => l.status === "parked"), "parked"],
-    [count((l) => l.status === "queued"), "queued"],
-  ];
-  const out = parts.filter(([n]) => n > 0).map(([n, w]) => `${n} ${w}`);
-  if (out[0] === "1 need you") out[0] = "1 needs you";
-  return out.join(" · ");
-};
-
 export const STAGE_WORD: Record<ChangeState, string> = {
   queued: "queued",
   reviewing: "review",
@@ -148,23 +124,6 @@ export const STAGE_WORD: Record<ChangeState, string> = {
 
 export const stageTone = (s: ChangeState): Tone =>
   s === "needs_rebase" ? "warning" : s === "ci_failed" || s === "refused" ? "danger" : s === "merged" ? "success" : "quiet";
-
-/** "reviewing 1/2", "in CI", "merged", "queued, position 2". */
-export const prLabel = (pr: PrRef): string => {
-  switch (pr.state) {
-    case "reviewing":
-      return `reviewing ${pr.reviewsDone}/${pr.reviewsNeeded}`;
-    case "ci":
-      return "in CI";
-    case "queued":
-      return pr.position === undefined ? "queued" : `queued, position ${pr.position + 1}`;
-    default:
-      return STAGE_WORD[pr.state];
-  }
-};
-
-/** The review fraction a PR reports itself. */
-export const prReview = (pr: PrRef): number => (pr.reviewsNeeded <= 0 ? 1 : pr.reviewsDone / pr.reviewsNeeded);
 
 /**
  * How full each of the track's three segments is, 0..1: review (checks done of needed), CI (half while it runs,
@@ -189,55 +148,3 @@ export const trackFill = (state: ChangeState, review: number): readonly [number,
       return undefined;
   }
 };
-
-export const PHASE_WORD: Record<OrderPhase, string> = {
-  waiting_on_you: "needs you",
-  failed: "failed",
-  stopped: "stopped",
-  working: "working",
-  reviewing: "reviewing",
-  merging: "merging",
-  verifying: "checking",
-  queued: "queued",
-  planning: "planning",
-  idle: "waiting for the lead",
-  done: "done",
-};
-
-export const phaseTone = (p: OrderPhase): Tone =>
-  p === "waiting_on_you" ? "warning" : p === "failed" ? "danger" : p === "done" ? "success" : "quiet";
-
-/** One machine's strip parts: "6 running", "load 3.1/32", "mem 41%", "claude 58% 5h · 41% wk"; offline is one part. */
-export const machineParts = (m: MachineLive, nowMs: number): readonly (readonly [string, Tone])[] => {
-  if (m.status === "offline") {
-    const at = parseMs(m.asOf);
-    return [[at === undefined ? "offline" : `offline ${fmtAgo(nowMs - at)}`, "warning"]];
-  }
-  const out: [string, Tone][] = [[`${m.running} running`, "quiet"]];
-  if (m.status === "degraded") out.unshift(["degraded", "warning"]);
-  if (m.slept && nowMs - m.slept.toMs < 3_600_000) {
-    out.push([`slept ${fmtElapsed(m.slept.toMs - m.slept.fromMs)}`, "warning"]);
-  }
-  if (m.load) {
-    out.push([`load ${m.load.load1.toFixed(1)}/${m.load.cpus}`, "quiet"]);
-    if (m.load.memUsedPct !== undefined) out.push([`mem ${m.load.memUsedPct}%`, "quiet"]);
-    const limits = (m.load.limits ?? []).flatMap(limitPart);
-    if (limits.length > 0) {
-      const worst = limits.some(([, t]) => t === "danger") ? "danger" : limits.some(([, t]) => t === "warning") ? "warning" : "quiet";
-      out.push([`claude ${limits.map(([s]) => s).join(" · ")}`, worst]);
-    }
-  }
-  return out;
-};
-
-const WINDOW_WORD: Record<string, string> = { five_hour: "5h", seven_day: "wk", seven_day_opus: "opus wk", seven_day_sonnet: "sonnet wk" };
-
-const limitPart = (l: LoginLimit): [string, Tone][] => {
-  if (l.utilization === undefined) return [];
-  const tone: Tone = l.status === "rejected" ? "danger" : l.status === "allowed_warning" ? "warning" : "quiet";
-  return [[`${Math.round(l.utilization * 100)}% ${WINDOW_WORD[l.limitType] ?? l.limitType}`, tone]];
-};
-
-/** "slots 8/40 (2 leads) · 1 queued": the board's own count of what holds a slot, against the hub's cap. */
-export const slotsText = (cap: number, use: { readonly agents: number; readonly leads: number; readonly queued: number }): string =>
-  `slots ${use.agents + use.leads}/${cap}${use.leads > 0 ? ` (${use.leads} lead${use.leads === 1 ? "" : "s"})` : ""}${use.queued > 0 ? ` · ${use.queued} queued` : ""}`;

@@ -10,7 +10,7 @@ interface ProjectRef {
 
 import { Paperclip, X } from "lucide-react";
 import { useRef, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
-import type { ChatDelivery } from "../../../shared/contracts";
+import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
@@ -56,12 +56,12 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
       if (checked.reason !== "") setDraft((d) => ({ ...d, error: checked.reason }));
       return;
     }
-    const files: string[] = [];
+    const files: AttachmentRef[] = [];
     for (const a of draft.attached) {
       const up = a.upload;
       if (!up) return setDraft((d) => ({ ...d, error: `${a.name} is still uploading.` }));
       if (!up.ok) return setDraft((d) => ({ ...d, error: `${a.name} didn’t upload: ${up.message} Remove it to send.` }));
-      files.push(up.id);
+      files.push(up.ref);
     }
     const sent = { text: draft.text, attached: draft.attached };
     // The words leave the box at once; the layer's item holds them (and offers Edit if they don't go).
@@ -109,7 +109,7 @@ export function ChatComposer({ project, onSent, autoFocus }: ChatComposerProps) 
 
   const note = draft.error ?? (draft.offline === true ? "Not connected to the hub, so this wasn’t sent. Send it again once the hub is back." : undefined);
   return (
-    <div className={c.composer} data-composer onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+    <div className={c.composer} data-composer data-screen="chat.composer" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <textarea
         ref={box}
         className={c.input}
@@ -188,8 +188,8 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
     {
       state: item.state,
       error: item.error === undefined ? undefined : { ...item.error, ...(item.offline === true ? { offline: true } : {}) },
-      // The layer's message type predates the generated ChatMessage, which carries delivery.
-      delivery: (item.message as { readonly delivery?: ChatDelivery } | undefined)?.delivery,
+      delivery: item.delivery,
+      leadWaiting: item.leadWaiting,
     },
     latest,
   );
