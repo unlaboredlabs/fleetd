@@ -3,6 +3,7 @@
 // symlinks, only link files by extension and a folder's .git/config, each under a size cap, and it returns a GitHub
 // "owner/name" at most, never file contents.
 
+import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { DropInfo } from "../shared/hub";
@@ -47,13 +48,16 @@ export const linkRepo = (content: string): string | undefined => {
   return undefined;
 };
 
-/** A regular file's text, read through one descriptor and never past `max` (a FIFO or a growing file can't stall it). */
+/**
+ * A regular file's text, never past `max`. O_NOFOLLOW and a check on the open descriptor itself: a path swapped for a
+ * symlink, FIFO or bigger file after the caller looked at it is refused, not read.
+ */
 const readSmall = async (path: string, max: number): Promise<string | null> => {
-  const info = await lstat(path).catch(() => null);
-  if (info === null || !info.isFile() || info.size > max) return null;
-  const handle = await open(path, "r").catch(() => null);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null);
   if (handle === null) return null;
   try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > max) return null;
     const buf = Buffer.alloc(max);
     const { bytesRead } = await handle.read(buf, 0, max, 0);
     return buf.subarray(0, bytesRead).toString("utf8");

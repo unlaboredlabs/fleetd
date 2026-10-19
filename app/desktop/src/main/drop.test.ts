@@ -45,6 +45,11 @@ describe("reading a drop", () => {
     symlinkSync(dir, join(dir, "linked-folder"));
     expect(await readDrop(join(dir, "link.url"))).toEqual({ kind: "other" });
     expect(await readDrop(join(dir, "linked-folder"))).toEqual({ kind: "other" });
+    // A checkout whose .git/config is a symlink gets no origin read through it.
+    const repo = join(dir, "linked-config");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    symlinkSync(file("elsewhere.cfg", '[remote "origin"]\n\turl = git@github.com:acme/secret.git\n'), join(repo, ".git", "config"));
+    expect(await readDrop(repo)).toEqual({ kind: "folder", path: repo, git: true });
   });
 
   it("gives a checkout's origin as owner/name, and says when a folder isn't one", async () => {
