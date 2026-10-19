@@ -3,6 +3,7 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { EmptyState, GalleryScreen } from "../../ui";
 import type { Screen } from "./routes";
+import { ChatScreen } from "../chat";
 
 // Each screen is its own chunk, loaded when its route first opens: the app starts by parsing the shell and the one
 // screen it shows, not all of them (startup time and idle memory, perf/budgets.ts).
@@ -35,8 +36,13 @@ function screenFor(screen: Screen): ReactNode {
       // Resolved by the frame to the last project; this shows only while the projects load or when there are none.
       return null;
     case "project":
-      // F3's ChatScreen (A2) replaces this: <ChatScreen project={screen.project} message={screen.message} />.
-      return <Pending id="chat" title="Chat with the lead" />;
+      return (
+        <ChatScreen
+          key={`${screen.project.machineId}/${screen.project.projectId}`}
+          project={screen.project}
+          {...(screen.message !== null ? { message: screen.message } : {})}
+        />
+      );
     case "status":
       return <StatusScreen />;
     case "machines":

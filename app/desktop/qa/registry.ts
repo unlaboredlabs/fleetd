@@ -60,9 +60,6 @@ export const fixtures = [
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
   "conversation-20k",
-  "order-told-overrides",
-  // F4: every steering state (fixtures/order).
-  "order-steering",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 

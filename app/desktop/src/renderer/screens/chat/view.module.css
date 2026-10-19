@@ -1,0 +1,222 @@
+/*
+ * The lead chat. One column, inset like the rest of the app; messages read like a conversation (author and time
+ * once per run), fleet activity and fleetd's own lines stay quiet and one line high.
+ */
+.screen {
+  --pad: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.header {
+  flex: none;
+  min-height: var(--bar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--pad);
+  border-bottom: 1px solid var(--hairline);
+}
+.title {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.flexNone {
+  flex: none;
+}
+.loading {
+  flex: 1;
+  padding: var(--space-4) var(--pad);
+}
+.log {
+  flex: 1;
+  min-height: 0;
+}
+.composer {
+  flex: none;
+}
+.composer:empty {
+  display: none;
+}
+
+/* Rows: the reading measure, centred, with the window's inset on narrow widths. */
+.message,
+.quietRow,
+.day,
+.top,
+.strip {
+  max-width: calc(var(--measure) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: 0 var(--pad);
+}
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1-5);
+  min-width: 0;
+}
+.messageHead {
+  padding-top: var(--space-4);
+}
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.quietRow {
+  padding-top: var(--space-2);
+  min-width: 0;
+}
+.event {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.eventTime {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}
+.day {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-6);
+}
+.day::before,
+.day::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+.top {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-2);
+}
+.strip {
+  padding-top: var(--space-2);
+}
+.strip:empty {
+  display: none;
+}
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  max-width: 280px;
+  min-width: 0;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.attachmentIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+}
+.systemText {
+  margin-top: var(--space-1-5);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--hairline);
+}
+.disclosure {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  text-align: left;
+  cursor: pointer;
+}
+.disclosure:hover {
+  color: var(--text);
+}
+.disclosure:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.chevron {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  align-self: center;
+}
+
+/* The told panel. */
+.section {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-4) 0 var(--space-1-5);
+  min-width: 0;
+}
+.sectionLabel {
+  flex: none;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-strong);
+  color: var(--quiet);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  min-width: 0;
+}
+.errorRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.told {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.toldGroup {
+  padding-top: var(--space-2);
+}
+.toldRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  column-gap: var(--space-3);
+  align-items: baseline;
+  padding: 2px 0 2px var(--space-3);
+}
+.toldTool {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-1) 0;
+}
+.toldFirst {
+  margin-top: var(--space-1);
+}
