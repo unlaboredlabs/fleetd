@@ -100,3 +100,18 @@ export function machineCode(md: string): string {
   }
   return out + wrap(md.slice(last));
 }
+
+const shortClocks = new Map<string, Intl.DateTimeFormat>();
+
+/** "16:02": a chat message's time (its day is the divider above it). */
+export function shortClock(iso: string, timeZone?: string): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "";
+  const key = timeZone ?? "";
+  let f = shortClocks.get(key);
+  if (f === undefined) {
+    f = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(timeZone ? { timeZone } : {}) });
+    shortClocks.set(key, f);
+  }
+  return f.format(ms);
+}

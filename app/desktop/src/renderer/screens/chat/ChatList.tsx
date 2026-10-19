@@ -8,7 +8,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import type { AgentLane } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
 import type { ChatAttachment, ChatItem } from "./contract";
-import { clock } from "./format";
+import { shortClock } from "./format";
 import { systemHeadline, type Row } from "./model";
 import { InlineChatItem, LiveStrip, PendingReceipt, type ProjectRef } from "./slots";
 import { Disclosure, InlineText, Message } from "./text";
@@ -21,7 +21,9 @@ function Attachment({ a }: { a: ChatAttachment }) {
   return (
     <span className={s.attachment} title={`${a.name} · ${sizeWords(a.sizeBytes)}`}>
       <Icon className={s.attachmentIcon} aria-hidden />
-      <Truncate size="xs">{a.name}</Truncate>
+      <Truncate as="code" size="xs" mono>
+        {a.name}
+      </Truncate>
       <Text size="xs" tone="quiet" className={cx(s.flexNone)}>
         {sizeWords(a.sizeBytes)}
       </Text>
@@ -95,7 +97,7 @@ const RowView = memo(function RowView(props: {
       return (
         <div className={cx(s.quietRow, s.event)} data-entry="event">
           <InlineText size="xs" tone="quiet" text={r.item.text} />
-          <span className={s.eventTime}>{clock(r.item.at)}</span>
+          <span className={s.eventTime}>{shortClock(r.item.at)}</span>
         </div>
       );
     case "inline":
@@ -120,7 +122,7 @@ const RowView = memo(function RowView(props: {
                 {AUTHOR[i.author]}
               </Text>
               <Text size="xs" tone="quiet" tabular>
-                {clock(i.at)}
+                {shortClock(i.at)}
               </Text>
             </div>
           ) : null}
