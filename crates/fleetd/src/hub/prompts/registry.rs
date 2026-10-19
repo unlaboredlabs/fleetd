@@ -293,6 +293,16 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "digest.agents",
+        Wake,
+        WakesAndMessages,
+        Lead,
+        "Digest: agents running and queued",
+        "each digest, first line of its tasks section",
+        "running!=the project's agents running now; maxAgents!=its max agents; queued!=its agents waiting for a slot",
+        &[]
+    ),
+    entry!(
         "digest.tasks.ended",
         Wake,
         WakesAndMessages,
@@ -603,6 +613,16 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
+        "wake.cap_raised",
+        Wake,
+        WakesAndMessages,
+        Lead,
+        "Wake: max agents raised",
+        "when a person raises the project's max agents",
+        "maxAgents!=the new max agents; free!=slots its agents could take now, after queued agents started",
+        &[]
+    ),
+    entry!(
         "wake.runnable",
         Wake,
         WakesAndMessages,
@@ -810,6 +830,26 @@ pub const ENTRIES: &[Entry] = &[
         "PR needs a rebase",
         "per PR the train could not rebase",
         "prUrl!=the PR; changeId!=X<n>; why!=what failed; branch!=the PR's branch; base!=the base branch",
+        &[]
+    ),
+    entry!(
+        "task.pause",
+        Msg,
+        Tasks,
+        Task,
+        "Pause: max agents lowered",
+        "per running agent above the new max when a person lowers it and pauses the extras",
+        "maxAgents!=the new max agents",
+        &[]
+    ),
+    entry!(
+        "task.resume",
+        Msg,
+        Tasks,
+        Task,
+        "Resume after a pause",
+        "per paused agent when a slot frees for it",
+        "",
         &[]
     ),
     entry!(

@@ -69,6 +69,16 @@ function agents(from: Fixture): Fixture {
   const slots: JsonObject = { cap: 16, used: 9, queued: 2, reservedBand: 2, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
+  // A save answers with the slot state it asked for, as the hub does: every max each project can take, and every
+  // fleet cap a person might type, so the shots show the saved value read back.
+  for (const row of rows) {
+    const projectRef = row["projectRef"] as JsonObject;
+    for (let n = 1; n <= 16; n++) {
+      const perProject = rows.map((r) => (r === row ? { ...clone(r), maxAgents: n } : clone(r)));
+      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, { slots: { ...clone(slots), perProject } });
+    }
+  }
+  for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n } });
   return f;
 }
 

@@ -126,26 +126,26 @@ describe("registry", () => {
   });
 
   it("merges source items after commands, skipping ids already present", () => {
-    offs.push(registerCommands([item("order:W1", "From a command", "orders")]));
-    offs.push(registerSource({ id: "orders", items: () => [item("order:W1", "Duplicate", "orders"), item("order:W2", "W2 Fix login", "orders")] }));
-    expect(snapshotItems().map((c) => c.title)).toEqual(["From a command", "W2 Fix login"]);
+    offs.push(registerCommands([item("project:devbox/a", "From a command", "projects")]));
+    offs.push(registerSource({ id: "projects", items: () => [item("project:devbox/a", "Duplicate", "projects"), item("project:devbox/b", "storefront", "projects")] }));
+    expect(snapshotItems().map((c) => c.title)).toEqual(["From a command", "storefront"]);
   });
 });
 
 describe("useCommands closures", () => {
   it("runs the command with the key's id after the list reorders or shrinks", () => {
     const ran: string[] = [];
-    const stop = item("order.stop", "Stop", "orders", { run: () => ran.push("stop") });
-    const prev = item("order.previous", "Previous", "orders", { run: () => ran.push("previous") });
-    const next = item("order.next", "Next", "orders", { run: () => ran.push("next") });
-    const latest: { current: readonly Command[] } = { current: [stop, prev, next] };
+    const attach = item("composer.attach", "Attach a file", "actions", { run: () => ran.push("attach") });
+    const prev = item("project.previous", "Previous", "projects", { run: () => ran.push("previous") });
+    const next = item("project.next", "Next", "projects", { run: () => ran.push("next") });
+    const latest: { current: readonly Command[] } = { current: [attach, prev, next] };
     const off = registerCommands(bindLatest(latest));
-    // The order stops running: "stop" leaves the list without a re-registration.
+    // The composer goes away: "attach" leaves the list without a re-registration.
     latest.current = [prev, next];
-    runCommand("order.previous");
-    runCommand("order.next");
-    expect(runCommand("order.stop")).toBe(false);
-    expect(commandFor("order.stop")).toBeUndefined();
+    runCommand("project.previous");
+    runCommand("project.next");
+    expect(runCommand("composer.attach")).toBe(false);
+    expect(commandFor("composer.attach")).toBeUndefined();
     off();
     expect(ran).toEqual(["previous", "next"]);
   });

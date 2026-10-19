@@ -67,10 +67,6 @@
 .clickable:hover {
   background: var(--hover);
 }
-.clickable:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
 
 .edge {
   position: absolute;

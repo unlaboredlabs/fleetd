@@ -42,13 +42,6 @@
 .navItem[aria-current="page"] {
   background: var(--selected);
 }
-.navItem:focus-visible,
-.row:focus-visible,
-.groupHead:focus-visible,
-.chipButton:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
 
 .page {
   display: flex;
@@ -497,10 +490,6 @@ h1.navTitle {
   border-radius: 50%;
   background: var(--raised);
   box-shadow: 0 1px 2px var(--shadow);
-}
-.sliderThumb:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 .slider[data-disabled] .sliderRange {
   background: var(--faint);

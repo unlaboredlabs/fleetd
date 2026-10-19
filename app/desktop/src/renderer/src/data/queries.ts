@@ -14,7 +14,7 @@ import type { HubError, HubFrame } from "../../../shared/hub";
 import type { ChatScope, LiveScope } from "../../../shared/ipc";
 import { createChatActions, refOf, type ChatActions } from "./chat-layer";
 import { effectsOf, matches, type Invalidation } from "./effects";
-import { applyFrame, applyReply, applyUndo, createDataStore, failRead, ingest, type DataStore } from "./store";
+import { applyFrame, applyReply, applySlots, applyUndo, createDataStore, failRead, ingest, type DataStore } from "./store";
 
 export class CallError extends Error {
   constructor(readonly error: HubError) {
@@ -183,6 +183,10 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
   // The person's own writes change the asks before any event says so. Apply them now and refetch now, not after the
   // event batch window: a list read that raced the write must not land in between and bring an answered ask back.
   const afterWrite = (tool: ToolName, output: unknown): void => {
+    if (tool === "cap_set") {
+      store.setState(applySlots(store.getState(), (output as ToolOutput<"cap_set">).slots));
+      return;
+    }
     if (tool !== "inbox_reply" && tool !== "inbox_undo") return;
     const before = store.getState();
     store.setState(

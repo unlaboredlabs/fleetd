@@ -1,6 +1,7 @@
 // Mounted once by the shell: the palette's "Add project…" and its machines, and a folder or a GitHub link dropped
-// anywhere on the window (a link dragged out of a browser works too). The composer takes files it can attach first:
-// a drop it handled arrives here with defaultPrevented.
+// on the window (a link dragged out of a browser works too). A lead chat owns every drop inside it (its composer
+// attaches files, images included), so this never acts there; elsewhere anything that isn't a folder or a GitHub
+// link is ignored, not turned into an Add project.
 
 import { useEffect, useMemo, useState } from "react";
 import { Text } from "../../ui";
@@ -40,9 +41,8 @@ const fromDrop = async (data: DataTransfer): Promise<{ text: string; note?: Note
   const file = data.files[0];
   if (file) {
     const info = await window.fleetd.projects.readDrop(file);
-    if (info.kind === "other") {
-      return { text: "", note: { text: "Drop a repo's folder, or a link to it on GitHub (a browser link or a saved link file).", problem: true } };
-    }
+    // An image, a document: not a project, so nothing happens.
+    if (info.kind === "other") return null;
     if (info.kind === "link") return { text: info.repo, note: { text: `From ${file.name}.`, problem: false } };
     const local = localMachine();
     if (local) {
@@ -71,11 +71,23 @@ const fromDrop = async (data: DataTransfer): Promise<{ text: string; note?: Note
   return other === null ? null : { text: t, note: { text: other, problem: true } };
 };
 
-/** Text dropped on a text field is the field's (files never are: dropping one would open it in the window). */
-const fieldTakesIt = (e: DragEvent): boolean =>
-  e.dataTransfer?.types.includes("Files") !== true &&
-  e.target instanceof HTMLElement &&
-  (e.target.isContentEditable || e.target.closest("input, textarea, [contenteditable='true']") !== null);
+export type DropOwner = "chat" | "field" | "projects";
+
+/**
+ * Who handles a drop: a lead chat takes everything inside it (F4's composer attaches files there), a text field
+ * takes dropped text (never files: one would open in the window), and Add project the rest.
+ */
+export const dropOwner = (where: { readonly inChat: boolean; readonly inField: boolean; readonly hasFiles: boolean }): DropOwner =>
+  where.inChat ? "chat" : where.inField && !where.hasFiles ? "field" : "projects";
+
+const ownerOf = (e: DragEvent): DropOwner => {
+  const el = e.target instanceof Element ? e.target : null;
+  return dropOwner({
+    inChat: el?.closest('[data-screen="chat"], [data-screen^="chat."]') != null,
+    inField: el instanceof HTMLElement && (el.isContentEditable || el.closest("input, textarea, [contenteditable='true']") !== null),
+    hasFiles: e.dataTransfer?.types.includes("Files") === true,
+  });
+};
 
 const accepts = (data: DataTransfer | null): boolean =>
   data !== null && (data.types.includes("Files") || data.types.includes("text/uri-list") || data.types.includes("text/plain"));
@@ -105,7 +117,7 @@ export function ProjectsHost() {
     // Counts nested enter/leave pairs so moving over child elements doesn't flicker the overlay.
     let depth = 0;
     const enter = (e: DragEvent) => {
-      if (fieldTakesIt(e) || !accepts(e.dataTransfer)) return;
+      if (ownerOf(e) !== "projects" || !accepts(e.dataTransfer)) return;
       depth += 1;
       setOver(true);
     };
@@ -114,7 +126,17 @@ export function ProjectsHost() {
       if (depth === 0) setOver(false);
     };
     const overHandler = (e: DragEvent) => {
-      if (e.defaultPrevented || fieldTakesIt(e) || !accepts(e.dataTransfer)) return;
+      const owner = ownerOf(e);
+      if (owner === "chat") {
+        // A file the chat doesn't take (dropped beside its composer) must still not open in the window.
+        if (e.dataTransfer?.types.includes("Files") === true) e.preventDefault();
+        if (depth > 0) {
+          depth = 0;
+          setOver(false);
+        }
+        return;
+      }
+      if (e.defaultPrevented || owner === "field" || !accepts(e.dataTransfer)) return;
       // Without this the drop navigates the window to the file or link.
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -122,7 +144,12 @@ export function ProjectsHost() {
     const drop = (e: DragEvent) => {
       depth = 0;
       setOver(false);
-      if (fieldTakesIt(e)) return;
+      const owner = ownerOf(e);
+      if (owner === "field") return;
+      if (owner === "chat") {
+        if (e.dataTransfer?.types.includes("Files") === true) e.preventDefault();
+        return;
+      }
       const data = e.dataTransfer;
       if (e.defaultPrevented || data === null) {
         e.preventDefault();

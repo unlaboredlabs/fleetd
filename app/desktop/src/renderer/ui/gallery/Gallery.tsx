@@ -1,4 +1,4 @@
-import { Archive, Bell, Copy, FolderPlus, Inbox, LayoutGrid, Plus, Settings, Square } from "lucide-react";
+import { Archive, Bell, Copy, FolderPlus, MessageSquare, Plus, Settings, Square } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AppFrame,
@@ -33,7 +33,6 @@ import {
   PopoverContent,
   PopoverTrigger,
   Radio,
-  RadioCard,
   RadioGroup,
   RoleTag,
   SectionHeader,
@@ -294,7 +293,7 @@ function ButtonsSection() {
             New order
           </Button>
           <Button variant="quiet" disabled={disabled}>
-            Skip for now
+            Not now
           </Button>
           <Button variant="danger" disabled={disabled}>
             Stop the order
@@ -365,20 +364,19 @@ function FieldsSection() {
 }
 
 function ChoicesSection() {
-  const [answer, setAnswer] = useState("snapshot");
   return (
     <Section id="choices" title="Choices">
       <div className={s.cols3}>
         <div className={s.case}>
-          <Checkbox label="Notify me when an order needs me" defaultChecked />
-          <Checkbox label="Open the board on launch" />
+          <Checkbox label="Notify me when a lead is waiting for my reply" defaultChecked />
+          <Checkbox label="Open the last chat on launch" />
           <Checkbox label={LONG} description="A long label wraps beside the box." />
           <Checkbox label="Disabled and on" disabled checked />
           <Checkbox label="Some of the projects" checked="indeterminate" />
         </div>
         <div className={s.case}>
           <Switch label="Launch at login" defaultChecked />
-          <Switch label="Show machine load" description="In the strip under the board." />
+          <Switch label="Show machine load" description="In the strip under the chat." />
           <Switch label="Disabled" disabled />
         </div>
         <RadioGroup defaultValue="system" aria-label="Appearance">
@@ -387,29 +385,6 @@ function ChoicesSection() {
           <Radio value="dark" label="Dark" description="Easier at night." />
           <Radio value="off" label="Disabled" disabled />
         </RadioGroup>
-      </div>
-      <div className={s.question}>
-        <Text strong>How should the share link work?</Text>
-        <Text tone="quiet">The Copy link button on the order page is waiting on this. Today the link opens a live page for anyone who has it.</Text>
-        <RadioGroup value={answer} onValueChange={setAnswer} aria-label="How should the share link work?">
-          <RadioCard
-            value="snapshot"
-            label="A frozen snapshot behind an unguessable link"
-            tag="Recommended"
-            reason="It shares what you saw without exposing the live page or anything added later."
-            detail="People with the link see the page as it was when you copied it."
-            shortcut="1"
-          />
-          <RadioCard value="image" label="An image only" detail="The link opens a picture of the page; nothing in it is clickable." shortcut="2" />
-          <RadioCard value="live" label={LONG} detail={LONG} shortcut="3" />
-          <RadioCard value="off" label="Turned off for now" detail="This option is unavailable while the hub is offline." shortcut="4" disabled />
-        </RadioGroup>
-        <div className={s.row}>
-          <Button variant="primary" shortcut="↵">
-            Answer
-          </Button>
-          <Button variant="quiet">Skip for now</Button>
-        </div>
       </div>
     </Section>
   );
@@ -427,8 +402,8 @@ function OverlaysSection() {
           </MenuTrigger>
           <MenuContent>
             <MenuLabel>Order</MenuLabel>
-            <MenuItem icon={<Inbox />} hint="⌘I">
-              Open in inbox
+            <MenuItem icon={<MessageSquare />} hint="⌘L">
+              Open the project chat
             </MenuItem>
             <MenuItem icon={<Copy />}>Copy order link</MenuItem>
             <MenuItem>{LONG}</MenuItem>
@@ -545,7 +520,7 @@ function TabsSection() {
 }
 
 const TONES: ReadonlyArray<[StatusTone, string]> = [
-  ["needs-you", "needs you · 1 question"],
+  ["needs-you", "needs you · waiting for your reply"],
   ["failed", "failed: tests"],
   ["working", "3 working"],
   ["quiet", "queued"],
@@ -692,9 +667,6 @@ function LayoutSection() {
             <TopBar
               trailing={
                 <>
-                  <Button variant="quiet" iconOnly aria-label="Inbox">
-                    <Inbox />
-                  </Button>
                   <Button variant="quiet" iconOnly aria-label="Settings">
                     <Settings />
                   </Button>
@@ -706,14 +678,6 @@ function LayoutSection() {
           }
           sidebar={
             <Sidebar>
-              <SidebarSection>
-                <SidebarItem label="Board" icon={<LayoutGrid />} current trailing="⌘1" />
-                <SidebarItem label="Inbox" icon={<Inbox />} trailing={
-                    <StatusChip tone="needs-you" inRow>
-                      2
-                    </StatusChip>
-                  } />
-              </SidebarSection>
               <SidebarSection
                 title="Projects"
                 action={
@@ -722,10 +686,10 @@ function LayoutSection() {
                   </Button>
                 }
               >
-                <SidebarItem label="storefront" trailing="3" />
-                <SidebarItem label={SHORT} indent />
-                <SidebarItem label={LONG} indent />
-                <SidebarItem label="docs site" trailing="0" disabled />
+                <SidebarItem label="storefront" current trailing={<Dot color="var(--warning)" label="needs you" />} />
+                <SidebarItem label="docs site" trailing={<Dot color="var(--text)" label="running" />} />
+                <SidebarItem label={LONG} />
+                <SidebarItem label="archived project" disabled />
               </SidebarSection>
             </Sidebar>
           }
