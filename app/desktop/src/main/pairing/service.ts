@@ -7,6 +7,7 @@ import {
   normalizeCode,
   readAppPair,
   type AppPair,
+  type KeyStore,
   type PairFailure,
   type PairOutcome,
   type PairRequest,
@@ -30,6 +31,8 @@ export interface PairingDeps {
   readonly remove: (path: string) => Promise<void>;
   readonly now: () => number;
   readonly deviceName: () => string;
+  /** Where the hub service keeps the key it is given. */
+  readonly keyStore: KeyStore;
 }
 
 /** Names the new key on the hub: this computer's name. */
@@ -39,7 +42,13 @@ const deviceName = (): string => hostname().trim().replace(/\.local$/u, "") || "
  * `fleetdDir` is the fleetd dir main already resolved (FLEETD_HOME, else <appData>/fleetd), where `fleetd init` /
  * `fleetd pair` write app-pair.json (crates/fleetd/src/cli/pair.rs `app_pair_file`).
  */
-export const realPairingDeps = (fleetdDir: string, connect: PairingDeps["connect"], firstRun: () => boolean): PairingDeps => ({
+export const realPairingDeps = (
+  fleetdDir: string,
+  connect: PairingDeps["connect"],
+  firstRun: () => boolean,
+  keyStore: KeyStore,
+): PairingDeps => ({
+  keyStore,
   // Node's fetch, not Electron's `net`: the page's session (defaultSession) blocks every request but its own origin.
   fetch: (url, init) => globalThis.fetch(url, init),
   connect,
@@ -70,6 +79,10 @@ export class PairingService {
       problem: loaded.kind === "untrusted" ? loaded.failure : null,
       probe: await this.probe(appPair?.hub ?? LOCAL_HUB),
     };
+  }
+
+  store(): KeyStore {
+    return this.#deps.keyStore;
   }
 
   async probe(hub: string): Promise<Probe> {

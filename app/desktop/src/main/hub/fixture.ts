@@ -19,7 +19,7 @@ const FixtureFile = z.object({
     z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),
     z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0) }),
     z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int() }),
-    z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), retryAt: z.number() }),
+    z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number() }),
     z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
   ]),
   frames: z.array(

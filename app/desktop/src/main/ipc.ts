@@ -48,6 +48,7 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.pairProbe, (_event, address) => pairing.probe(address));
   handle(IPC.pairRedeem, (_event, request) => pairing.redeem(request));
   handle(IPC.pairAuto, () => pairing.auto());
+  handle(IPC.pairStore, () => pairing.store());
   handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
     const checked = externalUrl(url);
     if (!checked.ok) return checked;

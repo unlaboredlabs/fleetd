@@ -2,7 +2,9 @@ import { isAbsolute, join } from "node:path";
 import tls from "node:tls";
 import { app, BrowserWindow, nativeTheme, powerMonitor } from "electron";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
+import { fromEnv } from "./hub/credentials";
 import { osCredentialEnv } from "./hub/os";
+import type { KeyStore } from "../shared/pairing";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
@@ -45,16 +47,22 @@ const fixtureDir = (): string => process.env["FLEETD_FIXTURE_DIR"] ?? join(app.g
 const fixtureFile = (name: string): string => (isAbsolute(name) ? name : join(fixtureDir(), `${name}.json`));
 
 /** The hub, or a fixture standing in for it; `fixtureFile` is also where pairing finds the fixture's `pair` section. */
-const hubMode = (): { mode: HubMode; fixtureFile: string | null } => {
+const hubMode = (): { mode: HubMode; fixtureFile: string | null; keyStore: KeyStore } => {
   const request = fixtureRequest(process.env, app.isPackaged);
   if (request.kind === "ignored") console.warn(request.reason);
   if (request.kind !== "fixture") {
+    const credentials = osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined);
     return {
-      mode: { kind: "hub", credentials: osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined), vars: process.env, transport: webSocketTransport },
+      mode: { kind: "hub", credentials, vars: process.env, transport: webSocketTransport },
       fixtureFile: null,
+      keyStore: fromEnv(process.env) === null ? credentials.store : { kind: "env" },
     };
   }
-  return { mode: { kind: "fixture", fixture: loadFixture(request.name, fixtureDir()) }, fixtureFile: fixtureFile(request.name) };
+  return {
+    mode: { kind: "fixture", fixture: loadFixture(request.name, fixtureDir()) },
+    fixtureFile: fixtureFile(request.name),
+    keyStore: { kind: "os", where: "the OS keychain" },
+  };
 };
 
 const createWindow = (mode: HubMode): BrowserWindow => {
@@ -106,7 +114,7 @@ void app.whenReady().then(() => {
     const firstRun = () => service.state().phase === "unpaired";
     pairing = new PairingService(
       chosen.fixtureFile === null
-        ? realPairingDeps(FLEETD_DIR, connect, firstRun)
+        ? realPairingDeps(FLEETD_DIR, connect, firstRun, chosen.keyStore)
         : fixturePairingDeps(chosen.fixtureFile, connect, firstRun),
     );
   } catch (error) {

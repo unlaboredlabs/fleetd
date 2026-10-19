@@ -1,26 +1,25 @@
+import { useMemo } from "react";
 import { olderNodes } from "../../../shared/pairing";
+import { useData } from "../../src/data/react";
 import { Text } from "../../ui";
-import { plainReason } from "../shell/model";
-import type { Reaching } from "./form";
+import { sentence, type Reaching } from "./form";
 import { useHubProbe, useHubState, useReaching, useSecondsUntil } from "./hooks";
 import { Prose } from "./Prose";
 import s from "./onboarding.module.css";
 
-export interface ConnectionBannerProps {
-  /** The snapshot's machines, to name nodes running an older fleetd than the hub. */
-  readonly machines?: ReadonlyArray<{ readonly name: string; readonly nodeVersion: string }> | undefined;
-}
 
 /**
  * The line the frame shows above any screen while the hub is out of reach, and when a machine needs an update.
  * Screens show their own skeletons meanwhile; nothing cached is presented as live.
  */
-export function ConnectionBanner({ machines }: ConnectionBannerProps) {
+export function ConnectionBanner() {
+  const byId = useData((d) => d.machines);
+  const machines = useMemo(() => Object.values(byId), [byId]);
   const state = useHubState();
   const reach = useReaching(state);
   const live = state?.phase === "live" ? state.hub : null;
   const probe = useHubProbe(live);
-  const behind = machines !== undefined && probe?.answers === true ? olderNodes(machines, probe.version) : [];
+  const behind = probe?.answers === true ? olderNodes(machines, probe.version) : [];
   if (state === null) return null;
   if (reach !== null) return <Reconnecting reach={reach} />;
   if (behind.length === 0) return null;
@@ -35,15 +34,20 @@ export function ConnectionBanner({ machines }: ConnectionBannerProps) {
   );
 }
 
-/** One line for every attempt: only the countdown changes, so a fast-failing hub doesn't flash. */
+/** One layout for every attempt: only the countdown changes, so a fast-failing hub doesn't flash. */
 function Reconnecting({ reach }: { reach: Reaching }) {
   const seconds = useSecondsUntil(reach.retryAt);
   const when = seconds === null || seconds === 0 ? "Reconnecting…" : `Trying again in ${seconds} s.`;
   return (
     <div className={s.banner} data-tone="warning" role="status" data-banner="reconnecting">
-      <Text tone="warning" tabular>
-        {reach.reason === null ? `Connecting to ${reach.hub}…` : `Lost the hub: ${plainReason(reach.reason, reach.hub)}. ${when}`}
-      </Text>
+      {reach.reason === null ? (
+        <Text tone="warning">{`Connecting to ${reach.hub}…`}</Text>
+      ) : (
+        <>
+          <Text tone="warning" tabular>{`Lost the hub: ${sentence(reach.reason)} ${when}`}</Text>
+          {reach.fix === null ? null : <Prose text={reach.fix} tone="quiet" size="sm" />}
+        </>
+      )}
     </div>
   );
 }
