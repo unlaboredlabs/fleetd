@@ -178,7 +178,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         </Text>
         <CommandLine command={form.useKey ? KEY_CREATE : "fleetd pair"} />
       </div>
-      <div>
+      <div className={s.toggle}>
         <Button variant="quiet" aria-expanded={form.useKey} onClick={() => dispatch({ type: "toggleKey" })}>
           {form.useKey ? "Use a pairing code instead" : "Use a key instead"}
         </Button>

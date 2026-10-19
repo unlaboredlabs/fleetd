@@ -69,3 +69,8 @@
 .banner[data-tone="quiet"] {
   color: var(--quiet);
 }
+
+/* A text-like button: its label lines up with the column, not its padding. */
+.toggle {
+  margin-inline-start: calc(-1 * var(--space-2));
+}
