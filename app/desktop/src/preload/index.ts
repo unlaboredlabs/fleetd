@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, HubFrame, HubState, SecretOutcome } from "../shared/hub";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -12,6 +12,10 @@ ipcRenderer.on(IPC.hubFrame, (_event: IpcRendererEvent, frame: HubFrame) => {
 
 const api: FleetdApi = {
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
+  copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
+  secret: {
+    submit: (request) => ipcRenderer.invoke(IPC.secretSubmit, request) as Promise<SecretOutcome>,
+  },
   hub: {
     state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,
     subscribe: (listener) => {

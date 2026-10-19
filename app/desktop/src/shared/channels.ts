@@ -16,6 +16,10 @@ export const IPC = {
   hubConnect: "hub:connect",
   /** invoke() → void. Disconnects and deletes the saved key. */
   hubForget: "hub:forget",
+  /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
+  copy: "app:copy",
+  /** invoke(SecretRequest) → SecretOutcome. Main seals the value to the machine's key and submits it. */
+  secretSubmit: "secret:submit",
   /** main → renderer: HubFrame */
   hubFrame: "hub:frame",
 } as const;

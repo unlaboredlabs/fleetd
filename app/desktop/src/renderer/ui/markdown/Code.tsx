@@ -48,16 +48,17 @@ export interface CodeProps {
   wrap?: boolean;
   /** Hide the header (language, wrap and copy controls). */
   bare?: boolean;
-  className?: string;
+  className?: string | undefined;
 }
 
 /** A block of machine text with syntax colours, a copy button and a wrap toggle. */
 export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = true, bare, className }: CodeProps) {
   const grammar = resolveLang(lang);
-  const tokens = useTokens(code, grammar);
+  // Fences end in a newline; highlighting it would add an empty last line.
+  const text = code.replace(/\n$/, "");
+  const tokens = useTokens(text, grammar);
   const [wrap, setWrap] = useState(initialWrap);
   const [copied, setCopied] = useState(false);
-  const text = code.replace(/\n$/, "");
   const lines = tokens ?? text.split("\n");
 
   return (

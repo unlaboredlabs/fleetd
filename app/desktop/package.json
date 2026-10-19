@@ -14,15 +14,17 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.qa.json --noEmit",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.qa.json --noEmit && tsc -p tsconfig.fixtures.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
     "qa": "playwright test -c qa/playwright.config.ts --project=screens",
-    "qa:selftest": "playwright test -c qa/playwright.config.ts --project=selftest"
+    "qa:selftest": "playwright test -c qa/playwright.config.ts --project=selftest",
+    "fixtures": "node fixtures/build.ts"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.1",
     "@tanstack/react-virtual": "3.14.21",
+    "libsodium-wrappers": "0.8.4",
     "lucide-react": "1.59.0",
     "radix-ui": "1.8.1",
     "react": "19.3.1",
@@ -39,6 +41,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
+    "ajv": "8.20.0",
     "electron": "44.9.0",
     "electron-vite": "6.0.0",
     "esbuild": "0.28.2",
