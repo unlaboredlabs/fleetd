@@ -347,13 +347,13 @@ mod tests {
             "0.0.0.0",
             4790,
             None,
-            Some(Ipv4Addr::new(100, 104, 1, 2)),
+            Some(Ipv4Addr::new(100, 101, 102, 103)),
             Some("192.168.1.20".parse().unwrap()),
         );
         assert_eq!(
             urls,
             [
-                "http://100.104.1.2:4790",
+                "http://100.101.102.103:4790",
                 "http://192.168.1.20:4790",
                 "http://127.0.0.1:4790"
             ]
@@ -363,10 +363,13 @@ mod tests {
             "::",
             4790,
             None,
-            Some(Ipv4Addr::new(100, 104, 1, 2)),
-            Some("100.104.1.2".parse().unwrap()),
+            Some(Ipv4Addr::new(100, 101, 102, 103)),
+            Some("100.101.102.103".parse().unwrap()),
         );
-        assert_eq!(urls, ["http://100.104.1.2:4790", "http://127.0.0.1:4790"]);
+        assert_eq!(
+            urls,
+            ["http://100.101.102.103:4790", "http://127.0.0.1:4790"]
+        );
     }
 
     #[test]
@@ -377,13 +380,16 @@ mod tests {
         );
         assert_eq!(
             hub_urls(
-                "100.104.1.2",
+                "100.101.102.103",
                 4790,
-                Some("https://forge.tail1234.ts.net/"),
+                Some("https://devbox.tail1234.ts.net/"),
                 None,
                 None
             ),
-            ["https://forge.tail1234.ts.net", "http://100.104.1.2:4790"]
+            [
+                "https://devbox.tail1234.ts.net",
+                "http://100.101.102.103:4790"
+            ]
         );
         assert_eq!(
             hub_urls(
@@ -400,8 +406,8 @@ mod tests {
     #[test]
     fn deep_links_carry_the_hub_url_encoded() {
         assert_eq!(
-            deep_link("http://100.104.1.2:4790", "ABCD-EFGH"),
-            "fleetd://pair?hub=http%3A%2F%2F100.104.1.2%3A4790&code=ABCD-EFGH"
+            deep_link("http://100.101.102.103:4790", "ABCD-EFGH"),
+            "fleetd://pair?hub=http%3A%2F%2F100.101.102.103%3A4790&code=ABCD-EFGH"
         );
     }
 }

@@ -1153,7 +1153,7 @@ mod tests {
     #[test]
     fn step_commands_refuse_placeholders_but_allow_redirects() {
         let step =
-            |command: &str| json!({ "text": "run it", "where": "forge", "command": command });
+            |command: &str| json!({ "text": "run it", "where": "devbox", "command": command });
         for command in [
             "export TOKEN=<token>",
             "curl <your api url>",
@@ -1176,7 +1176,7 @@ mod tests {
 
     fn decide_ask(options: Value, rec: &str) -> Ask {
         serde_json::from_value(json!({
-            "askId": "A1", "projectRef": { "machineId": "forge", "projectId": "p" }, "kind": "decide",
+            "askId": "A1", "projectRef": { "machineId": "devbox", "projectId": "p" }, "kind": "decide",
             "key": "share.link", "class": "product", "text": "What does the share link show?",
             "options": options, "recommendation": rec, "blocks": "nothing", "proceededOnRec": false,
             "state": "open", "createdAt": "2026-10-19T00:00:00.000Z"
@@ -1315,7 +1315,7 @@ mod tests {
     fn ask() -> Value {
         json!({
             "askId": "A1",
-            "projectRef": { "machineId": "forge", "projectId": "p1" },
+            "projectRef": { "machineId": "devbox", "projectId": "p1" },
             "kind": "decide",
             "key": "api.health.path",
             "class": "product",
@@ -1356,11 +1356,11 @@ mod tests {
         // A sink only on a secret ask, and an env name only with an env: sink.
         assert!(!accepts::<Ask>(with(
             ask(),
-            json!({ "sink": "env:forge:/srv/app/.env" })
+            json!({ "sink": "env:devbox:/srv/app/.env" })
         )));
         let secret = with(
             ask(),
-            json!({ "kind": "secret", "recommendation": null, "sink": "file:forge:/srv/app/key" }),
+            json!({ "kind": "secret", "recommendation": null, "sink": "file:devbox:/srv/app/key" }),
         );
         assert!(accepts::<Ask>(secret.clone()));
         assert!(!accepts::<Ask>(with(
@@ -1400,7 +1400,7 @@ mod tests {
         )));
         assert!(!accepts::<Brief>(with(
             brief.clone(),
-            json!({ "doneWhen": [{ "type": "cmd", "machineId": "forge", "argv": [], "expectExit": 0 }] })
+            json!({ "doneWhen": [{ "type": "cmd", "machineId": "devbox", "argv": [], "expectExit": 0 }] })
         )));
         assert!(!accepts::<Brief>(with(
             brief.clone(),
