@@ -911,12 +911,13 @@
     "CapSetInput": {
       "properties": {
         "cap": {
+          "description": "The fleet cap on running turns, leads' included. Needs an admin key.",
           "maximum": 1000,
           "minimum": 1,
           "type": "integer"
         },
-        "share": {
-          "$ref": "#/$defs/CapSetShare"
+        "project": {
+          "$ref": "#/$defs/CapSetProject"
         }
       },
       "type": "object"
@@ -925,6 +926,14 @@
       "properties": {
         "next": {
           "type": "string"
+        },
+        "paused": {
+          "description": "The agents `pauseExtras` paused.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 1000,
+          "type": "array"
         },
         "slots": {
           "$ref": "#/$defs/SlotState"
@@ -938,20 +947,25 @@
       ],
       "type": "object"
     },
-    "CapSetShare": {
+    "CapSetProject": {
       "properties": {
+        "maxAgents": {
+          "description": "1 up to the fleet cap.",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pauseExtras": {
+          "description": "Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot\nfrees. Without it they finish their current work.",
+          "type": "boolean"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
-        },
-        "share": {
-          "maximum": 1000,
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "required": [
         "projectRef",
-        "share"
+        "maxAgents"
       ],
       "type": "object"
     },
@@ -3322,6 +3336,11 @@
         {
           "const": "task.out_of_area",
           "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
+          "type": "string"
+        },
+        {
+          "const": "agents.cap",
+          "description": "A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.",
           "type": "string"
         },
         {
@@ -8540,15 +8559,29 @@
     },
     "SlotStatePerProject": {
       "properties": {
+        "maxAgents": {
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead's own\nturns don't count. The fleet `cap` until set.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
-        "share": {
+        "queued": {
+          "description": "Its agents waiting for a slot, paused ones included.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "running": {
+          "description": "Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "used": {
+          "description": "Every slot it holds, its lead's turns included.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -8556,7 +8589,9 @@
       },
       "required": [
         "projectRef",
-        "share",
+        "maxAgents",
+        "running",
+        "queued",
         "used"
       ],
       "type": "object"
