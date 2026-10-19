@@ -164,11 +164,20 @@
 .laneActivity {
   grid-column: 2 / 4;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-1-5);
   min-width: 0;
 }
-/* A lane: the board's row, then its id, PR, branch and told link, indented under the title. */
+/* The activity and its numbers share a line when there is room; in a narrow pane the numbers move to their own. */
+.laneDoing {
+  flex: 1 1 12em;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+}
+/* A lane: its row, then its PR, branch and told link, indented under the title. */
 .laneBlock {
   padding: var(--space-1) 0;
 }
@@ -213,7 +222,7 @@
 .activityWords {
   /* The words keep their room ("running", "waiting on you"); the command beside them gives way first. */
   flex: 0 0 auto;
-  max-width: 45%;
+  max-width: 60%;
   min-width: 0;
   font-size: var(--text-xs);
   line-height: var(--leading-xs);

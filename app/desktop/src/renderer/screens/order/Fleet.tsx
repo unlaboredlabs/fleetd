@@ -82,7 +82,9 @@ function Lane({ lane, now, onOpen, onTold }: { lane: AgentLane; now: number; onO
           <StatusChip tone={STATUS[lane.status]}>{lane.status}</StatusChip>
         </span>
         <span className={s.laneActivity}>
-          <ActivityText lane={lane} />
+          <span className={s.laneDoing}>
+            <ActivityText lane={lane} />
+          </span>
           <span className={s.laneNumbers}>
             <span className={s.laneClock}>{clock}</span>
             {running ? <ActivityBars spark={lane.live?.spark} startedMs={started} role={lane.role} now={now} /> : null}
