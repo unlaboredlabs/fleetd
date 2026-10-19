@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button, cx, Text, Textarea } from "../../ui";
-import { keyHint, modKey, placeholder, primaryLabel, secondaryLabel, sendModeFor, type Platform, type SteerWords } from "./composer";
+import { keyHint, modKey, placeholder, primaryLabel, secondaryLabel, sendModeFor, type Platform, type SteerWords } from "./composerModel";
 import type { SteerMode } from "../../../shared/contracts";
 import type { SendOutcome } from "./data";
 import s from "./order.module.css";
