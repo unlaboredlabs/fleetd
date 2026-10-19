@@ -34,7 +34,6 @@ export interface ShellData {
   readonly needsYou: number;
 }
 
-export const EMPTY_SHELL_DATA: ShellData = { projects: [], machinesDown: 0, needsYou: 0 };
 
 export const projectId = (key: ProjectKey): string => `${key.machineId}\u0000${key.projectId}`;
 
@@ -143,10 +142,10 @@ export const connLine = (state: HubState | null): { readonly label: string; read
   switch (state?.phase) {
     case undefined:
       return { label: "Starting…", tone: "quiet" };
+    case "connecting":
+      return { label: state.hub === "" ? "Connecting…" : `Connecting to ${host(state.hub)}…`, tone: "quiet" };
     case "unpaired":
       return { label: "Not connected to a hub", tone: "quiet" };
-    case "connecting":
-      return { label: `Connecting to ${host(state.hub)}…`, tone: "quiet" };
     case "live":
       return { label: `Connected to ${host(state.hub)}`, tone: "success" };
     case "retrying":

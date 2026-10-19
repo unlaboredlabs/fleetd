@@ -6,7 +6,9 @@ import { MENU_COMMANDS } from "../../../shared/menu";
 import { closeOverlay, commandFor, runCommand } from "../palette";
 // Not in the palette's public surface yet; the menu needs to hear when commands come and go.
 import { subscribeRegistry } from "../palette/registry";
-import { onHubEvent } from "./hubFeed";
+import type { HubEvent } from "../../../shared/hub";
+import { useDataLayer } from "../../src/data/react";
+import { useHubEvents } from "./hubFeed";
 import { currentRoute, navigate } from "./navigation";
 import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type Policy } from "./notifier";
 import { BOARD, type Route } from "./routes";
@@ -92,6 +94,21 @@ export const quietNow = (nowMs: number): boolean => quietAt(policy, nowMs);
  */
 export const useNotifications = (live: boolean): void => {
   const [notifier] = useState(() => new Notifier());
+  const { store } = useDataLayer();
+  // An ask the store knows is closed (answered or withdrawn meanwhile) is dropped; one it hasn't loaded yet stays.
+  const [check] = useState(() => () => {
+    const now = Date.now();
+    const asks = store.getState().asks;
+    const due = notifier.due(now, policy, (askId) => asks?.[askId] === undefined || asks[askId].state === "open");
+    if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due });
+  });
+  const [onEvent] = useState(() => (event: HubEvent) => {
+    const attention = attentionEvent(event);
+    if (attention === null) return;
+    notifier.push(attention, 0);
+    check();
+  });
+  useHubEvents(onEvent);
 
   useEffect(() => {
     if (!live) return;
@@ -100,27 +117,16 @@ export const useNotifications = (live: boolean): void => {
       const out = await window.fleetd.hub.call("attention_policy", {});
       if (!cancelled && out.ok) policy = policyFrom(out.output) ?? FALLBACK_POLICY;
     };
-    const check = () => {
-      const now = Date.now();
-      if (policyStale(policy, now)) void refresh();
-      // Until the store exposes the open asks, an ask answered within the window still shows.
-      const due = notifier.due(now, policy, () => true);
-      if (due !== null) void window.fleetd.app.notify({ tag: "needs-you", ...due });
-    };
     void refresh();
-    const offEvents = onHubEvent((event) => {
-      const attention = attentionEvent(event);
-      if (attention === null) return;
-      notifier.push(attention, 0);
+    const timer = setInterval(() => {
+      if (policyStale(policy, Date.now())) void refresh();
       check();
-    });
-    const timer = setInterval(check, CHECK_EVERY_MS);
+    }, CHECK_EVERY_MS);
     return () => {
       cancelled = true;
-      offEvents();
       clearInterval(timer);
     };
-  }, [live, notifier]);
+  }, [live, check]);
 };
 
 /** A field Esc should leave rather than act through (the composer, a search box). */

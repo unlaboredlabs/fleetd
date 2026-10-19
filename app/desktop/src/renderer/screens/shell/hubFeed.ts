@@ -1,50 +1,23 @@
-// The shell's one subscription to the hub frames main forwards: the connection state for the frame and the events
-// the notifier reads. E1's store reads the same frames for the screens' data.
-import { useSyncExternalStore } from "react";
-import type { HubEvent, HubFrame, HubState } from "../../../shared/hub";
+// The connection state and new hub events for the frame, read from the data layer's store (one subscription to
+// main for the whole page; a second one would make main resend the snapshot).
+import { useEffect } from "react";
+import type { HubEvent, HubState } from "../../../shared/hub";
+import { useData, useDataLayer } from "../../src/data/react";
 
-let state: HubState | null = null;
-const stateListeners = new Set<() => void>();
-const eventListeners = new Set<(event: HubEvent) => void>();
-let unsubscribe: (() => void) | null = null;
+/** The hub connection as main reports it. Kept nullable for callers written before the store landed. */
+export const useHubState = (): HubState | null => useData((s) => s.hub);
 
-const onFrame = (frame: HubFrame): void => {
-  if (frame.t === "state") {
-    state = frame.state;
-    for (const listener of stateListeners) listener();
-  } else if (frame.t === "event") {
-    for (const listener of eventListeners) listener(frame.event);
-  }
-};
-
-/** Subscribes while anything listens, so a page with no shell (the QA gallery) costs main nothing. */
-const retain = (): (() => void) => {
-  unsubscribe ??= window.fleetd.hub.subscribe(onFrame);
-  return () => {
-    if (stateListeners.size === 0 && eventListeners.size === 0) {
-      unsubscribe?.();
-      unsubscribe = null;
-    }
-  };
-};
-
-const subscribeState = (listener: () => void): (() => void) => {
-  stateListeners.add(listener);
-  const release = retain();
-  return () => {
-    stateListeners.delete(listener);
-    release();
-  };
-};
-
-/** Null until main has said; the frame shows nothing connection-specific until then. */
-export const useHubState = (): HubState | null => useSyncExternalStore(subscribeState, () => state);
-
-export const onHubEvent = (listener: (event: HubEvent) => void): (() => void) => {
-  eventListeners.add(listener);
-  const release = retain();
-  return () => {
-    eventListeners.delete(listener);
-    release();
-  };
+/** Calls `listener` with each event that arrives after mounting, once. */
+export const useHubEvents = (listener: (event: HubEvent) => void): void => {
+  const { store } = useDataLayer();
+  useEffect(() => {
+    let last = store.getState().events.at(-1)?.seq ?? -1;
+    return store.subscribe((s) => {
+      for (const event of s.events) {
+        if (event.seq <= last) continue;
+        last = event.seq;
+        listener(event);
+      }
+    });
+  }, [store, listener]);
 };
