@@ -26,13 +26,12 @@ fn missing_research_fields(brief: &Brief) -> Vec<&'static str> {
     if brief.decision_rule.is_none() {
         missing.push("decisionRule");
     }
-    if brief
+    if !brief
         .budget
         .as_ref()
-        .and_then(|b| b.agent_hours.as_ref())
-        .is_none()
+        .is_some_and(|b| b.size.is_some() || b.agent_hours.is_some())
     {
-        missing.push("budget.agentHours");
+        missing.push("budget.size");
     }
     missing
 }

@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(n.due(T0 + 19 * MIN, &policy, open), None);
         let both = n.due(T0 + 20 * MIN, &policy, open).unwrap();
         assert_eq!((both.body.as_str(), both.target), ("lab-a breaker open (+1 more)", Target::Inbox));
-        n.push(&event("forge breaker open", Some(Attention::Loud), None), 0);
+        n.push(&event("devbox breaker open", Some(Attention::Loud), None), 0);
         assert_eq!(n.due(T0 + 40 * MIN, &policy, open).unwrap().target, Target::Machines, "a usage breaker is explained on Machines");
     }
 

@@ -1,12 +1,12 @@
 import { isAbsolute, join } from "node:path";
 import tls from "node:tls";
 import { app, BrowserWindow, nativeTheme, powerMonitor } from "electron";
-import { loadFixture } from "./hub/fixture";
+import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
-import { harden, lockSession } from "./security";
+import { harden, lockSession, pageUrl } from "./security";
 
 /** Height of the renderer's top bar; the macOS traffic lights are centred in it. */
 const TOP_BAR = 44;
@@ -27,15 +27,16 @@ harden();
 tls.setDefaultCACertificates([...tls.getCACertificates("bundled"), ...tls.getCACertificates("system")]);
 
 const hubMode = (): HubMode => {
-  const fixture = process.env["FLEETD_FIXTURE"];
-  if (fixture === undefined || fixture === "") {
+  const request = fixtureRequest(process.env, app.isPackaged);
+  if (request.kind === "ignored") console.warn(request.reason);
+  if (request.kind !== "fixture") {
     return { kind: "hub", credentials: osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined), vars: process.env, transport: webSocketTransport };
   }
   const dir = process.env["FLEETD_FIXTURE_DIR"] ?? join(app.getAppPath(), "fixtures");
-  return { kind: "fixture", fixture: loadFixture(fixture, dir) };
+  return { kind: "fixture", fixture: loadFixture(request.name, dir) };
 };
 
-const createWindow = (): BrowserWindow => {
+const createWindow = (mode: HubMode): BrowserWindow => {
   const mac = process.platform === "darwin";
   const win = new BrowserWindow({
     width: 1400,
@@ -54,17 +55,17 @@ const createWindow = (): BrowserWindow => {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: false,
+      // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
+      additionalArguments: mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : [],
     },
   });
   win.once("ready-to-show", () => win.show());
-  const dev = process.env["ELECTRON_RENDERER_URL"];
-  if (dev !== undefined && !app.isPackaged) void win.loadURL(dev);
-  else void win.loadFile(join(import.meta.dirname, "../renderer/index.html"));
+  void win.loadURL(pageUrl());
   return win;
 };
 
 void app.whenReady().then(() => {
-  lockSession();
+  lockSession(join(import.meta.dirname, "../renderer"));
   let mode: HubMode;
   try {
     mode = hubMode();
@@ -78,9 +79,9 @@ void app.whenReady().then(() => {
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
   app.on("will-quit", () => hub.stop());
-  createWindow();
+  createWindow(mode);
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });
 });
 

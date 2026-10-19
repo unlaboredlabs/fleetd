@@ -48,12 +48,7 @@ pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) ->
     let ports = HubPorts::new();
     let dyn_ports: Arc<dyn ports::Ports> = ports.clone();
     let incidents = Arc::new(Incidents::new(db.clone(), events.clone(), clock.clone()));
-    let estimates = Arc::new(Estimates::new(
-        db.clone(),
-        dyn_ports.clone(),
-        incidents.clone(),
-        clock.clone(),
-    ));
+    let estimates = Arc::new(Estimates::new(db.clone(), dyn_ports.clone(), clock.clone()));
     let receipts = Arc::new(Receipts::new(dyn_ports.clone()));
     let gh: Arc<dyn GhRunner> = Arc::new(GhCli);
     let verdicts = Arc::new(JudgeVerdicts::default());

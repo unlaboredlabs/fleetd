@@ -58,7 +58,8 @@ jobs:
     # fleetd.sh may only mention what fleetd has: no index.* at the root of site/ (Vercel would serve it at / instead
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
     # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
-    # landing page for a browser and install.sh for curl; and every link on the site resolves.
+    # landing page for a browser and install.sh for curl; every link on the site resolves; and no tracked file names a
+    # maintainer's own machine, login or home directory.
     needs: rust-crates
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -72,6 +73,8 @@ jobs:
           name: fleetd-help
           path: ${{ runner.temp }}
       - run: node .github/site-check.mjs "$RUNNER_TEMP/fleetd-help.txt"
+      - name: No personal identifiers
+        run: node .github/personal-check.mjs
       - name: Internal links and anchors
         run: node .github/docs-links.mjs
 
