@@ -109,6 +109,7 @@ pub struct Eta {
 #[serde(rename_all = "snake_case")]
 pub enum IncidentClass {
     FalseClaim,
+    /// Retired: fleetd no longer scores time estimates. Kept so older incidents still read.
     EstimateMiss,
     PolishLoop,
     MisfiledAsk,

@@ -73,6 +73,21 @@ pub enum HubEventType {
     /// An ask was answered from the decision log and never reached a batch.
     #[serde(rename = "ask.auto")]
     AskAuto,
+    /// An open ask stopped being open (answered, withdrawn); `data.askId`, `data.key`, `data.state`, and
+    /// `data.workstreamId` when it was about an order. Everything that counts open asks recomputes on it.
+    #[serde(rename = "ask.closed")]
+    AskClosed,
+    /// A decide ask was answered; `data.askId`, `data.undoUntil`. Its decision and the lead's wake follow once the
+    /// undo window passes.
+    #[serde(rename = "ask.answered")]
+    AskAnswered,
+    /// An answer was taken back inside its undo window; the ask is open again. `data.askId`.
+    #[serde(rename = "ask.undone")]
+    AskUndone,
+    /// The receipt: the lead was woken with the answer. `data.askId`, `data.deliveredAt`, `data.decisionId` (absent
+    /// for a skip).
+    #[serde(rename = "ask.delivered")]
+    AskDelivered,
     #[serde(rename = "batch.ready")]
     BatchReady,
     #[serde(rename = "decision.recorded")]
@@ -264,6 +279,10 @@ impl HubEventType {
             Self::WorkstreamState => "workstream.state",
             Self::AskCreated => "ask.created",
             Self::AskAuto => "ask.auto",
+            Self::AskClosed => "ask.closed",
+            Self::AskAnswered => "ask.answered",
+            Self::AskUndone => "ask.undone",
+            Self::AskDelivered => "ask.delivered",
             Self::BatchReady => "batch.ready",
             Self::DecisionRecorded => "decision.recorded",
             Self::LeadStarted => "lead.started",

@@ -210,13 +210,13 @@ mod tests {
             found("wrote ~/notes/today and ./run.sh."),
             vec![("~/notes/today", path("~/notes/today", None)), ("./run.sh", path("./run.sh", None))]
         );
-        assert_eq!(found("/home/wynn/src/fleetd"), vec![("/home/wynn/src/fleetd", path("/home/wynn/src/fleetd", None))]);
+        assert_eq!(found("/home/ada/src/fleetd"), vec![("/home/ada/src/fleetd", path("/home/ada/src/fleetd", None))]);
     }
 
     #[test]
     fn leaves_prose_and_api_routes_alone() {
         assert!(found("and/or 1/2 the /healthz route, w/o tests, ok/fail").is_empty());
-        assert!(found("ssh://forge/repo git@github.com:a/b").is_empty());
+        assert!(found("ssh://devbox/repo git@github.com:a/b").is_empty());
     }
 
     #[test]

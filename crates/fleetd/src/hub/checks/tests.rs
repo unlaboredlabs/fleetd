@@ -152,12 +152,7 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
     }
     let dyn_ports: Arc<dyn Ports> = ports.clone();
     let incidents = Arc::new(Incidents::new(db.clone(), events.clone(), clock.clone()));
-    let estimates = Arc::new(Estimates::new(
-        db.clone(),
-        dyn_ports.clone(),
-        incidents.clone(),
-        clock.clone(),
-    ));
+    let estimates = Arc::new(Estimates::new(db.clone(), dyn_ports.clone(), clock.clone()));
     let verdicts = Arc::new(JudgeVerdicts::default());
     let judges = Arc::new(Judges::new(dyn_ports.clone(), events.clone(), verdicts));
     let runner = Arc::new(CheckRunner::new(

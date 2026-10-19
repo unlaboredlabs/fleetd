@@ -679,7 +679,7 @@ impl Shell {
     }
 }
 
-/// The view's reading width: wide enough for a row with its activity and ETA, narrow enough to scan.
+/// The view's reading width: wide enough for a row with its activity and gate, narrow enough to scan.
 pub const STATUS_MEASURE: f32 = 1040.;
 
 #[cfg(test)]
