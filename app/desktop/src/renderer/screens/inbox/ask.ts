@@ -154,7 +154,7 @@ export const cardOptions = (ask: Ask): CardOption[] => {
         option({
           id: "go",
           label: "Approve",
-          detail: ask.gated === undefined ? "The agent goes ahead." : "The command below runs now.",
+          detail: ask.gated === undefined ? "The agent goes ahead." : "The command above runs now.",
           pick: { type: "verb", verb: "go" },
         }),
         option({ id: "no", label: "Deny", detail: "Nothing runs; the lead hears no.", pick: { type: "verb", verb: "no" } }),

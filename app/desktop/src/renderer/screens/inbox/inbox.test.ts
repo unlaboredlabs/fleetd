@@ -84,7 +84,7 @@ describe("the inbox state", () => {
   it("collapses an answer in place, opens a 10 s undo when the hub keeps one, and shows the receipt", () => {
     const sent = answering(loaded, ask("A11"), { type: "option", key: "public-snapshot" });
     expect(sent.open.map((a) => a.askId)).not.toContain("A11");
-    expect(needsYou(sent).map((a) => a.askId)).toEqual(["A11", "A12", "A13", "A14", "A15", "A16"]);
+    expect(needsYou(sent).map((a) => a.askId)).toEqual(["A11", "A12", "A13", "A14", "A15", "A16", "A17"]);
     const back = replied(sent, "A11", ok({ label: "A public snapshot link", undoUntil: "2026-10-19T10:30:10.000Z" }), 1_000);
     expect(back.answered.get("A11")).toMatchObject({ label: "A public snapshot link", undoBy: 11_000, deliveredAt: null, sending: false });
     // A fetch that was already in flight still lists it: it stays collapsed.
@@ -106,7 +106,7 @@ describe("the inbox state", () => {
   it("reopens the card with the hub's hint when the reply is refused, and after an undo", () => {
     const sent = answering(loaded, ask("A12"), { type: "skip" });
     const refused = replied(sent, "A12", { parsed: false, applied: [], hint: "Item 2 is not open." }, 0);
-    expect(refused.open.map((a) => a.askId)).toEqual(["A11", "A12", "A13", "A14", "A15", "A16"]);
+    expect(refused.open.map((a) => a.askId)).toEqual(["A11", "A12", "A13", "A14", "A15", "A17", "A16"]);
     expect(refused.errors.get("A12")).toBe("Item 2 is not open.");
     const reopened = undone(replied(sent, "A12", ok({ askId: "A12", outcome: "skipped" }), 0), ask("A12"));
     expect(reopened.answered.has("A12")).toBe(false);
