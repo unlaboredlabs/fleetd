@@ -13,10 +13,9 @@ import {
   type ProjectAddInput,
   type ProjectAddOutput,
   type ProjectAddedData,
-  type ProjectDiscoverOutput,
   type ProjectInspectOutput,
 } from "./contracts";
-import { discovery, progress, ready, existingFolderAction, type Discovery, type Failure, type ProjectKey, type Ready, type Request, type Step } from "./discovery";
+import { progress, ready, existingFolderAction, type Failure, type ProjectKey, type Ready, type Request, type Step } from "./discovery";
 import { baseName, omit } from "./source";
 
 export interface Job {
@@ -37,8 +36,6 @@ export type Phase =
   | { readonly kind: "failed"; readonly what: string; readonly failure: Failure };
 
 export interface AddState {
-  /** Null while the hub is looking (or before the first look). */
-  readonly discovery: Discovery | null;
   readonly phase: Phase;
   readonly request?: Request;
   readonly addId?: string;
@@ -55,22 +52,11 @@ export interface AddState {
   /** Bumped by each start, so an answer to an earlier add is ignored. */
   readonly gen: number;
   readonly live: boolean;
-  /** A look for repos was asked for while offline: it runs on the next snapshot. */
-  readonly discoverWanted: boolean;
 }
 
-export const initialAdd: AddState = {
-  discovery: null,
-  phase: { kind: "pick" },
-  awaiting: false,
-  early: [],
-  lost: false,
-  gen: 0,
-  live: false,
-  discoverWanted: false,
-};
+export const initialAdd: AddState = { phase: { kind: "pick" }, awaiting: false, early: [], lost: false, gen: 0, live: false };
 
-export type Purpose = "discover" | "add" | "inspect" | "recover";
+export type Purpose = "add" | "inspect" | "recover";
 
 export interface Call {
   readonly purpose: Purpose;
@@ -82,7 +68,6 @@ export interface Call {
 export type Outcome = { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError };
 
 export type AddMsg =
-  | { readonly t: "discover" }
   | { readonly t: "start"; readonly request: Request; readonly path: string }
   | { readonly t: "answer"; readonly call: Call; readonly outcome: Outcome }
   | { readonly t: "event"; readonly event: HubEvent }
@@ -92,7 +77,7 @@ export type AddMsg =
   | { readonly t: "back" }
   | { readonly t: "reset" };
 
-/** Machine ids as names, for the discovery's detail lines. */
+/** Machine ids as names, for the ready state. */
 export type Names = (machineId: string) => string;
 
 export type Step_ = readonly [AddState, ReadonlyArray<Call>];
@@ -201,10 +186,6 @@ export const active = (s: AddState): boolean => s.request !== undefined && (s.aw
 
 export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
   switch (msg.t) {
-    case "discover":
-      return s.live
-        ? [{ ...s, discovery: null, discoverWanted: false }, [call(s, "discover", "project_discover", {})]]
-        : [{ ...s, discovery: null, discoverWanted: true }, []];
     case "live": {
       if (msg.live) return [{ ...s, live: true }, []];
       if (!active(s) || s.lost) return [{ ...s, live: false }, []];
@@ -212,10 +193,7 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
     }
     case "snapshot": {
       const seen = s.seen === undefined || s.seen < msg.cursor ? msg.cursor : s.seen;
-      const [next, calls] = recover({ ...s, seen, live: true });
-      if (!next.discoverWanted) return [next, calls];
-      const looking = { ...next, discoverWanted: false };
-      return [looking, [...calls, call(looking, "discover", "project_discover", {})]];
+      return recover({ ...s, seen, live: true });
     }
     case "start": {
       const r = msg.request;
@@ -231,7 +209,6 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
               detail: "Reading the default branch, CI and merge rules",
             };
       const base: AddState = {
-        discovery: s.discovery,
         phase: { kind: "working", job },
         request: r,
         awaiting: true,
@@ -239,7 +216,6 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
         lost: false,
         gen: s.gen + 1,
         live: s.live,
-        discoverWanted: false,
         ...(s.seen === undefined ? {} : { seen: s.seen, since: s.seen }),
       };
       if (!s.live) return [waiting({ ...base, awaiting: false, lost: true }, LOST), []];
@@ -260,11 +236,6 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
 };
 
 const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => {
-  if (c.purpose === "discover") {
-    // An older hub without project_discover still gets the machines from the snapshot, nothing listed.
-    if (!outcome.ok) return [{ ...s, discovery: { workers: [], found: [], problems: [failure(outcome.error.message, outcome.error.fix)] } }, []];
-    return [{ ...s, discovery: discovery(outcome.output as ProjectDiscoverOutput, names) }, []];
-  }
   if (c.gen !== s.gen || s.request === undefined) return [s, []];
   switch (c.purpose) {
     case "add": {
@@ -341,12 +312,24 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
 
 export type { ProjectKey };
 
+/** What the add flow reads of the data layer's store (E1): the connection, freshness, the cursor and recent events. */
+export interface HubView {
+  readonly live: boolean;
+  /** A snapshot arrived since the link last went down. */
+  readonly fresh: boolean;
+  readonly cursor?: number | undefined;
+  /** Oldest first. */
+  readonly events: ReadonlyArray<HubEvent>;
+}
+
 /**
- * What the add flow must hear when it starts listening after the fleet already has: the connection as it is now and
- * the snapshot it already took. Frames only reach listeners from when they join, so without this a sheet opened after
- * the palette or Machines would wait forever for a "live" that came before it.
+ * The messages a change in the store means for the add flow. `prev` undefined is the first look: whatever the store
+ * already holds (the palette or Machines may have started it long before) counts as news, except old events.
  */
-export const seedFrom = (fleet: { readonly live: boolean; readonly synced: boolean; readonly cursor?: number }): ReadonlyArray<AddMsg> => {
-  if (!fleet.live) return [];
-  return fleet.synced && fleet.cursor !== undefined ? [{ t: "live", live: true }, { t: "snapshot", cursor: fleet.cursor }] : [{ t: "live", live: true }];
+export const hubMessages = (prev: HubView | undefined, next: HubView, lastSeq: number | undefined): ReadonlyArray<AddMsg> => {
+  const out: Array<AddMsg> = [];
+  if (prev === undefined || prev.live !== next.live) out.push({ t: "live", live: next.live });
+  if (next.fresh && (prev === undefined || !prev.fresh) && next.cursor !== undefined) out.push({ t: "snapshot", cursor: next.cursor });
+  if (prev !== undefined) for (const event of next.events) if (lastSeq === undefined || event.seq > lastSeq) out.push({ t: "event", event });
+  return out;
 };

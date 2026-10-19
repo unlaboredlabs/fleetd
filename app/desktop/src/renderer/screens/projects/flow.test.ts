@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent } from "./contracts";
 import type { Request } from "./discovery";
-import { initialAdd, seedFrom, step, type AddMsg, type AddState, type Call } from "./flow";
+import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call } from "./flow";
 
 const names = (id: string) => `${id}-name`;
 const AT = "2026-10-18T10:00:00.000Z";
@@ -166,21 +166,24 @@ describe("the add flow", () => {
     expect(s.awaiting).toBe(true);
   });
 
-  it("looks for repos once connected when the sheet opened before the hub was", () => {
-    const [waiting, none] = run(initialAdd, { t: "discover" });
-    expect(none).toEqual([]);
-    const [, calls] = run(waiting, { t: "live", live: true }, { t: "snapshot", cursor: 3 });
-    only(calls, "project_discover");
-    const [, again] = run(live(), { t: "snapshot", cursor: 4 });
-    expect(again).toEqual([]);
-  });
-
   it("joins a connection that was live before it listened (the palette or Machines opened first)", () => {
-    const seeded = seedFrom({ live: true, synced: true, cursor: 40 });
-    const [s, calls] = run(initialAdd, ...seeded, { t: "discover" });
-    only(calls, "project_discover");
+    const fresh = { live: true, fresh: true, cursor: 40, events: [{ seq: 39, at: AT, type: "project.added", summary: "" }] };
+    const first = hubMessages(undefined, fresh, 40);
+    expect(first).toEqual([
+      { t: "live", live: true },
+      { t: "snapshot", cursor: 40 },
+    ]);
+    const [s] = run(initialAdd, ...first);
     const [, adding] = run(s, start());
     expect(only(adding, "project_add").input).toEqual({ machineId: "devbox", url: "acme/ledger" });
-    expect(seedFrom({ live: false, synced: false })).toEqual([]);
+    // Later, only events past the last one seen are news; a drop and a fresh snapshot are passed on.
+    const next = { ...fresh, cursor: 41, events: [...fresh.events, { seq: 41, at: AT, type: "project.clone_progress", summary: "" }] };
+    expect(hubMessages(fresh, next, 40).map((m) => m.t)).toEqual(["event"]);
+    const down = { ...next, live: false, fresh: false };
+    expect(hubMessages(next, down, 41)).toEqual([{ t: "live", live: false }]);
+    expect(hubMessages(down, { ...next, cursor: 50 }, 41)).toEqual([
+      { t: "live", live: true },
+      { t: "snapshot", cursor: 50 },
+    ]);
   });
 });

@@ -58,6 +58,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
   const resync = newMachine || type === "project.added" || type === "project.removed";
   if (resync) out.push({ tool: "projects_list" });
+  // Add project's list marks which repos are already projects.
+  if (type === "project.added" || type === "project.removed") out.push({ tool: "project_discover" });
   return { invalidate: out, resync };
 };
 

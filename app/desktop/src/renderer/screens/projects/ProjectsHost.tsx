@@ -5,21 +5,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { Text } from "../../ui";
 import { useCommands, useSource, type Command, type Source } from "../palette";
-import { getFleet, onHubFrame } from "./fleet";
+import type { DataLayer } from "../../src/data/queries";
+import { useDataLayer } from "../../src/data/react";
+import { hubNow, selectMachines } from "../../src/data/selectors";
 import { machineParts } from "./machineText";
 import { githubRepo, linkUrl, otherHost, tilde } from "./source";
 import { localMachine, openAddProject, type Note } from "./store";
 import s from "./projects.module.css";
 
-const machinesSource: Source = {
+/** The palette's machines, read from the data layer's store while the palette is open. */
+const machinesSource = (layer: DataLayer): Source => ({
   id: "projects.machines",
   items: (): ReadonlyArray<Command> => {
-    const f = getFleet();
-    const now = Date.now() + f.skewMs;
-    return f.machines.map((m) => ({
+    const d = layer.store.getState();
+    const now = hubNow(d, Date.now());
+    return (selectMachines(d) ?? []).map(({ machine: m, live }) => ({
       id: `machine:${m.machineId}`,
       title: m.name,
-      detail: machineParts(m, f.machineLive.get(m.machineId), now).map((p) => p.text).join(" · ") || m.status,
+      detail: machineParts(m, live, now).map((p) => p.text).join(" · ") || m.status,
       group: "machines",
       keywords: m.tags,
       run: () => {
@@ -27,10 +30,10 @@ const machinesSource: Source = {
       },
     }));
   },
-  subscribe: (onChange) => onHubFrame((frame) => {
-    if (frame.t === "snapshot" || frame.t === "event") onChange();
+  subscribe: (onChange) => layer.store.subscribe((next, prev) => {
+    if (next.machines !== prev.machines || next.live.machines !== prev.live.machines) onChange();
   }),
-};
+});
 
 /** What a drop means for Add project, or null when it is nothing it can use. */
 const fromDrop = async (data: DataTransfer): Promise<{ text: string; note?: Note } | null> => {
@@ -95,7 +98,8 @@ export function ProjectsHost() {
     [],
   );
   useCommands(commands, []);
-  useSource(machinesSource);
+  const layer = useDataLayer();
+  useSource(useMemo(() => machinesSource(layer), [layer]));
 
   useEffect(() => {
     // Counts nested enter/leave pairs so moving over child elements doesn't flicker the overlay.

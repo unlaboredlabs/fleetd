@@ -63,7 +63,7 @@ export const machineParts = (m: Machine, live: MachineLive | undefined, nowMs: n
   if (load) {
     out.push({ text: `load ${load.load1.toFixed(1)}/${load.cpus}`, tone: "quiet" });
     if (load.memUsedPct !== undefined) out.push({ text: `mem ${load.memUsedPct}%`, tone: "quiet" });
-    const limits = load.limits.map(limitPart).filter((p): p is Part => p !== null);
+    const limits = (load.limits ?? []).map(limitPart).filter((p): p is Part => p !== null);
     if (limits.length > 0) out.push({ text: `claude ${limits.map((p) => p.text).join(" · ")}`, tone: worst(limits.map((p) => p.tone)) });
   }
   return out;

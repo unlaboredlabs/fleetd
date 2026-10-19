@@ -195,10 +195,13 @@ export default defineGroup({
       return f;
     })(),
     (() => {
-      // A clone part way through. Calls are static, so its progress comes as timed events. They start after the QA
-      // step has typed acme/checkout-v2 and pressed Enter (well under 2 s), and stop at 42% so the bar shows.
+      // A clone part way through. Calls are static, so its progress comes as timed events from launch. They must land
+      // after the QA step has typed acme/checkout-v2 and pressed Enter, so the harness doesn't wait for them before
+      // the step (settle 0); the step itself waits for the bar at 42%.
       const f = Fixture.from(base("typical"), "projects-cloning", "Add project: a clone receiving objects, 42% in");
-      const cursor = typeof f.snapshot?.["cursor"] === "number" ? f.snapshot["cursor"] : 0;
+      // Past every event the fixture already plays: the store drops an event older than the last it applied.
+      const seqs = [f.snapshot?.["cursor"], ...f.events.map((e) => e["seq"])].filter((n): n is number => typeof n === "number");
+      const cursor = Math.max(0, ...seqs, ...f.timeline.map((t) => (typeof t.payload["seq"] === "number" ? t.payload["seq"] : 0)));
       const progress = (n: number, phase: string, percent: number | null, detail: string | null): JsonObject => ({
         seq: cursor + n,
         at: f.now,
@@ -214,10 +217,10 @@ export default defineGroup({
           ...(detail === null ? {} : { detail }),
         },
       });
-      f.later(2_500, "event", progress(1, "starting", null, null));
-      f.later(2_800, "event", progress(2, "receiving", 12, "1.20 MiB | 2.31 MiB/s"));
-      f.later(3_100, "event", progress(3, "receiving", 42, "4.10 MiB | 2.31 MiB/s"));
-      f.settleAt(3_400);
+      f.later(6_000, "event", progress(1, "starting", null, null));
+      f.later(6_300, "event", progress(2, "receiving", 12, "1.20 MiB | 2.31 MiB/s"));
+      f.later(6_600, "event", progress(3, "receiving", 42, "4.10 MiB | 2.31 MiB/s"));
+      f.settleAt(0);
       return f;
     })(),
     (() => {
@@ -236,6 +239,8 @@ export default defineGroup({
       if (f.snapshot) f.snapshot["machines"] = machines;
       for (const frame of f.live) {
         for (const m of objects(frame["machines"])) {
+          // The live feed's status wins over the snapshot's, so it says degraded too.
+          if (m["machineId"] === "buildbox") m["status"] = "degraded";
           if (m["machineId"] === "devbox") {
             m["slept"] = { fromMs: now - 25 * 60_000, toMs: now - 14 * 60_000 };
             m["load"] = {

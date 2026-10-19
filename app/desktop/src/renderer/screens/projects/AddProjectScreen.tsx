@@ -5,8 +5,9 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Button, Dot, Input, Sheet, Text, Truncate, copyText, cx } from "../../ui";
-import { clonePath, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
-import { useFleet } from "./fleet";
+import { clonePath, discovery as discoveryOf, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
+import { CallError, callKey } from "../../src/data/queries";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import type { Job } from "./flow";
 import { otherHost, tilde } from "./source";
 import {
@@ -29,10 +30,13 @@ import s from "./projects.module.css";
 export function AddProjectScreen() {
   const pick = usePick();
   const phase = pick.ui.add.phase;
+  const data = useDataLayer();
   useEffect(() => {
     sheetShown();
+    // New checkouts on disk raise no event: look again each time the sheet opens.
+    void data.queryClient.invalidateQueries({ queryKey: callKey("project_discover", allRepos) });
     return sheetHidden;
-  }, []);
+  }, [data]);
 
   const title =
     phase.kind === "working" ? `Adding ${phase.job.what}` : phase.kind === "ready" ? `${phase.ready.title} is ready` : phase.kind === "failed" ? `Couldn't add ${phase.what}` : "Add a project";
@@ -56,23 +60,38 @@ export function AddProjectScreen() {
   );
 }
 
-/** The machines a clone can go to: the hub's discovery, or the snapshot's machines when an older hub can't discover. */
-const useWorkers = (d: Discovery | null): ReadonlyArray<Worker> => {
-  const fleet = useFleet();
+const allRepos = {};
+
+/**
+ * What the hub found, through the data layer: null while it looks. An older hub without project_discover still gets
+ * the snapshot's machines, with its error as the one problem.
+ */
+const useDiscovery = (): Discovery | null => {
+  const query = useToolQuery("project_discover", allRepos);
+  const machines = useData((s) => s.machines);
   return useMemo(() => {
-    if (d === null) return [];
-    if (d.workers.length > 0) return d.workers;
-    return fleet.machines.map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" }));
-  }, [d, fleet.machines]);
+    const name = (id: string) => machines[id]?.name ?? id;
+    if (query.data !== undefined) {
+      const d = discoveryOf(query.data, name);
+      if (d.workers.length > 0) return d;
+      return { ...d, workers: Object.values(machines).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" })) };
+    }
+    if (query.error === null) return null;
+    const e: { message: string; fix?: string | undefined } = query.error instanceof CallError ? query.error.error : { message: query.error.message };
+    return {
+      workers: Object.values(machines).map((m) => ({ machineId: m.machineId, name: m.name, online: m.status !== "offline" })),
+      found: [],
+      problems: [e.fix ? { message: e.message, fix: e.fix } : { message: e.message }],
+    };
+  }, [query.data, query.error, machines]);
 };
 
 type PickData = ReturnType<typeof usePick>;
 
 const usePick = () => {
   const ui = useAddUi();
-  const d = ui.add.discovery;
-  const workers = useWorkers(d);
-  const withWorkers = useMemo(() => (d === null ? null : { ...d, workers }), [d, workers]);
+  const d = useDiscovery();
+  const withWorkers = d;
   const { rows, selected: first } = useMemo(() => rowsFor(ui.text, d?.found ?? []), [ui.text, d]);
   // The selection belongs to one list of rows: a keystroke makes new rows, which start on their own first pick.
   const [sel, setSel] = useState<{ rows: ReadonlyArray<Row>; n: number }>({ rows, n: first });
@@ -429,8 +448,7 @@ const STEPS: ReadonlyArray<readonly [Job["step"], string, string]> = [
 const ORDER: Record<Job["step"], number> = { clone: 0, inspect: 1, register: 2 };
 
 function Working({ job }: { job: Job }) {
-  const fleet = useFleet();
-  const name = fleet.machines.find((m) => m.machineId === job.machineId)?.name ?? job.machineId;
+  const name = useData((s) => s.machines[job.machineId]?.name) ?? job.machineId;
   return (
     <div data-screen="projects.add.cloning">
       <Truncate size="sm" tone="quiet" mono>{`${tilde(job.path)} on ${name}`}</Truncate>

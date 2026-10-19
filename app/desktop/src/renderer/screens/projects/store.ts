@@ -1,12 +1,14 @@
 // The one add in flight and the sheet's own state, kept outside the sheet so a clone carries on (and still reports
 // its end) while the sheet is hidden. Every entry point opens it with openAddProject().
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import type { DataLayer } from "../../src/data/queries";
+import { useDataLayer } from "../../src/data/react";
+import type { DataState } from "../../src/data/store";
 import { toast } from "../../ui";
-import type { HubEvent, Machine } from "./contracts";
+import type { Machine } from "./contracts";
 import type { Request } from "./discovery";
-import { onHubFrame, getFleet, machineName } from "./fleet";
-import { initialAdd, seedFrom, step, type AddMsg, type AddState, type Call } from "./flow";
+import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call, type HubView } from "./flow";
 import { machineIdFromHost, omit } from "./source";
 
 export const ADD_ROUTE = "#/projects/add";
@@ -39,8 +41,15 @@ const set = (next: AddUi) => {
   for (const l of listeners) l();
 };
 
-/** Calls that may take a while: discovery runs gh and scans every worker. */
+/** project_add and project_inspect may take a while: inspect runs gh on the hub. */
 const CALL_MS = 120_000;
+
+// The data layer (E1) is the one source of hub data; the add flow reads its store and never subscribes to main.
+let layer: DataLayer | undefined;
+const hubState = (): DataState | undefined => layer?.store.getState();
+
+/** A machine's name from the store, else its id. */
+export const machineName = (id: string): string => hubState()?.machines[id]?.name ?? id;
 
 const dispatch = (msg: AddMsg) => {
   const before = ui.add.phase.kind;
@@ -64,26 +73,40 @@ const announce = () => {
   }
 };
 
-let wired = false;
-const wire = () => {
-  if (wired) return;
-  wired = true;
-  onHubFrame((frame) => {
-    if (frame.t === "state") dispatch({ t: "live", live: frame.state.phase === "live" });
-    else if (frame.t === "snapshot") dispatch({ t: "snapshot", cursor: frame.snapshot.cursor });
-    else if (frame.t === "event") dispatch({ t: "event", event: frame.event as unknown as HubEvent });
-  });
-  for (const msg of seedFrom(getFleet())) dispatch(msg);
+const view = (d: DataState): HubView => ({ live: d.hub.phase === "live", fresh: d.fresh, cursor: d.cursor, events: d.events });
+
+/** Starts feeding the add flow from the layer's store; once per layer. */
+const connect = (next: DataLayer): void => {
+  if (layer === next) return;
+  layer = next;
+  let prev: HubView | undefined;
+  let lastSeq: number | undefined;
+  const onChange = (d: DataState) => {
+    const now = view(d);
+    // The first look takes the connection as it is now: frames that came before this listened are not replayed.
+    if (prev === undefined) lastSeq = d.cursor;
+    const msgs = hubMessages(prev, now, lastSeq);
+    prev = now;
+    for (const msg of msgs) {
+      if (msg.t === "event") lastSeq = msg.event.seq;
+      dispatch(msg);
+    }
+  };
+  next.store.subscribe(onChange);
+  onChange(next.store.getState());
   void window.fleetd.system.hostName().then((hostName) => set({ ...ui, hostName }));
 };
 
 const subscribe = (listener: () => void) => {
-  wire();
   listeners.add(listener);
   return () => listeners.delete(listener);
 };
 
-export const useAddUi = (): AddUi => useSyncExternalStore(subscribe, () => ui);
+export const useAddUi = (): AddUi => {
+  const data = useDataLayer();
+  useEffect(() => connect(data), [data]);
+  return useSyncExternalStore(subscribe, () => ui);
+};
 
 /**
  * Opens Add project from anywhere: the sidebar's + Add, the palette, the empty board, the File menu, a drop. A
@@ -94,7 +117,6 @@ export const prefillMachine = (text: string, given: string | undefined, local: s
   given ?? (/^[/~.]/u.test(text.trim()) ? local : undefined);
 
 export const openAddProject = (prefill?: { text: string; note?: Note; machine?: string }): void => {
-  wire();
   if (window.location.hash !== ADD_ROUTE) returnTo = window.location.hash || "#/board";
   const working = ui.add.phase.kind === "working";
   if (prefill && !working) {
@@ -111,12 +133,7 @@ export const openAddProject = (prefill?: { text: string; note?: Note; machine?: 
   window.location.hash = ADD_ROUTE;
 };
 
-/** The sheet mounted: look again for repos unless an add is on screen. */
-export const sheetShown = (): void => {
-  wire();
-  set({ ...ui, open: true });
-  if (ui.add.phase.kind === "pick") dispatch({ t: "discover" });
-};
+export const sheetShown = (): void => set({ ...ui, open: true });
 
 export const sheetHidden = (): void => {
   if (!ui.open) return;
@@ -151,7 +168,6 @@ export const addAnother = (): void => {
   const rest = omit(ui, "note");
   set({ ...rest, text: "" });
   dispatch({ t: "reset" });
-  dispatch({ t: "discover" });
 };
 
 /** This computer, when it is one of the hub's machines (by name, or the id fleetd init derives from its host name). */
@@ -159,7 +175,7 @@ export const localMachine = (): Machine | undefined => {
   const host = ui.hostName;
   if (host === undefined || host === "") return undefined;
   const id = machineIdFromHost(host);
-  return getFleet().machines.find((m) => m.name.toLowerCase() === host.toLowerCase() || m.machineId === id);
+  return Object.values(hubState()?.machines ?? {}).find((m) => m.name.toLowerCase() === host.toLowerCase() || m.machineId === id);
 };
 
 export const openProject = (machineId: string, projectId: string): void => {

@@ -2,10 +2,11 @@
 // what it runs and its usage, the slot board, and each machine's projects (open, or remove).
 
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useData } from "../../src/data/react";
+import { selectMachines, selectProjects } from "../../src/data/selectors";
 import { Button, Dot, IdChip, Menu, MenuContent, MenuItem, MenuTrigger, Text, Truncate } from "../../ui";
 import type { Machine, ProjectSummary } from "./contracts";
-import { useFleet } from "./fleet";
 import { machineOrder, machineParts, slotsText, type Tone } from "./machineText";
 import { RemoveProjectDialog, type RemoveTarget } from "./RemoveProjectDialog";
 import { tilde } from "./source";
@@ -26,17 +27,16 @@ const useMinute = (): number => {
 };
 
 export function MachinesScreen() {
-  const fleet = useFleet();
-  const now = useMinute() + fleet.skewMs;
+  const views = useData(selectMachines);
+  const projects = useData(selectProjects);
+  const slots = useData((d) => d.live.slots ?? d.slots);
+  const live = useData((d) => d.hub.phase === "live");
+  const now = useMinute() + (useData((d) => d.live.skewMs) ?? 0);
   const [removing, setRemoving] = useState<RemoveTarget | null>(null);
 
-  // Load and usage come in live frames: ask for the board's (what the board itself asks for).
-  useEffect(() => {
-    void window.fleetd.hub.live({ board: true });
-  }, []);
-
-  const machines = [...fleet.machines].sort(machineOrder);
-  const state = !fleet.synced ? "machines.loading" : machines.length === 0 ? "machines.empty" : undefined;
+  // Undefined until the layer has a fresh snapshot: a skeleton, never cached data shown as live.
+  const machines = useMemo(() => (views === undefined ? undefined : [...views].sort((a, b) => machineOrder(a.machine, b.machine))), [views]);
+  const state = machines === undefined ? "machines.loading" : machines.length === 0 ? "machines.empty" : undefined;
 
   return (
     <div className={s.page} data-screen="machines">
@@ -44,15 +44,17 @@ export function MachinesScreen() {
         <Text as="h1" size="xl" strong className={s.pageTitle ?? ""}>
           Machines
         </Text>
-        {fleet.slots ? (
+        {slots ? (
           <Text size="sm" tone="quiet" tabular>
-            {slotsText(fleet.slots)}
+            {slotsText(slots)}
           </Text>
         ) : null}
         <Button onClick={() => openAddProject()}>Add project…</Button>
       </div>
-      {!fleet.synced ? (
-        <Text tone="quiet">{fleet.live ? "Loading machines…" : "Waiting for the hub. Machines show once it's connected."}</Text>
+      {machines === undefined ? (
+        <Text tone="quiet">
+          {live ? "Loading machines…" : "Waiting for the hub. Machines show once it's connected."}
+        </Text>
       ) : machines.length === 0 ? (
         <div className={s.empty}>
           <Text strong>No machines yet.</Text>
@@ -60,13 +62,13 @@ export function MachinesScreen() {
         </div>
       ) : (
         <div className={s.cards}>
-          {machines.map((m) => (
+          {machines.map(({ machine, live: load }) => (
             <MachineCard
-              key={m.machineId}
-              machine={m}
-              projects={fleet.projects.filter((p) => p.machineId === m.machineId)}
+              key={machine.machineId}
+              machine={machine}
+              projects={(projects ?? []).filter((p) => p.machineId === machine.machineId)}
               now={now}
-              live={fleet.machineLive.get(m.machineId)}
+              live={load}
               onRemove={setRemoving}
             />
           ))}

@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { Button, Dialog, Text, toast } from "../../ui";
-import { machineName } from "./fleet";
+import { useData } from "../../src/data/react";
 import { openAddProject } from "./store";
 
 export interface RemoveTarget {
@@ -16,7 +16,7 @@ export interface RemoveTarget {
 export function RemoveProjectDialog({ project, onClose }: { project: RemoveTarget | null; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; fix?: string } | null>(null);
-  const machine = project ? machineName(project.machineId) : "";
+  const machine = useData((d) => (project ? (d.machines[project.machineId]?.name ?? project.machineId) : ""));
 
   const close = () => {
     setBusy(false);
