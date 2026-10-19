@@ -1,0 +1,233 @@
+/* Floating surfaces: menus, select lists, popovers, tooltips, dialogs. A hairline and one soft shadow, no glow. */
+.surface {
+  z-index: 50;
+  min-width: 180px;
+  max-width: min(420px, calc(100vw - 2 * var(--edge-inset)));
+  max-height: var(--radix-popper-available-height, 70vh);
+  overflow-y: auto;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: var(--float-shadow);
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  transform-origin: var(--radix-popper-transform-origin, center);
+  animation: enter var(--dur-fast) var(--ease-out);
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  cursor: default;
+}
+.item > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+}
+.item[data-highlighted] {
+  background: var(--selected);
+}
+.item[data-disabled] {
+  color: var(--faint);
+}
+.item[data-disabled] > svg {
+  color: var(--faint);
+}
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.itemHint {
+  flex: none;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+}
+.danger {
+  color: var(--danger);
+}
+.danger > svg {
+  color: var(--danger);
+}
+.indicator {
+  flex: none;
+  width: 14px;
+  display: inline-flex;
+  justify-content: center;
+}
+.indicator > svg {
+  width: 14px;
+  height: 14px;
+}
+.separator {
+  height: 1px;
+  margin: var(--space-1) calc(-1 * var(--space-1));
+  background: var(--hairline);
+}
+.groupLabel {
+  padding: var(--space-1) var(--space-2) 2px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+}
+
+.tooltip {
+  z-index: 60;
+  max-width: min(360px, calc(100vw - 2 * var(--edge-inset)));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  animation: fade var(--dur-fast) var(--ease-out);
+}
+.popover {
+  padding: var(--space-3);
+  min-width: 220px;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Select trigger: looks like a field. */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  height: var(--field);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+}
+.trigger[data-placeholder] .triggerValue {
+  color: var(--faint);
+}
+.trigger:disabled {
+  color: var(--faint);
+  border-color: var(--hairline);
+}
+.trigger > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--quiet);
+}
+.triggerValue {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.selectContent {
+  min-width: var(--radix-select-trigger-width);
+  max-height: var(--radix-select-content-available-height, 60vh);
+}
+
+/* Dialogs and sheets */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, black 32%, transparent);
+  animation: fade var(--dur-base) var(--ease-out);
+}
+.dialog {
+  position: fixed;
+  z-index: 41;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  width: min(520px, calc(100vw - 4 * var(--edge-inset)));
+  max-height: calc(100vh - 24vh);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+  animation: fade var(--dur-base) var(--ease-out);
+}
+.wide {
+  width: min(760px, calc(100vw - 4 * var(--edge-inset)));
+}
+.sheet {
+  position: fixed;
+  z-index: 41;
+  top: var(--edge-inset);
+  right: var(--edge-inset);
+  bottom: var(--edge-inset);
+  display: flex;
+  flex-direction: column;
+  width: min(480px, calc(100vw - 2 * var(--edge-inset)));
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+  animation: slide var(--dur-base) var(--ease-out);
+}
+@keyframes slide {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.dialogHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+.dialogTitles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.dialogTitle {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: var(--weight-strong);
+  overflow-wrap: anywhere;
+}
+.dialogDescription {
+  color: var(--quiet);
+  overflow-wrap: anywhere;
+}
+.dialogBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-4);
+}
+.dialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
