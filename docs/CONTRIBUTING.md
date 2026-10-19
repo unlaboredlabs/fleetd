@@ -17,6 +17,7 @@ fleetd is one Cargo workspace. The shipped `fleetd` is one static binary with no
 - `playbooks/`: the built-in playbooks, embedded in the binary.
 - `app/`: the desktop app (`fleetd-app`, GPUI pinned to a Zed release tag) and its speed harness (`app/bench/`, run
   with `app/bench/run.sh`).
+- `app/desktop`: the Electron + React app replacing `fleetd-app` (see below). Its own pnpm workspace, outside Cargo.
 - `tests/lab`: the end-to-end lab suite.
 - `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` holds
   the docs' sources and `crates/docsgen` renders them into `site/docs/`.
@@ -26,6 +27,19 @@ fleetd is one Cargo workspace. The shipped `fleetd` is one static binary with no
 On Linux the app needs GPUI's `-dev` packages. Without root, `app/bench/linux-sysroot.sh` extracts them and
 `source app/bench/linux-env.sh` points cargo at them. On macOS, `app/packaging/macos-bundle.sh` wraps the binary in
 `fleetd.app`, which notifications need.
+
+## The Electron app
+
+`app/desktop` needs Node 24 and pnpm (the version in its `package.json`). In that directory: `pnpm install`, then
+`pnpm dev` (hot reload), `pnpm build` and `pnpm start` (the built app), and `pnpm typecheck`, `pnpm lint` and
+`pnpm test`, which CI's `desktop` job runs. Electron downloads its binary on first launch.
+
+- `src/main`: the Electron main process. It holds the one hub connection and the saved key; the renderer has no
+  network (its CSP has `connect-src 'none'`).
+- `src/preload`: `window.fleetd`, the only bridge. `src/preload/api.d.ts` is its type.
+- `src/shared`: the IPC channels (`channels.ts`) and the schema main checks every renderer request against
+  (`ipc.ts`). A new channel goes in both, then in `src/main/ipc.ts` and the preload.
+- `src/renderer`: the React app.
 
 ## Checks
 
