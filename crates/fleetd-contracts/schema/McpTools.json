@@ -4363,6 +4363,37 @@
         }
       ]
     },
+    "LastMerged": {
+      "description": "The project's latest merge, as the train recorded it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the train merged it."
+        },
+        "prNumber": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prUrl": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "description": "The work's own title (its writer task's), not the PR's branch.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "at"
+      ],
+      "type": "object"
+    },
     "Lead": {
       "properties": {
         "lastWakeAt": {
@@ -4933,6 +4964,12 @@
         "status_get.output": {
           "$ref": "#/$defs/StatusGetOutput"
         },
+        "status_projects.input": {
+          "$ref": "#/$defs/StatusProjectsInput"
+        },
+        "status_projects.output": {
+          "$ref": "#/$defs/StatusProjectsOutput"
+        },
         "status_seen.input": {
           "$ref": "#/$defs/StatusSeenInput"
         },
@@ -5203,6 +5240,8 @@
         "session_prompt_get.output",
         "status_get.input",
         "status_get.output",
+        "status_projects.input",
+        "status_projects.output",
         "status_seen.input",
         "status_seen.output",
         "status_wait.input",
@@ -7110,6 +7149,84 @@
       },
       "required": [
         "ok"
+      ],
+      "type": "object"
+    },
+    "ProjectRowState": {
+      "description": "What a project is doing, in one word.",
+      "oneOf": [
+        {
+          "const": "working",
+          "description": "Agents are running, or its PRs are in review, CI or the train.",
+          "type": "string"
+        },
+        {
+          "const": "waiting_on_you",
+          "description": "The lead is waiting for your reply.",
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "description": "Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.",
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Nothing running and nothing waiting.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ProjectStatusRow": {
+      "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.",
+      "properties": {
+        "agentsRunning": {
+          "description": "Its lead and task sessions holding a slot now.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "asOf": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "blockedReason": {
+          "description": "Blocked only: why, in one line, for the expanded row.",
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "lastMerged": {
+          "$ref": "#/$defs/LastMerged"
+        },
+        "progress": {
+          "$ref": "#/$defs/ProgressEstimate",
+          "description": "The project's progress estimate (verified, in flight, planning), without its series. Absent when the project\nhas nothing to count."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "stale": {
+          "$ref": "#/$defs/StaleMark",
+          "description": "Set when a source the row reads (its machine, its repo on GitHub) went quiet."
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectRowState"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef",
+        "title",
+        "state",
+        "agentsRunning",
+        "asOf"
       ],
       "type": "object"
     },
@@ -9290,6 +9407,31 @@
       },
       "required": [
         "doc"
+      ],
+      "type": "object"
+    },
+    "StatusProjectsInput": {
+      "type": "object"
+    },
+    "StatusProjectsOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "rows": {
+          "description": "By title.",
+          "items": {
+            "$ref": "#/$defs/ProjectStatusRow"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "rows"
       ],
       "type": "object"
     },
