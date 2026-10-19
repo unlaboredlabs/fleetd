@@ -8,11 +8,11 @@ use super::*;
 use crate::clock::{Clock, SystemClock};
 use crate::hub::estimates::Estimates;
 use crate::hub::incidents::{IncidentFilter, Incidents};
-use crate::hub::store::{EventLog, HubDb, WaitInput};
+use crate::hub::store::{EventLog, HubDb, NewEvent, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{
-    AskId, MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
+    AskId, BriefHash, MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
@@ -61,6 +61,10 @@ struct Fake {
     node: Arc<Mutex<(i64, String)>>,
     /// Each command run: machine, cwd and argv.
     commands: Arc<Mutex<Vec<Value>>>,
+    /// Some: human checks file A5 and read this as its answer. None: no human is asked in the test.
+    human: Mutex<Option<String>>,
+    /// Set once a human check has filed its ask and waits for the answer.
+    filed: std::sync::atomic::AtomicBool,
 }
 
 impl Ports for Fake {
@@ -118,10 +122,20 @@ impl Ports for Fake {
         Box::pin(async { Err(super::ports::invalid("no judges here", None)) })
     }
     fn file_human_ask(&self, _: HumanAsk) -> BoxFuture<'_, Result<HumanAskFiled, Refusal>> {
-        Box::pin(async { panic!("no human is asked in these tests") })
+        assert!(
+            self.human.lock().unwrap().is_some(),
+            "no human is asked in this test"
+        );
+        self.filed.store(true, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Ok(HumanAskFiled {
+                ask_id: AskId::unchecked("A5"),
+                auto_value: None,
+            })
+        })
     }
     fn ask_answer(&self, _: &AskId) -> Option<String> {
-        None
+        self.human.lock().unwrap().clone().filter(|a| !a.is_empty())
     }
     fn thread_actions<'a>(
         &'a self,
@@ -452,4 +466,96 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
         "W3 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done."
     );
     assert!(k.commands.lock().unwrap().is_empty());
+}
+
+/// W4 on a real hub: a research order's answer-only brief had one human check ("did this answer your question?"). The
+/// lead claimed done and, in the same turn, asked whether to build. The human said build; the lead amended the brief to
+/// the build. Then the human confirmed the old check, and that claim, made against the answer-only brief, closed the
+/// workstream with the build never started. A claim only counts for the brief it checked.
+#[tokio::test]
+async fn w4_a_claim_on_the_old_brief_never_closes_the_amended_build() {
+    let research = vec![
+        json!({ "type": "human", "question": "Did the answer on scheduled work answer your question?" }),
+    ];
+    let k = kit(vec![workstream("W1", Some(research))]);
+    let mut w = k.ports.workstream(&w1()).unwrap();
+    w.brief_hash = Some(BriefHash::unchecked("a".repeat(64)));
+    k.ports.put_workstream(&w);
+    *k.ports.human.lock().unwrap() = Some(String::new());
+
+    let id = w1();
+    let claimed = k.claims.claim_done(&id, LEAD_BY, None);
+    let (claimed, ()) = tokio::join!(claimed, async {
+        // The human check is filed and waits; the human answers "build it", and the lead amends the brief.
+        while !k.ports.filed.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        let mut build = k.ports.workstream(&w1()).unwrap();
+        build.brief = Some(
+            serde_json::from_value(json!({ "goal": "build schedules", "why": "the human chose to build", "pointers": [],
+                "constraints": [], "tier": "L", "doneWhen": [doc_check()] }))
+            .unwrap(),
+        );
+        build.brief_hash = Some(BriefHash::unchecked("b".repeat(64)));
+        k.ports.put_workstream(&build);
+        // Then the human confirms the old answer-only check.
+        *k.ports.human.lock().unwrap() = Some("done".into());
+        k.events
+            .append(NewEvent {
+                at: now_ts(&SystemClock),
+                r#type: HubEventType::DecisionRecorded,
+                machine_id: None,
+                project_id: None,
+                thread_id: None,
+                summary: "D16 w1.c1.done-0 = done".into(),
+                data: Some(json!({ "askId": "A5" })),
+                attention: None,
+            })
+            .unwrap();
+    });
+    let claimed = claimed.unwrap();
+    assert!(claimed.claim.is_some(), "{}", claimed.next);
+    assert_eq!(k.state(), WorkstreamState::Running);
+    assert!(
+        k.events_of(&[HubEventType::WorkstreamDone, HubEventType::ClaimPassed])
+            .await
+            .is_empty()
+    );
+    let voided = k.events_of(&[HubEventType::WorkstreamState]).await;
+    assert_eq!(
+        voided.last().unwrap().1,
+        "C1 on W1 no longer counts: its brief changed"
+    );
+    // The build is still open: a claim on the new brief runs its checks.
+    k.set_node(0, "");
+    let passed = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap();
+    assert_eq!(passed.state, WorkstreamState::Done);
+}
+
+/// The lead amends a brief while a claim on the old one still waits: the claim stops at once and never counts.
+#[tokio::test]
+async fn amending_the_brief_voids_the_claim_still_waiting_on_it() {
+    let k = kit(vec![workstream(
+        "W1",
+        Some(vec![
+            json!({ "type": "human", "question": "Looks good on your end?" }),
+        ]),
+    )]);
+    *k.ports.human.lock().unwrap() = Some(String::new());
+    let id = w1();
+    let claimed = k.claims.claim_done(&id, LEAD_BY, None);
+    let (claimed, ()) = tokio::join!(claimed, async {
+        while !k.ports.filed.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        k.claims.void(&w1()).unwrap();
+    });
+    let claimed = claimed.unwrap();
+    assert!(claimed.claim.is_none());
+    assert!(
+        claimed.next.contains("change to the brief"),
+        "{}",
+        claimed.next
+    );
+    assert_eq!(k.state(), WorkstreamState::Running);
 }

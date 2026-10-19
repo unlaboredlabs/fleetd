@@ -13,7 +13,7 @@ use crate::hub::store::{EventLog, NewEvent, StoreError};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::ledger::{CheckSpec, Workstream, WorkstreamId, WorkstreamState};
+use fleetd_contracts::ledger::{BriefHash, CheckSpec, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::prim::{Count, List, Text};
 use fleetd_contracts::verification::{
     CheckOutcome, CheckResult, Claim, ClaimId, ClaimOutcome, IncidentClass,
@@ -68,7 +68,7 @@ pub struct Claims {
     clock: Arc<dyn Clock>,
     inline_wait: Duration,
     /// The claim running per workstream; a new claim aborts it.
-    running: Mutex<HashMap<WorkstreamId, AbortHandle>>,
+    running: Mutex<HashMap<WorkstreamId, (ClaimId, AbortHandle)>>,
     // Workstream state changes go through this, so a claim's start and another's end never interleave.
     lock: tokio::sync::Mutex<()>,
 }
@@ -177,11 +177,16 @@ impl Claims {
 
     /// Stores the claim and acts on it. The workstream is re-read: it may have been stopped while checks ran. Runs with
     /// the lock held and nothing awaited, so a superseding claim cannot cut it off halfway.
-    fn conclude(&self, claim: &Claim) -> Result<(), StoreError> {
-        self.records.finish(claim)?;
+    fn conclude(&self, claim: &Claim, checked: Option<&BriefHash>) -> Result<(), StoreError> {
         let Some(w) = self.ports.workstream(&claim.workstream_id) else {
-            return Ok(());
+            return self.records.finish(claim);
         };
+        // The brief changed while the checks ran (W4: the human asked for a build and the lead amended the brief, then
+        // confirmed the old answer-only check). The claim checked done-when that no longer exist, so it never counts.
+        if w.brief_hash.as_ref() != checked {
+            return self.void_with(&w, &claim.claim_id);
+        }
+        self.records.finish(claim)?;
         // A research judge's numbers already made it done, with its verdict.
         if w.state == WorkstreamState::Done {
             return Ok(());
@@ -284,7 +289,7 @@ impl Claims {
         };
         // Waiting for the lock stays abortable, so a superseded claim gives way; once it holds it, it finishes.
         let _held = self.lock.lock().await;
-        if let Err(error) = self.conclude(&claim) {
+        if let Err(error) = self.conclude(&claim, w.brief_hash.as_ref()) {
             tracing::warn!(claim_id = %claim.claim_id, %error, "claim not concluded");
         }
         claim
@@ -379,9 +384,12 @@ impl Claims {
             .running
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(workstream_id.clone(), handle.abort_handle())
+            .insert(
+                workstream_id.clone(),
+                (claim_id.clone(), handle.abort_handle()),
+            )
         {
-            previous.abort();
+            previous.1.abort();
         }
         Ok((claim_id, handle))
     }
@@ -434,7 +442,9 @@ impl Claims {
             }
             // Superseded by a newer claim before it finished.
             Some(Err(_)) => Ok(ClaimDoneOutcome {
-                next: format!("{claim_id} was superseded by a newer claim on {workstream_id}."),
+                next: format!(
+                    "{claim_id} was superseded by a newer claim or a change to the brief of {workstream_id}."
+                ),
                 claim_id,
                 workstream_id: workstream_id.clone(),
                 state: WorkstreamState::Verifying,
@@ -474,11 +484,55 @@ impl Claims {
         }
     }
 
+    /// The workstream's brief changed: a claim still running checked the old done-when, so it stops and never counts,
+    /// and a verifying workstream is running again. The lead claims afresh once the new done-when holds.
+    pub fn void(&self, workstream_id: &WorkstreamId) -> Result<(), StoreError> {
+        let running = self
+            .running
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(workstream_id);
+        let Some((claim_id, handle)) = running else {
+            return Ok(());
+        };
+        handle.abort();
+        match self.ports.workstream(workstream_id) {
+            Some(w)
+                if matches!(
+                    w.state,
+                    WorkstreamState::Verifying | WorkstreamState::Running
+                ) =>
+            {
+                self.void_with(&w, &claim_id)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn void_with(&self, w: &Workstream, claim_id: &ClaimId) -> Result<(), StoreError> {
+        if w.state == WorkstreamState::Verifying {
+            self.ports.put_workstream(&Workstream {
+                state: WorkstreamState::Running,
+                updated_at: now_ts(self.clock.as_ref()),
+                ..w.clone()
+            });
+        }
+        self.emit(
+            w,
+            HubEventType::WorkstreamState,
+            format!(
+                "{claim_id} on {} no longer counts: its brief changed",
+                w.workstream_id
+            ),
+            serde_json::json!({ "workstreamId": w.workstream_id, "state": "running", "claimId": claim_id }),
+        )
+    }
+
     fn forget_running(&self, workstream_id: &WorkstreamId, handle: &JoinHandle<Claim>) {
         let mut running = self.running.lock().unwrap_or_else(|p| p.into_inner());
         if running
             .get(workstream_id)
-            .is_some_and(|h| h.id() == handle.id())
+            .is_some_and(|(_, h)| h.id() == handle.id())
         {
             running.remove(workstream_id);
         }

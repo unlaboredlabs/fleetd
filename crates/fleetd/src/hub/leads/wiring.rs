@@ -297,6 +297,11 @@ impl ClaimsHook for ClaimsFromChecks {
             })
             .unwrap_or_default()
     }
+    fn void(&self, workstream_id: &WorkstreamId) {
+        if let Err(error) = self.0.void(workstream_id) {
+            tracing::warn!(%error, "claim not voided");
+        }
+    }
 }
 
 struct EstimatesFromArea(Arc<Estimates>);

@@ -352,9 +352,20 @@ impl Workstreams {
             format!("{id} brief amended under {amend}"),
             Some(serde_json::json!({ "workstreamId": id, "state": next.state, "briefHash": hash, "amend": amend })),
         )?;
+        // A claim made against the old brief must not close the workstream on the new one (W4).
+        let verifying = next.state == WorkstreamState::Verifying;
+        if verifying && let Some(claims) = self.ctx.hooks.claims.get() {
+            claims.void(id);
+        }
+        let state = self.get(id)?.map_or(next.state, |w| w.state);
+        let voided = if verifying {
+            " The claim you made before no longer counts; claim again once the new done-when checks hold."
+        } else {
+            ""
+        };
         Ok(result(
-            next.state,
-            format!("Brief amended under {amend}. {running}"),
+            state,
+            format!("Brief amended under {amend}.{voided} {running}"),
         ))
     }
 
