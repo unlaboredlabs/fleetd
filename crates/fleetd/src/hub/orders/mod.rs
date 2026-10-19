@@ -1,5 +1,6 @@
 //! The orders board: open workstreams joined with their agents (tasks and the project's lead), PRs, open asks and the
 //! trains of their repos, for the app's board and order view. Reads the existing stores; owns no table.
+pub mod filler;
 pub mod idle;
 pub mod notes;
 pub mod phase;

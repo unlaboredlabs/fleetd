@@ -1402,7 +1402,7 @@
 <tbody>
 <tr>
 <td><a href="#report"><code dir="auto">report</code></a></td>
-<td>Record your review verdict once, before your final message: the full SHA you reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.</td>
+<td>A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.</td>
 <td>No</td>
 </tr>
 <tr>
@@ -1418,7 +1418,7 @@
 </tbody>
 </table>
 <div class="sl-heading-wrapper level-h3"><h3 id="report">report</h3><a class="sl-anchor-link" href="#report"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “report”</span></a></div>
-<p>Record your review verdict once, before your final message: the full SHA you reviewed, the number of blocking and non-blocking findings and a one-paragraph summary.</p>
+<p>A reviewer records its verdict once, before its final message: the full SHA it reviewed, the number of blocking and non-blocking findings and a one-paragraph summary. A writer reports each slice whose PR is complete with kind slice_ready and its prUrl: its review starts at once while you go on with the next slice.</p>
 <table>
 <thead>
 <tr>
@@ -1432,8 +1432,14 @@
 <tr>
 <td><code dir="auto">blocking</code></td>
 <td>integer</td>
-<td>yes</td>
+<td>no</td>
 <td></td>
+</tr>
+<tr>
+<td><code dir="auto">kind</code></td>
+<td>string</td>
+<td>no</td>
+<td>Verdict (the default) for a review, slice_ready for a writer’s PR that is ready. One of <code dir="auto">verdict</code>, <code dir="auto">slice_ready</code>.</td>
 </tr>
 <tr>
 <td><code dir="auto">metricValues</code></td>
@@ -1456,25 +1462,31 @@
 <tr>
 <td><code dir="auto">nonBlocking</code></td>
 <td>integer</td>
-<td>yes</td>
+<td>no</td>
 <td></td>
 </tr>
 <tr>
 <td><code dir="auto">prHeadSha</code></td>
 <td>string</td>
-<td>yes</td>
+<td>no</td>
 <td>Full lowercase hex commit SHA, 40 or 64 characters.</td>
+</tr>
+<tr>
+<td><code dir="auto">prUrl</code></td>
+<td>string</td>
+<td>no</td>
+<td>Like <code dir="auto">https://github.com/&lt;owner&gt;/&lt;name&gt;/pull/&lt;n&gt;</code>.</td>
 </tr>
 <tr>
 <td><code dir="auto">summary</code></td>
 <td>string</td>
-<td>yes</td>
+<td>no</td>
 <td>At most 1000 characters.</td>
 </tr>
 <tr>
 <td><code dir="auto">taskId</code></td>
 <td>string</td>
-<td>yes</td>
+<td>no</td>
 <td><code dir="auto">T&lt;n&gt;</code>, e.g. <code dir="auto">T1</code>.</td>
 </tr>
 </tbody>

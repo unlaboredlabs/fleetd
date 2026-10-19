@@ -326,6 +326,17 @@ impl Reviews {
             );
         }
         let codex_model = codex.and_then(|i| i.default_model.clone());
+        // The newest head an earlier round of this Change reviewed: a re-push is reviewed from its delta.
+        let reviewed: Option<String> = sql(&self.db, |conn| {
+            conn.query_row(
+                "SELECT b.pr_head_sha FROM review_bindings b JOIN review_tasks t ON t.task_id = b.task_id
+                 WHERE t.change_id = ?1 AND b.patch_id != ?2 ORDER BY b.rowid DESC LIMIT 1",
+                params![change.change_id.as_str(), patch_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .expect("reviewed head")
+        });
         for planned in missing {
             let verb = if planned.role == ReviewRole::Verifier {
                 "Verify"
@@ -347,6 +358,7 @@ impl Reviews {
                     &self.db.prompts().current(Some(&change.project_ref)),
                     change,
                     planned.role,
+                    reviewed.as_deref(),
                 ),
                 serves: change.serves.to_string(),
                 pr: change.pr_url.to_string(),

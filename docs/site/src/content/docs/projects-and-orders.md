@@ -150,6 +150,21 @@ request on the [merge train](/docs/glossary#merge-train).
 - Open an order to see its PRs, checks and the lead's conversation. See [Follow an order](/docs/desktop-app#order).
 - From a terminal: `fleetd status W41`. See [Status](/docs/status).
 
+## How the lead schedules work {#scheduling}
+
+The lead plans each order as small items, sized S, M or L, some waiting `after` others. It starts every item it can
+in parallel while slots are free. fleetd keeps that going, but never starts work by itself:
+
+| Rule | What happens |
+|---|---|
+| A free slot is offered | When a slot frees and the lead is idle, fleetd wakes it with the plan items that can start: brief frozen, not waiting on an open item, no task or PR yet. A finish-all order with room for another child is offered too. If nothing qualifies, the lead stays idle. |
+| Once per change | A lead hears about the same runnable work once. It is told again only when that changes: an item is taken, done, added or unblocked. |
+| Slices are reviewed as they land | A writer reports each finished PR (`report`, kind `slice_ready`), or marks its draft PR ready on GitHub. fleetd puts it on the train and starts its reviewers right away, while the writer goes on. A new commit is reviewed again from what changed. |
+
+No gate relaxes. Every PR still gets its tier's reviews and green CI and goes through the train, done is still decided
+by the done-when checks, and anything that needs your approval still waits for it. The reviewers fleetd starts count
+against the slots and the lead's limit of 32 open tasks like any task.
+
 ## Change or stop it {#steer}
 
 | You want to | In the order view | The lead |

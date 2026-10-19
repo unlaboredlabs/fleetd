@@ -309,11 +309,16 @@ fn roles(router: &Router) -> String {
     md
 }
 
-/// The tool names for lead-call `ops`, in the order given.
-fn names_of<'a>(ops: &[&str], tools: &[&'a Tool]) -> Vec<&'a str> {
-    ops.iter()
-        .filter_map(|op| tools.iter().find(|t| t.op == *op).map(|t| t.name))
-        .collect()
+/// The tool names for lead-call `ops`, in the order given, each once; None when an op has no tool.
+fn names_of<'a>(ops: &[&str], tools: &[&'a Tool]) -> Option<Vec<&'a str>> {
+    let mut names: Vec<&str> = Vec::new();
+    for op in ops {
+        let name = tools.iter().find(|t| t.makes(op))?.name;
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    Some(names)
 }
 
 fn enum_values(schema: &Value) -> Vec<String> {
@@ -326,11 +331,11 @@ fn enum_values(schema: &Value) -> Vec<String> {
 }
 
 fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
-    let spawners = names_of(SPAWN_OPS, lead);
-    let worker_calls = names_of(WORKER_OPS, task);
-    if spawners.len() != SPAWN_OPS.len() || worker_calls.len() != WORKER_OPS.len() {
+    let (Some(spawners), Some(worker_calls)) =
+        (names_of(SPAWN_OPS, lead), names_of(WORKER_OPS, task))
+    else {
         return Err("agent tools: a hub policy op has no MCP tool".into());
-    }
+    };
     let gated = inline_schema::<GatedRunCall>();
     let timeout = gated["properties"]["timeoutSec"]["maximum"]
         .as_u64()
@@ -387,7 +392,7 @@ fn who_may_call(op: &str) -> String {
         (Role::Lead, CallerAgent::Lead, "a lead"),
         (Role::Worker, task_caller(), "a task's agent"),
     ] {
-        if agent_mcp::tools_for(role).any(|t| t.op == op) && policy::check(&caller, op).is_ok() {
+        if agent_mcp::tools_for(role).any(|t| t.makes(op)) && policy::check(&caller, op).is_ok() {
             who.push(name);
         }
     }

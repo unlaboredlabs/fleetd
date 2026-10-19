@@ -35,14 +35,20 @@ Agents act through fleetd's MCP tools. The list, generated from the code, is in
 fleetd never asks an agent how long something will take. Leads are told never to put an ETA or a duration in a brief,
 an ask, a status line, a plan or a summary. Plan items are sized `s`, `m` or `l` instead.
 
-Instead, leads work for throughput:
+What fleetd measures, such as CI runs and span durations, is shown as measured. See [Status](/docs/status).
+
+### Max efficiency without compromising {#efficiency}
+
+In place of a clock, leads are told to work for throughput:
 
 - Keep every slot busy.
 - Run work that touches separate areas in parallel.
-- Review each piece as it lands, and put each finished PR on the train at once.
-- Never sit idle while work can run.
+- Have each slice reviewed as it lands, and put each finished PR on the train at once.
+- End a turn only to wait on their agents, or when nothing approved can run.
 
-What fleetd measures, such as CI runs and span durations, is shown as measured. See [Status](/docs/status).
+They are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
+exactly as they are, and no filler work is made up to fill a slot. fleetd backs this up with two wakes, never with a
+task of its own. See [How the lead schedules work](/docs/projects-and-orders#scheduling).
 
 ### Claude's auto memory is off {#auto-memory}
 
@@ -73,7 +79,7 @@ Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their s
 | Agent | Gets |
 |---|---|
 | Lead | `spawn_agent`, `message_agent`, `agent_status`, `list_agents`, `stop_agent`, plus `ask`, `decide`, `brief`, `claim_done`, `plan_*`, `gated_run` and more. |
-| Task | `report` (a review verdict), `ask_lead` and `claim_done`. |
+| Task | `report` (a review verdict, or a writer's PR that is ready for review), `ask_lead` and `claim_done`. |
 
 - Results come back in the lead's next wake, never by polling.
 - The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents.
@@ -189,7 +195,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the digest | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only about product, money, credentials, irreversible (prompt only); secrets only through \`ask\` with kind secret; prod writes, spends and deletes only through \`gated\_run\`; never blocks on a question (\`proceededOnRec\`) (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with \`amend\` |
+| `lead.start` | lead start and every lead\_restart, followed by the digest | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only about product, money, credentials, irreversible (prompt only); secrets only through \`ask\` with kind secret; prod writes, spends and deletes only through \`gated\_run\`; never blocks on a question (\`proceededOnRec\`) (prompt only); done only through \`claim\_done\`; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with \`amend\`; never relaxes a review, CI, train, done-when or approval gate for speed |
 | `lead.digest` | the top of the lead's first message and of every wake | the digest is the truth, over the lead's memory (prompt only) |
 | `plan.granularity` | when \`plan\_add\` (or \`plan\_edit\` with a size) gets an item with no size or one bigger than m |  |
 
@@ -213,6 +219,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `wake.research_verdict.stop` | per research claim that went STOP | STOP is a success (prompt only) |
 | `wake.research_verdict.inconclusive` | per research claim that was inconclusive |  |
 | `review.reviewer` | per PR head per review round, by the tier's rules; Claude or Codex | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `review.delta` | after the reviewer's or verifier's text, when the PR was reviewed at an earlier head |  |
 | `review.verifier` | tier L, per PR head | works in a detached temporary worktree (prompt only); does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
@@ -253,6 +260,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `wake.agent_steer` | per steer\_send to a task, at the lead's next wake (debounced, never an interrupt) |  |
 | `wake.order_refs` | per new order with references or attachments |  |
 | `wake.order_stopped` | per order\_stop | does no more work on a stopped order (prompt only) |
+| `wake.runnable` | when a slot frees, the lead is idle and approved, unblocked work no task has taken waits; once per change in that work | the lead decides what to start; the hub never spawns (prompt only) |
 | `wake.order_idle` | when the lead ends a turn with a frozen order and nothing under way |  |
 | `wake.scheduled_late` | a wake\_set message that fired late |  |
 | `wake.scheduled_held` | a wake\_set message held by a usage pause |  |
