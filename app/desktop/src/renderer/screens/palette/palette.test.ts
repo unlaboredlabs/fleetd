@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { statusRouteFor, toggleInboxHash } from "./defaults";
+import type { HubFrame } from "../../../shared/hub";
+import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
+import { applyFrame, initialState } from "../../src/data/store";
+import { chatRoute, statusToggleTarget } from "./defaults";
+import { projectItems } from "./projects";
 import { dispatchable } from "./keymap";
 import { pushRecent, rank, score } from "./rank";
 import { bindLatest, commandFor, registerCommands, registerSource, runCommand, snapshotItems, type Command } from "./registry";
-import { isReply, namedBatch, namedItems, planReply, readReplyOutcome } from "./reply";
 
 const item = (id: string, title: string, group: Command["group"], extra: Partial<Command> = {}): Command => ({
   id,
@@ -24,23 +27,23 @@ describe("rank", () => {
 
   const items = [
     item("settings.open", "Settings", "settings"),
-    item("new-in:fleetd", "New order in fleetd", "actions", { searchOnly: true }),
-    item("project:fleetd", "fleetd", "projects"),
-    item("ask:A1", "Delete the bucket?", "needs-you"),
-    item("order:W14", "W14 Harden lead digest", "orders"),
+    item("go:settings.prompts", "Prompts for fleetd", "settings", { searchOnly: true }),
+    item("project:devbox/fleetd", "fleetd", "projects"),
+    item("project:devbox/storefront", "storefront", "projects", { keywords: ["shop-w14"] }),
+    item("status.toggle", "Status", "go-to"),
   ];
 
   it("with nothing typed, lists recents first, then groups, and hides search-only items", () => {
-    const ranked = rank("", items, ["project:fleetd", "gone"]);
-    expect(ranked.recent.map((i) => i.id)).toEqual(["project:fleetd"]);
-    expect(ranked.matches.map((i) => i.id)).toEqual(["ask:A1", "order:W14", "settings.open"]);
+    const ranked = rank("", items, ["project:devbox/fleetd", "gone"]);
+    expect(ranked.recent.map((i) => i.id)).toEqual(["project:devbox/fleetd"]);
+    expect(ranked.matches.map((i) => i.id)).toEqual(["project:devbox/storefront", "status.toggle", "settings.open"]);
   });
 
-  it("finds orders by id, ranks the exact name first and ignores scattered letters", () => {
-    expect(rank("w14", items, []).matches.map((i) => i.id)).toEqual(["order:W14"]);
+  it("finds by keyword, ranks the exact name first and ignores scattered letters", () => {
+    expect(rank("w14", items, []).matches.map((i) => i.id)).toEqual(["project:devbox/storefront"]);
     const fleetd = rank("fleetd", items, []).matches.map((i) => i.id);
-    expect(fleetd[0]).toBe("project:fleetd");
-    expect(fleetd).toContain("new-in:fleetd");
+    expect(fleetd[0]).toBe("project:devbox/fleetd");
+    expect(fleetd).toContain("go:settings.prompts");
     expect(fleetd).not.toContain("settings.open");
     expect(rank("dn", items, []).matches).toEqual([]);
   });
@@ -54,26 +57,6 @@ describe("rank", () => {
   it("keeps five recents, newest first, without repeats", () => {
     expect(pushRecent(["a", "b", "c", "d", "e"], "c")).toEqual(["c", "a", "b", "d", "e"]);
     expect(pushRecent(["a", "b", "c", "d", "e"], "f")).toEqual(["f", "a", "b", "c", "d"]);
-  });
-});
-
-describe("reply mode", () => {
-  it("recognises a reply only by its grammar's openings", () => {
-    for (const reply of ["1 go", " 2 nvm 3 b", "#B3 1 go", "recs fine", "all go", "pref: tabs", "forget D12"]) expect(isReply(reply)).toBe(true);
-    for (const search of ["", "settings", "W14", "go", "recent orders", "allx", "forget me"]) expect(isReply(search)).toBe(false);
-  });
-
-  it("names the items a reply answers, not numbers inside free text", () => {
-    expect(namedItems("1 go 2 nvm 3 b")).toEqual([1, 2, 3]);
-    expect(namedItems("2-4 go; 6,7 b")).toEqual([2, 3, 4, 6, 7]);
-    expect(namedItems('1: use port 8080; 2 "keep 40" 3 go')).toEqual([1, 2, 3]);
-    expect(namedItems("1go")).toEqual([1]);
-  });
-
-  it("reads the hub's echo, its hint, or the call's error", () => {
-    expect(readReplyOutcome({ ok: true, output: { parsed: true, echo: "Logged: 1 → go (D12)", applied: [] } })).toEqual({ ok: true, text: "Logged: 1 → go (D12)" });
-    expect(readReplyOutcome({ ok: true, output: { parsed: false, hint: "No item 9 in B2." } })).toEqual({ ok: false, text: "No item 9 in B2." });
-    expect(readReplyOutcome({ ok: false, error: { code: "disconnected", message: "Not connected.", fix: "Check the hub." } })).toEqual({ ok: false, text: "Not connected. Check the hub." });
   });
 });
 
@@ -196,45 +179,37 @@ describe("keys while the palette is open", () => {
   });
 });
 
-describe("reply batches", () => {
-  const ask = (batchId: string, number: number, title: string) => item(`ask:${batchId}-${number}`, title, "needs-you", { ask: { batchId, number } });
-
-  it("previews the one open batch and sends its id with the reply", () => {
-    const plan = planReply("1 go 3 nvm", [ask("B4", 1, "Which health path?"), ask("B4", 2, "Raise the cap?")]);
-    expect(plan).toEqual({
-      kind: "ready",
-      batchId: "B4",
-      items: [
-        { n: 1, item: expect.objectContaining({ title: "Which health path?" }) as unknown },
-        { n: 3, item: undefined },
-      ],
-    });
-  });
-
-  it("asks for a batch when several are open, and follows a #B prefix", () => {
-    const items = [ask("B4", 1, "Old question"), ask("B5", 1, "New question")];
-    expect(planReply("1 go", items)).toEqual({ kind: "ambiguous", batches: ["B5", "B4"] });
-    const named = planReply("#B4 1 go", items);
-    expect(named.kind === "ready" && named.batchId).toBe("B4");
-    expect(named.kind === "ready" && named.items.map((i) => i.item?.title)).toEqual(["Old question"]);
-    expect(namedBatch(" #b07 2 nvm")).toBe("B7");
-  });
-
-  it("sends no batch when no open question is known, so the hub's own answer shows", () => {
-    expect(planReply("1 go", [])).toEqual({ kind: "ready", batchId: undefined, items: [{ n: 1, item: undefined }] });
+describe("default navigation", () => {
+  it("toggles Status: open it from anywhere, go back from it", () => {
+    expect(statusToggleTarget("#/project/devbox/storefront")).toBe("#/status");
+    expect(statusToggleTarget("")).toBe("#/status");
+    expect(statusToggleTarget("#/status")).toBe("back");
+    expect(statusToggleTarget("#/statusx")).toBe("#/status");
   });
 });
 
-describe("default navigation", () => {
-  it("opens status at the scope on screen", () => {
-    expect(statusRouteFor("#/order/W14")).toBe("#/status/order/W14");
-    expect(statusRouteFor("#/board/devbox/storefront?inbox")).toBe("#/status/project/devbox/storefront");
-    expect(statusRouteFor("#/settings")).toBe("#/status");
+describe("projects", () => {
+  const state = (frames: readonly HubFrame[]) => frames.reduce((s, f) => applyFrame(s, f, Date.parse(AT))[0], initialState());
+
+  it("lists every project, opening its lead chat, named by machine, never by id", () => {
+    const opened: string[] = [];
+    const items = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
+    expect(items.map((i) => [i.id, i.title, i.detail, i.group])).toEqual([["project:devbox/storefront", "storefront", "Chat with the lead · on devbox", "projects"]]);
+    items[0]?.run();
+    expect(opened).toEqual(["#/project/devbox/storefront"]);
   });
 
-  it("toggles the inbox panel in the query, keeping the route", () => {
-    expect(toggleInboxHash("#/order/W14")).toBe("#/order/W14?inbox");
-    expect(toggleInboxHash("#/order/W14?inbox&ask=A3")).toBe("#/order/W14");
-    expect(toggleInboxHash("")).toBe("#/?inbox");
+  it("is found fuzzily and listed before the go-tos when nothing is typed", () => {
+    const items = [...projectItems(state([live(), snapshot(1)]), () => undefined), item("status.toggle", "Status", "go-to")];
+    expect(rank("stfr", items, []).matches.map((i) => i.title)).toEqual(["storefront"]);
+    expect(rank("", items, []).matches.map((i) => i.group)).toEqual(["projects", "go-to"]);
+  });
+
+  it("lists nothing until the hub's snapshot arrives", () => {
+    expect(projectItems(initialState(), () => undefined)).toEqual([]);
+  });
+
+  it("escapes ids in the chat route", () => {
+    expect(chatRoute("dev box", "a/b")).toBe("#/project/dev%20box/a%2Fb");
   });
 });

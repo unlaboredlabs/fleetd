@@ -377,7 +377,7 @@ const leadActive = (lanes: DataState["live"]["lanes"], key: ProjectKey): boolean
   return lead !== undefined && active(lead.status);
 };
 
-/** The sidebar's and status's projects: needs-you first, then working, then by title; undefined until loaded. */
+/** The sidebar's and status's projects, by title; undefined until loaded. */
 export const selectProjectList = memo(
   (s) => [s.fresh, s.projects, s.chatStates, selectAgentsByProject(s), s.live.lanes],
   (fresh, projects, chats, agents, liveLanes): readonly ProjectRow[] | undefined => {
@@ -389,12 +389,8 @@ export const selectProjectList = memo(
         const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
         return { key, project, needsYou: chat?.needsYou === true, running, working: running > 0 || leadWorking };
       })
-      .sort(
-        (a, b) =>
-          Number(b.needsYou) - Number(a.needsYou) ||
-          Number(b.working) - Number(a.working) ||
-          a.project.title.localeCompare(b.project.title),
-      );
+      // A stable order (by title): rows must not move under the pointer, and ⌘1–9 keep their targets.
+      .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
   },
 );
 
@@ -418,6 +414,9 @@ export interface ChatView {
   readonly items: readonly ChatItem[];
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
+  /** Paged above the latest (past what a chat keeps): loadNewer pages back down; live messages wait for it. */
+  readonly hasNewer: boolean;
+  readonly loadingNewer: boolean;
   readonly error?: HubError | undefined;
 }
 
@@ -429,7 +428,14 @@ export const selectChat = perKey((key) =>
     (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends],
     (fresh, chat, sends): ChatView | undefined => {
       if (!fresh || chat?.loaded !== true) return undefined;
-      return { items: chatItems(chat, sends), hasOlder: chat.hasOlder, loadingOlder: chat.loadingOlder, error: chat.error };
+      return {
+        items: chatItems(chat, sends),
+        hasOlder: chat.hasOlder,
+        loadingOlder: chat.loadingOlder,
+        hasNewer: chat.hasNewer,
+        loadingNewer: chat.loadingNewer,
+        error: chat.error,
+      };
     },
   ),
 );

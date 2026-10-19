@@ -56,7 +56,6 @@ export const fixtures = [
   // F6: the Status view's own states (fixtures/status).
   "status-stale",
   "status-planning",
-  "status-legacy",
   "status-skeleton",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
@@ -212,7 +211,7 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
+  // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet.
   {
     id: "palette",
     route: "#/",
@@ -220,12 +219,12 @@ export const screens: readonly Screen[] = [
     open: (page) => page.keyboard.press("ControlOrMeta+K"),
   },
   {
-    id: "palette.reply",
+    id: "palette.search",
     route: "#/",
-    fixtures: ["needs-you", "long-text", "empty"],
+    fixtures: ["typical", "long-text", "empty"],
     open: async (page) => {
       await page.keyboard.press("ControlOrMeta+K");
-      await page.getByRole("combobox", { name: "Search or reply" }).fill("1 go 2 nvm 3 b");
+      await page.getByRole("combobox", { name: "Search" }).fill("st");
     },
   },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
@@ -246,20 +245,13 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
-  // F6: Status for the fleet, a project and an order: live, stale sources, planning, long text and unknown wire
-  // values, a hub without the progress model, the skeleton before the first answer, and the link down. needs-you
-  // joins once F5's card text passes the raw-text check (it flags share_snapshots / share.example.test today).
-  ...(
-    [
-      ["status.fleet", "#/status"],
-      ["status.project", "#/status/project/devbox/storefront"],
-      ["status.order", "#/status/order/W1"],
-    ] as const
-  ).map(([id, route]) => ({
-    id,
-    route,
-    fixtures: ["typical", "long-text", "empty", "hub-unreachable", "status-stale", "status-planning", "status-legacy", "status-skeleton"] as const,
-  })),
+  // F6: Status, one row per project: every state word, long titles, no projects, quiet sources, every lead
+  // planning, the skeleton before the first answer, and the link down.
+  {
+    id: "status.fleet",
+    route: "#/status",
+    fixtures: ["typical", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+  },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.
   {

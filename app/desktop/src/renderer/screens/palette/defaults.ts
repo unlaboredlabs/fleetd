@@ -1,6 +1,5 @@
 // Commands that need nothing but the route table (notes/electron-routes.md): the palette itself, the shortcuts
-// sheet, and plain navigation. A screen that does better (status at the focused order's scope, the inbox panel's
-// own toggle) registers the same id and wins while it is mounted.
+// sheet, and plain navigation. A screen that does better registers the same id and wins while it is mounted.
 
 import type { Command } from "./registry";
 import { togglePalette, toggleShortcuts } from "./state";
@@ -9,60 +8,29 @@ const go = (route: string) => {
   window.location.hash = route;
 };
 
-/** The route part of the hash and its query, e.g. "#/order/W14?inbox" → ["/order/W14", URLSearchParams("inbox")]. */
-export const splitHash = (hash: string): [string, URLSearchParams] => {
-  const body = hash.replace(/^#/u, "");
-  const at = body.indexOf("?");
-  const path = at < 0 ? body : body.slice(0, at);
-  return [path === "" ? "/" : path, new URLSearchParams(at < 0 ? "" : body.slice(at + 1))];
-};
+/** A project's lead chat. */
+export const chatRoute = (machineId: string, projectId: string): string =>
+  `#/project/${encodeURIComponent(machineId)}/${encodeURIComponent(projectId)}`;
 
-/** Status at the scope you're looking at: an order's, a project's, or the fleet's. */
-export const statusRouteFor = (hash: string): string => {
-  const [path] = splitHash(hash);
-  const order = /^\/order\/([^/?]+)/u.exec(path)?.[1];
-  if (order !== undefined) return `#/status/order/${order}`;
-  const project = /^\/board\/([^/]+)\/([^/]+)/u.exec(path);
-  if (project) return `#/status/project/${project[1] ?? ""}/${project[2] ?? ""}`;
-  return "#/status";
-};
-
-/** The inbox is a panel kept in the query (`?inbox`), so it opens over whatever route you're on. */
-export const toggleInboxHash = (hash: string): string => {
-  const [path, query] = splitHash(hash);
-  if (query.has("inbox")) {
-    query.delete("inbox");
-    query.delete("ask");
-  } else query.set("inbox", "");
-  const rest = query.toString().replace(/=(?=&|$)/gu, "");
-  return `#${path}${rest === "" ? "" : `?${rest}`}`;
-};
+/** ⌘. from Status goes back to where you were; from anywhere else it opens Status. */
+export const statusToggleTarget = (hash: string): "back" | "#/status" => (/^#\/status(?:[/?]|$)/u.test(hash) ? "back" : "#/status");
 
 export const defaultCommands = (): Command[] => [
   { id: "palette.toggle", title: "Command palette", group: "actions", searchOnly: true, run: togglePalette },
   { id: "shortcuts.show", title: "Keyboard shortcuts", group: "actions", searchOnly: true, keywords: ["keys", "hotkeys", "help"], run: toggleShortcuts },
-  { id: "board.open", title: "Board", detail: "Every open order", group: "go-to", run: () => go("#/board") },
-  {
-    id: "inbox.toggle",
-    title: "Inbox",
-    detail: "What needs you",
-    group: "go-to",
-    keywords: ["needs you", "questions", "asks"],
-    run: () => go(toggleInboxHash(window.location.hash)),
-  },
   {
     id: "status.toggle",
     title: "Status",
-    detail: "How the fleet, a project or an order is doing",
+    detail: "Every project: working, waiting on you, idle or blocked",
     group: "go-to",
     run: () => {
-      const [path] = splitHash(window.location.hash);
-      if (path.startsWith("/status")) window.history.back();
-      else go(statusRouteFor(window.location.hash));
+      const target = statusToggleTarget(window.location.hash);
+      if (target === "back") window.history.back();
+      else go(target);
     },
   },
-  { id: "go:machines", title: "Machines", detail: "Machines and setup checks", group: "go-to", run: () => go("#/machines") },
   { id: "go:time", title: "Time", detail: "Where the time went", group: "go-to", keywords: ["timeline", "inspector"], run: () => go("#/time") },
+  { id: "go:machines", title: "Machines", detail: "Machines and setup checks", group: "go-to", run: () => go("#/machines") },
   { id: "go:projects.add", title: "Add a project…", detail: "Point the fleet at a folder", group: "actions", run: () => go("#/projects/add") },
   {
     id: "settings.open",

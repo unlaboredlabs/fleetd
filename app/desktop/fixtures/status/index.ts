@@ -1,78 +1,85 @@
-// The Status view's answers (F6): status_get for the fleet, storefront and W1 (the data layer refetches it on
-// events; there is no long-poll), and the seen mark. Added to the shared fixtures, plus the states
-// only Status has: stale sources, the lead still planning, a hub without the progress model, and the skeleton.
+// The Status view's answers (F6): status_projects, one row per project the fixture's hub has, in every state the
+// view draws. Added to the shared fixtures, plus the states only Status has: rows whose source went quiet, every
+// project still planning or with nothing to count, and the skeleton before the first answer.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
-import { isObject, type JsonObject } from "../kit/json.ts";
-import { emptyDoc, type Kind, legacyDoc, longTextDoc, planningDoc, SCOPES, statusDoc } from "./docs.ts";
+import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 
-/** The transport's longest delay: a status_get still unanswered when the screenshot is taken (the skeleton). */
+/** The transport's longest delay: a status_projects still unanswered when the screenshot is taken (the skeleton). */
 const HOLD_MS = 600_000;
-const KINDS: readonly Kind[] = ["fleet", "project", "order"];
+const at = (hm: string): string => `2026-10-19T${hm}.000Z`;
 
-/** The open asks the fixture's inbox answers with, so Needs you shows the same cards the inbox does. */
-const openAsks = (f: Fixture): string[] => {
-  const out = f.answers("asks_list").find((a) => isObject(a.input) && a.input["state"] === "open")?.output;
-  const asks = isObject(out) && Array.isArray(out["asks"]) ? out["asks"] : [];
-  return asks.flatMap((a) => (isObject(a) && typeof a["askId"] === "string" ? [a["askId"]] : []));
-};
+interface Project {
+  readonly machineId: string;
+  readonly projectId: string;
+  readonly title: string;
+}
 
-/** The tasks the fixture's board runs for W1, so In progress rows join real lanes (what each agent does now). */
-const boardTasks = (f: Fixture): string[] => {
-  const orders = f.answers("orders_board").flatMap((a) => (isObject(a.output) && Array.isArray(a.output["orders"]) ? a.output["orders"] : []));
-  const w1 = orders.find((o) => isObject(o) && o["workstreamId"] === "W1");
-  const lanes = isObject(w1) && Array.isArray(w1["lanes"]) ? w1["lanes"] : [];
-  return lanes.flatMap((l) => (isObject(l) && typeof l["taskId"] === "string" ? [l["taskId"]] : []));
-};
-
-/** In progress rows of W1 run the board's tasks: two lanes on the first row, one on the second. */
-const withBoardTasks = (doc: JsonObject, tasks: readonly string[]): JsonObject => {
-  const rows = doc["inProgress"];
-  if (tasks.length === 0 || !Array.isArray(rows)) return doc;
-  let next = 0;
-  const take = (n: number): string[] => tasks.slice(next, (next += n));
-  return {
-    ...doc,
-    inProgress: rows.map((r, i) => (isObject(r) && r["workstreamId"] === "W1" ? { ...r, taskIds: take(i === 0 ? 2 : 1) } : r)),
-  };
-};
-
-const answer = (f: Fixture, docs: (kind: Kind, asks: readonly string[]) => JsonObject, getDelayMs?: number): void => {
-  const asks = openAsks(f);
-  const tasks = boardTasks(f);
-  for (const kind of KINDS) {
-    const doc = withBoardTasks(docs(kind, asks), tasks);
-    f.answer("status_get", { scope: SCOPES[kind] }, { doc }, getDelayMs);
+/** The fixture hub's projects: its snapshot's (what the app's sidebar shows), else its projects_list answers. */
+const projectsOf = (f: Fixture): Project[] => {
+  const snapshot = f.snapshot?.["projects"];
+  const lists: JsonValue[] = Array.isArray(snapshot)
+    ? [snapshot]
+    : f.answers("projects_list").map((a) => (isObject(a.output) ? (a.output["projects"] ?? []) : []));
+  const seen = new Map<string, Project>();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const p of list) {
+      if (!isObject(p) || typeof p["machineId"] !== "string" || typeof p["projectId"] !== "string" || typeof p["title"] !== "string") continue;
+      seen.set(`${p["machineId"]}/${p["projectId"]}`, { machineId: p["machineId"], projectId: p["projectId"], title: p["title"] });
+    }
   }
-  f.answer("status_seen", undefined, { recorded: true });
+  return [...seen.values()];
 };
 
-const own = (base: Fixture, what: string, note: string, docs: (kind: Kind, asks: readonly string[]) => JsonObject, getDelayMs?: number): Fixture => {
+const estimate = (pct: number, verifiedPct: number, inFlightPct: number): JsonObject => ({ pct, verifiedPct, inFlightPct, weights: "project" });
+
+/** One row per project, cycling through the states the view draws, so every fixture shows them all. */
+const ROWS: readonly ((p: Project) => JsonObject)[] = [
+  () => ({ state: "working", progress: estimate(78, 58, 20), agentsRunning: 3, lastMerged: { title: "Totals use integer minor units", prNumber: 208, at: at("09:46:12") } }),
+  () => ({ state: "waiting_on_you", progress: estimate(64, 52, 12), agentsRunning: 0, lastMerged: { title: "Search index warms on deploy", prNumber: 205, at: at("09:12:40") } }),
+  () => ({ state: "blocked", blockedReason: "main CI is red: rust (macos)", progress: estimate(31, 31, 0), agentsRunning: 0 }),
+  () => ({ state: "idle", agentsRunning: 0 }),
+];
+
+type Variant = "typical" | "stale" | "planning";
+
+const rowsFor = (f: Fixture, variant: Variant): JsonObject[] =>
+  projectsOf(f).map((p, i) => {
+    const base = (ROWS[i % ROWS.length] ?? ROWS[0])?.(p) ?? {};
+    // The hub cuts a row's title at 120 characters, as it does any title in a list.
+    const title = p.title.length > 120 ? `${p.title.slice(0, 119)}…` : p.title;
+    const row: JsonObject = { projectRef: { machineId: p.machineId, projectId: p.projectId }, title, asOf: at("10:07:10"), ...base };
+    if (variant === "planning") {
+      row["progress"] = { ...estimate(0, 0, 0), planning: { active: true, pct: 55, sharePct: 8, since: at("09:59:00") } };
+      row["state"] = "working";
+    }
+    if (variant === "stale" && i % 2 === 0) row["stale"] = { since: at("09:55:45"), reason: `no heartbeat from ${p.machineId} since 09:55` };
+    return row;
+  });
+
+const answer = (f: Fixture, variant: Variant, delayMs?: number): void => {
+  f.answer("status_projects", {}, { rows: rowsFor(f, variant) }, delayMs);
+};
+
+const own = (what: string, note: string, base: Fixture, variant: Variant, delayMs?: number): Fixture => {
   const f = Fixture.from(base, `status-${what}`, note);
-  answer(f, docs, getDelayMs);
+  answer(f, variant, delayMs);
   // The held answer is the state being shot, not a frame still to come: nothing to wait for before the shot.
-  if (getDelayMs !== undefined) f.settleAt(0);
+  if (delayMs !== undefined) f.settleAt(0);
   return f;
 };
 
 export default defineGroup({
   extend: {
-    typical: (f) => answer(f, (k, asks) => statusDoc(k, false, asks)),
-    "needs-you": (f) => answer(f, (k, asks) => statusDoc(k, false, asks)),
-    empty: (f) => answer(f, (k) => emptyDoc(k)),
-    "long-text": (f) => {
-      answer(f, (k, asks) => longTextDoc(k, asks));
-      // On purpose: wire values a newer hub might send (a risk rule, a CI state, a stage), which must render a
-      // generic fallback. The schema of this build rejects them, which is the point.
-      f.pendingContracts.set("status_get", "values from a newer hub, on purpose");
-    },
+    typical: (f) => answer(f, "typical"),
+    empty: (f) => answer(f, "typical"),
+    "long-text": (f) => answer(f, "typical"),
+    "many-agents": (f) => answer(f, "typical"),
   },
   fixtures: (base) => [
-    own(base("typical"), "stale", "Status: GitHub stopped answering for acme/storefront on top of the typical picture.", (k, asks) => statusDoc(k, true, asks)),
-    own(base("typical"), "planning", "Status: W1's lead is still planning, so the order shows its planning bar, not 0%.", (k, asks) =>
-      k === "order" ? planningDoc() : statusDoc(k, false, asks),
-    ),
-    own(base("typical"), "legacy", "Status: a hub without the progress model (no estimate, stage credit, critical path or blockers).", (k, asks) => legacyDoc(k, asks)),
-    own(base("typical"), "skeleton", "Status: the hub is live but hasn't answered status_get yet: the skeleton, no numbers.", (k, asks) => statusDoc(k, false, asks), HOLD_MS),
+    own("stale", "Status: half the projects' machines went quiet.", base("typical"), "stale"),
+    own("planning", "Status: every lead is still planning: no numbers, a planning word.", base("typical"), "planning"),
+    own("skeleton", "Status: the hub is live but hasn't answered yet: row outlines, no words or numbers.", base("typical"), "typical", HOLD_MS),
   ],
 });
