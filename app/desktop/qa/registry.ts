@@ -57,7 +57,6 @@ export const fixtures = [
   // F6: the Status view's own states (fixtures/status).
   "status-stale",
   "status-planning",
-  "status-legacy",
   "status-skeleton",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
@@ -270,20 +269,13 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
-  // F6: Status for the fleet, a project and an order: live, stale sources, planning, long text and unknown wire
-  // values, a hub without the progress model, the skeleton before the first answer, and the link down. needs-you
-  // joins once F5's card text passes the raw-text check (it flags share_snapshots / share.example.test today).
-  ...(
-    [
-      ["status.fleet", "#/status"],
-      ["status.project", "#/status/project/devbox/storefront"],
-      ["status.order", "#/status/order/W1"],
-    ] as const
-  ).map(([id, route]) => ({
-    id,
-    route,
-    fixtures: ["typical", "long-text", "empty", "hub-unreachable", "status-stale", "status-planning", "status-legacy", "status-skeleton"] as const,
-  })),
+  // F6: Status, one row per project: every state word, long titles, no projects, quiet sources, every lead
+  // planning, the skeleton before the first answer, and the link down.
+  {
+    id: "status.fleet",
+    route: "#/status",
+    fixtures: ["typical", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+  },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.
   {

@@ -7,8 +7,7 @@ import { AppFrame, Button, TopBar } from "../../ui";
 import { useAsksLoad, useNeedsYouSource } from "../inbox";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
-import { quietNow, useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
-import { postDigest, useStatusDigest } from "../status/digest";
+import { useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
 import { selectNeedsYouCount } from "../../src/data/selectors";
@@ -50,7 +49,6 @@ export function Shell() {
   useMainProcess();
   useMenuState();
   useNotifications(hub?.phase === "live");
-  useStatusDigest(postDigest, quietNow);
   useEscape(route);
   useNeedsYouSource();
 
