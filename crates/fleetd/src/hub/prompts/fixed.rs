@@ -22,14 +22,21 @@ pub const WATCHDOG_NUDGE: &str = fixed!("watchdog.nudge");
 /// The message to a thread a usage limit parked, once the limit resets.
 pub const USAGE_CONTINUE: &str = fixed!("usage.continue");
 
+/// To a running agent above a lowered max agents, when a person pauses the extras.
+pub const TASK_PAUSE: &str = fixed!("task.pause");
+/// To a paused agent once a slot frees for it.
+pub const TASK_RESUME: &str = fixed!("task.resume");
+
 /// Every fixed text by name, for "What agents are told".
-pub const ALL: [(&str, &str); 6] = [
+pub const ALL: [(&str, &str); 8] = [
     ("task.brief.read", TASK_BRIEF_READ),
     ("task.brief.review", TASK_BRIEF_REVIEW),
     ("review.delta", REVIEW_DELTA),
     ("plan.granularity", PLAN_GRANULARITY),
     ("watchdog.nudge", WATCHDOG_NUDGE),
     ("usage.continue", USAGE_CONTINUE),
+    ("task.pause", TASK_PAUSE),
+    ("task.resume", TASK_RESUME),
 ];
 
 pub fn render(text: &str, vars: &[(&str, &dyn Display)]) -> String {

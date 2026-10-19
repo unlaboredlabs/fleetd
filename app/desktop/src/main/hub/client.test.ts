@@ -258,6 +258,25 @@ describe("HubClient", () => {
     expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }]);
   });
 
+  it("keeps the chat subscription across reconnects and forwards its deltas", () => {
+    const { hub, frames, client } = setup();
+    const project = { machineId: "devbox", projectId: "storefront" };
+    client.start();
+    client.chat(project);
+    hub.ready();
+    expect(hub.sent).toContainEqual({ t: "chat", project });
+    const delta = { projectRef: project, messageId: "m3", seq: 3, offset: 0, append: "On it" };
+    hub.frame({ t: "chat_delta", ...delta });
+    expect(frames.at(-1)).toEqual({ t: "chat_delta", delta });
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1 });
+    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "chat", project }]);
+    client.chat(null);
+    expect(hub.sent.at(-1)).toEqual({ t: "chat" });
+  });
+
   it("forwards live frames without their tag", () => {
     const { hub, frames, client } = setup();
     client.start();

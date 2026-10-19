@@ -415,32 +415,6 @@
  ],
  "calls": [
   {
-   "tool": "asks_list",
-   "input": {
-    "state": "open"
-   },
-   "outcome": {
-    "ok": true,
-    "output": {
-     "asks": [],
-     "batches": [],
-     "next": "Nothing to answer. Wait for batch.ready with events_wait."
-    }
-   }
-  },
-  {
-   "tool": "asks_list",
-   "input": {},
-   "outcome": {
-    "ok": true,
-    "output": {
-     "asks": [],
-     "batches": [],
-     "next": "Nothing to answer. Wait for batch.ready with events_wait."
-    }
-   }
-  },
-  {
    "tool": "attention_policy",
    "input": {},
    "outcome": {

@@ -123,6 +123,9 @@ pub enum HubEventType {
     /// A write task's diff touched files outside its leased areas; `data.paths`.
     #[serde(rename = "task.out_of_area")]
     TaskOutOfArea,
+    /// A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.
+    #[serde(rename = "agents.cap")]
+    AgentsCap,
     /// A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.
     #[serde(rename = "lease.stale")]
     LeaseStale,
@@ -258,6 +261,14 @@ pub enum HubEventType {
     /// A stale source answered again; `data.source`, `data.staleMs`.
     #[serde(rename = "source.fresh")]
     SourceFresh,
+    /// A project's chat got a message, or one of its messages finished streaming or had an inline item change state;
+    /// `data` is `chat::ChatMessageEventData`.
+    #[serde(rename = "chat.message")]
+    ChatMessage,
+    /// A project's chat started or stopped waiting on you, or its lead started or ended a turn; `data` is the
+    /// `chat::ProjectChatState`.
+    #[serde(rename = "chat.waiting")]
+    ChatWaiting,
 }
 
 impl HubEventType {
@@ -304,6 +315,7 @@ impl HubEventType {
             Self::TaskFailed => "task.failed",
             Self::TaskCancelled => "task.cancelled",
             Self::TaskOutOfArea => "task.out_of_area",
+            Self::AgentsCap => "agents.cap",
             Self::LeaseStale => "lease.stale",
             Self::ClaimFailed => "claim.failed",
             Self::ClaimPassed => "claim.passed",
@@ -347,6 +359,8 @@ impl HubEventType {
             Self::GithubDrift => "github.drift",
             Self::SourceStale => "source.stale",
             Self::SourceFresh => "source.fresh",
+            Self::ChatMessage => "chat.message",
+            Self::ChatWaiting => "chat.waiting",
         }
     }
 }

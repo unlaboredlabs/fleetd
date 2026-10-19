@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import { defineGroup, SHARED } from "../kit/group.ts";
 import { Fixture } from "../kit/fixture.ts";
-import { clone, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
+import { asText, clone, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { PROJECTS, PromptHub, type RegistryEntry } from "./promptHub.ts";
 
 const registry = (
@@ -39,6 +39,35 @@ function basics(f: Fixture) {
 
 /** Every shared fixture: what Settings calls besides the recorded prompt reads. */
 const shared = (f: Fixture) => basics(f);
+
+/**
+ * Max agents: a fleet cap of 16 with each project at a different point. The first runs 6 under a max of 12, the
+ * second sits at its max of 3, and the third has no limit of its own. The slot state is set in the snapshot and in
+ * every live frame that carries one, since the live state wins.
+ */
+function agents(from: Fixture): Fixture {
+  const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one project under its max, one at it, one with no limit of its own");
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
+  const rows: JsonObject[] = [];
+  const [first, second] = projects;
+  if (first) rows.push({ projectRef: ref(first), maxAgents: 12, running: 6, queued: 0, used: 7 });
+  if (second) rows.push({ projectRef: ref(second), maxAgents: 3, running: 3, queued: 2, used: 3 });
+  const slots: JsonObject = { cap: 16, used: 9, queued: 2, reservedBand: 2, perProject: rows };
+  if (f.snapshot) f.snapshot["slots"] = clone(slots);
+  for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
+  // A save answers with the slot state it asked for, as the hub does: every max each project can take, and every
+  // fleet cap a person might type, so the shots show the saved value read back.
+  for (const row of rows) {
+    const projectRef = row["projectRef"] as JsonObject;
+    for (let n = 1; n <= 16; n++) {
+      const perProject = rows.map((r) => (r === row ? { ...clone(r), maxAgents: n } : clone(r)));
+      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, { slots: { ...clone(slots), perProject } });
+    }
+  }
+  for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n } });
+  return f;
+}
 
 export default defineGroup({
   extend: {
@@ -74,6 +103,6 @@ export default defineGroup({
         if (got.ok) f.answer("prompt_get", { id, ...scope }, json(got.output));
       }
     }
-    return [f];
+    return [f, agents(base("typical"))];
   },
 });

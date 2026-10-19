@@ -83,7 +83,9 @@
         "machineId": "devbox",
         "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22"
        },
-       "share": 40,
+       "maxAgents": 40,
+       "running": 4,
+       "queued": 0,
        "used": 5
       }
      ],
@@ -1191,7 +1193,9 @@
         "machineId": "devbox",
         "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22"
        },
-       "share": 40,
+       "maxAgents": 40,
+       "running": 4,
+       "queued": 0,
        "used": 5
       }
      ],
@@ -2067,7 +2071,9 @@
         "machineId": "devbox",
         "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22"
        },
-       "share": 40,
+       "maxAgents": 40,
+       "running": 3,
+       "queued": 0,
        "used": 4
       }
      ],
@@ -2922,7 +2928,9 @@
         "machineId": "devbox",
         "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22"
        },
-       "share": 40,
+       "maxAgents": 40,
+       "running": 1,
+       "queued": 0,
        "used": 2
       }
      ],
@@ -3652,7 +3660,9 @@
         "machineId": "devbox",
         "projectId": "dcffccea-c5a7-40a6-940d-7f70239ffa22"
        },
-       "share": 40,
+       "maxAgents": 40,
+       "running": 0,
+       "queued": 0,
        "used": 1
       }
      ],
@@ -6774,32 +6784,6 @@
   }
  ],
  "calls": [
-  {
-   "tool": "asks_list",
-   "input": {
-    "state": "open"
-   },
-   "outcome": {
-    "ok": true,
-    "output": {
-     "asks": [],
-     "batches": [],
-     "next": "Nothing to answer. Wait for batch.ready with events_wait."
-    }
-   }
-  },
-  {
-   "tool": "asks_list",
-   "input": {},
-   "outcome": {
-    "ok": true,
-    "output": {
-     "asks": [],
-     "batches": [],
-     "next": "Nothing to answer. Wait for batch.ready with events_wait."
-    }
-   }
-  },
   {
    "tool": "attention_policy",
    "input": {},

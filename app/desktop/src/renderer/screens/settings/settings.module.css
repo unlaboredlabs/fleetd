@@ -42,12 +42,6 @@
 .navItem[aria-current="page"] {
   background: var(--selected);
 }
-.navItem:focus-visible,
-.row:focus-visible,
-.chipButton:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
 
 .page {
   display: flex;
@@ -455,4 +449,63 @@ h1.navTitle {
   line-height: var(--leading-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ---- Max agents ---- */
+.agentsPopover {
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+.agentsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.agentsRow {
+  max-width: 520px;
+}
+.agentsHead,
+.agentsScale {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 20px;
+  touch-action: none;
+  user-select: none;
+}
+.sliderTrack {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--selected);
+}
+.sliderRange {
+  position: absolute;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-fill);
+}
+.sliderThumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--raised);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+.slider[data-disabled] .sliderRange {
+  background: var(--faint);
+}
+.capField {
+  width: 96px;
 }

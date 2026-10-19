@@ -38,6 +38,8 @@ pub enum LineKind {
     Idle,
     /// A slot is free and approved work is runnable (`orders::filler`).
     Runnable,
+    /// A person raised the project's max agents (`tasks::cap`).
+    CapRaised,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +90,7 @@ impl Trigger {
                 LineKind::Human => "human",
                 LineKind::Idle => "idle",
                 LineKind::Runnable => "runnable",
+                LineKind::CapRaised => "cap_raised",
             },
         }
     }

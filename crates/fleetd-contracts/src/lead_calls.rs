@@ -292,6 +292,26 @@ pub struct WorkstreamSpawnCall {
     pub template: Option<PlaybookName>,
 }
 
+/// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then freezes with
+/// `brief`. `template` picks the playbook (feature, bugfix, research, finish-all).
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkstreamOpenCall {
+    pub text: IntakeText,
+    pub template: Option<PlaybookName>,
+    pub serves: Option<Serves>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkstreamOpenResult {
+    pub workstream_id: WorkstreamId,
+    pub playbook: Option<PlaybookRef>,
+    pub next: Option<String>,
+}
+
 /// A worker's question for its lead (the `ask_lead` MCP tool). The lead is woken with it and answers with
 /// `message_agent`, which reaches the worker as a steer; the worker carries on meanwhile.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -341,6 +361,7 @@ pub enum LeadCall {
     PlanShow(PlanShowCall),
     AskLead(AskLeadCall),
     SliceReady(SliceReadyCall),
+    WorkstreamOpen(WorkstreamOpenCall),
 }
 
 #[skip_serializing_none]
@@ -515,6 +536,7 @@ pub enum LeadCallResult {
     PlanShow(PlanShowResult),
     AskLead(AskLeadResult),
     SliceReady(ChangeResult),
+    WorkstreamOpen(WorkstreamOpenResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

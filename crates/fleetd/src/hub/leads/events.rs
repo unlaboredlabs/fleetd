@@ -156,6 +156,11 @@ pub enum Event<'a> {
         workstream: &'a str,
         title: &'a str,
     },
+    /// A person raised the project's max agents; queued agents have already started.
+    CapRaised {
+        max_agents: i64,
+        free: i64,
+    },
 }
 
 fn quote(text: &str) -> String {
@@ -370,6 +375,13 @@ impl Event<'_> {
                 format!(
                     "- {workstream} idle: {}; no agent running, nothing asked, and nothing else will wake you for it",
                     one_line(title, 80)
+                ),
+                vec![],
+            ),
+            Event::CapRaised { max_agents, free } => (
+                format!(
+                    "- cap raised to {max_agents}: {free} slot{} free; queued agents already started",
+                    if *free == 1 { "" } else { "s" }
                 ),
                 vec![],
             ),
@@ -629,6 +641,17 @@ mod tests {
         assert_eq!(
             a(Settled::Withdrawn, None, Some("")),
             "- A3 deploy.prod withdrawn by the human: drop it"
+        );
+    }
+
+    #[test]
+    fn cap_raised_event() {
+        assert_eq!(
+            r(Event::CapRaised {
+                max_agents: 12,
+                free: 9
+            }),
+            "- cap raised to 12: 9 slots free; queued agents already started"
         );
     }
 
