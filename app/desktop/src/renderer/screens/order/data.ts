@@ -9,7 +9,7 @@ import type { Streamed } from "./conversation";
 import { mergeSteer, type Sending } from "./receipts";
 
 export interface OrderData {
-  readonly status: "loading" | "ready" | { readonly error: string };
+  readonly status: "loading" | "ready" | { readonly error: string; readonly code: string };
   readonly workstreamId: string;
   readonly title: string;
   readonly projectName: string;
@@ -79,7 +79,7 @@ type WorkstreamGet = { readonly workstream: { readonly brief?: { readonly doneWh
 
 type Action =
   | { readonly t: "order"; readonly out: OrderGet; readonly brief?: readonly CheckSpec[] }
-  | { readonly t: "error"; readonly message: string }
+  | { readonly t: "error"; readonly message: string; readonly code: string }
   | { readonly t: "tail"; readonly items: readonly TailItem[] }
   | { readonly t: "tailError"; readonly message: string }
   | { readonly t: "steers"; readonly steers: readonly Steer[] }
@@ -133,7 +133,7 @@ function reduce(s: State, a: Action): State {
       };
     }
     case "error":
-      return { ...s, status: { error: a.message } };
+      return { ...s, status: { error: a.message, code: a.code } };
     case "tail": {
       // A message the tail now holds in full needs no streamed copy; a cut one keeps it.
       const whole = new Set(a.items.flatMap((i) => (i.kind === "message" ? [i.text] : [])));
@@ -215,7 +215,7 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       window.fleetd.hub.call("order_get", { workstreamId }),
       window.fleetd.hub.call("workstream_get", { workstreamId }),
     ]);
-    if (!o.ok) return dispatch({ t: "error", message: errorText(o) });
+    if (!o.ok) return dispatch({ t: "error", message: errorText(o), code: o.error.code });
     const brief = w.ok ? (w.output as WorkstreamGet).workstream.brief?.doneWhen : undefined;
     dispatch({ t: "order", out: o.output as OrderGet, ...(brief ? { brief } : {}) });
   }, [workstreamId]);

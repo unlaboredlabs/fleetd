@@ -28,9 +28,9 @@ export function describeCheck(spec: CheckSpec): { kind: string; text: string } {
     case "http":
       return { kind: "HTTP", text: `GET ${spec.url} answers ${spec.status}${spec.contains ? ` containing “${spec.contains}”` : ""}` };
     case "cmd":
-      return { kind: "Command", text: `${spec.argv.join(" ")} on ${spec.machineId} exits ${spec.expectExit}` };
+      return { kind: "Command", text: `\`${spec.argv.join(" ")}\` on ${spec.machineId} exits ${spec.expectExit}` };
     case "test":
-      return { kind: "Test", text: `${spec.testId} passes in ${spec.repo}` };
+      return { kind: "Test", text: `\`${spec.testId}\` passes in ${spec.repo}` };
     case "judge":
       return { kind: "Judge", text: spec.criteria };
     case "human":

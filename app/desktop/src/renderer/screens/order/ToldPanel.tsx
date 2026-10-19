@@ -2,7 +2,8 @@
 
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Dialog, IdChip, Markdown, Text, Tooltip } from "../../ui";
+import { Button, Code, Dialog, IdChip, Text, Tooltip } from "../../ui";
+import { Message } from "./Conversation";
 import type { PromptSummary, SessionPrompt, ThreadRef } from "./contracts";
 import { toldView, type ToldGroup, type ToldWho } from "./told";
 import s from "./order.module.css";
@@ -47,6 +48,7 @@ function Groups({ groups }: { groups: readonly ToldGroup[] }) {
 function Body({ prompt, registry, who }: { prompt: SessionPrompt; registry: readonly PromptSummary[]; who: ToldWho }) {
   const view = toldView(prompt, registry, who);
   const [defaultsOpen, setDefaultsOpen] = useState(false);
+  const [raw, setRaw] = useState(false);
   const Chevron = defaultsOpen ? ChevronDown : ChevronRight;
   const started = new Date(prompt.startedAt).toLocaleString();
   return (
@@ -98,12 +100,13 @@ function Body({ prompt, registry, who }: { prompt: SessionPrompt; registry: read
       <div className={s.section}>
         <span className={s.sectionLabel}>First message</span>
         <Text size="xs" tone="quiet">
-          Raw shows it exactly as sent.
+          {raw ? "Exactly as sent." : "Raw shows it exactly as sent."}
         </Text>
+        <Button variant="quiet" aria-pressed={raw} onClick={() => setRaw((r) => !r)}>
+          {raw ? "Formatted" : "Raw"}
+        </Button>
       </div>
-      <div className={s.toldFirst}>
-        <Markdown source={prompt.text} rawToggle />
-      </div>
+      <div className={s.toldFirst}>{raw ? <Code code={prompt.text} lang="markdown" title="First message" /> : <Message text={prompt.text} />}</div>
     </div>
   );
 }
@@ -126,7 +129,13 @@ function Loader(props: { thread: ThreadRef; who: ToldWho; projectRef: { machineI
     };
   }, [machineId, threadId, pm, pp, source]);
   if (load.t === "loading") return <Text tone="quiet">Loading what it was sent…</Text>;
-  if (load.t === "failed") return <Text tone="danger">{load.message}</Text>;
+  if (load.t === "failed")
+    return (
+      <div className={s.errorRow}>
+        <Text tone="quiet">Couldn’t load what it was sent.</Text>
+        <IdChip label="Details" id={load.message} kind="error" size="xs" tone="quiet" />
+      </div>
+    );
   return <Body prompt={load.prompt} registry={load.registry} who={props.who} />;
 }
 

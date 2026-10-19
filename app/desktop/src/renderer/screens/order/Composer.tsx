@@ -78,12 +78,14 @@ export function SteerComposer({ who, platform, onSend, autoFocus, label }: Steer
         <Text size="xs" tone="quiet" className={cx(s.hint)}>
           {keyHint(who, platform)}
         </Text>
-        <Button variant="secondary" disabled={!canSend} onClick={() => send("now")}>
-          {secondaryLabel}
-        </Button>
-        <Button variant="primary" disabled={!canSend} onClick={(e) => send(modKey(e, platform) ? "now" : "queue")}>
-          {primaryLabel(held)}
-        </Button>
+        <div className={s.composerButtons}>
+          <Button variant="secondary" disabled={!canSend} onClick={() => send("now")}>
+            {secondaryLabel}
+          </Button>
+          <Button variant="primary" disabled={!canSend} onClick={(e) => send(modKey(e, platform) ? "now" : "queue")}>
+            {primaryLabel(held)}
+          </Button>
+        </div>
       </div>
     </div>
   );

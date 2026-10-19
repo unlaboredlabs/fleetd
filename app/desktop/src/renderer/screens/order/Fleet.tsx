@@ -5,6 +5,7 @@ import { cx, RoleTag, StatusChip, Text, Truncate, type StatusTone } from "../../
 import type { AgentLane, CheckSpec, Claim, LaneStatus, PrRef } from "./contracts";
 import { doneRows, doneSummary, type CheckState } from "./doneWhen";
 import { shortModel } from "./format";
+import { InlineText } from "./Conversation";
 import { activityLine, prStage, prTone } from "./lanes";
 import s from "./order.module.css";
 
@@ -110,15 +111,15 @@ export function DoneWhen({ checks, claim }: { checks: readonly CheckSpec[] | und
               <Icon aria-hidden />
             </span>
             <div className={s.checkBody}>
-              <Text>
+              <div>
                 {r.kind === "Judge" || r.kind === "You confirm" ? <span className={s.checkKind}>{r.kind}</span> : null}
-                {r.text}
-              </Text>
+                <InlineText text={r.text} />
+              </div>
               {r.verdict && (r.state !== "passed" || r.reason) ? (
-                <Text size="xs" tone="quiet">
+                <div className={s.checkVerdict}>
                   <span className={s[r.state]}>{r.kind === "Judge" ? `Judge: ${r.verdict}` : r.verdict}</span>
-                  {r.reason ? ` · ${r.reason}` : ""}
-                </Text>
+                  {r.reason ? <InlineText size="xs" tone="quiet" text={r.reason} /> : null}
+                </div>
               ) : null}
             </div>
           </div>

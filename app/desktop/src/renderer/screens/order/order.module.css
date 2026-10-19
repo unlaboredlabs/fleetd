@@ -216,6 +216,15 @@
   flex-direction: column;
   gap: 2px;
 }
+.checkVerdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-1-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  min-width: 0;
+}
 .checkKind {
   color: var(--quiet);
   font-weight: var(--weight-strong);
@@ -281,6 +290,11 @@
 .logEmpty {
   flex: 1;
   padding: var(--space-4) var(--pad);
+}
+.errorRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
 /* One conversation row: time · author · message, on the first line's baseline. */
@@ -454,6 +468,16 @@
 .hint {
   flex: 1 1 200px;
   min-width: 0;
+}
+/* The two send buttons wrap together, never one under the other. */
+.composerButtons {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-2);
+}
+.flexNone {
+  flex: none;
 }
 .composerError {
   color: var(--danger);

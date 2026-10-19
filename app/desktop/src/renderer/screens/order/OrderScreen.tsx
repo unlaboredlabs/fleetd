@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Button, cx, Dialog, IdChip, StatusChip, Text, Truncate } from "../../ui";
 import { SteerComposer } from "./Composer";
-import { Conversation } from "./Conversation";
+import { Conversation, InlineText } from "./Conversation";
 import type { Platform } from "./composer";
 import type { AgentLane, Steer, SteerTarget, ThreadRef } from "./contracts";
 import { buildConversation, entryIndexAt, fanOut } from "./conversation";
@@ -210,9 +210,9 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
           {lead?.threadRef ? <IdChip label={leadName} id={lead.threadRef.threadId} kind="thread" strong /> : <Text strong>{leadName}</Text>}
         </span>
         <span className={s.leadState}>
-          <Text size="xs" tone="quiet">
+          <Truncate size="xs" tone="quiet" expand="none">
             {leadState}
-          </Text>
+          </Truncate>
         </span>
         {lead && leadWorking ? (
           <button type="button" className={s.activityButton} onClick={() => setSheet(agentOf(lead, w))} title="Steer the lead">
@@ -227,11 +227,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       </div>
       <Conversation entries={entries} notice={notice} onAct={onAct} focus={focusIndex} />
       <div className={s.bottom}>
-        {waiting ? (
-          <Text size="xs" tone="quiet" className={cx(s.waiting)}>
-            {waiting}
-          </Text>
-        ) : null}
+        {waiting ? <InlineText size="xs" tone="quiet" className={cx(s.waiting)} text={waiting} /> : null}
         <SteerComposer
           who={{ name: "the lead", ref: w }}
           platform={platform}
@@ -242,13 +238,16 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
     </div>
   );
 
-  const errorText = typeof data.status === "object" ? data.status.error : undefined;
+  // The hub's words for an unknown order name its internals; say it plainly and keep them behind Copy.
+  const failure = typeof data.status === "object" ? data.status : undefined;
+  const errorText = failure ? (failure.code === "not_found" ? `${w} isn’t on this hub.` : `Couldn’t load ${w}.`) : undefined;
   return (
     <div ref={root} className={cx(s.screen, !wide && s.narrow)} data-screen="order">
       {header}
       {errorText ? (
-        <div className={s.logEmpty} data-screen="order.error">
-          <Text tone="danger">{errorText}</Text>
+        <div className={cx(s.logEmpty, s.errorRow)} data-screen="order.error">
+          <Text tone={failure?.code === "not_found" ? "quiet" : "danger"}>{errorText}</Text>
+          {failure ? <IdChip label="Details" id={failure.error} kind="error" size="xs" tone="quiet" /> : null}
         </div>
       ) : wide ? (
         <div className={s.panes}>

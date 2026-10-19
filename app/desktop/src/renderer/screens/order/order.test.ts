@@ -4,7 +4,7 @@ import type { AgentLane, HubEvent, Steer, TailItem } from "./contracts";
 import { buildConversation, entryIndexAt, splitBlocks, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversation";
 import { jumpFromHash } from "./data";
 import { doneRows, doneSummary } from "./doneWhen";
-import { clock } from "./format";
+import { clock, codeRuns, machineCode } from "./format";
 import { mergeSteer, receipt, waitingLine } from "./receipts";
 import { toldView } from "./told";
 
@@ -148,6 +148,12 @@ describe("the conversation", () => {
     expect(conv[4]).toMatchObject({ kind: "say", streaming: true, text: "You approved both of my" });
   });
 
+  it("drops a streamed part once the tail holds the whole reply", () => {
+    const conv = buildConversation(input({ tail: [msg("01:00", "assistant", "The writers already run.")], streamed: [{ messageId: "m1", text: "The" }] }));
+    expect(conv).toHaveLength(1);
+    expect(conv[0]).toMatchObject({ text: "The writers already run." });
+  });
+
   it("shows a message the hub cut at 2,000 characters in full when it streamed in, else says it was cut", () => {
     const full = `${"x".repeat(2500)} the end`;
     const cut = `${full.slice(0, 1999)}…`;
@@ -210,6 +216,17 @@ describe("the conversation", () => {
   });
 });
 
+describe("machine tokens in agent text", () => {
+  it("are set as code; words, file names, links and code are left alone", () => {
+    expect(machineCode("D3 share.w2_after_w1 = W2 starts after W1's PR (project, lead)")).toBe("D3 `share.w2_after_w1` = W2 starts after W1's PR (project, lead)");
+    expect(machineCode("project storefront (devbox/30dbf7e3-87b1-4f78-bede-43e659f04647)")).toBe("project storefront (devbox/`30dbf7e3-87b1-4f78-bede-43e659f04647`)");
+    expect(machineCode("thread 30dbf7e3-87b1-4f78-bede-43e659f04647 and sha 9cd88e70")).toBe("thread `30dbf7e3-87b1-4f78-bede-43e659f04647` and sha `9cd88e70`");
+    expect(machineCode("a follow-up on ShareCard.tsx at github.com, waiting_on_you")).toBe("a follow-up on ShareCard.tsx at github.com, `waiting_on_you`");
+    expect(machineCode("run `echo a_b` then\n```\nx.y_z 9cd88e70\n```\n[link](https://x.dev/a_b-c-d)")).toBe("run `echo a_b` then\n```\nx.y_z 9cd88e70\n```\n[link](https://x.dev/a_b-c-d)");
+    expect(machineCode("the fix-receipt-dates branch, not defaced or 12345678")).toBe("the `fix-receipt-dates` branch, not defaced or 12345678");
+  });
+});
+
 describe("the fleet", () => {
   it("leads the pill with the most urgent state, and rolls up once every agent settled", () => {
     const l = [lane("T31", "working"), lane("T33", "working"), lane("T34", "queued"), lane("T30", "done", 211)];
@@ -234,7 +251,14 @@ describe("receipts", () => {
   it("say how a steer landed and admit a miss", () => {
     expect(clock("2026-10-18T14:02:07.143Z", "UTC")).toBe("14:02:07");
     const stopped = receipt(steer("S12", "delivered", { how: "stopped", stoppedTool: "cargo test --workspace", deliveredAt: "2026-10-18T14:02:07.143Z" }));
-    expect(stopped.line).toMatch(/^S12 · delivered \d\d:\d\d:07 · stopped cargo test --workspace$/);
+    expect(stopped.line).toMatch(/^S12 · delivered \d\d:\d\d:07 · stopped `cargo test --workspace`$/);
+    const quoted = receipt(steer("S12", "acknowledged", { ackExcerpt: "S12: **ok**, running `echo redirected-9cd88e70`" }));
+    expect(quoted.line).toMatch(/“S12: ok, running `echo redirected-9cd88e70`”$/);
+    expect(codeRuns("a `b` c `d")).toEqual([
+      { code: false, text: "a " },
+      { code: true, text: "b" },
+      { code: false, text: " c `d" },
+    ]);
     const missed = receipt(steer("S12", "unacknowledged", { ackExcerpt: "Continuing with the docs page." }));
     expect(missed).toMatchObject({ line: "S12 · not acknowledged · its reply: “Continuing with the docs page.”", tone: "warn", act: { kind: "redirect" } });
     expect(receipt(steer("S12", "failed", { detail: "devbox refused the send" })).line).toBe("S12 · failed: devbox refused the send");
@@ -252,7 +276,7 @@ describe("receipts", () => {
     };
     const now = Date.parse("2026-10-18T14:01:12.000Z");
     const rows = [steer("S11", "delivered"), steer("S12", "queued")];
-    expect(waitingLine(rows, lead, "the lead’s", now)).toBe("S12 waits for the lead’s next step (running cargo test for 1m12s)");
+    expect(waitingLine(rows, lead, "the lead’s", now)).toBe("S12 waits for the lead’s next step (running `cargo test` for 1m12s)");
     expect(waitingLine(rows, { ...lead, status: "idle" }, "the lead’s", now)).toBeUndefined();
   });
 });

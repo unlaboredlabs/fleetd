@@ -4,10 +4,10 @@
 
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { cx, Markdown, Text, Tooltip, VirtualList } from "../../ui";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cx, InlineCode, Markdown, Text, Tooltip, VirtualList, type TextProps } from "../../ui";
 import { foldLabel, systemHeadline, type Author, type Call, type Entry } from "./conversation";
-import { clock } from "./format";
+import { clock, codeRuns, machineCode } from "./format";
 import type { Receipt, ReceiptAct } from "./receipts";
 import s from "./order.module.css";
 
@@ -15,13 +15,28 @@ export interface ReceiptHandlers {
   readonly onAct: (act: ReceiptAct) => void;
 }
 
+/** A message in markdown, with its machine tokens set as code; parsed once per text. */
+export function Message({ text }: { text: string }) {
+  const source = useMemo(() => machineCode(text), [text]);
+  return <Markdown source={source} />;
+}
+
+/** One line of words with its `code` runs set as code (receipts, criteria, reasons): no block markdown. */
+export function InlineText(props: { text: string } & Omit<TextProps, "children">) {
+  const { text, ...style } = props;
+  const runs = useMemo(() => codeRuns(machineCode(text)), [text]);
+  return (
+    <Text {...style}>
+      {runs.map((r, i) => (r.code ? <InlineCode key={i}>{r.text}</InlineCode> : r.text))}
+    </Text>
+  );
+}
+
 export function ReceiptLine({ receipt, onAct }: { receipt: Receipt } & ReceiptHandlers) {
   const act = receipt.act;
   return (
     <div className={cx(s.receipt, s[`tone-${receipt.tone}`])} data-receipt={receipt.stage}>
-      <Text size="xs" tone="inherit">
-        {receipt.line}
-      </Text>
+      <InlineText size="xs" tone="inherit" text={receipt.line} />
       {act ? (
         <button type="button" className={s.linkButton} onClick={() => onAct(act)}>
           {act.kind === "withdraw" ? "Withdraw" : "Interrupt and redirect"}
@@ -55,7 +70,7 @@ export function FleetdText({ text }: { text: string }) {
       </Disclosure>
       {open ? (
         <div className={s.systemText}>
-          <Markdown source={text} />
+          <Message text={text} />
         </div>
       ) : null}
     </div>
@@ -82,7 +97,7 @@ const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolea
           </span>
           <div className={s.body}>
             {e.to ? <span className={s.to}>to {e.to}, directly</span> : null}
-            <Markdown source={e.text} />
+            <Message text={e.text} />
             {e.streaming ? <span className={s.streaming}>Still writing…</span> : null}
             {e.clipped ? <span className={s.streaming}>The hub sends a message’s first 2,000 characters; the rest is in the thread.</span> : null}
             {e.receipt ? <ReceiptLine receipt={e.receipt} onAct={onAct} /> : null}
@@ -100,7 +115,7 @@ const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolea
             </Disclosure>
             {open ? (
               <div className={s.systemText}>
-                <Markdown source={e.text} />
+                <Message text={e.text} />
               </div>
             ) : null}
           </div>
@@ -134,9 +149,7 @@ const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolea
         <div className={cx(s.row, last)} data-entry="events">
           <span className={s.time}>{clock(e.at)}</span>
           <span />
-          <Text size="xs" tone="quiet">
-            {e.text}
-          </Text>
+          <InlineText size="xs" tone="quiet" text={e.text} />
         </div>
       );
     case "more":
@@ -145,7 +158,7 @@ const Row = memo(function Row(props: { entry: Entry; open: boolean; last: boolea
           <span />
           <span />
           <div className={s.body}>
-            <Markdown source={e.text} />
+            <Message text={e.text} />
             {e.streaming ? <span className={s.streaming}>Still writing…</span> : null}
             {e.clipped ? <span className={s.streaming}>The hub sends a message’s first 2,000 characters; the rest is in the thread.</span> : null}
             {e.receipt ? <ReceiptLine receipt={e.receipt} onAct={onAct} /> : null}

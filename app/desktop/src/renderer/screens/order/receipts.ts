@@ -50,7 +50,7 @@ export function receipt(s: Steer): Receipt {
             ? " · after its running step"
             : s.how === "stopped"
               ? s.stoppedTool
-                ? ` · stopped ${clip(s.stoppedTool, 60)}`
+                ? ` · stopped \`${clip(s.stoppedTool, 60)}\``
                 : " · stopped its current step"
               : s.how === "joined"
                 ? " · joined its running turn"
@@ -109,9 +109,9 @@ export function waitingLine(steers: readonly Steer[], lane: AgentLane | undefine
     const a = now.activity;
     doing =
       a.kind === "command"
-        ? ` (running ${clip(a.text, 48)} for ${took})`
+        ? ` (running \`${clip(a.text, 48)}\` for ${took})`
         : a.kind === "edit"
-          ? ` (editing ${clip(a.path, 48)}, ${took})`
+          ? ` (editing \`${clip(a.path, 48)}\`, ${took})`
           : a.kind === "tool"
             ? ` (${a.name}, ${took})`
             : ` (${a.kind}, ${took})`;

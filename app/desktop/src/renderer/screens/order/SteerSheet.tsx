@@ -3,9 +3,9 @@
 // reaches the order's lead as a line in its next wake, so the lead's plan doesn't fork; the sheet says so.
 
 import { useEffect, useRef, useState } from "react";
-import { Button, cx, Markdown, RoleTag, Sheet, Text } from "../../ui";
+import { Button, cx, IdChip, RoleTag, Sheet, Text } from "../../ui";
 import { SteerComposer } from "./Composer";
-import { FleetdText, ReceiptLine, type ReceiptHandlers } from "./Conversation";
+import { FleetdText, InlineText, Message, ReceiptLine, type ReceiptHandlers } from "./Conversation";
 import type { Platform } from "./composer";
 import type { AgentLane, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } from "./contracts";
 import { ActivityText } from "./Fleet";
@@ -59,7 +59,13 @@ function Items({ thread, source, focusItem }: { thread: ThreadRef | undefined; s
   }, [focus]);
   if (thread === undefined) return <Text tone="quiet">It hasn’t started yet.</Text>;
   if (state === undefined) return <Text tone="quiet">Loading its last items…</Text>;
-  if ("error" in state) return <Text tone="danger">{state.error}</Text>;
+  if ("error" in state)
+    return (
+      <div className={s.errorRow}>
+        <Text tone="quiet">Couldn’t load its last items.</Text>
+        <IdChip label="Details" id={state.error} kind="error" size="xs" tone="quiet" />
+      </div>
+    );
   if (state.items.length === 0) return <Text tone="quiet">Nothing yet.</Text>;
   return (
     <div className={s.sheetItems}>
@@ -74,7 +80,7 @@ function Items({ thread, source, focusItem }: { thread: ThreadRef | undefined; s
         ) : i.role === "system" ? null : (
           <div key={n} ref={n === focus ? lit : undefined} className={cx(s.sheetItem, n === focus && s.lit)}>
             <span className={s.time}>{clock(i.at)}</span>
-            {i.role === "user" ? <FleetdText text={i.text} /> : <Markdown source={i.text} />}
+            {i.role === "user" ? <FleetdText text={i.text} /> : <Message text={i.text} />}
           </div>
         ),
       )}
@@ -115,7 +121,9 @@ export function SteerSheet(
       {agent ? (
         <div className={s.sheetBody} data-screen="order.steer">
           <div className={s.laneActivity}>
-            <RoleTag role={agent.lane.role} />
+            <span className={s.flexNone}>
+              <RoleTag role={agent.lane.role} />
+            </span>
             <ActivityText lane={agent.lane} />
           </div>
           {agent.lane.threadRef ? (
@@ -143,7 +151,7 @@ export function SteerSheet(
                     <Text size="xs" tone="quiet">
                       {st.by.kind === "lead" ? "The lead" : "You"}
                     </Text>
-                    <Markdown source={st.text} />
+                    <Message text={st.text} />
                     <ReceiptLine receipt={receipt(st)} onAct={props.onAct} />
                   </div>
                 </div>
@@ -156,11 +164,7 @@ export function SteerSheet(
               {`The lead is told: its next wake says you steered ${agent.ref} and what you said, so its plan and any message it sends ${agent.ref} stay in line. It isn’t interrupted.`}
             </Text>
           )}
-          {waiting ? (
-            <Text size="xs" tone="quiet">
-              {waiting}
-            </Text>
-          ) : null}
+          {waiting ? <InlineText size="xs" tone="quiet" text={waiting} /> : null}
           <SteerComposer
             who={{ name: agent.name, ref: agent.ref }}
             platform={props.platform}

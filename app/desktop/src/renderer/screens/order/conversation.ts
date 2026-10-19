@@ -132,6 +132,8 @@ export function systemHeadline(text: string): string {
   return `From fleetd: ${line.length > 100 ? `${line.slice(0, 99)}…` : line}`;
 }
 
+const RECENT = 8;
+
 // The hub cuts tail messages at 2,000 characters with a trailing ellipsis (hub/api/grants.rs TAIL_TEXT).
 const TAIL_TEXT = 2000;
 const isClipped = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
@@ -198,6 +200,10 @@ export function buildConversation(input: ConversationInput): Entry[] {
   const out: Entry[] = [];
   const streamed = input.streamed ?? [];
   const used = new Set<string>();
+  // A streamed message is matched to the lead's newest replies only, so a short part ("The") can't vanish into an
+  // old reply that happens to start the same way.
+  const assistantCount = tail.filter((i) => i.kind === "message" && i.role === "assistant").length;
+  let assistantSeen = 0;
   let calls: ActionItem[] = [];
   let foldStart: string | undefined;
   const seen = new Map<string, number>();
@@ -269,16 +275,20 @@ export function buildConversation(input: ConversationInput): Entry[] {
       foldStart = item.at;
       out.push({ kind: "system", key: keyFor("system", item.at), at: item.at, headline: systemHeadline(item.text), text: item.text });
     } else {
-      // The live feed has it in full when it streamed while the view was open; the tail may cut it.
+      // The same message from the live feed: in full where the tail cut it, or a part the feed caught.
       const head = isClipped(item.text) ? item.text.slice(0, -1) : item.text;
-      const full = streamed.find((m) => !used.has(m.messageId) && (m.text === item.text || (head.length > 0 && m.text.startsWith(head))));
-      if (full) used.add(full.messageId);
+      const recent = assistantSeen++ >= assistantCount - RECENT;
+      const same = recent
+        ? streamed.find((m) => !used.has(m.messageId) && m.text.trim() !== "" && (m.text.startsWith(head) || head.startsWith(m.text)))
+        : undefined;
+      if (same) used.add(same.messageId);
+      const full = same !== undefined && same.text.length > head.length ? same.text : undefined;
       out.push({
         kind: "say",
         key: keyFor("say", item.at),
         at: item.at,
         author: { kind: "lead" },
-        text: full?.text ?? item.text,
+        text: full ?? item.text,
         ...(full === undefined && isClipped(item.text) ? { clipped: true } : {}),
       });
     }
