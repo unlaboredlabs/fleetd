@@ -1,6 +1,6 @@
 // M8 "done when" on lab-a, through the desktop app's protocol: a human key from `fleetd hub key create --human` on
-// the hub's /app WebSocket, sending the same frames and tool calls the GPUI app sends. A secret ask is sealed client
-// side with libsodium's crypto_box_seal (the app's Rust seal is checked against libsodium in its own tests) and lands
+// the hub's /app WebSocket, sending the same frames and tool calls the app sends. A secret ask is sealed client
+// side with libsodium's crypto_box_seal, as the app seals it, and lands
 // 0600 on the node, its value found nowhere in the hub's files, logs or events; a checklist ticked done fails its
 // verify check, reopens, then passes; a gated irreversible command is refused to an agent key and runs after Approve,
 // waking the lead with its exit code. The loud items carry the `attention` the app notifies from, and attention_policy
