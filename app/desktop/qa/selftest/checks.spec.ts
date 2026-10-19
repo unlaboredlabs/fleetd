@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import type { CheckId } from "../dom/allowlist.ts";
-import { check, type Launched, launch, resultsDir, setView, shoot, show } from "../harness.ts";
+import { assertExpectedState, check, type Launched, launch, resultsDir, setView, shoot, show } from "../harness.ts";
 import { readShots } from "../report.ts";
 import { sizes, themes } from "../registry.ts";
 
@@ -73,6 +73,17 @@ test("a screen brought up by an interaction is shown and checked", async () => {
   await setView(app, page, "small", "dark");
   await show(page, "palette", "#/", (p) => p.keyboard.press("ControlOrMeta+K"));
   expect(await check(page, [])).toEqual([]);
+});
+
+test("a route landing on a not-found state fails unless the entry expects it", async () => {
+  const { app, page } = launched;
+  await setView(app, page, "medium", "light");
+  await show(page, "order", "#/order/W2");
+  await expect(assertExpectedState(page, { id: "order" })).rejects.toThrow(/order\.not-found/);
+  await assertExpectedState(page, { id: "order", expect: "error" });
+  await show(page, "good", "#/good");
+  await assertExpectedState(page, { id: "good" });
+  await expect(assertExpectedState(page, { id: "good", expect: "error" })).rejects.toThrow(/expects an error/);
 });
 
 test("content under the macOS window controls is reported", async () => {

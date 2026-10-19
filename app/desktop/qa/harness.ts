@@ -7,7 +7,7 @@ import path from "node:path";
 import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
 import { buildSync } from "esbuild";
 import type { Box, CheckOptions, Finding, ScrollStep } from "./dom/checks.ts";
-import { type FixtureName, type SizeName, sizes, type Theme } from "./registry.ts";
+import { type FixtureName, type Screen, type SizeName, sizes, type Theme } from "./registry.ts";
 
 const qaDir = import.meta.dirname;
 export const desktopDir = path.resolve(qaDir, "..");
@@ -154,6 +154,24 @@ export async function show(page: Page, screenId: string, route: string, open?: (
     .first()
     .waitFor({ state: "visible", timeout: 10_000 });
   await settle(page);
+}
+
+// A sub-state ending in one of these is an error page, whether the screen's own or one of its panels'.
+const ERROR_STATES = new Set(["error", "not-found", "notfound", "missing", "failed"]);
+
+// Fails when the view shows an error or not-found state the registry entry doesn't expect, or expects one and
+// shows none.
+export async function assertExpectedState(page: Page, screen: Pick<Screen, "id" | "expect">) {
+  const states = await page.locator("[data-screen]").evaluateAll((els) => els.map((e) => e.getAttribute("data-screen") ?? ""));
+  const errors = states.filter((s) => ERROR_STATES.has(s.split(".").pop() ?? ""));
+  if (screen.expect === "error" && errors.length === 0) {
+    throw new Error(`${screen.id} expects an error state but shows ${states.join(", ")}`);
+  }
+  if (screen.expect !== "error" && errors.length > 0) {
+    throw new Error(
+      `${screen.id} shows ${errors.join(", ")}: fix the route or fixture (an id the fixture doesn't have?), or register the entry with expect: "error"`,
+    );
+  }
 }
 
 // Fonts loaded, no skeletons, and two frames painted after the last layout change. `fonts.ready` waits for the faces

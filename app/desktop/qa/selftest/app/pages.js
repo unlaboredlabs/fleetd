@@ -20,6 +20,8 @@ const pages = {
     <div class="case pane"><div class="row"><span>W1</span><div class="grow shrinks"><div class="ellipsis">A flex child that may shrink, so its ellipsis shows inside the pane</div></div></div></div>
     <div class="case w200" style="overflow-x: auto"><span class="nowrap">A wide line that scrolls sideways inside its own scroller</span></div>
   </div>`,
+  // A route to an order the fixture doesn't have.
+  "#/order/W2": `<div class="page" data-screen="order.not-found"><p>This order doesn't exist.</p></div>`,
   // Every marked element must be reported, and nothing else.
   "#/bad": `<div class="page" data-screen="bad">
     <div class="case w200 nowrap clip" data-testid="exp-overflow-clip">A long single line clipped at the edge with no ellipsis at all</div>
