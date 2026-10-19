@@ -662,9 +662,11 @@ pub fn old_t3_removal(
     )
 }
 
-/// Commands that undo `machine add`: the node's service always; with `purge` also the node's key and settings,
-/// fleetd's Claude login and config, its logs, and what an older fleetd left. The fleetd binary stays: it may be
-/// the CLI the installer put there.
+/// Commands that undo `machine add`: the node's service (unless `own_service` is false: the unit there runs another
+/// fleet's node); with `purge` also the node's key and settings, fleetd's Claude login and config, its logs, and,
+/// for the default fleet only, what an older fleetd left. The fleetd binary stays: it may be the CLI the installer
+/// put there.
+#[allow(clippy::too_many_arguments)]
 pub fn plan_machine_remove(
     platform: Platform,
     home: &str,
@@ -672,20 +674,24 @@ pub fn plan_machine_remove(
     config_home: &str,
     uid: u32,
     suffix: &str,
+    own_service: bool,
     purge: bool,
 ) -> Vec<Step> {
     let l = fleetd.map_or_else(|| machine_layout(home), |f| machine_layout_at(home, f));
     let dirs = Dirs { home, config_home };
     let unit_file = |role: Role| unit_path(platform, &dirs, role, suffix);
     let services = ServiceManager::new(platform, uid, suffix, unit_file);
-    let mut steps = vec![step(
-        "stop and remove the node service",
-        format!(
-            "{}; rm -f {}",
-            services.remove(Role::Node),
-            q(&unit_file(Role::Node))
-        ),
-    )];
+    let mut steps = Vec::new();
+    if own_service {
+        steps.push(step(
+            "stop and remove the node service",
+            format!(
+                "{}; rm -f {}",
+                services.remove(Role::Node),
+                q(&unit_file(Role::Node))
+            ),
+        ));
+    }
     if purge {
         let mut paths = vec![&l.node_home, &l.env_file, &l.logs];
         paths.extend(l.legacy_share.iter());
@@ -696,7 +702,9 @@ pub fn plan_machine_remove(
                 paths.iter().map(|p| q(p)).collect::<Vec<_>>().join(" ")
             ),
         ));
-        steps.push(old_t3_removal(platform, home, config_home, uid, suffix));
+        if fleetd.is_none() {
+            steps.push(old_t3_removal(platform, home, config_home, uid, suffix));
+        }
     }
     if platform == Platform::Linux {
         steps.push(step(

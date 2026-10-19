@@ -55,8 +55,8 @@ fleetd status
 `--home <dir>` names one hub's (or node's) directory; whatever else that command keeps goes in the directory above
 it, so `--home /tmp/fleet2/hub` works like `FLEETD_HOME=/tmp/fleet2`. `status`, `time`, `steer`, `steers`, `answer`
 and `hub github-webhook` take `--home` too. `FLEETD_HOME` wins when both are given. User services are per user, not
-per fleet: give the second fleet its own `--unit-suffix`, or run it with `--no-service`. fleetd refuses to take over
-the first fleet's services.
+per fleet: give the second fleet its own `--unit-suffix`, or run it with `--no-service`. A second fleet's `init`,
+`machine add`, `machine remove` and `uninstall` never write, stop or remove the first fleet's services.
 
 ## Timelines {#timelines}
 

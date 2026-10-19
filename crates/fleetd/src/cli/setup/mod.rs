@@ -538,9 +538,8 @@ pub async fn install_hub(plan: &HubPlan<'_>, log: &dyn Fn(&str)) -> Result<Strin
     };
     // A second fleet on this machine (its own fleetd dir) never takes over the first one's hub service.
     if plan.with_service
-        && crate::home::relocated().is_some()
-        && let (Some(old), Some(file)) = (&existing, &unit_file)
-        && !old.contains(&home_text)
+        && units::foreign_unit(existing.as_deref(), &home_text)
+        && let Some(file) = &unit_file
     {
         return Err(Failure {
             message: format!("{file} runs another fleet's hub"),
@@ -819,7 +818,13 @@ async fn uninstall_command(argv: &[String]) -> u8 {
             Role::Hub,
             &suffix,
         );
-        if Path::new(&file).exists() {
+        let existing = std::fs::read_to_string(&file).ok();
+        if units::foreign_unit(existing.as_deref(), &home.to_string_lossy()) {
+            say(&format!(
+                "left {file} alone: it runs another fleet's hub, not the one in {}",
+                home.display()
+            ));
+        } else if existing.is_some() {
             let uid = local_uid();
             if let Err(message) = sh(
                 &ServiceManager::new(platform, uid, &suffix, |_| file.clone()).remove(Role::Hub),
@@ -883,7 +888,8 @@ async fn uninstall_command(argv: &[String]) -> u8 {
         return fail(&format!("cannot delete {home_text}: {error}"));
     }
     say(&format!("deleted {home_text}"));
-    if let Some(platform) = local_platform() {
+    // What an older fleetd installed for T3 Code belongs to the user's own fleet, never a second one.
+    if let Some(platform) = local_platform().filter(|_| crate::home::relocated().is_none()) {
         let dirs = local_dirs();
         let suffix = state.map(|s| s.unit_suffix).unwrap_or_default();
         let step = machine_plan::old_t3_removal(

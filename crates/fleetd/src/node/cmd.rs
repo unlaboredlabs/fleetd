@@ -15,14 +15,21 @@ use super::wire::{CmdCheck, CmdResult, Text, exit_code, tail_text};
 pub const OUTPUT_TAIL_MAX: usize = 2000;
 const SCRUBBED: &str = "[secret]";
 
-/// How a `cmd_result`'s output starts when the node refused the command: its cwd is outside `cmdRoots`.
+/// How a `cmd_result`'s output starts when the node refused the command: its cwd is outside `cmdRoots`, or isn't
+/// there.
 pub const REFUSED: &str = "fleetd node refused to run this: ";
 
 /// Why the node refused a command it never ran, from its `cmd_result`.
-pub fn refusal(exit_code_is_none: bool, output_tail: &str) -> Option<&str> {
+pub fn not_run_why(exit_code_is_none: bool, output_tail: &str) -> Option<&str> {
     output_tail
         .strip_prefix(REFUSED)
         .filter(|_| exit_code_is_none)
+}
+
+/// [`not_run_why`] when the cwd is outside cmdRoots (older nodes say "outside the directories this node runs
+/// commands in"); a cwd that doesn't exist is not this.
+pub fn refusal(exit_code_is_none: bool, output_tail: &str) -> Option<&str> {
+    not_run_why(exit_code_is_none, output_tail).filter(|why| why.contains(" is outside "))
 }
 
 /// What a person does about a checkout outside `cmdRoots` on `machine`.

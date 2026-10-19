@@ -92,8 +92,8 @@ there: the hub in <code>$FLEETD_HOME/hub</code>, the node in <code>$FLEETD_HOME/
 <p><code>--home &lt;dir&gt;</code> names one hub's (or node's) directory; whatever else that command keeps goes in the directory above
 it, so <code>--home /tmp/fleet2/hub</code> works like <code>FLEETD_HOME=/tmp/fleet2</code>. <code>status</code>, <code>time</code>, <code>steer</code>, <code>steers</code>, <code>answer</code>
 and <code>hub github-webhook</code> take <code>--home</code> too. <code>FLEETD_HOME</code> wins when both are given. User services are per user, not
-per fleet: give the second fleet its own <code>--unit-suffix</code>, or run it with <code>--no-service</code>. fleetd refuses to take over
-the first fleet's services.</p>
+per fleet: give the second fleet its own <code>--unit-suffix</code>, or run it with <code>--no-service</code>. A second fleet's <code>init</code>,
+<code>machine add</code>, <code>machine remove</code> and <code>uninstall</code> never write, stop or remove the first fleet's services.</p>
 <h2 id="timelines">Timelines<a class="anchor" href="#timelines" aria-label="Link to this section">#</a></h2>
 <p>The hub keeps the spans behind <a href="/docs/time-inspector">Where time went</a> in <code>hub.sqlite</code> for 30 days, and their daily
 totals and each finished order's critical path for 400 days (older ranges show those totals, without the commands

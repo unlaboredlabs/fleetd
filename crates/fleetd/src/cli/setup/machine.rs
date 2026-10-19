@@ -755,14 +755,42 @@ async fn remove_command(argv: &[String]) -> u8 {
                 config: record.ssh_config.clone(),
                 local: record.local,
             };
-            let relocated = crate::home::relocated().map(|d| d.to_string_lossy().into_owned());
+            let relocated = crate::home::relocated()
+                .map(|d| d.to_string_lossy().into_owned())
+                .filter(|_| record.local);
+            // A second fleet's local node never stops the first fleet's node service.
+            let own_service = match &relocated {
+                None => true,
+                Some(fleetd) => {
+                    let unit = super::units::unit_path(
+                        record.platform,
+                        &super::units::Dirs {
+                            home: &record.home,
+                            config_home: &record.config_home,
+                        },
+                        super::units::Role::Node,
+                        &record.unit_suffix,
+                    );
+                    let node_home =
+                        super::machine_plan::machine_layout_at(&record.home, fleetd).node_home;
+                    let own = !super::units::foreign_unit(
+                        std::fs::read_to_string(&unit).ok().as_deref(),
+                        &node_home,
+                    );
+                    if !own {
+                        say(&format!("left {unit} alone: it runs another fleet's node"));
+                    }
+                    own
+                }
+            };
             let steps = plan_machine_remove(
                 record.platform,
                 &record.home,
-                relocated.as_deref().filter(|_| record.local),
+                relocated.as_deref(),
                 &record.config_home,
                 record.uid,
                 &record.unit_suffix,
+                own_service,
                 purge,
             );
             for (i, step) in steps.iter().enumerate() {
