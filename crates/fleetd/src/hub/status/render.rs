@@ -273,7 +273,7 @@ impl World {
             .collect();
         let failures = item_failures(&items, &recent, &links);
         let steers = crate::hub::steer::store::recent(&hub.db, now - DAY_MS)?;
-        let model = hub.db.with(|c| {
+        let mut model = hub.db.with(|c| {
             Ok(super::estimate::ModelData::read(
                 c,
                 &orders,
@@ -281,6 +281,17 @@ impl World {
                 calibration,
             )?)
         })?;
+        // Only Changes before review need the rule, and reading it reads the order: few, not every Change in view.
+        model.reviewless = model
+            .changes
+            .iter()
+            .filter(|c| {
+                super::model::change_stage(c.state)
+                    == Some(fleetd_contracts::plan::ItemStage::PrOpen)
+            })
+            .filter(|c| hub.reviews.reviews_needed(c) == 0)
+            .map(|c| c.change_id.to_string())
+            .collect();
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -738,7 +749,14 @@ pub fn render(
         };
         let steps: Vec<Line<1, 80>> = p
             .filter(|p| !p.verified)
-            .map(|p| super::estimate::steps(p.stage, mo.prs.get(&key).copied(), after))
+            .map(|p| {
+                super::estimate::steps(
+                    p.stage,
+                    mo.prs.get(&key).copied(),
+                    !mo.no_review.contains(&key),
+                    after,
+                )
+            })
             .unwrap_or_default()
             .iter()
             .map(|x| line::<80>(x))
@@ -1368,6 +1386,27 @@ pub fn render(
             })
             .collect(),
         steers_unacked,
+        train_stuck: w
+            .model
+            .changes
+            .iter()
+            .filter(|c| matches!(c.state, ChangeState::Queued | ChangeState::Ready))
+            .filter(|c| {
+                s.orders
+                    .iter()
+                    .any(|o| o.w.workstream_id == c.workstream_id)
+            })
+            .filter_map(|c| {
+                let error = c.last_error.as_ref()?.as_str();
+                (!error.is_empty()).then(|| {
+                    (
+                        c.pr_number.get(),
+                        c.project_ref.machine_id.to_string(),
+                        error.to_owned(),
+                    )
+                })
+            })
+            .collect(),
         slower: mo
             .slower
             .iter()

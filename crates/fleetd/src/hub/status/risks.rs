@@ -38,6 +38,8 @@ pub struct RiskFacts {
     pub steers_unacked: Vec<(String, String, String)>,
     /// (item, where it is, measured time there) of items past 1.5× their stage's usual time, slowest first.
     pub slower: Vec<(String, String, String)>,
+    /// (PR number, its machine, the train's last error) of PRs waiting for the train while that error holds them.
+    pub train_stuck: Vec<(i64, String, String)>,
 }
 
 /// A delivered steer is a risk once it has gone this long without an acknowledgement.
@@ -96,6 +98,22 @@ pub fn risks(f: &RiskFacts) -> Vec<Risk> {
                 format!("`{key}` has blocked {ws} for {}", age(*open_ms)),
             ));
         }
+    }
+    for (pr, machine, error) in &f.train_stuck {
+        let error = error.strip_prefix("git: ").unwrap_or(error);
+        let (level, message) = if error.starts_with(crate::hub::train::git::REFUSED_HERE) {
+            (
+                Danger,
+                format!(
+                    "#{pr} can't merge: its checkout on {machine} is outside the node's cmdRoots. Fix: add it to \"cmdRoots\" in node.json on {machine}, then restart the node"
+                ),
+            )
+        } else if error.starts_with(crate::hub::train::git::BLOCKED) {
+            (Danger, format!("#{pr} can't merge: {error}"))
+        } else {
+            (Warning, format!("#{pr} is held on the train: {error}"))
+        };
+        out.push(risk(RiskRule::TrainStuck, level, message));
     }
     for (item, stage, took) in f.slower.iter().take(2) {
         out.push(risk(
@@ -271,6 +289,44 @@ mod tests {
         assert_eq!(
             risks(&f)[1].message.as_str(),
             "buildbox offline 4m (2 tasks waiting)"
+        );
+    }
+
+    #[test]
+    fn a_pr_held_by_the_train_is_a_risk_with_its_fix() {
+        let f = RiskFacts {
+            train_stuck: vec![
+                (
+                    151,
+                    "fe7".into(),
+                    format!(
+                        "git: {}/tmp/w/lab is outside cmdRoots, the directories this node runs commands in (/home/a) on fe7. Fix: …",
+                        crate::hub::train::git::REFUSED_HERE
+                    ),
+                ),
+                (
+                    152,
+                    "fe7".into(),
+                    "GitHub refused the merge (HTTP 405): no".into(),
+                ),
+            ],
+            ..Default::default()
+        };
+        let all = risks(&f);
+        assert_eq!(
+            all.iter().map(|r| (r.rule, r.level)).collect::<Vec<_>>(),
+            [
+                (RiskRule::TrainStuck, RiskLevel::Danger),
+                (RiskRule::TrainStuck, RiskLevel::Warning)
+            ]
+        );
+        assert_eq!(
+            all[0].message.as_str(),
+            "#151 can't merge: its checkout on fe7 is outside the node's cmdRoots. Fix: add it to \"cmdRoots\" in node.json on fe7, then restart the node"
+        );
+        assert_eq!(
+            all[1].message.as_str(),
+            "#152 is held on the train: GitHub refused the merge (HTTP 405): no"
         );
     }
 
