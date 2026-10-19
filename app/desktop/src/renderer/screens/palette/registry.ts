@@ -62,15 +62,19 @@ export interface TextAction {
 
 type Listener = () => void;
 
-/** `default` sits below every `screen` registration of the same id, so a built-in can never shadow a screen. */
-export type Priority = "default" | "screen";
+/**
+ * Lowest first: `builtin` is the palette's own fallback (defaults.ts), `default` a screen module's always-on version
+ * (time, settings), `screen` a mounted screen's. A lower one never shadows a higher one, whichever registered first.
+ */
+export type Priority = "builtin" | "default" | "screen";
+const RANK: Readonly<Record<Priority, number>> = { builtin: 0, default: 1, screen: 2 };
 
 interface Entry {
   readonly command: Command;
   readonly priority: Priority;
 }
 
-// Stacks, top last: defaults at the bottom, then screens in registration order. An unmount restores the one below.
+// Stacks, top last: by priority, then in registration order. An unmount restores the one below.
 const commands = new Map<string, Entry[]>();
 const sources = new Map<string, Source>();
 const textActions: TextAction[] = [];
@@ -94,9 +98,9 @@ export const registerCommands = (list: readonly Command[], priority: Priority = 
   const entries = list.map((command): Entry => ({ command, priority }));
   for (const entry of entries) {
     const stack = commands.get(entry.command.id) ?? [];
-    // A default goes above other defaults but below the first screen entry.
-    const firstScreen = stack.findIndex((e) => e.priority === "screen");
-    if (priority === "default" && firstScreen >= 0) stack.splice(firstScreen, 0, entry);
+    // Above its own priority's entries, below the first of a higher one.
+    const above = stack.findIndex((e) => RANK[e.priority] > RANK[priority]);
+    if (above >= 0) stack.splice(above, 0, entry);
     else stack.push(entry);
     commands.set(entry.command.id, stack);
   }
