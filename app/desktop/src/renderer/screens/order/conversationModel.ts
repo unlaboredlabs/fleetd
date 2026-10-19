@@ -145,7 +145,7 @@ const RECENT = 8;
  * when it holds the whole message. Undefined when the two don't overlap, so they can't be shown as one.
  */
 export function completeWith(head: string, tail: string): string | undefined {
-  if (tail.startsWith(head)) return tail;
+  if (tail.startsWith(head) || tail.endsWith(head)) return tail;
   if (head.endsWith(tail) || head.includes(tail)) return head;
   // A short overlap could be chance; a dozen characters of the same words is the same message.
   const min = Math.min(12, tail.length);
@@ -155,9 +155,11 @@ export function completeWith(head: string, tail: string): string | undefined {
   return undefined;
 }
 
-// The hub cuts tail messages at 2,000 characters with a trailing ellipsis (hub/api/grants.rs TAIL_TEXT).
+// A tail message is at most 2,000 UTF-16 units: the hub keeps a long message's END (thread_view.rs tail_of,
+// keep_tail), and the offline cache keeps its start with an ellipsis (tools.rs). Either way part of it is missing.
 const TAIL_TEXT = 2000;
-const isClipped = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
+const cutAtEnd = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
+const isClipped = (text: string): boolean => cutAtEnd(text) || text.length >= TAIL_TEXT;
 
 export interface Streamed {
   readonly messageId: string;
@@ -304,10 +306,12 @@ export function buildConversation(input: ConversationInput): Entry[] {
       out.push({ kind: "system", key: keyFor("system", item.at), at: item.at, headline: systemHeadline(item.text), text: item.text });
     } else {
       // The same message from the live feed: in full where the tail cut it, or a part the feed caught.
-      const head = isClipped(item.text) ? item.text.slice(0, -1) : item.text;
+      const head = cutAtEnd(item.text) ? item.text.slice(0, -1) : item.text;
       const recent = assistantSeen++ >= assistantCount - RECENT;
       const same = recent
-        ? streamed.find((m) => !used.has(m.messageId) && m.text.trim() !== "" && (m.text.startsWith(head) || head.startsWith(m.text)))
+        ? streamed.find(
+            (m) => !used.has(m.messageId) && m.text.trim() !== "" && (m.text.startsWith(head) || head.startsWith(m.text) || m.text.endsWith(head)),
+          )
         : undefined;
       if (same) used.add(same.messageId);
       const full = same !== undefined && same.text.length > head.length ? same.text : undefined;
@@ -347,17 +351,16 @@ export function buildConversation(input: ConversationInput): Entry[] {
       ...(streaming ? { streaming } : {}),
     });
   });
-  // No streamed copy: an idle lead's newest message from the tail, if the tail cut it, ends as the thread says.
+  // Idle, the lead's newest message is finished, and the thread's latest-message tail holds its true end: the
+  // tail item and the live feed may each have caught it mid-stream (or the hub kept only part of it). Complete it,
+  // whichever of them built the row.
   if (latest && fresh.length === 0) {
     for (let k = out.length - 1; k >= 0; k--) {
       const e = out[k];
       if (e?.kind !== "say" || e.author.kind !== "lead" || e.to !== undefined) continue;
-      if (e.clipped) {
-        const full = completeWith(e.text.slice(0, -1), latest.text);
-        if (full !== undefined) {
-          out[k] = { kind: "say", key: e.key, at: e.at, author: e.author, text: full };
-        }
-      }
+      const own = cutAtEnd(e.text) ? e.text.slice(0, -1) : e.text;
+      const full = completeWith(own, latest.text);
+      if (full !== undefined && full !== e.text) out[k] = { kind: "say", key: e.key, at: e.at, author: e.author, text: full };
       break;
     }
   }

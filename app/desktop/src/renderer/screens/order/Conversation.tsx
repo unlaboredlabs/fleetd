@@ -126,7 +126,7 @@ const Row = memo(function Row(
             {e.to ? <span className={s.to}>to {e.to}, directly</span> : null}
             <Message text={e.text} />
             {e.streaming ? <span className={s.streaming}>Still writing…</span> : null}
-            {e.clipped ? <span className={s.streaming}>The hub sends a message’s first 2,000 characters; the rest is in the thread.</span> : null}
+            {e.clipped ? <span className={s.streaming}>The hub sends 2,000 characters of a long message; the whole of it is in the thread.</span> : null}
             {e.receipt ? <ReceiptLine receipt={e.receipt} onAct={onAct} /> : null}
           </div>
         </div>
@@ -187,7 +187,7 @@ const Row = memo(function Row(
           <div className={s.body}>
             <Message text={e.text} />
             {e.streaming ? <span className={s.streaming}>Still writing…</span> : null}
-            {e.clipped ? <span className={s.streaming}>The hub sends a message’s first 2,000 characters; the rest is in the thread.</span> : null}
+            {e.clipped ? <span className={s.streaming}>The hub sends 2,000 characters of a long message; the whole of it is in the thread.</span> : null}
             {e.receipt ? <ReceiptLine receipt={e.receipt} onAct={onAct} /> : null}
           </div>
         </div>

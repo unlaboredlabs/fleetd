@@ -12,12 +12,23 @@ export interface OrderCommandContext {
   readonly finished: boolean;
   readonly lanes: readonly AgentLane[];
   readonly steers: readonly Steer[];
+  /** The steers have loaded for this connection: until then nothing can be withdrawn. */
+  readonly logReady: boolean;
   readonly go: (hash: string) => void;
   readonly askStop: () => void;
   readonly steerLead: () => void;
   readonly pickAgent: () => void;
   readonly steerLane: (lane: AgentLane) => void;
   readonly withdraw: (steerId: string) => void;
+}
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** At most `max` characters as a person counts them (an emoji or accented letter is one), ending in "…" when cut. */
+export function cutGraphemes(text: string, max: number): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  const parts = Array.from(graphemes.segment(line), (g) => g.segment);
+  return parts.length > max ? `${parts.slice(0, max - 1).join("")}…` : line;
 }
 
 const running = (l: AgentLane) => l.status === "working" || l.status === "starting" || l.status === "waiting" || l.status === "queued";
@@ -47,12 +58,14 @@ export function orderCommands(c: OrderCommandContext): Command[] {
         run: () => c.steerLane(l),
       }),
     ),
-    ...queued.map(
+    // Named by its words, never its id (the text rule); the whole of them in the detail.
+    ...(c.logReady ? queued : []).map(
       (s): Command => ({
         id: `steer.withdraw:${s.id}`,
-        title: `Withdraw ${s.id}`,
-        detail: s.text.length > 80 ? `${s.text.slice(0, 79)}…` : s.text,
+        title: `Withdraw “${cutGraphemes(s.text, 60)}”`,
+        detail: s.text,
         group: "actions",
+        keywords: ["withdraw", "steer"],
         run: () => c.withdraw(s.id),
       }),
     ),

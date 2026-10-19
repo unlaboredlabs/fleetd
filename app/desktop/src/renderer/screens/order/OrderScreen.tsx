@@ -186,6 +186,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
       finished,
       lanes: data.lanes,
       steers: data.steers,
+      logReady: data.logReady,
       go,
       askStop: () => setConfirmStop(true),
       steerLead,
@@ -195,7 +196,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
         if (data.logReady) actions.withdraw(id);
       },
     },
-    [w, finished, sidebarIds, data.lanes, data.steers],
+    [w, finished, sidebarIds, data.lanes, data.steers, data.logReady],
   );
 
   // The hub's words for an unknown order name its internals; say it plainly and keep them behind Copy.
