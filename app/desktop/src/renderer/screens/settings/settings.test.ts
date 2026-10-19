@@ -132,8 +132,9 @@ group("settings state", () => {
   it("round-trips a link to one prompt of one project", () => {
     const hash = formatRoute({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront" });
     expect(hash).toBe("#/settings/prompts?prompt=task.brief.write&for=devbox/storefront");
-    expect(parseRoute(hash)).toEqual({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront" });
-    expect(parseRoute("#/settings")).toEqual({ tab: "general", prompt: null, for: null });
+    expect(parseRoute(hash)).toEqual({ tab: "prompts", prompt: "task.brief.write", for: "devbox/storefront", view: "edit" });
+    expect(parseRoute(`${hash}&view=update`).view).toBe("update");
+    expect(parseRoute("#/settings")).toEqual({ tab: "general", prompt: null, for: null, view: "edit" });
     expect(parseScope("devbox/storefront")).toEqual({ kind: "project", ref: { machineId: "devbox", projectId: "storefront" } });
     expect(parseScope("nonsense")).toEqual(HUB);
   });

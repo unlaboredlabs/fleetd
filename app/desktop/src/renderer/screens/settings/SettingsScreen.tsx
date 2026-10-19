@@ -1,6 +1,8 @@
 // Settings (⌘, or the app menu): General, Prompts and Instructions. The route picks the tab
 // (#/settings/<tab>); see route.ts for the links into one prompt.
 import { Text } from "../../ui";
+// Registers the Settings pages and the prompts with the palette, once, when the app loads the screen.
+import "./commands";
 import { General } from "./General";
 import { Instructions } from "./Instructions";
 import { Prompts } from "./Prompts";

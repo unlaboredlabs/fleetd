@@ -48,6 +48,10 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+/** For code outside React (the palette's prompt source): called on every phase change and prompt event. */
+export const onHubChange = subscribe;
+export const hubPhase = (): HubState => phase;
+
 export function useHubPhase(): HubState {
   return useSyncExternalStore(subscribe, () => phase);
 }

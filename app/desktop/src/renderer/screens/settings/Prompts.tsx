@@ -29,10 +29,9 @@ import {
 import { call, errorText, useCall, useHubPhase, usePromptEvents } from "./hub";
 import { ConfirmDiscard, ScopeSelect, scopeName, useProjects } from "./parts";
 import { toggleGroup, useCollapsed } from "./prefs";
-import { replaceRoute, type SettingsRoute } from "./route";
+import { replaceRoute, type SettingsRoute, type View } from "./route";
 import s from "./settings.module.css";
 
-type View = "edit" | "compare" | "update";
 type Switch = { kind: "scope"; scope: Scope } | { kind: "prompt"; id: string };
 type Echo = { ok: boolean; text: string };
 
@@ -66,7 +65,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const [filled, setFilled] = useState<Filled | null>(() => kept?.filled ?? null);
   const [merged, setMerged] = useState(() => kept?.merged ?? "");
   const [mergedFilled, setMergedFilled] = useState<Filled | null>(() => kept?.mergedFilled ?? null);
-  const [view, setView] = useState<View>("edit");
+  const [view, setView] = useState<View>(route.view);
   const [synced, setSynced] = useState<PromptDetail | null>(null);
   const [checked, setChecked] = useState<{ text: string; warnings: ReadonlyArray<PromptWarning> } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -98,8 +97,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   }, [filled, editor, mergedFilled, merged]);
 
   useEffect(() => {
-    replaceRoute({ tab: "prompts", prompt: selected, for: scope.kind === "project" ? sk : null });
-  }, [selected, scope.kind, sk]);
+    replaceRoute({ tab: "prompts", prompt: selected, for: scope.kind === "project" ? sk : null, view });
+  }, [selected, scope.kind, sk, view]);
 
   // The dry run, after a pause in typing: what saving this text would warn about.
   const editorText = view === "update" ? merged : editor;
@@ -214,7 +213,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const name = d ? describe(d).name : "";
 
   return (
-    <div className={s.page} data-screen="settings.prompts">
+    <div className={s.page} data-screen={view === "edit" ? "settings.prompts" : `settings.prompts.${view}`}>
       <div className={s.scopeBar}>
         <div className={s.scopePick}>
           <label htmlFor="prompts-scope" className={textClass({ tone: "quiet" })}>
