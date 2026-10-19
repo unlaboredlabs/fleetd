@@ -6,10 +6,9 @@
 //    writer still runs. Gates hold: neither PR is ready without its review.
 // Costs a few haiku/low lead turns, one tiny read task, one writer and its reviewers.
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Body, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, userMessages } from "./harness.ts";
+import { type Body, openWorkstream, fleetdCommand, type Lab, MODEL, nodeSock, requireGhLogin, scrubbedEnv, userMessages } from "./harness.ts";
 import { prepareRepo } from "./m5Tasks.ts";
 import { BASE, BRANCH_PREFIX, CLONE, checkClone, NAMESPACE, onBase, prepareCheckout, REPO, removeLabRepoProject, resetNamespace } from "./m7Train.ts";
 
@@ -18,7 +17,6 @@ const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 /** `assets/prompts/wake.runnable.md`'s opening. */
 const RUNNABLE = "A slot is free and approved work can start:";
-const QUIET = "Lab run: the harness spawns every task; reply to each wake with one short line, run no commands.";
 
 const shell = (root: string) => (...args: Array<string>) => {
   const out = spawnSync(...fleetdCommand(args), {
@@ -69,14 +67,11 @@ async function slotFiller(lab: Lab) {
   };
   cursor = await leadTurn(cursor, "start");
 
-  // An order with a frozen brief (registered from the shell, as the lead would), then its plan, with the lead idle.
-  const intake = await callTool("intake_submit", { ...ref, text: `${QUIET} Lab eff: a docs line.`, clientRequestId: randomUUID() });
-  check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-  const w = intake.body.workstreamId as string;
+  // An order opened and its brief frozen from the shell as the lead would, then its plan, with the lead idle.
+  const w = openWorkstream(check, fleetd, "Lab eff: a docs line.");
   const brief = { goal: "a docs line", why: "the eff lab scenario", pointers: [], constraints: [], tier: "S", doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["true"], expectExit: 0 }] };
   const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
   check(frozen.code === 0, `brief create ${w}: ${JSON.stringify(frozen)}`);
-  cursor = await leadTurn(cursor, "intent wake");
   const milestone = fleetd("plan", "milestone", "lab eff");
   const m = /\b(M\d+)\b/u.exec(milestone.stdout)?.[1];
   check(milestone.code === 0 && m, `plan milestone: ${JSON.stringify(milestone)}`);
@@ -124,9 +119,7 @@ async function sliceReviews(lab: Lab) {
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
 
-    const intake = await callTool("intake_submit", { ...ref, text: `${QUIET} Two docs slices.`, clientRequestId: randomUUID() });
-    check(!intake.isError, `intake_submit: ${JSON.stringify(intake.body)}`);
-    const w = intake.body.workstreamId as string;
+    const w = openWorkstream(check, fleetd, "Two docs slices.");
     const onMain = (file: string) => ({ type: "cmd", machineId: MACHINE, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 });
     const brief = { goal: `two slices: ${dir}/one.md and ${dir}/two.md`, why: "the eff lab scenario", pointers: [], constraints: [], tier: "M", doneWhen: [onMain(`${dir}/one.md`), onMain(`${dir}/two.md`)] };
     const frozen = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
