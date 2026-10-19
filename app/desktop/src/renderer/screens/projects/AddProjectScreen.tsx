@@ -9,6 +9,7 @@ import { clonePath, discovery as discoveryOf, orList, plan, rows as rowsFor, tar
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import type { Job } from "./flow";
+import { HubText } from "./HubText";
 import { otherHost, tilde } from "./source";
 import {
   addAnother,
@@ -303,7 +304,7 @@ function Problems({ d }: { d: Discovery }) {
         <div className={s.problem} key={p.message}>
           <Dot color="var(--warning)" />
           <Text size="sm" tone="quiet">
-            {p.fix ? `${p.message} ${p.fix}` : p.message}
+            <HubText>{p.fix ? `${p.message} ${p.fix}` : p.message}</HubText>
           </Text>
         </div>
       ))}
@@ -503,11 +504,13 @@ function ReadyView({ ready }: { ready: Ready }) {
       </dl>
       <div className={s.lead}>
         <Dot color={ready.leadOk ? "var(--success)" : "var(--warning)"} />
-        <Text>{ready.leadLine}</Text>
+        <Text>
+          <HubText>{ready.leadLine}</HubText>
+        </Text>
       </div>
       {ready.notes.length > 0 ? (
         <Text as="p" size="sm" tone="quiet">
-          {ready.notes.join(" ")}
+          <HubText>{ready.notes.join(" ")}</HubText>
         </Text>
       ) : null}
     </div>
@@ -536,9 +539,15 @@ function FailedView({ failure }: { failure: Failure }) {
     <div data-screen="projects.add.error" className={s.error} role="alert">
       <div className={s.errorHead}>
         <Dot color="var(--danger)" />
-        <Text>{failure.message}</Text>
+        <Text>
+          <HubText>{failure.message}</HubText>
+        </Text>
       </div>
-      {failure.fix ? <Text tone="quiet">{failure.fix}</Text> : null}
+      {failure.fix ? (
+        <Text tone="quiet">
+          <HubText>{failure.fix}</HubText>
+        </Text>
+      ) : null}
       <div>
         <Button
           variant="ghost"

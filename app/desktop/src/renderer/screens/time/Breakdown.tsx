@@ -4,8 +4,8 @@
 import type { ReactNode } from "react";
 import { Text, Truncate, cx, humanizeKey } from "../../ui";
 import type { Linked } from "./data";
-import { CAT_LABEL, KIND_WORD, SHOWN, delta, fmtBytes, fmtDur, gapText, pct, type Missing } from "./format";
-import type { Category, CategoryTotal, SpanKind, TimeBreakdownOutput } from "./types";
+import { CAT_LABEL, KIND_WORD, SHOWN, delta, fmtBytes, fmtDur, gapText, pct, type Missing, categoryKinds } from "./format";
+import type { Category, CategoryTotal, TimeBreakdownOutput } from "./types";
 import s from "./Time.module.css";
 
 export interface BreakdownProps {
@@ -27,12 +27,7 @@ export const kindsText = (c: CategoryTotal): string =>
     .map((k) => `${KIND_WORD[k.kind]} ${k.kind === "model.first_token" ? "≈ " : ""}${fmtDur(k.ms)}${c.cat === "tools" ? ` (${k.n})` : ""}`)
     .join(" · ");
 
-/** Envelopes hold their children's time, not their own, so a category's spans are its leaf kinds. */
-const ENVELOPES: readonly SpanKind[] = ["run", "model.message", "tools.parallel"];
-const categoryLink = (cat: Category, kinds: readonly SpanKind[]): Linked => ({
-  title: `${CAT_LABEL[cat]} time`,
-  kinds: kinds.filter((k) => !ENVELOPES.includes(k)),
-});
+const categoryLink = (cat: Category): Linked => ({ title: `${CAT_LABEL[cat]} time`, kinds: categoryKinds(cat) });
 
 export function Swatch({ cat }: { cat: Category | "failed" }) {
   return <span className={cx(s.swatch, s[`sw_${cat}`])} aria-hidden />;
@@ -117,7 +112,7 @@ export function Breakdown({ data: b, order, missing, pathIds, onLinked }: Breakd
           return (
             <RowButton
               key={c.cat}
-              onClick={() => onLinked(categoryLink(c.cat, c.kinds.map((k) => k.kind)))}
+              onClick={() => onLinked(categoryLink(c.cat))}
               label={`${CAT_LABEL[c.cat]}: ${fmtDur(c.ms)}, ${pct(c.ms, agent)} of agent time. Show these spans.`}
             >
               <span className={cx(s.catCell)}>

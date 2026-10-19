@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { clearCredentials, fromEnv, loadCredentials, PAIR_AGAIN, saveCredentials, useOsEncryption, type CredentialEnv } from "./credentials";
+import { clearCredentials, fromEnv, keyStoreOf, loadCredentials, osEncryption, PAIR_AGAIN, saveCredentials, useOsEncryption, type CredentialEnv } from "./credentials";
 
 let dir: string;
 let keychainReads: Array<string>;
@@ -153,5 +153,19 @@ describe("useOsEncryption", () => {
   it("on Linux refuses the plain-text backend", () => {
     expect(ask({ platform: "linux", linuxBackend: () => "basic_text" }).use).toBe(false);
     expect(ask({ platform: "linux" }).use).toBe(true);
+  });
+});
+
+describe("keyStoreOf", () => {
+  it("says the key is encrypted only when the OS store is used, and otherwise why not and how to get there", () => {
+    const facts = { platform: "linux" as const, relocated: false, teamSigned: () => true, available: () => true, linuxBackend: () => "gnome_libsecret" };
+    expect(keyStoreOf(osEncryption(facts), "linux", "/x")).toEqual({ kind: "os", where: "your keyring (Secret Service)" });
+    const basic = keyStoreOf(osEncryption({ ...facts, linuxBackend: () => "basic_text" }), "linux", "/x");
+    expect(basic).toMatchObject({ kind: "file", path: "/x/desktop-hub.json" });
+    expect(basic.kind === "file" && basic.fix).toContain("GNOME Keyring");
+    const unsigned = keyStoreOf(osEncryption({ ...facts, platform: "darwin", teamSigned: () => false }), "darwin", "/x");
+    expect(unsigned.kind === "file" && unsigned.fix).toContain("fleetd.sh");
+    const relocated = keyStoreOf(osEncryption({ ...facts, relocated: true }), "linux", "/x");
+    expect(relocated.kind === "file" && relocated.why).toContain("FLEETD_HOME");
   });
 });

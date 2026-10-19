@@ -1,10 +1,15 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button, Dialog, Dot, InlineCode, Radio, RadioGroup, Select, Separator, Switch, Text, THEME_MODES, Truncate, textClass, useTheme } from "../../ui";
+import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { MOTION_PREFS, parseMotion, setDigest, setMotion, useDigest, useMotion } from "./prefs";
 import s from "./settings.module.css";
+import { keyStoreLine } from "../../../shared/pairing";
+import { useKeyStore } from "../onboarding";
+import { sentence } from "../onboarding/form";
+import { Prose } from "../onboarding/Prose";
 
 const RETENTION = [7, 30, 90, 365] as const;
 
@@ -42,6 +47,7 @@ export function General() {
         </Setting>
         <Separator />
         <HubSetting />
+        <LinkHandlerSetting />
         <Separator />
         <RetentionSetting />
         <Separator />
@@ -86,10 +92,10 @@ function phaseLine(state: HubState): { tone: string; text: string } {
       return { tone: "var(--faint)", text: state.attempt > 1 ? `Connecting, attempt ${state.attempt}…` : "Connecting…" };
     case "retrying": {
       const at = new Date(state.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      return { tone: "var(--warning)", text: `Can't reach it: ${state.reason}. Trying again at ${at}.` };
+      return { tone: "var(--warning)", text: `Can't reach it: ${sentence(state.reason)} ${state.fix === undefined ? "" : `${state.fix} `}Trying again at ${at}.` };
     }
     case "refused":
-      return { tone: "var(--danger)", text: `It refused this app's key: ${state.message} Pair again to get a new key.` };
+      return { tone: "var(--danger)", text: `It refused this app's key: ${sentence(state.message)} Pair again to get a new key.` };
     case "unpaired":
       return { tone: "var(--faint)", text: state.note ?? "This app isn't paired with a hub." };
   }
@@ -97,11 +103,12 @@ function phaseLine(state: HubState): { tone: string; text: string } {
 
 function HubSetting() {
   const state = useData((s) => s.hub);
+  const store = useKeyStore();
   const [confirm, setConfirm] = useState(false);
   const hub = state.phase === "unpaired" ? null : state.hub;
   const line = phaseLine(state);
   return (
-    <Setting label="Hub" help="This app acts as you on this hub. Its key is encrypted by the OS (the Keychain on macOS) and never shown.">
+    <Setting label="Hub" help={`This app acts as you on this hub. ${store === null ? "" : keyStoreLine(store).replaceAll("`", "")}`}>
       {hub ? (
         <Truncate mono size="sm">
           {hub}
@@ -109,7 +116,8 @@ function HubSetting() {
       ) : null}
       <div className={s.hubLine}>
         <Dot color={line.tone} />
-        <Text tone="quiet">{line.text}</Text>
+        {/* The hub's fix may name a command in backticks: shown as code. */}
+        <Prose tone="quiet" text={line.text} />
       </div>
       <div className={s.inline}>
         <Button
@@ -146,6 +154,79 @@ function HubSetting() {
           </>
         }
       />
+    </Setting>
+  );
+}
+
+/** Whether fleetd:// links (the pairing links `fleetd pair` prints) open this app, and the one action to make them. */
+function LinkHandlerSetting() {
+  const [status, setStatus] = useState<LinkHandlerStatus | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [refused, setRefused] = useState(false);
+  /** A failed check or claim, in words, with the action Try again repeats. */
+  const [failed, setFailed] = useState<{ text: string; retry: "check" | "claim" } | null>(null);
+  const [checks, setChecks] = useState(0);
+  useEffect(() => {
+    let live = true;
+    window.fleetd.app.linkHandler(null).then(
+      (st) => live && setStatus(st),
+      (e: unknown) => live && setFailed({ text: `Couldn't find out which app opens fleetd:// links: ${sentence(errorText(e))}`, retry: "check" }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [checks]);
+  const check = () => {
+    setFailed(null);
+    setChecks((n) => n + 1);
+  };
+  const claim = () => {
+    setFailed(null);
+    setClaiming(true);
+    window.fleetd.app.linkHandler("user").then(
+      (st) => {
+        setClaiming(false);
+        setStatus(st);
+        setRefused(!st.handler);
+      },
+      (e: unknown) => {
+        setClaiming(false);
+        setFailed({ text: `Couldn't ask the system to make fleetd the handler: ${sentence(errorText(e))}`, retry: "claim" });
+      },
+    );
+  };
+  return (
+    <Setting label="Pairing links" help="Open fleetd:// links (pairing links) in this app.">
+      {failed ? (
+        <div className={s.stack}>
+          <Text tone="danger">{failed.text}</Text>
+          <div>
+            <Button onClick={failed.retry === "check" ? check : claim}>Try again</Button>
+          </div>
+        </div>
+      ) : status === null ? (
+        <Text tone="quiet">Checking…</Text>
+      ) : status.handler ? (
+        <div className={s.hubLine}>
+          <Dot color="var(--success)" />
+          <Text tone="quiet">fleetd opens them.</Text>
+        </div>
+      ) : (
+        <>
+          <div className={s.inline}>
+            <Button disabled={!status.packaged || claiming} onClick={claim}>
+              {claiming ? "Asking the system…" : "Make fleetd the handler"}
+            </Button>
+          </div>
+          <Text size="xs" tone="quiet">
+            {refused
+              ? "The system left fleetd:// links with another app. Try again, or pair by typing the code from fleetd pair (Pair with another hub, above)."
+              : status.packaged
+                ? "fleetd doesn't open fleetd:// links now: another app does, or none."
+                : "Dev builds don't register for fleetd:// links; an installed fleetd does."}
+          </Text>
+        </>
+      )}
     </Setting>
   );
 }

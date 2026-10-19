@@ -100,6 +100,26 @@ describe("registry", () => {
     expect(runCommand("status.toggle")).toBe(false);
   });
 
+  it("never lets the palette's built-ins shadow a screen module's default, whichever registers first", () => {
+    const ran: string[] = [];
+    // time/commands.ts registers at module load; PaletteHost's built-ins come later, when it mounts.
+    offs.push(registerCommands([item("go:time", "Time for W14", "go-to", { run: () => ran.push("time") })], "default"));
+    offs.push(registerCommands([item("go:time", "Time", "go-to", { run: () => ran.push("builtin") })], "builtin"));
+    runCommand("go:time");
+    for (const off of offs.splice(0, 1)) off();
+    runCommand("go:time");
+    expect(ran).toEqual(["time", "builtin"]);
+    // And the other way round: the built-ins first (a screen module loaded late).
+    ran.length = 0;
+    const offBuiltin = registerCommands([item("go:time", "Time", "go-to", { run: () => ran.push("builtin") })], "builtin");
+    const offTime = registerCommands([item("go:time", "Time for W14", "go-to", { run: () => ran.push("time") })], "default");
+    runCommand("go:time");
+    offTime();
+    runCommand("go:time");
+    offBuiltin();
+    expect(ran).toEqual(["time", "builtin"]);
+  });
+
   it("lets the latest registration of an id win until it unmounts", () => {
     const ran: string[] = [];
     offs.push(registerCommands([item("board.open", "Board", "go-to", { run: () => ran.push("default") })]));

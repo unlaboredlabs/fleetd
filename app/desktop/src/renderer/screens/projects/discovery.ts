@@ -256,19 +256,19 @@ export interface Progress {
   readonly fraction?: number;
 }
 
-/** One bar across a clone's phases: receiving is most of it, resolving and checking out share the rest. */
+/** The bar shows the phase git reports, at the percent the label says (git counts each phase from 0 to 100). */
 export const progress = (p: CloneProgressData): Progress => {
   const pct = p.percent;
-  const f = (base: number, span: number) => (pct === undefined ? undefined : base + (pct / 100) * span);
+  const f = () => (pct === undefined ? undefined : pct / 100);
   const [step, label, fraction]: [Step, string, number | undefined] =
     p.phase === "starting"
       ? ["clone", "Starting the clone", undefined]
       : p.phase === "receiving"
-        ? ["clone", "Receiving objects", f(0, 0.8)]
+        ? ["clone", "Receiving objects", f()]
         : p.phase === "resolving"
-          ? ["clone", "Resolving deltas", f(0.8, 0.1)]
+          ? ["clone", "Resolving deltas", f()]
           : p.phase === "checking_out"
-            ? ["clone", "Checking out files", f(0.9, 0.1)]
+            ? ["clone", "Checking out files", f()]
             : ["inspect", "Reading the default branch, CI and merge rules", undefined];
   let detail = label;
   if (pct !== undefined && p.phase !== "inspecting") detail += ` ${pct}%`;

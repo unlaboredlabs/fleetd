@@ -46,6 +46,11 @@ describe("the connect form", () => {
     expect(reduce(form, { type: "started", start: { ...noHub, problem } }).error).toEqual(problem);
   });
 
+  it("says why there is no key when main knows", () => {
+    expect(initialForm({ phase: "unpaired", note: "The saved key couldn't be read. Pair again to continue." }, {}).notice).toContain("couldn't be read");
+    expect(initialForm(unpaired, {}).notice).toBeNull();
+  });
+
   it("shows a refused key's fix, and no probe line about another address", () => {
     const elsewhere = initialForm({ phase: "refused", hub: "http://devbox:4790", message: "Unknown agent key." }, {});
     expect(reduce(elsewhere, { type: "started", start: noHub })).toMatchObject({ hub: "http://devbox:4790", status: null });
@@ -65,10 +70,10 @@ describe("the connect form", () => {
 describe("reaching the hub", () => {
   const hub = "http://127.0.0.1:4790";
   it("keeps the last reason through a retry's connecting phase, so the layout holds", () => {
-    const last = { hub, reason: "connection refused" };
-    expect(reaching({ phase: "connecting", hub, attempt: 0 }, null)).toEqual({ hub, reason: null, retryAt: null });
-    expect(reaching({ phase: "retrying", hub, reason: "connection refused", retryAt: 5 }, null).reason).toBe("connection refused");
-    expect(reaching({ phase: "connecting", hub, attempt: 3 }, last)).toEqual({ hub, reason: "connection refused", retryAt: null });
+    const last = { hub, reason: "Nothing is listening at 127.0.0.1:4790", fix: "Start the hub." };
+    expect(reaching({ phase: "connecting", hub, attempt: 0 }, null)).toEqual({ hub, reason: null, fix: null, retryAt: null });
+    expect(reaching({ phase: "retrying", hub, reason: last.reason, fix: last.fix, retryAt: 5 }, null)).toMatchObject({ reason: last.reason, fix: last.fix });
+    expect(reaching({ phase: "connecting", hub, attempt: 3 }, last)).toEqual({ ...last, retryAt: null });
     expect(reaching({ phase: "connecting", hub: "http://other:4790", attempt: 3 }, last).reason).toBeNull();
   });
 });
@@ -80,5 +85,28 @@ describe("needsOnboarding", () => {
     expect(needsOnboarding({ phase: "live", hub: "h", protocol: 2 })).toBe(true);
     expect(needsOnboarding({ phase: "live", hub: "h", protocol: 1 })).toBe(false);
     expect(needsOnboarding({ phase: "retrying", hub: "h", reason: "r", retryAt: 0 })).toBe(false);
+  });
+});
+
+describe("a link whose code failed", () => {
+  const linked = initialForm(unpaired, { hub: "http://devbox:4790", code: "WXYZ-6789" });
+  it("remembers the link's code only while it is the one in the field", () => {
+    expect(linked.linkCode).toBe("WXYZ-6789");
+    expect(reduce(linked, { type: "edit", field: "code", value: "ABCD-2345" }).linkCode).toBeNull();
+  });
+
+  it("says what changed: links taken back, still elsewhere, or a dev build; nothing when this app had them", () => {
+    const yes = { packaged: true, handler: true };
+    const no = { packaged: true, handler: false };
+    expect(reduce(linked, { type: "linkChecked", before: no, after: yes }).linkNote).toContain("another app had them");
+    expect(reduce(linked, { type: "linkChecked", before: yes, after: yes }).linkNote).toBeNull();
+    expect(reduce(linked, { type: "linkChecked", before: no, after: no }).linkNote).toContain("Settings → General");
+    const dev = { packaged: false, handler: false };
+    expect(reduce(linked, { type: "linkChecked", before: dev, after: dev }).linkNote).toContain("Type the code");
+  });
+
+  it("ignores a late answer while another attempt runs", () => {
+    const busy = reduce(linked, { type: "submitting", hub: "http://devbox:4790" });
+    expect(reduce(busy, { type: "linkChecked", before: { packaged: false, handler: false }, after: { packaged: false, handler: false } })).toBe(busy);
   });
 });

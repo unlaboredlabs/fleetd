@@ -13,8 +13,8 @@ import type { AgentLane, Steer, SteerMode, SteerTarget, TailItem, ThreadRef } fr
 import { ActivityText } from "./Fleet";
 import { clock } from "./format";
 import { receipt, sendingReceipt, waitingLine } from "./receipts";
-import { taskOfTarget, type Sending } from "./sending";
-import type { SendOutcome } from "./data";
+import { draftKey, type SendOutcome } from "./outbox";
+import { taskOfTarget, unsettled, type Sending } from "./sending";
 import { roleWords } from "./told";
 import s from "./order.module.css";
 
@@ -78,6 +78,8 @@ function Items({ thread, focusItem }: { thread: ThreadRef | undefined; focusItem
 export function SteerSheet(
   props: {
     agent: SheetAgent | undefined;
+    /** The order, whose steer boxes keep their words (outbox.ts). */
+    workstreamId: string;
     steers: readonly Steer[];
     platform: Platform;
     nowMs: number;
@@ -96,7 +98,7 @@ export function SteerSheet(
   const mine = agent
     ? props.steers.filter((st) => ("taskId" in agent.target ? "taskId" in st.target && st.target.taskId === agent.target.taskId : "workstreamId" in st.target))
     : [];
-  const pending = agent ? props.sending.filter((p) => taskOfTarget(p.target) === taskOfTarget(agent.target)) : [];
+  const pending = agent ? unsettled(props.sending, mine).filter((p) => taskOfTarget(p.target) === taskOfTarget(agent.target)) : [];
   const waiting = agent ? waitingLine(mine, agent.lane, `${agent.name}’s`, props.nowMs) : undefined;
   const title = agent ? (isLead ? "Steer the lead" : `Steer ${roleWords(agent.lane.role, agent.lane.taskId)}`) : "";
   return (
@@ -171,6 +173,7 @@ export function SteerSheet(
             who={{ name: agent.name, ref: agent.ref }}
             platform={props.platform}
             label={`Steer ${agent.name}`}
+            draftKey={draftKey(props.workstreamId, agent.target)}
             autoFocus
             onSend={(text, mode, requestId) => props.onSteer(agent.target, text, mode, requestId)}
           />

@@ -117,7 +117,21 @@ const addAnswers = (f: Fixture) => {
   f.answer("project_remove", undefined, { ok: true });
 };
 
+/** The recorded checks predate the hub saying claude's login method in words (hub/doctor/checks.rs). */
+const loginInWords = (f: Fixture) =>
+  f.update("doctor_list", (out) =>
+    isObject(out)
+      ? {
+          ...out,
+          checks: objects(out["checks"]).map((c) =>
+            typeof c["message"] === "string" ? { ...c, message: c["message"].replace(" (oauth_token);", " with a long-lived login token;") } : c,
+          ),
+        }
+      : out,
+  );
+
 const typical = (f: Fixture) => {
+  loginInWords(f);
   addAnswers(f);
   f.answer("project_discover", undefined, discover(f));
 };
@@ -149,10 +163,12 @@ export default defineGroup({
     typical,
     "many-agents": typical,
     "long-text": (f) => {
+      loginInWords(f);
       addAnswers(f);
       f.answer("project_discover", undefined, discover(f, { longName: "receipts-and-invoices-date-formatting-service-with-a-very-long-repository-name" }));
     },
     empty: (f) => {
+      loginInWords(f);
       f.drop("project_discover");
       f.answer("project_discover", undefined, {
         machines: machinesOf(f).map((m) => ({ machineId: asText(m["machineId"]), online: true, cloneRoot: "/home/dev/src", repos: [] })),
@@ -161,6 +177,7 @@ export default defineGroup({
       });
     },
     "node-too-old": (f) => {
+      loginInWords(f);
       f.drop("project_discover");
       const d = discover(f);
       const machines = objects(d["machines"]).map((m, i) =>
@@ -255,6 +272,19 @@ export default defineGroup({
           }
         }
       }
+      // Setup checks: the hub's own, then each machine's, with a manual fix (a command) and an auto one (Fix).
+      const machineChecks: Array<JsonObject> = [
+        { id: "devbox/online", scope: "machine", machineId: "devbox", status: "ok", message: "devbox is online." },
+        { id: "devbox/disk", scope: "machine", machineId: "devbox", status: "warn", message: "devbox has 6.1 GB free; worktrees need room to grow.", fix: { kind: "manual", label: "Free some space on devbox, for example old build output:", command: "git -C /home/dev/src/storefront worktree prune" } },
+        { id: "buildbox/claude_login", scope: "machine", machineId: "buildbox", status: "fail", message: "claude is logged out on buildbox: run `claude /login` there.", fix: { kind: "manual", label: "On buildbox, log claude in:", command: "claude /login" } },
+        { id: "buildbox/claude_auto_memory", scope: "machine", machineId: "buildbox", status: "warn", message: "Claude auto memory is on for buildbox's agents; fleetd turns it off so each lane starts clean.", fix: { kind: "auto", label: "fleetd can turn it off." } },
+        { id: "spare/online", scope: "machine", machineId: "spare", status: "unknown", message: "spare is offline, so its checks can't run." },
+      ];
+      f.update("doctor_list", (out) => (isObject(out) ? { ...out, checks: [...objects(out["checks"]), ...machineChecks] } : out));
+      f.answer("doctor_fix", { checkId: "buildbox/claude_auto_memory" }, {
+        ran: "Turned Claude auto memory off for buildbox's agents.",
+        check: { id: "buildbox/claude_auto_memory", scope: "machine", machineId: "buildbox", status: "ok", message: "Claude auto memory is off for buildbox's agents." },
+      });
       f.events.push({ seq: 9_001, at: at(f.now, -14 * 60_000), type: "machine.slept", machineId: "devbox", summary: "devbox slept 11m00s", data: { fromMs: now - 25 * 60_000, toMs: now - 14 * 60_000 } });
       return f;
     })(),

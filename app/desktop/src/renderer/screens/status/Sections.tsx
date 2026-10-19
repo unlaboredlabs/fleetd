@@ -1,17 +1,41 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
+import type { AgentLane } from "../../../shared/contracts";
+import { useData } from "../../src/data/react";
+import { selectBoard } from "../../src/data/selectors";
+import { useNow } from "../board/clock";
+import { LaneRow } from "../board/parts";
+import { isWorking } from "../board/words";
 import { cx, StatusChip, Text, Truncate } from "../../ui";
 import type { StatusDoc, StatusScope } from "./contracts";
 import { TwoToneBar } from "./Hero";
 import { NeedsYou } from "./NeedsYou";
-import { figure, progressRowView, scopeRoute, shownRisks, staleWords, when } from "./view";
+import { figure, progressRowView, riskTarget, rowLanes, scopeRoute, shownRisks, staleWords, when } from "./view";
 import s from "./status.module.css";
 
 const openOrder = (workstreamId: string): void => {
   window.location.hash = `#/order/${encodeURIComponent(workstreamId)}`;
 };
+const openRisk = (target: "machines" | "inbox"): void => {
+  window.location.hash = target === "machines" ? "#/machines" : `${window.location.hash.split("?")[0] ?? "#/status"}?inbox`;
+};
 const openScope = (scope: StatusScope): void => {
   window.location.hash = scopeRoute(scope);
 };
+
+/** An in-progress row's agents, as the board draws them: role, what it is doing now, its clock. The clock ticks
+ * once a second only while one of them works; the lines grey out when the live feed has dropped. */
+function RowLanes({ lanes }: { lanes: readonly AgentLane[] }) {
+  const stale = useData((st) => st.live.stale);
+  const skew = useData((st) => st.live.skewMs ?? 0);
+  const now = useNow(lanes.some((l) => isWorking(l.status))) + skew;
+  return (
+    <div className={cx(s.rowLanes)}>
+      {lanes.map((lane) => (
+        <LaneRow key={lane.laneId} lane={lane} density="card" now={now} stale={stale} />
+      ))}
+    </div>
+  );
+}
 
 function Section({ title, count, more, children }: { title: string; count: number; more?: number; children: ReactNode }) {
   const id = `status-${title.toLowerCase().replaceAll(" ", "-")}`;
@@ -47,6 +71,9 @@ function Row({ onOpen, children, label, grid }: { onOpen?: (() => void) | undefi
 export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
   const partsTitle = doc.scope.kind === "fleet" ? "Projects" : "Milestones";
   const risks = shownRisks(doc);
+  // What each order's agents are doing now: the board's lanes from the data layer, with the live feed merged in.
+  const board = useData(selectBoard);
+  const lanesByOrder = new Map((board ?? []).map((o) => [o.card.workstreamId, o.lanes] as const));
   return (
     <div className={cx(s.sections)}>
       {doc.parts.length > 0 ? (
@@ -57,11 +84,17 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
             return (
               <Row grid key={p.milestoneId ?? p.title} label={`${p.title} status`} onOpen={scope ? () => openScope(scope) : undefined}>
                 <Truncate expand="none">{p.title}</Truncate>
-                <Text strong tabular className={cx(s.partPct)}>
-                  {f.pct === null ? "planning" : `${f.pct}%`}
+                <Text strong={f.pct !== null} tone={f.pct === null ? "quiet" : "default"} tabular className={cx(s.partPct)}>
+                  {f.pct !== null ? `${f.pct}%` : f.planning !== null ? "planning" : "–"}
                 </Text>
                 <span className={cx(s.partBar)}>
-                  <TwoToneBar small verified={f.verifiedPct} inFlight={f.inFlightPct} label={`${f.verifiedPct}% verified`} />
+                  {f.pct !== null ? (
+                    <TwoToneBar small verified={f.verifiedPct} inFlight={f.inFlightPct} label={`${f.verifiedPct}% verified`} />
+                  ) : (
+                    <Text size="xs" tone="quiet">
+                      {f.planning !== null ? "the lead is planning" : "no plan items"}
+                    </Text>
+                  )}
                 </span>
                 {p.progress.marker ? (
                   <Text size="xs" tone="warning">
@@ -89,17 +122,26 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
             none fleetd can see
           </Text>
         ) : (
-          risks.map((r) => (
-            <div key={`${r.rule}${r.message}`} className={cx(s.risk)}>
-              <span aria-hidden>
-                <Text strong tone={r.level === "danger" ? "danger" : "warning"}>
-                  ▲
-                </Text>
-              </span>
-              <Text>{r.message}</Text>
-              {r.rule === "slower_than_usual" ? <StatusChip tone="quiet">slower than usual</StatusChip> : null}
-            </div>
-          ))
+          risks.map((r) => {
+            const target = riskTarget(r.rule);
+            return (
+              <Row
+                key={`${r.rule}${r.message}`}
+                label={target === "machines" ? `${r.message}: open Machines` : `${r.message}: open the inbox`}
+                onOpen={target === null ? undefined : () => openRisk(target)}
+              >
+                <span className={cx(s.rowMain)}>
+                  <span aria-hidden>
+                    <Text strong tone={r.level === "danger" ? "danger" : "warning"}>
+                      ▲
+                    </Text>
+                  </span>
+                  <Text>{r.message}</Text>
+                  {r.rule === "slower_than_usual" ? <StatusChip tone="quiet">slower than usual</StatusChip> : null}
+                </span>
+              </Row>
+            );
+          })
         )}
       </Section>
 
@@ -111,8 +153,10 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
         ) : (
           doc.inProgress.map((r) => {
             const meta = progressRowView(r);
+            const lanes = rowLanes(lanesByOrder.get(r.workstreamId), r.taskIds);
             return (
-              <Row key={`${r.workstreamId}${r.itemId ?? ""}${r.title}`} label={`Open ${r.title}`} onOpen={() => openOrder(r.workstreamId)}>
+              <Fragment key={`${r.workstreamId}${r.itemId ?? ""}${r.title}`}>
+              <Row label={`Open ${r.title}`} onOpen={() => openOrder(r.workstreamId)}>
                 <span className={cx(s.rowMain)}>
                   {r.itemId !== undefined ? (
                     <Text size="xs" tone="quiet" tabular>
@@ -142,6 +186,8 @@ export function Sections({ doc, now }: { doc: StatusDoc; now: number }) {
                   </Text>
                 ))}
               </Row>
+              {lanes.length > 0 ? <RowLanes lanes={lanes} /> : null}
+              </Fragment>
             );
           })
         )}

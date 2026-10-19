@@ -25,7 +25,7 @@ export interface SidebarProps {
 
 export function Sidebar({ data, route, seen, hub, jumpHints, go }: SidebarProps) {
   const screen = route.screen;
-  const conn = connLine(hub);
+  const conn = connLine(hub, window.fleetd.fixture !== null);
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
     <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
   );

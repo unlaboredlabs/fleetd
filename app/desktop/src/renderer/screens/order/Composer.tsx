@@ -2,11 +2,11 @@
 // primary button queues for the agent's next step and reads "Interrupt" while the modifier is held; the secondary
 // interrupts and redirects now. Both modes by mouse too.
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent , type RefObject } from "react";
 import { Button, cx, Text, Textarea } from "../../ui";
 import { keyHint, modKey, placeholder, primaryLabel, secondaryLabel, sendModeFor, type Platform, type SteerWords } from "./composerModel";
 import type { SteerMode } from "../../../shared/contracts";
-import type { SendOutcome } from "./data";
+import { useDraft, type SendOutcome } from "./outbox";
 import s from "./order.module.css";
 
 /** Whether the platform's modifier is held, while the composer has focus. */
@@ -32,37 +32,41 @@ function useModHeld(platform: Platform, active: boolean): boolean {
 export interface SteerComposerProps {
   who: SteerWords;
   platform: Platform;
-  /** `requestId` is this composed steer's own: the same if it is sent again after a refusal. */
+  /** `requestId` is this composed steer's own: the same if it is sent again. */
   onSend: (text: string, mode: SteerMode, requestId: string) => Promise<SendOutcome>;
+  /** Whose box this is (outbox.draftKey): its words and id outlive the view, so leaving the order loses nothing. */
+  draftKey: string;
   /** Focus it when it mounts (the steer sheet). */
   autoFocus?: boolean;
   label: string;
+  /** The textarea, for "Steer the lead" in the palette. */
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
 }
 
-export function SteerComposer({ who, platform, onSend, autoFocus, label }: SteerComposerProps) {
-  const [text, setText] = useState("");
+export function SteerComposer({ who, platform, onSend, draftKey, autoFocus, label, inputRef }: SteerComposerProps) {
+  const [draft, setDraft] = useDraft(draftKey);
+  const text = draft.text;
   const [focused, setFocused] = useState(false);
-  // One id per composed steer, minted when it is first sent: a second press, a double-click or a retry after a
-  // refusal is the same request, which the hub dedupes.
-  const [draftId, setDraftId] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const held = useModHeld(platform, focused);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const own = useRef<HTMLTextAreaElement>(null);
+  const ref = inputRef ?? own;
   const canSend = text.trim() !== "" && !busy;
 
   const send = (mode: SteerMode) => {
     const body = text.trim();
     if (body === "" || busy) return;
-    const id = draftId ?? crypto.randomUUID();
-    setDraftId(id);
+    // One id per composed steer, minted when it is first sent: a second press, a double-click or a retry after
+    // no hub answered is the same request, which the hub dedupes.
+    const id = draft.requestId ?? crypto.randomUUID();
+    setDraft({ text, requestId: id });
     setBusy(true);
     void onSend(body, mode, id).then((outcome) => {
       setBusy(false);
-      // Refused: the words stay for another try under the same id. Sent, or waiting for the link: a new steer next.
-      if (outcome !== "failed") {
-        setText("");
-        setDraftId(undefined);
-      }
+      // No hub: nothing was sent and no row holds the words, so they stay here under the same id. Otherwise the
+      // steer's row has them now (its receipt, or not sent with Resend and Edit): the box is for the next steer,
+      // unless it was edited meanwhile.
+      setDraft((now) => (now.requestId !== id ? now : outcome === "offline" ? { ...now, offline: true } : { text: "" }));
       ref.current?.focus();
     });
   };
@@ -85,14 +89,20 @@ export function SteerComposer({ who, platform, onSend, autoFocus, label }: Steer
         maxRows={10}
         autoFocus={autoFocus}
         onChange={(e) => {
-          setText(e.target.value);
           // Edited words are a new steer.
-          setDraftId(undefined);
+          setDraft({ text: e.target.value });
         }}
         onKeyDown={onKeyDown}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
       />
+      <div role="status">
+        {draft.offline === true ? (
+          <Text size="xs" tone="danger">
+            Not connected to the hub, so this steer wasn’t sent. Send it again once the hub is back.
+          </Text>
+        ) : null}
+      </div>
       <div className={s.composerFoot}>
         <Text size="xs" tone="quiet" className={cx(s.hint)}>
           {keyHint(who, platform)}

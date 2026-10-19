@@ -3,8 +3,10 @@
 // no-time rule: state and measured ages, never an estimated time.
 
 import { useMemo, useSyncExternalStore } from "react";
-import { Button, cx, Dot, Text } from "../../ui";
+import { Button, cx, Dot, Text, Truncate } from "../../ui";
 import type { StatusDoc, StatusScope } from "./contracts";
+import { useData } from "../../src/data/react";
+import { projectKey } from "../../src/data/store";
 import { useHubNow, useStatus } from "./hooks";
 import { Health } from "./Health";
 import { Hero } from "./Hero";
@@ -57,9 +59,13 @@ export function StatusScreen() {
 }
 
 function Header({ scope, doc, phase: p, linkUp }: { scope: StatusScope; doc: StatusDoc | null; phase: Phase; linkUp: boolean }) {
+  const project = useOrderProject(scope.kind === "order" ? scope.workstreamId : undefined);
   const crumbs: { label: string; to: StatusScope }[] = [{ label: "Fleet", to: { kind: "fleet" } }];
   if (scope.kind === "project") crumbs.push({ label: doc?.title ?? scope.projectRef.projectId, to: scope });
-  if (scope.kind === "order") crumbs.push({ label: doc?.title ?? scope.workstreamId, to: scope });
+  if (scope.kind === "order") {
+    if (project) crumbs.push({ label: project.title, to: { kind: "project", projectRef: project.ref } });
+    crumbs.push({ label: doc?.title ?? scope.workstreamId, to: scope });
+  }
   const staleCount = doc?.stale.length ?? 0;
   const [tone, words] =
     p === "live"
@@ -78,14 +84,19 @@ function Header({ scope, doc, phase: p, linkUp }: { scope: StatusScope; doc: Sta
         {crumbs.map((c, i) => (
           <span key={c.label} className={cx(s.crumb)}>
             {i > 0 ? <span aria-hidden className={cx(s.faint)}>›</span> : null}
+            {/* A crumb can be a long project or order title: it ends in an ellipsis, with the full title on hover. */}
             {i === crumbs.length - 1 ? (
-              <span aria-current="page">
-                <Text strong>{c.label}</Text>
+              <span aria-current="page" className={cx(s.crumbText)}>
+                <Truncate expand="none" strong>
+                  {c.label}
+                </Truncate>
               </span>
             ) : (
-              <Button variant="quiet" onClick={() => go(c.to)}>
-                {c.label}
-              </Button>
+              <button type="button" className={cx(s.crumbLink)} onClick={() => go(c.to)}>
+                <Truncate expand="none" tone="quiet">
+                  {c.label}
+                </Truncate>
+              </button>
             )}
           </span>
         ))}
@@ -104,6 +115,13 @@ function Header({ scope, doc, phase: p, linkUp }: { scope: StatusScope; doc: Sta
     </header>
   );
 }
+
+/** An order's project, from the board the data layer holds, for the breadcrumb (Fleet › project › order). */
+const useOrderProject = (workstreamId: string | undefined): { title: string; ref: { machineId: string; projectId: string } } | undefined => {
+  const ref = useData((st) => (workstreamId === undefined || !st.fresh ? undefined : st.orders?.[workstreamId]?.projectRef));
+  const title = useData((st) => (ref === undefined ? undefined : st.projects[projectKey(ref)]?.title));
+  return ref === undefined ? undefined : { title: title ?? ref.projectId, ref };
+};
 
 /** Why the view isn't live: the link, a failed read (with Retry), or the first sync after (re)connecting. */
 function Banner({ read, phase: p }: { read: StatusRead & { retry: () => void }; phase: Phase }) {

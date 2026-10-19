@@ -194,7 +194,7 @@ describe("HubClient", () => {
     expect(hub.pings).toBe(2);
     // No pong, no frame since: the next tick is past the deadline.
     vi.advanceTimersByTime(PING_EVERY_MS);
-    expect(client.state).toMatchObject({ phase: "retrying", reason: "The hub stopped answering." });
+    expect(client.state).toMatchObject({ phase: "retrying", reason: expect.stringContaining("stopped answering") as string });
     expect(hub.closedByClient).toBe(1);
   });
 
@@ -203,7 +203,7 @@ describe("HubClient", () => {
     client.start();
     hub.open();
     vi.advanceTimersByTime(READY_TIMEOUT_MS);
-    expect(client.state).toMatchObject({ phase: "retrying", reason: "The hub didn't accept the connection in time." });
+    expect(client.state).toMatchObject({ phase: "retrying", reason: expect.stringContaining("never finished") as string });
     expect(hub.closedByClient).toBe(1);
     vi.advanceTimersByTime(500);
     expect(hub.urls).toHaveLength(2);

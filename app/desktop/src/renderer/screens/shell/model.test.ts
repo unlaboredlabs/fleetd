@@ -48,7 +48,7 @@ describe("connLine", () => {
   it("names the hub by its host and says why a retry is happening", () => {
     expect(connLine({ phase: "live", hub: "http://100.64.0.1:4790/", protocol: 1 })).toEqual({ label: "Connected to 100.64.0.1:4790", tone: "success" });
     expect(connLine({ phase: "retrying", hub: "http://hub:4790", reason: "connection reset", retryAt: 0 })).toEqual({
-      label: "Reconnecting to hub:4790: connection reset",
+      label: "Reconnecting: connection reset",
       tone: "warning",
     });
     expect(connLine({ phase: "refused", hub: "http://hub:4790", message: "bad key" }).tone).toBe("danger");
@@ -102,5 +102,11 @@ describe("toShellData", () => {
       [0, 0],
       [0, 0],
     ]);
+  });
+});
+
+describe("connLine in fixture mode", () => {
+  it("never says a fixture is connected", () => {
+    expect(connLine({ phase: "live", hub: "http://devbox:4790", protocol: 1 }, true)).toEqual({ label: "Sample data, no hub", tone: "quiet" });
   });
 });

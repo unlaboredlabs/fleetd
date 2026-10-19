@@ -29,9 +29,25 @@ const item = (opener: Opener, id: MenuCommand, label: string): MenuItemConstruct
  * The full app menu. Edit uses Chromium's own roles, so Undo/Cut/Copy/Paste/Select All act on whichever text field
  * has focus, and macOS adds its dictation and emoji items to it.
  */
-export const installMenu = (opener: Opener): void => {
+export const installMenu = (opener: Opener, checkForUpdates: (() => Promise<void>) | null): void => {
   const mac = process.platform === "darwin";
   const separator = { type: "separator" } as const;
+  // Only a release build has an updater (dev and test builds get null), so they don't show the item at all.
+  const updates: Array<MenuItemConstructorOptions> =
+    checkForUpdates === null
+      ? []
+      : [
+          {
+            label: "Check for Updates…",
+            // Off while a check or its download runs, so a second click can't stack a second answer.
+            click: (menuItem) => {
+              menuItem.enabled = false;
+              void checkForUpdates().finally(() => {
+                menuItem.enabled = true;
+              });
+            },
+          },
+        ];
   const template: Array<MenuItemConstructorOptions> = [
     ...(mac
       ? [
@@ -39,6 +55,7 @@ export const installMenu = (opener: Opener): void => {
             label: app.name,
             submenu: [
               { role: "about" },
+              ...updates,
               separator,
               item(opener, "settings.open", "Settings…"),
               separator,
@@ -105,7 +122,7 @@ export const installMenu = (opener: Opener): void => {
       submenu: [
         { label: "fleetd on GitHub", click: () => void shell.openExternal(REPO_URL) },
         { label: "Docs", click: () => void shell.openExternal(DOCS_URL) },
-        ...(mac ? [] : [separator, { role: "about" } as const]),
+        ...(mac ? [] : [separator, ...updates, { role: "about" } as const]),
       ],
     },
   ];

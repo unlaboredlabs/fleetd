@@ -2,7 +2,7 @@ import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } f
 import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { LiveScope, SecretRequest } from "../shared/ipc";
-import type { PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
+import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
@@ -44,6 +44,8 @@ export interface FleetdApi {
     redeem(request: PairRequest): Promise<PairOutcome>;
     /** Pairs from app-pair.json in main, only while no key is saved; the code never comes here. */
     auto(): Promise<PairOutcome>;
+    /** Where the hub key is kept: encrypted by the OS, or a private file (and why, and how to change that). */
+    store(): Promise<KeyStore>;
   };
   readonly system: {
     /** This computer's host name (without .local). */

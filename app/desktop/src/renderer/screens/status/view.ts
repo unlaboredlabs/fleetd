@@ -127,7 +127,8 @@ export const stageName = (stage: ItemStage): string => STAGES[stage] ?? words(st
 
 /** The figure the view shows, from the progress model when the hub has it, else the verified-only figure. */
 export interface Figure {
-  /** The headline number; null while the lead is still planning (the view says "planning" instead). */
+  /** The headline number; null while the lead plans ("planning" shows instead) or when there is nothing to count
+   * (no plan items: the view says so, never a 0%). */
   readonly pct: number | null;
   /** Solid part of the bar. */
   readonly verifiedPct: number;
@@ -156,10 +157,11 @@ export const figure = (p: Progress, virtualTier?: string): Figure => {
         : `No plan items: this order counts as one ${virtualTier} item until it is verified.`,
     );
   }
-  if (!e) return { pct: p.pct, verifiedPct: clampPct(p.pct), inFlightPct: 0, verifiedNote: null, planning, detail };
+  const counted = p.total > 0 || p.polishTotal > 0;
+  if (!e) return { pct: counted ? p.pct : null, verifiedPct: clampPct(p.pct), inFlightPct: 0, verifiedNote: null, planning, detail };
   const verifiedPct = clampPct(e.verifiedPct);
   return {
-    pct: planning === null ? clampPct(e.pct) : null,
+    pct: planning === null && counted ? clampPct(e.pct) : null,
     verifiedPct,
     // The lighter part never claims past 100, whatever rounding did.
     inFlightPct: Math.min(clampPct(e.inFlightPct), 100 - verifiedPct),
@@ -213,7 +215,7 @@ export const spark = (series: readonly ProgressPoint[], width: number, height: n
     series.map((p, i) => `${i === 0 ? "M" : "L"}${x(i)} ${y(pick(p))}`).join(" ");
   const drops = series.flatMap((p, i) =>
     p.drop
-      ? [{ x: x(i), y: y(p.pct), label: `↓ ${p.drop.fromPct}% → ${p.pct}%: ${p.drop.text} (${dropReason(p.drop.reason)})`, at: p.at }]
+      ? [{ x: x(i), y: y(p.pct), label: `↓ ${p.drop.fromPct}% → ${p.pct}%: ${p.drop.text || dropReason(p.drop.reason)}`, at: p.at }]
       : [],
   );
   return { estimate: path((p) => p.pct), verified: path((p) => p.verifiedPct), drops };
@@ -376,3 +378,15 @@ export const needsYouRow = <A extends { readonly state: string }>(
   const ask = asks[id];
   return ask?.state === "open" ? { kind: "card", ask } : { kind: "changed" };
 };
+
+/** Where a risk leads, as in the old app: machine trouble to Machines, a blocking ask to the inbox. Others are read
+ * where they stand (the row names its order or check). */
+export const riskTarget = (rule: string): "machines" | "inbox" | null =>
+  rule === "machine_offline" || rule === "machine_flaky" || rule === "usage_high" ? "machines" : rule === "blocked_on_you" ? "inbox" : null;
+
+/** A repo's CI runs on GitHub, where a red check is read. */
+export const ciUrl = (repo: string): string => `https://github.com/${repo.split("/").map(encodeURIComponent).join("/")}/actions`;
+
+/** The live lanes of an in-progress row: its order's lanes running one of its tasks, in the doc's task order. */
+export const rowLanes = <L extends { readonly taskId?: string | undefined }>(lanes: readonly L[] | undefined, taskIds: readonly string[]): L[] =>
+  taskIds.flatMap((id) => (lanes ?? []).filter((l) => l.taskId === id));

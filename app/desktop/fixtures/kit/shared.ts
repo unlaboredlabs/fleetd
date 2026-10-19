@@ -3,11 +3,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { FixtureFile } from "../../src/main/hub/fixture.ts";
-import { Fixture, HUB } from "./fixture.ts";
+import { Fixture, HUB, PROTOCOL } from "./fixture.ts";
 import type { SharedName } from "./group.ts";
 import { at } from "./ids.ts";
 import { clone, isObject, type JsonObject, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
+import { explainLoss } from "../../src/main/hub/explain.ts";
 
 const RECORDED = path.join(import.meta.dirname, "../recorded");
 
@@ -179,13 +180,16 @@ export const buildShared = (): Map<SharedName, Fixture> => {
     withConversation(copy("conversation", "The lead conversation from order-conversation-20261019.jpg: a markdown wake prompt, a human steer to T1 and a lead steer to T2, both acknowledged.")),
     (() => {
       const f = new Fixture("hub-unreachable", "The saved hub doesn't answer; the app retries.");
-      f.state = { phase: "retrying", hub: HUB, reason: "connect ECONNREFUSED devbox:4790", retryAt: Date.parse(f.now) + 8000 };
+      // The words the real client gives a refused connect (src/main/hub/explain.ts).
+      f.state = { phase: "retrying", hub: HUB, ...explainLoss(HUB, 1006, "", { code: "ECONNREFUSED", message: "connect ECONNREFUSED" }, false), retryAt: Date.parse(f.now) + 8000 };
       return f;
     })(),
     (() => {
       const f = new Fixture("pairing-failed", "The hub refused the saved key, and a new pairing code has expired.");
       f.state = { phase: "refused", hub: HUB, message: "The hub refused this app's key: it was revoked or belongs to another hub." };
       f.connect = { ok: false, message: "That pairing code has expired. Make a new one on the hub with `fleetd pair` and paste it again." };
+      // A code typed into the form meets the same expired code at the hub.
+      f.pair = { healthz: { ok: true, version: "0.5.0", protocol: PROTOCOL }, redeem: { status: 410, body: { code: "pair_code_expired", message: "That pairing code has expired.", fix: "Run `fleetd pair` on the hub for a new code." } } };
       return f;
     })(),
     (() => {

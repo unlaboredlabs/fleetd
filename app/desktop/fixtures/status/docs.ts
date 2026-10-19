@@ -1,4 +1,4 @@
-// Status docs as a hub sends them: the fleet, the storefront project and its order W14, with the progress model's
+// Status docs as a hub sends them: the fleet, the storefront project and its order W1, with the progress model's
 // fields (PR #169). Used by fixtures/status/index.ts (the screenshots) and by the Status view's tests, so both read
 // the same answers. Plain data and no imports, so the renderer's tests can load it too.
 
@@ -15,7 +15,7 @@ export type Kind = "fleet" | "project" | "order";
 export const SCOPES: Record<Kind, Obj> = {
   fleet: { kind: "fleet" },
   project: { kind: "project", projectRef: { machineId: "devbox", projectId: "storefront" } },
-  order: { kind: "order", workstreamId: "W14" },
+  order: { kind: "order", workstreamId: "W1" },
 };
 
 /** The estimate over the morning: a steady climb, with two explained drops. */
@@ -79,12 +79,12 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
   const gates: Json[] =
     kind === "order"
       ? [
-          { kind: "live", label: "review of #212", serial: true, since: at("10:03:11"), workstreamId: "W14" },
-          ...(asks.length > 0 ? [{ kind: "live", label: "your answer on the health check path", serial: false, since: at("09:41:00"), workstreamId: "W14" }] : []),
+          { kind: "live", label: "review of #212", serial: true, since: at("10:03:11"), workstreamId: "W1" },
+          ...(asks.length > 0 ? [{ kind: "live", label: "your answer on the health check path", serial: false, since: at("09:41:00"), workstreamId: "W1" }] : []),
         ]
       : [
-          { kind: "plan", label: "P12 full lab run", serial: true, itemId: "P12", workstreamId: "W14" },
-          { kind: "live", label: "CI on #212 (rust (macos) 8m)", serial: false, workstreamId: "W14" },
+          { kind: "plan", label: "P12 full lab run", serial: true, itemId: "P12", workstreamId: "W1" },
+          { kind: "live", label: "CI on #212 (rust (macos) 8m)", serial: false, workstreamId: "W1" },
         ];
   const lines: Record<Kind, string> = {
     fleet: `Fixing cart rounding and speeding up product search, waiting on the full lab run. ${needsClause(asks.length)}`,
@@ -115,7 +115,7 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
   }[kind];
   const t31: Obj = {
     itemId: "P12",
-    workstreamId: "W14",
+    workstreamId: "W1",
     title: "Round totals per currency, not per line",
     taskIds: ["T31"],
     changeIds: [],
@@ -128,7 +128,7 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
   };
   const t33: Obj = {
     itemId: "P13",
-    workstreamId: "W14",
+    workstreamId: "W1",
     title: "Review #212",
     taskIds: ["T33"],
     changeIds: ["X12"],
@@ -189,13 +189,13 @@ export const statusDoc = (kind: Kind, quiet = false, asks: readonly string[] = k
     since,
     parts,
     done: [
-      { itemId: "P9", workstreamId: "W14", title: "Totals use integer minor units", doneAt: at("09:46:12"), evidence: "#208 merged by the train 09:46 · check 2 passed" },
+      { itemId: "P9", workstreamId: "W1", title: "Totals use integer minor units", doneAt: at("09:46:12"), evidence: "#208 merged by the train 09:46 · check 2 passed" },
       { itemId: "P8", workstreamId: "W12", title: "Search index warms on deploy", doneAt: at("09:12:40"), evidence: "#205 merged by the train 09:12 · check 1 passed" },
       { workstreamId: "W11", title: "Product page shows stock per size", doneAt: at("08:30:02"), evidence: "W11 verified: 3 of 3 checks passed" },
     ],
     inProgress: kind === "fleet" ? [t31, t33, w9] : [t31, t33],
     next: [
-      { itemId: "P14", workstreamId: "W14", title: "JPY and KRW carts round to whole units", after: ["P12"] },
+      { itemId: "P14", workstreamId: "W1", title: "JPY and KRW carts round to whole units", after: ["P12"] },
       { itemId: "P15", title: "Currency table export for finance", after: ["P12", "P14"] },
       { itemId: "P16", title: "Docs page: how totals are rounded", after: [] },
     ],

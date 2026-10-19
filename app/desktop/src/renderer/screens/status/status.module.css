@@ -34,6 +34,26 @@
   gap: var(--space-2);
   min-width: 0;
 }
+.crumbText,
+.crumbLink {
+  min-width: 0;
+  max-width: 32ch;
+}
+.crumbLink {
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.crumbLink:hover {
+  background: var(--hover);
+}
+.crumbLink:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 .liveness {
   display: flex;
   align-items: center;
@@ -95,10 +115,11 @@
   flex-direction: column;
   gap: var(--space-2);
 }
+/* Inside the measure, so it lines up with the strip and the sections below it. */
 .heroStale {
-  outline: 1px solid var(--warning);
-  outline-offset: var(--space-2);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
 }
 .figureRow {
   display: flex;
@@ -213,6 +234,12 @@
   padding: 0 var(--space-1-5);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.tag:hover {
+  background: var(--hover);
 }
 .tag:focus-visible {
   outline: none;
@@ -251,6 +278,10 @@
 }
 .part,
 .partStale {
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
@@ -262,6 +293,10 @@
 }
 .partStale {
   border-color: var(--warning);
+}
+.part:hover,
+.partStale:hover {
+  background: var(--hover);
 }
 .part:focus-visible,
 .partStale:focus-visible {
@@ -342,12 +377,12 @@ button.row:focus-visible {
 .partBar {
   align-self: center;
 }
-.risk {
+/* A row's agents sit under it, indented to its text. */
+.rowLanes {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
+  flex-direction: column;
+  padding-left: var(--space-6);
+  margin-bottom: var(--space-1);
 }
 .asks {
   display: flex;

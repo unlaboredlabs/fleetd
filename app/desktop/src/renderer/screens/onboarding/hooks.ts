@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { HubState } from "../../../shared/hub";
-import type { Probe } from "../../../shared/pairing";
+import type { KeyStore, Probe } from "../../../shared/pairing";
 import { reaching, type Reaching } from "./form";
 
 /** The frame's one hub subscription (each extra subscribe would make main send a fresh snapshot). */
@@ -8,9 +8,9 @@ export { useHubState } from "../shell/hubFeed";
 
 /** The connection on its way to the hub, holding the last failure's reason across attempts (see `reaching`). */
 export const useReaching = (state: HubState | null): Reaching | null => {
-  const [last, setLast] = useState<{ readonly hub: string; readonly reason: string } | null>(null);
+  const [last, setLast] = useState<{ readonly hub: string; readonly reason: string; readonly fix: string | null } | null>(null);
   if (state?.phase === "retrying" && (last?.hub !== state.hub || last.reason !== state.reason)) {
-    setLast({ hub: state.hub, reason: state.reason });
+    setLast({ hub: state.hub, reason: state.reason, fix: state.fix ?? null });
   }
   if (state === null || (state.phase !== "connecting" && state.phase !== "retrying")) return null;
   return reaching(state, last);
@@ -47,4 +47,19 @@ export const useHubProbe = (hub: string | null): Probe | null => {
     };
   }, [hub]);
   return found !== null && found.hub === hub ? found.probe : null;
+};
+
+/** Where the hub key is kept (asked of main once per mount; it changes only with a restart). */
+export const useKeyStore = (): KeyStore | null => {
+  const [store, setStore] = useState<KeyStore | null>(null);
+  useEffect(() => {
+    let current = true;
+    void window.fleetd.pair.store().then((found) => {
+      if (current) setStore(found);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  return store;
 };

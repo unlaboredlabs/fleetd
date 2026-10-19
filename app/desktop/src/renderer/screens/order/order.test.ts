@@ -118,7 +118,7 @@ describe("the conversation", () => {
     const conv = buildConversation(input({ steers: [toTask, yours] }));
     expect(conv[0]).toMatchObject({ kind: "say", author: { kind: "lead" }, to: "T1" });
     expect(conv[1]).toMatchObject({ kind: "say", author: { kind: "you", keyName: "your console" }, to: "T1" });
-    expect(conv[1]?.kind === "say" && conv[1].receipt?.act).toEqual({ kind: "withdraw", steerId: "S3" });
+    expect(conv[1]?.kind === "say" && conv[1].receipt?.acts).toEqual([{ kind: "withdraw", steerId: "S3" }]);
   });
 
   it("shows a steer to the lead where the lead received it, with your words rather than fleetd's wrapper", () => {
@@ -260,19 +260,20 @@ describe("receipts", () => {
   it("say how a steer landed and admit a miss", () => {
     expect(clock("2026-10-18T14:02:07.143Z", "UTC")).toBe("14:02:07");
     const stopped = receipt(steer("S12", "delivered", { how: "stopped", stoppedTool: "cargo test --workspace", deliveredAt: "2026-10-18T14:02:07.143Z" }));
-    expect(stopped.line).toMatch(/^S12 · delivered \d\d:\d\d:07 · stopped `cargo test --workspace`$/);
+    expect(stopped.line).toMatch(/^S12 · delivered \d\d:\d\d:07 · stopped$/);
+    expect(stopped.quote).toEqual({ text: "cargo test --workspace", code: true });
     const quoted = receipt(steer("S12", "acknowledged", { ackExcerpt: "S12: **ok**, running `echo redirected-9cd88e70`" }));
-    expect(quoted.line).toMatch(/“S12: ok, running `echo redirected-9cd88e70`”$/);
+    expect(quoted.quote?.text).toBe("“S12: ok, running `echo redirected-9cd88e70`”");
     expect(codeRuns("a `b` c `d")).toEqual([
       { code: false, text: "a " },
       { code: true, text: "b" },
       { code: false, text: " c `d" },
     ]);
     const missed = receipt(steer("S12", "unacknowledged", { ackExcerpt: "Continuing with the docs page." }));
-    expect(missed).toMatchObject({ line: "S12 · not acknowledged · its reply: “Continuing with the docs page.”", tone: "warn", act: { kind: "redirect" } });
+    expect(missed).toMatchObject({ line: "S12 · not acknowledged · its reply:", quote: { text: "“Continuing with the docs page.”" }, tone: "warn", acts: [{ kind: "redirect" }] });
     expect(receipt(steer("S12", "failed", { detail: "devbox refused the send" })).line).toBe("S12 · failed: devbox refused the send");
-    expect(receipt(steer("S12", "queued", { by: { kind: "lead" } })).act).toBeUndefined();
-    expect(receipt(steer("S12", "delivered")).act).toBeUndefined();
+    expect(receipt(steer("S12", "queued", { by: { kind: "lead" } })).acts).toBeUndefined();
+    expect(receipt(steer("S12", "delivered")).acts).toBeUndefined();
   });
 
   it("name the running step a queued steer waits for", () => {

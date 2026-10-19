@@ -10,6 +10,27 @@ import type { HubSource } from "./source";
 const delay = z.int().min(0).max(600_000).optional();
 const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string().optional() });
 
+const Frame = z.discriminatedUnion("t", [
+  z.object({ t: z.literal("snapshot"), snapshot: z.looseObject({ cursor: z.int().min(0) }), afterMs: delay }),
+  z.object({ t: z.literal("event"), event: z.looseObject({ seq: z.int().min(0), type: z.string() }), afterMs: delay }),
+  z.object({ t: z.literal("live"), frame: z.looseObject({ full: z.boolean() }), afterMs: delay }),
+  z.object({ t: z.literal("error"), error: hubError, afterMs: delay }),
+]);
+
+/** Items of `tool`'s answers under `field` that match `where` (a deep subset), e.g. asks_list's asks with askId A1. */
+const Rows = z.object({ tool: z.string(), field: z.string(), where: z.json() });
+
+/**
+ * What answering a call changes, as a hub would: frames it emits (each `afterMs` after the call, e.g. ask.answered,
+ * then ask.delivered once the undo window has passed) and rows it hides from later answers or shows again (an
+ * answered ask leaves asks_list; undo brings it back), so a refetch after the event agrees with it.
+ */
+const Then = z.object({
+  frames: z.array(Frame).optional(),
+  hide: z.array(Rows).optional(),
+  show: z.array(Rows).optional(),
+});
+
 const FixtureFile = z.object({
   version: z.literal(1),
   name: z.string(),
@@ -19,23 +40,17 @@ const FixtureFile = z.object({
     z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),
     z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0) }),
     z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int() }),
-    z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), retryAt: z.number() }),
+    z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number() }),
     z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
   ]),
-  frames: z.array(
-    z.discriminatedUnion("t", [
-      z.object({ t: z.literal("snapshot"), snapshot: z.looseObject({ cursor: z.int().min(0) }), afterMs: delay }),
-      z.object({ t: z.literal("event"), event: z.looseObject({ seq: z.int().min(0), type: z.string() }), afterMs: delay }),
-      z.object({ t: z.literal("live"), frame: z.looseObject({ full: z.boolean() }), afterMs: delay }),
-      z.object({ t: z.literal("error"), error: hubError, afterMs: delay }),
-    ]),
-  ),
+  frames: z.array(Frame),
   calls: z.array(
     z.object({
       tool: z.string(),
       input: z.json().optional(),
       outcome: z.union([z.object({ ok: z.literal(true), output: z.json() }), z.object({ ok: z.literal(false), error: hubError })]),
       delayMs: delay,
+      then: Then.optional(),
     }),
   ),
   connect: z.union([z.object({ ok: z.literal(true) }), z.object({ ok: z.literal(false), message: z.string() })]).optional(),
@@ -97,10 +112,18 @@ export class FixtureSource implements HubSource {
   readonly #file: FixtureFile;
   readonly #emit: (frame: HubFrame) => void;
   #replay: Array<ReturnType<typeof setTimeout>> = [];
+  /** Rows answered calls have hidden (see Then); a resync keeps them, as a hub keeps what was answered. */
+  #hidden: Array<z.infer<typeof Rows>> = [];
+  /** The last event number sent: a call's events are numbered as they happen, after everything sent before. */
+  #seq = 0;
 
   constructor(file: FixtureFile, emit: (frame: HubFrame) => void) {
     this.#file = file;
-    this.#emit = emit;
+    this.#emit = (frame) => {
+      if (frame.t === "event") this.#seq = Math.max(this.#seq, frame.event.seq);
+      if (frame.t === "snapshot") this.#seq = Math.max(this.#seq, frame.snapshot.cursor);
+      emit(frame);
+    };
   }
 
   get state(): HubState {
@@ -138,9 +161,37 @@ export class FixtureSource implements HubSource {
       console.warn(message);
       return Promise.resolve({ ok: false, error: { code: "not_found", message } });
     }
-    const outcome: CallOutcome = answer.outcome;
+    const outcome = this.#withoutHidden(request.tool, answer.outcome);
+    if (answer.then !== undefined) this.#apply(answer.then);
     if (answer.delayMs === undefined || answer.delayMs === 0) return Promise.resolve(outcome);
     return new Promise((resolve) => setTimeout(() => resolve(outcome), answer.delayMs));
+  }
+
+  #apply(then: z.infer<typeof Then>): void {
+    const same = (a: z.infer<typeof Rows>, b: z.infer<typeof Rows>) => JSON.stringify(a) === JSON.stringify(b);
+    for (const rows of then.show ?? []) this.#hidden = this.#hidden.filter((h) => !same(h, rows));
+    for (const rows of then.hide ?? []) if (!this.#hidden.some((h) => same(h, rows))) this.#hidden.push(rows);
+    let at = 0;
+    for (const { afterMs, ...checked } of then.frames ?? []) {
+      at += afterMs ?? 0;
+      this.#replay.push(
+        setTimeout(() => {
+          const frame = checked as HubFrame;
+          this.#emit(frame.t === "event" ? { ...frame, event: { ...frame.event, seq: this.#seq + 1 } } : frame);
+        }, at),
+      );
+    }
+  }
+
+  #withoutHidden(tool: string, outcome: CallOutcome): CallOutcome {
+    const hides = this.#hidden.filter((h) => h.tool === tool);
+    if (!outcome.ok || hides.length === 0 || outcome.output === null || typeof outcome.output !== "object") return outcome;
+    const output = { ...(outcome.output as Record<string, unknown>) };
+    for (const { field, where } of hides) {
+      const rows = output[field];
+      if (Array.isArray(rows)) output[field] = rows.filter((row) => !matches(where, row));
+    }
+    return { ok: true, output };
   }
 
   live(): void {}
