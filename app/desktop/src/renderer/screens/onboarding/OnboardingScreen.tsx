@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
 import type { HubState } from "../../../shared/hub";
-import { protocolFit, type PairFailure, type PairOutcome } from "../../../shared/pairing";
+import { keyStoreLine, protocolFit, type PairFailure, type PairOutcome } from "../../../shared/pairing";
 import { Button, Field, Input, Text } from "../../ui";
 import { initialForm, KEY_CREATE, mismatchFailure, reduce, type Reaching } from "./form";
-import { useHubState, useReaching, useSecondsUntil } from "./hooks";
+import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks";
 import { CommandLine, Failure, Prose } from "./Prose";
 import s from "./onboarding.module.css";
 
@@ -83,6 +83,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       dispatch({ type: "failed", failure: outcome.failure });
       codeField.current?.focus();
     }
+    return outcome.ok;
   }, []);
 
   useEffect(() => {
@@ -110,7 +111,12 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     if (form.busy) return;
     if (!form.useKey) {
       const request = { hub: form.hub, code: form.code };
-      return pair(form.hub, () => window.fleetd.pair.redeem(request));
+      const fromLink = form.linkCode !== null && form.linkCode === form.code;
+      const before = fromLink ? await window.fleetd.app.linkHandler(null) : null;
+      const ok = await pair(form.hub, () => window.fleetd.pair.redeem(request));
+      // The link may have been meant for another install that holds fleetd://; main claims it back when it should.
+      if (!ok && before !== null) dispatch({ type: "linkChecked", before, after: await window.fleetd.app.linkHandler("pair-failed") });
+      return;
     }
     const key = form.key.trim();
     if (key === "") {
@@ -131,6 +137,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
 
   return (
     <Page id={form.useKey ? "onboarding.key" : "onboarding"} title="Connect to your fleetd hub">
+      {form.notice === null ? null : <Prose text={form.notice} />}
       {form.status === null ? null : <Prose text={form.status} tone="quiet" />}
       <form className={s.fields} onSubmit={(e) => void submit(e)} noValidate>
         <Field label="Hub address">
@@ -175,6 +182,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         </div>
       </form>
       {form.error === null ? null : <Failure failure={form.error} />}
+      {form.linkNote === null ? null : <Prose text={form.linkNote} />}
       <div className={s.hint}>
         <Text tone="quiet">
           {form.useKey
@@ -188,14 +196,18 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
           {form.useKey ? "Use a pairing code instead" : "Use a key instead"}
         </Button>
       </div>
-      <Text size="xs" tone="quiet">
-        The key is kept encrypted on this computer.
-      </Text>
+      <KeyStoreLine />
     </Page>
   );
 }
 
 /** One layout for every attempt: only the countdown line changes, so a fast-failing hub doesn't flash. */
+/** Where the key is kept, as it really is: encrypted by the OS, or a private file and how to change that. */
+function KeyStoreLine() {
+  const store = useKeyStore();
+  return store === null ? null : <Prose text={keyStoreLine(store)} tone="quiet" size="xs" />;
+}
+
 function Connecting({ reach }: { reach: Reaching }) {
   const seconds = useSecondsUntil(reach.retryAt);
   return (
@@ -208,7 +220,7 @@ function Connecting({ reach }: { reach: Reaching }) {
           failure={{
             code: "",
             message: reach.reason,
-            fix: "Check the hub is running (`fleetd doctor` on the hub) and that this computer can reach it.",
+            fix: reach.fix ?? "Check the hub is running (`fleetd doctor` on the hub) and that this computer can reach it.",
           }}
         />
       )}

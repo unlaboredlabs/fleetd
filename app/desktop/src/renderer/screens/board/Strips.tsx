@@ -2,6 +2,7 @@
 // claude usage windows (only what it reports), then the slot board. The train strip: each repo's merge train as
 // chips in train order (queued → CI → merged); a chip that changes place slides there, a merged one leaves after
 // 10 s. Every move is one transition on a change; nothing runs while the trains stand still.
+import { ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dot, Tooltip, Truncate, cx, toast } from "../../ui";
 import type { MachineLive, PrChip, SlotState, TrainLive } from "./contracts";
@@ -57,7 +58,11 @@ function MachineSeg({ m, now, onOpen }: { m: MachineLive; now: number; onOpen?: 
     <Tooltip content={full}>
       <button type="button" className={s.machineSeg} onClick={onOpen} disabled={!onOpen} aria-label={`${full}: open Machines`}>
         <span className={s.machineText} data-text="truncate">
-          <span className={s.machineName}>{m.name}</span> <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} />{" "}
+          <span className={s.machineName}>{m.name}</span>
+          {/* The gaps are margins: whitespace between inline elements is easy to lose to a reformat. */}
+          <span className={s.machineDot}>
+            <Dot color={m.status === "online" ? "var(--success)" : "var(--warning)"} />
+          </span>
           {parts.map(([text, tone], i) => (
             <span key={i} className={cx(TONE[tone])}>
               {i > 0 ? " · " : ""}
@@ -185,7 +190,7 @@ function Chips({ chips, onOpenPr }: { chips: readonly { chip: PrChip; leaving: b
               <ChipBody chip={chip} />
             </span>
           )}
-          {i + 1 < chips.length ? <span className={s.arrow}>▸</span> : null}
+          {i + 1 < chips.length ? <ChevronRight className={s.arrow} aria-hidden /> : null}
         </span>
       ))}
     </span>

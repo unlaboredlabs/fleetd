@@ -3,7 +3,7 @@
 // week of the fleet is made of orders like it. The roll-ups here stand in for the hub's so the numbers on screen
 // agree with the bars; they are fixture data, not the hub's rules. Ported from the GPUI app's time/fixture.rs.
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/time/index.ts).
-import { NO_NAMES, KIND_WORD, fmtDur, type Names } from "./format.ts";
+import { NO_NAMES, KIND_WORD, SHOWN, categoryKinds, fmtDur, type Names } from "./format.ts";
 import {
   KIND_CATEGORY,
   type AgentRole,
@@ -591,6 +591,11 @@ export interface FixtureOptions {
   capped?: boolean;
   /** The hub keeps 30 days and the order began before that. */
   detailSince?: string;
+  /**
+   * The hub's own projects (a recorded fixture's ids), matched to this fixture's projects by title, so a project
+   * filter in the app asks with an id the answers know.
+   */
+  projects?: readonly { readonly machineId: string; readonly projectId: string; readonly title: string }[];
 }
 
 interface Collected extends Data {
@@ -646,6 +651,7 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
   const dense = opts.dense === true ? 10 : 1;
   const shape: Shape = { ...(opts.agents === undefined ? {} : { agents: opts.agents }), ...(opts.long === true ? { long: true } : {}) };
   const cache = new Map<string, Collected>();
+  let week_: Span[] | undefined;
   const data = (order: string | undefined, compare: boolean, scope: TimeBreakdownInput["scope"]): Collected => {
     const key = `${order ?? "*"}:${String(compare)}:${JSON.stringify(scope)}`;
     const hit = cache.get(key);
@@ -653,7 +659,10 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
     let specs = week();
     if (order !== undefined && !specs.some((s) => s.id === order)) specs = specs.slice(0, 1).map((w8) => ({ ...w8, id: order }));
     if (compare) specs = specs.map(before);
-    if (scope.kind === "project") specs = specs.filter((s) => s.project === scope.projectRef.projectId);
+    if (scope.kind === "project") {
+      const title = opts.projects?.find((p) => p.projectId === scope.projectRef.projectId)?.title ?? scope.projectRef.projectId;
+      specs = specs.filter((s) => s.project === title);
+    }
     if (scope.kind === "machine") specs = specs.filter((s) => s.machine === scope.machineId);
     const d = collect(specs, order, dense, shape);
     if (order === undefined && !compare) {
@@ -714,8 +723,9 @@ export const fixtureAnswers = (opts: FixtureOptions = {}): ((tool: string, input
       }
       case "thread_window": {
         const i = input as { threadId: string; itemId: string; before?: number; after?: number };
-        const lane = collect(week(), undefined, dense, shape)
-          .spans.filter((s) => s.threadId === i.threadId && s.itemId !== undefined && s.kind !== "tools.parallel")
+        week_ ??= collect(week(), undefined, dense, shape).spans;
+        const lane = week_
+          .filter((s) => s.threadId === i.threadId && s.itemId !== undefined && s.kind !== "tools.parallel")
           .sort((a, b) => a.startMs - b.startMs);
         const focus = lane.findIndex((s) => s.itemId === i.itemId);
         if (focus < 0) return { items: [] };
@@ -761,10 +771,10 @@ const TAIL_PASS = "PASS src/pages/about.test.tsx\nPASS src/pages/pricing.test.ts
 const TAIL_BUILD = "vite v6.2.0 building for production...\n✓ 412 modules transformed.\ndist/index.html 0.61 kB\n✓ built in 81.20s";
 
 /** W8's spans and path directly, for the model's tests and the frame-budget bench. */
-export const fixtureOrder = (dense = false): { spans: Span[]; path: CriticalPath } => {
+export const fixtureOrder = (dense = false, long = false): { spans: Span[]; path: CriticalPath } => {
   const w8 = week()[0];
   if (w8 === undefined) throw new Error("the fixture week has W8");
-  const b = buildOrder(w8, dense ? 10 : 1);
+  const b = buildOrder(w8, dense ? 10 : 1, long ? { long: true } : {});
   return { spans: b.spans.slice().sort((a, z) => a.id - z.id), path: b.path };
 };
 
@@ -791,15 +801,19 @@ export const timeCalls = (opts: FixtureOptions = {}): FixtureCall[] => {
   });
   const order = { kind: "order", workstreamId: FIXTURE_ORDER } as const;
   const names = fixtureNames();
+  const projects = opts.projects ?? names.projects;
   const scopes: TimeBreakdownInput["scope"][] = [
     { kind: "fleet" },
-    ...names.projects.map((p) => ({ kind: "project" as const, projectRef: { machineId: p.machineId, projectId: p.projectId } })),
+    ...projects.map((p) => ({ kind: "project" as const, projectRef: { machineId: p.machineId, projectId: p.projectId } })),
     ...names.machines.map((m) => ({ kind: "machine" as const, machineId: m })),
   ];
   const compare = { since: "2026-10-04T00:00:00.000Z", until: "2026-10-11T00:00:00.000Z" };
   const out: FixtureCall[] = [];
-  // Linked spans by rule, before the pages (whose inputs they would also match).
-  for (const scope of [order, ...scopes]) for (const rule of RULES) out.push(ok("time_spans", { scope, rule }, { scope, rule, limit: 500 }));
+  // Linked spans by rule and by a breakdown row's kinds, before the pages (whose inputs they would also match).
+  for (const scope of [order, ...scopes]) {
+    for (const rule of RULES) out.push(ok("time_spans", { scope, rule }, { scope, rule, limit: 500 }));
+    for (const kinds of [...SHOWN.map(categoryKinds), ["ci.check" as const]]) out.push(ok("time_spans", { scope, kinds }, { scope, kinds, limit: 500 }));
+  }
   // W8's pages, newest cursor first; the first page (no cursor) last.
   const pages: FixtureCall[] = [];
   let after: number | undefined;
@@ -816,9 +830,20 @@ export const timeCalls = (opts: FixtureOptions = {}): FixtureCall[] => {
     out.push(ok(tool, { scope: order }, { scope: order }));
     for (const scope of scopes) out.push(ok(tool, { scope, compare: {} }, { scope, compare }), ok(tool, { scope }, { scope }));
   }
-  const failed = fixtureOrder(opts.dense === true).spans.find((s) => isSuite(s) && s.status === "failed");
-  if (failed?.threadId !== undefined && failed.itemId !== undefined) {
-    out.push(ok("thread_window", {}, { machineId: "devbox", threadId: failed.threadId, itemId: failed.itemId }));
+  // The transcript around each item a bar opens; at ten times the density, around each full-suite run only.
+  for (const s of fixtureOrder(opts.dense === true, opts.long === true).spans) {
+    if (s.threadId === undefined || s.itemId === undefined || s.kind === "tools.parallel") continue;
+    if (opts.dense === true && !isSuite(s)) continue;
+    const input = { threadId: s.threadId, itemId: s.itemId };
+    out.push(ok("thread_window", input, { machineId: "devbox", ...input }));
   }
   return out;
+};
+
+/** W8's lanes as the hub's order_get would list them: thread id, role, task and title (lead included). */
+export const fixtureOrderLanes = (opts: FixtureOptions = {}): { threadId: string; role: AgentRole; taskId?: string; title: string }[] => {
+  const w8 = week()[0];
+  if (w8 === undefined) throw new Error("the fixture week has W8");
+  const b = buildOrder(w8, 1, { ...(opts.agents === undefined ? {} : { agents: opts.agents }) });
+  return [...b.roles.entries()].map(([threadId, r]) => ({ threadId, role: r.role, title: r.title, ...(r.task === undefined ? {} : { taskId: r.task }) }));
 };

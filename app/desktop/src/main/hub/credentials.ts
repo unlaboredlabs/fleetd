@@ -12,6 +12,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import type { KeyStore } from "../../shared/pairing";
 
 export interface Saved {
   readonly url: string;
@@ -46,17 +47,55 @@ export const GPUI_BUNDLE_ID = "sh.fleetd.app";
  * creates its keychain item, whose trust an ad-hoc build loses at every update, and then every launch prompts (#143).
  * A relocated home (FLEETD_HOME) never touches the OS store.
  */
-export const useOsEncryption = (os: {
+export const useOsEncryption = (os: OsFacts): boolean => osEncryption(os) === null;
+
+interface OsFacts {
   readonly platform: NodeJS.Platform;
   readonly relocated: boolean;
   readonly teamSigned: () => boolean;
   readonly available: () => boolean;
   readonly linuxBackend: () => string;
-}): boolean => {
-  if (os.relocated) return false;
-  if (os.platform === "darwin" && !os.teamSigned()) return false;
-  if (!os.available()) return false;
-  return os.platform !== "linux" || os.linuxBackend() !== "basic_text";
+}
+
+/** Why the key can't be encrypted by the OS here, or null when it is. */
+export type NoOsStore = "relocated" | "unsigned" | "no-keyring" | "unavailable";
+
+export const osEncryption = (os: OsFacts): NoOsStore | null => {
+  if (os.relocated) return "relocated";
+  if (os.platform === "darwin" && !os.teamSigned()) return "unsigned";
+  if (!os.available()) return os.platform === "linux" ? "no-keyring" : "unavailable";
+  return os.platform === "linux" && os.linuxBackend() === "basic_text" ? "no-keyring" : null;
+};
+
+/** Where the key is kept, in words a person can check, with how to get it into the OS store when it isn't. */
+export const keyStoreOf = (no: NoOsStore | null, platform: NodeJS.Platform, dir: string): KeyStore => {
+  if (no === null) {
+    return {
+      kind: "os",
+      where: platform === "darwin" ? "the macOS Keychain" : platform === "linux" ? "your keyring (Secret Service)" : "the OS's protected storage",
+    };
+  }
+  const path = join(dir, PLAIN);
+  switch (no) {
+    case "relocated":
+      return { kind: "file", path, why: "FLEETD_HOME is set, so this app keeps its key out of the OS keychain.", fix: "Start the app without FLEETD_HOME to keep the key in the keychain." };
+    case "unsigned":
+      return {
+        kind: "file",
+        path,
+        why: "This build isn't signed with fleetd's Developer ID, so the Keychain would ask for your password after every update.",
+        fix: "Install the signed app (`curl -fsSL https://fleetd.sh | sh`), then pair again to keep the key in the Keychain.",
+      };
+    case "no-keyring":
+      return {
+        kind: "file",
+        path,
+        why: "No keyring (Secret Service) is running on this computer.",
+        fix: "Install and unlock GNOME Keyring or KWallet, restart the app, and pair again to keep the key there.",
+      };
+    case "unavailable":
+      return { kind: "file", path, why: "The OS keychain isn't available to this app.", fix: "Pair again once the keychain is available to keep the key there." };
+  }
 };
 
 const ENCRYPTED = "desktop-hub.bin";

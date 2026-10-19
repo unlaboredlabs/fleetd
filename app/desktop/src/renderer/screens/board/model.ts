@@ -32,6 +32,8 @@ export interface SentOrder {
 
 export interface BoardModel {
   readonly data: BoardData;
+  /** The board read failed and nothing is loaded: why, in the hub's words. */
+  readonly boardError?: string | undefined;
   /** Orders sent from this window that the board doesn't list yet. */
   readonly sent: readonly SentOrder[];
 }
@@ -51,8 +53,10 @@ export const pendingSent = (m: BoardModel): SentOrder[] => {
 
 export type Item =
   | { readonly kind: "empty"; readonly why: "no-projects" | "loading" | "idle" | "offline" }
-  | { readonly kind: "project"; readonly key: ProjectKey; readonly title: string; readonly facts: string }
+  | { readonly kind: "project"; readonly key: ProjectKey; readonly title: string; readonly facts: string; readonly first: boolean }
+  | { readonly kind: "bucket"; readonly bucket: Bucket; readonly first: boolean }
   | { readonly kind: "routing" }
+  | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "sent"; readonly sent: SentOrder }
   | {
       readonly kind: "card";
@@ -84,8 +88,12 @@ export const itemKey = (i: Item): string => {
       return `empty:${i.why}`;
     case "project":
       return `project:${i.key}`;
+    case "bucket":
+      return `bucket:${i.bucket}`;
     case "routing":
       return "routing";
+    case "error":
+      return "error";
     case "sent":
       return `sent:${i.sent.requestId}`;
     case "card":
@@ -169,6 +177,16 @@ export const stageItems = (m: BoardModel, staged: LiveCard, drawn: readonly Agen
   return items;
 };
 
+/**
+ * The board's other orders under the stage: the ones that finished in the last 10 minutes (the stage takes the only
+ * open order, or the last to finish), so nothing on the board drops out of view while one order has the stage.
+ */
+export const underStage = (m: BoardModel, staged: LiveCard, nowMs: number, filter?: ProjectKey): Item[] => {
+  const rest = boardCards(m, nowMs, filter).filter((c) => c.card.workstreamId !== staged.card.workstreamId);
+  if (rest.length === 0) return [];
+  return [{ kind: "gap", id: "under-stage" }, ...sortCards(rest.map((x) => ({ ...x, updatedAt: x.card.updatedAt }))).map(cardItem)];
+};
+
 /** "lead · 2 orders · 3/7 agents settled". */
 const projectFacts = (cards: readonly LiveCard[]): string => {
   const open = cards.filter((c) => c.phase !== "done" && c.phase !== "stopped").length;
@@ -177,8 +195,52 @@ const projectFacts = (cards: readonly LiveCard[]): string => {
   return [plural(open, "open order"), ...(total > 0 ? [`${settled}/${total} agents settled`] : [])].join(" · ");
 };
 
-/** The board with several orders (or none): grouped by project, those needing you first, then the latest. */
-export const listItems = (m: BoardModel, nowMs: number, filter?: ProjectKey): Item[] => {
+/** The status groups of "Group by status", in attention order. */
+export type Bucket = "needs-you" | "working" | "review-and-merge" | "planning-and-queued" | "done";
+export const BUCKETS: readonly Bucket[] = ["needs-you", "working", "review-and-merge", "planning-and-queued", "done"];
+export const BUCKET_LABEL: Record<Bucket, string> = {
+  "needs-you": "Needs you",
+  working: "Working",
+  "review-and-merge": "Review and merge",
+  "planning-and-queued": "Planning and queued",
+  done: "Done",
+};
+
+export const bucketOf = (phase: OrderPhase): Bucket => {
+  switch (phase) {
+    case "waiting_on_you":
+    case "failed":
+      return "needs-you";
+    case "working":
+      return "working";
+    case "reviewing":
+    case "merging":
+    case "verifying":
+      return "review-and-merge";
+    case "queued":
+    case "planning":
+    case "idle":
+      return "planning-and-queued";
+    case "stopped":
+    case "done":
+      return "done";
+  }
+};
+
+const cardItem = ({ view, card, phase, lanes }: LiveCard): Item => ({
+  kind: "card",
+  card,
+  phase,
+  lanes,
+  chip: !chipHidden(phase, card, lanes) || phase === "working",
+  label: phaseLabel(view.phase, lanes),
+});
+
+/**
+ * The board with several orders (or none). By project: those needing you first, then the latest. By status: one
+ * group per bucket in attention order, each by phase then the latest.
+ */
+export const listItems = (m: BoardModel, nowMs: number, filter?: ProjectKey, by: "project" | "status" = "project"): Item[] => {
   const items: Item[] = [];
   const sent = pendingSent(m);
   const routing = sent.filter((o) => sentProject(o) === undefined);
@@ -186,8 +248,21 @@ export const listItems = (m: BoardModel, nowMs: number, filter?: ProjectKey): It
     items.push({ kind: "routing" });
     for (const o of [...routing].reverse()) items.push({ kind: "sent", sent: o });
   }
+  // A failed read is said, with a retry; it is not a board that is still loading.
+  if (m.data.orders === undefined && m.boardError !== undefined) return [...items, { kind: "error", message: m.boardError }];
   const projects = projectsOf(m.data) ?? [];
   const cards = boardCards(m, nowMs, filter);
+  if (by === "status") {
+    for (const bucket of BUCKETS) {
+      const list = cards.filter((c) => bucketOf(c.phase) === bucket);
+      if (list.length === 0) continue;
+      items.push({ kind: "bucket", bucket, first: !items.some((i) => i.kind === "bucket") });
+      for (const c of sortCards(list.map((x) => ({ ...x, updatedAt: x.card.updatedAt })))) items.push(cardItem(c));
+    }
+    for (const o of sent.filter((x) => sentProject(x) !== undefined)) items.push({ kind: "sent", sent: o });
+    if (!items.some((i) => i.kind === "card" || i.kind === "sent")) items.push({ kind: "empty", why: emptyWhy(m) });
+    return items;
+  }
   const byProject = new Map<ProjectKey, LiveCard[]>();
   for (const c of cards) {
     const k = projectKey(c.card.projectRef);
@@ -202,13 +277,10 @@ export const listItems = (m: BoardModel, nowMs: number, filter?: ProjectKey): It
     })
     .filter((x) => x.list.length > 0 || x.mine.length > 0)
     .sort((a, b) => Number(b.needs) - Number(a.needs) || b.latest.localeCompare(a.latest));
-  for (const { p, list, mine } of keyed) {
-    items.push({ kind: "project", key: p.key, title: p.title, facts: projectFacts(list) });
+  for (const [n, { p, list, mine }] of keyed.entries()) {
+    items.push({ kind: "project", key: p.key, title: p.title, facts: projectFacts(list), first: n === 0 });
     for (const o of [...mine].reverse()) items.push({ kind: "sent", sent: o });
-    for (const { view, card, phase, lanes } of sortCards(list.map((c) => ({ ...c, updatedAt: c.card.updatedAt })))) {
-      const chip = !chipHidden(phase, card, lanes) || phase === "working";
-      items.push({ kind: "card", card, phase, lanes, chip, label: phaseLabel(view.phase, lanes) });
-    }
+    for (const c of sortCards(list.map((x) => ({ ...x, updatedAt: x.card.updatedAt })))) items.push(cardItem(c));
   }
   if (!items.some((i) => i.kind === "card" || i.kind === "sent")) items.push({ kind: "empty", why: emptyWhy(m) });
   return items;
@@ -238,23 +310,35 @@ export const sentProject = (o: SentOrder): ProjectKey | undefined => {
 };
 
 
-/** The order the list was last drawn in, and which orders needed you then. */
+/** The order the list was last drawn in, and what re-sorts it (which orders needed you, which group each is in). */
 export interface Held {
   readonly keys: readonly string[];
-  readonly needs: string;
+  /** Each card's group, with "!" when it needs you. */
+  readonly placed: ReadonlyMap<string, string>;
 }
 
 /**
  * Keeps the list where the eye left it: a refetch re-sorts by activity, but rows already shown keep their places and
- * new ones go in after whatever precedes them. Only a change in what needs you re-sorts it, so that order rises.
+ * new ones go in after whatever precedes them. A card that came to need you (or stopped) re-sorts it, so that order
+ * rises; so does a card that moved to another group, or a switch of grouping, since a card sits under its header.
  */
 export const stableOrder = (items: readonly Item[], held: Held | undefined): { items: Item[]; held: Held } => {
   const keys = items.map(itemKey);
-  const needs = items.flatMap((i) => (i.kind === "card" && i.phase === "waiting_on_you" ? [i.card.workstreamId] : [])).join(",");
-  const order = held !== undefined && held.needs === needs ? hold(held.keys, keys) : keys;
+  let group = "";
+  const placed = new Map<string, string>();
+  for (const i of items) {
+    if (i.kind === "project" || i.kind === "bucket") group = itemKey(i);
+    if (i.kind === "card") placed.set(i.card.workstreamId, `${group}${i.phase === "waiting_on_you" ? "!" : ""}`);
+  }
+  const moved = held === undefined || [...placed].some(([id, at]) => held.placed.has(id) && held.placed.get(id) !== at);
+  const order = moved ? keys : hold(held.keys, keys);
   const byKey = new Map(items.map((i) => [itemKey(i), i]));
-  return { items: order.flatMap((k) => byKey.get(k) ?? []), held: { keys: order, needs } };
+  return { items: order.flatMap((k) => byKey.get(k) ?? []), held: { keys: order, placed } };
 };
 
 export const sameHeld = (a: Held | undefined, b: Held | undefined): boolean =>
-  a !== undefined && b !== undefined && a.needs === b.needs && a.keys.join("\n") === b.keys.join("\n");
+  a !== undefined &&
+  b !== undefined &&
+  a.keys.join("\n") === b.keys.join("\n") &&
+  a.placed.size === b.placed.size &&
+  [...a.placed].every(([id, at]) => b.placed.get(id) === at);

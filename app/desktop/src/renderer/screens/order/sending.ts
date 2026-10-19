@@ -7,9 +7,12 @@ import type { Steer, SteerMode, SteerTarget } from "../../../shared/contracts";
 
 export type SendState =
   | { readonly t: "sending" }
-  /** The link dropped or the call timed out with the steer in flight: resent with the same id when it is back. */
+  /** The link dropped with the steer in flight: resent with the same id when it is back. */
   | { readonly t: "reconnecting" }
-  | { readonly t: "failed"; readonly message: string };
+  /** The call timed out (twice): the hub may have it. Resent on the next reconnect, or by hand. */
+  | { readonly t: "unanswered" }
+  /** The hub never stored it: it refused it, or (a resend) there was no hub to ask. */
+  | { readonly t: "failed"; readonly message: string; readonly offline?: boolean };
 
 export interface Sending {
   /** The clientRequestId: the same on every resend. */
@@ -20,24 +23,64 @@ export interface Sending {
   readonly mode: SteerMode;
   readonly at: string;
   readonly state: SendState;
+  /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
+  readonly reached?: boolean;
 }
 
 export const taskOfTarget = (t: SteerTarget): string | undefined => ("taskId" in t ? t.taskId : undefined);
 
-/** The ids the hub can't have answered: the link went away under the call. */
-const CUT_OFF = new Set(["disconnected", "timeout"]);
 
 export type CallResult = { readonly ok: true; readonly steer: Steer } | { readonly ok: false; readonly code: string; readonly message: string };
 
-/** What a steer_send answer does to its row: the hub's steer replaces it, a cut-off keeps it for a resend. */
-export function afterCall(row: Sending, r: CallResult): { readonly row?: Sending; readonly steer?: Steer } {
-  if (r.ok) return { steer: r.steer };
-  if (CUT_OFF.has(r.code)) return { row: { ...row, state: { t: "reconnecting" } } };
-  return { row: { ...row, state: { t: "failed", message: r.message } } };
+/** One order's steers on their way to the hub, kept for the window's life (outbox.ts). */
+export interface OrderSends {
+  readonly sending: readonly Sending[];
+  /** Steers redirected from this app ("Interrupt and redirect" isn't offered twice). */
+  readonly redirected: ReadonlySet<string>;
+}
+
+export const noSends: OrderSends = { sending: [], redirected: new Set() };
+
+export type SendAction =
+  | { readonly t: "sending"; readonly s: Sending }
+  | { readonly t: "sent"; readonly requestId: string; readonly result: CallResult }
+  | { readonly t: "drop"; readonly requestId: string };
+
+/**
+ * What a steer_send answer does to its row: the hub's steer removes it, a cut-off keeps it for a resend. `offline`
+ * (main never sent the call) means not sent, unless an earlier try may have reached the hub.
+ */
+export function afterCall(row: Sending, r: CallResult): Sending | undefined {
+  if (r.ok) return undefined;
+  if (r.code === "disconnected" || (r.code === "offline" && row.reached === true)) return { ...row, state: { t: "reconnecting" }, reached: true };
+  if (r.code === "timeout") return { ...row, state: { t: "unanswered" }, reached: true };
+  return { ...row, state: { t: "failed", message: r.message, ...(r.code === "offline" ? { offline: true } : {}) } };
+}
+
+export function sendsReducer(o: OrderSends, a: SendAction): OrderSends {
+  switch (a.t) {
+    case "sending": {
+      // Upsert: a resend (same id) is the same row, in its place, and remembers an earlier cut-off.
+      const at = o.sending.findIndex((x) => x.requestId === a.s.requestId);
+      const old = o.sending[at];
+      const row = old?.reached === true ? { ...a.s, reached: true } : a.s;
+      return { ...o, sending: at === -1 ? [...o.sending, row] : o.sending.map((x, i) => (i === at ? row : x)) };
+    }
+    case "sent": {
+      const row = o.sending.find((x) => x.requestId === a.requestId);
+      if (row === undefined) return o;
+      const next = afterCall(row, a.result);
+      const sending = next ? o.sending.map((x) => (x.requestId === a.requestId ? next : x)) : o.sending.filter((x) => x.requestId !== a.requestId);
+      const redirected = a.result.ok && a.requestId.startsWith("redirect:") ? new Set([...o.redirected, a.requestId.slice("redirect:".length)]) : o.redirected;
+      return { sending, redirected };
+    }
+    case "drop":
+      return { ...o, sending: o.sending.filter((x) => x.requestId !== a.requestId) };
+  }
 }
 
 /** Rows to send again, with their own ids, once the link is back after it was really lost. */
-export const toResend = (rows: readonly Sending[]): readonly Sending[] => rows.filter((r) => r.state.t === "reconnecting");
+export const toResend = (rows: readonly Sending[]): readonly Sending[] => rows.filter((r) => r.state.t === "reconnecting" || r.state.t === "unanswered");
 
 /**
  * Watches the hub frames: after the link was really lost (a state frame other than live), the next snapshot hands
@@ -65,3 +108,13 @@ export function redirecting(sending: readonly Sending[], done: ReadonlySet<strin
   for (const s of sending) if (s.requestId.startsWith("redirect:") && s.state.t !== "failed") out.add(s.requestId.slice("redirect:".length));
   return out;
 }
+
+// Clocks differ a little between the app and the hub; a steer queued well before the send is an older one.
+const SKEW_MS = 5000;
+
+const sameSteer = (st: Steer, s: Sending): boolean =>
+  st.text === s.text && taskOfTarget(st.target) === taskOfTarget(s.target) && Date.parse(st.queuedAt) >= Date.parse(s.at) - SKEW_MS;
+
+/** The rows to show: a steer the hub turns out to have (steers_list after a reconnect) shows once, as the hub's. */
+export const unsettled = (sending: readonly Sending[], steers: readonly Steer[]): readonly Sending[] =>
+  sending.filter((s) => s.state.t === "failed" || !steers.some((st) => sameSteer(st, s)));

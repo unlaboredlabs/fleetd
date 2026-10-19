@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { type CDPSession, _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
 import { buildSync } from "esbuild";
 import type { Box, CheckOptions, Finding, ScrollStep } from "./dom/checks.ts";
 import { type FixtureName, type Screen, type SizeName, sizes, type Theme } from "./registry.ts";
@@ -128,14 +128,34 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
     { width, height, theme },
   );
   // A window can't outgrow its screen (macOS runners have small ones), so the page's viewport is set too: layout,
-  // the checks and the screenshot all see exactly the size asked for.
-  await page.setViewportSize({ width, height });
+  // the checks and the screenshot all see exactly the size asked for. Not with page.setViewportSize: on an Electron
+  // page it sends a device scale factor of 1, which overrides --force-device-scale-factor and makes every @2x shot
+  // a 1x one. The override below carries the scale, and is re-sent on every resize.
+  await cdp(page).then((session) =>
+    session.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: false }),
+  );
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
   await page.waitForFunction(
-    (v) => window.innerWidth === v.width && window.innerHeight === v.height,
-    { width, height },
+    (v) => window.innerWidth === v.width && window.innerHeight === v.height && window.devicePixelRatio === v.scale,
+    { width, height, scale },
     { timeout: 5_000 },
   );
+}
+
+const sessions = new WeakMap<Page, Promise<CDPSession>>();
+function cdp(page: Page) {
+  let session = sessions.get(page);
+  if (!session) {
+    session = page.context().newCDPSession(page);
+    sessions.set(page, session);
+  }
+  return session;
+}
+
+// A PNG's size from its IHDR chunk.
+export function pngSize(file: string) {
+  const header = readFileSync(file).subarray(16, 24);
+  return { width: header.readUInt32BE(0), height: header.readUInt32BE(4) };
 }
 
 export async function show(page: Page, screenId: string, route: string, open?: (page: Page) => Promise<void>) {
@@ -174,13 +194,33 @@ export async function assertExpectedState(page: Page, screen: Pick<Screen, "id" 
   }
 }
 
-// Fonts loaded, no skeletons, and two frames painted after the last layout change. `fonts.ready` waits for the faces
-// the current layout asked for; `fonts.status` alone is "loaded" before any face has been requested.
+// Fonts loaded, no skeletons, and the layout unchanged for three frames in a row. Components that fit themselves to
+// their measured size (a ResizeObserver, then a re-render, sometimes twice) settle a frame or more after the last
+// font or resize, more often on the slower macOS runners; a fixed two frames shot them mid-fit. `fonts.ready` waits
+// for the faces the current layout asked for; `fonts.status` alone is "loaded" before any face has been requested.
+// A page that never holds still (a running animation) is shot after 3 s rather than hanging the run.
 export async function settle(page: Page) {
   await page.waitForFunction(() => !document.querySelector("[aria-busy='true']"), undefined, { timeout: 10_000 });
   await page.evaluate(async () => {
     await document.fonts.ready;
-    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null))));
+    const frame = () => new Promise((done) => requestAnimationFrame(() => done(null)));
+    const layout = () => {
+      let sig = `${document.body.scrollWidth}x${document.body.scrollHeight}`;
+      for (const el of document.body.getElementsByTagName("*")) {
+        const r = el.getBoundingClientRect();
+        sig += `|${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`;
+      }
+      return sig;
+    };
+    const until = performance.now() + 3_000;
+    let last = layout();
+    let still = 0;
+    while (still < 3 && performance.now() < until) {
+      await frame();
+      const now = layout();
+      still = now === last ? still + 1 : 0;
+      last = now;
+    }
   });
 }
 
@@ -222,6 +262,13 @@ async function capture(page: Page, file: string, findings: Finding[]) {
   if (findings.length > 0) await run(page, `annotate(${JSON.stringify(findings)})`);
   await page.screenshot({ path: path.join(resultsDir, file), animations: "disabled", caret: "hide" });
   if (findings.length > 0) await run(page, "clearAnnotations()");
+  // An "@2x" shot that is really 1x hides exactly what scale 2 is for (Retina text, hairlines, canvases).
+  const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  const got = pngSize(path.join(resultsDir, file));
+  const want = { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
+  if (got.width !== want.width || got.height !== want.height) {
+    throw new Error(`${file} is ${got.width}×${got.height}, not the viewport × ${scale} (${want.width}×${want.height})`);
+  }
 }
 
 // Screenshot and check the view; with `scroll`, also step every scroll container through its range and check at

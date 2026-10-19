@@ -138,8 +138,9 @@ export type ConnTone = "success" | "warning" | "danger" | "quiet";
 /** `http://100.64.0.1:4790/` → `100.64.0.1:4790`. */
 const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/+$/u, "");
 
-/** The sidebar's last line. A retry says why rather than counting down, so nothing repaints every second. */
-export const connLine = (state: HubState | null): { readonly label: string; readonly tone: ConnTone } => {
+/** The sidebar's last line. A fixture never says it is connected; a retry says why rather than counting down. */
+export const connLine = (state: HubState | null, fixture = false): { readonly label: string; readonly tone: ConnTone } => {
+  if (fixture) return { label: "Sample data, no hub", tone: "quiet" };
   switch (state?.phase) {
     case undefined:
       return { label: "Starting…", tone: "quiet" };
@@ -150,7 +151,8 @@ export const connLine = (state: HubState | null): { readonly label: string; read
     case "live":
       return { label: `Connected to ${host(state.hub)}`, tone: "success" };
     case "retrying":
-      return { label: `Reconnecting to ${host(state.hub)}: ${state.reason}`, tone: "warning" };
+      // Main words the reason (hub/explain.ts), so it is shown as it comes.
+      return { label: `Reconnecting: ${state.reason}`, tone: "warning" };
     case "refused":
       return { label: "The hub refused this key", tone: "danger" };
   }

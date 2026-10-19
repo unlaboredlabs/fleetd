@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixtureNames, fixtureOrder } from "./fixture";
-import { NO_NAMES, clockMs } from "./format";
-import { CAT_CODE, bars, buildModel, hit, ticks, type Model } from "./model";
+import { NO_NAMES, categoryKinds, clockMs } from "./format";
+import { CAT_CODE, bars, barsFor, buildModel, hit, ticks, type Model } from "./model";
 import type { Category, Coverage, Span, SpanKind } from "./types";
 import { KIND_CATEGORY } from "./types";
 
@@ -165,5 +165,27 @@ describe("ticks", () => {
     expect(t.length).toBeLessThanOrEqual(8);
     expect(t.every((x) => x % 900_000 === 0)).toBe(true);
     expect(clockMs(t[0] ?? 0)).toBe("10:15:00");
+  });
+});
+
+describe("what is lit is what is listed", () => {
+  it("lights a parallel call's group bar, and every lit id has a bar", () => {
+    const { spans, path } = fixtureOrder();
+    const m = buildModel(spans, path, undefined, fixtureNames(), 0);
+    const tools = new Set(categoryKinds("tools"));
+    const lit = barsFor(m, spans.filter((s) => tools.has(s.kind)).map((s) => s.id));
+    const drawn = new Set(Array.from(m.itemSpan, (i) => m.spans[i]?.id));
+    expect([...lit].every((id) => drawn.has(id))).toBe(true);
+    const groups = spans.filter((s) => s.kind === "tools.parallel").map((s) => s.id);
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups.every((id) => lit.has(id))).toBe(true);
+    // No parallel call is listed on its own: it shows (and lists) as its group.
+    expect([...lit].some((id) => m.parallel.has(id))).toBe(false);
+  });
+
+  it("links a category's every kind, CI checks included", () => {
+    expect(categoryKinds("pipeline")).toContain("ci.check");
+    expect(categoryKinds("tools")).not.toContain("tools.parallel");
+    expect(categoryKinds("model")).not.toContain("model.message");
   });
 });

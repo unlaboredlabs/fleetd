@@ -1,13 +1,13 @@
 import { useState } from "react";
 import type { PairFailure } from "../../../shared/pairing";
-import { Button, copyText, InlineCode, Text, type TextTone } from "../../ui";
+import { Button, copyText, InlineCode, Text, type TextSize, type TextTone } from "../../ui";
 import s from "./onboarding.module.css";
 
 /** A sentence from the hub or the app, with its `commands` shown as code rather than as backticks. */
-export function Prose({ text, tone = "default" }: { text: string; tone?: TextTone }) {
+export function Prose({ text, tone = "default", size = "md" }: { text: string; tone?: TextTone; size?: TextSize }) {
   const parts = text.split("`");
   return (
-    <Text as="p" tone={tone}>
+    <Text as="p" tone={tone} size={size}>
       {parts.map((part, i) => (i % 2 === 1 && i < parts.length - 1 ? <InlineCode key={i}>{part}</InlineCode> : part))}
     </Text>
   );
