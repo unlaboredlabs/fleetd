@@ -103,8 +103,10 @@ export const chordMatches = (chord: Chord, event: KeyInput, platform: Platform):
   const code = CODES[chord.key];
   if (code !== undefined) return event.code === code;
   if (/^[0-9]$/u.test(chord.key)) return event.code === `Digit${chord.key}` || event.code === `Numpad${chord.key}`;
-  // Letters follow the layout, as the menu's key equivalents do.
-  return event.key.toLowerCase() === chord.key;
+  // Letters follow the layout, as the menu's key equivalents do; a layout without Latin letters (Cyrillic, Greek)
+  // falls back to the physical key, as macOS does for ⌘ shortcuts.
+  if (/^[a-z]$/iu.test(event.key)) return event.key.toLowerCase() === chord.key;
+  return event.code === `Key${chord.key.toUpperCase()}`;
 };
 
 const CHORDS = new Map(Object.entries(SHORTCUTS).map(([id, s]) => [id as ShortcutId, parseChord(s.keys)]));

@@ -3,6 +3,7 @@
 // verbs; it only decides that the text is a reply and which numbered items it names.
 
 import type { CallOutcome } from "../../../shared/hub";
+import type { Command } from "./registry";
 
 /** Text that can only be a reply: a leading item number, "#B<n>", "recs", "all <verb>", "pref:" or "forget D<n>". */
 export const isReply = (text: string): boolean => /^\s*(?:\d|#B\d|recs\b|all\s+\S|pref:|forget\s+D\d)/iu.test(text);
@@ -24,6 +25,32 @@ export const namedItems = (text: string): number[] => {
     for (let n = from; n <= Math.min(to, from + 20); n += 1) add(n);
   }
   return out;
+};
+
+/** "#B4 1 go" → "B4": the batch a reply names itself, which the hub then answers. */
+export const namedBatch = (text: string): string | undefined => {
+  const n = /^\s*#B(\d+)/iu.exec(text)?.[1];
+  return n === undefined ? undefined : `B${String(Number(n))}`;
+};
+
+export type ReplyPlan =
+  /** `batchId` goes to inbox_reply with the text, so the hub answers the batch shown here or refuses. Undefined
+   *  only when no open question is known, and then the hub answers its latest open batch and says so. */
+  | { readonly kind: "ready"; readonly batchId: string | undefined; readonly items: readonly { readonly n: number; readonly item: Command | undefined }[] }
+  /** Several batches are open and the reply doesn't say which: the hub's choice could differ from ours. */
+  | { readonly kind: "ambiguous"; readonly batches: readonly string[] };
+
+/** Which batch a reply answers and which question each number is, from the needs-you items' batch and number. */
+export const planReply = (text: string, items: readonly Command[]): ReplyPlan => {
+  const asks = items.filter((item) => item.ask !== undefined);
+  const batches = [...new Set(asks.map((item) => item.ask?.batchId ?? ""))].sort((a, b) => Number(b.slice(1)) - Number(a.slice(1)));
+  const named = namedBatch(text);
+  const batchId = named ?? (batches.length === 1 ? batches[0] : undefined);
+  if (batchId === undefined && batches.length > 1) return { kind: "ambiguous", batches };
+  const inBatch = new Map(asks.filter((item) => item.ask?.batchId === batchId).map((item) => [item.ask?.number, item] as const));
+  // The batch prefix is not an item: drop it before reading numbers.
+  const body = named === undefined ? text : text.replace(/^\s*#B\d+/iu, " ");
+  return { kind: "ready", batchId, items: namedItems(body).map((n) => ({ n, item: inBatch.get(n) })) };
 };
 
 export interface ReplyResult {

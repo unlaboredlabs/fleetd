@@ -4,7 +4,8 @@
 // - Commands: actions with a stable id. When the id is a ShortcutId (shared/shortcuts.ts), its key runs it and the
 //   palette shows the key. Register while the screen that handles it is mounted (useCommands), so "Stop order" only
 //   exists on the order view; when no registered command has an id, its key does nothing and falls through.
-//   The same id registered again (a nested screen) overrides it until that one unmounts.
+//   A screen's registration always outranks the built-in defaults (defaults.ts), whatever the mount order. Between
+//   two screens registering the same id, the later registration wins until it unmounts.
 // - Sources: data the palette searches (orders, projects, machines, prompts). `items` is read only while the
 //   palette is open, so a large list costs nothing the rest of the time.
 
@@ -38,8 +39,9 @@ export interface Command {
   readonly keywords?: readonly string[];
   /** Shown only once something is typed: long lists (prompts) and per-item variants ("New order in api"). */
   readonly searchOnly?: boolean;
-  /** Needs-you items: the ask's number in its open batch, so a typed reply ("1 go") shows what it answers. */
-  readonly askNumber?: number;
+  /** Needs-you items: the ask's batch ("B4") and fixed number in it, so a typed reply ("1 go") shows exactly
+   *  the question the hub will answer. From Ask.batch_id and Ask.number. */
+  readonly ask?: { readonly batchId: string; readonly number: number };
   /** Read when the palette opens and when the key is pressed; false hides it and lets the key fall through. */
   readonly enabled?: () => boolean;
   readonly run: () => void;
@@ -60,8 +62,16 @@ export interface TextAction {
 
 type Listener = () => void;
 
-// Stacks, so a later registration of the same id wins and an unmount restores the one below it.
-const commands = new Map<string, Command[]>();
+/** `default` sits below every `screen` registration of the same id, so a built-in can never shadow a screen. */
+export type Priority = "default" | "screen";
+
+interface Entry {
+  readonly command: Command;
+  readonly priority: Priority;
+}
+
+// Stacks, top last: defaults at the bottom, then screens in registration order. An unmount restores the one below.
+const commands = new Map<string, Entry[]>();
 const sources = new Map<string, Source>();
 const textActions: TextAction[] = [];
 const listeners = new Set<Listener>();
@@ -80,20 +90,24 @@ export const subscribeRegistry = (listener: Listener): (() => void) => {
 /** Bumps on every registration change; for useSyncExternalStore. */
 export const registryVersion = (): number => version;
 
-export const registerCommands = (list: readonly Command[]): (() => void) => {
-  for (const command of list) {
-    const stack = commands.get(command.id);
-    if (stack) stack.push(command);
-    else commands.set(command.id, [command]);
+export const registerCommands = (list: readonly Command[], priority: Priority = "screen"): (() => void) => {
+  const entries = list.map((command): Entry => ({ command, priority }));
+  for (const entry of entries) {
+    const stack = commands.get(entry.command.id) ?? [];
+    // A default goes above other defaults but below the first screen entry.
+    const firstScreen = stack.findIndex((e) => e.priority === "screen");
+    if (priority === "default" && firstScreen >= 0) stack.splice(firstScreen, 0, entry);
+    else stack.push(entry);
+    commands.set(entry.command.id, stack);
   }
   changed();
   return () => {
-    for (const command of list) {
-      const stack = commands.get(command.id);
+    for (const entry of entries) {
+      const stack = commands.get(entry.command.id);
       if (!stack) continue;
-      const at = stack.lastIndexOf(command);
+      const at = stack.indexOf(entry);
       if (at >= 0) stack.splice(at, 1);
-      if (stack.length === 0) commands.delete(command.id);
+      if (stack.length === 0) commands.delete(entry.command.id);
     }
     changed();
   };
@@ -122,7 +136,7 @@ const isEnabled = (command: Command): boolean => command.enabled?.() ?? true;
 
 /** The command a shortcut or a menu item runs right now, if one is registered and enabled. */
 export const commandFor = (id: string): Command | undefined => {
-  const top = commands.get(id)?.at(-1);
+  const top = commands.get(id)?.at(-1)?.command;
   return top && isEnabled(top) ? top : undefined;
 };
 
@@ -139,7 +153,7 @@ export const snapshotItems = (): Command[] => {
   const out: Command[] = [];
   const seen = new Set<string>();
   for (const stack of commands.values()) {
-    const top = stack.at(-1);
+    const top = stack.at(-1)?.command;
     if (top && isEnabled(top)) {
       out.push(top);
       seen.add(top.id);
@@ -166,8 +180,27 @@ export const subscribeSources = (onChange: () => void): (() => void) => {
 };
 
 /**
+ * Stable registrations for useCommands: each runs, and is enabled by, the latest closure with its id. An id gone
+ * from the latest list is disabled.
+ */
+export const bindLatest = (latest: { readonly current: readonly Command[] }): Command[] => {
+  const current = (id: string) => latest.current.find((c) => c.id === id);
+  return latest.current.map(
+    (command): Command => ({
+      ...command,
+      enabled: () => {
+        const now = current(command.id);
+        return now !== undefined && (now.enabled?.() ?? true);
+      },
+      run: () => current(command.id)?.run(),
+    }),
+  );
+};
+
+/**
  * Registers commands while the calling component is mounted. Pass a fresh array each render if you like: the
- * registration only changes when `deps` do, and `run`/`enabled` always call the latest closures.
+ * registered ids and titles change when `deps` do, and `run`/`enabled` always call the latest closure with the
+ * same id. An id missing from the latest list counts as disabled, so its key falls through.
  */
 export const useCommands = (list: readonly Command[], deps: readonly unknown[]): void => {
   const latest = useRef(list);
@@ -175,14 +208,7 @@ export const useCommands = (list: readonly Command[], deps: readonly unknown[]):
     latest.current = list;
   });
   useEffect(() => {
-    const stable = latest.current.map(
-      (command, index): Command => ({
-        ...command,
-        enabled: () => latest.current[index]?.enabled?.() ?? true,
-        run: () => latest.current[index]?.run(),
-      }),
-    );
-    return registerCommands(stable);
+    return registerCommands(bindLatest(latest));
     // The caller's deps decide when ids and titles change; closures are read through `latest`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
