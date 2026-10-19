@@ -189,8 +189,7 @@ export async function m6Verify(lab: Lab) {
   const listed = (await callTool("claims_list", { workstreamId: w })).body;
   check(listed.claims?.length === claims.length, `claims_list: ${JSON.stringify(listed)}`);
   const incidents = (await callTool("incidents_list", { projectRef: ref, workstreamId: w })).body.incidents as Array<Body>;
-  const missed = actual.actualMinutes > 2;
-  check(missed === incidents.some((i) => i.class === "estimate_miss"), `an estimate_miss incident exactly when actual > 2 x raw: ${JSON.stringify(incidents)}`);
+  check(!incidents.some((i) => i.class === "estimate_miss"), `fleetd never scores a time estimate as an incident: ${JSON.stringify(incidents)}`);
   ok(`claims_list: ${listed.claims.length}; incidents_list: ${incidents.map((i) => `${i.incidentId} ${i.class}`).join(", ") || "none"}`);
   const digest = (await callTool("digest_get")).body.text as string;
   check(digest.includes(`Done: ${w} `) && digest.includes("· ✓ 1 of 1 checks"), `the human digest shows the done workstream with its checked ✓: ${digest}`);
