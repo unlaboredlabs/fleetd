@@ -9,6 +9,10 @@ import { at } from "./ids.ts";
 import { isObject, type JsonObject, asText } from "./json.ts";
 import { arr, busiestOrder, longText, manyAgents, manyPrompts, NODE_TOO_OLD, obj, streamedLines, timeSpans } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
+import { answerRows, commandApproval, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, setChatState, statusRow, writeChat } from "./chat.ts";
+import { longChat, QUESTION, STREAMING_SO_FAR, TERSE } from "./chatText.ts";
+import { uuid } from "./ids.ts";
+import { LONG_TITLES, ofLength } from "./text.ts";
 
 const RECORDED = path.join(import.meta.dirname, "../recorded");
 
@@ -93,12 +97,121 @@ const withConversation = (f: Fixture): Fixture => {
   return f;
 };
 
+// ---- The lead chat ----
+
+/** Every snapshot project gets a chat state and a status row, so the sidebar and Status never meet an unknown one. */
+const withProjectRows = (f: Fixture): Fixture => {
+  const projects = arr(f.snapshot?.["projects"]).filter(isObject);
+  const rows = projects.map((p, i) => {
+    const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
+    if (!arr(f.snapshot?.["chats"]).some((c) => obj(obj(c)["projectRef"])["projectId"] === ref.projectId)) setChatState(f, ref, { needsYou: false, leadWorking: false, lastSeq: 0 });
+    return i === 0 ? statusRow(f, ref, asText(p["title"]), "working", { agents: 3, pct: [40, 25], merged: "Receipt dates use Intl" }) : statusRow(f, ref, asText(p["title"]), "idle");
+  });
+  return answerRows(f, rows);
+};
+
+/** The first project's chat: the lead's numbered question with its recommendations, and terse replies. */
+const withChat = (f: Fixture, drafts: ReadonlyArray<Draft> = [...fromLines(QUESTION), ...fromLines(TERSE)], opts: { needsYou?: boolean; leadWorking?: boolean } = {}): Fixture => {
+  writeChat(f, firstProject(f), drafts, opts);
+  return withProjectRows(f);
+};
+
+const LONG = 520;
+const longDrafts = (): Array<Draft> => [...migrated(), ...fromLines(longChat(LONG)), ...fromLines(QUESTION), ...fromLines(TERSE)];
+
+/** The sidebar and Status mix: projects needing you, running, both and neither, each row state, long names. */
+const PROJECTS: ReadonlyArray<{ title: string; machine: string; needsYou: boolean; working: boolean; row: Parameters<typeof statusRow>[3]; extra: Parameters<typeof statusRow>[4] }> = [
+  { title: "storefront", machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 4, pct: [45, 30], merged: "Receipt dates use Intl" } },
+  { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, pct: [60, 0], merged: "Nightly export resumes after a crash" } },
+  { title: "checkout", machine: "devbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "main CI is red on acme/checkout", pct: [20, 10] } },
+  { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a project's chat" } },
+  { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2, pct: [10, 15], planning: true } },
+  { title: "search", machine: "buildbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "buildbox is offline", stale: "buildbox stopped answering" } },
+  { title: ofLength(LONG_TITLES[1], 118), machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 12, pct: [5, 70] } },
+  { title: "mobile", machine: "devbox", needsYou: false, working: false, row: "idle", extra: {} },
+];
+
+const withProjectsMix = (f: Fixture): Fixture => {
+  if (f.snapshot === undefined) throw new Error("status-rows needs a snapshot");
+  // storefront keeps the id every chat fixture uses, so one registry route opens it in all of them.
+  const storefront = firstProject(f);
+  const id = (title: string) => (title === "storefront" ? storefront.projectId : uuid(`project ${title}`));
+  f.snapshot["projects"] = PROJECTS.map((p, i) => ({
+    machineId: p.machine,
+    projectId: id(p.title),
+    title: p.title,
+    workspaceRoot: `/home/dev/src/${i === 6 ? "pricing-copy" : p.title}`,
+    lastActivityAt: at(f.now, -i * 600_000),
+    threads: { running: p.working ? 1 : 0, waiting: p.needsYou ? 1 : 0, idle: 2, failed: p.row === "blocked" ? 1 : 0 },
+  }));
+  f.snapshot["chats"] = [];
+  const rows = PROJECTS.map((p) => {
+    const ref: Ref = { machineId: p.machine, projectId: id(p.title) };
+    setChatState(f, ref, { needsYou: p.needsYou, leadWorking: p.working, lastSeq: p.title === "mobile" ? 0 : 12, lastMessageAt: at(f.now, -120_000) });
+    return statusRow(f, ref, p.title, p.row, p.extra);
+  });
+  return answerRows(f, rows);
+};
+
+const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<Fixture> => {
+  const strip = (f: Fixture, n: number) => liveStrip(f, firstProject(f), n);
+  return [
+    withChat(copy("chat-long", `${String(LONG)}+ messages in the first project's chat, paged 50 at a time: migrated past orders first, Markdown, code, lists, the lead's numbered question and terse replies.`), longDrafts()),
+    strip(
+      withChat(
+        copy("chat-streaming", "The lead mid-reply (a streaming message with partial text) while 3 agents work under it."),
+        [...fromLines(QUESTION), { author: "lead", text: STREAMING_SO_FAR, state: "streaming" }],
+        { leadWorking: true },
+      ),
+      3,
+    ),
+    withChat(copy("chat-attachments", "A screenshot and a log file sent to the lead, and its reply."), [
+      ...fromLines(QUESTION),
+      { author: "human", text: "the receipt looks off on mobile, see screenshot + log", attachments: ["F1", "F2"] },
+      { author: "human", text: "", attachments: ["F3"] },
+      { author: "lead", text: "Got both. The date wraps under the total on narrow screens; a writer is fixing the layout." },
+    ]),
+    withChat(
+      copy("chat-secret", "The lead needs a secret: an open masked entry inline, and an earlier one already stored."),
+      [
+        { author: "lead", text: "Stored earlier for the receipt tests." },
+        { author: "lead", text: "", item: secretRequest("stored", copy("empty", "")) },
+        { author: "human", text: "run the checkout tests against Stripe test mode" },
+        { author: "lead", text: "Need the Stripe test key for that. It goes to devbox only and never into this chat." },
+        { author: "lead", text: "", item: secretRequest("open", copy("empty", "")) },
+      ],
+      { needsYou: true },
+    ),
+    withChat(
+      copy("chat-gated", "A risky command waits for Approve / Deny: the exact command inline; an earlier one ran, one was denied, and an agent's permission prompt."),
+      [
+        { author: "lead", text: "Last week's migration ran:" },
+        { author: "lead", text: "", item: commandApproval("ran", copy("empty", "")) },
+        { author: "lead", text: "", item: commandApproval("denied", copy("empty", ""), true) },
+        { author: "human", text: "ship the share snapshots table" },
+        { author: "lead", text: "This writes to the production database. Approve to run it exactly as below." },
+        { author: "lead", text: "", item: commandApproval("open", copy("empty", "")) },
+      ],
+      { needsYou: true },
+    ),
+    strip(withChat(copy("chat-strip", "20 agents working under the lead's message, across two orders, with PR and merge one-liners."), [
+      ...fromLines(TERSE),
+      { author: "system", text: "PR #214 opened: receipt dates use Intl" },
+      { author: "system", text: "PR #213 merged: pricing headline from the copy review" },
+      { author: "lead", text: "20 agents on it: 12 on receipts and checkout, 8 on the export. I'll say when something needs you." },
+    ], { leadWorking: true }), 20),
+    strip(withChat(copy("chat-waiting", "The lead asked its numbered question and waits on you: the needs-you dot, no agents running."), fromLines(QUESTION).slice(0, 1), { needsYou: true }), 0),
+    withChat(copy("chat-empty", "A project whose chat has no messages yet."), []),
+    withProjectsMix(copy("status-rows", "Eight projects: rows in all four states (one planning, one stale, one with a ~120-character name), and the sidebar's needs-you and running mix.")),
+  ];
+};
+
 /** Every shared fixture, by name, freshly built. */
 export const buildShared = (): Map<SharedName, Fixture> => {
-  const typical = Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time.");
+  const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers, reviewers and verifiers, three PRs in the train, live lanes, prompts and time."));
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
-    Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, asks or time."),
+    answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no projects, orders, chats or time."), []),
     typical,
     longText(copy("long-text", "Every title ~120 characters, a ~250-character judge criterion, long branches, paths, prose and prompt keys.")),
     manyPrompts(copy("many-prompts", "72 prompts with long dotted ids, every other one overridden for the project.")),
@@ -128,6 +241,7 @@ export const buildShared = (): Map<SharedName, Fixture> => {
       return f;
     })(),
     timeSpans(copy("time-heavy", "15,000 time spans over the past week, paged 500 at a time.")),
+    ...chatFixtures(copy),
   ];
   const conversation = shared.find((f) => f.name === "conversation");
   if (conversation === undefined) throw new Error("conversation is built above");

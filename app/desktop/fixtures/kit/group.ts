@@ -15,6 +15,16 @@ export const SHARED = [
   "node-too-old",
   "time-heavy",
   "conversation-20k",
+  // The lead chat (lead-chat spec): one project's conversation in each state, and the per-project rows.
+  "chat-long",
+  "chat-streaming",
+  "chat-attachments",
+  "chat-secret",
+  "chat-gated",
+  "chat-strip",
+  "chat-waiting",
+  "chat-empty",
+  "status-rows",
 ] as const;
 export type SharedName = (typeof SHARED)[number];
 

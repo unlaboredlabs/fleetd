@@ -6,6 +6,7 @@ import { Fixture } from "./fixture.ts";
 import { assertClean, findLeaks } from "./leaks.ts";
 import { makeSanitizer } from "./sanitize.ts";
 import { buildShared, recorded } from "./shared.ts";
+import { writeChat } from "./chat.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
 describe("Fixture answers", () => {
@@ -194,5 +195,28 @@ describe("shared fixtures", () => {
   it.each(shared.map((f) => [f.name, f] as const))("%s leaks nothing and is traffic a hub could send", (_name, f) => {
     expect(findLeaks(JSON.stringify(f.toFile()))).toEqual([]);
     expect(validateFixture(f)).toEqual([]);
+  });
+});
+
+describe("chat pages", () => {
+  // As the app pages back: the newest page, then `before` the first seq it holds, until moreBefore is false.
+  it("hands every message out once, oldest to newest, however long the chat", () => {
+    const f = new Fixture("t", "");
+    f.snapshot = { cursor: 0, machines: [], projects: [], attention: [] };
+    const ref = { machineId: "devbox", projectId: "p1" };
+    writeChat(f, ref, Array.from({ length: 123 }, (_, i) => ({ author: i % 2 === 0 ? "human" : "lead", text: `m${String(i)}` }) as const));
+    const page = (input: Record<string, unknown>) => {
+      const out = f.toFile().calls.find((c) => c.tool === "chat_history" && c.input !== undefined && matches(c.input, { projectRef: ref, limit: 50, ...input }))?.outcome;
+      return (out?.ok === true ? out.output : {}) as { messages: Array<{ seq: number }>; moreBefore: boolean };
+    };
+    const seen: number[] = [];
+    let p = page({});
+    for (;;) {
+      seen.unshift(...p.messages.map((m) => m.seq));
+      if (!p.moreBefore) break;
+      p = page({ before: p.messages[0]?.seq });
+    }
+    expect(seen).toEqual(Array.from({ length: 123 }, (_, i) => i + 1));
+    expect(page({ after: 123 }).messages).toEqual([]);
   });
 });
