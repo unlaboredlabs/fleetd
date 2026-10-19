@@ -60,11 +60,11 @@ const LEASE_MS = 4 * 60 * 60_000;
 let lease: string | undefined;
 
 /**
- * Takes this run's lease on the namespace, once per run, or stops: creating the tag is atomic, so a second run on a
- * busy namespace (another worktree, another machine) refuses instead of mixing its PRs into this one's. An expired
- * lease (a run killed before its cleanup) is taken over by compare-and-swap: the new lease commit's parent is the
- * expired one, and the tag moves only as a fast-forward, so of two runs taking over the same lease one wins. Released
- * when the process exits. Not renewed: a run longer than LEASE_MS may lose it.
+ * Takes this run's lease on the namespace, once per run, or stops: creating the lease branch is atomic, so a second
+ * run on a busy namespace (another worktree, another machine) refuses instead of mixing its PRs into this one's. An
+ * expired lease (a run killed before its cleanup) is taken over by compare-and-swap: the new lease commit's parent is
+ * the expired one, and the branch moves only as a fast-forward, so of two runs taking over the same lease one wins.
+ * Released when the process exits. Not renewed: a run longer than LEASE_MS may lose it.
  */
 const leaseNamespace = () => {
   if (lease !== undefined) return;
