@@ -786,8 +786,8 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Plan item too big or unsized",
-        "when `fleetd plan add` (or `plan edit --size`) gets an item with no size or one likely over an hour of agent time",
-        "item!=P<n>; reason!=why, e.g. \"has no size\" or \"is size l, about 1h20m of agent time here\"",
+        "when `fleetd plan add` (or `plan edit --size`) gets an item with no size or one bigger than m",
+        "item!=P<n>; reason!=why, \"has no size (counted as m)\" or \"is size l\"",
         &[]
     ),
     entry!(
@@ -893,6 +893,12 @@ pub const ENTRIES: &[Entry] = &[
                 "numbers-from-facts",
                 "uses only numbers from the facts",
                 r"only numbers that appear in the facts",
+                Code
+            ),
+            (
+                "no-time",
+                "never estimates time",
+                r"never estimate time",
                 Code
             ),
         ]

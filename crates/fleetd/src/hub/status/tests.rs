@@ -667,9 +667,28 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
         "{:?}",
         d.risks
     );
-    let eta = d.eta;
+    let row = &d.in_progress[0];
+    assert_eq!(
+        row.critical,
+        Some(true),
+        "the only open item is the critical path"
+    );
+    let steps: Vec<&str> = row
+        .waiting_on
+        .iter()
+        .flatten()
+        .map(|s| s.as_str())
+        .collect();
+    assert_eq!(
+        steps,
+        ["review of #212", "CI on #212", "merge", "done-when checks"]
+    );
     assert!(
-        eta.p50.is_some() && eta.p90 >= eta.p50,
-        "a range, not a point"
+        d.eta.current.is_none() && d.eta.basis == fleetd_contracts::status::EtaBasis::None,
+        "no time estimates; the retired ETA still decodes in older apps"
+    );
+    let text = serde_json::to_string(&d).unwrap();
+    assert!(
+        !text.contains("p50") && !text.contains("overdueMinutes") && !text.contains("\"current\"")
     );
 }

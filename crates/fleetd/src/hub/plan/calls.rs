@@ -69,44 +69,17 @@ fn acknowledge(
     out
 }
 
-/// Past this much agent time an item is too big to move the figure steadily.
-const MAX_AGENT_MS: i64 = 60 * 60_000;
-
-/// Agent time is the writing stretch: task started to its PR, at the median measured for the item's size.
-fn agent_ms(
-    cal: &crate::hub::status::model::Calibration,
-    pkey: &str,
-    size: fleetd_contracts::plan::Size,
-) -> i64 {
-    use fleetd_contracts::plan::ItemStage;
-    let r = cal.resolve(pkey, crate::hub::status::model::UnitKind::Item, size);
-    r.durations.p50[ItemStage::TaskStarted.index()..ItemStage::PrOpen.index()]
-        .iter()
-        .sum()
-}
-
-/// The granularity warning, worded by the `plan.granularity` prompt: no size, or likely over an hour of agent time.
+/// The granularity warning, worded by the `plan.granularity` prompt: an item with no size, or bigger than m.
 fn granularity(
     hub: &Hub,
     r: &fleetd_contracts::ids::ProjectRef,
     item: &fleetd_contracts::plan::PlanItem,
     unsized_item: bool,
 ) -> Option<String> {
-    let pkey = super::store::pkey(r);
-    let agent = agent_ms(&hub.status.calibration(), &pkey, item.size);
-    let reason = if unsized_item {
-        "has no size (counted as m)".to_owned()
-    } else if agent > MAX_AGENT_MS {
-        let size = serde_json::to_value(item.size)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        format!(
-            "is size {size}, about {} of agent time here",
-            crate::hub::status::risks::age(agent)
-        )
-    } else {
-        return None;
+    let reason = match (unsized_item, item.size) {
+        (true, _) => "has no size (counted as m)",
+        (false, fleetd_contracts::plan::Size::L) => "is size l",
+        _ => return None,
     };
     Some(hub.db.prompts().for_lead(r).render(
         "plan.granularity",
@@ -184,23 +157,14 @@ fn answer(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::hub::status::model::Calibration;
-    use fleetd_contracts::plan::Size;
-
     #[test]
-    fn items_over_an_hour_of_agent_time_warn() {
-        let cal = Calibration::default();
-        assert!(
-            agent_ms(&cal, "p", Size::M) <= MAX_AGENT_MS,
-            "m fits an hour by default"
-        );
-        assert!(agent_ms(&cal, "p", Size::L) > MAX_AGENT_MS, "l is over it");
+    fn the_granularity_warning_asks_to_split_anything_bigger_than_m() {
         let text = crate::hub::prompts::PromptSet::defaults().render(
             "plan.granularity",
             &[("item", &"P4"), ("reason", &"has no size (counted as m)")],
         );
-        assert!(text.starts_with("P4 has no size (counted as m). Plan items of about an hour"));
+        assert!(text.starts_with("P4 has no size (counted as m). Split anything bigger than m"));
         assert!(text.contains("fleetd plan edit P4 --size"));
+        assert!(!text.contains("hour"), "sizes, never hours");
     }
 }

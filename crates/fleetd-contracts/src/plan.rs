@@ -108,6 +108,7 @@ pub enum PlanItemState {
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum ItemStage {
     Planned,
     BriefFrozen,
@@ -250,6 +251,7 @@ pub struct MilestoneView {
     #[serde(flatten)]
     pub milestone: Milestone,
     pub progress: Progress,
+    /// Retired with the ETA: always absent.
     pub eta: Option<StatusEta>,
 }
 
@@ -262,6 +264,7 @@ pub struct PlanView {
     /// Set when the view is one order's items.
     pub workstream_id: Option<WorkstreamId>,
     pub progress: Progress,
+    /// Retired with the ETA: always absent.
     pub eta: Option<StatusEta>,
     pub milestones: List<MilestoneView, 0, 50>,
     pub items: List<PlanItem, 0, 500>,
@@ -364,7 +367,7 @@ pub struct PlanItemResult {
     pub item: PlanItem,
     pub change: Option<PlanChange>,
     pub next: Option<String>,
-    /// Granularity: the item has no size, or is likely over an hour of agent time; split it.
+    /// Granularity: the item has no size, or is bigger than m; split it.
     pub warning: Option<String>,
 }
 

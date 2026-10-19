@@ -6,10 +6,9 @@ use std::sync::Arc;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::ledger::{Tier, WorkstreamState};
 use fleetd_contracts::plan::{ItemStage, PlanItemState, Size, Weight};
-use fleetd_contracts::prim::{Count, Int, Line, List};
+use fleetd_contracts::prim::{Int, Line, List};
 use fleetd_contracts::status::{
-    ForecastAccuracy, PlanningState, ProgressDrop, ProgressEstimate, ProgressPoint, StatusScope,
-    WeightsBasis,
+    PlanningState, ProgressDrop, ProgressEstimate, ProgressPoint, StatusScope, WeightsBasis,
 };
 use fleetd_contracts::train::{Change, ChangeState};
 use rusqlite::{Connection, params};
@@ -224,10 +223,12 @@ pub struct ModelOut {
     pub basis: WeightsBasis,
     /// The order's planning (order scopes only).
     pub planning: Option<PlanningState>,
-    pub p50: Option<i64>,
-    pub p90: Option<i64>,
-    /// (label, stage, elapsed in it, usual), slowest first.
-    pub slower: Vec<(String, ItemStage, i64, i64)>,
+    /// (label, stage, time in it so far), the slowest against its usual first.
+    pub slower: Vec<(String, ItemStage, i64)>,
+    /// The unit on the scope's critical path.
+    pub critical: Option<UnitKey>,
+    /// Each unit's open PR number, for its steps.
+    pub prs: HashMap<UnitKey, i64>,
     /// Plans that appeared since the last read: (order, share, when), to store once.
     pub fix_planning: Vec<(String, f64, i64)>,
     /// When the figure next moves with time alone (in-stage credit, a unit turning slow, planning's bar).
@@ -252,40 +253,85 @@ fn label_of(w: &World, key: &UnitKey) -> String {
     }
 }
 
-/// The longest `after` chain of open items at each percentile: Σ remaining along it.
-fn chain_floor(items: &[&ItemRow], units: &HashMap<UnitKey, ItemProgress>) -> (i64, i64) {
-    let by_n: HashMap<i64, &ItemRow> = items.iter().map(|i| (i.n, *i)).collect();
-    fn walk(
+/// The critical path: the open unit with the most unfinished work through it (its own remaining share of its size,
+/// plus that of every open item waiting on it), by weights only. Ties go to the earlier unit.
+fn critical(
+    items: &[&ItemRow],
+    units: &HashMap<UnitKey, ItemProgress>,
+    points: &HashMap<UnitKey, f64>,
+) -> Option<UnitKey> {
+    let left = |k: &UnitKey| {
+        units.get(k).filter(|u| !u.verified).map_or(0.0, |u| {
+            points.get(k).copied().unwrap_or(0.0) * (1.0 - u.credit)
+        })
+    };
+    let waiting: HashMap<i64, Vec<i64>> = items.iter().fold(HashMap::new(), |mut m, i| {
+        for a in &i.data.after {
+            m.entry(*a).or_default().push(i.n);
+        }
+        m
+    });
+    fn through(
         n: i64,
-        by_n: &HashMap<i64, &ItemRow>,
-        units: &HashMap<UnitKey, ItemProgress>,
-        memo: &mut HashMap<i64, (i64, i64)>,
+        waiting: &HashMap<i64, Vec<i64>>,
+        left: &dyn Fn(&UnitKey) -> f64,
+        memo: &mut HashMap<i64, f64>,
         depth: usize,
-    ) -> (i64, i64) {
+    ) -> f64 {
         if let Some(v) = memo.get(&n) {
             return *v;
         }
-        let own = units
-            .get(&UnitKey::Item(n))
-            .map_or((0, 0), |u| (u.remaining_p50_ms, u.remaining_p90_ms));
-        let mut best = (0, 0);
-        if depth < 64
-            && let Some(i) = by_n.get(&n)
-        {
-            for a in i.data.after.iter().filter(|a| by_n.contains_key(a)) {
-                let (b50, b90) = walk(*a, by_n, units, memo, depth + 1);
-                best = (best.0.max(b50), best.1.max(b90));
-            }
-        }
-        let out = (own.0 + best.0, own.1 + best.1);
-        memo.insert(n, out);
-        out
+        let after = if depth < 64 {
+            waiting
+                .get(&n)
+                .into_iter()
+                .flatten()
+                .map(|x| through(*x, waiting, left, memo, depth + 1))
+                .fold(0.0, f64::max)
+        } else {
+            0.0
+        };
+        let v = left(&UnitKey::Item(n)) + after;
+        memo.insert(n, v);
+        v
     }
     let mut memo = HashMap::new();
-    items.iter().fold((0, 0), |acc, i| {
-        let (a, b) = walk(i.n, &by_n, units, &mut memo, 0);
-        (acc.0.max(a), acc.1.max(b))
-    })
+    let mut keys: Vec<&UnitKey> = units.keys().filter(|k| !units[*k].verified).collect();
+    keys.sort();
+    let mut best: Option<(&UnitKey, f64)> = None;
+    for k in keys {
+        let v = match k {
+            UnitKey::Item(n) => through(*n, &waiting, &left, &mut memo, 0),
+            UnitKey::Order(_) => left(k),
+        };
+        if best.is_none_or(|(_, b)| v > b + 1e-9) {
+            best = Some((k, v));
+        }
+    }
+    best.map(|(k, _)| k.clone())
+}
+
+/// What a unit still waits on, in order: open items it is `after`, then its remaining stages.
+pub fn steps(stage: ItemStage, pr: Option<i64>, after: &[String]) -> Vec<String> {
+    let on = |what: &str| pr.map_or_else(|| what.to_owned(), |n| format!("{what} of #{n}"));
+    let ci = pr.map_or_else(|| "CI".to_owned(), |n| format!("CI on #{n}"));
+    let mut out: Vec<String> = after.to_vec();
+    let rest: [String; 8] = [
+        "the brief".into(),
+        "a writer".into(),
+        "the writer's push".into(),
+        "a PR".into(),
+        on("review"),
+        ci,
+        "merge".into(),
+        "done-when checks".into(),
+    ];
+    let k = stage.index().min(rest.len());
+    if stage != ItemStage::Verified {
+        out.extend(rest[k..].iter().cloned());
+    }
+    out.truncate(8);
+    out
 }
 
 pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
@@ -413,9 +459,10 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
             change_units.push((key.clone(), ch));
         }
     }
-    for (key, ch) in change_units {
-        change_obs(&key, ch, &moves, &mut obs);
+    for (key, ch) in &change_units {
+        change_obs(key, ch, &moves, &mut obs);
     }
+    let pr_of = change_units;
     let facts = model::observe(&obs, now);
 
     // Each unit's progress against its calibration.
@@ -443,11 +490,12 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
             wake_at(entered + (usual as f64 * model::SLOW_FACTOR) as i64 + 1);
         }
         if p.slower {
+            let usual = r.durations.p50[stage.index()].max(1);
             slower.push((
                 label_of(w, &key),
                 stage,
                 now - entered,
-                r.durations.p50[stage.index()],
+                (now - entered) * 100 / usual,
             ));
         }
         units.insert(key, p.clone());
@@ -457,7 +505,7 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     let mut groups = Vec::new();
     let mut fix_planning = Vec::new();
     let mut planning_state = None;
-    let mut extra_open: Vec<ItemProgress> = Vec::new();
+    let mut points: HashMap<UnitKey, f64> = HashMap::new();
     let mut grouped: HashSet<i64> = HashSet::new();
     for o in s.orders.iter().copied().chain(drafts.iter().copied()) {
         let ws = o.w.workstream_id.as_str();
@@ -523,19 +571,6 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
                 model::planning(created, ended, now, share, usual)
             }
         };
-        if group_units.is_empty() {
-            // A draft: planning, then the whole order at its tier's usual length.
-            let r = cal.resolve(&o.pkey, UnitKind::Order, Size::from(tier_of(o)));
-            let left = (usual - (now - created)).max(usual / 10);
-            extra_open.push(ItemProgress {
-                stage: ItemStage::Planned,
-                credit: 0.0,
-                verified: false,
-                slower: false,
-                remaining_p50_ms: left + r.durations.total_p50(),
-                remaining_p90_ms: left + r.durations.p90.iter().sum::<i64>(),
-            });
-        }
         if planning.active && planning.credit < model::IN_STAGE_CAP {
             wake_at(now + TICK_MS);
         }
@@ -576,38 +611,39 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         WeightsBasis::Project
     };
 
-    // The range: remaining stage time over the slots the scope can use.
-    let lanes: usize = s
-        .orders
-        .iter()
-        .filter_map(|o| w.cards.get(o.w.workstream_id.as_str()))
-        .map(|c| {
-            c.lanes
-                .iter()
-                .filter(|l| !crate::hub::orders::phase::settled(l.status))
-                .count()
-        })
-        .sum();
-    let free = (w.slots.cap.get() - w.slots.used.get()).max(0) as usize;
-    let mut open: Vec<&ItemProgress> = units.values().filter(|u| !u.verified).collect();
-    open.extend(extra_open.iter());
-    let (p50, p90) = if open.is_empty() {
-        (None, None)
-    } else {
-        let floor = chain_floor(&counted, &units);
-        let (a, b) = model::scope_eta(&open, lanes + free, floor, now);
-        (Some(a), Some(b))
-    };
-    slower.sort_by_key(|(_, _, elapsed, usual)| std::cmp::Reverse(elapsed * 100 / usual.max(&1)));
+    for i in &counted {
+        points.insert(UnitKey::Item(i.n), i.size.points() as f64);
+    }
+    for o in &virtual_orders {
+        if let Some(ph) = w.placeholders.get(o.w.workstream_id.as_str()) {
+            points.insert(
+                UnitKey::Order(o.w.workstream_id.to_string()),
+                ph.size as f64,
+            );
+        }
+    }
+    let critical = critical(&counted, &units, &points);
+    let mut prs: HashMap<UnitKey, i64> = HashMap::new();
+    for (key, ch) in &pr_of {
+        let open = !matches!(
+            ch.state,
+            ChangeState::Merged | ChangeState::Abandoned | ChangeState::Refused
+        );
+        if open || !prs.contains_key(key) {
+            prs.insert(key.clone(), ch.pr_number.get());
+        }
+    }
+    slower.sort_by_key(|(_, _, _, ratio)| std::cmp::Reverse(*ratio));
+    let slower = slower.into_iter().map(|(l, s, e, _)| (l, s, e)).collect();
     ModelOut {
         groups,
         units,
         estimate,
         basis,
         planning: planning_state,
-        p50,
-        p90,
         slower,
+        critical,
+        prs,
         fix_planning,
         wake_at: wake.get(),
     }
@@ -763,23 +799,7 @@ pub fn estimate_of(out: &ModelOut, series: Option<&[Point]>) -> ProgressEstimate
     }
 }
 
-pub fn accuracy(cal: &Calibration) -> Option<ForecastAccuracy> {
-    let a = cal
-        .accuracy
-        .as_ref()
-        .filter(|a| a.samples >= super::eta::MIN_SAMPLES)?;
-    Some(ForecastAccuracy {
-        within_pct: Count::unchecked(a.within_pct.max(0)),
-        samples: Count::unchecked(a.samples),
-        window_days: Count::unchecked(7),
-        text: Line::unchecked(format!(
-            "ETAs have been within ±{}% this week",
-            a.within_pct.max(0)
-        )),
-    })
-}
-
-/// "in review", for "slower than usual: 2h in review, usually 40m".
+/// "in review", for "P12 cart page is slower than usual in review (2h10m so far)".
 pub fn stage_phrase(stage: ItemStage) -> &'static str {
     match stage {
         ItemStage::Planned => "waiting for its brief",

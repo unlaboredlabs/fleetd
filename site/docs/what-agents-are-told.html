@@ -137,7 +137,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
 <tr><td><code>lead.start</code></td><td>lead start and every lead_restart, followed by the digest</td><td>the lead never writes code (prompt only); delegates only with <code>fleetd task spawn</code>, no other agents (prompt only); asks the human only about product, money, credentials, irreversible (prompt only); secrets only through <code>fleetd ask --kind secret</code>; prod writes, spends and deletes only through <code>fleetd gated run</code>; never blocks on a question (<code>--proceeded</code>) (prompt only); done only through <code>fleetd claim done</code>; every write says what it serves; only the merge train merges; never re-asks a key the digest lists (prompt only); a frozen brief changes only with <code>--amend</code></td></tr>
 <tr><td><code>lead.digest</code></td><td>the top of the lead's first message and of every wake</td><td>the digest is the truth, over the lead's memory (prompt only)</td></tr>
-<tr><td><code>plan.granularity</code></td><td>when <code>fleetd plan add</code> (or <code>plan edit --size</code>) gets an item with no size or one likely over an hour of agent time</td><td></td></tr>
+<tr><td><code>plan.granularity</code></td><td>when <code>fleetd plan add</code> (or <code>plan edit --size</code>) gets an item with no size or one bigger than m</td><td></td></tr>
 </tbody></table></div>
 <h3 id="tasks">Tasks<a class="anchor" href="#tasks" aria-label="Link to this section">#</a></h3>
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
@@ -205,7 +205,7 @@ protocol with code: a description must match its tool, a <code>next:</code> must
 <h3 id="one-shots">One-shots<a class="anchor" href="#one-shots" aria-label="Link to this section">#</a></h3>
 <div class="table"><table><thead><tr><th>Id</th><th>Sent</th><th>Safety rules</th></tr></thead><tbody>
 <tr><td><code>router</code></td><td>each order without @project or a template prefix</td><td>uses no tools; replies with JSON only (prompt only)</td></tr>
-<tr><td><code>status.headline</code></td><td>when a viewed status scope's facts change</td><td>uses no tools; replies with one line of at most 160 characters; uses only numbers from the facts</td></tr>
+<tr><td><code>status.headline</code></td><td>when a viewed status scope's facts change</td><td>uses no tools; replies with one line of at most 160 characters; uses only numbers from the facts; never estimates time</td></tr>
 <tr><td><code>router.retry</code></td><td>once per order, after an unusable first answer</td><td></td></tr>
 <tr><td><code>retro</code></td><td>each retro run (at most 2 a day)</td><td>uses no tools; at most 3 changes</td></tr>
 </tbody></table></div>

@@ -1485,7 +1485,8 @@
           "description": "Not fetched since the hub started. Also what a state this build doesn't know decodes as.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "Claim": {
       "properties": {
@@ -2273,7 +2274,8 @@
           "description": "A done item reopened when a later check failed.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "Effort": {
       "enum": [
@@ -2383,7 +2385,8 @@
           "description": "Too few samples anywhere: no ETA (\"measuring: 2 of 5 verified\"). Also what a basis this build doesn't know\ndecodes as.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "EtaSlip": {
       "description": "`current − original`, split into what scope added and what speed lost.",
@@ -2516,41 +2519,6 @@
         "projects",
         "attention",
         "cursor"
-      ],
-      "type": "object"
-    },
-    "ForecastAccuracy": {
-      "description": "How close past ETAs came: \"ETAs have been within ±20% this week\".",
-      "properties": {
-        "samples": {
-          "description": "Items behind it.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "text": {
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "windowDays": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "withinPct": {
-          "description": "Four in five of the window's items finished within ±this % of their predicted p50.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "withinPct",
-        "samples",
-        "windowDays",
-        "text"
       ],
       "type": "object"
     },
@@ -2700,7 +2668,8 @@
           "description": "The order's phase, when no span says more. Also what a kind this build doesn't know decodes as.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "GatedClass": {
       "enum": [
@@ -2923,7 +2892,8 @@
           "description": "The deterministic template: the facts changed, claude was unavailable, or the daily limit was hit. Also what a\nsource this build doesn't know decodes as.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "Health": {
       "properties": {
@@ -3492,6 +3462,14 @@
     },
     "InProgressRow": {
       "properties": {
+        "blocking": {
+          "description": "Open items that wait on it.",
+          "items": {
+            "$ref": "#/$defs/PlanItemId"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
         "changeIds": {
           "items": {
             "$ref": "#/$defs/ChangeId"
@@ -3505,9 +3483,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "critical": {
+          "description": "It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it.",
+          "type": "boolean"
+        },
         "eta": {
           "$ref": "#/$defs/Timestamp",
-          "description": "started + the median duration of done items of its size."
+          "description": "Retired with the ETA: always absent."
         },
         "gate": {
           "maxLength": 160,
@@ -3519,7 +3501,7 @@
           "$ref": "#/$defs/PlanItemId"
         },
         "overdueMinutes": {
-          "description": "Minutes past `eta`.",
+          "description": "Retired with the ETA: always absent.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -3556,6 +3538,17 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
+        },
+        "waitingOn": {
+          "description": "What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.\n[\"review of #12\", \"CI on #12\", \"merge\", \"done-when checks\"].",
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "type": "array"
         },
         "workstreamId": {
           "$ref": "#/$defs/WorkstreamId"
@@ -4147,7 +4140,8 @@
           ],
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "KindTotal": {
       "properties": {
@@ -5174,7 +5168,8 @@
           "$ref": "#/$defs/Timestamp"
         },
         "eta": {
-          "$ref": "#/$defs/StatusEta"
+          "$ref": "#/$defs/StatusEta",
+          "description": "Retired with the ETA: always absent."
         },
         "firstItemAt": {
           "$ref": "#/$defs/Timestamp",
@@ -5960,7 +5955,8 @@
       "description": "A plan as `plan show` and `plan_get` return it: derived state, figures and markers.",
       "properties": {
         "eta": {
-          "$ref": "#/$defs/StatusEta"
+          "$ref": "#/$defs/StatusEta",
+          "description": "Retired with the ETA: always absent."
         },
         "items": {
           "items": {
@@ -7937,7 +7933,8 @@
           "description": "Also what a level this build doesn't know decodes as.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "RiskRule": {
       "oneOf": [
@@ -7946,8 +7943,6 @@
             "ci_red_main",
             "machine_offline",
             "blocked_on_you",
-            "slipping",
-            "estimate_drift",
             "riskiest_item",
             "ci_red_repeat",
             "machine_flaky",
@@ -7956,6 +7951,16 @@
             "github_drift",
             "no_plan"
           ],
+          "type": "string"
+        },
+        {
+          "const": "slipping",
+          "description": "Retired with the ETA: no longer raised.",
+          "type": "string"
+        },
+        {
+          "const": "estimate_drift",
+          "description": "Retired with the ETA: no longer raised.",
           "type": "string"
         },
         {
@@ -7968,7 +7973,8 @@
           "description": "An item has spent over 1.5× the usual time in its current stage.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "RuntimeMode": {
       "enum": [
@@ -8010,7 +8016,8 @@
       "description": "A child figure: the fleet's projects, a project's milestones, an order's milestones.",
       "properties": {
         "eta": {
-          "$ref": "#/$defs/Timestamp"
+          "$ref": "#/$defs/Timestamp",
+          "description": "Retired with the ETA: always absent."
         },
         "milestoneId": {
           "$ref": "#/$defs/MilestoneId"
@@ -8995,11 +9002,8 @@
       "type": "object"
     },
     "StatusEta": {
-      "description": "ETA from measured throughput; the lead's own estimate only as a comparison.",
+      "description": "Retired: fleetd shows no time estimates (progress, the critical path and \"slower than usual\" instead). The hub\nsends `{ samples: 0, basis: \"none\" }` so apps from before the change still decode the doc; every other field is\nabsent.",
       "properties": {
-        "accuracy": {
-          "$ref": "#/$defs/ForecastAccuracy"
-        },
         "basis": {
           "$ref": "#/$defs/EtaBasis"
         },
@@ -9021,13 +9025,6 @@
         "original": {
           "$ref": "#/$defs/Timestamp",
           "description": "The first ETA with enough samples, stored once (orders and milestones only)."
-        },
-        "p50": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The progress model's range: remaining stage time from history (median and 90th percentile), spread over the\nslots the scope can use. Shown as \"p50–p90\"."
-        },
-        "p90": {
-          "$ref": "#/$defs/Timestamp"
         },
         "rate": {
           "description": "Points verified per busy hour.",
@@ -11872,7 +11869,8 @@
           "description": "Too few anywhere: the built-in weights.",
           "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "Workstream": {
       "properties": {

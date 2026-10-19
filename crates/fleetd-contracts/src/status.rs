@@ -126,6 +126,7 @@ pub struct PlanningState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum WeightsBasis {
     /// Measured on this project's finished items.
     Project,
@@ -153,6 +154,7 @@ pub struct ProgressPoint {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum DropReason {
     /// Work was added (a scope-change marker).
     ScopeChange,
@@ -178,18 +180,6 @@ pub struct ProgressDrop {
     pub text: Line<1, 200>,
 }
 
-/// How close past ETAs came: "ETAs have been within ±20% this week".
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ForecastAccuracy {
-    /// Four in five of the window's items finished within ±this % of their predicted p50.
-    pub within_pct: Count,
-    /// Items behind it.
-    pub samples: Count,
-    pub window_days: Count,
-    pub text: Line<1, 120>,
-}
-
 /// A change to a figure's denominator, shown next to it.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -205,6 +195,7 @@ pub struct Marker {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum EtaBasis {
     /// The scope's own measured rate.
     Order,
@@ -225,7 +216,9 @@ pub struct EtaSlip {
     pub speed_minutes: AnyInt,
 }
 
-/// ETA from measured throughput; the lead's own estimate only as a comparison.
+/// Retired: fleetd shows no time estimates (progress, the critical path and "slower than usual" instead). The hub
+/// sends `{ samples: 0, basis: "none" }` so apps from before the change still decode the doc; every other field is
+/// absent.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -244,15 +237,11 @@ pub struct StatusEta {
     pub basis: EtaBasis,
     /// The serial chain that sets `current` when it is later than throughput says, e.g. "P12 full lab run".
     pub chain: Option<Line<1, 160>>,
-    /// The progress model's range: remaining stage time from history (median and 90th percentile), spread over the
-    /// slots the scope can use. Shown as "p50–p90".
-    pub p50: Option<Timestamp>,
-    pub p90: Option<Timestamp>,
-    pub accuracy: Option<ForecastAccuracy>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum GateKind {
     /// An in-progress item with open items `after` it.
     Plan,
@@ -280,6 +269,7 @@ pub struct Gate {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum HeadlineSource {
     /// Phrased by the `status.headline` prompt from the current facts.
     Generated,
@@ -346,9 +336,9 @@ pub struct InProgressRow {
     pub task_ids: List<TaskId, 0, 10>,
     pub change_ids: List<ChangeId, 0, 10>,
     pub gate: Option<Line<1, 160>>,
-    /// started + the median duration of done items of its size.
+    /// Retired with the ETA: always absent.
     pub eta: Option<Timestamp>,
-    /// Minutes past `eta`.
+    /// Retired with the ETA: always absent.
     pub overdue_minutes: Option<Count>,
     pub stale: Option<StaleMark>,
     /// The order's latest steers, newest first, on its first in-progress row only.
@@ -359,6 +349,13 @@ pub struct InProgressRow {
     pub credit_pct: Option<Int<0, 100>>,
     /// Past 1.5× the usual time for its current stage: flagged in Risks, never credited past 90% of the stage.
     pub slower_than_usual: Option<bool>,
+    /// What it still waits on, in order: open items it is `after`, then its remaining stages, e.g.
+    /// ["review of #12", "CI on #12", "merge", "done-when checks"].
+    pub waiting_on: Option<List<Line<1, 80>, 0, 8>>,
+    /// Open items that wait on it.
+    pub blocking: Option<List<PlanItemId, 0, 10>>,
+    /// It is the scope's critical path: the most unfinished work (its own and what waits on it) runs through it.
+    pub critical: Option<bool>,
 }
 
 /// A steer as the status doc shows it: "↳ you steered S12 14:02 · acknowledged · −1 item".
@@ -395,11 +392,14 @@ pub struct NeedsYou {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum RiskRule {
     CiRedMain,
     MachineOffline,
     BlockedOnYou,
+    /// Retired with the ETA: no longer raised.
     Slipping,
+    /// Retired with the ETA: no longer raised.
     EstimateDrift,
     RiskiestItem,
     CiRedRepeat,
@@ -420,6 +420,7 @@ pub enum RiskRule {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum RiskLevel {
     Danger,
     /// Also what a level this build doesn't know decodes as.
@@ -437,6 +438,7 @@ pub struct Risk {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
 pub enum CiState {
     Green,
     Red,
@@ -529,6 +531,7 @@ pub struct ScopePart {
     pub scope: Option<StatusScope>,
     pub milestone_id: Option<MilestoneId>,
     pub progress: Progress,
+    /// Retired with the ETA: always absent.
     pub eta: Option<Timestamp>,
 }
 
@@ -577,7 +580,8 @@ pub struct StatusDoc {
     pub virtual_tier: Option<Tier>,
 }
 
-/// What the headline prompt is given: code builds it, the model only phrases it. Canonical JSON, at most 2 KB.
+/// What the headline prompt is given: code builds it, the model only phrases it. Canonical JSON, at most 2 KB. It
+/// carries no time estimates, and a generated line with a time phrase is rejected.
 #[skip_serializing_none]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -592,9 +596,6 @@ pub struct HeadlineFacts {
     pub waiting_on: Vec<String>,
     pub needs_you: i64,
     pub first_ask: Option<String>,
-    pub eta: Option<String>,
-    pub planned: Option<String>,
-    pub slipped: bool,
     /// At most 2 risk messages.
     pub risks: Vec<String>,
 }

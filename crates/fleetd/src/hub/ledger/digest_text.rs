@@ -15,13 +15,11 @@ const PLAYBOOK_ASK_PREFIX: &str = "playbook.";
 /// Same text as `playbooks::finish_all_rules::FINISH_ALL_IDLE`.
 pub const FINISH_ALL_IDLE: &str = "finish-all: nothing left with a value source";
 
-/// What backs a workstream's status beyond the lead's word: the checks its latest claim passed and its ETA.
+/// What backs a workstream's status beyond the lead's word: the checks its latest claim passed.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorkstreamFacts {
     /// How many checks the latest finished claim passed.
     pub passed: usize,
-    /// `etaText` of the calibrated estimate.
-    pub eta: Option<String>,
 }
 
 /// What the 09:00/18:00 digest is rendered from; the caller gathers it.
@@ -249,14 +247,6 @@ pub fn render_human_digest(input: &DigestInput) -> String {
             format!(" · ✓ {passed} of {total} checks")
         }
     };
-    let eta = |w: &Workstream| {
-        input
-            .facts
-            .get(w.workstream_id.as_str())
-            .and_then(|f| f.eta.as_ref())
-            .map(|e| format!(" · {e}"))
-            .unwrap_or_default()
-    };
     // Only a passing claim makes a workstream done, so done ones are checked by definition.
     for w in &done {
         lines.push(format!("Done: {}{}", status(w), checked(w)));
@@ -278,13 +268,7 @@ pub fn render_human_digest(input: &DigestInput) -> String {
         ));
     }
     for w in &running {
-        lines.push(format!(
-            "Running: {}{}{}{}",
-            status(w),
-            says(w),
-            checked(w),
-            eta(w)
-        ));
+        lines.push(format!("Running: {}{}{}", status(w), says(w), checked(w)));
     }
     // Finish-all's finish line; other idle workstreams stay quiet.
     for w in input

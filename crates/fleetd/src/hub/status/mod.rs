@@ -3,7 +3,6 @@
 //! scopes someone viewed in the last 10 minutes, at most every 250 ms, and bumps a doc's version only when its
 //! content changes. `status_wait` blocks on that version. Nothing polls.
 pub mod estimate;
-pub mod eta;
 pub mod fresh;
 pub mod headline;
 pub mod model;
@@ -604,7 +603,7 @@ impl Status {
         doc
     }
 
-    /// A plan view with its ETA (the project's, or the order's).
+    /// A plan view with its progress estimate (the project's, or the order's).
     pub fn plan_view(
         &self,
         hub: &Hub,
@@ -625,7 +624,7 @@ impl Status {
             && let Some(rendered) =
                 render::render(hub, &world, &self.fresh, &scope, hub.events.head())
         {
-            view.eta = Some(rendered.doc.eta);
+            view.progress.estimate = rendered.doc.progress.estimate;
         }
         Ok(view)
     }

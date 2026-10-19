@@ -1,6 +1,7 @@
 //! The progress model: an item earns part of its size at each stage fleetd observed (an event, a PR or a CI state),
 //! and moves smoothly inside a stage toward the next one without ever claiming it. Pure: callers load the facts and
-//! the calibration (stage weights and durations measured from the time inspector's spans, `calib.rs`).
+//! the calibration (stage weights and durations measured from the time inspector's spans, `calib.rs`). The
+//! calibration only weights progress; nothing here is ever shown as a time estimate.
 use std::collections::HashMap;
 
 use fleetd_contracts::plan::{ItemStage, Size};
@@ -112,12 +113,13 @@ pub enum UnitKind {
     Order,
 }
 
-/// Built-in item length by size when nothing is measured (the plan asks for items of about an hour or less).
+/// Built-in item length by size when nothing is measured, for in-stage smoothing only (the live hub's first orders
+/// took 11 to 23 minutes for an m).
 pub fn default_total_ms(size: Size) -> i64 {
     match size {
-        Size::S => 30 * MIN,
-        Size::M => 60 * MIN,
-        Size::L => 180 * MIN,
+        Size::S => 10 * MIN,
+        Size::M => 20 * MIN,
+        Size::L => 60 * MIN,
     }
 }
 
@@ -152,20 +154,12 @@ impl Params {
     }
 }
 
-/// How close predicted p50s came to the actual finish: four in five within ±`within_pct`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Accuracy {
-    pub within_pct: i64,
-    pub samples: i64,
-}
-
 /// What the model is calibrated with, recomputed nightly by `calib.rs`. `Default` is the built-in model.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Calibration {
     pub fleet: Params,
     /// By project key (`machine/project`).
     pub projects: HashMap<String, Params>,
-    pub accuracy: Option<Accuracy>,
     pub computed_ms: i64,
 }
 
@@ -379,8 +373,6 @@ pub struct ItemProgress {
     pub verified: bool,
     /// Past 1.5× the usual time for its current stage.
     pub slower: bool,
-    pub remaining_p50_ms: i64,
-    pub remaining_p90_ms: i64,
 }
 
 /// Stage credit plus in-stage smoothing: `cum[k] + weight(k+1) × min(elapsed / usual, 0.9)`.
@@ -393,25 +385,16 @@ pub fn item_progress(f: &ItemFacts, now: i64, r: &Resolved) -> ItemProgress {
             credit: 1.0,
             verified: true,
             slower: false,
-            remaining_p50_ms: 0,
-            remaining_p90_ms: 0,
         };
     }
     let elapsed = (now - entered).max(0);
     let usual = r.durations.p50[k].max(1);
     let frac = (elapsed as f64 / usual as f64).min(IN_STAGE_CAP);
-    let credit = r.weights.cum[k] + r.weights.weight(k + 1) * frac;
-    // A unit over its usual time still has some of the stage left: never "due now".
-    let left = |d: i64| (d - elapsed).max(usual / 10);
-    let rest50: i64 = r.durations.p50[k + 1..].iter().sum();
-    let rest90: i64 = r.durations.p90[k + 1..].iter().sum();
     ItemProgress {
         stage,
-        credit,
+        credit: r.weights.cum[k] + r.weights.weight(k + 1) * frac,
         verified: false,
         slower: elapsed as f64 > SLOW_FACTOR * usual as f64,
-        remaining_p50_ms: left(usual) + rest50,
-        remaining_p90_ms: left(r.durations.p90[k].max(usual)) + rest90,
     }
 }
 
@@ -521,28 +504,6 @@ pub fn estimate(groups: &[Group]) -> Estimate {
         verified_pct,
         in_flight_pct: pct - verified_pct,
     }
-}
-
-/// p50 and p90 of a scope's remaining time: the units' remaining stage time spread over the slots the scope can use,
-/// and never shorter than its longest unit or `after` chain (`floor_ms`, at each percentile).
-pub fn scope_eta(
-    units: &[&ItemProgress],
-    parallel: usize,
-    floor_ms: (i64, i64),
-    now: i64,
-) -> (i64, i64) {
-    let open: Vec<&&ItemProgress> = units.iter().filter(|u| !u.verified).collect();
-    if open.is_empty() {
-        return (now, now);
-    }
-    let par = parallel.clamp(1, open.len()) as i64;
-    let sum50: i64 = open.iter().map(|u| u.remaining_p50_ms).sum();
-    let sum90: i64 = open.iter().map(|u| u.remaining_p90_ms).sum();
-    let long50 = open.iter().map(|u| u.remaining_p50_ms).max().unwrap_or(0);
-    let long90 = open.iter().map(|u| u.remaining_p90_ms).max().unwrap_or(0);
-    let p50 = (sum50 / par).max(long50).max(floor_ms.0);
-    let p90 = (sum90 / par).max(long90).max(floor_ms.1).max(p50);
-    (now + p50, now + p90)
 }
 
 /// One point of a scope's series.
@@ -721,7 +682,7 @@ mod tests {
         );
         let done = facts(&[(ItemStage::PrOpen, 0), (ItemStage::Verified, 5 * M)]);
         let p = item_progress(&done, 6 * M, &r);
-        assert!(p.verified && p.credit == 1.0 && p.remaining_p50_ms == 0);
+        assert!(p.verified && p.credit == 1.0);
     }
 
     #[test]
@@ -756,10 +717,6 @@ mod tests {
         assert!(!item_progress(&f, usual * 3 / 2, &r).slower);
         let late = item_progress(&f, usual * 3 / 2 + 1, &r);
         assert!(late.slower);
-        assert!(
-            late.remaining_p50_ms > 0,
-            "an overdue stage still has time left"
-        );
         assert_eq!(late.credit, item_progress(&f, usual * 10, &r).credit);
     }
 
@@ -1032,23 +989,6 @@ mod tests {
             cal.resolve("q", UnitKind::Item, Size::S).basis,
             WeightsBasis::Fleet,
             "unknown project: fleet"
-        );
-    }
-
-    #[test]
-    fn the_eta_range_spreads_remaining_work_over_slots() {
-        let r = resolved();
-        let p = item_progress(&facts(&[(ItemStage::TaskStarted, 0)]), 0, &r);
-        let units = [&p, &p, &p, &p];
-        let (a50, a90) = scope_eta(&units, 1, (0, 0), 0);
-        let (b50, b90) = scope_eta(&units, 4, (0, 0), 0);
-        assert_eq!(a50, 4 * p.remaining_p50_ms);
-        assert_eq!(b50, p.remaining_p50_ms, "four slots: as long as one item");
-        assert!(a90 >= a50 && b90 >= b50);
-        assert_eq!(
-            scope_eta(&units, 4, (10 * b50, 0), 0).0,
-            10 * b50,
-            "the after-chain floors it"
         );
     }
 }
