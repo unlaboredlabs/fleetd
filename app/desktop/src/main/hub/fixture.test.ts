@@ -84,6 +84,15 @@ describe("FixtureSource", () => {
     expect(frames.at(-1)).toEqual({ t: "live", frame: { full: true, lanes: [] } });
   });
 
+  it("replays streamed chat frames on the fixture's timeline", () => {
+    const frames: Array<HubFrame> = [];
+    const delta = { projectRef: { machineId: "devbox", projectId: "storefront" }, messageId: "m3", seq: 3, offset: 0, append: "On it" };
+    writeFileSync(join(dir, "streaming.json"), JSON.stringify({ ...base, frames: [...base.frames, { t: "chat_delta", delta, afterMs: 100 }] }));
+    new FixtureSource(loadFixture("streaming", dir), (f) => frames.push(f)).resync();
+    vi.advanceTimersByTime(350);
+    expect(frames.at(-1)).toEqual({ t: "chat_delta", delta });
+  });
+
   it("replays nothing unless the fixture's state is live", () => {
     const frames: Array<HubFrame> = [];
     new FixtureSource({ ...base, state: { phase: "refused", hub: "http://devbox:4790", message: "No." } }, (f) => frames.push(f)).resync();

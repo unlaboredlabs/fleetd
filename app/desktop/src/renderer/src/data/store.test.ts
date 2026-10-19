@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyFrame, applyLive, applyStreams, failRead, ingest, initialState, type DataState } from "./store";
-import { selectProjectList, selectAsksError, selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
+import { projectStateWord, selectNeedsYou, selectProjectList, selectProjectRow, selectAsksError, selectBoard, selectConnection, selectInbox, selectNeedsYouCount, selectOrder } from "./selectors";
 import { ask, card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
@@ -208,7 +208,39 @@ describe("live frames", () => {
   });
 });
 
+describe("one state word per project", () => {
+  // The typical fixture's billing project: the Status row (status_projects) said "idle" while its lead was
+  // waiting on a reply. The hub's chat state is the one source, so the dot, the header and the row agree.
+  it("takes needs-you from the hub's chat state only, whatever the Status row says", () => {
+    let s = withBoard(run([live(), snapshot(1)]), []);
+    s = run([{ t: "event", event: { seq: 2, at: "2026-10-19T10:00:00.000Z", type: "chat.waiting", summary: "", data: { projectRef: project, needsYou: true, leadWorking: false, lastSeq: 9 } } }], s);
+    const row = selectProjectRow("devbox/storefront")(s);
+    expect([row?.needsYou, row?.state]).toEqual([true, "waiting_on_you"]);
+    expect(selectNeedsYou("devbox/storefront")(s)).toBe(row?.needsYou);
+    expect(projectStateWord(row?.needsYou ?? false, row?.working ?? false, "idle")).toBe("waiting_on_you");
+    // The row's own "waiting on you" never counts on its own; its blocked and working do.
+    expect(projectStateWord(false, false, "waiting_on_you")).toBe("idle");
+    expect(projectStateWord(false, false, "blocked")).toBe("blocked");
+    expect(projectStateWord(false, false, "working")).toBe("working");
+    expect(projectStateWord(false, true, "idle")).toBe("working");
+  });
+});
+
 describe("the project list", () => {
+  it("hands back the same row and list when a lane frame changes none of their fields", () => {
+    const s = withBoard(run([live(), snapshot(1)]), [card("W1")]);
+    const row = selectProjectRow("devbox/storefront")(s);
+    const list = selectProjectList(s);
+    // A spark-only frame: the lane is still working, so no row field moves.
+    const next = run([{ t: "live", frame: { at: "2026-10-19T10:00:02.000Z", full: false, lanes: [liveLane("T1", "working", { spark: { endAt: "2026-10-19T10:00:02.000Z", samples: [3] } })] } }], s);
+    expect(next.live.lanes).not.toBe(s.live.lanes);
+    expect(selectProjectList(next)).toBe(list);
+    expect(selectProjectRow("devbox/storefront")(next)).toBe(row);
+    // A lane that stops working does move it.
+    const idle = run([{ t: "live", frame: { at: "2026-10-19T10:00:03.000Z", full: false, lanes: [liveLane("T1", "idle")] } }], next);
+    expect(selectProjectRow("devbox/storefront")(idle)?.running).toBe(0);
+  });
+
   it("keeps a stable order by title, whatever needs you or works", () => {
     let s = withBoard(run([live(), snapshot(1)]), []);
     const storefront = s.projects["devbox/storefront"];
