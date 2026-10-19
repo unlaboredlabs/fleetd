@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from "electron";
+import { app, type BrowserWindow } from "electron";
 import { parseDeepLink, type OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 

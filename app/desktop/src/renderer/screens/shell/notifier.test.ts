@@ -53,9 +53,9 @@ describe("Notifier", () => {
 
   it("cuts long summaries to one line", () => {
     const n = new Notifier();
-    n.push(event(`${"word ".repeat(60)}`, "loud"), 0);
+    n.push(event("word ".repeat(60), "loud"), 0);
     const body = n.due(T0, FALLBACK_POLICY, open)?.body ?? "";
-    expect([...body]).toHaveLength(140);
+    expect(body).toHaveLength(140);
     expect(body.endsWith("…")).toBe(true);
   });
 });

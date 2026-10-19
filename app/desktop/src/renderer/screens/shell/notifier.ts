@@ -81,7 +81,8 @@ interface Pending {
 
 const oneLine = (text: string, max: number): string => {
   const flat = text.split(/\s+/u).filter(Boolean).join(" ");
-  const chars = [...flat];
+  // By grapheme, so a cut never splits an emoji or an accented letter.
+  const chars = Array.from(new Intl.Segmenter().segment(flat), (g) => g.segment);
   return chars.length <= max ? flat : `${chars.slice(0, max - 1).join("")}…`;
 };
 

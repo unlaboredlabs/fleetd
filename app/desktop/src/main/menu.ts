@@ -1,12 +1,12 @@
 import { app, BrowserWindow, Menu, shell, type BaseWindow, type MenuItemConstructorOptions } from "electron";
 import { IPC } from "../shared/channels";
-import { accelerator, SHORTCUTS, type ShortcutId } from "../shared/shortcuts";
+import { accelerator, isShortcutId, type ShortcutId } from "../shared/shortcuts";
 
 const REPO_URL = "https://github.com/unlaboredlabs/fleetd";
 const DOCS_URL = "https://fleetd.sh/docs";
 
-/** Palette commands that have a menu item but no key. */
-type MenuOnlyId = "project.add";
+/** Palette commands (renderer/screens/palette/defaults.ts) that have a menu item but no key. */
+type MenuOnlyId = "go:projects.add";
 
 const send = (id: ShortcutId | MenuOnlyId, focused: BaseWindow | undefined): void => {
   const win = (focused instanceof BrowserWindow ? focused : null) ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
@@ -20,17 +20,14 @@ const send = (id: ShortcutId | MenuOnlyId, focused: BaseWindow | undefined): voi
  * click here only covers the mouse. Linux doesn't register the accelerator at all (it would fire twice there);
  * macOS needs it registered to show it, and hands a key the page didn't take to the menu, which ignores it.
  */
-const item = (id: ShortcutId | MenuOnlyId, label?: string): MenuItemConstructorOptions => {
-  const shortcut = id in SHORTCUTS ? (id as ShortcutId) : undefined;
-  return {
-    label: label ?? (shortcut === undefined ? id : SHORTCUTS[shortcut].title),
-    ...(shortcut === undefined ? {} : { accelerator: accelerator(shortcut), registerAccelerator: process.platform === "darwin" }),
-    click: (_item, focused, event) => {
-      if (event.triggeredByAccelerator) return;
-      send(id, focused);
-    },
-  };
-};
+const item = (id: ShortcutId | MenuOnlyId, label: string): MenuItemConstructorOptions => ({
+  label,
+  ...(isShortcutId(id) ? { accelerator: accelerator(id), registerAccelerator: process.platform === "darwin" } : {}),
+  click: (_item, focused, event) => {
+    if (event.triggeredByAccelerator) return;
+    send(id, focused);
+  },
+});
 
 /**
  * The full app menu. Edit uses Chromium's own roles, so Undo/Cut/Copy/Paste/Select All act on whichever text field
@@ -64,7 +61,7 @@ export const installMenu = (): void => {
       label: "File",
       submenu: [
         item("order.new", "New Order"),
-        item("project.add", "Add Project…"),
+        item("go:projects.add", "Add Project…"),
         item("composer.focus", "Focus Composer"),
         separator,
         ...(mac ? [{ role: "close" } as const] : [item("settings.open", "Settings…"), separator, { role: "quit" } as const]),

@@ -8,12 +8,14 @@ describe("routes", () => {
     const routes: Array<Route> = [
       HOME,
       { screen: { id: "board", project: storefront }, inbox: null },
-      { screen: { id: "order", orderId: "W14" }, inbox: { askId: "A1" } },
+      { screen: { id: "order", orderId: "W14", at: null }, inbox: { askId: "A1" } },
+      { screen: { id: "order", orderId: "W14", at: { threadId: "t-1", itemId: "i-9" } }, inbox: null },
       { screen: { id: "status", scope: { kind: "fleet" } }, inbox: null },
       { screen: { id: "status", scope: { kind: "project", project: storefront } }, inbox: null },
       { screen: { id: "status", scope: { kind: "order", orderId: "W14" } }, inbox: { askId: null } },
       { screen: { id: "machines" }, inbox: null },
-      { screen: { id: "time" }, inbox: null },
+      { screen: { id: "time", orderId: null }, inbox: null },
+      { screen: { id: "time", orderId: "W14" }, inbox: null },
       { screen: { id: "projects.add" }, inbox: null },
       { screen: { id: "settings", tab: "prompts" }, inbox: null },
       { screen: { id: "onboarding", hub: "http://100.64.0.1:4790", code: "ABCD-2345" }, inbox: null },
@@ -25,7 +27,11 @@ describe("routes", () => {
 
   it("writes the hashes the screen writers and the QA registry use", () => {
     expect(toHash(HOME)).toBe("#/");
-    expect(toHash({ screen: { id: "order", orderId: "W14" }, inbox: { askId: "A1" } })).toBe("#/order/W14?inbox&ask=A1");
+    expect(toHash({ screen: { id: "order", orderId: "W14", at: null }, inbox: { askId: "A1" } })).toBe("#/order/W14?inbox&ask=A1");
+    expect(toHash({ screen: { id: "order", orderId: "W14", at: { threadId: "t1", itemId: "i2" } }, inbox: null })).toBe(
+      "#/order/W14?thread=t1&item=i2",
+    );
+    expect(toHash({ screen: { id: "time", orderId: "W14" }, inbox: null })).toBe("#/time/order/W14");
     expect(toHash({ screen: { id: "settings", tab: "general" }, inbox: null })).toBe("#/settings/general");
     expect(toHash({ screen: { id: "board", project: { machineId: "dev box", projectId: "a/b" } }, inbox: null })).toBe(
       "#/board/dev%20box/a%2Fb",

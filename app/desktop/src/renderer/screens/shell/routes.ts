@@ -15,12 +15,19 @@ export type StatusScope =
   | { readonly kind: "project"; readonly project: ProjectKey }
   | { readonly kind: "order"; readonly orderId: string };
 
+export interface TranscriptItem {
+  readonly threadId: string;
+  readonly itemId: string;
+}
+
 export type Screen =
   | { readonly id: "board"; readonly project: ProjectKey | null }
-  | { readonly id: "order"; readonly orderId: string }
+  /** `at` scrolls the conversation to one transcript item (the time inspector's jump). */
+  | { readonly id: "order"; readonly orderId: string; readonly at: TranscriptItem | null }
   | { readonly id: "status"; readonly scope: StatusScope }
   | { readonly id: "machines" }
-  | { readonly id: "time" }
+  /** The time inspector, for one order or (null) the fleet. */
+  | { readonly id: "time"; readonly orderId: string | null }
   | { readonly id: "projects.add" }
   | { readonly id: "settings"; readonly tab: SettingsTab }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
@@ -58,15 +65,20 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
       return { id: "board", project: project(a, b) };
     case "inbox":
       return BOARD;
-    case "order":
-      return a === undefined ? BOARD : { id: "order", orderId: a };
+    case "order": {
+      if (a === undefined) return BOARD;
+      const threadId = query.get("thread");
+      const itemId = query.get("item");
+      return { id: "order", orderId: a, at: threadId && itemId ? { threadId, itemId } : null };
+    }
     case "status": {
       if (a === "order" && b !== undefined) return { id: "status", scope: { kind: "order", orderId: b } };
       const key = a === "project" ? project(b, c) : null;
       return { id: "status", scope: key === null ? { kind: "fleet" } : { kind: "project", project: key } };
     }
-    case "machines":
     case "time":
+      return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
+    case "machines":
     case "gallery":
       return { id: head };
     case "projects":
@@ -114,6 +126,8 @@ const path = (screen: Screen): Array<string> => {
       return screen.project === null ? [] : ["board", screen.project.machineId, screen.project.projectId];
     case "order":
       return ["order", screen.orderId];
+    case "time":
+      return screen.orderId === null ? ["time"] : ["time", "order", screen.orderId];
     case "status":
       return statusPath(screen.scope);
     case "projects.add":
@@ -121,7 +135,6 @@ const path = (screen: Screen): Array<string> => {
     case "settings":
       return ["settings", screen.tab];
     case "machines":
-    case "time":
     case "onboarding":
     case "gallery":
       return [screen.id];
@@ -130,6 +143,10 @@ const path = (screen: Screen): Array<string> => {
 
 export const toHash = (route: Route): string => {
   const query = new URLSearchParams();
+  if (route.screen.id === "order" && route.screen.at !== null) {
+    query.set("thread", route.screen.at.threadId);
+    query.set("item", route.screen.at.itemId);
+  }
   if (route.screen.id === "onboarding") {
     if (route.screen.hub !== null) query.set("hub", route.screen.hub);
     if (route.screen.code !== null) query.set("code", route.screen.code);
