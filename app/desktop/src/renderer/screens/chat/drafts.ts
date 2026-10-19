@@ -8,7 +8,7 @@ import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
 import { fmtBytes, looksText, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, mimeFor, toBase64 } from "./attachments";
 
-export type Upload = { readonly ok: true; readonly id: string } | { readonly ok: false; readonly message: string };
+export type Upload = { readonly ok: true; readonly id: string; readonly mime: string } | { readonly ok: false; readonly message: string };
 
 export interface Attached {
   readonly local: number;
@@ -78,7 +78,7 @@ export function createDrafts(layer: Pick<DataLayer, "call">): Drafts {
           const mime = mimeFor(file.name, looksText(buf));
           if (!mime) return settle(key, local, undefined, `${file.name}: only images, text and PDF files attach.`);
           const o = await layer.call("attachment_put", { name: file.name, mime, dataB64: toBase64(buf) }, { timeoutMs: 120_000 });
-          settle(key, local, o.ok ? { ok: true, id: o.output.attachmentId } : { ok: false, message: o.error.message });
+          settle(key, local, o.ok ? { ok: true, id: o.output.attachmentId, mime } : { ok: false, message: o.error.message });
         });
       }
     },
