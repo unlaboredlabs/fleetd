@@ -50,6 +50,18 @@
   max-width: 28%;
   min-width: 0;
 }
+.pillButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  max-width: 100%;
+}
+.pillButton:hover {
+  text-decoration: underline;
+}
 .headerActions {
   flex: none;
   display: flex;
@@ -156,8 +168,53 @@
   gap: var(--space-1-5);
   min-width: 0;
 }
-.activityWords {
+/* A lane: the board's row, then its id, PR, branch and told link, indented under the title. */
+.laneBlock {
+  padding: var(--space-1) 0;
+}
+.laneNumbers {
   flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--quiet);
+}
+.laneClock,
+.laneTokens {
+  width: 44px;
+  text-align: right;
+}
+.laneExtras {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 0 var(--space-1) calc(88px + var(--space-3) + var(--space-2));
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+/* A task id is a single-line slot: never wraps, never shrinks to nothing. */
+.laneId {
+  flex: 0 0 auto;
+  max-width: 8em;
+  white-space: nowrap;
+}
+.laneBranch {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.doneFold {
+  padding-top: var(--space-1);
+}
+.activityWords {
+  /* The words keep their room ("running", "waiting on you"); the command beside them gives way first. */
+  flex: 0 0 auto;
+  max-width: 45%;
+  min-width: 0;
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   color: var(--quiet);
@@ -309,8 +366,15 @@
 .rowMore {
   padding-top: var(--space-2);
 }
-.rowLast {
+.row.rowLast,
+.indented.rowLast {
   padding-bottom: var(--space-4);
+}
+.clamp3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 /* A transcript jump's target: lit once, then fades (no motion under reduce-motion: --dur-base is 0). */
 .row,

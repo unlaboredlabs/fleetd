@@ -32,6 +32,10 @@ export interface OrderData {
   /** Absent while the brief is a draft. */
   readonly doneWhen?: readonly CheckSpec[];
   readonly claim?: Claim;
+  /** The end of the lead's latest message and when it was written (thread_tail's thread summary). */
+  readonly latest?: { readonly text: string; readonly at: string };
+  /** The words the order was given, for Reorder. */
+  readonly sourceText?: string;
   /** The lead's log, oldest first, kept across refetches. */
   readonly tail: readonly TailItem[];
   readonly tailError?: string | undefined;
@@ -75,6 +79,8 @@ export interface OrderActions {
   /** Send an unacknowledged steer's words again, interrupting. */
   readonly redirect: (steerId: string) => void;
   readonly stop: () => void;
+  /** Ask the hub again after a load error. */
+  readonly retry: () => void;
 }
 
 /** What this view holds itself, beside the store. */
@@ -191,6 +197,7 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
 
   const refetchSteers = steersQ.refetch;
   const refetchOrder = orderQ.refetch;
+  const refetchBrief = briefQ.refetch;
   const { actions, send } = useMemo(() => {
     /** One steer_send for a row, with the row's own id; a timeout while the link stays up is retried once. */
     const send = async (row: Sending): Promise<SendOutcome> => {
@@ -226,9 +233,13 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       stop: () => {
         void layer.call("order_stop", { workstreamId }).then(() => refetchOrder());
       },
+      retry: () => {
+        void refetchOrder();
+        void refetchBrief();
+      },
     };
     return { actions, send };
-  }, [layer, workstreamId, refetchSteers, refetchOrder]);
+  }, [layer, workstreamId, refetchSteers, refetchOrder, refetchBrief]);
 
   // Steers the link cut off go again, under their own ids, on the first snapshot after a real loss: a phase other
   // than live, then a new generation (every snapshot bumps it). Keyed on those two values only.
@@ -286,6 +297,8 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       asks: page?.asks.length ?? 0,
       ...(doneWhen ? { doneWhen } : {}),
       ...(claim ? { claim } : {}),
+      ...(briefQ.data ? { sourceText: briefQ.data.workstream.source.text } : {}),
+      ...(log.logReady && tailQ.data ? { latest: { text: tailQ.data.thread.latestMessageTail, at: tailQ.data.thread.lastProgressAt } } : {}),
       tail: log.tail,
       tailError,
       logReady: log.logReady,

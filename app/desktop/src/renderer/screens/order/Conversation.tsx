@@ -80,6 +80,26 @@ export function FleetdText({ text }: { text: string }) {
 
 type Lit = { readonly key: string; readonly call?: number | undefined };
 
+/** A merged events line: a train run makes a long one, so it shows three lines with "Show all". */
+function EventsLine({ text }: { text: string }) {
+  const [all, setAll] = useState(false);
+  const long = text.length > 280;
+  return (
+    <div className={s.body}>
+      <div className={cx(long && !all && s.clamp3)}>
+        <InlineText size="xs" tone="quiet" text={text} />
+      </div>
+      {long ? (
+        <button type="button" className={s.linkButton} onClick={() => setAll((a) => !a)}>
+          <Text size="xs" tone="inherit">
+            {all ? "Show less" : "Show all"}
+          </Text>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 const Row = memo(function Row(
   props: { entry: Entry; open: boolean; last: boolean; lit: Lit | undefined; onToggle: (key: string) => void } & ReceiptHandlers,
 ) {
@@ -156,7 +176,7 @@ const Row = memo(function Row(
         <div className={cx(s.row, last)} data-entry="events">
           <span className={s.time}>{clock(e.at)}</span>
           <span />
-          <InlineText size="xs" tone="quiet" text={e.text} />
+          <EventsLine text={e.text} />
         </div>
       );
     case "more":
@@ -234,6 +254,36 @@ export function Conversation(
     // Once per jump target, not on every new row.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusKey]);
+
+  // Open at the newest row. The list starts at the end on its row-height guesses; tall markdown rows then measure
+  // taller and push the end below the fold. Until the reader scrolls (or a jump takes over), keep the end in view as
+  // the rows settle.
+  const listShown = entries.length > 0 || props.notice === undefined;
+  const jumping = focus !== undefined;
+  useEffect(() => {
+    const el = virtualizer.current?.scrollElement;
+    const inner = el?.firstElementChild;
+    if (!listShown || jumping || !el || !inner) return;
+    let pinned = true;
+    const release = () => {
+      pinned = false;
+    };
+    const pin = () => {
+      if (pinned) el.scrollTop = el.scrollHeight;
+    };
+    el.addEventListener("wheel", release, { passive: true });
+    el.addEventListener("pointerdown", release);
+    el.addEventListener("keydown", release);
+    const ro = new ResizeObserver(pin);
+    ro.observe(inner);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("wheel", release);
+      el.removeEventListener("pointerdown", release);
+      el.removeEventListener("keydown", release);
+    };
+  }, [listShown, jumping]);
 
   if (entries.length === 0 && props.notice) {
     return (

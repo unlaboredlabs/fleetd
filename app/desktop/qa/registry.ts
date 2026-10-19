@@ -253,6 +253,8 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const fleet = page.getByRole("tab", { name: "Fleet" });
       if ((await fleet.count()) > 0) await fleet.click();
+      // A finished order's agents sit under its "Done (n)" fold.
+      if ((await page.locator("[data-lane]").count()) === 0) await page.getByRole("button", { name: /^Done \(/ }).click();
       await page.locator("[data-lane]").first().click();
     },
   },

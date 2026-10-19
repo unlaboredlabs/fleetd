@@ -1,13 +1,36 @@
 // The order's left pane: its agents (each opens its steer box), its PRs, and what "done" means for it.
 
-import { CheckCircle2, Circle, CircleAlert, CircleX } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Circle, CircleAlert, CircleX } from "lucide-react";
+import { useState } from "react";
 import { cx, RoleTag, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
 import type { AgentLane, CheckSpec, Claim, LaneStatus, PrRef } from "../../../shared/contracts";
-import { doneRows, doneSummary, type CheckState } from "./doneWhen";
+import { fmtElapsed, fmtTokens, parseMs } from "../board/format";
+import { ActivityBars } from "../board/parts";
 import { shortModel } from "./format";
+import { doneRows, doneSummary, type CheckState } from "./doneWhen";
 import { InlineText } from "./Conversation";
 import { activityLine, prStage, prTone } from "./lanes";
 import s from "./order.module.css";
+
+
+export function ActivityText({ lane }: { lane: AgentLane }) {
+  const line = activityLine(lane);
+  const tone = line.tone === "loud" ? s.loud : line.tone === "danger" ? s.danger : "";
+  return (
+    <>
+      <span className={cx(s.activityWords, tone)}>
+        <Truncate size="xs" tone="inherit" expand="none">
+          {line.words}
+        </Truncate>
+      </span>
+      {line.machine ? (
+        <Truncate size="sm" mono tone="quiet" expand="none">
+          {line.machine}
+        </Truncate>
+      ) : null}
+    </>
+  );
+}
 
 const STATUS: Readonly<Record<LaneStatus, StatusTone>> = {
   queued: "quiet",
@@ -22,49 +45,76 @@ const STATUS: Readonly<Record<LaneStatus, StatusTone>> = {
   cancelled: "idle",
 };
 
-export function ActivityText({ lane }: { lane: AgentLane }) {
-  const line = activityLine(lane);
-  const tone = line.tone === "loud" ? s.loud : line.tone === "danger" ? s.danger : "";
-  return (
-    <>
-      <span className={cx(s.activityWords, tone)}>{line.words}</span>
-      {line.machine ? (
-        <Truncate size="sm" mono tone="quiet" expand="none">
-          {line.machine}
-        </Truncate>
-      ) : null}
-    </>
-  );
-}
+const working = (l: AgentLane) => l.status === "working" || l.status === "starting";
 
-function Lane({ lane, onOpen }: { lane: AgentLane; onOpen: (lane: AgentLane) => void }) {
+/**
+ * One agent (GPUI live/lanes.rs): role, task id, title and model; what it is doing now, how long it has run, its
+ * activity bars and tokens; then its PR, branch and "What it was told". The row opens its steer box.
+ */
+function Lane({ lane, now, onOpen, onTold }: { lane: AgentLane; now: number; onOpen: (lane: AgentLane) => void; onTold: (lane: AgentLane) => void }) {
+  const id = lane.taskId ?? "";
   const meta = [lane.model ? shortModel(lane.model) : undefined, lane.effort].filter(Boolean).join(" · ");
+  const started = lane.status === "queued" ? undefined : parseMs(lane.startedAt);
+  const ended = parseMs(lane.endedAt);
+  const clock = started === undefined ? "" : fmtElapsed((ended ?? now) - started);
+  const tokens = lane.live?.tokens;
+  const running = working(lane) || lane.status === "waiting";
   return (
-    <button type="button" className={s.lane} onClick={() => onOpen(lane)} aria-label={`Steer ${lane.taskId ?? lane.title}`} data-lane={lane.laneId}>
-      <RoleTag role={lane.role} width={88} />
-      <span className={s.laneHead}>
-        <Text size="sm" mono tone="quiet">
-          {lane.taskId ?? ""}
-        </Text>
-        <Truncate expand="none">{lane.title}</Truncate>
-        {meta ? (
-          <Text size="xs" tone="quiet" className={cx(s.laneModel)}>
-            {meta}
-          </Text>
-        ) : null}
-      </span>
-      <span className={s.laneMeta}>
-        <StatusChip tone={STATUS[lane.status]}>{lane.status}</StatusChip>
-      </span>
-      <span className={s.laneActivity}>
-        <ActivityText lane={lane} />
-        {lane.branch ? (
-          <Truncate size="sm" mono tone="quiet" expand="none">
-            {lane.branch}
-          </Truncate>
-        ) : null}
-      </span>
-    </button>
+    <div className={s.laneBlock}>
+      <button type="button" className={s.lane} onClick={() => onOpen(lane)} aria-label={`Steer ${id || lane.title}`} data-lane={lane.laneId}>
+        <RoleTag role={lane.role} width={88} />
+        <span className={s.laneHead}>
+          {id ? (
+            <span className={s.laneId}>
+              <Truncate size="sm" mono tone="quiet" expand="none">
+                {id}
+              </Truncate>
+            </span>
+          ) : null}
+          <Truncate expand="none">{lane.title}</Truncate>
+          {meta ? (
+            <Text size="xs" tone="quiet" className={cx(s.laneModel)}>
+              {meta}
+            </Text>
+          ) : null}
+        </span>
+        <span className={s.laneMeta}>
+          <StatusChip tone={STATUS[lane.status]}>{lane.status}</StatusChip>
+        </span>
+        <span className={s.laneActivity}>
+          <ActivityText lane={lane} />
+          <span className={s.laneNumbers}>
+            <span className={s.laneClock}>{clock}</span>
+            {running ? <ActivityBars spark={lane.live?.spark} startedMs={started} role={lane.role} now={now} /> : null}
+            <span className={s.laneTokens}>{tokens ? fmtTokens(tokens.input + tokens.output) : ""}</span>
+          </span>
+        </span>
+      </button>
+      {lane.pr || lane.branch || lane.threadRef ? (
+        <div className={s.laneExtras}>
+          {lane.pr ? (
+            <span className={s.flexNone}>
+              <a className={s.prLink} href={lane.pr.url} target="_blank" rel="noreferrer" title={lane.pr.url}>
+                #{lane.pr.number}
+              </a>{" "}
+              <StatusChip tone={prTone(lane.pr)}>{prStage(lane.pr)}</StatusChip>
+            </span>
+          ) : null}
+          {lane.branch ? (
+            <span className={s.laneBranch}>
+              <Truncate size="sm" mono tone="quiet">
+                {lane.branch}
+              </Truncate>
+            </span>
+          ) : null}
+          {lane.threadRef ? (
+            <button type="button" className={cx(s.linkButton, s.flexNone)} onClick={() => onTold(lane)}>
+              {`What ${id || "it"} was told`}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -117,7 +167,7 @@ export function DoneWhen({ checks, claim }: { checks: readonly CheckSpec[] | und
               </div>
               {r.verdict && (r.state !== "passed" || r.reason) ? (
                 <div className={s.checkVerdict}>
-                  <span className={s[r.state]}>{r.kind === "Judge" ? `Judge: ${r.verdict}` : r.verdict}</span>
+                  <span className={s[r.state]}>{r.verdict}</span>
                   {r.reason ? <InlineText size="xs" tone="quiet" text={r.reason} /> : null}
                 </div>
               ) : null}
@@ -156,8 +206,12 @@ function Prs({ prs }: { prs: readonly PrRef[] }) {
   );
 }
 
+const folded = (l: AgentLane) => l.status === "done" || l.status === "cancelled";
+
 export function Fleet(props: {
   lanes: readonly AgentLane[];
+  now: number;
+  onTold: (lane: AgentLane) => void;
   loading: boolean;
   prs: readonly PrRef[];
   checks: readonly CheckSpec[] | undefined;
@@ -165,6 +219,11 @@ export function Fleet(props: {
   summary: string | undefined;
   onOpenLane: (lane: AgentLane) => void;
 }) {
+  const [doneOpen, setDoneOpen] = useState(false);
+  const active = props.lanes.filter((l) => !folded(l));
+  const done = props.lanes.filter(folded);
+  const lane = (l: AgentLane) => <Lane key={l.laneId} lane={l} now={props.now} onOpen={props.onOpenLane} onTold={props.onTold} />;
+  const Chevron = doneOpen ? ChevronDown : ChevronRight;
   return (
     <div data-screen="order.fleet">
       <Section label="Fleet" {...(props.summary ? { detail: props.summary } : {})} />
@@ -173,7 +232,18 @@ export function Fleet(props: {
           {props.loading ? "Loading the order…" : "No agents yet. The lead starts them after it freezes the brief."}
         </Text>
       ) : (
-        props.lanes.map((l) => <Lane key={l.laneId} lane={l} onOpen={props.onOpenLane} />)
+        <>
+          {active.map(lane)}
+          {done.length > 0 ? (
+            <div className={s.doneFold}>
+              <button type="button" className={s.disclosure} aria-expanded={doneOpen} onClick={() => setDoneOpen((o) => !o)}>
+                <Chevron className={s.chevron} aria-hidden />
+                <Text size="xs" tone="inherit">{`Done (${String(done.length)})`}</Text>
+              </button>
+              {doneOpen ? done.map(lane) : null}
+            </div>
+          ) : null}
+        </>
       )}
       <Prs prs={props.prs} />
       <DoneWhen checks={props.checks} claim={props.claim} />

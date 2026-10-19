@@ -140,6 +140,21 @@ export function systemHeadline(text: string): string {
 
 const RECENT = 8;
 
+/**
+ * A message's start (`head`) joined to its end (`tail`, its last characters) where they overlap; the tail alone
+ * when it holds the whole message. Undefined when the two don't overlap, so they can't be shown as one.
+ */
+export function completeWith(head: string, tail: string): string | undefined {
+  if (tail.startsWith(head)) return tail;
+  if (head.endsWith(tail) || head.includes(tail)) return head;
+  // A short overlap could be chance; a dozen characters of the same words is the same message.
+  const min = Math.min(12, tail.length);
+  for (let k = Math.min(head.length, tail.length); k >= min; k--) {
+    if (head.endsWith(tail.slice(0, k))) return head + tail.slice(k);
+  }
+  return undefined;
+}
+
 // The hub cuts tail messages at 2,000 characters with a trailing ellipsis (hub/api/grants.rs TAIL_TEXT).
 const TAIL_TEXT = 2000;
 const isClipped = (text: string): boolean => text.length >= TAIL_TEXT - 1 && text.endsWith("…");
@@ -164,6 +179,11 @@ export interface ConversationInput {
   readonly redirected?: ReadonlySet<string>;
   /** The lead's messages as they streamed in on the live feed, oldest first: in full, where the tail cuts them. */
   readonly streamed?: readonly Streamed[];
+  /**
+   * The end of the lead's latest message (thread_tail's thread.latestMessageTail, its last 4,096 characters) and
+   * when it was written: once the lead is idle, this completes a message the live feed or the tail cut short.
+   */
+  readonly latest?: { readonly text: string; readonly at: string };
   readonly lanes: readonly AgentLane[];
 }
 
@@ -312,10 +332,35 @@ export function buildConversation(input: ConversationInput): Entry[] {
   // Streamed messages the tail doesn't hold yet (it refetches on the thread's events); the newest is still arriving
   // while the lead works.
   const fresh = streamed.filter((m) => !used.has(m.messageId) && m.text.trim() !== "");
+  const latest = !input.leadWorking && input.latest !== undefined && input.latest.text.trim() !== "" ? input.latest : undefined;
   fresh.forEach((m, i) => {
-    const streaming = input.leadWorking && i === fresh.length - 1;
-    out.push({ kind: "say", key: `live:${m.messageId}`, at: "", author: { kind: "lead" }, text: m.text, ...(streaming ? { streaming } : {}) });
+    const last = i === fresh.length - 1;
+    const streaming = input.leadWorking && last;
+    // Idle, the newest streamed message is finished: its end is the thread's latest message.
+    const done = last && latest ? (completeWith(m.text, latest.text) ?? `${m.text}\n\n…\n\n${latest.text}`) : m.text;
+    out.push({
+      kind: "say",
+      key: `live:${m.messageId}`,
+      at: last && latest ? latest.at : "",
+      author: { kind: "lead" },
+      text: done,
+      ...(streaming ? { streaming } : {}),
+    });
   });
+  // No streamed copy: an idle lead's newest message from the tail, if the tail cut it, ends as the thread says.
+  if (latest && fresh.length === 0) {
+    for (let k = out.length - 1; k >= 0; k--) {
+      const e = out[k];
+      if (e?.kind !== "say" || e.author.kind !== "lead" || e.to !== undefined) continue;
+      if (e.clipped) {
+        const full = completeWith(e.text.slice(0, -1), latest.text);
+        if (full !== undefined) {
+          out[k] = { kind: "say", key: e.key, at: e.at, author: e.author, text: full };
+        }
+      }
+      break;
+    }
+  }
 
   for (const s of input.sending) {
     // A cut-off steer the hub turns out to have (steers_list after a reconnect) shows once, as the hub's.
