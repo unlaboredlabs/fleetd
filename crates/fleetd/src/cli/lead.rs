@@ -54,7 +54,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              steer a running task (at its next step; --now stops its current step), answer a
              waiting one, or continue an ended one
   task cancel <T> [--reason <r>]
-  claim done --workstream <W>
+  claim done --workstream <W> [--close-over "<why>"]
              fleetd runs the workstream's done-when checks itself; only all of them passing makes
              it done (exit 1 when a check did not pass)
   review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
@@ -152,6 +152,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("now", Kind::Bool),
     ("state", Kind::Str),
     ("reason", Kind::Str),
+    ("close-over", Kind::Str),
     ("task", Kind::Str),
     ("sha", Kind::Str),
     ("blocking", Kind::Str),
@@ -556,11 +557,17 @@ pub fn parse_lead_args(
         },
         Some("claim") => {
             if sub != Some("done") || !rest.is_empty() {
-                return Err("expected fleetd claim done --workstream <W>".into());
+                return Err(
+                    "expected fleetd claim done --workstream <W> [--close-over \"<why>\"]".into(),
+                );
             }
-            only(&["workstream"])?;
+            only(&["workstream", "close-over"])?;
             required(&["workstream"])?;
-            json!({ "op": "claim_done", "workstreamId": v.str("workstream") })
+            defined(vec![
+                ("op", s(Some("claim_done"))),
+                ("workstreamId", s(v.str("workstream"))),
+                ("closeOver", s(v.str("close-over"))),
+            ])
         }
         Some("review") => {
             if sub != Some("verdict") || !rest.is_empty() {
@@ -1710,6 +1717,32 @@ mod tests {
     }
 
     #[test]
+    fn claim_done_takes_a_close_over_why() {
+        let plain = parse(&["claim", "done", "--workstream", "W1"]).unwrap();
+        assert_eq!(plain, json!({ "op": "claim_done", "workstreamId": "W1" }));
+        let on_purpose = parse(&[
+            "claim",
+            "done",
+            "--workstream",
+            "W1",
+            "--close-over",
+            "redone in the next order",
+        ])
+        .unwrap();
+        assert_eq!(
+            on_purpose,
+            json!({ "op": "claim_done", "workstreamId": "W1", "closeOver": "redone in the next order" })
+        );
+        let call: fleetd_contracts::lead_calls::LeadCall =
+            serde_json::from_value(on_purpose).unwrap();
+        assert!(matches!(
+            call,
+            fleetd_contracts::lead_calls::LeadCall::ClaimDone(c)
+                if c.close_over.as_ref().map(|w| w.as_str()) == Some("redone in the next order")
+        ));
+    }
+
+    #[test]
     fn fills_the_contract_defaults() {
         let ask = parse(&[
             "ask",
@@ -1914,7 +1947,7 @@ mod tests {
             ),
             (
                 &["claim", "W1"],
-                "expected fleetd claim done --workstream <W>",
+                "expected fleetd claim done --workstream <W> [--close-over \"<why>\"]",
             ),
             (&["change", "enqueue"], "--pr is required"),
             (
