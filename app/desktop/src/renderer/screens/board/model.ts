@@ -1,9 +1,11 @@
 // The board as rows, pure: what the virtual list draws, in order. Every count on a row is computed here from the
-// same lanes the rows under it show, so a header never says "2 writing" over one lane.
-import type { AgentLane, AskSummary, OrderCard, OrderPhase } from "./contracts";
-import { type Group, chipHidden, finishHeadline, finished, fleet, hold, idleHeadline, livePhase, onBoard, openAsksByOrder, phaseLabel, sortCards, stagePick } from "./fleet";
+// same lanes the rows under it show, so a header never says "2 writing" over one lane. The hub data comes from the
+// data layer (selectBoardData); only the orders sent from this window and not yet on the board are the board's own.
+import type { BoardData, OrderView } from "../../src/data/selectors";
+import type { AgentLane, OrderCard, OrderPhase } from "./contracts";
+import { type Group, chipHidden, finishHeadline, finished, fleet, hold, idleHeadline, onBoard, phaseLabel, sortCards, stagePick } from "./fleet";
 import { parseMs, plural } from "./format";
-import { type LiveState, type ProjectKey, leadLane, leadLaneId, orderLanes, projectKey, seenLanes } from "./live";
+import { type ProjectKey, leadLane, leadLaneId, projectKey } from "./live";
 import { fleetActivity, isFinal } from "./words";
 
 export interface Project {
@@ -28,25 +30,27 @@ export interface SentOrder {
     | { readonly kind: "failed"; readonly message: string };
 }
 
-export type Conn = "live" | "connecting" | "offline" | "unpaired";
-
 export interface BoardModel {
-  readonly conn: Conn;
-  /** The hub's snapshot (projects, machines) arrived: until then an empty board is loading, not empty. */
-  readonly snapshot: boolean;
-  readonly projects: readonly Project[];
-  readonly live: LiveState;
-  /** The live ask state (E1's selector): open asks are what makes an order "needs you". */
-  readonly asks: readonly AskSummary[];
-  /** Projects whose board answered: an empty board is loaded, not loading. */
-  readonly loaded: ReadonlySet<ProjectKey>;
-  readonly errors: ReadonlyMap<ProjectKey, string>;
+  readonly data: BoardData;
+  /** Orders sent from this window that the board doesn't list yet. */
   readonly sent: readonly SentOrder[];
 }
 
+/** The projects the composer can send to; undefined until the snapshot loaded them. */
+export const projectsOf = (d: BoardData): Project[] | undefined =>
+  d.projects?.map((p) => {
+    const m = d.machines?.find((x) => x.machine.machineId === p.machineId)?.machine;
+    return { key: projectKey(p), machineId: p.machineId, projectId: p.projectId, title: p.title, machine: m?.name ?? p.machineId, offline: m?.status === "offline" };
+  });
+
+/** Sent orders still worth a row: one the board now lists has its card instead. */
+export const pendingSent = (m: BoardModel): SentOrder[] => {
+  const listed = new Set((m.data.orders ?? []).map((o) => o.card.workstreamId));
+  return m.sent.filter((o) => !(o.status.kind === "placed" && listed.has(o.status.workstreamId)));
+};
+
 export type Item =
   | { readonly kind: "empty"; readonly why: "no-projects" | "loading" | "idle" | "offline" }
-  | { readonly kind: "error"; readonly key: ProjectKey; readonly title: string; readonly message: string }
   | { readonly kind: "project"; readonly key: ProjectKey; readonly title: string; readonly facts: string }
   | { readonly kind: "routing" }
   | { readonly kind: "sent"; readonly sent: SentOrder }
@@ -78,8 +82,6 @@ export const itemKey = (i: Item): string => {
   switch (i.kind) {
     case "empty":
       return `empty:${i.why}`;
-    case "error":
-      return `error:${i.key}`;
     case "project":
       return `project:${i.key}`;
     case "routing":
@@ -105,32 +107,22 @@ export const itemKey = (i: Item): string => {
   }
 };
 
-/** The orders on the board for a project (or all), each with its live phase. */
+/** An order on the board with its live phase (from the data layer: open asks now, lanes live). */
 export interface LiveCard {
+  readonly view: OrderView;
   readonly card: OrderCard;
   readonly phase: OrderPhase;
   readonly lanes: readonly AgentLane[];
-  readonly openAsks: number;
 }
 
-export const boardCards = (m: BoardModel, nowMs: number, filter?: ProjectKey): LiveCard[] => {
-  const asks = openAsksByOrder(m.asks);
-  const out: LiveCard[] = [];
-  for (const [key, board] of m.live.boards) {
-    if (filter !== undefined && key !== filter) continue;
-    for (const card of board.orders) {
-      if (!onBoard(card, nowMs)) continue;
-      const lanes = orderLanes(m.live, card.workstreamId);
-      const openAsks = asks.get(card.workstreamId) ?? 0;
-      out.push({ card, lanes, openAsks, phase: livePhase(card, lanes, openAsks) });
-    }
-  }
-  return out;
-};
+export const boardCards = (m: BoardModel, nowMs: number, filter?: ProjectKey): LiveCard[] =>
+  (m.data.orders ?? [])
+    .filter((v) => (filter === undefined || projectKey(v.card.projectRef) === filter) && onBoard({ ...v.card, phase: v.phase.phase }, nowMs))
+    .map((view) => ({ view, card: view.card, phase: view.phase.phase, lanes: view.lanes }));
 
 /** The order on the stage: when nothing else is in flight, the only open order (or the last to finish). */
 export const stagedOrder = (m: BoardModel, nowMs: number, filter?: ProjectKey): LiveCard | undefined => {
-  if (m.sent.length > 0) return undefined;
+  if (pendingSent(m).length > 0) return undefined;
   const cards = boardCards(m, nowMs, filter);
   const pick = stagePick(cards.map(({ card, phase }) => ({ ...card, phase })));
   return cards.find((c) => c.card.workstreamId === pick?.workstreamId);
@@ -147,9 +139,9 @@ export const leadNote = (card: OrderCard, lanes: readonly AgentLane[]): string |
  */
 export const stageItems = (m: BoardModel, staged: LiveCard, drawn: readonly AgentLane[], seen: readonly AgentLane[]): Item[] => {
   const { card, phase } = staged;
-  const live = m.live.lanes.get(leadLaneId(card.projectRef));
+  const live = m.data.liveLanes[leadLaneId(card.projectRef)];
   const lead = live ? leadLane(live) : undefined;
-  const chip = chipHidden(phase, card, seen) ? undefined : phaseLabel(phase, card, staged.lanes, staged.openAsks);
+  const chip = chipHidden(phase, card, seen) ? undefined : phaseLabel(staged.view.phase, staged.lanes);
   const items: Item[] = [{ kind: "stageTitle", card, phase, chip, lead, note: leadNote(card, seen) }];
   if (finished(drawn, card.prs)) {
     const created = parseMs(card.createdAt);
@@ -178,61 +170,59 @@ export const stageItems = (m: BoardModel, staged: LiveCard, drawn: readonly Agen
 };
 
 /** "lead · 2 orders · 3/7 agents settled". */
-const projectFacts = (cards: readonly OrderCard[]): string => {
+const projectFacts = (cards: readonly LiveCard[]): string => {
   const open = cards.filter((c) => c.phase !== "done" && c.phase !== "stopped").length;
-  const total = cards.reduce((n, c) => n + c.total, 0);
-  const settled = cards.reduce((n, c) => n + c.settled, 0);
+  const total = cards.reduce((n, c) => n + c.card.total, 0);
+  const settled = cards.reduce((n, c) => n + c.card.settled, 0);
   return [plural(open, "open order"), ...(total > 0 ? [`${settled}/${total} agents settled`] : [])].join(" · ");
 };
 
 /** The board with several orders (or none): grouped by project, those needing you first, then the latest. */
 export const listItems = (m: BoardModel, nowMs: number, filter?: ProjectKey): Item[] => {
   const items: Item[] = [];
-  for (const [key, message] of m.errors) {
-    if (filter !== undefined && key !== filter) continue;
-    items.push({ kind: "error", key, title: m.projects.find((p) => p.key === key)?.title ?? key, message });
-  }
-  const routing = m.sent.filter((o) => sentProject(o) === undefined);
+  const sent = pendingSent(m);
+  const routing = sent.filter((o) => sentProject(o) === undefined);
   if (routing.length > 0 && filter === undefined) {
     items.push({ kind: "routing" });
-    for (const sent of [...routing].reverse()) items.push({ kind: "sent", sent });
+    for (const o of [...routing].reverse()) items.push({ kind: "sent", sent: o });
   }
+  const projects = projectsOf(m.data) ?? [];
   const cards = boardCards(m, nowMs, filter);
   const byProject = new Map<ProjectKey, LiveCard[]>();
   for (const c of cards) {
     const k = projectKey(c.card.projectRef);
     byProject.set(k, [...(byProject.get(k) ?? []), c]);
   }
-  const keyed = m.projects
+  const keyed = projects
     .filter((p) => filter === undefined || p.key === filter)
     .map((p) => {
       const list = byProject.get(p.key) ?? [];
-      const sent = m.sent.filter((o) => sentProject(o) === p.key);
-      return { p, list, sent, needs: list.some((c) => c.phase === "waiting_on_you"), latest: list.map((c) => c.card.updatedAt).sort().at(-1) ?? "" };
+      const mine = sent.filter((o) => sentProject(o) === p.key);
+      return { p, list, mine, needs: list.some((c) => c.phase === "waiting_on_you"), latest: list.map((c) => c.card.updatedAt).sort().at(-1) ?? "" };
     })
-    .filter((x) => x.list.length > 0 || x.sent.length > 0)
+    .filter((x) => x.list.length > 0 || x.mine.length > 0)
     .sort((a, b) => Number(b.needs) - Number(a.needs) || b.latest.localeCompare(a.latest));
-  for (const { p, list, sent } of keyed) {
-    items.push({ kind: "project", key: p.key, title: p.title, facts: projectFacts(list.map((c) => c.card)) });
-    for (const o of [...sent].reverse()) items.push({ kind: "sent", sent: o });
-    for (const { card, phase, lanes, openAsks } of sortCards(list.map((c) => ({ ...c, updatedAt: c.card.updatedAt })))) {
+  for (const { p, list, mine } of keyed) {
+    items.push({ kind: "project", key: p.key, title: p.title, facts: projectFacts(list) });
+    for (const o of [...mine].reverse()) items.push({ kind: "sent", sent: o });
+    for (const { view, card, phase, lanes } of sortCards(list.map((c) => ({ ...c, updatedAt: c.card.updatedAt })))) {
       const chip = !chipHidden(phase, card, lanes) || phase === "working";
-      items.push({ kind: "card", card, phase, lanes, chip, label: phaseLabel(phase, card, lanes, openAsks) });
+      items.push({ kind: "card", card, phase, lanes, chip, label: phaseLabel(view.phase, lanes) });
     }
   }
-  if (!items.some((i) => i.kind === "card" || i.kind === "sent")) {
-    items.push({ kind: "empty", why: emptyWhy(m, filter) });
-  }
+  if (!items.some((i) => i.kind === "card" || i.kind === "sent")) items.push({ kind: "empty", why: emptyWhy(m) });
   return items;
 };
 
-const emptyWhy = (m: BoardModel, filter?: ProjectKey): "no-projects" | "loading" | "idle" | "offline" => {
-  if (m.live.boards.size === 0 && m.conn === "connecting") return "loading";
-  if (m.live.boards.size === 0 && m.conn !== "live") return "offline";
-  if (!m.snapshot) return "loading";
-  if (m.projects.length === 0) return "no-projects";
-  const wanted = m.projects.filter((p) => filter === undefined || p.key === filter);
-  return wanted.every((p) => m.loaded.has(p.key) || m.errors.has(p.key)) ? "idle" : "loading";
+/**
+ * Why the board is empty. The data layer's undefined (not connected yet, or not loaded since the last snapshot) is a
+ * loading state, never "nothing here".
+ */
+const emptyWhy = (m: BoardModel): "no-projects" | "loading" | "idle" | "offline" => {
+  const c = m.data.connection.view;
+  if (c === "unpaired" || c === "refused") return "offline";
+  if (c === "skeleton" || m.data.projects === undefined || m.data.orders === undefined) return "loading";
+  return m.data.projects.length === 0 ? "no-projects" : "idle";
 };
 
 /** The project a sent order's card sits under, once known. */
@@ -247,7 +237,6 @@ export const sentProject = (o: SentOrder): ProjectKey | undefined => {
   }
 };
 
-export { seenLanes };
 
 /** The order the list was last drawn in, and which orders needed you then. */
 export interface Held {

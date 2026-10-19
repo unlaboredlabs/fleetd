@@ -18,16 +18,6 @@ export const heldLanes = (lanes: readonly AgentLane[], now: number): AgentLane[]
     return ended !== undefined && now < ended + DONE_HOLD_MS;
   });
 
-/**
- * The staged order's rows: its lanes as held, plus any failed agent it has had that its card no longer lists. A
- * failure the header counts always has its row.
- */
-export const stageDrawn = (lanes: readonly AgentLane[], seen: readonly AgentLane[], now: number): AgentLane[] => {
-  const drawn = heldLanes(lanes, now);
-  const ids = new Set(drawn.map((l) => l.laneId));
-  return [...drawn, ...seen.filter((l) => l.status === "failed" && !ids.has(l.laneId))];
-};
-
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export interface Present<T> {

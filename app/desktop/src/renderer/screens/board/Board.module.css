@@ -642,3 +642,15 @@
 .mergedToday {
   flex: none;
 }
+
+/* A strip still loading: a quiet bar, not a "0" that would claim nothing runs. */
+.skeleton {
+  display: block;
+  width: 240px;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+}
+.skeletonStrip {
+  justify-content: flex-start;
+}

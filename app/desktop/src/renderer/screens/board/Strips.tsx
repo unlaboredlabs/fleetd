@@ -2,13 +2,14 @@
 // claude usage windows (only what it reports), then the slot board. The train strip: each repo's merge train as
 // chips in train order (queued → CI → merged); a chip that changes place slides there, a merged one leaves after
 // 10 s. Every move is one transition on a change; nothing runs while the trains stand still.
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dot, Truncate, cx, toast } from "../../ui";
 import type { MachineLive, PrChip, SlotState, TrainLive } from "./contracts";
 import { peekNow, useNow } from "./clock";
-import { EXIT_MS, MERGED_HOLD_MS, type SlotUse, hubNow, machines, needsClock, slotUse, trains } from "./live";
+import { useData } from "../../src/data/react";
+import { selectBoardData } from "../../src/data/selectors";
+import { EXIT_MS, MERGED_HOLD_MS, type SlotUse, hubNow, machinesNow, needsClock, slotUse } from "./live";
 import { useBoardPalette } from "./commands";
-import { useBoardState } from "./source";
 import { Track } from "./parts";
 import { STAGE_WORD, type Tone, machineParts, slotsText, stageTone } from "./words";
 import s from "./Board.module.css";
@@ -156,22 +157,60 @@ function ChipBody({ chip }: { chip: PrChip }) {
 }
 
 /**
- * The strips along the bottom of the window, under every screen (the frame mounts this): the merge trains, then
- * the machines and the slot board, from the board's store.
+ * When each merged chip was first seen, local ms. Merges already there on the strip's first look are old news (0),
+ * so a window opened mid-afternoon doesn't parade the morning's merges. Returns `prev` when nothing is new.
+ */
+export const noteMerged = (
+  prev: ReadonlyMap<string, number> | undefined,
+  chips: readonly PrChip[],
+  nowMs: number,
+): ReadonlyMap<string, number> => {
+  const merged = chips.filter((c) => c.state === "merged").map((c) => c.changeId);
+  if (prev === undefined) return new Map(merged.map((id) => [id, 0]));
+  const fresh = merged.filter((id) => !prev.has(id));
+  return fresh.length === 0 ? prev : new Map([...prev, ...fresh.map((id) => [id, nowMs] as const)]);
+};
+
+/**
+ * The strips along the bottom of the window, under every screen (the frame mounts this): the merge trains, then the
+ * machines and the slot board, from the data layer. Until the data layer has them, a skeleton strip.
  */
 export function BoardStrips({ onOpenMachines }: { onOpenMachines: () => void }) {
   useBoardPalette();
-  const { live } = useBoardState();
-  const now = hubNow(live, useNow(needsClock(live, hubNow(live, peekNow()))));
+  const d = useData(selectBoardData);
+  const [mergedAt, setMergedAt] = useState<ReadonlyMap<string, number> | undefined>(undefined);
+  const chips = (d.trains ?? []).flatMap((t) => t.chips);
+  const chipKey = chips.map((c) => `${c.changeId}:${c.state}`).join(",");
+  const loaded = d.trains !== undefined;
+  // First-seen times are this window's memory, not hub data; taken just after the render that showed the chip.
+  useEffect(() => {
+    if (!loaded) return;
+    const t = window.setTimeout(() => setMergedAt((prev) => noteMerged(prev, chips, Date.now())), 0);
+    return () => window.clearTimeout(t);
+    // chipKey stands for the chips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chipKey, loaded]);
+  const peek = peekNow();
+  const holding = [...(mergedAt ?? new Map<string, number>()).values()].some((at) => peek < at + MERGED_HOLD_MS + EXIT_MS);
+  const local = useNow(holding || needsClock(d, hubNow(d, peek)));
   const openPr = (url: string) => {
     void window.fleetd.openExternal(url).then((o) => {
       if (!o.ok) toast({ title: "Couldn't open the PR", description: o.message, tone: "danger" });
     });
   };
+  const machines = machinesNow(d);
   return (
     <>
-      <TrainStrip trains={trains(live)} mergedAt={live.mergedAt} now={now} onOpenPr={openPr} />
-      <MachineStrip machines={machines(live)} slots={live.slots} use={slotUse(live)} now={now} onOpen={onOpenMachines} />
+      {d.trains !== undefined && mergedAt !== undefined ? (
+        <TrainStrip trains={d.trains} mergedAt={mergedAt} now={local} onOpenPr={openPr} />
+      ) : null}
+      {machines === undefined ? (
+        <div className={cx(s.strip, s.skeletonStrip)} aria-hidden data-strip="machines">
+          <span className={s.skeleton} />
+        </div>
+      ) : (
+        <MachineStrip machines={machines} slots={d.slots} use={slotUse(d)} now={hubNow(d, local)} onOpen={onOpenMachines} />
+      )}
     </>
   );
 }

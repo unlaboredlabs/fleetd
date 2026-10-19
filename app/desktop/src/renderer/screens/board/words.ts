@@ -221,7 +221,7 @@ export const machineParts = (m: MachineLive, nowMs: number): readonly (readonly 
   if (m.load) {
     out.push([`load ${m.load.load1.toFixed(1)}/${m.load.cpus}`, "quiet"]);
     if (m.load.memUsedPct !== undefined) out.push([`mem ${m.load.memUsedPct}%`, "quiet"]);
-    const limits = m.load.limits.flatMap(limitPart);
+    const limits = (m.load.limits ?? []).flatMap(limitPart);
     if (limits.length > 0) {
       const worst = limits.some(([, t]) => t === "danger") ? "danger" : limits.some(([, t]) => t === "warning") ? "warning" : "quiet";
       out.push([`claude ${limits.map(([s]) => s).join(" · ")}`, worst]);

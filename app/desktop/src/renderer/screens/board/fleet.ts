@@ -1,9 +1,10 @@
 // The staged order as structure, not a log: the writers still writing, then one group per PR with the checkers on
 // it, then the finish. Pure, so every count the board shows comes from one place: the rows it draws and the PRs.
-import type { AgentLane, AskSummary, ChangeState, OrderCard, OrderPhase, PrRef } from "./contracts";
+import type { Phase } from "../../src/data/phase";
+import type { AgentLane, ChangeState, OrderCard, OrderPhase, PrRef } from "./contracts";
 import { PHASE_ORDER } from "./contracts";
 import { fmtElapsed, parseMs, plural } from "./format";
-import { PHASE_WORD, STAGE_WORD, fleetActivity as fleetActivityOf, isChecker, isFinal, isWorking } from "./words";
+import { PHASE_WORD, STAGE_WORD, fleetActivity as fleetActivityOf, isChecker, isFinal } from "./words";
 
 export interface Group {
   readonly pr: PrRef;
@@ -108,35 +109,6 @@ export const idleHeadline = (prs: readonly PrRef[]): string => {
   return moving === 0 ? "agents done" : `agents done · ${plural(moving, "PR")} in the train`;
 };
 
-/** Open asks per order, from the live ask state: the source of "needs you", not the board's last snapshot. */
-export const openAsksByOrder = (asks: readonly AskSummary[]): ReadonlyMap<string, number> => {
-  const out = new Map<string, number>();
-  for (const a of asks) {
-    if (a.state === "open" && a.workstreamId !== undefined) out.set(a.workstreamId, (out.get(a.workstreamId) ?? 0) + 1);
-  }
-  return out;
-};
-
-/**
- * The order's phase with "needs you" taken from live state: an open ask for it or a lane waiting on a permission.
- * A card the hub still marks waiting after the ask was answered falls to what its lanes and PRs say, so the amber
- * never outlives the question.
- */
-export const livePhase = (card: OrderCard, lanes: readonly AgentLane[], openAsks: number): OrderPhase => {
-  if (openAsks > 0 || lanes.some((l) => l.status === "waiting")) return "waiting_on_you";
-  if (card.phase !== "waiting_on_you") return card.phase;
-  if (lanes.some((l) => l.status === "failed")) return "failed";
-  if (lanes.some((l) => isWorking(l.status) && (l.role === "implementer" || l.role === "reader"))) return "working";
-  if (card.prs.some((p) => p.state === "reviewing") || lanes.some((l) => isWorking(l.status) && isChecker(l.role))) {
-    return "reviewing";
-  }
-  if (card.prs.some((p) => p.state === "ready" || p.state === "rebasing" || p.state === "ci" || p.state === "merging")) {
-    return "merging";
-  }
-  if (lanes.length > 0 && lanes.every((l) => l.status === "queued")) return "queued";
-  return "idle";
-};
-
 const closed = (p: OrderPhase) => p === "done" || p === "stopped";
 
 /** Done orders stay on the board this long after they finish. */
@@ -197,21 +169,21 @@ export const chipHidden = (phase: OrderPhase, card: OrderCard, lanes: readonly A
 };
 
 /**
- * The phase chip's words. "Needs you" counts the open asks from live state; a working order counts its fleet from
- * the lanes, which move with every agent event; otherwise the hub's detail where it reads on its own.
+ * The phase chip's words, from the data layer's phase: "needs you · 2 questions"; a working order counts its fleet
+ * from the lanes, which move with every agent event; otherwise the phase's own detail.
  */
-export const phaseLabel = (phase: OrderPhase, card: OrderCard, lanes: readonly AgentLane[], openAsks: number): string => {
-  if (phase === "waiting_on_you") {
-    if (openAsks > 0) return `needs you · ${plural(openAsks, "question")}`;
-    return lanes.some((l) => l.status === "waiting") ? "needs you · a permission" : "needs you";
+export const phaseLabel = (phase: Phase, lanes: readonly AgentLane[]): string => {
+  const detail = phase.detail?.trim() ? phase.detail : undefined;
+  switch (phase.phase) {
+    case "waiting_on_you":
+      return detail === undefined ? "needs you" : `needs you · ${detail}`;
+    case "working": {
+      const doing = fleetActivityOf(lanes);
+      return doing !== "" ? doing : (detail ?? PHASE_WORD.working);
+    }
+    case "failed":
+      return detail === undefined ? "failed" : `failed: ${detail}`;
+    default:
+      return detail ?? PHASE_WORD[phase.phase];
   }
-  const detail = card.phaseDetail?.trim() ? card.phaseDetail : undefined;
-  if (phase === "working") {
-    const doing = fleetActivityOf(lanes);
-    if (doing !== "") return doing;
-  }
-  if (detail === undefined || phase !== card.phase) return PHASE_WORD[phase];
-  if (phase === "failed") return `failed: ${detail}`;
-  if (phase === "stopped") return `stopped: ${detail}`;
-  return detail;
 };

@@ -123,11 +123,15 @@ export const leadLaneId = (r: { readonly machineId: string; readonly projectId: 
   return id;
 };
 
-/** A lane with its live values merged in. A finished lane keeps its own; the feed says no more about it. */
-export const mergeLane = (lane: AgentLane, live: LiveLane | undefined): AgentLane => {
+/**
+ * A lane with its live values merged in. A finished lane keeps its own; the feed says no more about it. `endedAt`:
+ * when the feed said it finished, its end time until the hub's own arrives.
+ */
+export const mergeLane = (lane: AgentLane, live: LiveLane | undefined, endedAt?: string): AgentLane => {
   if (live === undefined || settled(lane.status)) return lane;
   const spark = live.spark ?? lane.live?.spark;
-  return { ...lane, status: live.status, live: spark === undefined ? live : { ...live, spark } };
+  const ended = settled(live.status) && lane.endedAt === undefined && endedAt !== undefined ? { endedAt } : {};
+  return { ...lane, status: live.status, ...ended, live: spark === undefined ? live : { ...live, spark } };
 };
 
 export interface OrderView {
@@ -144,8 +148,9 @@ const orderView = (
   openAsks: readonly Ask[],
   liveLanes: Readonly<Record<string, LiveLane>>,
   detail: OrderDetail | undefined,
+  ended: Readonly<Record<string, string>> = {},
 ): OrderView => {
-  const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId]));
+  const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
   const lead = liveLanes[leadLaneId(card.projectRef)];
   // Without a live lead lane, trust the hub's word that the lead is planning.
   const leadWorking =
@@ -166,13 +171,13 @@ const noAsks: readonly Ask[] = [];
 
 /** The board: every order with its live phase, by phase then most recently updated; undefined until loaded. */
 export const selectBoard = memo(
-  (s) => [s.fresh, s.orders, s.asks !== undefined, selectOpenAsksByOrder(s), s.live.lanes, s.details],
-  (fresh, orders, asksLoaded, asks, liveLanes, details): readonly OrderView[] | undefined => {
+  (s) => [s.fresh, s.orders, s.asks !== undefined, selectOpenAsksByOrder(s), s.live.lanes, s.details, s.live.ended],
+  (fresh, orders, asksLoaded, asks, liveLanes, details, ended): readonly OrderView[] | undefined => {
     // Phases count open asks, so the board waits for them too.
     if (!fresh || orders === undefined || !asksLoaded) return undefined;
     return Object.values(orders)
       .map((card) =>
-        orderView(card, asks[card.workstreamId] ?? noAsks, liveLanes, details[card.workstreamId]),
+        orderView(card, asks[card.workstreamId] ?? noAsks, liveLanes, details[card.workstreamId], ended),
       )
       .sort(
         (a, b) =>
@@ -253,3 +258,50 @@ export const selectProjects = memo(
 
 /** The hub's clock now, from the live feed's skew. */
 export const hubNow = (s: DataState, localNowMs: number): number => localNowMs + (s.live.skewMs ?? 0);
+
+// The board (F2).
+export interface BoardData {
+  readonly connection: ConnectionView;
+  /** Every order with its live phase and lanes; undefined until loaded. */
+  readonly orders: readonly OrderView[] | undefined;
+  /** order_get's details, for the agents a card leaves out (finished ones, with their end times). */
+  readonly details: DataState["details"];
+  /** Every lane's live values, the project leads' included (no card lists a lead). */
+  readonly liveLanes: DataState["live"]["lanes"];
+  readonly projects: ReturnType<typeof selectProjects>;
+  readonly machines: readonly MachineView[] | undefined;
+  readonly trains: readonly TrainLive[] | undefined;
+  readonly slots: DataState["slots"];
+  readonly skewMs: number;
+  /** The live feed dropped: values stay, greyed, until the next frame. */
+  readonly stale: boolean;
+}
+
+/** Everything the board and its strips draw, from one place. */
+export const selectBoardData = memo(
+  (s) =>
+    [
+      selectConnection(s),
+      selectBoard(s),
+      s.details,
+      s.live.lanes,
+      selectProjects(s),
+      selectMachines(s),
+      selectTrains(s),
+      s.live.slots ?? s.slots,
+      s.live.skewMs ?? 0,
+      s.live.stale,
+    ],
+  (connection, orders, details, liveLanes, projects, machines, trains, slots, skewMs, stale): BoardData => ({
+    connection,
+    orders,
+    details,
+    liveLanes,
+    projects,
+    machines,
+    trains,
+    slots,
+    skewMs,
+    stale,
+  }),
+);

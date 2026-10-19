@@ -38,6 +38,7 @@ import {
   templateFromPrefix,
   wantsPreview,
 } from "./composerLogic";
+import type { AttachmentMime } from "../../../shared/contracts";
 import type { IntakeRef, PlaybookName } from "./contracts";
 import c from "./Composer.module.css";
 
@@ -56,7 +57,7 @@ export interface ComposerApi {
   /** The router's guess for this text: a project key, or undefined when it can't place it. */
   preview(text: string): Promise<string | undefined>;
   files(target: Target, query: string): Promise<readonly string[]>;
-  upload(name: string, mime: string, dataB64: string): Promise<Upload>;
+  upload(name: string, mime: AttachmentMime, dataB64: string): Promise<Upload>;
   send(draft: Draft): void;
   addProject(): void;
 }

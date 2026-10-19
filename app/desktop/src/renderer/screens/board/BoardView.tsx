@@ -9,9 +9,9 @@ import type { AgentLane, OrderPhase } from "./contracts";
 import { groupLabel, nowLane, reviewProgress, writtenIn } from "./fleet";
 import { fmtAgo, fmtElapsed, parseMs } from "./format";
 import { type ProjectKey, hubNow, needsClock, seenLanes } from "./live";
-import { type BoardModel, type Held, type Item, type SentOrder, itemKey, leadNote, listItems, sameHeld, stableOrder, stageItems, stagedOrder } from "./model";
+import { type BoardModel, type Held, type Item, type SentOrder, itemKey, leadNote, listItems, projectsOf, sameHeld, stableOrder, stageItems, stagedOrder } from "./model";
 import { ActivityLine, Check, LaneRow, Track } from "./parts";
-import { type Present, heldLanes, stageDrawn, usePresence } from "./presence";
+import { type Present, heldLanes, usePresence } from "./presence";
 import { describe, isWorking, prLabel, prReview, stageTone } from "./words";
 import s from "./Board.module.css";
 
@@ -58,10 +58,12 @@ const CHIP_TONE: Record<OrderPhase, StatusTone> = {
 
 export function BoardView({ model, actions, composer, composerHandle, filter, lastUsed, offline, onStage }: BoardViewProps) {
   // The clock ticks only while something on the board changes with time alone.
-  const now = hubNow(model.live, useNow(needsClock(model.live, hubNow(model.live, peekNow()))));
+  const d = model.data;
+  const now = hubNow(d, useNow(needsClock(d, hubNow(d, peekNow()))));
   const staged = stagedOrder(model, now, filter);
-  const seen = staged ? seenLanes(model.live, staged.card.workstreamId) : EMPTY;
-  const drawn = staged ? stageDrawn(staged.lanes, seen, now) : EMPTY;
+  const seen = staged ? seenLanes(d, staged.view) : EMPTY;
+  // Every lane it has had, as held: at work, failed, or finished a moment ago and still showing its check.
+  const drawn = staged ? heldLanes(seen, now) : EMPTY;
   const stagedId = staged?.card.workstreamId;
   useEffect(() => onStage?.(stagedId), [onStage, stagedId]);
   // The list holds its order while you look (stableOrder); the previous order is kept as state.
@@ -74,18 +76,12 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
   const present = usePresence(staged ? items : NO_ITEMS, itemKey);
   const state = staged ? (items.some((i) => i.kind === "finish") ? "finish" : "stage") : items.some((i) => i.kind === "empty") ? "empty" : "list";
 
-  const targets: Target[] = model.projects.map((p) => ({
-    key: p.key,
-    machineId: p.machineId,
-    projectId: p.projectId,
-    title: p.title,
-    machine: p.machine,
-    offline: p.offline,
-  }));
-  const orders = [...model.live.boards.values()].flatMap((b) => b.orders.map((o) => ({ id: o.workstreamId, title: o.title })));
+  const targets: Target[] = projectsOf(d) ?? [];
+  const cards = (d.orders ?? []).map((o) => o.card);
+  const orders = cards.map((o) => ({ id: o.workstreamId, title: o.title }));
   // A PR is known by what its writer was for; the order's title when the writer isn't listed.
-  const prs = [...model.live.boards.values()].flatMap((b) =>
-    b.orders.flatMap((o) => o.prs.map((p) => ({ number: p.number, url: p.url, title: o.lanes.find((l) => l.taskId !== undefined && l.taskId === p.taskId)?.title ?? o.title }))),
+  const prs = cards.flatMap((o) =>
+    o.prs.map((p) => ({ number: p.number, url: p.url, title: o.lanes.find((l) => l.taskId !== undefined && l.taskId === p.taskId)?.title ?? o.title })),
   );
 
   return (
@@ -107,7 +103,7 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
         {staged ? (
           <div className={s.stageScroll} role="list" aria-label={staged.card.title}>
             {present.map((p) => (
-              <Row key={p.key} present={p} now={now} stale={model.live.stale} actions={actions} composerHandle={composerHandle} />
+              <Row key={p.key} present={p} now={now} stale={d.stale} actions={actions} composerHandle={composerHandle} />
             ))}
             <div className={s.listEnd} />
           </div>
@@ -119,7 +115,7 @@ export function BoardView({ model, actions, composer, composerHandle, filter, la
             aria-label="Orders"
             renderItem={(item, i) => (
               <div className={s.col}>
-                <ItemView item={item} now={now} stale={model.live.stale} actions={actions} composerHandle={composerHandle} />
+                <ItemView item={item} now={now} stale={d.stale} actions={actions} composerHandle={composerHandle} />
                 {i === items.length - 1 ? <div className={s.listEnd} /> : null}
               </div>
             )}
@@ -170,12 +166,6 @@ function ItemView({
   switch (item.kind) {
     case "empty":
       return <Empty why={item.why} addProject={actions.addProject} />;
-    case "error":
-      return (
-        <div className={s.errorRow} role="alert">
-          <Text size="sm" tone="danger">{`${item.title}: ${item.message}`}</Text>
-        </div>
-      );
     case "routing":
       return <div className={s.routing}>Routing…</div>;
     case "project":

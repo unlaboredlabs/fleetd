@@ -1,5 +1,6 @@
 // The composer's rules, pure: where an order goes, which type it is, the @ menu's query, and why it can't be sent.
 // Ported from the GPUI composer (composer.rs); the hub reads prefixes the same way (intake/prefix.rs).
+import type { AttachmentMime } from "../../../shared/contracts";
 import type { IntakeRef, PlaybookName } from "./contracts";
 
 /** The hub's limit on an order's text (IntakeText), in UTF-8 bytes. */
@@ -130,9 +131,9 @@ export const wantsPreview = (text: string, lastPreview: string): boolean =>
   Array.from(text.trim()).length >= 12 && changedChars(text.trim(), lastPreview) >= 8;
 
 /** The mime type the hub takes for a file; undefined when it isn't an image, text or PDF. */
-export const mimeFor = (name: string, looksText: boolean): string | undefined => {
+export const mimeFor = (name: string, looksText: boolean): AttachmentMime | undefined => {
   const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  const known: Record<string, string> = {
+  const known: Record<string, AttachmentMime> = {
     png: "image/png",
     jpg: "image/jpeg",
     jpeg: "image/jpeg",

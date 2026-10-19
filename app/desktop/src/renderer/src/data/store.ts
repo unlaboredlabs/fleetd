@@ -40,6 +40,12 @@ export interface OrderDetail {
 
 export interface LiveState {
   readonly lanes: Readonly<Record<string, LiveLane>>;
+  /**
+   * When the feed first said each lane finished (the frame's hub time). A board card still lists a lane the feed
+   * just finished, without an end time; this is its end time until the hub's own arrives, so its clock stops and its
+   * check can hold for a moment before it leaves.
+   */
+  readonly ended: Readonly<Record<string, string>>;
   /** The tail of the message each lane is writing. */
   readonly text: Readonly<Record<string, { readonly messageId: string; readonly text: string }>>;
   readonly machines: Readonly<Record<string, MachineLive>>;
@@ -83,7 +89,7 @@ const ORDER_EVENTS = 100;
 const ORDERS_WITH_EVENTS = 100;
 const TEXT_TAIL = 2000;
 
-const emptyLive: LiveState = { lanes: {}, text: {}, machines: {}, stale: true };
+const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, stale: true };
 
 export const initialState = (): DataState => ({
   hub: { phase: "connecting", hub: "", attempt: 0 },
@@ -254,6 +260,12 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
     const spark = lane.spark ?? live.lanes[lane.laneId]?.spark;
     lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
   }
+  // Kept for lanes still in scope; a lane's first finished frame sets it.
+  const ended: Record<string, string> = {};
+  for (const [id, lane] of Object.entries(lanes)) {
+    const at = live.ended[id] ?? (FINAL.has(lane.status) ? frame.at : undefined);
+    if (at !== undefined) ended[id] = at;
+  }
   const text: Record<string, { messageId: string; text: string }> = frame.full ? {} : { ...live.text };
   for (const t of frame.text ?? []) {
     const prev = text[t.laneId];
@@ -262,6 +274,7 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
   }
   return {
     lanes,
+    ended,
     text,
     machines: frame.machines === undefined ? live.machines : byId(frame.machines, (m) => m.machineId),
     slots: frame.slots ?? live.slots,
@@ -269,6 +282,8 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
     stale: false,
   };
 };
+
+const FINAL: ReadonlySet<string> = new Set(["done", "failed", "cancelled"]);
 
 type Ingest = {
   [T in ToolName]: { readonly tool: T; readonly input: ToolInput<T>; readonly output: ToolOutput<T> };

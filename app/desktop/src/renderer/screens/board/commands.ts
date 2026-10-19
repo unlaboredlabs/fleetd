@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from
 import { registerTextAction, useCommands, useSource, type Command } from "../palette";
 import type { ComposerHandle } from "./Composer";
 import { PHASE_WORD } from "./words";
-import { useBoardState } from "./source";
+import { useData } from "../../src/data/react";
+import { selectBoardData } from "../../src/data/selectors";
+import { projectsOf } from "./model";
 
 const go = (hash: string) => {
   window.location.hash = hash;
@@ -45,29 +47,27 @@ export const useBoardCommands = (composer: RefObject<ComposerHandle | null>): vo
 /** From anywhere: the palette's "New order: <text>", and every order and project on the board as items. */
 export const useBoardPalette = (): void => {
   useEffect(() => registerTextAction({ title: (text) => `New order: ${text}`, run: askForOrder }), []);
-  const { live, projects } = useBoardState();
+  const data = useData(selectBoardData);
   // The source reads the latest state when the palette opens; its identity stays put so it registers once.
-  const latest = useRef({ live, projects });
+  const latest = useRef(data);
   useEffect(() => {
-    latest.current = { live, projects };
+    latest.current = data;
   });
   const source = useMemo(
     () => ({
       id: "board",
       items: (): Command[] => {
-        const { live: l, projects: ps } = latest.current;
-        const orders = [...l.boards.values()].flatMap((b) =>
-          b.orders.map(
-            (o): Command => ({
-              id: `order:${o.workstreamId}`,
-              title: o.title,
-              detail: `${o.workstreamId} · ${PHASE_WORD[o.phase]}`,
-              group: "orders",
-              run: () => go(`#/order/${encodeURIComponent(o.workstreamId)}`),
-            }),
-          ),
+        const d = latest.current;
+        const orders = (d.orders ?? []).map(
+          ({ card: o, phase }): Command => ({
+            id: `order:${o.workstreamId}`,
+            title: o.title,
+            detail: `${o.workstreamId} · ${PHASE_WORD[phase.phase]}`,
+            group: "orders",
+            run: () => go(`#/order/${encodeURIComponent(o.workstreamId)}`),
+          }),
         );
-        const projectItems = ps.map(
+        const projectItems = (projectsOf(d) ?? []).map(
           (p): Command => ({
             id: `project:${p.key}`,
             title: p.title,

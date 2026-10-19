@@ -1,11 +1,10 @@
-// Board scenes as the hub would send them: the snapshot, the orders_board answer, the open asks and live frames, with
+// Board scenes as the hub would send them: the snapshot, the orders_board answer, order details and live frames, with
 // every time relative to `now`. The screenshot suite and the fixture files are built from these; nothing here is
 // real data (acme/storefront on devbox and buildbox).
 import type {
   ProjectRef,
   AgentLane,
   AgentRole,
-  AskSummary,
   LaneStatus,
   LiveFrame,
   LiveLane,
@@ -29,7 +28,6 @@ export interface Scene {
   readonly board: OrdersBoardOutput;
   /** order_get's finished lanes per order: a board card leaves them out. */
   readonly done: Readonly<Record<string, readonly AgentLane[]>>;
-  readonly asks: readonly AskSummary[];
   readonly live: readonly LiveFrame[];
 }
 
@@ -198,8 +196,7 @@ export const stage = (now: number): Scene => {
       at: iso(now),
     },
     done: { W14: made.map((m) => m.lane).filter((l) => l.status === "done") },
-    asks: [],
-    live: [
+      live: [
       {
         at: iso(now),
         full: true,
@@ -275,15 +272,12 @@ export const many = (now: number): Scene => {
       });
     }
   });
-  const ask = orders[3];
-  const asks: AskSummary[] = ask ? [{ askId: "A1", workstreamId: ask.workstreamId, state: "open", text: "Which currency should a half cent round toward?" }] : [];
   return {
     name: "board-many",
-    note: "Six orders over three projects (one needs you), long titles and commands, 24 agents.",
+    note: "Six orders over three projects, long titles and commands, 24 agents.",
     snapshot: { cursor: 300, machines: MACHINES, projects: PROJECTS },
     board: { orders, trains: train([{ changeId: "X208", number: 208, url: "https://github.com/acme/storefront/pull/208", workstreamId: "W100", state: "ci" }, { changeId: "X212", number: 212, url: "https://github.com/acme/storefront/pull/212", workstreamId: "W101", state: "reviewing", position: 1 }], 4), at: iso(now) },
     done: {},
-    asks,
     live: [{ at: iso(now), full: true, lanes: frames, machines: machinesLive(now, 0), slots: SLOTS }],
   };
 };
@@ -294,7 +288,6 @@ export const empty = (now: number): Scene => ({
   snapshot: { cursor: 1, machines: MACHINES.slice(0, 1), projects: [] },
   board: { orders: [], trains: [], at: iso(now) },
   done: {},
-  asks: [],
   live: [{ at: iso(now), full: true, lanes: [], machines: machinesLive(now, 0).slice(0, 1), slots: { ...SLOTS, used: 0, queued: 0 } }],
 });
 
