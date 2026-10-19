@@ -6,11 +6,12 @@ import {
   afterCall,
   applyHistory,
   CHAT_PAGE,
-  mergeMessages,
+  mergeLive,
   settleSends,
   toResend,
   upsertSend,
   type CallResult,
+  type Chat,
   type ChatSend,
 } from "./chat";
 import type { ChatHistoryOutput, ChatSendInput } from "./chat-contract";
@@ -30,6 +31,10 @@ export interface ChatActions {
   close(): void;
   /** The page before the oldest message held; nothing while one is loading or when there is none. */
   loadOlder(key: ProjectKey): void;
+  /** After paging back past what a chat keeps: the page after the newest message held, back toward the latest. */
+  loadNewer(key: ProjectKey): void;
+  /** Straight back to the latest page (the window starts over there when it was paged above it). */
+  jumpToLatest(key: ProjectKey): void;
   /**
    * Sends the person's message. `clientRequestId` is the composed message's own (one per message, reused on every
    * retry); minted when absent. Its row shows at once and settles on the hub's echo.
@@ -53,27 +58,29 @@ export const createChatActions = (
 ) => {
   const update = (f: (s: DataState) => Partial<DataState>) => store.setState((s) => ({ ...s, ...f(s) }));
   const opened = new Set<ProjectKey>();
-  const loading = new Set<ProjectKey>();
+  /** The generation each chat's latest-page read is for: a read for an older one doesn't hold up a newer one. */
+  const loading = new Map<ProjectKey, number>();
   let focused: ProjectKey | null = null;
 
-  const fold = (key: ProjectKey, out: ChatHistoryOutput, older: boolean) =>
+  const fold = (key: ProjectKey, out: ChatHistoryOutput, direction: "latest" | "older" | "newer") =>
     update((s) => {
       const sends = s.chatSends[key];
       return {
-        chats: { ...s.chats, [key]: applyHistory(chatOf(s, key), out, older) },
+        chats: { ...s.chats, [key]: applyHistory(chatOf(s, key), out, direction) },
         chatStates: { ...s.chatStates, [key]: out.state },
         chatSends: sends === undefined ? s.chatSends : { ...s.chatSends, [key]: settleSends(sends, out.messages) },
       };
     });
 
   const readLatest = async (key: ProjectKey) => {
-    if (loading.has(key)) return;
-    loading.add(key);
     const generation = store.getState().generation;
+    if (loading.get(key) === generation) return;
+    loading.set(key, generation);
     const r = await call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
-    loading.delete(key);
+    if (loading.get(key) === generation) loading.delete(key);
+    // An answer for a connection that's gone: the new one's own read replaces it (onState started it).
     if (store.getState().generation !== generation) return;
-    if (r.ok) fold(key, r.output, false);
+    if (r.ok) fold(key, r.output, "latest");
     else update((s) => ({ chats: { ...s.chats, [key]: { ...chatOf(s, key), error: r.error } } }));
   };
 
@@ -86,7 +93,10 @@ export const createChatActions = (
       const sends = s.chatSends[key];
       const chat = chatOf(s, key);
       return {
-        chats: { ...s.chats, [key]: mergeMessages({ ...chat, missing: chat.missing.filter((x) => x !== seq) }, r.output.messages) },
+        chats: {
+          ...s.chats,
+          [key]: r.output.messages.reduce<Chat>((c, m) => mergeLive(c, m), { ...chat, missing: chat.missing.filter((x) => x !== seq) }),
+        },
         chatSends: sends === undefined ? s.chatSends : { ...s.chatSends, [key]: settleSends(sends, r.output.messages) },
       };
     });
@@ -117,9 +127,27 @@ export const createChatActions = (
     const generation = s.generation;
     void call("chat_history", { projectRef: refOf(key), before: oldest.seq, limit: CHAT_PAGE }).then((r) => {
       if (store.getState().generation !== generation) return;
-      if (r.ok) fold(key, r.output, true);
+      if (r.ok) fold(key, r.output, "older");
       else update((st) => ({ chats: { ...st.chats, [key]: { ...chatOf(st, key), loadingOlder: false, error: r.error } } }));
     });
+  };
+
+  const loadNewer: ChatActions["loadNewer"] = (key) => {
+    const s = store.getState();
+    const chat = chatOf(s, key);
+    const newest = chat.messages.at(-1);
+    if (!s.fresh || !chat.loaded || !chat.hasNewer || chat.loadingNewer || newest === undefined) return;
+    update((st) => ({ chats: { ...st.chats, [key]: { ...chatOf(st, key), loadingNewer: true } } }));
+    const generation = s.generation;
+    void call("chat_history", { projectRef: refOf(key), after: newest.seq, limit: CHAT_PAGE }).then((r) => {
+      if (store.getState().generation !== generation) return;
+      if (r.ok) fold(key, r.output, "newer");
+      else update((st) => ({ chats: { ...st.chats, [key]: { ...chatOf(st, key), loadingNewer: false, error: r.error } } }));
+    });
+  };
+
+  const jumpToLatest: ChatActions["jumpToLatest"] = (key) => {
+    if (store.getState().fresh) void readLatest(key);
   };
 
   const rowOf = (key: ProjectKey, id: string) => store.getState().chatSends[key]?.find((r) => r.clientRequestId === id);
@@ -153,9 +181,9 @@ export const createChatActions = (
           const chat = s.chats[key];
           const next =
             chat?.loaded === true
-              ? mergeMessages(
+              ? mergeLive(
                   leadWaiting === undefined ? chat : { ...chat, leadWaiting: { ...chat.leadWaiting, [message.messageId]: leadWaiting } },
-                  [message],
+                  message,
                 )
               : undefined;
           return {
@@ -187,6 +215,8 @@ export const createChatActions = (
       at: new Date(now()).toISOString(),
       state: { t: "sending" },
     };
+    // Sending from a window paged above the latest: go back down, where the message will be.
+    if (chatOf(store.getState(), key).hasNewer) jumpToLatest(key);
     const outcome = await sendRow(key, row);
     if (outcome !== "failed" || prior !== undefined) return outcome;
     const failed = rowOf(key, id);
@@ -223,7 +253,7 @@ export const createChatActions = (
     }
   };
 
-  const actions: ChatActions = { open, close, loadOlder, send, retry, discard: dropRow };
+  const actions: ChatActions = { open, close, loadOlder, loadNewer, jumpToLatest, send, retry, discard: dropRow };
   return { actions, onState };
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterCall, applyDelta, applyHistory, CHAT_KEEP, chatItems, emptyChat, mergeMessages, settleSends, toResend, upsertSend, type ChatSend } from "./chat";
+import { afterCall, applyDelta, applyHistory, CHAT_KEEP, chatItems, emptyChat, mergeLive, mergeMessages, settleSends, toResend, upsertSend, type ChatSend } from "./chat";
 import type { ChatHistoryOutput, ChatMessage } from "./chat-contract";
 
 const ref = { machineId: "devbox", projectId: "storefront" };
@@ -31,7 +31,7 @@ const delta = (messageId: string, index: number, append: string) => ({ projectRe
 
 describe("chat messages", () => {
   it("merge by id in seq order, from any source in any order, and an older copy never wins", () => {
-    let chat = applyHistory(emptyChat, page([msg(2), msg(3)], true), false);
+    let chat = applyHistory(emptyChat, page([msg(2), msg(3)], true), "latest");
     const edited = msg(3, { text: "fixed", updatedAt: "2026-10-19T11:00:00.000Z" });
     chat = mergeMessages(chat, [edited, msg(1)]);
     chat = mergeMessages(chat, [msg(3)]);
@@ -43,8 +43,8 @@ describe("chat messages", () => {
   });
 
   it("pages older history in and keeps the newest CHAT_KEEP", () => {
-    let chat = applyHistory(emptyChat, page([msg(100)], true), false);
-    chat = applyHistory({ ...chat, loadingOlder: true }, page([msg(99)]), true);
+    let chat = applyHistory(emptyChat, page([msg(100)], true), "latest");
+    chat = applyHistory({ ...chat, loadingOlder: true }, page([msg(99)]), "older");
     expect([chat.hasOlder, chat.loadingOlder, chat.messages.length]).toEqual([false, false, 2]);
     chat = mergeMessages(chat, Array.from({ length: CHAT_KEEP + 5 }, (_, i) => msg(1000 + i)));
     expect(chat.messages).toHaveLength(CHAT_KEEP);
@@ -52,8 +52,40 @@ describe("chat messages", () => {
     expect(chat.hasOlder).toBe(true);
   });
 
+  it("pages back past CHAT_KEEP to the very first message, evicting the newest, and back down to the latest", () => {
+    const run = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => msg(from + i));
+    // 2,000 held (seq 1001–3000), the latest window.
+    let chat = applyHistory(emptyChat, page(run(1001, 3000), true), "latest");
+    const seen = new Set<number>();
+    while (chat.hasOlder) {
+      const oldest = chat.messages[0]?.seq ?? 0;
+      expect(seen.has(oldest)).toBe(false);
+      seen.add(oldest);
+      const from = Math.max(1, oldest - 50);
+      chat = applyHistory(chat, page(run(from, oldest - 1), from > 1), "older");
+      expect(chat.messages).toHaveLength(Math.min(CHAT_KEEP, 3000 - from + 1));
+    }
+    expect([chat.messages[0]?.seq, chat.hasNewer]).toEqual([1, true]);
+    // A live message isn't added to a window above the latest; one it holds is still updated.
+    expect(mergeLive(chat, msg(3001))).toBe(chat);
+    expect(mergeLive(chat, msg(5, { text: "edited", updatedAt: "2026-10-20T00:00:00.000Z" })).messages[4]?.text).toBe("edited");
+    while (chat.hasNewer) {
+      const newest = chat.messages.at(-1)?.seq ?? 0;
+      const to = Math.min(3001, newest + 50);
+      chat = { ...applyHistory(chat, { ...page(run(newest + 1, to)), moreAfter: to < 3001 }, "newer") };
+    }
+    expect([chat.messages.at(-1)?.seq, chat.hasOlder, chat.messages.length]).toEqual([3001, true, CHAT_KEEP]);
+  });
+
+  it("the latest page on a window paged above it starts the window over", () => {
+    let chat = applyHistory(emptyChat, page([msg(10), msg(11)], true), "latest");
+    chat = { ...chat, hasNewer: true };
+    chat = applyHistory(chat, page([msg(500), msg(501)], true), "latest");
+    expect([chat.messages.map((m) => m.seq), chat.hasNewer, chat.hasOlder]).toEqual([[500, 501], false, true]);
+  });
+
   it("streams frame by frame: a repeat is ignored, a skip is a gap, the final message ends it", () => {
-    let chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "" })]), false);
+    let chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "" })]), "latest");
     chat = applyDelta(chat, delta("m1", 0, "Hel"));
     chat = applyDelta(chat, delta("m1", 1, "lo"));
     chat = applyDelta(chat, delta("m1", 1, "lo"));
@@ -65,13 +97,13 @@ describe("chat messages", () => {
   });
 
   it("a stream joined mid-message shows what history had until the final copy, never doubled text", () => {
-    const chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "Halfway th" })]), false);
+    const chat = applyHistory(emptyChat, page([msg(1, { state: "streaming", text: "Halfway th" })]), "latest");
     expect(applyDelta(chat, delta("m1", 7, "rough"))).toBe(chat);
     expect(chatItems(chat, [])[0]?.text).toBe("Halfway th");
   });
 
   it("a stream that starts before its message is listed shows as the lead's, last", () => {
-    const chat = applyDelta(applyHistory(emptyChat, page([msg(1)]), false), delta("m2", 0, "On it"));
+    const chat = applyDelta(applyHistory(emptyChat, page([msg(1)]), "latest"), delta("m2", 0, "On it"));
     expect(chatItems(chat, []).map((i) => [i.id, i.author, i.state])).toEqual([
       ["m1", "lead", "sent"],
       ["m2", "lead", "streaming"],
@@ -82,7 +114,7 @@ describe("chat messages", () => {
     const secret = msg(1, { text: "", item: { kind: "secret_request", requestId: "R1", name: "STRIPE_KEY", text: "Paste the key", sink: "env:STRIPE_KEY", state: "open" } });
     const migrated = msg(2, { author: "human", history: "order" });
     const robot = msg(3, { author: "robot" });
-    const chat = applyHistory(emptyChat, page([secret, migrated, robot]), false);
+    const chat = applyHistory(emptyChat, page([secret, migrated, robot]), "latest");
     expect(chatItems(chat, []).map((i) => [i.kind, i.author])).toEqual([
       ["secret", "lead"],
       ["event", "human"],
