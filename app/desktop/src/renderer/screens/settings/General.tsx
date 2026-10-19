@@ -9,6 +9,7 @@ import s from "./settings.module.css";
 import { keyStoreLine } from "../../../shared/pairing";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
+import { Prose } from "../onboarding/Prose";
 
 const RETENTION = [7, 30, 90, 365] as const;
 
@@ -91,7 +92,7 @@ function phaseLine(state: HubState): { tone: string; text: string } {
       return { tone: "var(--faint)", text: state.attempt > 1 ? `Connecting, attempt ${state.attempt}…` : "Connecting…" };
     case "retrying": {
       const at = new Date(state.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      return { tone: "var(--warning)", text: `Can't reach it: ${sentence(state.reason)} ${state.fix === undefined ? "" : `${state.fix.replaceAll("`", "")} `}Trying again at ${at}.` };
+      return { tone: "var(--warning)", text: `Can't reach it: ${sentence(state.reason)} ${state.fix === undefined ? "" : `${state.fix} `}Trying again at ${at}.` };
     }
     case "refused":
       return { tone: "var(--danger)", text: `It refused this app's key: ${sentence(state.message)} Pair again to get a new key.` };
@@ -115,7 +116,8 @@ function HubSetting() {
       ) : null}
       <div className={s.hubLine}>
         <Dot color={line.tone} />
-        <Text tone="quiet">{line.text}</Text>
+        {/* The hub's fix may name a command in backticks: shown as code. */}
+        <Prose tone="quiet" text={line.text} />
       </div>
       <div className={s.inline}>
         <Button
@@ -161,24 +163,48 @@ function LinkHandlerSetting() {
   const [status, setStatus] = useState<LinkHandlerStatus | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [refused, setRefused] = useState(false);
+  /** A failed check or claim, in words, with the action Try again repeats. */
+  const [failed, setFailed] = useState<{ text: string; retry: "check" | "claim" } | null>(null);
+  const [checks, setChecks] = useState(0);
   useEffect(() => {
     let live = true;
-    void window.fleetd.app.linkHandler(null).then((s) => live && setStatus(s));
+    window.fleetd.app.linkHandler(null).then(
+      (st) => live && setStatus(st),
+      (e: unknown) => live && setFailed({ text: `Couldn't find out which app opens fleetd:// links: ${sentence(errorText(e))}`, retry: "check" }),
+    );
     return () => {
       live = false;
     };
-  }, []);
+  }, [checks]);
+  const check = () => {
+    setFailed(null);
+    setChecks((n) => n + 1);
+  };
   const claim = () => {
+    setFailed(null);
     setClaiming(true);
-    void window.fleetd.app.linkHandler("user").then((s) => {
-      setClaiming(false);
-      setStatus(s);
-      setRefused(!s.handler);
-    });
+    window.fleetd.app.linkHandler("user").then(
+      (st) => {
+        setClaiming(false);
+        setStatus(st);
+        setRefused(!st.handler);
+      },
+      (e: unknown) => {
+        setClaiming(false);
+        setFailed({ text: `Couldn't ask the system to make fleetd the handler: ${sentence(errorText(e))}`, retry: "claim" });
+      },
+    );
   };
   return (
     <Setting label="Pairing links" help="Open fleetd:// links (pairing links) in this app.">
-      {status === null ? (
+      {failed ? (
+        <div className={s.stack}>
+          <Text tone="danger">{failed.text}</Text>
+          <div>
+            <Button onClick={failed.retry === "check" ? check : claim}>Try again</Button>
+          </div>
+        </div>
+      ) : status === null ? (
         <Text tone="quiet">Checking…</Text>
       ) : status.handler ? (
         <div className={s.hubLine}>
@@ -194,10 +220,10 @@ function LinkHandlerSetting() {
           </div>
           <Text size="xs" tone="quiet">
             {refused
-              ? "The system kept another handler. Try again, or open the pairing code by hand in onboarding."
+              ? "The system left fleetd:// links with another app. Try again, or pair by typing the code from fleetd pair (Pair with another hub, above)."
               : status.packaged
-              ? "Another app opens fleetd:// links now, or none does."
-              : "Dev builds don't register for fleetd:// links; an installed fleetd does."}
+                ? "fleetd doesn't open fleetd:// links now: another app does, or none."
+                : "Dev builds don't register for fleetd:// links; an installed fleetd does."}
           </Text>
         </>
       )}
