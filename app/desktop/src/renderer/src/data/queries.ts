@@ -185,11 +185,16 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
         ? applyReply(before, output as ToolOutput<"inbox_reply">)
         : applyUndo(before, output as ToolOutput<"inbox_undo">),
     );
-    const askIds =
+    // The orders concerned. An undo's comes from the ask it returns: by then the list refetched after the answer has
+    // usually dropped the closed ask from the store, and a racing order_get must still be marked dirty.
+    const orders = new Set(
       tool === "inbox_reply"
-        ? (output as ToolOutput<"inbox_reply">).applied.flatMap((a) => (a.askId === undefined ? [] : [a.askId]))
-        : [(output as ToolOutput<"inbox_undo">).ask.askId];
-    const orders = new Set(askIds.flatMap((id) => { const w = before.asks?.[id]?.workstreamId; return w === undefined ? [] : [w]; }));
+        ? (output as ToolOutput<"inbox_reply">).applied.flatMap((a) => {
+            const w = a.askId === undefined ? undefined : before.asks?.[a.askId]?.workstreamId;
+            return w === undefined ? [] : [w];
+          })
+        : [(output as ToolOutput<"inbox_undo">).ask.workstreamId].filter((w) => w !== undefined),
+    );
     invalidateNow([
       { tool: "asks_list" },
       { tool: "orders_board" },

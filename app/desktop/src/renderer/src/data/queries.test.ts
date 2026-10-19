@@ -187,6 +187,32 @@ describe("the person's own answers", () => {
     stop();
   });
 
+  it("an order read in flight across an undo doesn't remove the restored ask", async () => {
+    const { fake, layer, stop } = await loaded();
+    const out = layer.call("inbox_reply", { raw: "1 a" });
+    fake.answers.at(-1)?.(reply);
+    await out;
+    await vi.advanceTimersByTimeAsync(0);
+    // The post-answer list drops A1 from the store, so only the undo's own ask names its order.
+    const list = fake.calls.lastIndexOf("asks_list");
+    fake.answers[list]?.({ asks: [ask("A2", "W1", { number: 2 })], batches: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(layer.store.getState().asks?.["A1"]).toBeUndefined();
+    // The order view opens: its read leaves before the undo.
+    const order = new QueryObserver(layer.queryClient, layer.toolQuery("order_get", { workstreamId: "W1" })).subscribe(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    const orderCall = fake.answers.length - 1;
+    const undo = layer.call("inbox_undo", { askId: "A1" });
+    fake.answers.at(-1)?.({ ask: ask("A1", "W1") });
+    await undo;
+    // The order read that left before the undo answers with the order's asks as they were then: A2 only.
+    fake.answers[orderCall]?.({ order: card("W1"), asks: [ask("A2", "W1", { number: 2 })], doneLanes: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(selectNeedsYouCount(layer.store.getState())).toBe(2);
+    order();
+    stop();
+  });
+
   it("undo puts the ask back at once", async () => {
     const { fake, layer, stop } = await loaded();
     const out = layer.call("inbox_reply", { raw: "1 a" });
