@@ -21,6 +21,18 @@ protocols:
   - name: fleetd pairing
     schemes: [fleetd]
 electronLanguages: [en]
+# Electron's fuses, flipped in the binary before signing. Without them anything running as the user could run the
+# signed app as plain Node (ELECTRON_RUN_AS_NODE, NODE_OPTIONS, --inspect) under our Team ID, and read the keychain
+# items it trusts without a prompt, or swap the app code beside the signed binary. The page loads from app://, so it
+# needs no file:// privileges. Asar integrity is checked on macOS (Electron doesn't on Linux).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  enableCookieEncryption: true
+  grantFileProtocolExtraPrivileges: false
 extraResources:
   - from: build/app-update.yml
     to: app-update.yml

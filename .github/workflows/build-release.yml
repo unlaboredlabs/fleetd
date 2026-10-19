@@ -319,14 +319,9 @@ jobs:
     if: inputs.desktop && needs.plan.outputs.build-app == 'true' && (inputs.publish || github.event_name == 'workflow_dispatch')
     runs-on: macos-latest
     timeout-minutes: 90
+    # The secrets go only to the steps that use them, never to the install, the build or the launched app.
     env:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
-      MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-      NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
-      NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -344,6 +339,13 @@ jobs:
           pnpm build
       - name: Signing secrets
         id: secrets
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
         run: |
           echo "sign=$(.github/release/macos-sign.sh enabled)" >> "$GITHUB_OUTPUT"
           notarize=false
@@ -351,11 +353,15 @@ jobs:
           echo "notarize=$notarize" >> "$GITHUB_OUTPUT"
       - name: Signing keychain
         if: steps.secrets.outputs.sign == 'true'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
         run: .github/release/macos-sign.sh keychain
       - name: Package a universal fleetd.app
         working-directory: app/desktop
         env:
           SIGN: ${{ steps.secrets.outputs.sign }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: |
           short="${FLEETD_VERSION%%[-+]*}"
           args=(--mac --publish never -c.extraMetadata.version="$FLEETD_VERSION" -c.buildVersion="$short" -c.mac.bundleShortVersion="$short")
@@ -378,15 +384,18 @@ jobs:
         run: |
           .github/release/macos-sign.sh verify dist/fleetd.app
           codesign -d --entitlements - --xml dist/fleetd.app | plutil -p -
-      - name: Load the native keyring module from the packed app
-        # It reads the GPUI app's keychain item once; a native module only loads from outside the asar.
+      - name: Fuses and native modules
         run: |
-          ELECTRON_RUN_AS_NODE=1 dist/fleetd.app/Contents/MacOS/fleetd -e \
-            'const k = require(process.resourcesPath + "/app.asar/node_modules/@napi-rs/keyring"); console.log(process.arch, "keyring:", typeof k.Entry); if (typeof k.Entry !== "function") process.exit(1)'
+          .github/release/desktop-fuses-check.sh dist/fleetd.app dist/fleetd.app/Contents/MacOS/fleetd
+          # The keyring module (it reads the GPUI app's keychain item once) loads only from outside the asar.
           find dist/fleetd.app/Contents/Resources/app.asar.unpacked -name '*.node' -exec lipo -archs {} \; -print
       - name: Notarize and staple
         id: notarize
         if: steps.secrets.outputs.sign == 'true' && steps.secrets.outputs.notarize == 'true'
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
         run: |
           # The name is what macos-staple.sh looks for in the notary history when Apple outlasts NOTARY_WAIT.
           ditto -c -k --keepParent dist/fleetd.app "$RUNNER_TEMP/fleetd-desktop-notarize.zip"
@@ -460,6 +469,7 @@ jobs:
           pnpm build
           pnpm exec electron-builder --linux --publish never -c.extraMetadata.version="$FLEETD_VERSION"
           mkdir -p ../../dist
+          ../../.github/release/desktop-fuses-check.sh dist/linux-unpacked/fleetd-desktop dist/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
           mv dist/fleetd-desktop-linux-x86_64.AppImage dist/fleetd-desktop-linux-amd64.deb ../../dist/
           dpkg-deb -I ../../dist/fleetd-desktop-linux-amd64.deb | grep -E '^ (Package|Version|Depends):'
       - name: Write latest-linux.yml
@@ -473,6 +483,12 @@ jobs:
           # No FUSE or display on the runner; Ubuntu's AppArmor refuses Chromium's user-namespace sandbox.
           .github/release/desktop-update-check.sh dist/fleetd-desktop-linux-x86_64.AppImage \
             "$RUNNER_TEMP/fleetd.AppImage" --appimage-extract-and-run --no-sandbox --ozone-platform=headless
+      - name: Launch the deb's app and have it announce the update
+        # The deb can't update itself; it shows a dialog, hence a virtual display.
+        run: |
+          dpkg-deb -x dist/fleetd-desktop-linux-amd64.deb "$RUNNER_TEMP/deb"
+          DONE_MARKER="update notice: fleetd 99.0.0" xvfb-run -a .github/release/desktop-update-check.sh \
+            dist/fleetd-desktop-linux-x86_64.AppImage "$RUNNER_TEMP/deb/opt/fleetd/fleetd-desktop" --no-sandbox
           ls -l dist
       - uses: actions/upload-artifact@v7
         with:

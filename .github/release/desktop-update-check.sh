@@ -8,7 +8,8 @@
 #
 #   desktop-update-check.sh <asset> <command> [args...]
 #
-# Env: FEED_PORT (default 8765), CHECK_WAIT seconds (default 180).
+# Env: FEED_PORT (default 8765), CHECK_WAIT seconds (default 180), DONE_MARKER (the log line that means success; the
+# deb, which can't update itself, only says an update is available).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 asset="$1"
@@ -27,6 +28,7 @@ Darwin)
   done_marker="has been downloaded to"
   ;;
 esac
+done_marker="${DONE_MARKER:-$done_marker}"
 cp "$asset" "$feed/"
 "$here/update-yml.sh" "$feed/$(basename "$asset")" 99.0.0 > "$feed/$yml"
 
@@ -48,12 +50,14 @@ trap stop EXIT
 show() { grep -vE '^\[[0-9:./]+:(ERROR|WARNING):|^ERR: |dbus|Gtk-|^File exists and file size matches' "$log" | tail -n 40 || true; }
 result=""
 for _ in $(seq "${CHECK_WAIT:-180}"); do
-  if ! kill -0 "$app" 2>/dev/null; then
-    result="the app exited"
+  if grep -q "$done_marker" "$log"; then
+    # And it survives what follows (the deb shows a dialog).
+    sleep 5
+    if kill -0 "$app" 2>/dev/null; then result=ok; else result="the app exited after: $done_marker"; fi
     break
   fi
-  if grep -q "$done_marker" "$log"; then
-    result=ok
+  if ! kill -0 "$app" 2>/dev/null; then
+    result="the app exited"
     break
   fi
   if grep -qE '^Error: |ERR_UPDATER' "$log"; then
@@ -66,7 +70,7 @@ show
 echo "feed requests:"
 cat "$feed/http.log"
 case "$result" in
-ok) echo "the app is running and took the update from the local feed" ;;
+ok) echo "the app is running and took the update from the local feed ($done_marker)" ;;
 "") echo "::error::the app didn't take the update within ${CHECK_WAIT:-180}s" && exit 1 ;;
 *) echo "::error::$result" && exit 1 ;;
 esac
