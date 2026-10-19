@@ -11,6 +11,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { askCard } from "./askCard.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
+import { desktopShell } from "./desktopShell.ts";
 import { FAILURE_SCENARIOS } from "./failure/index.ts";
 import {
   type Body,
@@ -94,6 +95,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "ask", run: askCard, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the testbed. Only when named.
   { name: "demo", run: demoFanout, only: true },
+  { name: "desktop", run: desktopShell, only: true },
   // The native runner's failure scenarios (tests/lab/failure): they restart lab-b and add a machine, so they go last.
   ...FAILURE_SCENARIOS,
 ];
