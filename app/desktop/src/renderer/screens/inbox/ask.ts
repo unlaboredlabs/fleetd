@@ -1,36 +1,17 @@
-// What a question card shows and what it sends. Everything here mirrors the hub (ledger.rs `humanize_key`,
-// `Ask::choices`, `AskAnswer::display`; grammar.rs for the reply text), so the app, the CLI and the phone agree.
-import { humanizeKey as humanizeSlug } from "../../ui";
-import type { Ask, AskAnswer, AskOption, GatedRunSpec } from "./contracts";
+// What a question card shows and what it sends. Labels, the option order and the answer wording come from E1's
+// shared helpers (shared/contracts/asks.ts, mirroring the hub); the reply text mirrors grammar.rs, so the app, the
+// CLI and the phone agree.
+import { ASK_UNDO_WINDOW_MS, type Ask, type AskAnswer, type GatedRunSpec } from "../../../shared/contracts";
+import { answerDisplay, choices, displayLabel, humanizeKey } from "../../../shared/contracts/asks";
 
-/** The hub's undo window (ASK_UNDO_WINDOW_MS). */
-export const UNDO_WINDOW_MS = 10_000;
+/** The hub's undo window. */
+export const UNDO_WINDOW_MS = ASK_UNDO_WINDOW_MS;
 
 /** grammar.rs MAX_TEXT. */
 const MAX_FREE_TEXT = 2000;
 
 /** Option verbs in the reply grammar: `a` is `ask.options[0]`, whatever order the card lists them in. */
 const LETTERS = "abcdef";
-
-/**
- * An old ask's slug as a readable label ("public-snapshot" → "Public snapshot"). Text that is not a slug (an old
- * free-text recommendation) is kept as it is, as the hub does.
- */
-export const humanizeKey = (key: string): string => (/^[a-z0-9._-]+$/u.test(key) ? humanizeSlug(key) : key);
-
-export const optionLabel = (option: AskOption): string => option.label ?? humanizeKey(option.key);
-
-/**
- * The options as the card lists them: the recommendation first, then the rest, never twice. An old ask whose
- * recommendation is free text gets it as a bare first option.
- */
-export const choices = (ask: Ask): AskOption[] => {
-  const options = ask.options ?? [];
-  const rec = ask.recommendation;
-  if (rec === undefined) return [...options];
-  const recommended = options.find((o) => o.key === rec) ?? { key: rec };
-  return [recommended, ...options.filter((o) => o.key !== rec)];
-};
 
 export type CardPick =
   | { readonly type: "option"; readonly key: string }
@@ -70,7 +51,7 @@ export const replyFor = (ask: Ask, pick: CardPick): string | null => {
 
 const labelOf = (ask: Ask, key: string): string => {
   const option = (ask.options ?? []).find((o) => o.key === key);
-  return option === undefined ? humanizeKey(key) : optionLabel(option);
+  return option === undefined ? humanizeKey(key) : displayLabel(option);
 };
 
 /** "You chose: <this>", for a pick made here before the hub's answer is back. */
@@ -97,11 +78,7 @@ const verbLabel = (ask: Ask, verb: "go" | "no" | "done"): string => {
 };
 
 /** The stored answer as the human reads it; `AskAnswer::display` on the hub. */
-export const answerLabel = (ask: Ask, answer: AskAnswer): string => {
-  if (answer.kind === "text") return answer.value;
-  if (answer.kind === "skip") return skipLabel(ask, answer.value);
-  return labelOf(ask, answer.value);
-};
+export const answerLabel = (ask: Ask, answer: AskAnswer): string => answerDisplay(answer, ask);
 
 /** The class in plain words, only when it raises the stakes; product calls need no tag. */
 export const classTag = (ask: Ask): string | null => {
@@ -142,7 +119,7 @@ export const cardOptions = (ask: Ask): CardOption[] => {
         const recommended = o.key === ask.recommendation;
         return {
           id: o.key,
-          label: optionLabel(o),
+          label: displayLabel(o),
           recommended,
           pick: { type: "option", key: o.key },
           ...(o.consequence === undefined ? {} : { detail: o.consequence }),

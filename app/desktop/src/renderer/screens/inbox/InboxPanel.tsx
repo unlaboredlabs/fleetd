@@ -1,11 +1,13 @@
 // The inbox panel's body. F1's shell hosts it over any route (?inbox, ?inbox&ask=<askId>) with its header, close
 // button, ⌘I and Esc; this is what is inside: every ask as a question card, the other things that need a look, and
 // the reply field.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, cx, Input, ScrollArea, StatusChip, Text, Truncate } from "../../ui";
-import { needsYou, type AttentionItem } from "./model";
-import { QuestionCard } from "./QuestionCard";
-import { inboxStore, useInbox } from "./store";
+import { useData, useDataLayer } from "../../src/data/react";
+import { selectInbox } from "../../src/data/selectors";
+import { attentionItems, needsYou, type AttentionItem } from "./model";
+import { QuestionCard, useLive } from "./QuestionCard";
+import { inboxUi, useInboxUi } from "./store";
 import s from "./InboxPanel.module.css";
 
 export interface InboxPanelProps {
@@ -14,42 +16,49 @@ export interface InboxPanelProps {
 }
 
 export function InboxPanel({ askId }: InboxPanelProps) {
-  const inbox = useInbox();
-  const asks = needsYou(inbox);
-  const focusId = asks.some((a) => a.askId === askId) ? askId : inbox.open[0]?.askId;
+  const open = useData(selectInbox);
+  const ui = useInboxUi();
+  const live = useLive();
+  const hubAttention = useData((d) => d.attention);
+  const events = useData((d) => d.events);
+  const projects = useData((d) => d.projects);
+  const attention = useMemo(() => attentionItems({ attention: hubAttention, events, projects }), [hubAttention, events, projects]);
+  const asks = needsYou(open, ui);
+  const loaded = asks !== undefined;
+  const focusId = asks?.some((a) => a.askId === askId) === true ? askId : open?.[0]?.ask.askId;
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (askId === undefined) return;
     bodyRef.current?.querySelector(`[data-ask="${CSS.escape(askId)}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [askId, inbox.loaded]);
+  }, [askId, loaded]);
+
+  // An answer taken back is done with once the ask is open again.
+  useEffect(() => {
+    for (const item of open ?? []) if (ui.answered.get(item.ask.askId)?.undone === true) inboxUi().dismiss(item.ask.askId);
+  }, [open, ui.answered]);
 
   return (
     <div className={s.panel} data-screen="inbox">
       <ScrollArea className={cx(s.scroll)}>
         <div ref={bodyRef} className={s.body}>
-          {inbox.loadError === null ? null : (
-            <p role="alert" className={s.alert}>
-          <Text size="sm" tone="danger">{inbox.loadError}</Text>
-        </p>
-          )}
-          {!inbox.loaded && inbox.loadError === null ? (
+          {!loaded ? (
             <Text as="p" tone="quiet" className={cx(s.empty)}>
-              Loading questions…
+              {live ? "Loading questions…" : "Not connected to the hub. Questions show once it is back."}
             </Text>
           ) : null}
-          {inbox.loaded && asks.length === 0 ? (
+          {loaded && asks.length === 0 ? (
             <Text as="p" tone="quiet" className={cx(s.empty)}>
               Nothing needs you.
             </Text>
           ) : null}
-          {asks.map((ask) => (
+          {(asks ?? []).map((ask) => (
             <QuestionCard key={ask.askId} ask={ask} autoFocus={ask.askId === focusId} />
           ))}
-          {inbox.attention.length === 0 ? null : <Attention items={inbox.attention} />}
+          {attention.length === 0 ? null : <Attention items={attention} />}
         </div>
       </ScrollArea>
-      <ReplyField live={inbox.live} echo={inbox.replyEcho} />
+      <ReplyField live={live} echo={ui.replyEcho} />
     </div>
   );
 }
@@ -97,12 +106,13 @@ const when = (iso: string): string => {
 function ReplyField({ live, echo }: { live: boolean; echo: { ok: boolean; text: string } | null }) {
   const [raw, setRaw] = useState("");
   const [sending, setSending] = useState(false);
+  const { call } = useDataLayer();
   const send = (): void => {
     const text = raw.trim();
     if (text === "" || sending || !live) return;
     setSending(true);
-    void inboxStore()
-      .reply(text)
+    void inboxUi()
+      .reply(call, text)
       .then((ok) => {
         if (ok) setRaw("");
       })

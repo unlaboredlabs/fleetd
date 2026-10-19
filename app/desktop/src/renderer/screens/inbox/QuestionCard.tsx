@@ -1,12 +1,14 @@
 // The one question card. The board's Needs you, the inbox panel, the order view and Status all render this, so an
-// answer given anywhere reads the same and clears everywhere (one store).
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+// answer given anywhere reads the same and clears everywhere. Hub data comes from E1's data layer; the only state
+// kept here is what the person did (store.ts).
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Button, Code, cx, IdChip, InlineCode, Input, RadioCard, RadioGroup, Text, Textarea, Truncate } from "../../ui";
 import { cardKey, cardOptions, classTag, secretEnvLines, takesFreeText, takesSkip, type CardPick } from "./ask";
-import type { Ask, GatedRunSpec } from "./contracts";
+import type { Ask, GatedRunSpec, Machine } from "../../../shared/contracts";
+import { useData, useDataLayer } from "../../src/data/react";
 import { prose } from "./prose";
-import { askPlace, secretTarget, type Answered, type SecretTarget } from "./model";
-import { inboxStore, useInbox } from "./store";
+import { askPlace, deliveredAt, secretTarget, type Answered, type SecretTarget } from "./model";
+import { inboxUi, useInboxUi } from "./store";
 import s from "./QuestionCard.module.css";
 
 /** The radio value of "Something else…"; option keys are slugs, so it can't collide. */
@@ -29,23 +31,54 @@ export interface QuestionCardViewProps {
   onDismiss: () => void;
 }
 
-/** A card wired to the inbox store. */
+/** The hub is reachable and the data layer holds this connection's state, so an answer can go out. */
+export const useLive = (): boolean => useData((d) => d.fresh && d.hub.phase === "live");
+
+/** Machines with the live feed's status, which is newer than the snapshot's. */
+const useMachines = (): Readonly<Record<string, Machine>> => {
+  const machines = useData((d) => d.machines);
+  const live = useData((d) => d.live.machines);
+  return useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(machines).map(([id, m]) => {
+          const status = live[id]?.status;
+          return [id, status === undefined ? m : { ...m, status }];
+        }),
+      ),
+    [machines, live],
+  );
+};
+
+/** A card wired to the data layer (hub data) and the inbox UI state (what the person did). */
 export function QuestionCard({ ask, autoFocus }: { ask: Ask; autoFocus?: boolean }) {
-  const inbox = useInbox();
-  const store = inboxStore();
+  const ui = useInboxUi();
+  const actions = inboxUi();
+  const { call } = useDataLayer();
+  const live = useLive();
+  const projects = useData((d) => d.projects);
+  const orders = useData((d) => d.orders);
+  const machines = useMachines();
+  const delivered = useData((d) => deliveredAt(d.events, ask.askId));
+  const local = ui.answered.get(ask.askId);
+  const answered = local === undefined || local.deliveredAt !== null || delivered === undefined ? local : { ...local, undoBy: null, deliveredAt: delivered };
+  const target = ask.kind === "secret" ? secretTarget(machines, ask) : undefined;
+  const dismiss = useCallback(() => actions.dismiss(ask.askId), [actions, ask.askId]);
   return (
     <QuestionCardView
       ask={ask}
-      place={askPlace(inbox, ask)}
-      secret={ask.kind === "secret" ? secretTarget(inbox, ask) : undefined}
-      onSecret={(field) => store.submitSecret(ask, field)}
-      answered={inbox.answered.get(ask.askId)}
-      error={inbox.errors.get(ask.askId)}
-      live={inbox.live}
+      place={askPlace({ projects, orders }, ask)}
+      secret={target}
+      onSecret={(field) => {
+        if (target !== undefined) actions.submitSecret(ask, target, field);
+      }}
+      answered={answered}
+      error={ui.errors.get(ask.askId)}
+      live={live}
       autoFocus={autoFocus}
-      onAnswer={(pick) => store.answer(ask, pick)}
-      onUndo={() => store.undo(ask.askId)}
-      onDismiss={() => store.dismiss(ask.askId)}
+      onAnswer={(pick) => actions.answer(call, ask, pick)}
+      onUndo={() => actions.undo(call, ask.askId)}
+      onDismiss={dismiss}
     />
   );
 }
@@ -370,6 +403,8 @@ function GatedCommand({ gated }: { gated: GatedRunSpec }) {
   );
 }
 
+const RECEIPT_MS = 30_000;
+
 const clock = (iso: string): string => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -399,8 +434,16 @@ function AnsweredBody(props: {
 }) {
   const { answered } = props;
   const left = useCountdown(answered.undoBy);
+  const { onDismiss } = props;
+  // A receipt stays half a minute, then the card goes; Dismiss takes it away sooner.
+  useEffect(() => {
+    if (answered.deliveredAt === null) return;
+    const id = window.setTimeout(onDismiss, RECEIPT_MS);
+    return () => window.clearTimeout(id);
+  }, [answered.deliveredAt, onDismiss]);
   let status: string;
-  if (answered.sending) status = "Sending…";
+  if (answered.undone) status = "Taking it back…";
+  else if (answered.sending) status = "Sending…";
   else if (left > 0) status = `You can undo this for ${left} s.`;
   else if (answered.deliveredAt === null) status = "Passing it to the lead…";
   else if (answered.ask.kind === "secret") {

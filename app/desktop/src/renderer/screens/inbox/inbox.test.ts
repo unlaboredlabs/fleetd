@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../../../../fixtures/inbox/asks.json";
-import { answerLabel, cardKey, cardOptions, choices, cleanFreeText, humanizeKey, optionLabel, pickLabel, replyFor, secretEnvLines, takesSkip } from "./ask";
-import type { Ask, InboxReplyOutput } from "./contracts";
-import { answering, answeringAs, emptyInbox, needsYou, normalizeAsk, replied, secretSent, secretTarget, undone, withAsks, withEvent, withSnapshot } from "./model";
+import type { Ask, HubEvent, InboxReplyOutput, Machine } from "../../../shared/contracts";
+import { choices, displayLabel, humanizeKey } from "../../../shared/contracts/asks";
+import { answerLabel, cardKey, cardOptions, cleanFreeText, pickLabel, replyFor, secretEnvLines, takesSkip } from "./ask";
+import {
+  answering,
+  answeringAs,
+  attentionItems,
+  deliveredAt,
+  emptyUi,
+  needsYou,
+  normalizeAsk,
+  replied,
+  secretSent,
+  secretTarget,
+  undone,
+} from "./model";
 
 const asks = fixture.asks as unknown as Ask[];
 const ask = (id: string): Ask => {
@@ -23,13 +36,13 @@ describe("the card's options", () => {
 
   it("renders an old label-less ask: humanized keys, its free-text recommendation first, no consequences", () => {
     const old = ask("A13");
-    expect(choices(old).map(optionLabel)).toEqual([
+    expect(choices(old).map(displayLabel)).toEqual([
       "public frozen PNG snapshot under an unguessable URL, served without login",
       "Public snapshot",
       "Image only",
     ]);
     expect(cardOptions(old).some((o) => o.detail !== undefined)).toBe(false);
-    expect(humanizeKey("a-monthly-vs-week")).toBe("Monthly vs week");
+    expect(humanizeKey("a-monthly-vs-week")).toBe("A monthly vs week");
     // A hub from before labels sends the options as bare strings.
     const bare = normalizeAsk({ ...old, options: ["public-snapshot", "image-only"] } as unknown as Ask);
     expect(bare.options).toEqual([{ key: "public-snapshot" }, { key: "image-only" }]);
@@ -74,50 +87,57 @@ describe("the reply each pick sends (grammar.rs)", () => {
   });
 });
 
-describe("the inbox state", () => {
-  const loaded = withAsks(withSnapshot(emptyInbox, { cursor: 1, projects: fixture.projects, attention: [] }), asks);
+describe("the inbox's own state over the data layer's asks", () => {
+  const open = asks.map((a) => ({ ask: a }));
+  const ids = (list: readonly Ask[] | undefined) => list?.map((a) => a.askId);
   const ok = (extra: Partial<InboxReplyOutput["applied"][number]>): InboxReplyOutput => ({
     parsed: true,
     applied: [{ askId: "A11", number: 1, outcome: "answered", ...extra }],
   });
 
-  it("collapses an answer in place, opens a 10 s undo when the hub keeps one, and shows the receipt", () => {
-    const sent = answering(loaded, ask("A11"), { type: "option", key: "public-snapshot" });
-    expect(sent.open.map((a) => a.askId)).not.toContain("A11");
-    expect(needsYou(sent).map((a) => a.askId)).toEqual(["A11", "A12", "A13", "A14", "A15", "A16", "A17"]);
+  it("collapses an answer in place, opens a 10 s undo when the hub keeps one, and finds the receipt in the events", () => {
+    const sent = answering(emptyUi, ask("A11"), { type: "option", key: "public-snapshot" });
+    // The open copy (the layer still lists it until the hub's event) gives way to the collapsed one, in place.
+    expect(ids(needsYou(open, sent))).toEqual(["A11", "A12", "A13", "A14", "A15", "A16", "A17"]);
+    expect(needsYou(open, sent)?.filter((a) => a.askId === "A11")).toHaveLength(1);
+    // Once the layer drops it, the answered one stays where it was.
+    expect(ids(needsYou(open.slice(1), sent))).toEqual(["A11", "A12", "A13", "A14", "A15", "A16", "A17"]);
     const back = replied(sent, "A11", ok({ label: "A public snapshot link", undoUntil: "2026-10-19T10:30:10.000Z" }), 1_000);
     expect(back.answered.get("A11")).toMatchObject({ label: "A public snapshot link", undoBy: 11_000, deliveredAt: null, sending: false });
-    // A fetch that was already in flight still lists it: it stays collapsed.
-    expect(withAsks(back, asks).open.map((a) => a.askId)).not.toContain("A11");
-    const delivered = withEvent(back, {
-      seq: 9,
-      type: "ask.delivered",
-      at: "2026-10-19T10:30:11.000Z",
-      summary: "The lead has the answer.",
-      data: { askId: "A11", deliveredAt: "2026-10-19T10:30:11.000Z" },
-    });
-    expect(delivered.answered.get("A11")).toMatchObject({ undoBy: null, deliveredAt: "2026-10-19T10:30:11.000Z" });
+    const events: HubEvent[] = [
+      { seq: 8, at: "2026-10-19T10:30:05.000Z", type: "ask.answered", summary: "", data: { askId: "A11" } },
+      { seq: 9, at: "2026-10-19T10:30:11.000Z", type: "ask.delivered", summary: "", data: { askId: "A11", deliveredAt: "2026-10-19T10:30:11.500Z" } },
+    ];
+    expect(deliveredAt(events, "A11")).toBe("2026-10-19T10:30:11.500Z");
+    expect(deliveredAt(events, "A12")).toBeUndefined();
+  });
+
+  it("is loading while the layer's asks are, and lists one order's asks for the order view", () => {
+    expect(needsYou(undefined, emptyUi)).toBeUndefined();
+    expect(ids(needsYou(open, emptyUi, "W2"))).toEqual(["A14", "A15", "A17"]);
   });
 
   it("gives an answer without an undo window (an older hub, an approval) its receipt at once", () => {
-    const sent = answering(loaded, ask("A14"), { type: "verb", verb: "go" });
+    const sent = answering(emptyUi, ask("A14"), { type: "verb", verb: "go" });
     const back = replied(sent, "A14", { parsed: true, applied: [{ askId: "A14", outcome: "answered", decisionId: "D4" }] }, 5_000);
     expect(back.answered.get("A14")).toMatchObject({ label: "Approved", undoBy: null, deliveredAt: new Date(5_000).toISOString() });
   });
 
-  it("reopens the card with the hub's hint when the reply is refused, and after an undo", () => {
-    const sent = answering(loaded, ask("A12"), { type: "skip" });
+  it("reopens the card with the hub's hint when the reply is refused, and gives way to the open ask after an undo", () => {
+    const sent = answering(emptyUi, ask("A12"), { type: "skip" });
     const refused = replied(sent, "A12", { parsed: false, applied: [], hint: "Item 2 is not open." }, 0);
-    expect(refused.open.map((a) => a.askId)).toEqual(["A11", "A12", "A13", "A14", "A15", "A17", "A16"]);
+    expect(refused.answered.has("A12")).toBe(false);
     expect(refused.errors.get("A12")).toBe("Item 2 is not open.");
-    const reopened = undone(replied(sent, "A12", ok({ askId: "A12", outcome: "skipped" }), 0), ask("A12"));
-    expect(reopened.answered.has("A12")).toBe(false);
-    expect(reopened.open.map((a) => a.askId)).toContain("A12");
+    const taken = undone(replied(sent, "A12", ok({ askId: "A12", outcome: "skipped" }), 0), "A12");
+    expect(taken.answered.get("A12")).toMatchObject({ undone: true, undoBy: null });
+    // Not open in the layer yet: still the collapsed card ("Taking it back…"); open again: the open card.
+    expect(needsYou(open.filter((i) => i.ask.askId !== "A12"), taken)?.some((a) => a.askId === "A12")).toBe(true);
+    expect(needsYou(open, taken)?.filter((a) => a.askId === "A12")).toEqual([ask("A12")]);
   });
 
   it("names the project, never its id, and keeps loud events as attention items", () => {
-    expect(loaded.projects.get("devbox/storefront")).toBe("storefront");
-    const next = withEvent(loaded, {
+    const projects = { "devbox/storefront": { title: "storefront" } } as never;
+    const loud: HubEvent = {
       seq: 12,
       type: "thread.failed",
       at: "2026-10-19T10:29:00.000Z",
@@ -125,22 +145,23 @@ describe("the inbox state", () => {
       projectId: "storefront",
       summary: "An implementer stopped: the tests would not start.",
       attention: "loud",
-    });
-    expect(next.attention).toEqual([
+    };
+    const quiet: HubEvent = { seq: 13, at: "2026-10-19T10:29:30.000Z", type: "task.done", summary: "quiet" };
+    expect(attentionItems({ attention: [loud], events: [loud, quiet], projects })).toEqual([
       { seq: 12, at: "2026-10-19T10:29:00.000Z", summary: "An implementer stopped: the tests would not start.", urgent: false, project: "storefront" },
     ]);
-    expect(withEvent(next, { seq: 13, at: "2026-10-19T10:29:30.000Z", type: "task.done", summary: "quiet" })).toBe(next);
   });
 });
 
 describe("a secret ask's destination", () => {
   const secret = { ...ask("A11"), kind: "secret", sink: "env:devbox:/srv/storefront/.env", envName: "STRIPE_KEY" } as Ask;
   const key = "a".repeat(43) + "=";
-  const withMachine = (machine: Record<string, unknown>) =>
-    withSnapshot(emptyInbox, { cursor: 1, machines: [{ machineId: "devbox", name: "devbox", ...machine }] });
+  const machines = (m: Partial<Machine>): Record<string, Machine> => ({
+    devbox: { machineId: "devbox", name: "devbox", status: "online", lastSeenAt: "", nodeVersion: "1", tags: [], ...m },
+  });
 
   it("seals to the sink machine's key and says where the value lands", () => {
-    expect(secretTarget(withMachine({ status: "online", boxPubKey: key }), secret)).toEqual({
+    expect(secretTarget(machines({ boxPubKey: key }), secret)).toEqual({
       ok: true,
       machine: "devbox",
       boxPubKey: key,
@@ -149,11 +170,11 @@ describe("a secret ask's destination", () => {
   });
 
   it("says why it can't be sent, with what to do, before anything is typed", () => {
-    const cases: Array<[ReturnType<typeof withMachine>, Ask, string]> = [
-      [withMachine({ status: "online" }), secret, "Update fleetd on devbox"],
-      [withMachine({ status: "offline", boxPubKey: key }), secret, "back online"],
-      [withSnapshot(emptyInbox, { cursor: 1, machines: [] }), secret, "add that machine"],
-      [withMachine({ status: "online", boxPubKey: key }), { ...secret, sink: "env:devbox:relative" }, "with a destination"],
+    const cases: Array<[Record<string, Machine>, Ask, string]> = [
+      [machines({}), secret, "Update fleetd on devbox"],
+      [machines({ status: "offline", boxPubKey: key }), secret, "back online"],
+      [{}, secret, "add that machine"],
+      [machines({ boxPubKey: key }), { ...secret, sink: "env:devbox:relative" }, "with a destination"],
     ];
     for (const [state, a, fix] of cases) {
       const target = secretTarget(state, a);
@@ -199,7 +220,7 @@ describe("what an approval and a secret show", () => {
   });
 
   it("keeps the node's fingerprint for the receipt", () => {
-    const sealed = answeringAs(emptyInbox, ask("A17"), "Sealed and sent");
+    const sealed = answeringAs(emptyUi, ask("A17"), "Sealed and sent");
     expect(secretSent(sealed, "A17", 0, "ab12cd34").answered.get("A17")).toMatchObject({ fingerprint: "ab12cd34", sending: false });
   });
 });
