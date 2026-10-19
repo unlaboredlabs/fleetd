@@ -69,6 +69,8 @@ function agents(from: Fixture): Fixture {
   const slots: JsonObject = { cap: 16, used: 9, queued: 2, reservedBand: 2, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
+  // A save answers with the hub's slot state; the fixture's is fixed, so Save shows its confirmation over it.
+  f.answer("cap_set", undefined, { slots: clone(slots) });
   return f;
 }
 

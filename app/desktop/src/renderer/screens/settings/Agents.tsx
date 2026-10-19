@@ -6,7 +6,7 @@ import { useState } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
 import { useData } from "../../src/data/react";
 import { Button, Checkbox, Input, Popover, PopoverContent, PopoverTrigger, Separator, Text, textClass } from "../../ui";
-import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote, type ProjectAgents } from "./agents";
+import { agentsLabel, changeLine, clampMax, extrasOver, pauseLine, projectAgents, serialNote, type ProjectAgents } from "./agentsModel";
 import { errorText, useHubCall, useLive } from "./hub";
 import { scopeName, useProjects } from "./parts";
 import s from "./settings.module.css";
@@ -31,7 +31,7 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
       </PopoverTrigger>
       <PopoverContent align="end">
         <div className={s.agentsPopover}>
-          <AgentsPanel projectRef={projectRef} slots={slots} onSaved={() => setOpen(false)} />
+          <AgentsPanel projectRef={projectRef} slots={slots} title="Max agents for this project" />
         </div>
       </PopoverContent>
     </Popover>
@@ -39,7 +39,7 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
 }
 
 /** One project's Max agents: the slider, what the change will do, and Save. */
-export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string; onSaved?: () => void }) {
+export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; title?: string }) {
   const live = useLive();
   const call = useHubCall();
   const a: ProjectAgents = projectAgents(props.slots, props.projectRef);
@@ -72,7 +72,6 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
               ? `Saved: at most ${value} at once. ${paused === 1 ? "1 agent is" : `${paused} agents are`} saving work and waiting for a slot.`
               : `Saved: at most ${value} at once.`,
         });
-        props.onSaved?.();
       },
       (e: unknown) => {
         setBusy(false);
@@ -84,13 +83,12 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   return (
     <div className={s.agentsPanel}>
       <div className={s.agentsHead}>
-        <label htmlFor={id} className={textClass({ strong: true })}>
+        <span id={`${id}-label`} className={textClass({ strong: true })}>
           {props.title ?? "Max agents"}
-        </label>
+        </span>
         <Text tabular strong>{`${value}`}</Text>
       </div>
       <Slider.Root
-        id={id}
         className={s.slider}
         min={1}
         max={Math.max(1, a.cap)}
@@ -101,12 +99,11 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
           if (v !== undefined) setDraft(v);
           setEcho(null);
         }}
-        aria-label={props.title ?? "Max agents"}
       >
         <Slider.Track className={s.sliderTrack}>
           <Slider.Range className={s.sliderRange} />
         </Slider.Track>
-        <Slider.Thumb className={s.sliderThumb} aria-label="Max agents" />
+        <Slider.Thumb className={s.sliderThumb} aria-labelledby={`${id}-label`} aria-describedby={`${id}-change`} />
       </Slider.Root>
       <div className={s.agentsScale}>
         <Text size="xs" tone="quiet" tabular>
@@ -114,7 +111,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
         </Text>
         <Text size="xs" tone="quiet" tabular>{`${a.cap}, the fleet's limit`}</Text>
       </div>
-      <Text size="xs" tone="quiet">
+      <Text size="xs" tone="quiet" id={`${id}-change`}>
         {changeLine(a, value)}
       </Text>
       {over > 0 ? <Checkbox checked={pause} onCheckedChange={(c) => setPause(c === true)} label={pauseLine(over)} /> : null}
