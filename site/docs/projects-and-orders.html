@@ -117,6 +117,24 @@ orders and PRs; the lead gets them with the order.</p>
 <p>The lead freezes a brief, runs writer and reviewer tasks on your workers, and puts each PR on the merge train. The
 board shows every order's phase and live agents; open one for its PRs, checks and the lead's conversation
 (<a href="/docs/desktop-app#order">Follow an order</a>).</p>
+<h2 id="scheduling">How the lead schedules work<a class="anchor" href="#scheduling" aria-label="Link to this section">#</a></h2>
+<p>The lead plans each order as small items (sizes S, M or L, some waiting <code>after</code> others) and starts every item it can in
+parallel, as long as slots are free. fleetd keeps that going without ever starting work by itself:</p>
+<ul>
+<li><strong>A free slot is offered.</strong> When a slot frees and the lead is idle, fleetd wakes it with the next plan items that
+can start: in an order whose brief is frozen, not waiting on another open item, and with no task or PR yet. A
+finish-all order with room for another child is offered too; its lead picks from the inventory. When nothing
+qualifies, the lead stays idle.</li>
+<li><strong>Once per change.</strong> A lead hears about the same runnable work once. It is told again only when that changes: an
+item is taken, done, added or unblocked.</li>
+<li><strong>Slices are reviewed as they land.</strong> A writer reports each finished PR with <code>report</code> (kind <code>slice_ready</code>), or
+marks its draft PR ready on GitHub, which the train notices on its own polling (no webhook needed); fleetd puts it
+on the train and starts its reviewers under the order's review rules right away, while the writer goes on. A
+new head is reviewed again from what changed, at the same blocking-only bar.</li>
+</ul>
+<p>Nothing here relaxes a gate: every PR still gets its tier's reviews and green CI and goes through the train, done is
+still decided by the done-when checks, and anything that needs your approval still waits for it. The slots board and
+the lead's limit of 32 open tasks apply to the reviewers fleetd starts as to any task.</p>
 <h2 id="add-to-it-steer-it-stop-it">Add to it, steer it, stop it<a class="anchor" href="#add-to-it-steer-it-stop-it" aria-label="Link to this section">#</a></h2>
 <p>In the order, Enter adds your words to the lead's queue: it takes them in at its next step, after the tool it is
 running. ⌘Enter (Ctrl+Enter) interrupts and redirects: its current step stops and it reads you at once. Each steer
@@ -161,6 +179,7 @@ rebasing, checking or merging is left to land.</p>
 <li><a href="#connect-an-mcp-client">Connect an MCP client</a></li>
 <li><a href="#send-an-order">Send an order</a></li>
 <li><a href="#follow-it">Follow it</a></li>
+<li><a href="#scheduling">How the lead schedules work</a></li>
 <li><a href="#add-to-it-steer-it-stop-it">Add to it, steer it, stop it</a></li>
 <li><a href="#answer-its-questions">Answer its questions</a></li>
 <li><a href="#done-checked">Done, checked</a></li>
