@@ -88,6 +88,12 @@ struct Pull {
     state: String,
     merge_commit_sha: Option<String>,
     merged_at: Option<String>,
+    #[serde(default)]
+    head: Option<PullHead>,
+}
+#[derive(Deserialize)]
+struct PullHead {
+    sha: String,
 }
 #[derive(Deserialize)]
 struct RepoInfo {
@@ -166,12 +172,15 @@ struct BatchLanding {
 static LANDED_IN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^Landed in #(\d+)").expect("landed regex"));
 
-/// The batch a closed PR landed in, verified on GitHub: the train's closing comment names it, and that PR is merged,
-/// its `fleetd-batch:` line lists this one, and its head carries `fleetd/train=success`, which only the train posts.
+/// The batch a closed PR landed in, verified on GitHub as equivalent to merging it: the train's closing comment names
+/// the batch, that PR is merged with `fleetd/train=success` (which only the train posts) on its head, and its
+/// `fleetd-batch:` line recorded this PR at `member_head`, the head it has now. A push after batching, or a batch
+/// that recorded no head, is not landed.
 async fn landed_in_batch(
     github: &GitHub,
     repo: &str,
     pr: i64,
+    member_head: &str,
 ) -> Result<Option<BatchLanding>, GhError> {
     #[derive(Deserialize)]
     struct Comment {
@@ -207,9 +216,11 @@ async fn landed_in_batch(
     for batch in batches {
         let path = format!("repos/{repo}/pulls/{batch}");
         let pull: BatchPull = parse(&path, github.api(&path).await?)?;
+        let member_head = member_head.to_lowercase();
         let lists_it =
-            crate::hub::train::github::batch_members(pull.body.as_deref().unwrap_or_default())
-                .contains(&pr);
+            crate::hub::train::github::batch_heads(pull.body.as_deref().unwrap_or_default())
+                .into_iter()
+                .any(|(n, built)| n == pr && built.as_deref() == Some(member_head.as_str()));
         let (true, true, Some(sha)) = (pull.merged, lists_it, pull.merge_commit_sha) else {
             continue;
         };
@@ -497,8 +508,12 @@ impl CheckRunner {
                     .unwrap_or_default();
                 verdict(CheckOutcome::Pass, format!("{repo}#{pr} merged{at}{sha}"))
             }
-            Ok(pull) if pull.state == "closed" => {
-                match landed_in_batch(&self.github, repo, pr).await {
+            Ok(Pull {
+                state,
+                head: Some(head),
+                ..
+            }) if state == "closed" => {
+                match landed_in_batch(&self.github, repo, pr, &head.sha).await {
                     Ok(Some(landed)) => verdict(
                         CheckOutcome::Pass,
                         format!(
@@ -813,33 +828,49 @@ mod batch_tests {
         GitHub::new(Arc::new(Paths(paths)))
     }
 
-    #[tokio::test]
-    async fn a_closed_pr_counts_as_merged_only_when_the_trains_batch_landed_it() {
-        let landed = landed_in_batch(
-            &github("success", "fleetd-batch: #7 #8"),
+    /// Whether PR 8, now at `member_head`, landed in batch #20 whose body is `body` and whose head has the train's
+    /// status `train_status`.
+    async fn landed(train_status: &str, body: &str, member_head: &str) -> Option<BatchLanding> {
+        landed_in_batch(
+            &github(train_status, body),
             "acme/storefront",
             8,
+            member_head,
         )
         .await
-        .unwrap();
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_closed_pr_counts_as_merged_only_when_the_trains_batch_landed_it_at_its_current_head()
+    {
         assert_eq!(
-            landed,
+            landed("success", "fleetd-batch: #7@aaa #8@CAFE", "cafe").await,
             Some(BatchLanding {
                 batch: 20,
                 sha: "f00d".into(),
                 merged_at: Some("2026-10-19T12:00:00Z".into())
             })
         );
-        // Not listed in the batch, or the batch merged without the train's status: not merged.
-        let unlisted =
-            landed_in_batch(&github("success", "fleetd-batch: #7"), "acme/storefront", 8).await;
-        assert_eq!(unlisted.unwrap(), None);
-        let bypassed = landed_in_batch(
-            &github("pending", "fleetd-batch: #7 #8"),
-            "acme/storefront",
-            8,
-        )
-        .await;
-        assert_eq!(bypassed.unwrap(), None);
+        // Pushed to after the batch was built: what landed is not its head.
+        assert_eq!(
+            landed("success", "fleetd-batch: #7@aaa #8@cafe", "d00d").await,
+            None
+        );
+        // A batch that recorded no head for it proves nothing about its head.
+        assert_eq!(
+            landed("success", "fleetd-batch: #7@aaa #8", "cafe").await,
+            None
+        );
+        // Not in the batch.
+        assert_eq!(
+            landed("success", "fleetd-batch: #7@aaa", "cafe").await,
+            None
+        );
+        // Merged without the train's status: a bypass, not the train's merge.
+        assert_eq!(
+            landed("pending", "fleetd-batch: #7@aaa #8@cafe", "cafe").await,
+            None
+        );
     }
 }

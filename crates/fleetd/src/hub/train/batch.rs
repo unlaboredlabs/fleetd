@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::contract::{Change, ChangeId, ChangeState};
 use super::git::BatchMember;
-use super::github::{BATCH_MARKER, MergeOutcome, Pull, batch_members};
+use super::github::{BATCH_MARKER, MergeOutcome, Pull, batch_heads};
 use super::service::{Checks, CiOutcome, Train, checks, error_text, lock, short};
 
 /// Files every dependency bump touches. Two members both changing one still batch; a real clash shows as the second
@@ -100,9 +100,10 @@ fn member_lines(members: &[Candidate]) -> String {
 }
 
 fn batch_body(base: &str, members: &[Candidate]) -> String {
+    // Each member's head as built: a member counts as landed only while its PR is still at that head.
     let numbers: Vec<String> = members
         .iter()
-        .map(|m| format!("#{}", m.change.pr_number))
+        .map(|m| format!("#{}@{}", m.change.pr_number, m.change.head_sha))
         .collect();
     format!(
         "The fleetd merge train's batch: these ready PRs, each reviewed at its current patch and green on its own, \
@@ -586,12 +587,16 @@ impl Train {
             .pulls_for(&change.repo, &branch, "closed")
             .await
             .ok()?;
+        // Only at the head it has now: a batch built from an earlier head did not land this one.
         pulls.into_iter().find_map(|p| {
-            let members = batch_members(p.body.as_deref().unwrap_or_default());
-            (p.merged_at.is_some() && members.contains(&change.pr_number.get())).then(|| Landed {
+            let heads = batch_heads(p.body.as_deref().unwrap_or_default());
+            let built_at_head = heads.iter().any(|(n, sha)| {
+                *n == change.pr_number.get() && sha.as_deref() == Some(change.head_sha.as_str())
+            });
+            (p.merged_at.is_some() && built_at_head).then(|| Landed {
                 pr_number: p.number,
                 merged_sha: p.merge_commit_sha.clone().unwrap_or_default(),
-                members,
+                members: heads.into_iter().map(|(n, _)| n).collect(),
             })
         })
     }
@@ -609,11 +614,17 @@ mod tests {
     }
 
     #[test]
-    fn the_batch_marker_lists_every_member() {
+    fn the_batch_marker_lists_every_member_with_its_head() {
+        let body = "intro\n\nfleetd-batch: #12@AbC #13@def #20\n";
+        assert_eq!(super::super::github::batch_members(body), [12, 13, 20]);
         assert_eq!(
-            batch_members("intro\n\nfleetd-batch: #12 #13 #20\n"),
-            [12, 13, 20]
+            batch_heads(body),
+            [
+                (12, Some("abc".into())),
+                (13, Some("def".into())),
+                (20, None)
+            ]
         );
-        assert!(batch_members("no marker").is_empty());
+        assert!(batch_heads("no marker").is_empty());
     }
 }

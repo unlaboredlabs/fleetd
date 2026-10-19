@@ -131,19 +131,32 @@ impl Pull {
     }
 }
 
-/// The machine-readable line in a batch PR's body naming its members, which recovery and the `pr_merged` check read.
+/// The machine-readable line in a batch PR's body naming each member and the head it was built from
+/// (`fleetd-batch: #7@<sha> #8@<sha>`), which recovery and the `pr_merged` check read.
 pub const BATCH_MARKER: &str = "fleetd-batch:";
 
-/// The PR numbers a batch PR's body names on its `fleetd-batch:` line.
-pub fn batch_members(body: &str) -> Vec<i64> {
+/// Each member a batch PR's body names on its `fleetd-batch:` line, with the head sha it was built from (None when
+/// the line names none).
+pub fn batch_heads(body: &str) -> Vec<(i64, Option<String>)> {
     body.lines()
         .find_map(|l| l.trim().strip_prefix(BATCH_MARKER))
         .map(|rest| {
             rest.split_whitespace()
-                .filter_map(|w| w.trim_start_matches('#').parse().ok())
+                .filter_map(|w| {
+                    let (n, sha) = match w.trim_start_matches('#').split_once('@') {
+                        Some((n, sha)) => (n, Some(sha.to_lowercase())),
+                        None => (w.trim_start_matches('#'), None),
+                    };
+                    Some((n.parse().ok()?, sha))
+                })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// The PR numbers a batch PR's body names on its `fleetd-batch:` line.
+pub fn batch_members(body: &str) -> Vec<i64> {
+    batch_heads(body).into_iter().map(|(n, _)| n).collect()
 }
 
 #[derive(Clone, Debug, Deserialize)]

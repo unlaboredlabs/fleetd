@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use super::contract::*;
-use super::github::{GhOut, GhRunner, TRAIN_CONTEXT};
+use super::github::{GhOut, GhRunner, TRAIN_CONTEXT, batch_heads, batch_members};
 use super::host::*;
 use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
@@ -1872,11 +1872,13 @@ async fn batches_three_disjoint_ready_prs_into_one_ci_run_and_one_squash_and_clo
         "{}",
         batch.branch
     );
-    assert!(
-        batch.body.contains("fleetd-batch: #7 #8 #9"),
-        "{}",
-        batch.body
-    );
+    // Each member with the exact head it was built from, which the pr_merged check holds its PR to.
+    let heads: Vec<(i64, Option<String>)> = ["a", "b", "c"]
+        .iter()
+        .zip([7, 8, 9])
+        .map(|(branch, n)| (n, Some(kit.head_of(branch))))
+        .collect();
+    assert_eq!(batch_heads(&batch.body), heads, "{}", batch.body);
     for n in [7, 8, 9] {
         let member = &pulls[&n];
         assert_eq!(member.state, "closed");
@@ -2040,10 +2042,9 @@ async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
 
     assert!(kit.train.step(REPO).await);
     let batch = kit.gh.merges.lock().unwrap()[0].0;
-    assert!(
-        kit.gh.pulls.lock().unwrap()[&batch]
-            .body
-            .contains("fleetd-batch: #7 #11")
+    assert_eq!(
+        batch_members(&kit.gh.pulls.lock().unwrap()[&batch].body),
+        [7, 11]
     );
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
     assert_eq!(state_of(&kit, &d), ChangeState::Merged);
@@ -2176,10 +2177,9 @@ async fn a_member_pushed_to_while_the_batch_is_in_ci_leaves_it_untested_code_nev
 
     assert!(kit.train.step(REPO).await);
     let batch = kit.gh.merges.lock().unwrap()[0].0;
-    assert!(
-        kit.gh.pulls.lock().unwrap()[&batch]
-            .body
-            .contains("fleetd-batch: #7 #9")
+    assert_eq!(
+        batch_members(&kit.gh.pulls.lock().unwrap()[&batch].body),
+        [7, 9]
     );
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
     assert_eq!(state_of(&kit, &c), ChangeState::Merged);

@@ -25,7 +25,8 @@ It takes the first PR in line and adds the ones after it that:
 It squashes them onto the base in order on a branch of its own, `train/batch` under the project's branch prefix
 (`fleetd/train/batch` by default; see `branchPrefix` in [the policy file](config-and-files.md)), and opens one PR for them,
 whose CI runs once. When that PR is green, the train posts `fleetd/train` on it and merges it as one squash. Each
-member PR is then closed with a comment linking the batch, and counts as merged for done-when checks.
+member PR is then closed with a comment linking the batch. It counts as merged for done-when checks only while its
+head is still the one the batch was built from, as the batch PR records.
 
 If the batch is red, the train drops the last member and tries again with the rest. The dropped PR later goes on its
 own, so it's the only one whose CI result blames it. A member that gets a new push, the `hold` label or is closed while

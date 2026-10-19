@@ -177,7 +177,9 @@ export async function trainBatch(lab: Lab) {
     const oneMerged = await Promise.all(oneIds.map((id) => merged(cursor, id)));
     const shas = new Set(oneMerged.map((m) => m.event.data.mergedSha as string));
     check(shas.size === 1, `the three merged as one squash: ${[...shas].join(", ")}`);
-    const batch1 = batchPrs().find((p) => p.state === "MERGED" && (p.body as string).includes(`fleetd-batch: ${one.map((p) => `#${p.number}`).join(" ")}`));
+    // The batch records each member at the head it was built from.
+    const marker = `fleetd-batch: ${one.map((p) => `#${p.number}@${head(p)}`).join(" ")}`;
+    const batch1 = batchPrs().find((p) => p.state === "MERGED" && (p.body as string).includes(marker));
     check(batch1 !== undefined, `a merged batch PR on ${BRANCH_PREFIX}train/batch names #${one.map((p) => p.number).join(", #")}: ${JSON.stringify(batchPrs())}`);
     const runs = ghJson<Body>("api", `repos/${REPO}/actions/runs?head_sha=${batch1!.headRefOid}`).total_count as number;
     check(runs === 1, `one CI run on the batch's head ${batch1!.headRefOid}: ${runs}`);
