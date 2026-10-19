@@ -37,7 +37,9 @@ use fleetd_contracts::steer::SteerTag;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
-use super::runner::claude::{ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, subagents_off_settings_env};
+use super::runner::claude::{
+    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, SESSION_ENV, subagents_off_settings_env,
+};
 use super::runner::claude_setup;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
@@ -170,15 +172,11 @@ impl SessionConfig {
                 dir.to_string_lossy().into_owned(),
             ));
         }
-        env.extend([
-            // claude never updates itself out of the pinned, tested range.
-            ("DISABLE_AUTOUPDATER".to_owned(), "1".to_owned()),
-            // Startup failures come back as result messages the failure classifier reads.
-            (
-                "CLAUDE_CODE_STARTUP_FAILURE_RESULTS".to_owned(),
-                "1".to_owned(),
-            ),
-        ]);
+        env.extend(
+            SESSION_ENV
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
+        );
         env
     }
 }
@@ -225,7 +223,7 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
             let exe = std::env::current_exe()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| "fleetd".into());
-            serde_json::json!({ "fleetd": {
+            serde_json::json!({ crate::cli::agent_mcp::SERVER_NAME: {
                 "type": "stdio",
                 "command": exe,
                 "args": ["agent-mcp", "--role", role],
