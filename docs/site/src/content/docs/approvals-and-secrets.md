@@ -25,7 +25,10 @@ command as a [gated command](/docs/glossary#gated-command).
 1. The item shows the command, the reason and the machine.
 2. Click Approve to run it, or Deny to refuse.
 3. The node runs exactly the stored command, in the project's workspace.
-4. The exit code and output go back to the lead.
+4. The exit code and output go back to the lead, and the item shows them.
+
+If the machine was offline when you approved, the item opens again and says why. Click "Approve again" once it is
+back.
 
 ## Enter a secret {#secrets}
 

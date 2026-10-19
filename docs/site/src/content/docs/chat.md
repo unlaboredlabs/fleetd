@@ -78,8 +78,8 @@ For a project's progress at a glance, see [Status](/docs/status). For where the 
 
 ## Stop everything {#stop}
 
-To stop all of a project's work at once, say "stop" in the chat, or use Stop in the chat header. Every running and
-queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
+To stop all of a project's work at once, say "stop" in the chat. From an MCP client, call `project_stop`. Every running
+and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
 chat: write again to start new work.
 
 ## Secrets and risky commands {#inline}
