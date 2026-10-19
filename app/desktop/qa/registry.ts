@@ -113,8 +113,10 @@ export const screens: readonly Screen[] = [
   {
     id: "time.breakdown",
     route: "#/time",
-    fixtures: ["typical", "long-text", "empty", "hub-unreachable"],
+    fixtures: ["typical", "long-text", "empty"],
   },
+  // With no hub, the breakdown says so in words (time.breakdown.error).
+  { id: "time.breakdown", route: "#/time", fixtures: ["hub-unreachable"], expect: "error" },
   // The harness waits for the id before `open`, so the insights entry waits for the screen root, then opens the tab.
   {
     id: "time",

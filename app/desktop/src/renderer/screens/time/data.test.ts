@@ -48,12 +48,14 @@ describe("span pages", () => {
   });
 });
 
+const ev = { seq: 1, at: "2026-10-18T10:00:00.000Z", summary: "an event" };
+
 describe("events", () => {
   it("refetch an order only on the events about it", () => {
-    expect(eventConcerns({ seq: 1, type: "task.started", data: { workstreamId: "W8" } }, "W8")).toBe(true);
-    expect(eventConcerns({ seq: 1, type: "lead.woken", data: { workstreamIds: ["W3", "W8"] } }, "W8")).toBe(true);
-    expect(eventConcerns({ seq: 1, type: "task.started", data: { workstreamId: "W3" } }, "W8")).toBe(false);
-    expect(eventConcerns({ seq: 1, type: "machine.up", data: { workstreamId: "W8" } }, "W8")).toBe(false);
+    expect(eventConcerns({ ...ev, type: "task.started", data: { workstreamId: "W8" } }, "W8")).toBe(true);
+    expect(eventConcerns({ ...ev, type: "lead.woken", data: { workstreamIds: ["W3", "W8"] } }, "W8")).toBe(true);
+    expect(eventConcerns({ ...ev, type: "task.started", data: { workstreamId: "W3" } }, "W8")).toBe(false);
+    expect(eventConcerns({ ...ev, type: "machine.up", data: { workstreamId: "W8" } }, "W8")).toBe(false);
   });
 
   it("narrow linked spans to one label or check", () => {
