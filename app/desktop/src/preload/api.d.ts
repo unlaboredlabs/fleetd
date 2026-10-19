@@ -1,4 +1,5 @@
 import type { NotifyRequest, OpenTarget } from "../shared/app";
+import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../shared/hub";
 import type { LiveScope } from "../shared/ipc";
 
@@ -31,6 +32,8 @@ export interface FleetdApi {
      */
     onOpen(listener: (target: OpenTarget) => void): () => void;
     notify(request: NotifyRequest): Promise<void>;
+    /** The menu commands enabled now; main greys out the other menu items. */
+    setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
   };
 }
 

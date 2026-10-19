@@ -1,14 +1,12 @@
 import { app, BrowserWindow, Menu, shell, type BaseWindow, type MenuItemConstructorOptions } from "electron";
 import { IPC } from "../shared/channels";
-import { accelerator, isShortcutId, type ShortcutId } from "../shared/shortcuts";
+import type { MenuCommand } from "../shared/menu";
+import { accelerator, isShortcutId } from "../shared/shortcuts";
 
 const REPO_URL = "https://github.com/unlaboredlabs/fleetd";
 const DOCS_URL = "https://fleetd.sh/docs";
 
-/** Palette commands (renderer/screens/palette/defaults.ts) that have a menu item but no key. */
-type MenuOnlyId = "go:projects.add";
-
-const send = (id: ShortcutId | MenuOnlyId, focused: BaseWindow | undefined): void => {
+const send = (id: MenuCommand, focused: BaseWindow | undefined): void => {
   const win = (focused instanceof BrowserWindow ? focused : null) ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   if (win === undefined || win.isDestroyed()) return;
   if (!win.isVisible()) win.show();
@@ -20,7 +18,9 @@ const send = (id: ShortcutId | MenuOnlyId, focused: BaseWindow | undefined): voi
  * click here only covers the mouse. Linux doesn't register the accelerator at all (it would fire twice there);
  * macOS needs it registered to show it, and hands a key the page didn't take to the menu, which ignores it.
  */
-const item = (id: ShortcutId | MenuOnlyId, label: string): MenuItemConstructorOptions => ({
+const item = (id: MenuCommand, label: string): MenuItemConstructorOptions => ({
+  // The id is the command id, so the renderer's enabled list (menuState.ts) finds the item.
+  id,
   label,
   ...(isShortcutId(id) ? { accelerator: accelerator(id), registerAccelerator: process.platform === "darwin" } : {}),
   click: (_item, focused, event) => {

@@ -2,6 +2,7 @@
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
 import { NotifyRequest } from "./app";
+import { MenuState } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
 /** MCP tool names: lowercase words joined by underscores. */
@@ -42,6 +43,7 @@ export const REQUESTS = {
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),
+  [IPC.appMenuState]: z.tuple([MenuState]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;
 
 export type RequestArgs<C extends InvokeChannel> = z.infer<(typeof REQUESTS)[C]>;

@@ -1,17 +1,41 @@
-import { app, type BrowserWindow } from "electron";
+// Brings the window forward on something to open (a clicked notification, a fleetd:// link). No electron import,
+// so it is unit-tested with a fake window; index.ts hands it the real ones.
 import { parseDeepLink, type OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
 
-/**
- * Brings the window forward on something to open (a clicked notification, a fleetd:// link). A target that
- * arrives before the page listens (the link that launched the app) waits for it.
- */
+/** The parts of a BrowserWindow the opener uses. */
+export interface OpenerWindow {
+  isDestroyed(): boolean;
+  isMinimized(): boolean;
+  restore(): void;
+  show(): void;
+  focus(): void;
+  once(event: "closed", listener: () => void): unknown;
+  readonly webContents: {
+    send(channel: string, ...args: Array<unknown>): void;
+    on(event: "did-start-navigation", listener: (details: { isMainFrame: boolean; isSameDocument: boolean }) => void): unknown;
+  };
+}
+
+export interface OpenerHooks {
+  /** Opens the app window (it attaches itself). Absent until the app is ready to make windows. */
+  create?: () => void;
+  /** Activates the app (macOS: a notification click or a link doesn't on its own). */
+  activateApp?: () => void;
+}
+
 export class Opener {
-  #window: BrowserWindow | undefined;
+  #window: OpenerWindow | undefined;
   #ready = false;
   #held: Array<OpenTarget> = [];
+  #hooks: OpenerHooks = {};
 
-  attach(win: BrowserWindow): void {
+  /** Called once the app is ready to make windows. */
+  setHooks(hooks: OpenerHooks): void {
+    this.#hooks = hooks;
+  }
+
+  attach(win: OpenerWindow): void {
     this.#window = win;
     this.#ready = false;
     // A reload or a crashed renderer starts a new page, which must say it is ready again.
@@ -19,7 +43,10 @@ export class Opener {
       if (details.isMainFrame && !details.isSameDocument) this.#ready = false;
     });
     win.once("closed", () => {
-      if (this.#window === win) this.#window = undefined;
+      if (this.#window === win) {
+        this.#window = undefined;
+        this.#ready = false;
+      }
     });
   }
 
@@ -32,23 +59,26 @@ export class Opener {
   }
 
   open(target: OpenTarget): void {
-    const win = this.#window;
-    if (win === undefined || win.isDestroyed() || !this.#ready) {
-      // Only the latest of each kind matters: a second pairing link replaces the first.
+    // On macOS the window may be closed while the app runs; a link or a notification click opens a new one.
+    const win = this.focus();
+    if (win === undefined || !this.#ready) {
+      // Held until the page listens. Only the latest of each kind matters: a second pairing link replaces the first.
       this.#held = [...this.#held.filter((t) => t.kind !== target.kind), target];
       return;
     }
-    this.focus();
     win.webContents.send(IPC.appOpen, target);
   }
 
-  focus(): void {
+  /** Brings the window forward, opening one when there is none (and the app can). */
+  focus(): OpenerWindow | undefined {
+    if (this.#window === undefined || this.#window.isDestroyed()) this.#hooks.create?.();
     const win = this.#window;
-    if (win === undefined || win.isDestroyed()) return;
+    if (win === undefined || win.isDestroyed()) return undefined;
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
-    if (process.platform === "darwin") app.focus({ steal: true });
+    this.#hooks.activateApp?.();
+    return win;
   }
 
   /** A fleetd:// link; anything that isn't one we know is ignored. */
@@ -60,25 +90,3 @@ export class Opener {
 
 /** The fleetd:// links in a command line (Linux passes them to `Exec=fleetd %u`, and to a second instance). */
 export const linksIn = (argv: ReadonlyArray<string>): Array<string> => argv.filter((arg) => arg.startsWith("fleetd://"));
-
-/**
- * Registers fleetd:// and routes links to the opener. Call before `ready`: macOS sends a launch link as an
- * `open-url` event right after `will-finish-launching`. Returns false when another instance already runs (this
- * one handed its links over and should quit).
- */
-export const listenForLinks = (opener: Opener): boolean => {
-  if (!app.requestSingleInstanceLock()) return false;
-  app.on("second-instance", (_event, argv) => {
-    // Launching the app again while it runs brings this window forward, on the link if it came with one.
-    opener.focus();
-    for (const link of linksIn(argv)) opener.openLink(link);
-  });
-  app.on("open-url", (event, url) => {
-    event.preventDefault();
-    opener.openLink(url);
-  });
-  for (const link of linksIn(process.argv)) opener.openLink(link);
-  // In development the scheme would point at the bare Electron binary; only a packaged app registers it.
-  if (app.isPackaged) app.setAsDefaultProtocolClient("fleetd");
-  return true;
-};

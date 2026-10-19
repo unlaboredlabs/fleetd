@@ -57,6 +57,7 @@ const api: FleetdApi = {
       return () => openListeners.delete(listener);
     },
     notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
+    setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
   },
 };
 

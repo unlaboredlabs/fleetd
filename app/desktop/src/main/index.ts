@@ -8,7 +8,8 @@ import { webSocketTransport } from "./hub/transport";
 import { registerIpc } from "./ipc";
 import { installMenu } from "./menu";
 import { Notifier } from "./notify";
-import { listenForLinks, Opener } from "./opener";
+import { listenForLinks } from "./links";
+import { Opener } from "./opener";
 import { harden, lockSession } from "./security";
 import { restorePlacement, trackPlacement } from "./windowState";
 
@@ -97,6 +98,12 @@ void app.whenReady().then(() => {
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
   app.on("will-quit", () => hub.stop());
+  opener.setHooks({
+    create: () => void createWindow(),
+    activateApp: () => {
+      if (process.platform === "darwin") app.focus({ steal: true });
+    },
+  });
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

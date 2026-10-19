@@ -2,7 +2,10 @@
 // that shows the sidebar's jump numbers.
 import { useEffect, useState } from "react";
 import type { OpenTarget } from "../../../shared/app";
-import { closeOverlay, runCommand } from "../palette";
+import { MENU_COMMANDS } from "../../../shared/menu";
+import { closeOverlay, commandFor, runCommand } from "../palette";
+// Not in the palette's public surface yet; the menu needs to hear when commands come and go.
+import { subscribeRegistry } from "../palette/registry";
 import { onHubEvent } from "./hubFeed";
 import { currentRoute, navigate } from "./navigation";
 import { attentionEvent, FALLBACK_POLICY, Notifier, policyFrom, policyStale, quietAt, type Policy } from "./notifier";
@@ -39,6 +42,38 @@ export const useMainProcess = (): void => {
     return () => {
       offMenu();
       offOpen();
+    };
+  }, []);
+};
+
+/**
+ * Keeps the app menu's items enabled only where their command does something here (no Stop Order on the board).
+ * Commands come and go as screens mount, and their `enabled` reads the route, so both trigger a (debounced) report.
+ */
+export const useMenuState = (): void => {
+  useEffect(() => {
+    let last = "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const report = () => {
+      const enabled = MENU_COMMANDS.filter((id) => commandFor(id) !== undefined);
+      const key = enabled.join(" ");
+      if (key === last) return;
+      last = key;
+      void window.fleetd.app.setMenuState(enabled);
+    };
+    const later = () => {
+      clearTimeout(timer);
+      timer = setTimeout(report, 50);
+    };
+    report();
+    const offRegistry = subscribeRegistry(later);
+    window.addEventListener("hashchange", later);
+    window.addEventListener("focus", later);
+    return () => {
+      clearTimeout(timer);
+      offRegistry();
+      window.removeEventListener("hashchange", later);
+      window.removeEventListener("focus", later);
     };
   }, []);
 };
@@ -88,12 +123,24 @@ export const useNotifications = (live: boolean): void => {
   }, [live, notifier]);
 };
 
-/** Esc closes the inbox, else leaves an order for the board. Menus, sheets and the palette take it first. */
+/** A field Esc should leave rather than act through (the composer, a search box). */
+const editable = (target: EventTarget | null): target is HTMLElement =>
+  target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select"));
+
+/**
+ * Esc closes the inbox, else leaves an order for the board. Menus, sheets and the palette take it first, and in a
+ * text field (the composer) it only leaves the field, so a half-typed steer never sends you off the order.
+ */
 export const useEscape = (route: Route): void => {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null) return;
+      if (editable(event.target)) {
+        event.target.blur();
+        event.preventDefault();
+        return;
+      }
       if (route.inbox !== null) navigate({ ...route, inbox: null }, { replace: true });
       else if (route.screen.id === "order") navigate({ screen: BOARD, inbox: null });
       else return;

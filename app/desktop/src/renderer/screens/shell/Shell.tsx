@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
-import { useEscape, useMainProcess, useModHeld, useNotifications } from "./effects";
+import { useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
 import { EMPTY_SHELL_DATA, Seen, sidebarOrders, type ShellData } from "./model";
@@ -31,6 +31,7 @@ export function Shell() {
   const modHeld = useModHeld();
 
   useMainProcess();
+  useMenuState();
   useNotifications(hub?.phase === "live");
   useEscape(route);
 

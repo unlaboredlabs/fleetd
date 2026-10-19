@@ -1,7 +1,8 @@
-import { clipboard, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { clipboard, ipcMain, Menu, type IpcMainInvokeEvent } from "electron";
 import { IPC, type InvokeChannel } from "../shared/channels";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
 import type { HubService } from "./hub/service";
+import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { rendererOrigin } from "./security";
@@ -38,4 +39,5 @@ export const registerIpc = (hub: HubService, shell: { opener: Opener; notifier: 
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
   handle(IPC.appReady, () => shell.opener.ready());
   handle(IPC.appNotify, (_event, request) => shell.notifier.show(request));
+  handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
 };
