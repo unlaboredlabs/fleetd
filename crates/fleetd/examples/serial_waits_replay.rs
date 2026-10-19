@@ -3,13 +3,14 @@
 //! a read-only connection into a private scratch copy, so the files given are never written. Never point it at a
 //! running hub's database.
 //!
-//! cargo run -p fleetd --example serial_waits_replay -- [--json] [--cap 40] fleet.sqlite [lab.sqlite ...]
+//! cargo run -p fleetd --example serial_waits_replay -- [--json] [--cap 40] [--batch-max 4] fleet.sqlite [lab.sqlite ...]
 //!
 //! The period is the whole history each database still holds spans for, at fleet scope. Slot use is measured from
 //! the lead and task runs (a slot is held while its session runs).
 use std::path::Path;
 
 use fleetd::hub::store::HubDb;
+use fleetd::hub::time::model::Batching;
 use fleetd::hub::time::rules;
 use fleetd::hub::time::tools::read_rule_input;
 use fleetd_contracts::time::{Insight, InsightRule, SpanKind, TimeScope};
@@ -38,7 +39,7 @@ fn numbers(i: &Insight) -> Value {
         .into()
 }
 
-fn replay(path: &Path, cap: i64) -> anyhow::Result<Value> {
+fn replay(path: &Path, cap: i64, batch_max: i64) -> anyhow::Result<Value> {
     let src = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let scratch = tempfile::tempdir()?;
     src.execute(
@@ -53,7 +54,11 @@ fn replay(path: &Path, cap: i64) -> anyhow::Result<Value> {
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        let input = read_rule_input(c, &TimeScope::Fleet, since, until, cap)?;
+        let batching = Batching {
+            max: batch_max,
+            off: Default::default(),
+        };
+        let input = read_rule_input(c, &TimeScope::Fleet, since, until, cap, &batching)?;
         let found = rules::evaluate(&input);
         let runs: Vec<_> = input
             .rows
@@ -104,18 +109,19 @@ fn replay(path: &Path, cap: i64) -> anyhow::Result<Value> {
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1).peekable();
-    let (mut as_json, mut cap, mut paths) = (false, 40, Vec::new());
+    let (mut as_json, mut cap, mut batch_max, mut paths) = (false, 40, 4, Vec::new());
     while let Some(a) = args.next() {
         match a.as_str() {
             "--json" => as_json = true,
             "--cap" => cap = args.next().and_then(|v| v.parse().ok()).unwrap_or(40),
+            "--batch-max" => batch_max = args.next().and_then(|v| v.parse().ok()).unwrap_or(4),
             _ => paths.push(a),
         }
     }
     anyhow::ensure!(!paths.is_empty(), "give the path of a hub database copy");
     let reports: Vec<Value> = paths
         .iter()
-        .map(|p| replay(Path::new(p), cap))
+        .map(|p| replay(Path::new(p), cap, batch_max))
         .collect::<anyhow::Result<_>>()?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&reports)?);

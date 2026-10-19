@@ -1,13 +1,14 @@
 //! The serial-wait rules: work that waited while capacity existed. Each finding names the fix. Every number is
 //! measured from recorded spans and the hub's own rows (when a plan item became ready, when its task was spawned);
 //! nothing here estimates. Whether a slot was free is read fleet-wide (`slots.full` spells and every `queue.slot`
-//! wait), whatever the scope.
+//! wait), whatever the scope. Interval lists are kept sorted and merged, so each rule is linear in what it reads
+//! after one sort.
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use fleetd_contracts::time::{InsightRule, SpanKind, TimeScope};
 use rusqlite::{Connection, params};
 
-use super::model::{LeadRun, Ready, Row, RuleInput, Serial};
+use super::model::{Batching, LeadRun, Ready, Row, RuleInput, Serial};
 use super::rules::{Candidate, fmt_dur, short, spans, total};
 use crate::hub::plan::store::{self as plan_store, ItemRow};
 use crate::hub::store::StoreError;
@@ -26,7 +27,7 @@ const DEFAULT_AREA: &str = "all";
 
 type Iv = (i64, i64);
 
-/// Sorted, non-overlapping, non-empty.
+/// Sorted, non-overlapping, non-empty. Touching intervals join.
 fn merge(mut v: Vec<Iv>) -> Vec<Iv> {
     v.retain(|(s, e)| e > s);
     v.sort_unstable();
@@ -40,22 +41,25 @@ fn merge(mut v: Vec<Iv>) -> Vec<Iv> {
     out
 }
 
-/// `a` minus `b`, both merged.
+/// `a` minus `b`, both merged, in one pass over each.
 fn minus(a: &[Iv], b: &[Iv]) -> Vec<Iv> {
     let mut out = Vec::new();
+    let mut j = 0;
     for &(s, e) in a {
+        while j < b.len() && b[j].1 <= s {
+            j += 1;
+        }
         let mut cur = s;
-        for &(bs, be) in b {
-            if be <= cur || bs >= e {
-                continue;
+        let mut k = j;
+        while k < b.len() && b[k].0 < e {
+            if b[k].0 > cur {
+                out.push((cur, b[k].0));
             }
-            if bs > cur {
-                out.push((cur, bs));
-            }
-            cur = cur.max(be);
-            if cur >= e {
+            cur = cur.max(b[k].1);
+            if b[k].1 > e {
                 break;
             }
+            k += 1;
         }
         if cur < e {
             out.push((cur, e));
@@ -64,21 +68,17 @@ fn minus(a: &[Iv], b: &[Iv]) -> Vec<Iv> {
     out
 }
 
-fn intersect(a: &[Iv], b: &[Iv]) -> Vec<Iv> {
-    let mut out = Vec::new();
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        let (s, e) = (a[i].0.max(b[j].0), a[i].1.min(b[j].1));
-        if e > s {
-            out.push((s, e));
-        }
-        if a[i].1 < b[j].1 {
-            i += 1;
-        } else {
-            j += 1;
-        }
-    }
-    out
+/// The parts of merged `v` within `[s, e)`.
+fn clip(v: &[Iv], s: i64, e: i64) -> impl Iterator<Item = Iv> + '_ {
+    let from = v.partition_point(|iv| iv.1 <= s);
+    v[from..]
+        .iter()
+        .take_while(move |iv| iv.0 < e)
+        .map(move |&(a, b)| (a.max(s), b.min(e)))
+}
+
+fn clip_len(v: &[Iv], s: i64, e: i64) -> i64 {
+    clip(v, s, e).map(|(a, b)| b - a).sum()
 }
 
 fn len(v: &[Iv]) -> i64 {
@@ -91,6 +91,10 @@ fn project_of(r: &Row) -> String {
         r.machine_id.as_deref().unwrap_or("?"),
         r.project_id.as_deref().unwrap_or("?")
     )
+}
+
+fn machine_of(project: &str) -> &str {
+    project.split_once('/').map_or(project, |(m, _)| m)
 }
 
 fn title<'a>(input: &'a RuleInput, project: &'a str) -> &'a str {
@@ -109,14 +113,20 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-/// No slot free for new work: every slot held, or something already queued for one.
-fn no_slot(input: &RuleInput) -> Vec<Iv> {
+/// When `project`'s work could not have started anyway: no slot free (every slot held, or something already
+/// queued for one), or its machine parked on a usage limit or offline. Those waits are other findings'.
+fn blocked(input: &RuleInput, project: &str) -> Vec<Iv> {
+    let s = &input.serial;
     merge(
-        input
-            .serial
-            .slots_full
+        s.slots_full
             .iter()
-            .chain(&input.serial.slot_queued)
+            .chain(&s.slot_queued)
+            .chain(
+                s.machine_blocked
+                    .get(machine_of(project))
+                    .into_iter()
+                    .flatten(),
+            )
             .copied()
             .collect(),
     )
@@ -127,13 +137,62 @@ fn repo_of(lane: &str) -> &str {
     lane.split('#').next().unwrap_or(lane)
 }
 
-/// Tasks queued for a slot while the fleet had free ones (a project share or the lead band held them), and PRs
-/// that waited in the train's line while another PR's cycle (rebase, CI, merge) ran.
-pub(super) fn queue_wait(input: &RuleInput, out: &mut Vec<Candidate>) {
+/// One train run of a repo: the merged span of its members' rebase, CI and merge (a batch's members overlap).
+struct Run<'a> {
+    start: i64,
+    end: i64,
+    lanes: BTreeSet<&'a str>,
+}
+
+fn train_runs<'a>(rows: &[&'a Row]) -> Vec<Run<'a>> {
+    // A PR's own rebase, CI and merge follow one another: one cycle per lane first.
+    let mut by_lane: HashMap<&str, Vec<Iv>> = HashMap::new();
+    for r in rows {
+        by_lane
+            .entry(r.lane.as_str())
+            .or_default()
+            .push((r.start_ms, r.end_ms));
+    }
+    let mut cycles: Vec<(i64, i64, &str)> = by_lane
+        .into_iter()
+        .flat_map(|(lane, v)| merge(v).into_iter().map(move |(s, e)| (s, e, lane)))
+        .collect();
+    cycles.sort_unstable();
+    let mut out: Vec<Run> = Vec::new();
+    for (s, e, lane) in cycles {
+        match out.last_mut() {
+            // Cycles of different PRs that overlap are one batch; back-to-back ones stay two runs.
+            Some(run) if s < run.end => {
+                run.end = run.end.max(e);
+                run.lanes.insert(lane);
+            }
+            _ => out.push(Run {
+                start: s,
+                end: e,
+                lanes: BTreeSet::from([lane]),
+            }),
+        }
+    }
+    out
+}
+
+/// Why waiting out a run was the train's limit and not the PR's own: only then is there a fix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum TrainLimit {
+    /// GitHub refused batch merges for the repo; it goes one at a time until the hub restarts.
+    Off,
+    /// `FLEETD_TRAIN_BATCH_MAX=1`.
+    One,
+    /// The run already held `FLEETD_TRAIN_BATCH_MAX` PRs.
+    Full,
+}
+
+/// Tasks queued for a slot while the fleet had free ones (a project share or the lead band held them).
+fn slot_waits(input: &RuleInput, out: &mut Vec<Candidate>) {
     let full = merge(input.serial.slots_full.clone());
     let mut by_project: BTreeMap<String, Vec<(&Row, i64)>> = BTreeMap::new();
     for r in input.rows.iter().filter(|r| r.kind == SpanKind::QueueSlot) {
-        let free = len(&minus(&[(r.start_ms, r.end_ms)], &full));
+        let free = (r.end_ms - r.start_ms) - clip_len(&full, r.start_ms, r.end_ms);
         if free > 0 {
             by_project.entry(project_of(r)).or_default().push((r, free));
         }
@@ -168,65 +227,112 @@ pub(super) fn queue_wait(input: &RuleInput, out: &mut Vec<Candidate>) {
             weight: sum,
         });
     }
+}
 
-    let mut cycles: BTreeMap<&str, Vec<&Row>> = BTreeMap::new();
-    for r in input.rows.iter().filter(|r| {
-        matches!(
-            r.kind,
-            SpanKind::ChangeRebase | SpanKind::ChangeCi | SpanKind::ChangeMerge
-        )
-    }) {
-        cycles.entry(repo_of(&r.lane)).or_default().push(r);
+/// PRs that were ready while a train run of other PRs started and went through it, when the train's batching is
+/// what kept them out: the run was already at the batch limit, the limit is 1, or batching is off for the repo. A
+/// PR left out for its own reasons (files that overlap, red on its own head, dropped by a bisect) waited for a
+/// reason batching can't remove, so it isn't counted. The limit read is the train's now.
+fn train_waits(input: &RuleInput, out: &mut Vec<Candidate>) {
+    let batching = &input.serial.batching;
+    if batching.max <= 0 {
+        return;
     }
-    // repo -> (the PR's wait, how long it overlapped other PRs' cycles, how many PRs those were).
-    let mut by_repo: BTreeMap<&str, Vec<(&Row, i64, usize)>> = BTreeMap::new();
-    for q in input
-        .rows
-        .iter()
-        .filter(|r| r.kind == SpanKind::ChangeQueue)
-    {
-        let repo = repo_of(&q.lane);
-        let others: Vec<&Row> = cycles
-            .get(repo)
-            .into_iter()
-            .flatten()
-            .filter(|c| c.lane != q.lane && c.start_ms < q.end_ms && c.end_ms > q.start_ms)
-            .copied()
-            .collect();
-        let busy = merge(others.iter().map(|c| (c.start_ms, c.end_ms)).collect());
-        let waited = len(&intersect(&[(q.start_ms, q.end_ms)], &busy));
-        if waited > 0 {
-            let ahead: BTreeSet<&str> = others.iter().map(|c| c.lane.as_str()).collect();
-            by_repo
-                .entry(repo)
-                .or_default()
-                .push((q, waited, ahead.len()));
+    let mut cycles: BTreeMap<&str, Vec<&Row>> = BTreeMap::new();
+    let mut queued: BTreeMap<&str, Vec<&Row>> = BTreeMap::new();
+    for r in &input.rows {
+        match r.kind {
+            SpanKind::ChangeRebase | SpanKind::ChangeCi | SpanKind::ChangeMerge => {
+                cycles.entry(repo_of(&r.lane)).or_default().push(r)
+            }
+            SpanKind::ChangeQueue => queued.entry(repo_of(&r.lane)).or_default().push(r),
+            _ => {}
         }
     }
-    for (repo, waits) in by_repo {
-        let sum: i64 = waits.iter().map(|(_, ms, _)| ms).sum();
-        let prs: BTreeSet<&str> = waits.iter().map(|(q, _, _)| q.lane.as_str()).collect();
-        let cycles: usize = waits.iter().map(|(_, _, ahead)| ahead).sum();
-        out.push(Candidate {
-            rule: InsightRule::QueueWait,
-            key: format!("train:{repo}"),
-            fired: sum >= QUEUE_WAIT_MIN,
-            message: format!(
-                "{} in the `{}` train waited out {} of other PRs ({}): batch disjoint green PRs so they merge in one CI run",
-                plural(prs.len(), "PR", "PRs"),
-                short(repo),
-                plural(cycles, "train cycle", "train cycles"),
-                fmt_dur(sum)
-            ),
-            numbers: vec![
-                ("prs", prs.len() as i64),
-                ("cycles", cycles as i64),
-                ("total_ms", sum),
-            ],
-            spans: spans(waits.iter().map(|(q, _, _)| *q)),
-            weight: sum,
-        });
+    for (repo, waits) in queued {
+        let runs = train_runs(cycles.get(repo).map_or(&[][..], Vec::as_slice));
+        let off = batching
+            .off
+            .iter()
+            .find(|(r, _)| r.eq_ignore_ascii_case(repo))
+            .map(|(_, why)| why.as_str());
+        // limit -> (waits, runs waited out by index, ms).
+        let mut by_limit: BTreeMap<TrainLimit, (Vec<&Row>, BTreeSet<usize>, i64)> = BTreeMap::new();
+        for q in waits {
+            // A run that started as the PR turned ready could not have taken it.
+            let first = runs.partition_point(|r| r.start <= q.start_ms);
+            for (i, run) in runs
+                .iter()
+                .enumerate()
+                .skip(first)
+                .take_while(|(_, r)| r.start < q.end_ms)
+            {
+                if run.lanes.contains(q.lane.as_str()) {
+                    continue;
+                }
+                let limit = if off.is_some() {
+                    TrainLimit::Off
+                } else if batching.max <= 1 {
+                    TrainLimit::One
+                } else if run.lanes.len() as i64 >= batching.max {
+                    TrainLimit::Full
+                } else {
+                    continue;
+                };
+                let e = by_limit.entry(limit).or_default();
+                e.0.push(q);
+                e.1.insert(i);
+                e.2 += run.end.min(q.end_ms) - run.start;
+            }
+        }
+        for (limit, (rows, waited_out, sum)) in by_limit {
+            let prs: BTreeSet<&str> = rows.iter().map(|q| q.lane.as_str()).collect();
+            let (cause, fix) = match limit {
+                TrainLimit::Off => (
+                    format!(
+                        "of one PR each, with batching off for this repo ({})",
+                        short(off.unwrap_or(""))
+                    ),
+                    "fix what GitHub refused, then restart the hub so the train batches again"
+                        .to_owned(),
+                ),
+                TrainLimit::One => (
+                    "of one PR each, with FLEETD_TRAIN_BATCH_MAX=1".to_owned(),
+                    "raise FLEETD_TRAIN_BATCH_MAX so disjoint green PRs share a CI run".to_owned(),
+                ),
+                TrainLimit::Full => (
+                    format!("already holding the batch limit of {} PRs", batching.max),
+                    format!("raise FLEETD_TRAIN_BATCH_MAX (now {})", batching.max),
+                ),
+            };
+            out.push(Candidate {
+                rule: InsightRule::QueueWait,
+                key: format!("train:{repo}:{limit:?}"),
+                fired: sum >= QUEUE_WAIT_MIN,
+                message: format!(
+                    "{} in the `{}` train waited {} through {} {cause}: {fix}",
+                    plural(prs.len(), "ready PR", "ready PRs"),
+                    short(repo),
+                    fmt_dur(sum),
+                    plural(waited_out.len(), "CI run", "CI runs"),
+                ),
+                numbers: vec![
+                    ("prs", prs.len() as i64),
+                    ("runs", waited_out.len() as i64),
+                    ("batch_max", batching.max),
+                    ("total_ms", sum),
+                ],
+                spans: spans(rows.iter().copied()),
+                weight: sum,
+            });
+        }
     }
+}
+
+/// Work that waited in a fleetd queue although there was room: a slot, or a place in a train run.
+pub(super) fn queue_wait(input: &RuleInput, out: &mut Vec<Candidate>) {
+    slot_waits(input, out);
+    train_waits(input, out);
 }
 
 /// "lease: docs held by T1, hub held by T2" -> [("docs", "T1"), ("hub", "T2")].
@@ -340,53 +446,46 @@ fn ready_by_project(input: &RuleInput) -> BTreeMap<&str, Vec<&Ready>> {
     out
 }
 
-fn lead_busy(input: &RuleInput, project: &str) -> Vec<Iv> {
-    merge(
-        input
-            .serial
-            .lead_runs
-            .iter()
-            .filter(|r| r.project == project)
-            .map(|r| (r.start_ms, r.end_ms))
-            .collect(),
-    )
+/// Each project's lead runs, by when they end.
+fn lead_runs_by_project(input: &RuleInput) -> HashMap<&str, Vec<&LeadRun>> {
+    let mut out: HashMap<&str, Vec<&LeadRun>> = HashMap::new();
+    for r in &input.serial.lead_runs {
+        out.entry(r.project.as_str()).or_default().push(r);
+    }
+    for runs in out.values_mut() {
+        runs.sort_by_key(|r| (r.end_ms, r.span_id));
+    }
+    out
 }
 
-/// The lead runs that ended last before each stretch starts, or ran during it: the turns that left ready work.
-fn runs_before(input: &RuleInput, project: &str, stretches: &[Iv]) -> Vec<(i64, i64)> {
-    let runs: Vec<&LeadRun> = input
-        .serial
-        .lead_runs
-        .iter()
-        .filter(|r| r.project == project)
-        .collect();
+/// The lead runs that ended last before each stretch, and those during it: the turns that left ready work. A
+/// lead's runs follow one another, so by their end they are also by their start.
+fn runs_before(runs: &[&LeadRun], stretches: &[Iv]) -> Vec<(i64, i64)> {
     let mut out = BTreeSet::new();
     for &(s, e) in stretches {
-        if let Some(r) = runs
-            .iter()
-            .filter(|r| r.end_ms <= s)
-            .max_by_key(|r| (r.end_ms, r.span_id))
-        {
+        let i = runs.partition_point(|r| r.end_ms <= s);
+        if let Some(r) = i.checked_sub(1).map(|i| runs[i]) {
             out.insert((r.start_ms, r.span_id));
         }
-        for r in runs.iter().filter(|r| r.start_ms < e && r.end_ms > s) {
+        for r in runs[i..].iter().take_while(|r| r.start_ms < e) {
             out.insert((r.start_ms, r.span_id));
         }
     }
     out.into_iter().collect()
 }
 
-/// A project's lead was not running while one of its orders had a plan item ready to start and a slot was free.
-/// A lead with no runs in the period is left out: its node sent no spans (an older fleetd), so idle is not known.
+/// A project's lead was not running while one of its orders had a plan item ready to start and its work could
+/// have started (a slot free, its machine neither parked on usage nor offline). A lead with no runs in the period is
+/// left out: its node sent no spans (an older fleetd), so idle is not known.
 pub(super) fn idle_lead(input: &RuleInput, out: &mut Vec<Candidate>) {
-    let no_slot = no_slot(input);
+    let lead = lead_runs_by_project(input);
     for (project, items) in ready_by_project(input) {
-        let busy = lead_busy(input, project);
-        if busy.is_empty() {
+        let Some(runs) = lead.get(project) else {
             continue;
-        }
+        };
+        let busy = merge(runs.iter().map(|r| (r.start_ms, r.end_ms)).collect());
         let ready = merge(items.iter().map(|r| (r.from_ms, r.to_ms)).collect());
-        let idle: Vec<Iv> = minus(&minus(&ready, &busy), &no_slot)
+        let idle: Vec<Iv> = minus(&minus(&ready, &busy), &blocked(input, project))
             .into_iter()
             .filter(|(s, e)| e - s >= IDLE_STRETCH_MIN)
             .collect();
@@ -398,7 +497,7 @@ pub(super) fn idle_lead(input: &RuleInput, out: &mut Vec<Candidate>) {
         let mut per_item: BTreeMap<(&str, &str), i64> = BTreeMap::new();
         for r in &items {
             *per_item.entry((&r.item_id, &r.title)).or_default() +=
-                len(&intersect(&[(r.from_ms, r.to_ms)], &idle));
+                clip_len(&idle, r.from_ms, r.to_ms);
         }
         let mut ranked: Vec<((&str, &str), i64)> =
             per_item.into_iter().filter(|(_, ms)| *ms > 0).collect();
@@ -423,18 +522,18 @@ pub(super) fn idle_lead(input: &RuleInput, out: &mut Vec<Candidate>) {
                 ("items", ranked.len() as i64),
                 ("stretches", idle.len() as i64),
             ],
-            spans: runs_before(input, project, &idle),
+            spans: runs_before(runs, &idle),
             weight: sum,
         });
     }
 }
 
-/// The stretches where at least two items were ready at once, and the most ready at once.
-fn side_by_side(items: &[&Ready]) -> (Vec<Iv>, i64) {
+/// The stretches where at least two of `items` were ready at once, and the most ready at once.
+fn side_by_side(items: impl Iterator<Item = Iv>) -> (Vec<Iv>, i64) {
     let mut edges: Vec<(i64, i64)> = Vec::new();
-    for r in items.iter().filter(|r| r.to_ms > r.from_ms) {
-        edges.push((r.from_ms, 1));
-        edges.push((r.to_ms, -1));
+    for (s, e) in items.filter(|(s, e)| e > s) {
+        edges.push((s, 1));
+        edges.push((e, -1));
     }
     // Ends before starts at the same instant: back-to-back items are not side by side.
     edges.sort_unstable();
@@ -475,33 +574,26 @@ fn peak_running(input: &RuleInput) -> i64 {
     peak
 }
 
-/// Two or more ready plan items of a project waited at the same time while slots were free: work that could
-/// have run side by side ran one after another.
+/// Two or more ready plan items of a project waited at the same time while their work could have started: work
+/// that could have run side by side ran one after another.
 pub(super) fn slots_underused(input: &RuleInput, out: &mut Vec<Candidate>) {
-    let no_slot = no_slot(input);
     let running = peak_running(input);
+    let lead = lead_runs_by_project(input);
     for (project, items) in ready_by_project(input) {
-        let (both, _) = side_by_side(&items);
-        let free = minus(&both, &no_slot);
+        let (both, _) = side_by_side(items.iter().map(|r| (r.from_ms, r.to_ms)));
+        let free = minus(&both, &blocked(input, project));
         let sum = len(&free);
         if sum == 0 {
             continue;
         }
-        let in_free: Vec<Ready> = items
+        let (_, peak) = side_by_side(
+            items
+                .iter()
+                .flat_map(|r| clip(&free, r.from_ms, r.to_ms).collect::<Vec<_>>()),
+        );
+        let n_items = items
             .iter()
-            .flat_map(|r| {
-                intersect(&[(r.from_ms, r.to_ms)], &free)
-                    .into_iter()
-                    .map(|(s, e)| Ready {
-                        from_ms: s,
-                        to_ms: e,
-                        ..(*r).clone()
-                    })
-            })
-            .collect();
-        let (_, peak) = side_by_side(&in_free.iter().collect::<Vec<_>>());
-        let n_items = in_free
-            .iter()
+            .filter(|r| clip_len(&free, r.from_ms, r.to_ms) > 0)
             .map(|r| r.item_id.as_str())
             .collect::<BTreeSet<_>>()
             .len();
@@ -521,7 +613,10 @@ pub(super) fn slots_underused(input: &RuleInput, out: &mut Vec<Candidate>) {
                 ("items", n_items as i64),
                 ("peak_running", running),
             ],
-            spans: runs_before(input, project, &free),
+            spans: lead
+                .get(project)
+                .map(|runs| runs_before(runs, &free))
+                .unwrap_or_default(),
             weight: sum,
         });
     }
@@ -553,6 +648,43 @@ fn hub_spells(
     Ok(merge(rows.collect::<Result<_, _>>()?))
 }
 
+/// Per machine: when it was parked on a usage limit (`park.usage`, `queue.usage`) or offline (`wait.offline`,
+/// `queue.offline`). All are hub spans, found by key prefix.
+fn machine_blocked(
+    c: &Connection,
+    since: i64,
+    until: i64,
+) -> Result<HashMap<String, Vec<Iv>>, StoreError> {
+    let mut stmt = c.prepare_cached(
+        "SELECT machine_id, start_ms, COALESCE(end_ms, ?4) FROM time_spans
+         WHERE src = 'h' AND src_key >= ?1 AND src_key < ?5 AND kind IN (?2, ?6)
+           AND machine_id IS NOT NULL AND start_ms < ?4 AND COALESCE(end_ms, ?4) > ?3",
+    )?;
+    let mut by: HashMap<String, Vec<Iv>> = HashMap::new();
+    for (prefix, kinds) in [
+        ("park", [SpanKind::ParkUsage, SpanKind::ParkUsage]),
+        ("task", [SpanKind::QueueUsage, SpanKind::QueueOffline]),
+        ("write", [SpanKind::WaitOffline, SpanKind::WaitOffline]),
+    ] {
+        let (lo, hi) = (format!("{prefix}/"), format!("{prefix}0"));
+        let rows = stmt.query_map(
+            params![lo, kinds[0].code(), since, until, hi, kinds[1].code()],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            },
+        )?;
+        for row in rows {
+            let (m, s, e) = row?;
+            by.entry(m).or_default().push((s, e));
+        }
+    }
+    Ok(by.into_iter().map(|(m, v)| (m, merge(v))).collect())
+}
+
 fn in_scope(scope: &TimeScope, item: &ItemRow) -> bool {
     match scope {
         TimeScope::Fleet => true,
@@ -570,29 +702,45 @@ fn in_scope(scope: &TimeScope, item: &ItemRow) -> bool {
     }
 }
 
-/// When each order first ran (its brief approved), and when it ended.
-fn order_bounds(c: &Connection) -> Result<HashMap<String, (i64, Option<i64>)>, StoreError> {
-    let mut out: HashMap<String, (i64, Option<i64>)> = HashMap::new();
+/// When each order ran: from `workstream.running` (its brief frozen) or a state of running or converging, until a
+/// state that isn't (verifying, idle, stopped, failed) or `workstream.done`. A spell still open runs to the end.
+fn order_spells(c: &Connection) -> Result<HashMap<String, Vec<Iv>>, StoreError> {
     let mut stmt = c.prepare_cached(
-        "SELECT json_extract(data, '$.data.workstreamId'), MIN(created_ms) FROM events
-         WHERE type = 'workstream.running' GROUP BY 1",
+        "SELECT created_ms, type, json_extract(data, '$.data.workstreamId'), json_extract(data, '$.data.state')
+         FROM events WHERE type IN ('workstream.running', 'workstream.state', 'workstream.done') ORDER BY seq",
     )?;
+    let mut open: HashMap<String, i64> = HashMap::new();
+    let mut out: HashMap<String, Vec<Iv>> = HashMap::new();
     for row in stmt.query_map([], |r| {
-        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, i64>(1)?))
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?,
+        ))
     })? {
-        if let (Some(w), at) = row? {
-            out.insert(w, (at, None));
+        let (at, ty, ws, state) = row?;
+        let Some(ws) = ws else { continue };
+        let runs = match ty.as_str() {
+            "workstream.running" => true,
+            "workstream.state" => matches!(state.as_deref(), Some("running" | "converging")),
+            _ => false,
+        };
+        match (runs, open.get(&ws).copied()) {
+            (true, None) => {
+                open.insert(ws, at);
+            }
+            (false, Some(from)) => {
+                open.remove(&ws);
+                out.entry(ws).or_default().push((from, at));
+            }
+            _ => {}
         }
     }
-    let mut stmt =
-        c.prepare_cached("SELECT workstream_id, end_ms FROM time_orders WHERE end_ms IS NOT NULL")?;
-    for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
-        let (w, end) = row?;
-        if let Some(b) = out.get_mut(&w) {
-            b.1 = Some(end);
-        }
+    for (ws, from) in open {
+        out.entry(ws).or_default().push((from, i64::MAX));
     }
-    Ok(out)
+    Ok(out.into_iter().map(|(w, v)| (w, merge(v))).collect())
 }
 
 /// When each item first had a task spawned for it (`itemId`, or listed in the item's links).
@@ -619,6 +767,7 @@ fn spawned(c: &Connection, ws: &str) -> Result<HashMap<String, i64>, StoreError>
     Ok(out)
 }
 
+/// An order's blocking asks over the period, merged: read once per order.
 fn blocking_asks(c: &Connection, ws: &str, since: i64, until: i64) -> Result<Vec<Iv>, StoreError> {
     let mut stmt = c.prepare_cached(
         "SELECT start_ms, COALESCE(end_ms, ?3) FROM time_spans
@@ -630,9 +779,9 @@ fn blocking_asks(c: &Connection, ws: &str, since: i64, until: i64) -> Result<Vec
     Ok(merge(rows.collect::<Result<_, _>>()?))
 }
 
-/// The ready stretches of the scope's plan items within `[since, until)`. An item counts only while its order ran,
-/// once it existed and every item it is `after` was done, until a task was spawned for it; a blocking ask on its
-/// order pauses it. Items with a dropped dependency, or no known start, are left out rather than guessed.
+/// The ready stretches of the scope's plan items within `[since, until)`. An item counts only while its order ran
+/// (not stopped, failed, idle or verifying), once it existed and every item it is `after` was done, until a task was
+/// spawned for it; a blocking ask on its order pauses it. Items with a dropped dependency, or no known start, are left out rather than guessed.
 fn ready(
     c: &Connection,
     scope: &TimeScope,
@@ -648,8 +797,9 @@ fn ready(
         .into_iter()
         .map(|m| (m.n, m.first_item_ms))
         .collect();
-    let bounds = order_bounds(c)?;
+    let spells = order_spells(c)?;
     let mut tasks: HashMap<String, HashMap<String, i64>> = HashMap::new();
+    let mut asks: HashMap<String, Vec<Iv>> = HashMap::new();
     let mut out = Vec::new();
     for item in items.iter().filter(|i| in_scope(scope, i)) {
         use fleetd_contracts::plan::PlanItemState;
@@ -659,7 +809,7 @@ fn ready(
         let Some(ws) = item.workstream_id.as_deref() else {
             continue;
         };
-        let Some(&(running, order_end)) = bounds.get(ws) else {
+        let Some(ran) = spells.get(ws) else {
             continue;
         };
         let Some(created) = item
@@ -696,22 +846,20 @@ fn ready(
             .chain(spawned.get(&format!("P{}", item.n)))
             .min()
             .copied();
-        let from = running.max(created).max(deps_done).max(since);
-        let to = [
-            first_task,
-            item.started_ms,
-            item.done_ms,
-            order_end,
-            Some(until),
-        ]
-        .into_iter()
-        .flatten()
-        .min()
-        .unwrap_or(until);
+        let from = created.max(deps_done).max(since);
+        let to = [first_task, item.started_ms, item.done_ms, Some(until)]
+            .into_iter()
+            .flatten()
+            .min()
+            .unwrap_or(until);
         if to <= from {
             continue;
         }
-        for (s, e) in minus(&[(from, to)], &blocking_asks(c, ws, from, to)?) {
+        if !asks.contains_key(ws) {
+            asks.insert(ws.to_owned(), blocking_asks(c, ws, since, until)?);
+        }
+        let running: Vec<Iv> = clip(ran, from, to).collect();
+        for (s, e) in minus(&running, &asks[ws]) {
             out.push(Ready {
                 project: item.pkey.clone(),
                 workstream_id: ws.to_owned(),
@@ -772,11 +920,13 @@ fn lead_runs(
     Ok(out)
 }
 
+/// The serial facts of `scope` over `[since, until)`, with the train's batching as it runs now.
 pub fn load(
     c: &Connection,
     scope: &TimeScope,
     since: i64,
     until: i64,
+    batching: Batching,
 ) -> Result<Serial, StoreError> {
     let ready = ready(c, scope, since, until)?;
     let projects: BTreeSet<&str> = ready.iter().map(|r| r.project.as_str()).collect();
@@ -798,6 +948,8 @@ pub fn load(
     Ok(Serial {
         slots_full: hub_spells(c, "slots", SpanKind::SlotsFull, since, until)?,
         slot_queued: hub_spells(c, "task", SpanKind::QueueSlot, since, until)?,
+        machine_blocked: machine_blocked(c, since, until)?,
+        batching,
         ready,
         lead_runs: lead,
         project_titles: titles,
@@ -900,10 +1052,19 @@ mod tests {
             minus(&[(0, 10), (20, 30)], &[(2, 4), (8, 22)]),
             vec![(0, 2), (4, 8), (22, 30)]
         );
+        // One b interval spanning two of a, and one a interval cut by several b.
         assert_eq!(
-            intersect(&[(0, 10), (20, 30)], &[(5, 25)]),
+            minus(
+                &[(0, 5), (6, 10), (12, 20)],
+                &[(4, 7), (13, 14), (15, 16), (19, 30)]
+            ),
+            vec![(0, 4), (7, 10), (12, 13), (14, 15), (16, 19)]
+        );
+        assert_eq!(
+            clip(&[(0, 10), (20, 30), (40, 50)], 5, 25).collect::<Vec<_>>(),
             vec![(5, 10), (20, 25)]
         );
+        assert_eq!(clip_len(&[(0, 10), (20, 30)], 10, 20), 0);
     }
 
     /// A slot wait counts only while the fleet had a free slot: inside a `slots.full` spell it is the cap's.
@@ -929,23 +1090,94 @@ mod tests {
         assert_eq!(num(&found[0], "total_ms"), 6 * MIN);
     }
 
-    /// The spec's example: PRs that sat in line while other PRs' CI cycles ran, one cycle each or more.
-    #[test]
-    fn prs_waiting_out_other_cycles_ask_for_batching() {
+    fn batching(max: i64, off: &[(&str, &str)]) -> Serial {
+        Serial {
+            batching: Batching {
+                max,
+                off: off
+                    .iter()
+                    .map(|(r, w)| (r.to_string(), w.to_string()))
+                    .collect(),
+            },
+            ..Serial::default()
+        }
+    }
+
+    /// #1 and #2 go as one batch (one run, 2–8m); #3 and #4, ready since 1m, wait it out and go together next. #5
+    /// turned ready after that run started, so no batch could have taken it.
+    fn train_rows() -> Vec<Row> {
         let lane = |n: i64| format!("change:acme/web#{n}");
-        let rows = vec![
-            row(1, SpanKind::ChangeCi, &lane(1), 0, 4 * MIN),
-            row(2, SpanKind::ChangeQueue, &lane(2), 0, 4 * MIN),
-            row(3, SpanKind::ChangeCi, &lane(2), 4 * MIN, 8 * MIN),
-            row(4, SpanKind::ChangeQueue, &lane(3), 0, 8 * MIN),
-            row(5, SpanKind::ChangeCi, &lane(3), 8 * MIN, 12 * MIN),
-        ];
-        let found = fired(&input(rows, Serial::default()), InsightRule::QueueWait);
+        let mut rows = Vec::new();
+        for (n, ready_from, run) in [(1, 0, 2), (2, 0, 2), (3, 1, 8), (4, 1, 8), (5, 3, 8)] {
+            rows.push(row(
+                n * 10,
+                SpanKind::ChangeQueue,
+                &lane(n),
+                ready_from * MIN,
+                run * MIN,
+            ));
+            rows.push(row(
+                n * 10 + 1,
+                SpanKind::ChangeCi,
+                &lane(n),
+                run * MIN,
+                (run + 4) * MIN,
+            ));
+            rows.push(row(
+                n * 10 + 2,
+                SpanKind::ChangeMerge,
+                &lane(n),
+                (run + 4) * MIN,
+                (run + 6) * MIN,
+            ));
+        }
+        rows
+    }
+
+    /// A batch is one run however many PRs it holds, and the fix names the limit that kept the PRs out.
+    #[test]
+    fn ready_prs_kept_out_of_a_full_run_name_the_batch_limit() {
+        let found = fired(
+            &input(train_rows(), batching(2, &[])),
+            InsightRule::QueueWait,
+        );
         assert_eq!(
             found[0].message.as_str(),
-            "2 PRs in the `acme/web` train waited out 3 train cycles of other PRs (12m): batch disjoint green PRs so they merge in one CI run"
+            "2 ready PRs in the `acme/web` train waited 12m through 1 CI run already holding the batch limit of 2 PRs: raise FLEETD_TRAIN_BATCH_MAX (now 2)"
         );
-        assert_eq!((num(&found[0], "prs"), num(&found[0], "cycles")), (2, 3));
+        assert_eq!((num(&found[0], "prs"), num(&found[0], "runs")), (2, 1));
+        let one = fired(
+            &input(train_rows(), batching(1, &[])),
+            InsightRule::QueueWait,
+        );
+        assert!(
+            one[0]
+                .message
+                .as_str()
+                .contains("through 1 CI run of one PR each, with FLEETD_TRAIN_BATCH_MAX=1: raise")
+        );
+        let off = fired(
+            &input(
+                train_rows(),
+                batching(4, &[("Acme/Web", "batch PR refused: 405")]),
+            ),
+            InsightRule::QueueWait,
+        );
+        assert!(off[0].message.as_str().contains(
+            "with batching off for this repo (batch PR refused: 405): fix what GitHub refused, then restart the hub"
+        ));
+    }
+
+    /// A run under the limit left the PRs out for their own reasons (overlapping files, red alone, a bisect):
+    /// batching would not have helped, so nothing is said.
+    #[test]
+    fn prs_left_out_of_a_run_with_room_are_not_a_batching_finding() {
+        let i = input(train_rows(), batching(4, &[]));
+        assert!(
+            super::super::rules::evaluate(&i)
+                .iter()
+                .all(|(f, _)| f.rule != InsightRule::QueueWait)
+        );
     }
 
     #[test]
@@ -1040,6 +1272,18 @@ mod tests {
             ..serial.clone()
         };
         assert!(fired(&input(Vec::new(), full), InsightRule::IdleLead).is_empty());
+        let parked = |machine: &str| Serial {
+            machine_blocked: HashMap::from([(machine.to_owned(), vec![(0, 40 * MIN)])]),
+            ..serial.clone()
+        };
+        assert!(
+            fired(&input(Vec::new(), parked("devbox")), InsightRule::IdleLead).is_empty(),
+            "parked on usage or offline: the lead could not run"
+        );
+        assert_eq!(
+            fired(&input(Vec::new(), parked("other")), InsightRule::IdleLead).len(),
+            1
+        );
         let unseen = Serial {
             lead_runs: Vec::new(),
             ..serial
@@ -1180,7 +1424,18 @@ mod tests {
             write(c, &span("n/run1", SpanKind::Run, 9 * MIN, 11 * MIN, lead_ids, "thread:devbox/lead-1"), &[])?;
             write(c, &span("slots/600000", SpanKind::SlotsFull, 30 * MIN, 31 * MIN, Ids::default(), "fleet"), &[])?;
 
-            let s = load(c, &TimeScope::Fleet, 0, 60 * MIN)?;
+            // W2 ran 2–20m, was stopped, and resumed at 40m: its open item is ready only while it ran.
+            event(c, 2 * MIN, "workstream.running", serde_json::json!({ "workstreamId": "W2" }));
+            event(c, 20 * MIN, "workstream.state", serde_json::json!({ "workstreamId": "W2", "state": "stopped" }));
+            event(c, 40 * MIN, "workstream.state", serde_json::json!({ "workstreamId": "W2", "state": "running" }));
+            let p5 = item(c, "W2", vec![], PlanItemState::Open, None);
+            let park = Ids {
+                machine_id: Some("devbox".into()),
+                ..Ids::default()
+            };
+            write(c, &span("park/devbox/t/9", SpanKind::ParkUsage, 5 * MIN, 9 * MIN, park, "thread:devbox/t"), &[])?;
+
+            let s = load(c, &TimeScope::Fleet, 0, 60 * MIN, Batching::default())?;
             let got: Vec<(String, i64, i64)> = s
                 .ready
                 .iter()
@@ -1188,14 +1443,21 @@ mod tests {
                 .collect();
             assert_eq!(
                 got,
-                vec![(format!("P{p1}"), 2, 3), (format!("P{p2}"), 10, 12), (format!("P{p2}"), 15, 25)]
+                vec![
+                    (format!("P{p1}"), 2, 3),
+                    (format!("P{p2}"), 10, 12),
+                    (format!("P{p2}"), 15, 25),
+                    (format!("P{p5}"), 2, 20),
+                    (format!("P{p5}"), 40, 60),
+                ]
             );
+            assert_eq!(s.machine_blocked["devbox"], vec![(5 * MIN, 9 * MIN)]);
             assert_eq!(s.lead_runs.len(), 1);
             assert_eq!(s.slots_full, vec![(30 * MIN, 31 * MIN)]);
             let task_scope = TimeScope::Task {
                 task_id: fleetd_contracts::tasks::TaskId::unchecked("T1"),
             };
-            assert!(load(c, &task_scope, 0, 60 * MIN)?.ready.is_empty());
+            assert!(load(c, &task_scope, 0, 60 * MIN, Batching::default())?.ready.is_empty());
             Ok(())
         })
         .unwrap();

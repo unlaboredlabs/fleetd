@@ -129,6 +129,14 @@ pub struct LeadRun {
     pub end_ms: i64,
 }
 
+/// How the train batches now: the most PRs one CI run takes (0: not known, so no train findings), and the repos
+/// GitHub refused batch merges for, with why.
+#[derive(Clone, Debug, Default)]
+pub struct Batching {
+    pub max: i64,
+    pub off: HashMap<String, String>,
+}
+
 /// Fleet-wide facts for the serial-wait rules, read whatever the scope: whether a slot was free is a fleet fact.
 #[derive(Clone, Debug, Default)]
 pub struct Serial {
@@ -137,6 +145,9 @@ pub struct Serial {
     pub slots_full: Vec<(i64, i64)>,
     /// Every `queue.slot` wait in the fleet: while one waits, new work would wait too.
     pub slot_queued: Vec<(i64, i64)>,
+    /// Per machine: when it was parked on a usage limit or offline, so its leads and tasks could not run.
+    pub machine_blocked: HashMap<String, Vec<(i64, i64)>>,
+    pub batching: Batching,
     /// The runs of the leads of the projects in `ready`.
     pub lead_runs: Vec<LeadRun>,
     /// `<machine>/<project>` -> its title.

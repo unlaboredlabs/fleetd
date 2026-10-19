@@ -98,14 +98,15 @@ what to change:
 
 | finding | means | fix |
 |---|---|---|
-| `queue_wait` | a task waited for a slot although the fleet had free ones (its project's share, or the slots kept for lead turns), or a PR waited in the train's line while other PRs' CI ran | raise the share or the cap with `cap_set`; batch PRs that touch different files |
+| `queue_wait` | a task waited for a slot although the fleet had free ones (its project's share, or the slots kept for lead turns), or a ready PR waited out a CI run it could not join because the [batch](merge-train.md#batches) was already full or batching was off | raise the share or the cap with `cap_set`; raise `FLEETD_TRAIN_BATCH_MAX`, or fix why batching turned off for the repo |
 | `contention` | tasks waited one after another for one area lease, or for one machine's claude usage | define narrower areas in `.fleetd/policy.yaml` (without one, every write task takes the single area `all`); a larger plan or another machine |
 | `idle_lead` | a lead sat idle while a plan item of its running order was ready to start and slots were free | the lead should start ready items before its turn ends |
 | `slots_underused` | two or more ready plan items waited at the same time while slots were free | start ready items together |
 
-A plan item counts as ready once its order runs and every item it comes after is done, until its lead spawns a task for
-it; an ask that blocks the order pauses it. Short gaps while fleetd wakes a lead don't count. A finding appears once
-its wait adds up to 5 minutes in the range.
+A plan item counts as ready while its order runs (not stopped, failed, idle or being verified) and every item it comes
+after is done, until its lead spawns a task for it; an ask that blocks the order pauses it. Time with no free slot, or
+with the machine parked on its usage limit or offline, doesn't count, and neither do short gaps while fleetd wakes a
+lead. A finding appears once its wait adds up to 5 minutes in the range.
 
 ## What is not exact {#limits}
 
