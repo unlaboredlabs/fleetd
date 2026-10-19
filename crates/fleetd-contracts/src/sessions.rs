@@ -72,6 +72,34 @@ pub struct SessionLaunch {
     /// off in the session.
     #[serde(default)]
     pub auto_memory: bool,
+    /// Which fleetd management tools the session's MCP server offers.
+    #[serde(default)]
+    pub role: SessionRole,
+}
+
+/// A session's place among fleetd's agents, which decides the MCP tools it gets. The hub enforces the same split on
+/// every call (`hub/tasks/policy.rs`); the tool list only keeps a worker from seeing tools it can't use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionRole {
+    /// A thread a person started (`thread_start`): no fleetd tools.
+    #[default]
+    Plain,
+    /// A project's lead: spawns, steers and stops agents, asks, decides, plans.
+    Lead,
+    /// A task's agent: reports, asks its lead, claims done.
+    Worker,
+}
+
+impl SessionRole {
+    /// `fleetd agent-mcp --role <this>`; none for a plain thread.
+    pub fn cli_arg(self) -> Option<&'static str> {
+        match self {
+            SessionRole::Plain => None,
+            SessionRole::Lead => Some("lead"),
+            SessionRole::Worker => Some("worker"),
+        }
+    }
 }
 
 /// A person's or policy's answer to a tool permission prompt.
@@ -357,6 +385,12 @@ pub struct RunnerInfo {
     /// Whether claude's auto memory was on in the latest session fleetd keeps it off in, from that session's
     /// `system/init` (`memory_paths`). Absent until such a session has started, and from older nodes.
     pub auto_memory: Option<bool>,
+    /// The subagent, team and background-task tools the probe found in the installed claude; every session denies
+    /// them. Absent before the first probe and from older nodes.
+    pub agent_tools: Option<Vec<String>>,
+    /// Claude's own subagents that still showed despite fleetd's settings (agent tools, or built-in agents the knobs
+    /// remove), from the probe and the latest session's `system/init`. Empty: off. Absent from older nodes.
+    pub subagent_leaks: Option<Vec<String>>,
 }
 
 #[skip_serializing_none]

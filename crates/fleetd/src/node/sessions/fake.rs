@@ -115,6 +115,8 @@ impl Runner for FakeRunner {
                 proxy_source: None,
                 config_dir: None,
                 auto_memory: None,
+                agent_tools: Some(Vec::new()),
+                subagent_leaks: Some(Vec::new()),
             }
         })
     }
@@ -352,6 +354,8 @@ fn map_line(
             model: s(&msg["model"]),
             cwd: s(&msg["cwd"]),
             auto_memory: crate::node::runner::conformance::auto_memory_on(msg.get("memory_paths")),
+            // The fixtures were recorded without fleetd's deny list, which a real claude would have applied.
+            subagent_leaks: Vec::new(),
         }],
         "command_lifecycle" if msg["state"] == "started" => vec![RunnerEvent::RunStarted {
             run_id: run_id.to_owned(),

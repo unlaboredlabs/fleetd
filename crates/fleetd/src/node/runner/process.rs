@@ -150,6 +150,51 @@ fn marker_of(pid: i32) -> Option<String> {
         .map(|v| String::from_utf8_lossy(v).into_owned())
 }
 
+/// Where a process calling the node's socket runs, as the kernel's process tree and its environment say; never what
+/// the caller claims.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PeerSession {
+    /// It descends from that session's claude (claude itself, its MCP servers, its shell commands).
+    Session(String),
+    /// It carries that session's marker but no longer descends from it: a detached child of the session.
+    Detached(String),
+    /// Neither: a person's own shell.
+    Outside,
+}
+
+/// The session `pid` belongs to: the nearest of itself and its ancestors that is a session's claude in `roots`
+/// (pid → session id); failing that, the session its [`SESSION_MARKER`] names (Linux), which only a process started
+/// inside a session carries.
+pub fn peer_session(table: &[Proc], pid: i32, roots: &HashMap<i32, String>) -> PeerSession {
+    let parents: HashMap<i32, i32> = table.iter().map(|p| (p.pid, p.ppid)).collect();
+    let mut at = pid;
+    let mut seen = HashSet::new();
+    while at > 1 && seen.insert(at) {
+        if let Some(session) = roots.get(&at) {
+            return PeerSession::Session(session.clone());
+        }
+        let Some(parent) = parents.get(&at) else {
+            break;
+        };
+        at = *parent;
+    }
+    match marker_session(pid) {
+        Some(session) => PeerSession::Detached(session),
+        None => PeerSession::Outside,
+    }
+}
+
+/// The session id in `pid`'s marker ([`marker`]: `<session>.<node pid>.<nanos>.<n>`).
+#[cfg(target_os = "linux")]
+fn marker_session(pid: i32) -> Option<String> {
+    marker_of(pid).and_then(|m| m.split('.').next().map(str::to_owned))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn marker_session(_pid: i32) -> Option<String> {
+    None
+}
+
 /// macOS cannot read another process's environment without parsing `ps -E`; the ppid walk has to do.
 #[cfg(not(target_os = "linux"))]
 pub fn marked(_table: &[Proc], _marker: &str) -> Vec<Proc> {
@@ -387,5 +432,60 @@ mod tests {
             sid: 8,
             ..proc(8, 100, 8)
         }));
+    }
+}
+
+#[cfg(test)]
+mod peer_tests {
+    use super::*;
+
+    fn proc(pid: i32, ppid: i32) -> Proc {
+        Proc {
+            pid,
+            ppid,
+            pgid: pid,
+            sid: pid,
+            start: None,
+            zombie: false,
+        }
+    }
+
+    #[test]
+    fn a_caller_belongs_to_the_session_whose_claude_it_descends_from() {
+        // claude 100 (session lead), its MCP server 101 and a shell 102 → fleetd 103; claude 200 (session task) and
+        // its shell 201 → fleetd 202; a person's shell 300 → fleetd 301.
+        let table = [
+            proc(100, 1),
+            proc(101, 100),
+            proc(102, 100),
+            proc(103, 102),
+            proc(200, 1),
+            proc(201, 200),
+            proc(202, 201),
+            proc(300, 1),
+            proc(301, 300),
+        ];
+        let roots = HashMap::from([(100, "lead".to_owned()), (200, "task".to_owned())]);
+        assert_eq!(
+            peer_session(&table, 101, &roots),
+            PeerSession::Session("lead".into())
+        );
+        assert_eq!(
+            peer_session(&table, 103, &roots),
+            PeerSession::Session("lead".into())
+        );
+        assert_eq!(
+            peer_session(&table, 202, &roots),
+            PeerSession::Session("task".into())
+        );
+        // Whatever it claims: a task's process is the task's.
+        assert_eq!(
+            peer_session(&table, 200, &roots),
+            PeerSession::Session("task".into())
+        );
+        assert_eq!(peer_session(&table, 301, &roots), PeerSession::Outside);
+        // A cycle in a racy table ends the walk.
+        let looped = [proc(400, 401), proc(401, 400)];
+        assert_eq!(peer_session(&looped, 400, &roots), PeerSession::Outside);
     }
 }

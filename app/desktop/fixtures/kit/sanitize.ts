@@ -24,6 +24,8 @@ const MACHINES: Record<string, string> = { "lab-a": "devbox", "lab-b": "buildbox
 /** The literal rewrites for one lab slot, longest first so a path goes before its prefix. */
 const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> => {
   const pairs: Array<[string, string]> = [
+    // The one lab repo (unlaboredlabs/fleetd-lab, cloned to <lab>/lab-repo) and, in older recordings, the testbed.
+    [path.join(lab, "lab-repo"), "/home/dev/src/storefront"],
     [path.join(lab, "testbed"), "/home/dev/src/storefront"],
     [path.join(lab, "repo-a"), "/home/dev/src/checkout"],
     [path.join(lab, "repo-b"), "/home/dev/src/billing"],
@@ -33,8 +35,11 @@ const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> 
     [lab, "/home/dev/.fleetd"],
     [os.homedir(), "/home/dev"],
     [`127.0.0.1:${hubPort}`, "devbox:4790"],
+    ["unlaboredlabs/fleetd-lab", "acme/storefront"],
     ["unlaboredlabs/fleetd-testbed", "acme/storefront"],
     ["fleetd-testbed", "storefront"],
+    // The lab repo's project title; its paths are rewritten above, being longer.
+    ["fleetd-lab", "storefront"],
     ["repo-a", "checkout"],
     ["repo-b", "billing"],
   ];
@@ -42,6 +47,7 @@ const literalRewrites = (lab: string, hubPort: number): Array<[string, string]> 
   return pairs.toSorted((a, b) => b[0].length - a[0].length);
 };
 
+const SLOT_BRANCH = /\b(?:slot|noci)\/\d+\/(?=fleetd\/)/gu;
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu;
 const SHA = /\b[0-9a-f]{40}\b/gu;
 // Short shas (7-12 hex with a digit and a letter), as in promptRefs ("lead.start@786007aa14") and commit summaries.
@@ -72,6 +78,8 @@ export const makeSanitizer = (lab: string, hubPort: number) => {
     out = out.replace(userWords, "dev");
     // A slot's own testbed is fleetd-testbed-<n>; the literal above leaves "-<n>".
     out = out.replace(/acme\/storefront-\d\b/gu, "acme/storefront").replace(/\bstorefront-\d\b/gu, "storefront");
+    // Each lab slot works in its own branch namespace of the one repo; the app shows fleetd's own branch names.
+    out = out.replace(SLOT_BRANCH, "");
     out = out.replace(GITHUB_URL, (_m, owner: string, name: string) => `github.com/${repo(owner, name)}`);
     out = out.replace(/unlaboredlabs/giu, "acme");
     out = out.replace(TOKENS, "<redacted>");
