@@ -109,3 +109,51 @@ describe("FixtureSource", () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 });
+
+describe("what answering a call changes", () => {
+  const asks = [{ askId: "A1" }, { askId: "A2" }];
+  const file: FixtureFile = {
+    ...base,
+    frames: [],
+    calls: [
+      {
+        tool: "inbox_reply",
+        input: { raw: "1 go" },
+        outcome: { ok: true, output: { parsed: true } },
+        then: {
+          frames: [
+            { t: "event", event: { seq: 7, type: "ask.answered" }, afterMs: 50 },
+            { t: "event", event: { seq: 8, type: "ask.delivered" }, afterMs: 10_000 },
+          ],
+          hide: [{ tool: "asks_list", field: "asks", where: { askId: "A1" } }],
+        },
+      },
+      {
+        tool: "inbox_undo",
+        outcome: { ok: true, output: {} },
+        then: { show: [{ tool: "asks_list", field: "asks", where: { askId: "A1" } }] },
+      },
+      { tool: "asks_list", outcome: { ok: true, output: { asks } } },
+    ],
+  };
+
+  it("emits the call's frames after it and leaves the rows it answered out of later reads, until undone", async () => {
+    const frames: HubFrame[] = [];
+    const source = new FixtureSource(file, (f) => frames.push(f));
+    const ids = async () => {
+      const out = await source.call({ tool: "asks_list", input: {} });
+      return out.ok ? (out.output as { asks: Array<{ askId: string }> }).asks.map((a) => a.askId) : [];
+    };
+    expect(await ids()).toEqual(["A1", "A2"]);
+    await source.call({ tool: "inbox_reply", input: { raw: "1 go" } });
+    expect(await ids()).toEqual(["A2"]);
+    vi.advanceTimersByTime(50);
+    expect(frames.map((f) => (f.t === "event" ? f.event.type : f.t))).toEqual(["ask.answered"]);
+    vi.advanceTimersByTime(10_000);
+    expect(frames.map((f) => (f.t === "event" ? f.event.type : f.t))).toEqual(["ask.answered", "ask.delivered"]);
+    // Numbered in the order they were sent, whatever the file said, so the app never drops one as already seen.
+    expect(frames.map((f) => (f.t === "event" ? f.event.seq : 0))).toEqual([1, 2]);
+    await source.call({ tool: "inbox_undo", input: { askId: "A1" } });
+    expect(await ids()).toEqual(["A1", "A2"]);
+  });
+});

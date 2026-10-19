@@ -67,18 +67,35 @@ const addAsks = (f: Fixture, asks: ReadonlyArray<JsonObject>): void => {
 };
 
 /**
- * What the hub answers when a card is sent, so QA can shoot the answering flow: the first decide ask keeps a 10 s
- * undo window ("You chose" with Undo), the approval has none (its receipt at once), and Undo reopens the ask.
+ * What the hub does when a card is sent, so QA can follow the whole flow: the reply's answer (a decide ask keeps a
+ * 10 s undo window; the others are recorded at once), then `ask.answered` and the ask gone from asks_list, then,
+ * once the window has passed, `ask.delivered` (the receipt). Undo brings the ask back with `ask.undone`.
  */
 const withAnswers = (f: Fixture): void => {
   const asks = arr(obj(f.answers("asks_list")[0]?.output)["asks"]).filter(isObject);
   const at = Date.parse(f.now);
-  for (const ask of asks) {
-    const { askId, number, batchId, kind } = ask;
-    if (typeof askId !== "string" || typeof number !== "number" || typeof batchId !== "string") continue;
+  const cursor = Number(f.snapshot?.["cursor"] ?? 0);
+  const iso = (ms: number) => new Date(at + ms).toISOString();
+  asks.forEach((ask, i) => {
+    const { askId, number, batchId, kind, workstreamId } = ask;
+    if (typeof askId !== "string" || typeof number !== "number" || typeof batchId !== "string") return;
     const undoable = kind === "decide";
+    const seq = cursor + 1000 + i * 10;
+    const event = (n: number, type: string, summary: string, data: JsonObject): JsonObject => ({
+      seq: seq + n,
+      at: iso(n * 100),
+      type,
+      summary,
+      data: { askId, batchId, number, ...(typeof workstreamId === "string" ? { workstreamId } : {}), ...data },
+    });
+    // order_get lists the order's open asks too; a stale copy there would bring the ask back.
+    const rows = [
+      { tool: "asks_list", field: "asks", where: { askId } },
+      { tool: "order_get", field: "asks", where: { askId } },
+    ];
     for (const verb of ["go", "a", "b", "skip", "no", "done"]) {
-      f.answer("inbox_reply", { raw: `${String(number)} ${verb}`, batchId }, {
+      const input = { raw: `${String(number)} ${verb}`, batchId };
+      f.answer("inbox_reply", input, {
         parsed: true,
         batchId,
         echo: `Logged: ${String(number)} → ${verb}`,
@@ -88,13 +105,26 @@ const withAnswers = (f: Fixture): void => {
             askId,
             outcome: verb === "skip" ? "skipped" : "answered",
             value: verb,
-            ...(undoable ? { undoUntil: new Date(at + 10_000).toISOString() } : { decisionId: `D${String(number)}` }),
+            ...(undoable ? { undoUntil: iso(10_000) } : { decisionId: `D${String(number)}` }),
           },
+        ],
+      });
+      f.then("inbox_reply", input, {
+        hide: rows,
+        frames: [
+          { ms: 100, kind: "event", payload: event(1, "ask.answered", `Question ${String(number)} answered`, undoable ? { undoUntil: iso(10_000) } : {}) },
+          ...(undoable
+            ? [{ ms: 10_500, kind: "event" as const, payload: event(2, "ask.delivered", "The lead has the answer", { deliveredAt: iso(10_500) }) }]
+            : []),
         ],
       });
     }
     f.answer("inbox_undo", { askId }, { ask });
-  }
+    f.then("inbox_undo", { askId }, {
+      show: rows,
+      frames: [{ ms: 100, kind: "event", payload: event(3, "ask.undone", `Question ${String(number)} reopened`, {}) }],
+    });
+  });
 };
 
 const withBoxKey = (f: Fixture): void => {

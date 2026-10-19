@@ -32,7 +32,9 @@ export function NeedsYouStrip({ workstreamId, project, limit }: NeedsYouStripPro
   const ui = useInboxUi();
   const asks = needsYou(open, ui, { workstreamId, project });
   if (asks === undefined || asks.length === 0) return null;
-  const total = open?.length ?? asks.length;
+  // Counts are of open asks: one answered here still shows its "You chose" card but no longer needs you.
+  const waiting = asks.filter((a) => !ui.answered.has(a.askId)).length;
+  const total = (open ?? []).filter((i) => !ui.answered.has(i.ask.askId)).length;
   const shown = limit === undefined ? asks : asks.slice(0, limit);
   const more = asks.length - shown.length;
   const key = display("inbox.toggle", window.fleetd.platform);
@@ -40,7 +42,7 @@ export function NeedsYouStrip({ workstreamId, project, limit }: NeedsYouStripPro
     <section className={s.strip} aria-label="Needs you">
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {workstreamId === undefined ? `Needs you ${String(asks.length)}` : `Needs you ${String(asks.length)} of ${String(total)}`}
+          {workstreamId === undefined ? `Needs you ${String(waiting)}` : `Needs you ${String(waiting)} of ${String(total)}`}
         </Text>
         <Button variant="quiet" shortcut={key} onClick={() => openInbox()}>
           {more > 0 ? `${String(more)} more in the inbox` : "Open the inbox"}

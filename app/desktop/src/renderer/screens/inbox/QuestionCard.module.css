@@ -29,6 +29,11 @@
 .project {
   flex: 0 1 auto;
 }
+.beforeOrder::after {
+  content: "\00a0·";
+  color: var(--faint);
+  font-weight: var(--weight-regular);
+}
 .order {
   display: flex;
   align-items: center;
@@ -42,10 +47,6 @@
 .number {
   flex: none;
   min-width: 1.5ch;
-}
-.dot {
-  flex: none;
-  color: var(--faint);
 }
 .tag {
   flex: none;

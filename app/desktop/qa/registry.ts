@@ -114,8 +114,9 @@ export const screens: readonly Screen[] = [
   },
   // F5: the inbox panel with every ask shape (needs-you), the long-text stress ask, and nothing to answer.
   { id: "inbox", route: "#/board?inbox", fixtures: ["needs-you", "long-text", "empty"] },
-  // The answering flow: the first question answered (collapsed to "You chose", with the 10 s Undo) and the approval
-  // approved (no undo window: its receipt at once).
+  // The answering flow, as the fixture's hub plays it (ask.answered, then ask.delivered once the undo window has
+  // passed): the first question collapses to "You chose" with the 10 s Undo and every count drops at once; the
+  // approval (no undo window) shows its receipt at once; then the first one's receipt arrives. Shot at the end.
   {
     id: "inbox.answered",
     route: "#/board?inbox&ask=A1",
@@ -123,10 +124,22 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.keyboard.press("1");
       await page.keyboard.press("Enter");
-      const approval = page.getByRole("region", { name: /database migration/u });
+      // The board shows the same cards; the panel's are the ones answered here.
+      const panel = page.getByRole("complementary", { name: "Needs you" });
+      const first = panel.getByRole("region", { name: /You chose: Public snapshot link/u });
+      await first.getByText(/You can undo this for \d+ s/u).waitFor();
+      // The stale-badge bug: the title-bar badge and the board's Needs you must both say 5 now, not 6.
+      const badge = (n: number) => page.getByRole("button", { name: /need you/u }).filter({ hasText: new RegExp(`^${String(n)} need you`, "u") });
+      const board = (n: number) => page.getByText(new RegExp(`^Needs you ${String(n)}$`, "u"));
+      await badge(5).waitFor({ timeout: 3_000 });
+      await board(5).waitFor({ timeout: 3_000 });
+      const approval = panel.getByRole("region", { name: /database migration/u });
       await approval.getByRole("radio", { name: /Approve/u }).click();
       await approval.getByRole("button", { name: /Send answer/u }).click();
-      await page.getByText(/The lead has your answer/u).waitFor();
+      await badge(4).waitFor({ timeout: 3_000 });
+      await board(4).waitFor({ timeout: 3_000 });
+      await panel.getByRole("region", { name: /You chose: Approved/u }).getByText(/The lead has your answer/u).waitFor();
+      await first.getByText(/The lead has your answer/u).waitFor({ timeout: 15_000 });
     },
   },
   // The open-asks read refused: the reason, the hub's fix and Retry; the badge is plain "Inbox", not loading.
