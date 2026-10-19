@@ -399,7 +399,7 @@ mod tests {
         assert!(score("fi", "fleet-infra").is_some());
         assert!(score("xyz", "fleetd").is_none());
         // A run at the start beats the same letters scattered.
-        assert!(score("fle", "fleetd").unwrap() > score("fle", "forge-lead-e").unwrap());
+        assert!(score("fle", "fleetd").unwrap() > score("fle", "frontdoor-lead-e").unwrap());
         // Word starts beat letters mid-word.
         assert!(score("dn", "desktop-notify").unwrap() > score("dn", "addon").unwrap());
         assert_eq!(score("FLEET", "fleetd"), score("fleet", "fleetd"));
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn empty_query_groups_asks_first_and_hides_per_project_orders() {
-        let p = ("forge".to_string(), "fleetd".to_string());
+        let p = ("devbox".to_string(), "fleetd".to_string());
         let items = vec![
             it(Group::Action, "Inbox", Command::Inbox),
             it(Group::Project, "fleetd", Command::Project(p.clone())),
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn typed_query_ranks_by_score_then_group() {
-        let p = ("forge".to_string(), "fleetd".to_string());
+        let p = ("devbox".to_string(), "fleetd".to_string());
         let items = vec![
             it(Group::Action, "Settings", Command::Settings),
             it(Group::Action, "New order in fleetd", Command::NewOrder(Some(p.clone()))),

@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn thread_answer_takes_a_deny_message_only_with_deny() {
         let answer = |extra: serde_json::Value| {
-            let mut input = json!({ "machineId": "forge", "threadId": "7f0c" });
+            let mut input = json!({ "machineId": "devbox", "threadId": "7f0c" });
             input
                 .as_object_mut()
                 .unwrap()

@@ -1362,7 +1362,7 @@ mod tests {
     #[test]
     fn inputs_fill_documented_defaults() {
         let tail: ThreadTailInput =
-            decode(json!({ "machineId": "forge", "threadId": "t1" })).unwrap();
+            decode(json!({ "machineId": "devbox", "threadId": "t1" })).unwrap();
         assert_eq!(tail.n.get(), 10);
         assert_eq!(
             decode::<EventsWaitInput>(json!({}))
@@ -1371,12 +1371,12 @@ mod tests {
                 .get(),
             50
         );
-        let launch = json!({ "machineId": "forge", "projectId": "p1", "prompt": "hi", "model": "claude-haiku-5-5", "effort": "low", "clientRequestId": "r1" });
+        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "model": "claude-haiku-5-5", "effort": "low", "clientRequestId": "r1" });
         assert_eq!(
             decode::<ThreadLaunchInput>(launch).unwrap().runtime_mode,
             RuntimeMode::FullAccess
         );
-        let wake = json!({ "target": { "machineId": "forge", "threadId": "t1" }, "schedule": { "kind": "at", "at": "2026-10-17T10:00:00.000Z", "tz": "UTC" }, "message": "x", "clientRequestId": "r1" });
+        let wake = json!({ "target": { "machineId": "devbox", "threadId": "t1" }, "schedule": { "kind": "at", "at": "2026-10-17T10:00:00.000Z", "tz": "UTC" }, "message": "x", "clientRequestId": "r1" });
         let wake: WakeSetInput = decode(wake).unwrap();
         assert!(wake.once);
         assert_eq!(wake.catch_up, WakeCatchUp::FireOnce);
@@ -1395,7 +1395,7 @@ mod tests {
     #[test]
     fn inputs_refuse_values_past_their_bounds() {
         assert!(
-            decode::<ThreadTailInput>(json!({ "machineId": "forge", "threadId": "t1", "n": 51 }))
+            decode::<ThreadTailInput>(json!({ "machineId": "devbox", "threadId": "t1", "n": 51 }))
                 .is_err()
         );
         assert!(decode::<EventsWaitInput>(json!({ "timeoutSec": 51 })).is_err());
@@ -1415,11 +1415,11 @@ mod tests {
         let base = json!({ "text": "fix the login bug", "clientRequestId": "r1" });
         assert!(decode::<IntakeSubmitInput>(base.clone()).is_ok());
         let mut both = base.clone();
-        both["machineId"] = "forge".into();
+        both["machineId"] = "devbox".into();
         both["projectId"] = "p1".into();
         assert!(decode::<IntakeSubmitInput>(both).is_ok());
         let mut one = base.clone();
-        one["machineId"] = "forge".into();
+        one["machineId"] = "devbox".into();
         assert!(decode::<IntakeSubmitInput>(one).is_err());
         let mut chore = base;
         chore["template"] = "chore".into();
@@ -1469,8 +1469,8 @@ mod tests {
     fn steer_outputs_round_trip_with_every_field_set() {
         let steer = json!({
             "id": "S12", "target": { "taskId": "T88" }, "workstreamId": "W41",
-            "thread": { "machineId": "forge", "threadId": "t1" }, "runId": "r1",
-            "by": { "kind": "human", "keyName": "wynn-mac" }, "mode": "now", "text": "skip the docs page",
+            "thread": { "machineId": "devbox", "threadId": "t1" }, "runId": "r1",
+            "by": { "kind": "human", "keyName": "laptop" }, "mode": "now", "text": "skip the docs page",
             "stage": "acknowledged", "queuedAt": "2026-10-18T14:02:07.120Z",
             "deliveredAt": "2026-10-18T14:02:07.143Z", "how": "stopped", "stoppedTool": "cargo test",
             "seenAt": "2026-10-18T14:02:07.150Z", "ackedAt": "2026-10-18T14:02:08.910Z",
