@@ -129,6 +129,8 @@ pub enum RunnerEvent {
         cwd: String,
         /// The init named an auto memory dir ([`conformance::auto_memory_on`]).
         auto_memory: bool,
+        /// Claude's own subagents the init still offered ([`conformance::subagent_leaks`]); empty when off.
+        subagent_leaks: Vec<String>,
     },
     /// `command_lifecycle` started.
     RunStarted {

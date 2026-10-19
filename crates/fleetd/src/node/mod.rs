@@ -187,7 +187,11 @@ async fn run_node(
         wakes.clone(),
     )));
     let relay = lead::LeadRelay::new();
-    let _socket = lead::serve_lead_socket(lead::lead_socket_path(home), relay.clone())
+    let identify: lead::Identify = {
+        let sessions = node_sessions.clone();
+        Arc::new(move |pid| sessions.peer_session(pid))
+    };
+    let _socket = lead::serve_lead_socket(lead::lead_socket_path(home), relay.clone(), identify)
         .await
         .map_err(NodeError::LeadSocket)?;
 

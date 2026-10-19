@@ -37,6 +37,29 @@ worktree. `fleetd doctor` shows "claude auto memory off" for each machine once a
 turns it back on for its sessions with `claude: { autoMemory: true }` in its
 [policy file](config-and-files.md#policy).
 
+## Claude's own subagents are off {#no-subagents}
+
+Every agent in fleetd is a fleetd agent: its own session, slot, worktree, lane, steering and receipts. So fleetd turns
+Claude Code's own subagent system off in every claude it starts, and gives agents fleetd's tools instead. Your
+`~/.claude` is left alone; this applies to fleetd's sessions only.
+
+- Claude's agent, team and background-task tools (Agent/Task, Workflow, ListAgents, SendMessage, TaskStop and any
+  like them the installed claude has) are denied. fleetd reads the installed claude's tool list when it checks the
+  runner, so a tool a new claude version adds is denied too.
+- Its built-in Explore, Plan and `claude` agents and background shell commands are switched off. Two built-in
+  agents (general-purpose, statusline-setup) and your own agents from `~/.claude/agents` still appear in claude's
+  list, since no setting removes them, but nothing can start them.
+- `fleetd doctor` shows "Claude subagents off (fleetd manages agents)" for each machine. If a session ever offers one
+  of them anyway, the check fails, no new session starts on that machine and the fix is to install the claude version
+  fleetd was tested with.
+
+Leads and tasks reach fleetd through MCP tools from a `fleetd` server in their session, not through the shell. A lead
+gets `spawn_agent`, `message_agent`, `agent_status`, `list_agents` and `stop_agent`, plus `ask`, `decide`, `brief`,
+`claim_done`, `plan_*`, `gated_run` and the rest of what it used to run as `fleetd` commands. A task gets three:
+`report` (a review verdict), `ask_lead` and `claim_done`. Results come back in the lead's next wake, never by polling.
+The hub enforces the split whatever a prompt says: a task can't start, steer or stop agents, and a lead has at most
+32 tasks open at once. A refusal says why and what to do instead. The lead-side `fleetd` commands stay for you.
+
 ## Safety rules: code or prompt {#safety}
 
 Most rules don't depend on the prompt. fleetd enforces them in code whatever the text says: secrets are sealed to a
@@ -126,8 +149,8 @@ fleetd prompts show --session <machine>/<thread>
 
 ## Not editable: tool descriptions and CLI replies
 
-MCP tool descriptions and what the lead-side CLI prints back (each `next:` and `fix:`) are the other half of a
-protocol with code: a description must match its tool, a `next:` must name a real command. See the
+MCP tool descriptions (fleetd's agent tools included) and what the hub answers back (each `next:` and `fix:`) are the
+other half of a protocol with code: a description must match its tool, a `next:` must name a real tool or command. See the
 [CLI reference](cli.md) and the [order tools](projects-and-orders.md#tools).
 
 ## Every prompt {#prompts}

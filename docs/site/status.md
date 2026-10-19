@@ -15,17 +15,19 @@ Open it in the [desktop app](desktop-app.md#status) with ⌘. (Ctrl+. on Linux),
 
 ```console
 $ fleetd status storefront
-storefront  61%  polish 2/5    as of 14:02:07 (live)
+storefront  70%  polish 2/5    as of 14:02:07 (live)
+  [████████████▒▒░░░░░░] 61% verified + 9% in flight
   11 of 18 required items verified
-  ↓ from 69% · +3 items: checkout redesign added (14:00)
+  ↓ from 74% · +3 items: checkout redesign added (14:00)
+  ↓ from 66% · CI failed on #212 (13:20)
   Switching payments to the new provider, waiting on the full test run. Nothing needs you.   [generated]
-  waiting on: P12 full test run (serial) → CI on #212
+  waiting on: P12 full test run: review of #212 → CI on #212 → merge   holds up P14, P16
   since you last looked here 09:12  7 merged, 3 verified, 1 failed, +3 items
 health  main CI acme/storefront green as of 14:01:50 · 2 of 2 machines online · claude 58% 5h 41% wk · 8 running, slots 8/40
 risks   check `e2e (safari)` failed on 2 PRs today
-        slower than usual: review of #212
-doing   P12 full test run   T88
-        P15 provider cutover   T90   review of #212
+        P12 full test run is slower than usual in review (2h10m so far)
+doing   P12 full test run   T88   critical path   waiting on review of #212 → CI on #212 → merge   holds up P14, P16   SLOWER THAN USUAL
+        P15 provider cutover   T90   waiting on CI on #214
 next    P14 switch the default provider (after P12), P16 docs page
 done    P9 webhook outbox   #208 merged by the train 13:12 · check 2 passed C7
 ```
@@ -36,10 +38,16 @@ add `--hub <url> --key-file <path>`. See the [CLI reference](cli.md#status) for 
 
 ## What the number means
 
-The number is the share of **required** work that fleetd has verified, by size. An item counts only when fleetd
-checked it: its PRs were merged by the merge train (a PR merged by hand doesn't count) and the order's done-when checks
-it lists passed in the latest claim. A lead saying it's done moves nothing. The number reaches 100% only when every
-required item is verified.
+The number is **verified** work plus credit for work **in flight**, as a share of the **required** work, by size. The
+bar shows the two apart: solid (█) is verified, shaded (▒) is in flight.
+
+- An item is verified only when fleetd checked it: its PRs were merged by the merge train (a PR merged by hand doesn't
+  count) and the order's done-when checks it lists passed in the latest claim. A lead saying it's done moves nothing.
+- An open item earns partial credit for each stage fleetd itself observed (task started, PR open, review passed, CI
+  green, merged), weighted by how much of an item's work each stage usually takes in this project.
+- The number reaches 100% only when every required item is verified. When it falls, a `↓` line says why: work was
+  added, a review blocked, CI failed, or a done item reopened. It never falls without one.
+- While an order's lead is still planning and there are no items yet, status says so instead of sitting at 0%.
 
 Items are **must** or **polish**. Polish shows beside the number ("polish 2/5") and never holds it back. Sizes are s,
 m and l, worth 1, 3 and 8 points, so a large item moves the number more than a small one.
@@ -67,12 +75,13 @@ closed with W41, not separately verified"), or of an order that was stopped.
 
 ## What it waits on
 
-"Waiting on" is the work's critical path: up to three things it is blocked by right now, serial ones first, such as an
-item others wait on (`--after`), a review, CI on a PR, the merge train, your answer to an ask, a free slot, or a
-machine that's offline. Each row under `doing` names its own blocker too.
+"Waiting on" follows the critical path: the item in progress that the most unfinished work runs through, what it
+still waits on in order (items it is `--after`, then its remaining stages such as review, CI, merge and done-when
+checks), and the items it holds up. Each row under `doing` shows its own path, `critical path` on that one item. An
+older hub without per-item paths lists up to three blockers instead.
 
-An item that has spent much longer than usual in its current stage (in review, in CI, waiting to merge) is listed
-under risks as "slower than usual", measured against how long that stage normally takes in this project.
+An item that has spent over 1.5 times the usual time in its current stage is marked `SLOWER THAN USUAL` on its row and
+listed under risks, measured against how long that stage normally takes in this project.
 
 Status never shows an ETA or a finish time. Durations it has measured, such as how long a CI run took or how long ago
 a machine was last seen, are observations and do show; the [time inspector](time-inspector.md) breaks a run down

@@ -36,6 +36,10 @@ pub struct System {
     pub capabilities: Option<Vec<String>>,
     /// `{"auto": "<config dir>/projects/<cwd>/memory/"}` while claude's auto memory is on.
     pub memory_paths: Option<Value>,
+    /// Tool names the session offers (claude's own and `mcp__<server>__<tool>`).
+    pub tools: Option<Vec<String>>,
+    /// Agent names the session could start (built-in, user, project and plugin agents).
+    pub agents: Option<Vec<String>>,
     // status
     pub status: Option<String>,
     /// `requesting`: the user messages this model request carries (`request_marker_lists_v1`).
