@@ -76,7 +76,8 @@ export function MiddleCut({ text }: { text: string }) {
   const shown = fits === undefined ? text : middleEllipsis(text, fits);
   // The measured box stays the same element whether or not the text is cut; only what is inside it changes.
   return (
-    <span ref={ref} className={s.machine} data-text="truncate">
+    // Machine text (a command, a path, a URL) is the code voice: shown as written, cut once in the middle.
+    <span ref={ref} className={s.machine} data-text="code">
       {shown === text ? (
         text
       ) : (
