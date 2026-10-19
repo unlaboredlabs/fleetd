@@ -2,6 +2,8 @@
 // (crates/fleetd/src/hub/ledger/grammar.rs) and answers with an echo or a hint, so the app never interprets the
 // verbs; it only decides that the text is a reply and which numbered items it names.
 
+import type { CallOutcome } from "../../../shared/hub";
+
 /** Text that can only be a reply: a leading item number, "#B<n>", "recs", "all <verb>", "pref:" or "forget D<n>". */
 export const isReply = (text: string): boolean => /^\s*(?:\d|#B\d|recs\b|all\s+\S|pref:|forget\s+D\d)/iu.test(text);
 
@@ -31,9 +33,7 @@ export interface ReplyResult {
 }
 
 /** Reads an inbox_reply call's outcome. Its output shape is fleetd_contracts::mcp::InboxReplyOutput. */
-export const readReplyOutcome = (
-  outcome: { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: { readonly message: string; readonly fix?: string } },
-): ReplyResult => {
+export const readReplyOutcome = (outcome: CallOutcome): ReplyResult => {
   if (!outcome.ok) {
     const { message, fix } = outcome.error;
     return { ok: false, text: fix === undefined ? message : `${message} ${fix}` };

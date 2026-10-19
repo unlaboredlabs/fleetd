@@ -2,7 +2,7 @@
 // prompt, and that also takes a terse inbox reply ("1 go 2 nvm 3 b"). Up/Down or the mouse pick, Enter or a click
 // runs, Esc or a click outside closes. Typed text nothing matches can become a new order (the last row).
 
-import { Dialog as D, VisuallyHidden } from "radix-ui";
+import { Dialog as D } from "radix-ui";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { display, isShortcutId } from "../../../shared/shortcuts";
 import { Kbd, Text } from "../../ui";
@@ -111,9 +111,8 @@ export function Palette({ initialQuery }: { initialQuery: string }) {
       <D.Portal>
         <D.Overlay className={s.backdrop} />
         <D.Content className={s.palette} data-screen={replying ? "palette.reply" : "palette"} aria-describedby={undefined}>
-          <VisuallyHidden.Root>
-            <D.Title>Command palette</D.Title>
-          </VisuallyHidden.Root>
+          {/* Names the dialog for screen readers (aria-labelledby reads hidden text); hidden, not clipped, so it takes no box. */}
+          <D.Title hidden>Command palette</D.Title>
           <div className={s.field}>
             {replying ? <span className={s.mode}>Reply</span> : null}
             <input

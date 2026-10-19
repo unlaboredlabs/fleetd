@@ -73,7 +73,7 @@ describe("reply mode", () => {
   it("reads the hub's echo, its hint, or the call's error", () => {
     expect(readReplyOutcome({ ok: true, output: { parsed: true, echo: "Logged: 1 → go (D12)", applied: [] } })).toEqual({ ok: true, text: "Logged: 1 → go (D12)" });
     expect(readReplyOutcome({ ok: true, output: { parsed: false, hint: "No item 9 in B2." } })).toEqual({ ok: false, text: "No item 9 in B2." });
-    expect(readReplyOutcome({ ok: false, error: { message: "Not connected.", fix: "Check the hub." } })).toEqual({ ok: false, text: "Not connected. Check the hub." });
+    expect(readReplyOutcome({ ok: false, error: { code: "disconnected", message: "Not connected.", fix: "Check the hub." } })).toEqual({ ok: false, text: "Not connected. Check the hub." });
   });
 });
 
