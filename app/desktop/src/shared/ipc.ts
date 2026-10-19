@@ -3,12 +3,43 @@
 import { z } from "zod";
 import { IPC, type InvokeChannel } from "./channels";
 
+/** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
+export const MAX_CALL_INPUT_BYTES = 1024 * 1024;
+export const MAX_CALL_INPUT_DEPTH = 64;
+
+/**
+ * Plain JSON within the size and nesting caps. Walked without recursion, so a deeply nested input can't overflow the
+ * stack before it's refused.
+ */
+export const isBoundedJson = (value: unknown): boolean => {
+  const stack: Array<[unknown, number]> = [[value, 1]];
+  for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+    const [item, depth] = next;
+    if (item === null || typeof item === "string" || typeof item === "boolean") continue;
+    if (typeof item === "number") {
+      if (!Number.isFinite(item)) return false;
+      continue;
+    }
+    if (typeof item !== "object" || depth > MAX_CALL_INPUT_DEPTH) return false;
+    if (Array.isArray(item)) {
+      for (const child of item) stack.push([child, depth + 1]);
+      continue;
+    }
+    const proto: unknown = Object.getPrototypeOf(item);
+    if (proto !== Object.prototype && proto !== null) return false;
+    for (const child of Object.values(item)) stack.push([child, depth + 1]);
+  }
+  return new TextEncoder().encode(JSON.stringify(value)).length <= MAX_CALL_INPUT_BYTES;
+};
+
 /** MCP tool names: lowercase words joined by underscores. */
 const toolName = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/u);
 
 export const CallRequest = z.strictObject({
   tool: toolName,
-  input: z.json(),
+  input: z.custom<z.core.util.JSONType>(isBoundedJson, {
+    message: `Input must be plain JSON, at most ${MAX_CALL_INPUT_BYTES} bytes and ${MAX_CALL_INPUT_DEPTH} levels deep.`,
+  }),
   /** Defaults to 30 s. Long-polls such as status_wait pass their own. */
   timeoutMs: z.int().min(100).max(300_000).optional(),
 });

@@ -32,6 +32,12 @@ export const App = () => {
       <div className="shell" data-screen="shell">
         {/* The window's drag region; on macOS the traffic lights sit at its left. */}
         <header className="top-bar" />
+        {/* Fixture data must never pass for a live hub. */}
+        {window.fleetd.fixture !== null && (
+          <div className="fixture-banner" role="status">
+            Sample data, not connected
+          </div>
+        )}
         <main className="content">
           <Content hash={hash} />
         </main>
