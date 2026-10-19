@@ -19569,7 +19569,7 @@
      "thread": {
       "asOf": "2026-10-19T09:02:36.475Z",
       "effort": "low",
-      "headline": "I created `lab/20261019090134/alpha.md` as a single paragraph on what fleetd's merge train does, committed it to `fleetd/T1-write-alpha-md`, and pushed the branch. The PR is open against `main` with the line `Source: done:0` in its body: https://github.com/acme/fleetd-te",
+      "headline": "I created `lab/20261019090134/alpha.md` as a single paragraph on what fleetd's merge train does, committed it to `fleetd/T1-write-alpha-md`, and pushed the branch. The PR is open against `main` with the line `Source: done:0` in its body: https://github.com/acme/search",
       "lastProgressAt": "2026-10-19T09:02:36.474Z",
       "latestMessageTail": "I created `lab/20261019090134/alpha.md` as a single paragraph on what fleetd's merge train does, committed it to `fleetd/T1-write-alpha-md`, and pushed the branch. The PR is open against `main` with the line `Source: done:0` in its body: https://github.com/acme/storefront/pull/9. I did not merge it or post a commit status. Nothing else in the repo was touched. The commit message and PR body end with the attribution lines from the reminder. Nothing is left for this task, and I have no decisions for the lead.",
       "machineId": "devbox",

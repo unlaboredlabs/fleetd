@@ -16,6 +16,9 @@ export interface HubErrorJson {
 
 type TimedKind = "event" | "live" | "snapshot";
 
+/** src/main/hub/fixture.ts: the longest gap between frames, and the longest call delay. */
+const MAX_AFTER_MS = 600_000;
+
 export const HUB = "http://devbox:4790";
 export const PROTOCOL = 1;
 /** Every generated fixture's clock: a Monday mid-morning, so "today" and "this week" have data on both sides. */
@@ -72,6 +75,8 @@ export class Fixture {
     f.now = file.now;
     f.state = file.state;
     f.connect = file.connect;
+    const settle = (file as { settleMs?: unknown }).settleMs;
+    if (typeof settle === "number") f.settleMs = settle;
     let ms = 0;
     for (const frame of file.frames) {
       ms += frame.afterMs ?? 0;
@@ -159,12 +164,15 @@ export class Fixture {
     let previous = 0;
     for (const { ms, kind, payload } of this.timeline.toSorted((a, b) => a.ms - b.ms)) {
       const afterMs = Math.max(0, Math.round(ms - previous));
+      if (afterMs > MAX_AFTER_MS) throw new Error(`${this.name}: a frame ${afterMs} ms after the one before it; main allows ${MAX_AFTER_MS}`);
       previous = Math.max(previous, ms);
       if (kind === "snapshot") frames.push({ t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs });
       else if (kind === "event") frames.push({ t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs });
       else frames.push({ t: "live", frame: { ...payload, full: payload["full"] === true }, afterMs });
     }
-    const settleMs = this.settleMs ?? (this.timeline.length > 0 ? previous : undefined);
+    // A delayed answer is part of what the screen waits for, too.
+    const slowest = Math.max(0, ...this.calls.map((c) => c.delayMs ?? 0));
+    const settleMs = this.settleMs ?? (this.timeline.length > 0 || slowest > 0 ? Math.max(previous, slowest) : undefined);
     const calls = this.calls
       .map((c, i) => ({ c, i }))
       .toSorted((a, b) => a.c.tool.localeCompare(b.c.tool) || leaves(b.c.input) - leaves(a.c.input) || a.i - b.i)
