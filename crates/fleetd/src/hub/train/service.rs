@@ -14,7 +14,7 @@ use super::contract::{
     GitHubRepo, NonEmpty, Positive, ProjectRef, Serves, Timestamp, TrainState, last_error,
     parse_pr_url, state_str, tier_str,
 };
-use super::git::{BLOCKED, GitError, Rebase, TrainGit, default_worktree};
+use super::git::{BLOCKED, GitError, REFUSED_HERE, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub};
 use super::host::{BoxFut, IncidentInput, TrainHost};
 use super::main_ci::{DriftCounts, GithubSync, MainCi, ci_state};
@@ -1028,11 +1028,14 @@ impl Train {
         }
     }
 
-    /// A git failure goes on the Change as its last error and the loop retries it. A blocked worktree needs a person,
-    /// so it is also an event, once per Change and error rather than every pass.
+    /// A git failure goes on the Change as its last error and the loop retries it. A blocked worktree or a checkout
+    /// the node won't run commands in needs a person, so it is also an event, once per Change and error rather than
+    /// every pass.
     pub(super) fn git_failed(&self, change: &Change, error: &str) -> Text<0, 2000> {
         let text = error_text(&format!("git: {error}"));
-        if error.starts_with(BLOCKED) && change.last_error.as_ref() != Some(&text) {
+        if (error.starts_with(BLOCKED) || error.starts_with(REFUSED_HERE))
+            && change.last_error.as_ref() != Some(&text)
+        {
             self.emit(
                 &change.project_ref,
                 "train.blocked",

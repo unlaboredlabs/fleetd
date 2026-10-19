@@ -285,7 +285,37 @@ async fn checkout(hub: &Hub, m: &MachineId, path: &str) -> Result<RepoFacts, Too
             "Give the repository's root directory, or run `git init` there first",
         )));
     }
+    inside_cmd_roots(hub, m, path).await?;
     Ok(facts)
+}
+
+/// The node runs no command outside its cmdRoots, the merge train's git included, so a project there could never
+/// merge. A node that can't be asked is not a refusal: the add goes on as before.
+async fn inside_cmd_roots(hub: &Hub, m: &MachineId, dir: &str) -> Result<(), ToolError> {
+    let input = crate::hub::link::commands::CommandInput {
+        cwd: dir.to_owned(),
+        argv: vec!["true".into()],
+        timeout_sec: Some(30),
+    };
+    let Ok(result) = hub.node_commands.run(m, input).await else {
+        return Ok(());
+    };
+    match outside_roots(m, &result) {
+        Some(p) => Err(problem_error(&p)),
+        None => Ok(()),
+    }
+}
+
+fn outside_roots(
+    m: &MachineId,
+    result: &fleetd_contracts::node_link::CmdResult,
+) -> Option<ProjectProblem> {
+    let why = crate::node::cmd::refusal(result.exit_code.is_none(), result.output_tail.as_str())?;
+    Some(problem(
+        ProjectProblemCode::Other,
+        format!("{why} on {m}, so the merge train could not work there"),
+        crate::node::cmd::outside_roots_fix(m.as_str()),
+    ))
 }
 
 async fn clone_target(
@@ -296,7 +326,13 @@ async fn clone_target(
 ) -> Result<CloneTarget, ToolError> {
     repo_node(hub, m).map_err(|p| problem_error(&p))?;
     let path = match dest {
-        Some(d) => d.strip_suffix('/').unwrap_or(d).to_owned(),
+        Some(d) => {
+            let d = d.strip_suffix('/').unwrap_or(d);
+            if let Some((parent, _)) = d.rsplit_once('/').filter(|(p, _)| !p.is_empty()) {
+                inside_cmd_roots(hub, m, parent).await?;
+            }
+            d.to_owned()
+        }
         None => {
             let (root, _) = hub
                 .executors
@@ -931,5 +967,33 @@ mod tests {
             ClonePhase::Receiving,
             15
         ));
+    }
+
+    /// What `project add` says, from what the node really answers for a checkout outside its cmdRoots.
+    #[tokio::test]
+    async fn a_checkout_outside_cmd_roots_is_refused_with_how_to_add_it() {
+        let home = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let roots = vec![home.path().display().to_string()];
+        let m = MachineId::unchecked("fe7");
+        let ask = |dir: &std::path::Path| {
+            serde_json::from_value(serde_json::json!({
+                "id": "c1", "cwd": dir, "argv": ["true"], "timeoutSec": 30
+            }))
+            .unwrap()
+        };
+        let outside = crate::node::cmd::run_cmd_check(ask(elsewhere.path()), &roots).await;
+        let p = outside_roots(&m, &outside).expect("refused");
+        assert!(p.message.contains("is outside cmdRoots"), "{}", p.message);
+        assert!(p.message.contains(&roots[0]), "{}", p.message);
+        assert!(
+            p.fix
+                .as_deref()
+                .is_some_and(|f| f.contains("\"cmdRoots\" in node.json on fe7")),
+            "{:?}",
+            p.fix
+        );
+        let inside = crate::node::cmd::run_cmd_check(ask(home.path()), &roots).await;
+        assert!(outside_roots(&m, &inside).is_none());
     }
 }

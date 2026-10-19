@@ -15,6 +15,24 @@ use super::wire::{CmdCheck, CmdResult, Text, exit_code, tail_text};
 pub const OUTPUT_TAIL_MAX: usize = 2000;
 const SCRUBBED: &str = "[secret]";
 
+/// How a `cmd_result`'s output starts when the node refused the command: its cwd is outside `cmdRoots`.
+pub const REFUSED: &str = "fleetd node refused to run this: ";
+
+/// Why the node refused a command it never ran, from its `cmd_result`.
+pub fn refusal(exit_code_is_none: bool, output_tail: &str) -> Option<&str> {
+    output_tail
+        .strip_prefix(REFUSED)
+        .filter(|_| exit_code_is_none)
+}
+
+/// What a person does about a checkout outside `cmdRoots` on `machine`.
+pub fn outside_roots_fix(machine: &str) -> String {
+    format!(
+        "Move the checkout into your home directory, or add its directory to \"cmdRoots\" in node.json on {machine} \
+         (in ~/.fleetd/node by default) and restart its node"
+    )
+}
+
 /// The real directory `cwd` names, when it lies under one of `roots` after following symlinks on both sides.
 pub fn confine(cwd: &str, roots: &[String]) -> Result<PathBuf, String> {
     let Ok(dir) = std::fs::canonicalize(cwd) else {
@@ -29,7 +47,7 @@ pub fn confine(cwd: &str, roots: &[String]) -> Result<PathBuf, String> {
         .any(|root| dir.starts_with(&root));
     if !inside {
         return Err(format!(
-            "{cwd} is outside the directories this node runs commands in ({})",
+            "{cwd} is outside cmdRoots, the directories this node runs commands in ({})",
             roots.join(", ")
         ));
     }
@@ -118,7 +136,7 @@ pub async fn run_confined(run: ConfinedRun<'_>, roots: &[String]) -> RunOutcome 
     let longest = scrub.iter().map(String::len).max().unwrap_or(0);
     let dir = match confine(run.cwd, roots) {
         Ok(dir) => dir,
-        Err(why) => return not_run(format!("fleetd node refused to run this: {why}")),
+        Err(why) => return not_run(format!("{REFUSED}{why}")),
     };
     let (command, args) = run
         .argv
@@ -319,10 +337,11 @@ mod tests {
                 "{}",
                 refused.output_tail
             );
+            let why = refusal(refused.exit_code.is_none(), refused.output_tail.as_str());
             assert!(
-                refused
-                    .output_tail
-                    .contains("outside the directories this node runs commands in")
+                why.is_some_and(|w| w.contains("is outside cmdRoots")),
+                "{}",
+                refused.output_tail
             );
         }
         assert!(!marker.exists());

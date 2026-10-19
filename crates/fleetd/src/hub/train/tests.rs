@@ -518,6 +518,8 @@ struct FakeHost {
     events: Mutex<Vec<EventView>>,
     appended: Notify,
     wakes: Mutex<Vec<String>>,
+    /// The node's cmdRoots, when a test sets them: commands elsewhere are refused as the node refuses them.
+    cmd_roots: Mutex<Option<Vec<String>>>,
 }
 
 impl FakeHost {
@@ -662,7 +664,15 @@ impl TrainHost for FakeHost {
         _: u64,
     ) -> BoxFut<'a, Result<CmdOut, String>> {
         let cwd = cwd.to_string();
+        let roots = self.cmd_roots.lock().unwrap().clone();
         Box::pin(async move {
+            if let Some(Err(why)) = roots.map(|r| crate::node::cmd::confine(&cwd, &r)) {
+                return Ok(CmdOut {
+                    exit_code: None,
+                    output_tail: format!("{}{why}", crate::node::cmd::REFUSED),
+                    timed_out: false,
+                });
+            }
             let out = tokio::task::spawn_blocking(move || {
                 Command::new(&argv[0])
                     .args(&argv[1..])
@@ -844,6 +854,7 @@ impl Kit {
             events: Mutex::default(),
             appended: Notify::new(),
             wakes: Mutex::default(),
+            cmd_roots: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
         let worktree = dir.join("train-wt").display().to_string();
@@ -2554,4 +2565,44 @@ async fn a_speculative_build_follows_its_parents_new_head_not_the_childs_stale_c
         "rebuilt on the parent's new head: {log:?}"
     );
     assert!(merged_prs(&kit).is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_checkout_outside_the_nodes_cmd_roots_says_so_and_needs_a_person() {
+    let kit = Kit::new();
+    let elsewhere = tempfile::tempdir().unwrap();
+    *kit.host.cmd_roots.lock().unwrap() = Some(vec![elsewhere.path().display().to_string()]);
+
+    let pr = kit.open_pr(7, "outside", &[add("b.txt", "b\n")], "Source: done:0");
+    let change = kit.enqueue(pr, None).await;
+    assert_eq!(change.state, ChangeState::Queued);
+    let error = change.last_error.unwrap();
+    assert!(
+        error.as_str().contains("is outside cmdRoots"),
+        "{}",
+        error.as_str()
+    );
+    assert!(
+        error.as_str().contains("\"cmdRoots\" in node.json"),
+        "{}",
+        error.as_str()
+    );
+    assert!(
+        !error.as_str().contains("not a git checkout"),
+        "{}",
+        error.as_str()
+    );
+    assert_eq!(kit.host.events_of("train.blocked").len(), 1);
+
+    // Once the node runs commands there, the train goes on.
+    *kit.host.cmd_roots.lock().unwrap() = None;
+    kit.train.step(REPO).await;
+    let after = kit.get(&change.change_id);
+    assert_eq!(
+        (
+            after.last_error.as_ref().map(|e| e.as_str()),
+            after.patch_id.is_some()
+        ),
+        (None, true)
+    );
 }
