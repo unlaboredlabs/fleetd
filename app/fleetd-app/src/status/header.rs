@@ -1,10 +1,10 @@
 //! The top of the view: the number with its bar and scope markers, the headline (marked generated or template),
-//! what has gone stale, the ETA against the original with its gates, and since-you-last-looked.
+//! what has gone stale, what it is waiting on, and since-you-last-looked.
 
 use gpui::{AnyElement, Context, Div, SharedString, div, prelude::*, px};
 
 use super::number;
-use fleetd_contracts::status::{EtaBasis, HeadlineSource, Marker, StatusDoc};
+use fleetd_contracts::status::{HeadlineSource, Marker, StatusDoc};
 
 use super::{span, stale_words, when};
 use crate::shell::{Shell, clock};
@@ -82,7 +82,7 @@ impl Shell {
             .children(marker_lines)
             .child(self.status_headline(doc, now, cx))
             .children(stale_block(t, doc, now))
-            .child(eta_block(t, doc, now))
+            .children(waiting_on(t, doc))
             .child(since_line(t, doc))
             .into_any_element()
     }
@@ -181,69 +181,19 @@ fn stale_block(t: &Theme, doc: &StatusDoc, now: i64) -> Option<Div> {
     )
 }
 
-/// The ETA against the one first planned, why it moved, the measured rate, the lead's guess when it drifted,
-/// and the gates in the way.
-fn eta_block(t: &Theme, doc: &StatusDoc, now: i64) -> Div {
-    let e = &doc.eta;
-    let mut parts: Vec<(String, bool)> = Vec::new();
-    let samples = e.samples.get();
-    match &e.current {
-        Some(cur) => {
-            parts.push((format!("eta {}", when(cur.as_str(), now)), true));
-            if let Some(orig) = &e.original {
-                let mut slip = Vec::new();
-                if let Some(s) = &e.slip {
-                    let (scope, speed) = (s.scope_minutes.get() * 60_000, s.speed_minutes.get() * 60_000);
-                    if scope != 0 {
-                        slip.push(format!("{}{} scope", if scope > 0 { "+" } else { "−" }, span(scope)));
-                    }
-                    if speed != 0 {
-                        slip.push(format!("{}{} {}", if speed > 0 { "+" } else { "−" }, span(speed), if speed > 0 { "slower" } else { "faster" }));
-                    }
-                }
-                let why = if slip.is_empty() { String::new() } else { format!(" ({})", slip.join(", ")) };
-                parts.push((format!("planned {}{why}", when(orig.as_str(), now)), false));
-            }
-            if let Some(chain) = &e.chain {
-                parts.push((format!("set by the chain through {}", &**chain), false));
-            }
-        }
-        None => parts.push((format!("no ETA yet: measuring, {samples} of {} verified", fleetd_contracts::status::MIN_SAMPLES), true)),
-    }
-    if let Some(rate) = e.rate {
-        let basis = match e.basis {
-            EtaBasis::Order => "",
-            EtaBasis::Project => " (the project's)",
-            EtaBasis::Fleet => " (the fleet's)",
-            EtaBasis::None => "",
-        };
-        parts.push((format!("{:.1} pts/busy h{basis}", rate.get()), false));
-    }
-    if samples > 0 && e.current.is_some() {
-        parts.push((format!("{samples} samples"), false));
-    }
-    let eta = div().flex().flex_wrap().gap_x_2().text_size(px(size::XS)).text_color(t.quiet).children(parts.into_iter().enumerate().map(
-        |(i, (p, strong))| div().flex().gap_2().when(i > 0, |d| d.child("·")).when(strong, |d| d.text_color(t.text).font_weight(STRONG)).child(p),
-    ));
-    let lead = e.lead.as_ref().zip(e.current.as_ref()).map(|(lead, cur)| {
-        div().text_size(px(size::XS)).text_color(t.warning).child(format!(
-            "The lead's estimate said {}; measured speed says {}. The measured one is shown.",
-            when(lead.as_str(), now),
-            when(cur.as_str(), now)
-        ))
-    });
-    let gates = (!doc.gates.is_empty()).then(|| {
+/// What the scope is waiting on, in order. Never a time estimate: fleetd shows state, not finish times.
+fn waiting_on(t: &Theme, doc: &StatusDoc) -> Option<Div> {
+    (!doc.gates.is_empty()).then(|| {
         div().flex().gap_2().text_size(px(size::XS)).child(div().flex_none().text_color(t.quiet).child("waiting on")).child(
             div().flex_1().min_w_0().whitespace_normal().text_color(t.text).child(
                 doc.gates
                     .iter()
                     .map(|g| if g.serial { format!("{} (serial)", &*g.label) } else { g.label.to_string() })
                     .collect::<Vec<_>>()
-                    .join(" · "),
+                    .join(" → "),
             ),
         )
-    });
-    div().flex().flex_col().gap_1().child(eta).children(lead).children(gates)
+    })
 }
 
 /// "Since you looked (09:12): 7 merged · 3 verified · 2 started · 1 failed · +3 items". Zero counts are left out.

@@ -144,7 +144,7 @@ pub fn items(state: &State) -> Vec<Item> {
             None,
             Command::Time(Some(w.clone())),
         ));
-        out.push(item(Group::Action, format!("Status for {w}"), "Its verified progress, ETA and what it waits on", None, Command::Status(Some(w))));
+        out.push(item(Group::Action, format!("Status for {w}"), "Its verified progress and what it waits on", None, Command::Status(Some(w))));
         // Steering: every steer is aimed at one of the open order's agents.
         let w = order.workstream_id.as_str();
         out.push(item(
