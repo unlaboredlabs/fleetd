@@ -624,3 +624,22 @@ async fn an_amend_racing_the_concluding_claim_wins() {
         "a claim that never counts is never recorded"
     );
 }
+
+/// An amend lands between the claim's read and its verifying write: the claim is refused, and the build brief stays.
+#[tokio::test]
+async fn an_amend_racing_the_claim_start_wins() {
+    let k = research_kit();
+    *k.ports.human.lock().unwrap() = None;
+    let amended = build_brief(k.ports.workstream(&w1()).unwrap());
+    *k.ports.lands_first.lock().unwrap() = Some(amended);
+    let refused = k.claims.claim_done(&w1(), LEAD_BY, None).await.unwrap_err();
+    assert_eq!(
+        (refused.code, refused.message.as_str()),
+        (ErrorCode::Invalid, "W1 changed while you claimed it.")
+    );
+    let w = k.ports.workstream(&w1()).unwrap();
+    assert_eq!(
+        (w.state, w.brief_hash.unwrap().as_str().starts_with('b')),
+        (WorkstreamState::Running, true)
+    );
+}

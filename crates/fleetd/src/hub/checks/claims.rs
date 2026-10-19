@@ -378,7 +378,15 @@ impl Claims {
             ..w.clone()
         };
         if w.state != WorkstreamState::Verifying {
-            self.ports.put_workstream(&verifying);
+            // Only over the workstream as read: an amend landing meanwhile must not be reverted to the old brief.
+            if !self.ports.put_workstream_if(&verifying, &w) {
+                return Err(invalid(
+                    format!("{workstream_id} changed while you claimed it."),
+                    Some(
+                        "Read it in your next wake, then claim again if its done-when checks hold.",
+                    ),
+                ));
+            }
             self.emit(
                 &w,
                 HubEventType::WorkstreamState,
