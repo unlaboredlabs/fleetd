@@ -90,7 +90,9 @@ pub fn params(units: &[&Timeline]) -> Params {
         p.weights = Some(StageWeights::from_shares(shares));
     }
     type Class = (UnitKind, Size);
-    let mut classes: Vec<(Class, Vec<([i64; STAGES], [bool; STAGES])>)> = Vec::new();
+    /// A unit's stage times and which stages it saw.
+    type Seen = ([i64; STAGES], [bool; STAGES]);
+    let mut classes: Vec<(Class, Vec<Seen>)> = Vec::new();
     for (t, f) in &done {
         let class = (t.kind, t.size);
         let row = (*f, t.observed());
