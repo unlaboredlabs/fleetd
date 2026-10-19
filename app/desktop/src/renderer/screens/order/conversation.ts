@@ -35,6 +35,7 @@ export type Entry =
   | {
       readonly kind: "fold";
       readonly key: string;
+      readonly at: string;
       readonly secs: number;
       readonly commands: number;
       readonly failed: number;
@@ -42,7 +43,7 @@ export type Entry =
     }
   /** The lead is mid-turn: its latest calls, unfolded. */
   | { readonly kind: "working"; readonly key: string; readonly calls: readonly Call[] }
-  | { readonly kind: "others"; readonly key: string; readonly n: number; readonly about: string }
+  | { readonly kind: "others"; readonly key: string; readonly at: string; readonly n: number; readonly about: string }
   | { readonly kind: "events"; readonly key: string; readonly at: string; readonly text: string }
   | { readonly kind: "rollup"; readonly key: string; readonly text: string };
 
@@ -198,6 +199,7 @@ export function buildConversation(input: ConversationInput): Entry[] {
     out.push({
       kind: "fold",
       key: `fold:${start}`,
+      at: start,
       secs,
       commands: calls.filter((c) => c.kind === "command").length,
       failed: calls.filter((c) => c.failed).length,
@@ -242,7 +244,7 @@ export function buildConversation(input: ConversationInput): Entry[] {
       foldStart = undefined;
       const prev = out.at(-1);
       if (prev?.kind === "others") out[out.length - 1] = { ...prev, n: prev.n + 1 };
-      else out.push({ kind: "others", key: keyFor("others", item.at), n: 1, about: ids[0] ?? "" });
+      else out.push({ kind: "others", key: keyFor("others", item.at), at: item.at, n: 1, about: ids[0] ?? "" });
       continue;
     }
     flush();
@@ -325,4 +327,14 @@ export function fanOut(lanes: readonly AgentLane[], asks: number): string | unde
     .filter(([n]) => n > 0)
     .map(([n, word]) => `${n} ${word}`)
     .join(" · ");
+}
+
+/** The row holding a transcript item at `at`: the last row that starts at or before it (a fold holds the calls after its start). */
+export function entryIndexAt(entries: readonly Entry[], at: string): number {
+  let best = -1;
+  entries.forEach((e, i) => {
+    const t = "at" in e ? e.at : "";
+    if (t !== "" && t <= at) best = i;
+  });
+  return best === -1 ? 0 : best;
 }

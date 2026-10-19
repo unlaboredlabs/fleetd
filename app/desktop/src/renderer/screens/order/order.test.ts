@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { sendModeFor, type KeyLike } from "./composer";
 import type { AgentLane, HubEvent, Steer, TailItem } from "./contracts";
-import { buildConversation, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversation";
+import { buildConversation, entryIndexAt, fanOut, foldLabel, mentions, rollup, systemHeadline, type ConversationInput } from "./conversation";
+import { jumpFromHash } from "./data";
 import { doneRows, doneSummary } from "./doneWhen";
 import { clock } from "./format";
 import { mergeSteer, receipt, waitingLine } from "./receipts";
@@ -158,6 +159,18 @@ describe("the conversation", () => {
     const b = buildConversation(input({ tail: [...tail, msg("02:00", "assistant", "three")] })).map((e) => e.key);
     expect(b.slice(0, 2)).toEqual(a);
     expect(new Set(b).size).toBe(3);
+  });
+
+  it("opens a transcript jump at the row holding the item", () => {
+    expect(jumpFromHash("#/order/W1?thread=t-lead&item=toolu_01")).toEqual({ thread: "t-lead", item: "toolu_01" });
+    expect(jumpFromHash("#/order/W1")).toBeUndefined();
+    const conv = buildConversation(
+      input({ tail: [msg("01:00", "assistant", "one"), act("01:10", "command", "a"), act("01:20", "command", "b"), msg("02:00", "assistant", "two")] }),
+    );
+    expect(conv.map((e) => e.kind)).toEqual(["say", "fold", "say"]);
+    expect(entryIndexAt(conv, at("01:20"))).toBe(1);
+    expect(entryIndexAt(conv, at("02:00"))).toBe(2);
+    expect(entryIndexAt(conv, at("00:10"))).toBe(0);
   });
 
   it("reads order ids as whole words", () => {

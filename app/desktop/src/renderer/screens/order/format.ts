@@ -41,3 +41,13 @@ export const plural = (n: number, word: string): string => `${n} ${word}${n === 
 export function shortModel(model: string): string {
   return ["haiku", "sonnet", "opus", "fable"].find((m) => model.includes(m)) ?? model;
 }
+
+/** One line of message text without markdown syntax, for quotes inside a receipt. */
+export function inlinePlain(text: string): string {
+  return text
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
+    .replace(/(^|\s)(?:[-*+]|\d+\.)\s+/g, "$1")
+    .replace(/(\*\*|__|`+)/g, "")
+    .trim();
+}

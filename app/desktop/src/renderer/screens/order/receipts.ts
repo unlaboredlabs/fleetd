@@ -2,7 +2,7 @@
 // honestly not. The stages are decided by the hub from claude's own frames; this only words them.
 
 import type { AgentLane, Steer, SteerMode, SteerStage } from "./contracts";
-import { clip, clock, shortElapsed } from "./format";
+import { clip, clock, inlinePlain, shortElapsed } from "./format";
 
 export type Tone = "quiet" | "good" | "warn" | "bad";
 
@@ -58,12 +58,12 @@ export function receipt(s: Steer): Receipt {
       return { ...base, line: `${s.id} · delivered${at(s.deliveredAt)}${how}${detail}`, tone: "quiet" };
     }
     case "acknowledged": {
-      const said = s.ackExcerpt ? ` · “${clip(s.ackExcerpt, 90)}”` : "";
+      const said = s.ackExcerpt ? ` · “${clip(inlinePlain(s.ackExcerpt), 90)}”` : "";
       const plan = s.planChange ? ` · ${s.planChange}` : "";
       return { ...base, line: `${s.id} · acknowledged${at(s.ackedAt)}${said}${plan}`, tone: "good" };
     }
     case "unacknowledged": {
-      const reply = s.ackExcerpt ? ` · its reply: “${clip(s.ackExcerpt, 80)}”` : "";
+      const reply = s.ackExcerpt ? ` · its reply: “${clip(inlinePlain(s.ackExcerpt), 80)}”` : "";
       return { ...base, line: `${s.id} · not acknowledged${reply}`, tone: "warn", act: { kind: "redirect", steerId: s.id } };
     }
     case "withdrawn":
