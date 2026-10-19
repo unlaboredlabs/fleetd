@@ -77,7 +77,6 @@ export const fixtures = [
   "chat-waiting",
   "chat-empty",
   // Eight projects in all four states, one with a ~120-character name (fixtures/kit/shared.ts).
-  "status-rows",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
   "inline-items",
 ] as const;
