@@ -1002,7 +1002,7 @@ impl Tasks {
             _ => Err(lead_error(
                 ErrorCode::NotFound,
                 format!("No task {} in this project.", task_id.as_str()),
-                Some("Run `fleetd task list`."),
+                Some("Call `list_agents`."),
             )),
         }
     }
@@ -1184,7 +1184,7 @@ impl Tasks {
                             task.queued_reason.as_ref().map_or("queued", |r| r.as_str())
                         ),
                         Some(&format!(
-                            "Wait for it to start, or `fleetd task cancel {id}` and spawn it again with the new prompt."
+                            "Wait for it to start, or stop it with `stop_agent` and spawn it again with the new prompt."
                         )),
                     ));
                 }

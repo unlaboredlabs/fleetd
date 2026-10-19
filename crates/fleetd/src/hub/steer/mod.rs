@@ -406,7 +406,7 @@ pub fn for_plan_call(
 ) -> Result<Steer, ToolError> {
     let refused = || {
         invalid(format!("{id} is not a delivered steer of this project.")).with_fix(
-            "Name a steer you were sent (its message starts with S<n>), or give --why instead.",
+            "Name a steer you were sent (its message starts with S<n>), or give why instead.",
         )
     };
     let (steer, _) = store::get(&hub.db, id)?.ok_or_else(refused)?;

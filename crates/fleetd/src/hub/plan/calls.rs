@@ -80,7 +80,7 @@ fn answer(
         LeadCall::PlanMilestone(c) => {
             let milestone = plans.milestone(r, c)?;
             let next = format!(
-                "add items with `fleetd plan add \"<title>\" --milestone {}`.",
+                "add items with `plan_add` and milestoneId {}.",
                 milestone.milestone_id
             );
             LeadCallResult::PlanMilestone(PlanMilestoneResult {
@@ -103,9 +103,7 @@ fn answer(
             if c.why.is_none() {
                 return Err(
                     McpToolError::new(ErrorCode::Invalid, "Say why the item goes.")
-                        .with_fix(
-                            "Add --why \"<reason>\", or --steer S<n> when a steer asked for it.",
-                        )
+                        .with_fix("Add why, or steer S<n> when a steer asked for it.")
                         .into(),
                 );
             }
