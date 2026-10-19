@@ -284,6 +284,7 @@ impl Session {
                     "attention": status["attention"],
                     "cursor": status["cursor"],
                     "slots": status["slots"],
+                    "chats": status["chats"],
                 })),
                 Err(CallError::Tool(error)) => self.send(error_frame(&error, None)),
                 Err(other) => tracing::error!(?other, "app snapshot failed"),

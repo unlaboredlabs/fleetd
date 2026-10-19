@@ -406,6 +406,21 @@ output!(AttachmentPutOutput {
     sha256: Text<64, 64>,
 });
 
+// attachment_get: one file of a project's chat or orders, to show it (an image in a chat message): at most 5 MiB, the
+// attachment_put cap. Read on the project's machine; the file must belong to that project, or the caller uploaded it.
+input!(AttachmentGetInput {
+    project_ref: ProjectRef,
+    attachment_id: AttachmentId,
+});
+output!(AttachmentGetOutput {
+    attachment_id: AttachmentId,
+    name: Line<1, 120>,
+    mime: AttachmentMime,
+    bytes: Count,
+    /// Standard base64.
+    data_b64: String,
+});
+
 // project_files: a project's files for @-mentions, best fuzzy match first.
 input!(ProjectFilesInput {
     machine_id: MachineId,
@@ -506,6 +521,21 @@ output!(OrderStopOutput {
     state: WorkstreamState,
     /// Tasks this call cancelled (0 when it was already stopped).
     cancelled: Count,
+});
+
+// project_stop: the safety valve. Stops every running and queued agent of the project and its open orders, withdraws
+// what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the chat stay. Idempotent.
+input!(ProjectStopInput {
+    project_ref: ProjectRef,
+    reason: Option<Text<1, 200>>,
+});
+output!(ProjectStopOutput {
+    /// Orders this call stopped.
+    stopped: Count,
+    /// Tasks this call cancelled.
+    cancelled: Count,
+    /// The system line it wrote into the chat.
+    message: crate::chat::ChatMessage,
 });
 
 // time_spans: stored spans of a scope, oldest first, paged by id. `rule` lists the spans a finding links to.
@@ -862,14 +892,39 @@ output!(UsageResumeOutput {
 });
 
 // secret_submit: human keys only. The hub relays the sealed value to the sink's node and waits for its fingerprint.
-input!(SecretSubmitInput {
-    ask_id: AskId,
-    /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
-    sealed: SealedSecret,
+input!(
+    #[serde(remote = "Self")]
+    SecretSubmitInput {
+        /// A secret ask (the questions tool). Exactly one of askId and requestId.
+        ask_id: Option<AskId>,
+        /// A chat's `secret_request` item.
+        request_id: Option<crate::chat::ChatRequestId>,
+        /// Sealed in the desktop app to the sink machine's `box_pub_key` (see Machine).
+        sealed: SealedSecret,
+    }
+);
+checked!(SecretSubmitInput, |input| {
+    if input.ask_id.is_some() == input.request_id.is_some() {
+        return Err("give exactly one of askId and requestId".into());
+    }
+    Ok(())
 });
 output!(SecretSubmitOutput {
-    ask_id: AskId,
+    ask_id: Option<AskId>,
+    request_id: Option<crate::chat::ChatRequestId>,
     fingerprint: SecretFingerprint
+});
+
+// approval_answer: the human approves or denies a chat's `command_approval` item. Human keys only (the handler
+// checks). The item's new state arrives as a `chat.message` event.
+input!(ApprovalAnswerInput {
+    request_id: crate::chat::ChatRequestId,
+    decision: crate::chat::ApprovalDecision,
+    /// A denial's reason, passed to the lead.
+    message: Option<Text<1, 500>>,
+});
+output!(ApprovalAnswerOutput {
+    message: crate::chat::ChatMessage,
 });
 
 // doctor_list: the latest result of every check this key may read; rerun runs them all now first.
@@ -1307,12 +1362,15 @@ tools! {
     train_get => TrainGet, Read, TrainGetInput, TrainGetOutput;
     train_freeze => TrainFreeze, Operate, TrainFreezeInput, TrainFreezeOutput;
     secret_submit => SecretSubmit, Operate, SecretSubmitInput, SecretSubmitOutput;
+    // Human keys only (the handler checks).
+    approval_answer => ApprovalAnswer, Operate, ApprovalAnswerInput, ApprovalAnswerOutput;
     doctor_list => DoctorList, Read, DoctorListInput, DoctorListOutput;
     attention_policy => AttentionPolicy, Read, AttentionPolicyInput, AttentionPolicyOutput;
     // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
     doctor_fix => DoctorFix, Operate, DoctorFixInput, DoctorFixOutput;
     intake_preview => IntakePreview, Operate, IntakePreviewInput, IntakePreviewOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
+    attachment_get => AttachmentGet, Read, AttachmentGetInput, AttachmentGetOutput;
     project_files => ProjectFiles, Read, ProjectFilesInput, ProjectFilesOutput;
     orders_board => OrdersBoard, Read, OrdersBoardInput, OrdersBoardOutput;
     order_get => OrderGet, Read, OrderGetInput, OrderGetOutput;
@@ -1342,6 +1400,8 @@ tools! {
     steers_list => SteersList, Read, SteersListInput, SteersListOutput;
     chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
+    // Human keys only (the handler checks).
+    project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1473,7 +1533,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 76);
+        assert_eq!(McpToolName::ALL.len(), 79);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
