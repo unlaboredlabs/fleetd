@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { Steer, TailItem } from "../../../shared/contracts";
 import { buildConversation, entryIndexAt, jumpTarget, type Entry } from "./conversation";
-import { emptySteering, steeringReducer, type Steering, type SteeringAction } from "./data";
+import { emptySteering, logView, steeringReducer, type Steering, type SteeringAction } from "./data";
 import { reconnectWatcher, redirectId, redirecting, type Sending } from "./sending";
 
 const T0 = "2026-10-19T09:00:00.000Z";
@@ -147,3 +147,17 @@ describe("a transcript jump to a tool call", () => {
   });
 });
 
+
+describe("after a reconnect resets the reads", () => {
+  it("shows no steer or log from before the drop until steers_list and thread_tail answer again", () => {
+    const local = run([{ t: "steers", steers: [steer("S3", "skip the docs page", { stage: "queued" })] }]);
+    const base = { pageLoaded: true, hasLeadThread: true, local, stream: [{ messageId: "m", text: "old" }] };
+    const reset = logView({ ...base, tailLoaded: false, steersLoaded: false });
+    expect(reset).toEqual({ logReady: false, tail: [], steers: [], streamed: [] });
+    expect(logView({ ...base, tailLoaded: true, steersLoaded: false }).logReady).toBe(false);
+    const back = logView({ ...base, tailLoaded: true, steersLoaded: true });
+    expect(back.logReady).toBe(true);
+    expect(back.steers.map((s) => s.id)).toEqual(["S3"]);
+    expect(logView({ ...base, hasLeadThread: false, tailLoaded: false, steersLoaded: true }).logReady).toBe(true);
+  });
+});

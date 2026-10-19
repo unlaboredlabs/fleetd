@@ -8,7 +8,7 @@ import { SteerComposer } from "./Composer";
 import { Conversation, InlineText } from "./Conversation";
 import type { Platform } from "./composer";
 import type { AgentLane, Steer, SteerTarget, ThreadRef } from "../../../shared/contracts";
-import { buildConversation, entryIndexAt, fanOut } from "./conversation";
+import { buildConversation, entryIndexAt, fanOut, type Entry } from "./conversation";
 import { jumpFromHash, useOrder, type Jump, type OrderActions, type OrderData } from "./data";
 import { ActivityText, Fleet } from "./Fleet";
 import { shortModel } from "./format";
@@ -73,6 +73,8 @@ function agentOf(lane: AgentLane, workstreamId: string): SheetAgent {
   return { lane, target: { taskId: lane.taskId }, name: lane.taskId, ref: lane.taskId };
 }
 
+const noEntries: readonly Entry[] = [];
+
 const leadSteers = (steers: readonly Steer[]) => steers.filter((st) => "workstreamId" in st.target);
 
 export function OrderView(props: { data: OrderData; actions: OrderActions; platform: Platform; jumpItem?: string }) {
@@ -126,7 +128,12 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
   // Keep an open sheet's lane live as frames arrive.
   const sheetAgent = sheet ? { ...sheet, lane: (sheet.lane.role === "lead" ? lead : data.lanes.find((l) => l.laneId === sheet.lane.laneId)) ?? sheet.lane } : undefined;
 
-  const onAct = (act: ReceiptAct) => (act.kind === "withdraw" ? actions.withdraw(act.steerId) : actions.redirect(act.steerId));
+  // Receipts only show once the steers answered for this connection; a stale one can't act.
+  const onAct = (act: ReceiptAct) => {
+    if (!data.logReady) return;
+    if (act.kind === "withdraw") actions.withdraw(act.steerId);
+    else actions.redirect(act.steerId);
+  };
   const openTold = (agent: SheetAgent) => {
     if (!agent.lane.threadRef) return;
     setToldOpen({
@@ -143,8 +150,8 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
   const steerTo = (target: SteerTarget, text: string, mode: "queue" | "now", requestId: string) => actions.steer(target, text, mode, requestId);
   const notice =
     data.tailError !== undefined
-      ? { text: data.tailError, error: true }
-      : { text: data.status === "loading" ? "Loading the lead’s log…" : `The lead hasn’t said anything about ${w} yet.`, error: false };
+      ? { text: "Couldn’t load the lead’s log; it loads again when the hub answers.", error: true }
+      : { text: data.logReady ? `The lead hasn’t said anything about ${w} yet.` : "Loading the lead’s log…", error: false };
 
   // The hub's words for an unknown order name its internals; say it plainly and keep them behind Copy.
   const failure = typeof data.status === "object" ? data.status : undefined;
@@ -231,7 +238,7 @@ export function OrderView(props: { data: OrderData; actions: OrderActions; platf
           </Button>
         ) : null}
       </div>
-      <Conversation entries={entries} notice={notice} onAct={onAct} focus={focusIndex === undefined || focusAt === undefined ? undefined : { index: focusIndex, at: focusAt }} />
+      <Conversation entries={data.logReady ? entries : noEntries} notice={notice} onAct={onAct} focus={focusIndex === undefined || focusAt === undefined ? undefined : { index: focusIndex, at: focusAt }} />
       <div className={s.bottom}>
         {waiting ? <InlineText size="xs" tone="quiet" className={cx(s.waiting)} text={waiting} /> : null}
         <SteerComposer

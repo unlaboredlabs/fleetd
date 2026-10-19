@@ -35,6 +35,11 @@ export interface OrderData {
   /** The lead's log, oldest first, kept across refetches. */
   readonly tail: readonly TailItem[];
   readonly tailError?: string | undefined;
+  /**
+   * The lead's log and the steers have answered for this connection. Until then (a first load, or a reconnect that
+   * reset the reads) neither is shown, so no receipt from before the drop reads as live or offers Withdraw.
+   */
+  readonly logReady: boolean;
   readonly steers: readonly Steer[];
   readonly events: readonly HubEvent[];
   /** The lead's messages as they streamed in, oldest first (the tail cuts long ones at 2,000 characters). */
@@ -128,6 +133,28 @@ export function steeringReducer(s: Steering, a: SteeringAction): Steering {
 }
 
 const noLanes: readonly AgentLane[] = [];
+const noTail: readonly TailItem[] = [];
+const noSteers: readonly Steer[] = [];
+const noStream: readonly Streamed[] = [];
+
+/**
+ * What the conversation may show: the accumulated log, steers and streams once this connection's reads answered
+ * (the layer resets them on a reconnect, and its queries hold no data until they answer again); nothing before.
+ */
+export function logView(i: {
+  readonly pageLoaded: boolean;
+  readonly hasLeadThread: boolean;
+  readonly tailLoaded: boolean;
+  readonly steersLoaded: boolean;
+  readonly local: Steering;
+  readonly stream: readonly Streamed[];
+}): { readonly logReady: boolean; readonly tail: readonly TailItem[]; readonly steers: readonly Steer[]; readonly streamed: readonly Streamed[] } {
+  // An order whose project has no lead thread has no log to wait for.
+  const logReady = i.pageLoaded && (!i.hasLeadThread || i.tailLoaded) && i.steersLoaded;
+  return logReady
+    ? { logReady, tail: i.local.tail, steers: i.local.steers, streamed: i.stream }
+    : { logReady, tail: noTail, steers: noSteers, streamed: noStream };
+}
 
 export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderActions] {
   const layer = useDataLayer();
@@ -247,6 +274,14 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
     const doneWhen = briefQ.data?.workstream.brief?.doneWhen;
     const claim = page?.detail?.claims[0] ?? briefQ.data?.claims?.[0];
     const tailError = tailQ.error instanceof CallError ? tailQ.error.error.message : undefined;
+    const log = logView({
+      pageLoaded: page !== undefined,
+      hasLeadThread: page?.lead?.threadRef !== undefined,
+      tailLoaded: tailQ.data !== undefined,
+      steersLoaded: steersQ.data !== undefined,
+      local,
+      stream,
+    });
     return {
       status: card !== undefined ? "ready" : failure !== undefined ? { error: failure.message, code: failure.code } : "loading",
       workstreamId,
@@ -258,16 +293,17 @@ export function useOrder(workstreamId: string, jump?: Jump): [OrderData, OrderAc
       asks: page?.asks.length ?? 0,
       ...(doneWhen ? { doneWhen } : {}),
       ...(claim ? { claim } : {}),
-      tail: local.tail,
+      tail: log.tail,
       tailError,
-      steers: local.steers,
+      logReady: log.logReady,
+      steers: log.steers,
       events,
-      streamed: stream,
+      streamed: log.streamed,
       sending: local.sending,
       redirected: local.redirected,
       ...(local.focus ? { focus: local.focus } : {}),
     };
-  }, [workstreamId, page, orderQ.error, briefQ.data, tailQ.error, projects, events, local, stream]);
+  }, [workstreamId, page, orderQ.error, briefQ.data, tailQ.error, tailQ.data, steersQ.data, projects, events, local, stream]);
 
   return [data, actions];
 }

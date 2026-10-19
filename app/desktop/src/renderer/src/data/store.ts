@@ -46,7 +46,7 @@ export interface LiveState {
    * A project lead's recent messages in full, oldest first (the order view's conversation): `text` keeps a tail, and
    * a lead can stream far more than that before its log has the message. Bounded per lead by STREAM_CHARS.
    */
-  readonly streams?: Readonly<Record<string, readonly { readonly messageId: string; readonly text: string }[]>>;
+  readonly streams?: Readonly<Record<string, readonly { readonly messageId: string; readonly text: string }[]>> | undefined;
   readonly machines: Readonly<Record<string, MachineLive>>;
   readonly slots?: SlotState | undefined;
   /** Hub clock minus local clock, in ms; see `applyLive`. */
@@ -102,6 +102,18 @@ const appendStream = (stream: Stream, messageId: string, append: string): Stream
   }
   const only = next[0];
   if (size > STREAM_CHARS && only !== undefined) next = [{ messageId: only.messageId, text: only.text.slice(-STREAM_CHARS) }];
+  return next;
+};
+
+/**
+ * The leads' streams after a live frame. A frame with no lead text keeps them, identity included; a full frame
+ * starts them over, as it does `text`.
+ */
+export const applyStreams = (streams: LiveState["streams"], frame: LiveFrame): LiveState["streams"] => {
+  const lead = (frame.text ?? []).filter((t) => isLeadLane(t.laneId));
+  if (lead.length === 0) return frame.full ? {} : streams;
+  const next: Record<string, Stream> = frame.full ? {} : { ...streams };
+  for (const t of lead) next[t.laneId] = appendStream(next[t.laneId] ?? [], t.messageId, t.append);
   return next;
 };
 
@@ -174,7 +186,7 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "event":
       return [applyEvent(s, frame.event), {}];
     case "live":
-      return [{ ...s, live: applyLive(s.live, frame.frame, nowMs) }, {}];
+      return [{ ...s, live: { ...applyLive(s.live, frame.frame, nowMs), streams: applyStreams(s.live.streams, frame.frame) } }, {}];
     case "error":
       return [{ ...s, sessionError: frame.error }, {}];
   }
@@ -277,17 +289,14 @@ export const applyLive = (live: LiveState, frame: LiveFrame, nowMs: number): Liv
     lanes[lane.laneId] = spark === undefined ? lane : { ...lane, spark };
   }
   const text: Record<string, { messageId: string; text: string }> = frame.full ? {} : { ...live.text };
-  const streams: Record<string, Stream> = frame.full ? {} : { ...live.streams };
   for (const t of frame.text ?? []) {
     const prev = text[t.laneId];
     const base = prev !== undefined && prev.messageId === t.messageId ? prev.text : "";
     text[t.laneId] = { messageId: t.messageId, text: tail(base + t.append, TEXT_TAIL) };
-    if (isLeadLane(t.laneId)) streams[t.laneId] = appendStream(streams[t.laneId] ?? [], t.messageId, t.append);
   }
   return {
     lanes,
     text,
-    streams,
     machines: frame.machines === undefined ? live.machines : byId(frame.machines, (m) => m.machineId),
     slots: frame.slots ?? live.slots,
     skewMs,
