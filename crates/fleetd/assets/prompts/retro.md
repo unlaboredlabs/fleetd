@@ -12,7 +12,7 @@ Rules:
 - expected: one line, what should change and by about how much.
 - You cannot change how incidents are detected, how metrics are counted, or briefs already running.
 
-Incident classes: false_claim (a done claim whose checks failed), estimate_miss (took over 2x the estimate), polish_loop (review rounds past the cap), misfiled_ask (the lead asked the human something the human handed back), out_of_area (a task wrote outside its areas), stall (a run stopped making progress), policy_bypass (a merge outside the train), re_ask (the human was asked about something already decided), override (the human replaced a lead's decision).
+Incident classes: false_claim (a done claim whose checks failed), polish_loop (review rounds past the cap), misfiled_ask (the lead asked the human something the human handed back), out_of_area (a task wrote outside its areas), stall (a run stopped making progress), policy_bypass (a merge outside the train), re_ask (the human was asked about something already decided), override (the human replaced a lead's decision).
 
 Incidents, one JSON object per line:
 

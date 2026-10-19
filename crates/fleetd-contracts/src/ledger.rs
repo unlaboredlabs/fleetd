@@ -349,6 +349,9 @@ brand!(
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BriefBudget {
+    /// How big a research spend the lead allows, relative like plan sizes; never a time guess.
+    pub size: Option<Tier>,
+    /// Older briefs only; a lead now gives `size`.
     pub agent_hours: Option<PositiveNumber>,
 }
 

@@ -185,7 +185,7 @@ fn default_task_kind() -> TaskKind {
 }
 
 /// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
-/// [--effort e] [--tier S|M|L] [--estimate <min>] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
+/// [--effort e] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
 /// from the policy file, then the project, then claude-opus-5-5/high. A write task needs `--serves`, a review task
 /// `--pr`; `--qa` marks a review task as a QA run.
 #[skip_serializing_none]
@@ -202,6 +202,7 @@ pub struct TaskSpawnCall {
     pub model: Option<NonEmpty>,
     pub effort: Option<Effort>,
     pub tier: Option<Tier>,
+    /// Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one.
     pub estimate_minutes: Option<NonNegative>,
     pub serves: Option<Serves>,
     pub pr: Option<PrUrl>,
