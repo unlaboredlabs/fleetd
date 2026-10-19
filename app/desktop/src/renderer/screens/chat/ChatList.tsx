@@ -7,7 +7,9 @@ import { FileText, Image } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import type { AgentLane } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
-import type { ChatAttachment, ChatItem } from "./contract";
+import type { ChatItem } from "../../src/data/chat";
+
+type ChatAttachment = ChatItem["attachments"][number];
 import { shortClock } from "./format";
 import { systemHeadline, type Row } from "./model";
 import { InlineChatItem, LiveStrip, PendingReceipt, type ProjectRef } from "./slots";
@@ -17,16 +19,19 @@ import s from "./chat.module.css";
 const sizeWords = (n: number): string => (n < 1024 ? `${String(n)} B` : n < 1024 * 1024 ? `${String(Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 function Attachment({ a }: { a: ChatAttachment }) {
-  const Icon = a.mimeType.startsWith("image/") ? Image : FileText;
+  const Icon = a.mime.startsWith("image/") ? Image : FileText;
+  const size = a.bytes === undefined ? undefined : sizeWords(a.bytes);
   return (
-    <span className={s.attachment} title={`${a.name} · ${sizeWords(a.sizeBytes)}`}>
+    <span className={s.attachment} title={size ? `${a.name} · ${size}` : a.name}>
       <Icon className={s.attachmentIcon} aria-hidden />
       <Truncate as="code" size="xs" mono>
         {a.name}
       </Truncate>
-      <Text size="xs" tone="quiet" className={cx(s.flexNone)}>
-        {sizeWords(a.sizeBytes)}
-      </Text>
+      {size ? (
+        <Text size="xs" tone="quiet" className={cx(s.flexNone)}>
+          {size}
+        </Text>
+      ) : null}
     </span>
   );
 }
@@ -130,7 +135,7 @@ const RowView = memo(function RowView(props: {
           {i.attachments.length > 0 ? (
             <div className={s.attachments}>
               {i.attachments.map((a) => (
-                <Attachment key={a.id} a={a} />
+                <Attachment key={a.attachmentId} a={a} />
               ))}
             </div>
           ) : null}
@@ -139,7 +144,7 @@ const RowView = memo(function RowView(props: {
               Still writing…
             </Text>
           ) : null}
-          {i.state === "pending" || i.state === "failed" ? <PendingReceipt item={i} project={project} /> : null}
+          {i.author === "human" && i.state !== "sent" ? <PendingReceipt item={i} project={project} /> : null}
         </div>
       );
     }

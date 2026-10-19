@@ -1,7 +1,7 @@
 // The chat as rows: day dividers, messages grouped by author (a run from one author within a few minutes shows its
 // name and time once), fleetd's own messages folded to one quiet line, event one-liners, inline items, the live
 // strip under the lead's newest message, and the top of the history (older pages, or its start).
-import type { ChatItem } from "./contract";
+import type { ChatItem } from "../../src/data/chat";
 
 export type Row =
   | { readonly kind: "top"; readonly key: "top"; readonly state: "more" | "loading" | "start" }

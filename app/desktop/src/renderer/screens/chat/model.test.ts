@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatItem } from "./contract";
+import type { ChatItem } from "../../src/data/chat";
 import { chatRows, dayLabel, rowIndexOf, systemHeadline } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();

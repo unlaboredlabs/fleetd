@@ -2,7 +2,7 @@
 // one import of the real component (names agreed with its owner), and its stand-in here is deleted.
 import type { AgentLane } from "../../../shared/contracts";
 import { Text } from "../../ui";
-import type { ChatItem } from "./contract";
+import type { ChatItem } from "../../src/data/chat";
 
 export interface ProjectRef {
   readonly machineId: string;
