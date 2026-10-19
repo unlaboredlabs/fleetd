@@ -1,5 +1,5 @@
-//! Text the hub writes for tasks: the branch name, the task's first message, its line in the lead digest, and the
-//! result the lead receives inline in its wake. Pure. Lengths count UTF-16 units, as older hubs' did.
+//! Text the hub writes for tasks: the branch name, the task's first message, its line in the lead digest, and its
+//! event lines in the lead's wake. Pure. Lengths count UTF-16 units, as older hubs' did.
 use std::sync::LazyLock;
 
 use fleetd_contracts::ledger::Brief;
@@ -8,7 +8,8 @@ use fleetd_contracts::tasks::{
 };
 use regex::Regex;
 
-use crate::hub::prompts::PromptSet;
+use crate::hub::leads::events::{Ended, Event};
+use crate::hub::prompts::{PromptSet, fixed};
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
@@ -194,101 +195,78 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
         })
         .collect::<Vec<_>>()
         .join("; ");
-    let id = match task.kind {
-        TaskKind::Write => "task.brief.write",
-        TaskKind::Read => "task.brief.read",
-        TaskKind::Review => "task.brief.review",
+    let vars: &[(&str, &dyn std::fmt::Display)] = &[
+        ("taskId", &task.task_id),
+        ("kind", &kind_str(task.kind)),
+        ("workstreamId", &task.workstream_id),
+        ("project", &one_line(input.project_title, 80)),
+        ("title", &task.title),
+        ("task", &task.prompt.as_str().trim()),
+        ("workstream", &workstream),
+        ("areas", &areas),
+        ("branch", &input.branch.unwrap_or("<your branch>")),
+        (
+            "baseBranch",
+            &input.base_branch.unwrap_or("<default branch>"),
+        ),
+        ("serves", &serves.unwrap_or("<what this serves>")),
+    ];
+    let text = match task.kind {
+        TaskKind::Write => set.render("task.brief.write", vars),
+        TaskKind::Read => fixed::render(fixed::TASK_BRIEF_READ, vars),
+        TaskKind::Review => fixed::render(fixed::TASK_BRIEF_REVIEW, vars),
     };
-    let text = set.render(
-        id,
-        &[
-            ("taskId", &task.task_id),
-            ("kind", &kind_str(task.kind)),
-            ("workstreamId", &task.workstream_id),
-            ("project", &one_line(input.project_title, 80)),
-            ("title", &task.title),
-            ("task", &task.prompt.as_str().trim()),
-            ("workstream", &workstream),
-            ("areas", &areas),
-            ("branch", &input.branch.unwrap_or("<your branch>")),
-            (
-                "baseBranch",
-                &input.base_branch.unwrap_or("<default branch>"),
-            ),
-            ("serves", &serves.unwrap_or("<what this serves>")),
-        ],
-    );
     set.with_instructions(text)
 }
 
-fn quoted(text: &str) -> Vec<String> {
-    text.trim()
-        .split('\n')
-        .map(|l| format!("  > {l}").trim_end().to_owned())
-        .collect()
-}
-
-/// The "why you are woken" entry for a finished task: its whole result tail, inline.
+/// The lead's event line for a finished task: its whole result tail, inline.
 /// `receipts` is the receipts area's line for this result.
 pub fn task_result_lines(
-    set: &PromptSet,
     task_id: &str,
     title: &str,
     result: &TaskResult,
     receipts: Option<&str>,
 ) -> String {
-    let mut where_ = Vec::new();
+    let mut place = Vec::new();
     if let Some(b) = &result.branch {
-        where_.push(format!("branch {}", b.as_str()));
+        place.push(format!("branch {}", b.as_str()));
     }
     if let Some(p) = &result.pr_url {
-        where_.push(format!("PR {}", p.as_str()));
+        place.push(format!("PR {}", p.as_str()));
     }
-    let where_ = if where_.is_empty() {
+    let place = if place.is_empty() {
         String::new()
     } else {
-        format!(" ({})", where_.join(", "))
+        format!(" ({})", place.join(", "))
     };
-    // M6 receipts, counted by the hub; absent on results stored before them.
-    let receipts = receipts.map_or_else(String::new, |r| format!("\n  {r}"));
-    let tail = result.tail.as_str();
-    let quoted_tail = if tail.trim().is_empty() {
-        "  > (no final message)".to_owned()
-    } else {
-        quoted(tail).join("\n")
-    };
-    let (id, verb) = match result.status {
-        TaskResultStatus::Done => ("wake.task_result", "completed"),
-        TaskResultStatus::Failed => ("wake.task_result", "failed"),
-        TaskResultStatus::Cancelled => ("wake.task_cancelled", "was cancelled"),
-    };
-    set.render(
-        id,
-        &[
-            ("taskId", &task_id),
-            ("verb", &verb),
-            ("title", &one_line(title, 80)),
-            ("where", &where_),
-            ("receipts", &receipts),
-            ("result", &quoted_tail),
-        ],
-    )
+    Event::AgentEnded {
+        task: task_id,
+        ended: match result.status {
+            TaskResultStatus::Done => Ended::Done,
+            TaskResultStatus::Failed => Ended::Failed,
+            TaskResultStatus::Cancelled => Ended::Cancelled,
+        },
+        title,
+        place: &place,
+        // M6 receipts, counted by the hub; absent on results stored before them.
+        receipts,
+        result: result.tail.as_str(),
+    }
+    .render()
 }
 
-/// The "why you are woken" entry for a task waiting on input: its question, inline.
-pub fn task_waiting_lines(set: &PromptSet, task_id: &str, title: &str, question: &str) -> String {
-    set.render(
-        "wake.task_waiting",
-        &[
-            ("taskId", &task_id),
-            ("title", &one_line(title, 80)),
-            ("question", &quoted(question).join("\n")),
-        ],
-    )
+/// The lead's event line for a task waiting on input: its question, inline.
+pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String {
+    Event::AgentWaiting {
+        task: task_id,
+        title,
+        question,
+    }
+    .render()
 }
 
 /// One digest line per task: running and idle, then queued with reasons, then those that ended since `since`.
-pub fn task_digest_lines(set: &PromptSet, tasks: &[Task], since: Option<&str>) -> Vec<String> {
+pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
     let model = |t: &Task| format!("{}/{}", t.model.as_str(), effort_str(t.effort));
     let mut out = Vec::new();
@@ -296,36 +274,30 @@ pub fn task_digest_lines(set: &PromptSet, tasks: &[Task], since: Option<&str>) -
         .iter()
         .filter(|t| matches!(t.state, TaskState::Running | TaskState::Idle))
     {
-        let id = if t.state == TaskState::Idle {
-            "digest.tasks.idle"
-        } else {
-            "digest.tasks.running"
-        };
         let branch = t
             .branch
             .as_ref()
             .map_or_else(String::new, |b| format!(" [{}]", b.as_str()));
-        out.push(set.render(
-            id,
-            &[
-                ("taskId", &t.task_id),
-                ("kind", &kind_str(t.kind)),
-                ("model", &model(t)),
-                ("title", &title(t)),
-                ("branch", &branch),
-            ],
+        let state = if t.state == TaskState::Idle {
+            "idle, waiting for input"
+        } else {
+            "running"
+        };
+        out.push(format!(
+            "- {} {state} ({}, {}): {}{branch}",
+            t.task_id,
+            kind_str(t.kind),
+            model(t),
+            title(t)
         ));
     }
     for t in tasks.iter().filter(|t| t.state == TaskState::Queued) {
         let reason = t.queued_reason.as_ref().map_or("waiting", |r| r.as_str());
-        out.push(set.render(
-            "digest.tasks.queued",
-            &[
-                ("taskId", &t.task_id),
-                ("kind", &kind_str(t.kind)),
-                ("title", &title(t)),
-                ("reason", &reason),
-            ],
+        out.push(format!(
+            "- {} queued ({}): {}; {reason}",
+            t.task_id,
+            kind_str(t.kind),
+            title(t)
         ));
     }
     for t in tasks.iter().filter(|t| {
@@ -343,14 +315,11 @@ pub fn task_digest_lines(set: &PromptSet, tasks: &[Task], since: Option<&str>) -
         } else {
             format!(" → {first}")
         };
-        out.push(set.render(
-            "digest.tasks.ended",
-            &[
-                ("taskId", &t.task_id),
-                ("state", &state_str(t.state)),
-                ("title", &title(t)),
-                ("result", &arrow),
-            ],
+        out.push(format!(
+            "- {} {} since your last wake: {}{arrow}",
+            t.task_id,
+            state_str(t.state),
+            title(t)
         ));
     }
     out

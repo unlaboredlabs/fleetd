@@ -1,6 +1,6 @@
 //! The claim lines a lead reads in its wake. Pure.
 use super::{units, utf16_prefix};
-use crate::hub::prompts::PromptSet;
+use crate::hub::leads::events::Event;
 use fleetd_contracts::ledger::{CheckSpec, WorkstreamId};
 use fleetd_contracts::verification::{CheckOutcome, CheckResult, ClaimId};
 
@@ -85,33 +85,25 @@ fn failure_lines(r: &CheckResult) -> Vec<String> {
 }
 
 pub fn claim_failed_lines(
-    set: &PromptSet,
     claim_id: &ClaimId,
     workstream_id: &WorkstreamId,
     failures: &[CheckResult],
 ) -> String {
-    let first = failures.first().map_or(0, |r| r.check_index.get());
     let lines: Vec<String> = failures.iter().flat_map(failure_lines).collect();
-    set.render(
-        "wake.claim_failed",
-        &[
-            ("claimId", claim_id),
-            ("workstreamId", workstream_id),
-            ("failures", &lines.join("\n")),
-            ("firstCheck", &first),
-        ],
-    )
+    Event::ClaimFailed {
+        claim: claim_id.as_str(),
+        workstream: workstream_id.as_str(),
+        failures: &lines,
+    }
+    .render()
 }
 
-pub fn claim_passed_line(
-    set: &PromptSet,
-    claim_id: &ClaimId,
-    workstream_id: &WorkstreamId,
-) -> String {
-    set.render(
-        "wake.claim_passed",
-        &[("claimId", claim_id), ("workstreamId", workstream_id)],
-    )
+pub fn claim_passed_line(claim_id: &ClaimId, workstream_id: &WorkstreamId) -> String {
+    Event::ClaimPassed {
+        claim: claim_id.as_str(),
+        workstream: workstream_id.as_str(),
+    }
+    .render()
 }
 
 /// One evidence line per failed claim, for the false-claim incident.

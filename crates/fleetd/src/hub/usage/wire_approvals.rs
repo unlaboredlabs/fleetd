@@ -400,10 +400,4 @@ impl ApprovalHub for OpsPorts {
             })
         })
     }
-    fn prompts(&self, m: &str, t: &str) -> crate::hub::prompts::PromptSet {
-        match fleetd_contracts::ids::MachineId::new(m) {
-            Ok(m) => self.hub().db.prompts().for_thread(&m, t),
-            Err(_) => crate::hub::prompts::PromptSet::defaults().clone(),
-        }
-    }
 }

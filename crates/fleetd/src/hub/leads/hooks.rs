@@ -24,7 +24,7 @@ pub trait UsageHook: Send + Sync {
     fn when_clear(&self, thread: &ThreadRef) -> BoxFuture<()>;
 }
 
-/// Tasks: digest lines, and listing and cancelling the tasks of removed projects.
+/// Tasks: digest lines, the agents line, and listing and cancelling the tasks of removed projects.
 pub trait TasksHook: Send + Sync {
     /// The digest's "Tasks" lines: `taskDigestLines(forDigest(ref, since, limit), since)`.
     fn digest_lines(
@@ -32,8 +32,9 @@ pub trait TasksHook: Send + Sync {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String>;
+    /// The project's agents against its cap, for the state block.
+    fn agents(&self, project_ref: &ProjectRef) -> super::events::AgentsLine;
     /// Live (queued, running, idle) tasks, in one project or all.
     fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)>;
     /// `Tasks.cancel({projectRef, by: "hub"}, taskId, reason)`, errors ignored.
@@ -62,7 +63,6 @@ pub trait TrainHook: Send + Sync {
         &self,
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Option<Vec<String>>;
 }
 

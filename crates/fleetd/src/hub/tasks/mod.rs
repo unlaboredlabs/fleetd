@@ -308,9 +308,7 @@ impl Tasks {
 
     fn wake_result(&self, task: &Task, result: &TaskResult) {
         let receipts = self.hooks.receipts.get().and_then(|r| r.line(result));
-        let set = self.d.db.prompts().for_lead(&task.project_ref);
         let text = render::task_result_lines(
-            &set,
             task.task_id.as_str(),
             task.title.as_str(),
             result,
@@ -460,12 +458,7 @@ impl Tasks {
         let result = TaskResult {
             status: TaskResultStatus::Failed,
             tail: Text::unchecked(tail_of(
-                &self
-                    .d
-                    .db
-                    .prompts()
-                    .for_lead(&task.project_ref)
-                    .render("wake.task_start_failed", &[("message", &message)]),
+                &format!("fleetd could not start the task: {message}"),
                 render::TAIL_MAX,
             )),
             branch: task.branch.clone(),
@@ -931,9 +924,7 @@ impl Tasks {
                             thread_ref.thread_id.as_str()
                         )
                     });
-                let set = self.d.db.prompts().for_lead(&task.project_ref);
                 let text = render::task_waiting_lines(
-                    &set,
                     task.task_id.as_str(),
                     task.title.as_str(),
                     &question,
@@ -1364,9 +1355,7 @@ impl Tasks {
                 None,
             ));
         };
-        let set = self.d.db.prompts().for_lead(&task.project_ref);
-        let text =
-            render::task_waiting_lines(&set, task_id.as_str(), task.title.as_str(), question);
+        let text = render::task_waiting_lines(task_id.as_str(), task.title.as_str(), question);
         self.d
             .ports
             .wake(&task.project_ref, WakeKind::TaskWaiting, text);
@@ -1390,15 +1379,35 @@ impl Tasks {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
         limit: usize,
-        prompts: &crate::hub::prompts::PromptSet,
     ) -> Vec<String> {
         let since = since.map(Timestamp::as_str);
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
-            Ok(tasks) => render::task_digest_lines(prompts, &tasks, since),
+            Ok(tasks) => render::task_digest_lines(&tasks, since),
             Err(error) => {
                 tracing::warn!(%error, "tasks: digest lines not read");
                 Vec::new()
             }
+        }
+    }
+
+    /// The project's agents against its share of the slots: running holds a slot now, queued waits for one.
+    pub fn agents(&self, project_ref: &ProjectRef) -> crate::hub::leads::events::AgentsLine {
+        let slots = self.d.slots.state();
+        let mine = slots
+            .per_project
+            .iter()
+            .find(|p| &p.project_ref == project_ref);
+        let queued = self
+            .db(|c| TaskRecords::counts(c, project_ref))
+            .map(|c| c.queued.get())
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "tasks: counts not read");
+                0
+            });
+        crate::hub::leads::events::AgentsLine {
+            running: mine.map_or(0, |p| p.used.get()),
+            cap: mine.map_or(slots.cap.get(), |p| p.share.get()),
+            queued,
         }
     }
 

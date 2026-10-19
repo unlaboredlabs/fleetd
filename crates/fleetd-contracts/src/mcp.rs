@@ -27,7 +27,7 @@ use crate::prim::{
 use crate::projects::{AddId, CloneTarget, GitHubRepos, MachineRepos, ProjectInspect};
 use crate::prompts::{
     PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
-    SessionPrompt,
+    RetiredPromptOverride, SessionPrompt,
 };
 use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
@@ -383,11 +383,11 @@ checked!(IntakeSubmitOutput, |output| {
     Ok(())
 });
 
-// intake_preview: where intake_submit would send this text (the `@project` and prefix rules, then the router), without
-// creating anything. Cached by text for 10 minutes.
+// intake_preview: where intake_submit would send this text (a leading `@project`, or the only project), without
+// creating anything.
 input!(IntakePreviewInput { text: IntakeText });
 output!(IntakePreviewOutput {
-    /// Absent: the router could not place it (intake_submit would ask the human).
+    /// Absent: the text names no project and there is more than one (intake_submit would refuse it).
     echo: Option<IntakeEcho>,
 });
 
@@ -1056,7 +1056,11 @@ input!(PromptsListInput {
     /// The texts in effect for this project; absent: hub-wide.
     project_ref: Option<ProjectRef>,
 });
-output!(PromptsListOutput { prompts: Vec<PromptSummary> });
+output!(PromptsListOutput {
+    prompts: Vec<PromptSummary>,
+    /// Your edits to prompts a release retired: hub-wide ones, and the asked project's.
+    orphans: Vec<RetiredPromptOverride>
+});
 input!(PromptGetInput { id: PromptId, project_ref: Option<ProjectRef> });
 output!(PromptGetOutput {
     #[serde(flatten)]

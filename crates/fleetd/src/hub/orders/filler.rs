@@ -15,11 +15,11 @@ use fleetd_contracts::ledger::{LeadState, WorkstreamState};
 use tokio::sync::Notify;
 
 use crate::hub::api::Hub;
+use crate::hub::leads::events::Event;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::plan::Runnable;
 use crate::hub::plan::store::pkey;
-use crate::hub::prompts::PromptSet;
 
 /// At most this many items are named in one wake; the rest are counted.
 const MAX_NAMED: usize = 5;
@@ -96,7 +96,7 @@ impl Memory {
 }
 
 /// The wake line: the next offers by name, how many more there are, and how many slots are free.
-pub fn line(set: &PromptSet, offers: &[Offer], total: usize, room: i64) -> String {
+pub fn line(offers: &[Offer], total: usize, room: i64) -> String {
     let mut items = offers
         .iter()
         .map(|o| o.text.as_str())
@@ -105,7 +105,11 @@ pub fn line(set: &PromptSet, offers: &[Offer], total: usize, room: i64) -> Strin
     if total > offers.len() {
         items.push_str(&format!("; and {} more", total - offers.len()));
     }
-    set.render("wake.runnable", &[("items", &items), ("room", &room)])
+    Event::Runnable {
+        items: &items,
+        room,
+    }
+    .render()
 }
 
 /// The orders whose items are approved work: running on a frozen brief, so the human asked for them.
@@ -168,12 +172,7 @@ pub async fn pass(hub: &Hub, memory: &mut Memory) {
             continue;
         };
         if let Some(offers) = memory.decide(&pkey(&r), &facts) {
-            let text = line(
-                &hub.db.prompts().for_lead(&r),
-                offers,
-                facts.offers.len(),
-                facts.room,
-            );
+            let text = line(offers, facts.offers.len(), facts.room);
             tracing::info!(project = %pkey(&r), offers = facts.offers.len(), "slot filler: waking the lead");
             hub.leads.wakes.trigger(
                 &r,
@@ -289,10 +288,11 @@ mod tests {
 
     #[test]
     fn the_line_names_the_offers_counts_the_rest_and_never_a_time() {
-        let set = PromptSet::defaults();
-        let text = line(set, &[offer("P4")], 3, 1);
-        assert!(text.contains("P4 work; and 2 more"), "{text}");
-        assert!(text.contains("spawn_agent"), "{text}");
+        let text = line(&[offer("P4")], 3, 1);
+        assert_eq!(
+            text,
+            "- 1 slot free; approved work can start: P4 work; and 2 more"
+        );
         for word in ["minute", "hour", "ETA", "soon"] {
             assert!(!text.contains(word), "{word} in {text}");
         }

@@ -1,6 +1,6 @@
-//! Wakes to a lead: triggers for one lead are debounced and coalesced into a single message, which starts with the
-//! code-rendered digest and then says why the lead was woken.
-use std::collections::{HashMap, HashSet};
+//! Wakes to a lead: triggers for one lead are debounced and coalesced into a single message: the code-rendered
+//! digest, then one event line per trigger (`events`).
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -8,19 +8,16 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{
-    Decision, DecisionScope, DecisionSource, PlaybookRef, WorkstreamId,
-};
+use fleetd_contracts::ledger::WorkstreamId;
 
-use super::digest::{DigestInput, DigestPlaybook, WorkstreamFacts, one_line, render_lead_digest};
+use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
 use super::error::LeadError;
+use super::events::{Event, frame};
 use super::hooks::BoxFuture;
 use super::ports::{Answer, followed_up};
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
-use crate::hub::playbooks::Playbooks;
-use crate::hub::prompts::PromptSet;
 use crate::hub::store::{NewEvent, now_ms};
 
 pub const WAKE_DEBOUNCE: Duration = Duration::from_secs(10);
@@ -37,8 +34,6 @@ pub enum LineKind {
     ResearchVerdict,
     /// A person added to an order (`order_note`).
     Human,
-    /// The lead ended a turn with an order frozen and nothing under way (`orders::idle`).
-    Idle,
     /// A slot is free and approved work is runnable (`orders::filler`).
     Runnable,
 }
@@ -52,34 +47,28 @@ pub enum Trigger {
     Intent {
         workstream_id: WorkstreamId,
         text: String,
-        /// M9: the playbook it pinned, whose instructions go into this wake.
-        playbook: Option<DigestPlaybook>,
     },
+    /// An answered ask only wakes the lead: it gets no event line, since the chat replaces asks.
     Answer(Answer),
-    /// A decision the human recorded that touches the lead's project.
-    Decision(Decision),
     /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
     /// that raises it renders its own "why" line(s).
-    Line {
-        kind: LineKind,
-        text: String,
-    },
+    Line { kind: LineKind, text: String },
 }
 
 impl Trigger {
-    /// M7 merge train: a merge, or a PR the train refused or gave up on, as one line.
+    /// M7 merge train: a merge, or a PR the train refused or gave up on, as its event line.
     pub fn train(line: &str) -> Self {
         Trigger::Line {
             kind: LineKind::Train,
-            text: format!("- {line}"),
+            text: line.to_owned(),
         }
     }
 
-    /// M9: a research workstream's computed verdict, as one line.
+    /// M9: a research workstream's computed verdict, as its event line.
     pub fn research_verdict(line: &str) -> Self {
         Trigger::Line {
             kind: LineKind::ResearchVerdict,
-            text: format!("- {line}"),
+            text: line.to_owned(),
         }
     }
 
@@ -87,7 +76,6 @@ impl Trigger {
         match self {
             Trigger::Intent { .. } => "intent",
             Trigger::Answer(_) => "answer",
-            Trigger::Decision(_) => "decision",
             Trigger::Line { kind, .. } => match kind {
                 LineKind::TaskResult => "task_result",
                 LineKind::ClaimFailed => "claim_failed",
@@ -96,94 +84,35 @@ impl Trigger {
                 LineKind::Train => "train",
                 LineKind::ResearchVerdict => "research_verdict",
                 LineKind::Human => "human",
-                LineKind::Idle => "idle",
                 LineKind::Runnable => "runnable",
             },
         }
     }
 }
 
-fn quote(text: &str) -> String {
-    one_line(text, 300)
-}
-
-fn scope_text(scope: &DecisionScope) -> String {
-    match scope {
-        DecisionScope::Workstream { workstream_id } => workstream_id.to_string(),
-        DecisionScope::Project { .. } => "project".into(),
-        DecisionScope::Global => "global".into(),
-    }
-}
-
-/// The "why you are woken" lines. Answers are already listed in the digest, so they get one summary line; so do
-/// playbook instructions the digest already shows.
-pub fn trigger_lines(set: &PromptSet, triggers: &[Trigger], digest: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    for t in triggers {
-        match t {
+/// One event line per trigger, in the order they came.
+pub fn trigger_lines(triggers: &[Trigger]) -> Vec<String> {
+    triggers
+        .iter()
+        .filter_map(|t| match t {
             Trigger::Intent {
                 workstream_id,
                 text,
-                playbook,
-            } => {
-                lines.push(set.render(
-                    "wake.intent",
-                    &[("workstreamId", workstream_id), ("text", &quote(text))],
-                ));
-                if let Some(p) = playbook {
-                    let instructions = one_line(&p.lead_instructions, 600);
-                    lines.push(if digest.contains(&instructions) {
-                        set.render("wake.intent.playbook_listed", &[("playbook", &p.name)])
-                    } else {
-                        set.render(
-                            "wake.intent.playbook",
-                            &[("playbook", &p.name), ("instructions", &instructions)],
-                        )
-                    });
+            } => Some(
+                Event::Order {
+                    workstream: workstream_id.as_str(),
+                    text,
                 }
-            }
-            Trigger::Decision(d) => {
-                let who = if d.source == DecisionSource::Human {
-                    "The human".to_string()
-                } else {
-                    format!(
-                        "Agent {}, for the human,",
-                        d.by.as_deref().unwrap_or("(unnamed)")
-                    )
-                };
-                lines.push(set.render(
-                    "wake.decision",
-                    &[
-                        ("who", &who),
-                        ("decisionId", &d.decision_id),
-                        ("key", &d.key),
-                        ("value", &quote(d.value.as_ref())),
-                        ("scope", &scope_text(&d.scope)),
-                    ],
-                ));
-            }
-            Trigger::Line { text, .. } => lines.push(text.clone()),
-            Trigger::Answer(_) => {}
-        }
-    }
-    let answers = triggers
-        .iter()
-        .filter(|t| matches!(t, Trigger::Answer(_)))
-        .count();
-    if answers > 0 {
-        lines.push(set.render("wake.answers", &[("count", &answers)]));
-    }
-    lines
+                .render(),
+            ),
+            Trigger::Line { text, .. } => Some(text.clone()),
+            Trigger::Answer(_) => None,
+        })
+        .collect()
 }
 
-pub fn render_wake(set: &PromptSet, digest: &str, triggers: &[Trigger]) -> String {
-    set.render(
-        "wake.frame",
-        &[
-            ("digest", &digest),
-            ("lines", &trigger_lines(set, triggers, digest).join("\n")),
-        ],
-    )
+pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {
+    frame(digest, &trigger_lines(triggers))
 }
 
 /// Coalesces items per key: a key flushes once no new item arrived for `debounce`, or `max_wait` after its first
@@ -295,7 +224,6 @@ fn trigger_workstreams(
         let found: Vec<String> = match t {
             Trigger::Intent { workstream_id, .. } => vec![workstream_id.to_string()],
             Trigger::Answer(a) => a.ask.workstream_id.iter().map(|w| w.to_string()).collect(),
-            Trigger::Decision(_) => Vec::new(),
             Trigger::Line { text, .. } => re
                 .find_iter(text)
                 .filter_map(|m| match m.as_str() {
@@ -320,7 +248,6 @@ fn key_of(r: &ProjectRef) -> String {
 pub struct LeadWakes {
     ctx: Arc<Ctx>,
     records: Arc<LeadRecords>,
-    playbooks: Arc<Playbooks>,
     debouncer: Arc<Debouncer<ProjectRef, Trigger>>,
     flushing: tokio::sync::Mutex<()>,
     /// When the pending wake's first trigger came, per project: `lead.woken.firstTriggerAt`, so the time inspector
@@ -329,12 +256,11 @@ pub struct LeadWakes {
 }
 
 impl LeadWakes {
-    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, playbooks: Arc<Playbooks>) -> Arc<Self> {
+    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>) -> Arc<Self> {
         let debouncer = Debouncer::new(Arc::clone(&ctx.clock), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
         Arc::new(Self {
             ctx,
             records,
-            playbooks,
             debouncer,
             flushing: tokio::sync::Mutex::new(()),
             first: std::sync::Mutex::new(HashMap::new()),
@@ -366,13 +292,8 @@ impl LeadWakes {
             });
     }
 
-    /// The lead digest as of now, with `answers` as its "since your last wake" list.
-    pub async fn digest(
-        &self,
-        r: &ProjectRef,
-        answers: &[Answer],
-        set: &PromptSet,
-    ) -> Result<String, LeadError> {
+    /// The lead digest as of now: the state block at the top of its first message and of every wake.
+    pub async fn digest(&self, r: &ProjectRef) -> Result<String, LeadError> {
         let ctx = &self.ctx;
         let project = ctx.store.project_get(r)?;
         let workstreams = self.records.workstreams_list(&WorkstreamFilter {
@@ -382,22 +303,6 @@ impl LeadWakes {
             ..Default::default()
         })?;
         let since = self.records.lead_get(r)?.and_then(|l| l.last_wake_at);
-        let mut pinned: HashMap<PlaybookRef, DigestPlaybook> = HashMap::new();
-        let refs: HashSet<&PlaybookRef> = workstreams
-            .iter()
-            .filter_map(|w| w.playbook.as_ref())
-            .collect();
-        for p in refs {
-            if let Some(loaded) = self.playbooks.by_ref(p)? {
-                pinned.insert(
-                    p.clone(),
-                    DigestPlaybook {
-                        name: loaded.playbook.name.as_str().into(),
-                        lead_instructions: loaded.playbook.lead_instructions.to_string(),
-                    },
-                );
-            }
-        }
         let open_asks = ctx.ports().open_asks(Some(r), None, 50)?;
         // Global, project and every workstream-scoped decision in the project; the digest ranks them.
         let decisions = ctx.ports().decisions_in_project(r, 500)?;
@@ -405,16 +310,16 @@ impl LeadWakes {
             .hooks
             .tasks
             .get()
-            .map(|t| t.digest_lines(r, since.as_ref(), 50, set));
+            .map(|t| t.digest_lines(r, since.as_ref(), 50));
+        let agents = ctx.hooks.tasks.get().map(|t| t.agents(r));
         let train = ctx
             .hooks
             .train
             .get()
-            .and_then(|t| t.lead_lines(r, since.as_ref(), set));
+            .and_then(|t| t.lead_lines(r, since.as_ref()));
         let facts = self.workstream_facts(&workstreams);
         let at = now_iso(ctx);
         Ok(render_lead_digest(&DigestInput {
-            prompts: set,
             project_ref: r,
             title: project
                 .as_ref()
@@ -422,12 +327,11 @@ impl LeadWakes {
             at: &at,
             workstreams: &workstreams,
             open_asks: &open_asks,
-            answers,
             decisions: &decisions,
+            agents,
             tasks,
             train,
             facts: &facts,
-            playbooks: &pinned,
         }))
     }
 
@@ -541,20 +445,7 @@ impl LeadWakes {
             });
             return Ok(());
         }
-        let answers: Vec<Answer> = triggers
-            .iter()
-            .filter_map(|t| match t {
-                Trigger::Answer(a) => Some(a.clone()),
-                _ => None,
-            })
-            .collect();
-        // The lead keeps the texts its session started with.
-        let set = self
-            .ctx
-            .db
-            .prompts()
-            .for_thread(&r.machine_id, lead.thread_id.as_str());
-        let message = render_wake(&set, &self.digest(r, &answers, &set).await?, &triggers);
+        let message = render_wake(&self.digest(r).await?, &triggers);
         let at = now_iso(&self.ctx);
         let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
         // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
@@ -621,63 +512,6 @@ impl LeadWakes {
         for answer in answers {
             if !followed_up(answer) {
                 self.trigger(r, Trigger::Answer(answer.clone()));
-            }
-        }
-    }
-
-    /// Wakes a lead when someone other than a lead records a decision in its project (decisions_record from a human
-    /// or an outside agent). Answers to asks are left out: the AnswerSink already delivers those. Follows the event
-    /// log from the hub's start, so it sees every path that records a decision.
-    pub async fn run_decision_wakes(self: Arc<Self>) {
-        let events = Arc::clone(&self.ctx.events);
-        let mut cursor = events.head();
-        loop {
-            let page = match events
-                .wait(crate::hub::store::WaitInput {
-                    cursor: Some(cursor),
-                    types: Some(vec![HubEventType::DecisionRecorded]),
-                    machine_id: None,
-                    timeout_sec: 3600,
-                })
-                .await
-            {
-                Ok(page) => page,
-                Err(error) => {
-                    tracing::warn!(%error, "decision wakes: event log read failed");
-                    self.ctx.clock.sleep(Duration::from_secs(1)).await;
-                    continue;
-                }
-            };
-            cursor = page.cursor;
-            for event in page.events {
-                let (Some(machine_id), Some(project_id)) =
-                    (event.machine_id.clone(), event.project_id.clone())
-                else {
-                    continue;
-                };
-                // A global decision touches every project; leads see it in their next digest instead.
-                let id = event
-                    .data
-                    .as_ref()
-                    .and_then(|d| d.get("decisionId"))
-                    .and_then(|v| v.as_str());
-                let Some(decision) = id.and_then(|id| self.ctx.ports().decision(id).ok().flatten())
-                else {
-                    continue;
-                };
-                if matches!(decision.scope, DecisionScope::Global)
-                    || decision.source == DecisionSource::Lead
-                    || decision.ask_id.is_some()
-                {
-                    continue;
-                }
-                self.trigger(
-                    &ProjectRef {
-                        machine_id,
-                        project_id,
-                    },
-                    Trigger::Decision(decision),
-                );
             }
         }
     }

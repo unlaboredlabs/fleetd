@@ -8,10 +8,11 @@ use fleetd_contracts::mcp::{
     PromptSetInput, PromptSetOutput, PromptsListInput, PromptsListOutput, SessionPromptGetInput,
     SessionPromptGetOutput,
 };
-use fleetd_contracts::prompts::{PromptRef, PromptScope};
+use fleetd_contracts::prompts::{PromptRef, PromptScope, PromptVersion};
 use serde_json::json;
 
 use super::render::{ref_of, warnings};
+use super::retired;
 use super::store::{PromptError, entry};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, require,
@@ -35,6 +36,23 @@ impl From<PromptError> for ToolError {
             PromptError::Store(e) => e.into(),
             PromptError::Io(e) => ToolError::new(ErrorCode::Failed, e.to_string()),
         }
+    }
+}
+
+/// A retired id gets told where its words went, instead of a bare "no such prompt".
+fn retired_hint(id: &str, e: PromptError) -> ToolError {
+    match retired::get(id) {
+        Some(r) => ToolError::new(
+            ErrorCode::NotFound,
+            format!("fleetd retired {id}: {}.", r.why),
+        )
+        .with_fix(match r.target {
+            Some(t) => format!(
+                "Edit {t} instead; prompts_list shows any edit you made to {id} under orphans."
+            ),
+            None => format!("prompts_list shows any edit you made to {id} under orphans."),
+        }),
+        None => e.into(),
     }
 }
 
@@ -81,9 +99,16 @@ async fn prompts_list(
     input: PromptsListInput,
 ) -> Result<PromptsListOutput, ToolError> {
     readable_project(&hub, &caller, input.project_ref.as_ref())?;
+    let orphans = hub.db.prompts().orphans(input.project_ref.as_ref());
+    let next = if orphans.is_empty() {
+        "prompt_get shows one prompt's texts, placeholders and safety rules."
+    } else {
+        "orphans are your edits to prompts fleetd retired: copy what you need into suggestedTarget, then prompt_reset the old id."
+    };
     Ok(PromptsListOutput {
         prompts: hub.db.prompts().list(input.project_ref.as_ref()),
-        next: Some("prompt_get shows one prompt's texts, placeholders and safety rules.".into()),
+        orphans,
+        next: Some(next.into()),
         truncated: None,
     })
 }
@@ -94,7 +119,7 @@ async fn prompt_get(
     input: PromptGetInput,
 ) -> Result<PromptGetOutput, ToolError> {
     readable_project(&hub, &caller, input.project_ref.as_ref())?;
-    let e = entry(input.id.as_str())?;
+    let e = entry(input.id.as_str()).map_err(|e| retired_hint(input.id.as_str(), e))?;
     let prompt = hub.db.prompts().detail(e, input.project_ref.as_ref());
     let next = prompt.stale.as_ref().map(|s| {
         format!(
@@ -114,7 +139,7 @@ async fn prompt_set(
     caller: Caller,
     input: PromptSetInput,
 ) -> Result<PromptSetOutput, ToolError> {
-    let e = entry(input.id.as_str())?;
+    let e = entry(input.id.as_str()).map_err(|e| retired_hint(input.id.as_str(), e))?;
     let r = input.project_ref.as_ref();
     may_edit(&caller, input.scope, r)?;
     readable_project(&hub, &caller, r)?;
@@ -157,8 +182,34 @@ async fn prompt_reset(
     caller: Caller,
     input: PromptResetInput,
 ) -> Result<PromptResetOutput, ToolError> {
-    let e = entry(input.id.as_str())?;
     let r = input.project_ref.as_ref();
+    if let Some(old) = retired::get(input.id.as_str()) {
+        may_edit(&caller, input.scope, r)?;
+        readable_project(&hub, &caller, r)?;
+        hub.db.prompts().reset_retired(old, input.scope, r)?;
+        super::changed(
+            &hub.events,
+            &iso_ms(now_ms(hub.clock.as_ref())),
+            old.id,
+            input.scope,
+            r,
+            json!({ "retired": true }),
+        )?;
+        // A retired prompt sends nothing: what is in effect is no text at all.
+        return Ok(PromptResetOutput {
+            effective: PromptVersion {
+                r#ref: PromptRef::unchecked(ref_of(old.id, "")),
+                text: String::new(),
+            },
+            scope: PromptScope::Default,
+            next: Some(format!(
+                "Your edit to {} is deleted; fleetd retired that prompt.",
+                old.id
+            )),
+            truncated: None,
+        });
+    }
+    let e = entry(input.id.as_str())?;
     may_edit(&caller, input.scope, r)?;
     readable_project(&hub, &caller, r)?;
     hub.db.prompts().reset(e, input.scope, r)?;
