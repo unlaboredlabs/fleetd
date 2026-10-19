@@ -96,6 +96,8 @@ export const SecretRequest = z.strictObject({
   value: z.string().min(1).max(8192),
 });
 export type SecretRequest = z.infer<typeof SecretRequest>;
+/** An absolute path the renderer got from a drop (webUtils.getPathForFile). */
+export const DropPath = z.string().min(2).max(4096).refine((p) => p.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(p), "an absolute path");
 
 const none = z.tuple([]);
 
@@ -114,6 +116,9 @@ export const REQUESTS = {
   [IPC.pairRedeem]: z.tuple([PairRequest]),
   [IPC.pairAuto]: none,
   [IPC.secretSubmit]: z.tuple([SecretRequest]),
+  [IPC.systemHostName]: none,
+  [IPC.projectsPickFolder]: none,
+  [IPC.projectsReadDrop]: z.tuple([DropPath]),
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),

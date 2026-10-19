@@ -32,6 +32,10 @@ export const fixtures = [
   "settings-prompts",
   "board-stage",
   "board-finish",
+  // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
+  "projects-cloning",
+  "projects-errors",
+  "projects-machines",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -109,6 +113,53 @@ export const screens: readonly Screen[] = [
   // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
   // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
   ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
+  // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
+  { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
+  // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.
+  {
+    id: "projects.add.pick",
+    route: "#/machines",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add project…" }).click();
+    },
+  },
+  // The sheet's later states, reached by adding from the pick list (fixtures/projects answers project_add).
+  {
+    id: "projects.add.cloning",
+    route: "#/projects/add",
+    fixtures: ["projects-cloning"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
+      await page.keyboard.press("Enter");
+      // The fixture's progress events are timed; shoot once the bar shows git's 42%.
+      await page.locator('[role="progressbar"][aria-valuenow="34"]').waitFor();
+    },
+  },
+  {
+    id: "projects.add.ready",
+    route: "#/projects/add",
+    fixtures: ["typical", "long-text"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("/home/dev/src/pricing");
+      await page.keyboard.press("Enter");
+    },
+  },
+  {
+    id: "projects.add.error",
+    route: "#/projects/add",
+    fixtures: ["typical", "projects-errors"],
+    // The error state is the point: a clone refused because its folder exists, offering to add that folder.
+    expect: "error",
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/ledger-ui");
+      await page.keyboard.press("Enter");
+    },
+  },
+  { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
   // F11: the command palette, its reply mode (typed text switches it) and the shortcuts sheet.
   {
     id: "palette",

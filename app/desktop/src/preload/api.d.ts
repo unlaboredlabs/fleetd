@@ -1,6 +1,6 @@
 import type { NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
-import type { CallOutcome, ConnectOutcome, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { LiveScope, SecretRequest } from "../shared/ipc";
 import type { PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
 
@@ -44,6 +44,16 @@ export interface FleetdApi {
     redeem(request: PairRequest): Promise<PairOutcome>;
     /** Pairs from app-pair.json in main, only while no key is saved; the code never comes here. */
     auto(): Promise<PairOutcome>;
+  };
+  readonly system: {
+    /** This computer's host name (without .local). */
+    hostName(): Promise<string>;
+  };
+  readonly projects: {
+    /** A native folder picker; null when cancelled. */
+    pickFolder(): Promise<string | null>;
+    /** What a dropped folder or link file holds for Add project; `other` for anything else (or a File with no path). */
+    readDrop(file: File): Promise<DropInfo>;
   };
   readonly app: {
     /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */

@@ -7,6 +7,7 @@ import { InboxPanel } from "../inbox";
 import { SettingsScreen } from "../settings/SettingsScreen";
 import { BoardScreen } from "../board/BoardScreen";
 import { BoardStrips } from "../board/Strips";
+import { AddProjectScreen, MachinesScreen } from "../projects";
 import type { Screen } from "./routes";
 
 /** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
@@ -27,11 +28,11 @@ export function ScreenHost({ screen }: { screen: Screen }) {
     case "status":
       return <Pending id={`status.${screen.scope.kind}`} title="Status" />;
     case "machines":
-      return <Pending id="machines" title="Machines" />;
+      return <MachinesScreen />;
     case "time":
       return <Pending id="time" title="Time" />;
     case "projects.add":
-      return <Pending id="projects.add" title="Add a project" />;
+      return <AddProjectScreen />;
     case "settings":
       return <SettingsScreen />;
     case "onboarding":

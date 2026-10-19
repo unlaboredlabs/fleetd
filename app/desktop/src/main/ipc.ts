@@ -9,6 +9,7 @@ import { submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
+import { hostName, pickFolder, readDrop } from "./projects";
 import { isOwnPage } from "./security";
 
 /** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
@@ -39,6 +40,9 @@ export const registerIpc = (hub: HubService, frame: { opener: Opener; notifier: 
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
   handle(IPC.secretSubmit, (_event, request) => submitSecret(request, (tool, input) => hub.call({ tool, input })));
+  handle(IPC.systemHostName, () => hostName());
+  handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
+  handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));
   handle(IPC.copy, (_event, text) => clipboard.writeText(text));
   handle(IPC.pairStart, () => pairing.start());
   handle(IPC.pairProbe, (_event, address) => pairing.probe(address));

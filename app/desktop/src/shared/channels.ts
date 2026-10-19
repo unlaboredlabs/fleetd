@@ -24,6 +24,12 @@ export const IPC = {
   pairRedeem: "pair:redeem",
   /** invoke() → PairOutcome. Main pairs from app-pair.json itself (its code never reaches the page), then deletes it. */
   pairAuto: "pair:auto",
+  /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
+  systemHostName: "system:host-name",
+  /** invoke() → string | null. A native folder picker; null when cancelled. */
+  projectsPickFolder: "projects:pick-folder",
+  /** invoke(path) → DropInfo. What a folder or file dropped on the window holds for Add project. */
+  projectsReadDrop: "projects:read-drop",
   /** invoke(text) → void. Writes the clipboard; the page itself has no clipboard permission. */
   copy: "app:copy",
   /** invoke(SecretRequest) → SecretOutcome. Main seals the value to the machine's key and submits it. */

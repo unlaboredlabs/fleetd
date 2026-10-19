@@ -6,6 +6,7 @@ import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
 import { useNeedsYouSource } from "../inbox";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
+import { ProjectsHost } from "../projects";
 import { useEscape, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { InboxPanel } from "./InboxPanel";
@@ -185,6 +186,7 @@ export function Shell() {
         </div>
       </AppFrame>
       <PaletteHost />
+      <ProjectsHost />
     </div>
   );
 }

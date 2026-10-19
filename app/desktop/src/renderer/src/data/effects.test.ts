@@ -36,6 +36,8 @@ describe("event effects", () => {
 
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
+    // Add project's list marks the repos that are projects, so it is read again too.
+    expect(tools(e("project.removed"))).toContain("project_discover");
     // A known machine's status is patched in place; only one the snapshot lacks resyncs.
     expect(effectsOf(e("machine.offline", undefined, { machineId: "devbox" }), { devbox: {} }).resync).toBe(false);
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
