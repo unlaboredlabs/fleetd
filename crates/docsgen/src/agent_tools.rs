@@ -1,0 +1,977 @@
+//! The "Agent tools" reference page, written whole to `docs/site/reference/agent-tools.md` from the code fleetd runs:
+//! the agent MCP server's tool registry and schemas (`cli/agent_mcp.rs`), the hub's call policy
+//! (`hub/tasks/policy.rs`), and the deny list and environment claude is launched with (`node/runner/claude`). Only
+//! the example calls and a few lines of framing are written here, and every example is checked against its tool's
+//! schema by the same decoder the MCP server uses.
+
+use std::collections::BTreeSet;
+use std::path::Path;
+
+use fleetd::cli::agent_mcp::{self, Role, SERVER_NAME, Tool};
+use fleetd::hub::orders::phase;
+use fleetd::hub::playbooks::finish_all_rules::{CHILD_SOURCES, DEFAULT_MAX_CHILDREN};
+use fleetd::hub::reviews::rules::ReviewRole;
+use fleetd::hub::tasks::policy::{
+    self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
+};
+use fleetd::node::runner::claude::{
+    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DISALLOWED_WHY, NESTING_VARS_WHY, SESSION_ENV_WHY,
+    SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
+};
+use fleetd::node::runner::{conformance, version::TESTED};
+use fleetd_contracts::lead_calls::GatedRunCall;
+use fleetd_contracts::ledger::{AskClass, GatedClass};
+use fleetd_contracts::live::AgentRole;
+use fleetd_contracts::schema::inline_schema;
+use fleetd_contracts::sessions::SessionRole;
+use fleetd_contracts::tasks::{TaskId, TaskKind};
+use serde_json::{Value, json};
+
+/// Under `docs/site/`.
+pub const PATH: &str = "reference/agent-tools.md";
+
+const FRONT: &str = "---
+title: Agent tools
+section: Reference
+order: 85
+description: The tools fleetd gives each agent, the Claude Code tools it blocks, the settings it forces and the limits the hub enforces.
+sidebar: { order: 20 }
+---
+";
+
+const INTRO: &str = "Generated from fleetd's source by `cargo run -p docsgen`, so it matches the code. Don't edit this \
+file by hand: CI fails when it differs from the generator's output.
+
+Every agent fleetd starts is a Claude Code session. fleetd adds its own MCP server, named `{server}`, with the tools \
+for the agent's role. Claude Code shows them as `mcp__{server}__<tool>`. Each call goes to the hub, which checks it \
+whatever the prompt says.
+
+";
+
+const SETUP: &str = "## What your own setup adds
+
+fleetd starts sessions with your own Claude Code setup underneath. The router is the exception: it runs in safe \
+mode with none of it.
+
+| Your setup | In a session |
+|---|---|
+| MCP servers (user, project, local) | Loaded. fleetd adds its `{server}` server next to them. |
+| Skills, plugins, hooks, `CLAUDE.md` | Loaded as in your own `claude`. |
+| Allow and deny rules | Applied. fleetd's blocked tools stay blocked: its settings outrank yours. |
+| Your own agents (`~/.claude/agents`) | Listed, but nothing can start them: the Agent tool is blocked. |
+| Env in your settings | Applied, except the switches above, which fleetd sets last. |
+
+A project's policy file can add rules for its sessions: `tools.allow` and `tools.deny` (Claude Code rule syntax), and \
+`claude.autoMemory: true`.
+
+### See it in a session
+
+| Where | What you see |
+|---|---|
+| App: an order, then **Show full prompt** on an agent's lane | \"What T1 was told\": the exact first message, which prompt versions it used and the tools it never gets. |
+| CLI on the hub machine: `fleetd prompts show --session <machine>/<thread>` | The first message alone. |
+| MCP client: `session_prompt_get` | The same as the app. |
+| `claude mcp list` in the project's folder | Your own MCP servers, which the session loads too. |
+";
+
+pub fn page(root: &Path) -> Result<String, String> {
+    let lead_tools: Vec<&Tool> = agent_mcp::tools_for(Role::Lead).collect();
+    let task_tools: Vec<&Tool> = agent_mcp::tools_for(Role::Worker).collect();
+    let mut md = String::from(FRONT);
+    md.push('\n');
+    md.push_str(&INTRO.replace("{server}", SERVER_NAME));
+    md.push_str(&roles());
+    md.push_str(&limits(&lead_tools, &task_tools)?);
+    md.push_str(&tool_section(
+        "Lead tools",
+        "Every lead gets these, the finish-all lead included.",
+        Role::Lead,
+        &lead_tools,
+        &[],
+    )?);
+    let lead_names: Vec<&str> = lead_tools.iter().map(|t| t.name).collect();
+    md.push_str(&tool_section(
+        "Task tools",
+        "Every task's agent gets these: implementers, readers, reviewers, verifiers and QA.",
+        Role::Worker,
+        &task_tools,
+        &lead_names,
+    )?);
+    md.push_str(&builtins(root)?);
+    md.push_str(&switches());
+    md.push_str(&SETUP.replace("{server}", SERVER_NAME));
+    Ok(md)
+}
+
+fn cell(text: &str) -> String {
+    prose(&text.split_whitespace().collect::<Vec<_>>().join(" ")).replace('|', "\\|")
+}
+
+/// Source text as markdown that shows it literally: outside code spans, `<n>` is not an HTML tag and `*` is not
+/// emphasis.
+fn prose(text: &str) -> String {
+    let mut out = String::new();
+    for (i, part) in text.split('`').enumerate() {
+        if i > 0 {
+            out.push('`');
+        }
+        if i % 2 == 1 {
+            out.push_str(part);
+        } else {
+            out.push_str(&part.replace('<', "&lt;").replace('*', "\\*"));
+        }
+    }
+    out
+}
+
+/// Consecutive items that share a reason, as one row each.
+fn grouped<'a>(items: impl IntoIterator<Item = (String, &'a str)>) -> Vec<(Vec<String>, &'a str)> {
+    let mut rows: Vec<(Vec<String>, &str)> = Vec::new();
+    for (item, why) in items {
+        match rows.last_mut() {
+            Some((names, last)) if *last == why => names.push(item),
+            _ => rows.push((vec![item], why)),
+        }
+    }
+    rows
+}
+
+fn code_list<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
+    items
+        .into_iter()
+        .map(|i| format!("`{i}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn task_caller() -> CallerAgent {
+    CallerAgent::Task(TaskId::unchecked("T1"))
+}
+
+/// The role's word as the app shows it.
+fn role_name(role: AgentRole) -> &'static str {
+    match role {
+        AgentRole::Lead => "Lead",
+        AgentRole::Implementer => "Implementer",
+        AgentRole::Reader => "Reader",
+        AgentRole::Reviewer => "Reviewer",
+        AgentRole::Verifier => "Verifier",
+        AgentRole::Qa => "QA",
+    }
+}
+
+/// How fleetd starts a session of this role, which picks its MCP tools.
+fn session_role(role: AgentRole) -> SessionRole {
+    match role {
+        AgentRole::Lead => SessionRole::Lead,
+        AgentRole::Implementer
+        | AgentRole::Reader
+        | AgentRole::Reviewer
+        | AgentRole::Verifier
+        | AgentRole::Qa => SessionRole::Worker,
+    }
+}
+
+/// How a task of `role` is started, from the hub's own kind-to-role rule.
+fn started_as(role: AgentRole) -> Option<String> {
+    for kind in [TaskKind::Write, TaskKind::Read, TaskKind::Review] {
+        for qa in [false, true] {
+            for review in [None, Some(ReviewRole::Verifier)] {
+                if phase::role(kind, qa, review) != role {
+                    continue;
+                }
+                let kind = serde_json::to_value(kind).ok()?;
+                let kind = kind.as_str()?;
+                let mut how = format!("`spawn_agent` with kind `{kind}`");
+                if qa {
+                    how.push_str(" and `qa: true`");
+                }
+                if review.is_some() {
+                    how = format!("A {kind} task the review gate starts as the verifier");
+                }
+                if kind == "write" {
+                    how.push_str(". Gets its own worktree and branch");
+                }
+                return Some(how);
+            }
+        }
+    }
+    None
+}
+
+fn tool_set(session: SessionRole) -> &'static str {
+    match session.cli_arg() {
+        Some("lead") => "[Lead tools](#lead-tools)",
+        Some(_) => "[Task tools](#task-tools)",
+        None => "None",
+    }
+}
+
+fn roles() -> String {
+    let mut md = String::from(
+        "## Roles\n\nThe app shows each agent's role on its lane. The role decides the fleetd tools; every session \
+         gets the same [Claude Code tools](#claude-code-tools).\n\n| Role | How it starts | fleetd tools | Can start \
+         agents |\n|---|---|---|---|\n",
+    );
+    let can_spawn = |caller: &CallerAgent| {
+        if SPAWN_OPS.iter().all(|op| policy::check(caller, op).is_ok()) {
+            "Yes"
+        } else {
+            "No"
+        }
+    };
+    for role in [
+        AgentRole::Lead,
+        AgentRole::Implementer,
+        AgentRole::Reader,
+        AgentRole::Reviewer,
+        AgentRole::Verifier,
+        AgentRole::Qa,
+    ] {
+        let session = session_role(role);
+        let (how, caller) = match session {
+            SessionRole::Lead => (
+                "One per project, started by the project's first order".to_owned(),
+                CallerAgent::Lead,
+            ),
+            _ => (
+                started_as(role).unwrap_or_else(|| "A task".to_owned()),
+                task_caller(),
+            ),
+        };
+        md.push_str(&format!(
+            "| {} | {how} | {} | {} |\n",
+            role_name(role),
+            tool_set(session),
+            can_spawn(&caller)
+        ));
+        if role == AgentRole::Lead {
+            md.push_str(&format!(
+                "| Finish-all lead | A lead whose workstream runs the finish-all playbook. It also uses \
+                 `inventory` and `workstream_spawn` | {} | Yes, child workstreams too |\n",
+                tool_set(SessionRole::Lead)
+            ));
+        }
+    }
+    md.push_str(&format!(
+        "| Router | One `claude -p` on the hub that reads each new order; not a session | {} | No |\n",
+        tool_set(SessionRole::Plain)
+    ));
+    md.push('\n');
+    md.push_str(
+        "The router has no tools at all, Claude Code's included: fleetd starts it with `--tools \"\"` and \
+         `--safe-mode`.\n\n",
+    );
+    md
+}
+
+/// The tool names for lead-call `ops`, in the order given.
+fn names_of<'a>(ops: &[&str], tools: &[&'a Tool]) -> Vec<&'a str> {
+    ops.iter()
+        .filter_map(|op| tools.iter().find(|t| t.op == *op).map(|t| t.name))
+        .collect()
+}
+
+fn enum_values(schema: &Value) -> Vec<String> {
+    schema["enum"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect()
+}
+
+fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
+    let spawners = names_of(SPAWN_OPS, lead);
+    let worker_calls = names_of(WORKER_OPS, task);
+    if spawners.len() != SPAWN_OPS.len() || worker_calls.len() != WORKER_OPS.len() {
+        return Err("agent tools: a hub policy op has no MCP tool".into());
+    }
+    let gated = inline_schema::<GatedRunCall>();
+    let timeout = gated["properties"]["timeoutSec"]["maximum"]
+        .as_u64()
+        .ok_or("agent tools: gated_run's timeoutSec has no maximum")?;
+    let gated_classes = enum_values(&inline_schema::<GatedClass>());
+    let ask_classes = enum_values(&inline_schema::<AskClass>());
+    let mut md = String::from(
+        "## Hub limits\n\nThe hub enforces these on every call, from MCP or from a `fleetd` command in the agent's \
+         shell. A refusal says why and what to do instead.\n\n| Limit | Value |\n|---|---|\n",
+    );
+    md.push_str(&format!(
+        "| Who can start agents | A lead, with {}. A task's agent can't. |\n",
+        code_list(spawners.iter().copied())
+    ));
+    md.push_str(&format!(
+        "| Depth | {MAX_DEPTH}. A lead is depth 0 and its tasks depth {MAX_DEPTH}; nothing goes deeper. |\n"
+    ));
+    md.push_str(&format!(
+        "| Open tasks per lead | {MAX_OPEN_TASKS} (queued, running or idle). Slots cap what runs at once. |\n"
+    ));
+    md.push_str(&format!(
+        "| Calls a task's agent may make | {}. Every other call is refused. |\n",
+        code_list(worker_calls.iter().copied())
+    ));
+    md.push_str(&format!(
+        "| Finish-all children open at once | {DEFAULT_MAX_CHILDREN} by default; the policy file's \
+         `finishAll.maxChildren` changes it. |\n"
+    ));
+    md.push_str(&format!(
+        "| What a child workstream may serve | {}. Never invented work. |\n",
+        code_list(CHILD_SOURCES.iter().map(|s| s.trim_end_matches(':')))
+    ));
+    md.push_str(&format!(
+        "| Gated commands (`gated_run`) | Classes {}. Run only after a human approves; at most {timeout} s. |\n",
+        code_list(gated_classes.iter().map(String::as_str))
+    ));
+    md.push_str(&format!(
+        "| What a lead may ask the human (`ask`) | Classes {}. Anything else it decides itself (`decide`). |\n\n",
+        code_list(ask_classes.iter().map(String::as_str))
+    ));
+    Ok(md)
+}
+
+/// The roles that are offered a tool making call `op` and that the hub lets make it.
+fn who_may_call(op: &str) -> String {
+    let mut who = Vec::new();
+    for (role, caller, name) in [
+        (Role::Lead, CallerAgent::Lead, "a lead"),
+        (Role::Worker, task_caller(), "a task's agent"),
+    ] {
+        if agent_mcp::tools_for(role).any(|t| t.op == op) && policy::check(&caller, op).is_ok() {
+            who.push(name);
+        }
+    }
+    who.join(", ")
+}
+
+/// A heading for `tool`, unique on the page: a task tool that has a lead namesake says so.
+fn heading(tool: &Tool, taken: &[&str]) -> String {
+    if taken.contains(&tool.name) {
+        format!("{} (task)", tool.name)
+    } else {
+        tool.name.to_owned()
+    }
+}
+
+fn anchor(heading: &str) -> String {
+    crate::slugify(heading)
+}
+
+fn tool_section(
+    title: &str,
+    intro: &str,
+    role: Role,
+    tools: &[&Tool],
+    taken: &[&str],
+) -> Result<String, String> {
+    let mut md = format!(
+        "## {title}\n\n{intro}\n\n| Tool | What it does | Needs a human |\n|---|---|---|\n"
+    );
+    for tool in tools {
+        let h = heading(tool, taken);
+        md.push_str(&format!(
+            "| [`{}`](#{}) | {} | {} |\n",
+            tool.name,
+            anchor(&h),
+            cell(first_sentence(tool.description)),
+            cell(tool.human.unwrap_or("No")),
+        ));
+    }
+    md.push('\n');
+    for tool in tools {
+        let h = heading(tool, taken);
+        md.push_str(&format!("### {h}\n\n{}\n\n", prose(tool.description)));
+        let schema = (tool.schema)();
+        let mut rows = Vec::new();
+        params(&schema, "", &mut rows);
+        if rows.is_empty() {
+            md.push_str("No parameters.\n\n");
+        } else {
+            md.push_str("| Parameter | Type | Required | Description |\n|---|---|---|---|\n");
+            for row in rows {
+                md.push_str(&format!(
+                    "| `{}` | {} | {} | {} |\n",
+                    row.name,
+                    row.ty,
+                    if row.required { "yes" } else { "no" },
+                    cell(&row.description)
+                ));
+            }
+            md.push('\n');
+        }
+        md.push_str(&format!(
+            "**Who may call:** {}, checked by the hub. **Needs a human:** {}\n\n",
+            who_may_call(tool.op),
+            tool.human.unwrap_or("no.")
+        ));
+        let arguments = example(role, tool.name)
+            .ok_or_else(|| format!("agent tools: {} has no example call", tool.name))?;
+        check_example(role, tool, &arguments)?;
+        // Written by hand so `name` comes first; serde_json's map sorts keys.
+        let arguments = serde_json::to_string_pretty(&arguments)
+            .map_err(|e| e.to_string())?
+            .replace('\n', "\n  ");
+        md.push_str(&format!(
+            "```json\n{{\n  \"name\": \"{}\",\n  \"arguments\": {arguments}\n}}\n```\n\n",
+            tool.name
+        ));
+    }
+    Ok(md)
+}
+
+fn first_sentence(text: &str) -> &str {
+    match text.find(". ") {
+        Some(i) => &text[..=i],
+        None => text,
+    }
+}
+
+struct Param {
+    name: String,
+    ty: String,
+    required: bool,
+    description: String,
+}
+
+/// One row per property, nested objects and arrays of objects flattened as `a.b` and `a[].b`.
+fn params(schema: &Value, prefix: &str, rows: &mut Vec<Param>) {
+    let required: Vec<&str> = schema["required"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let Some(props) = schema["properties"].as_object() else {
+        return;
+    };
+    for (key, prop) in props {
+        let name = format!("{prefix}{key}");
+        rows.push(Param {
+            name: name.clone(),
+            ty: type_of(prop),
+            required: required.contains(&key.as_str()),
+            description: describe(prop),
+        });
+        if prop["properties"].is_object() {
+            params(prop, &format!("{name}."), rows);
+        } else if prop["items"]["properties"].is_object() {
+            params(&prop["items"], &format!("{name}[]."), rows);
+        }
+    }
+}
+
+fn type_of(prop: &Value) -> String {
+    if let Some(t) = prop["type"].as_str() {
+        return match t {
+            "array" => format!("{}[]", type_of(&prop["items"])),
+            "number" | "integer" | "boolean" | "string" | "object" => t.to_owned(),
+            other => other.to_owned(),
+        };
+    }
+    let variants = prop["oneOf"]
+        .as_array()
+        .or_else(|| prop["anyOf"].as_array());
+    let types: BTreeSet<String> = variants.into_iter().flatten().map(type_of).collect();
+    match types.len() {
+        1 => types.into_iter().next().unwrap_or_default(),
+        0 => "any".to_owned(),
+        _ => types.into_iter().collect::<Vec<_>>().join(" or "),
+    }
+}
+
+/// The property's own description, cleaned of source-code notation, then its constraints in words.
+fn describe(prop: &Value) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(d) = prop["description"].as_str() {
+        parts.push(clean(d));
+    }
+    let values = enum_values(prop);
+    if !values.is_empty() {
+        parts.push(format!(
+            "One of {}.",
+            code_list(values.iter().map(String::as_str))
+        ));
+    }
+    if let Some(variants) = prop["oneOf"]
+        .as_array()
+        .or_else(|| prop["anyOf"].as_array())
+    {
+        let consts: Vec<String> = variants
+            .iter()
+            .filter_map(|v| {
+                let c = v["const"].as_str().map(str::to_owned).or_else(|| {
+                    let e = enum_values(v);
+                    (e.len() == 1).then(|| e[0].clone())
+                })?;
+                Some(match v["description"].as_str() {
+                    Some(d) => format!("`{c}` ({})", d.trim_end_matches('.')),
+                    None => format!("`{c}`"),
+                })
+            })
+            .collect();
+        let shapes: Vec<String> = variants
+            .iter()
+            .filter_map(|v| v["properties"].as_object())
+            .map(|p| format!("{{{}}}", p.keys().cloned().collect::<Vec<_>>().join(", ")))
+            .collect();
+        if !consts.is_empty() && consts.len() == variants.len() {
+            parts.push(format!("One of {}.", consts.join(", ")));
+        }
+        if !shapes.is_empty() {
+            parts.push(format!("One of these shapes: {}.", shapes.join("; ")));
+        }
+        if prop["description"].is_null() {
+            let other: Vec<String> = variants
+                .iter()
+                .filter(|v| v["const"].is_null() && enum_values(v).is_empty())
+                .filter_map(|v| v["description"].as_str().map(clean))
+                .collect();
+            parts.extend(other);
+        }
+    }
+    if prop["description"].is_null()
+        && let Some(p) = prop["pattern"].as_str()
+    {
+        parts.push(pattern_words(p));
+    }
+    let len = (prop["minLength"].as_u64(), prop["maxLength"].as_u64());
+    if let (_, Some(max)) = len {
+        parts.push(format!("At most {max} characters."));
+    }
+    if let Some(max) = prop["maxItems"].as_u64() {
+        parts.push(format!("At most {max} items."));
+    }
+    match (prop["minimum"].as_f64(), prop["maximum"].as_f64()) {
+        (Some(min), Some(max)) if max < 1e12 => parts.push(format!("{min} to {max}.")),
+        (Some(min), _) if min > 0.0 => parts.push(format!("At least {min}.")),
+        _ => {}
+    }
+    if let Some(d) = prop.get("default")
+        && !(d.is_array() && d.as_array().is_some_and(Vec::is_empty))
+    {
+        parts.push(format!("Default `{d}`."));
+    }
+    parts.retain(|p| !p.is_empty());
+    parts.join(" ")
+}
+
+/// `^T[1-9][0-9]*$` reads as "`T<n>`, e.g. `T1`".
+fn pattern_words(pattern: &str) -> String {
+    if let Some(letter) = pattern
+        .strip_prefix('^')
+        .and_then(|p| p.strip_suffix("[1-9][0-9]*$"))
+        && letter.len() == 1
+    {
+        return format!("`{letter}<n>`, e.g. `{letter}1`.");
+    }
+    match pattern {
+        r"^[^\r\n]*$" => "One line.".to_owned(),
+        "^/" => "An absolute path.".to_owned(),
+        _ => format!("Matches `{pattern}`."),
+    }
+}
+
+/// Doc comments are written for the source: drop rustdoc links, a CLI flag prefix and milestone tags.
+fn clean(text: &str) -> String {
+    let mut text = text.replace("[`", "`").replace("`]", "`");
+    if text.starts_with("`--")
+        && let Some(i) = text.find("`: ")
+    {
+        text = text[i + 3..].to_owned();
+    }
+    if let Some(rest) = text.strip_prefix('M')
+        && let Some((n, rest)) = rest.split_once(": ")
+        && n.chars().all(|c| c.is_ascii_digit())
+    {
+        text = rest.to_owned();
+    }
+    if text.starts_with("https://") && !text.contains(' ') {
+        return format!("Like `{text}`.");
+    }
+    let mut chars = text.chars();
+    let text = match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect(),
+        None => text,
+    };
+    if text.ends_with('.') || text.ends_with(')') {
+        text
+    } else {
+        format!("{text}.")
+    }
+}
+
+/// An example call per tool. Checked against the tool's schema when the page is generated.
+fn example(role: Role, tool: &str) -> Option<Value> {
+    Some(match (role, tool) {
+        (Role::Lead, "spawn_agent") => json!({
+            "workstreamId": "W3",
+            "kind": "write",
+            "title": "Rate-limit the upload API",
+            "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
+            "areas": ["api"],
+            "serves": "done:0",
+        }),
+        (Role::Lead, "message_agent") => json!({
+            "taskId": "T7",
+            "message": "Keep the old endpoint working until the mobile client ships.",
+        }),
+        (Role::Lead, "agent_status") => json!({ "taskId": "T7" }),
+        (Role::Lead, "list_agents") => json!({ "state": "running" }),
+        (Role::Lead, "stop_agent") => json!({ "taskId": "T7", "reason": "T9 covers this now." }),
+        (Role::Lead, "brief") => json!({
+            "workstreamId": "W3",
+            "brief": {
+                "goal": "Uploads are rate-limited per API key.",
+                "why": "One client's retry loop took the upload service down.",
+                "pointers": ["api/src/upload.rs"],
+                "constraints": ["No new service; use the existing Redis."],
+                "doneWhen": [{ "type": "pr_merged", "repo": "acme/shop" }],
+                "tier": "S",
+            },
+        }),
+        (Role::Lead, "ask") => json!({
+            "key": "billing.provider",
+            "class": "money",
+            "text": "Which payment provider should checkout use?",
+            "options": [
+                { "key": "stripe", "label": "Stripe", "consequence": "2.9% + 30c a charge; live this week." },
+                { "key": "paddle", "label": "Paddle", "consequence": "5% + 50c; handles sales tax for you." },
+            ],
+            "recommendation": "stripe",
+            "recommendationWhy": "Cheaper at our volume, and the team knows it.",
+            "proceededOnRec": true,
+        }),
+        (Role::Lead, "ask_withdraw") => json!({ "askId": "A4", "use": "D12" }),
+        (Role::Lead, "decide") => json!({
+            "key": "api.pagination",
+            "value": "cursor",
+            "why": "Stable when rows are inserted mid-scroll.",
+        }),
+        (Role::Lead, "claim_done") | (Role::Worker, "claim_done") => {
+            json!({ "workstreamId": "W3" })
+        }
+        (Role::Lead, "gated_run") => json!({
+            "argv": ["fly", "deploy", "--app", "shop-prod"],
+            "class": "irreversible",
+            "reason": "Ship the upload rate limit to production.",
+            "workstreamId": "W3",
+        }),
+        (Role::Lead, "plan_milestone") => json!({ "title": "Public beta" }),
+        (Role::Lead, "plan_add") => json!({
+            "milestoneId": "M1",
+            "title": "Rate-limit uploads",
+            "size": "s",
+            "weight": "must",
+        }),
+        (Role::Lead, "plan_edit") => json!({
+            "itemId": "P4",
+            "size": "m",
+            "why": "The limiter needs a shared store.",
+        }),
+        (Role::Lead, "plan_drop") => {
+            json!({ "itemId": "P6", "why": "The client already throttles." })
+        }
+        (Role::Lead, "plan_show") | (Role::Lead, "inventory") => json!({}),
+        (Role::Lead, "status_set") => json!({
+            "workstreamId": "W3",
+            "text": "Limiter merged; checking the 429 path.",
+        }),
+        (Role::Lead, "decisions_search") => json!({ "query": "pagination" }),
+        (Role::Lead, "change_enqueue") => json!({
+            "prUrl": "https://github.com/acme/shop/pull/42",
+            "workstreamId": "W3",
+        }),
+        (Role::Lead, "change_status") => json!({ "changeId": "X12" }),
+        (Role::Lead, "workstream_spawn") => json!({
+            "text": "Fix the flaky upload test",
+            "serves": "issue:#88",
+        }),
+        (Role::Worker, "report") => json!({
+            "taskId": "T8",
+            "prHeadSha": "3f2a9c0d41b7e85a6c2f19d0e4b3a7c8d5e6f102",
+            "blocking": 0,
+            "nonBlocking": 2,
+            "summary": "The limiter is correct. Two nits: a magic number and a missing test for the reset.",
+        }),
+        (Role::Worker, "ask_lead") => json!({
+            "question": "Should the limit apply to admin keys too?",
+        }),
+        _ => return None,
+    })
+}
+
+/// The MCP server's own decoder accepts it, and every key is one the schema names (serde would drop an unknown one).
+fn check_example(role: Role, tool: &Tool, arguments: &Value) -> Result<(), String> {
+    agent_mcp::call_of(role, tool.name, arguments.clone())
+        .map_err(|e| format!("agent tools: the example for {}: {e}", tool.name))?;
+    unknown_keys(arguments, &(tool.schema)(), "").map_err(|key| {
+        format!(
+            "agent tools: the example for {} has {key}, which its schema doesn't",
+            tool.name
+        )
+    })
+}
+
+fn unknown_keys(value: &Value, schema: &Value, at: &str) -> Result<(), String> {
+    match value {
+        Value::Object(map) => {
+            let variants: Vec<&Value> = schema["oneOf"]
+                .as_array()
+                .or_else(|| schema["anyOf"].as_array())
+                .map(|v| v.iter().collect())
+                .unwrap_or_else(|| vec![schema]);
+            let fits = |s: &Value| {
+                map.iter().all(|(k, v)| {
+                    s["properties"]
+                        .get(k)
+                        .is_some_and(|p| unknown_keys(v, p, "").is_ok())
+                })
+            };
+            if variants.iter().any(|s| fits(s)) {
+                return Ok(());
+            }
+            let s = variants[0];
+            for (k, v) in map {
+                let Some(p) = s["properties"].get(k) else {
+                    return Err(format!("{at}{k}"));
+                };
+                unknown_keys(v, p, &format!("{at}{k}."))?;
+            }
+            Ok(())
+        }
+        Value::Array(items) => items
+            .iter()
+            .try_for_each(|i| unknown_keys(i, &schema["items"], &format!("{at}[]."))),
+        _ => Ok(()),
+    }
+}
+
+/// Claude Code's built-in tools as the version fleetd is tested with lists them, from the `system/init` lines in the
+/// runner's recorded fixtures.
+fn recorded_tools(root: &Path) -> Result<BTreeSet<String>, String> {
+    let dir = root.join("crates/fleetd/src/node/runner/fixtures");
+    let prefix = format!("claude-{TESTED}-");
+    let mut tools = BTreeSet::new();
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with(&prefix) || !name.ends_with(".jsonl") {
+            continue;
+        }
+        let text = std::fs::read_to_string(entry.path()).map_err(|e| format!("{name}: {e}"))?;
+        for line in text.lines() {
+            let Ok(frame) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            let msg = &frame["msg"];
+            if msg["type"] == "system" && msg["subtype"] == "init" {
+                tools.extend(
+                    msg["tools"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .filter(|t| !t.starts_with("mcp__"))
+                        .map(str::to_owned),
+                );
+            }
+        }
+    }
+    if tools.is_empty() {
+        return Err(format!(
+            "agent tools: no claude {TESTED} init in {}",
+            dir.display()
+        ));
+    }
+    Ok(tools)
+}
+
+fn builtins(root: &Path) -> Result<String, String> {
+    let blocked: Vec<&str> = DISALLOWED_WHY.iter().map(|(t, _)| *t).collect();
+    let allowed: Vec<String> = recorded_tools(root)?
+        .into_iter()
+        .filter(|t| !blocked.contains(&t.as_str()) && !conformance::agent_like(t))
+        .collect();
+    let mut md = format!(
+        "## Claude Code tools\n\nThe same for every role but the router, which gets none. Listed for Claude Code \
+         {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
+         with `tools.deny`. In a run started approval-required, Claude Code asks before it uses a tool and the \
+         question comes to you; `tools.allow` answers it ahead of time.\n\n**Blocked**, in `--disallowedTools` and in the \
+         `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
+         |\n|---|---|\n",
+        code_list(allowed.iter().map(String::as_str))
+    );
+    for (tools, why) in grouped(
+        DISALLOWED_WHY
+            .iter()
+            .map(|(t, why)| (format!("`{t}`"), *why)),
+    ) {
+        md.push_str(&format!("| {} | {} |\n", tools.join(", "), cell(why)));
+    }
+    md.push_str(
+        "\nfleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude's tool \
+         list when it checks the machine, and a session that still offers one fails the check.\n\n",
+    );
+    Ok(md)
+}
+
+fn switches() -> String {
+    let all = "Every claude fleetd starts";
+    let mut md = String::from(
+        "## Settings fleetd forces\n\nSet in the environment and in fleetd's settings file for the session, which \
+         outranks yours.\n\n| Variable | Value | Where | Why |\n|---|---|---|---|\n",
+    );
+    let mut rows = |items: Vec<(String, &str)>, value: &str, where_: &str| {
+        for (names, why) in grouped(items) {
+            md.push_str(&format!(
+                "| {} | {value} | {where_} | {} |\n",
+                names.join(", "),
+                cell(why)
+            ));
+        }
+    };
+    for ((name, value), why) in SUBAGENTS_OFF_ENV_WHY {
+        rows(vec![(format!("`{name}`"), why)], &format!("`{value}`"), all);
+    }
+    let named = |list: &[(&str, &'static str)]| -> Vec<(String, &'static str)> {
+        list.iter()
+            .map(|(n, why)| (format!("`{n}`"), *why))
+            .collect()
+    };
+    rows(named(SUBAGENTS_ON_ENV_WHY), "removed", all);
+    let (name, value) = AUTO_MEMORY_OFF_ENV;
+    rows(
+        vec![(format!("`{name}`"), AUTO_MEMORY_OFF_WHY)],
+        &format!("`{value}`, and `autoMemoryEnabled: false`"),
+        all,
+    );
+    for ((name, value), why) in SESSION_ENV_WHY {
+        rows(
+            vec![(format!("`{name}`"), why)],
+            &format!("`{value}`"),
+            "Sessions",
+        );
+    }
+    rows(named(NESTING_VARS_WHY), "removed", "Sessions");
+    md.push('\n');
+    md
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn root() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn every_tool_of_every_role_is_documented_with_a_valid_example() {
+        let page = page(&root()).unwrap();
+        for role in [Role::Lead, Role::Worker] {
+            for tool in agent_mcp::tools_for(role) {
+                assert!(
+                    page.contains(&format!("\"name\": \"{}\"", tool.name)),
+                    "{}",
+                    tool.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_example_with_a_key_the_schema_lacks_is_refused() {
+        let tool = agent_mcp::tools_for(Role::Lead)
+            .find(|t| t.name == "agent_status")
+            .unwrap();
+        let bad = json!({ "taskId": "T1", "taskID": "T1" });
+        let error = check_example(Role::Lead, tool, &bad).unwrap_err();
+        assert!(error.contains("taskID"), "{error}");
+        let wrong = json!({ "taskId": "seven" });
+        assert!(check_example(Role::Lead, tool, &wrong).is_err());
+    }
+
+    #[test]
+    fn every_blocked_tool_and_switch_is_on_the_page() {
+        let page = page(&root()).unwrap();
+        let blocked = page.split("**Blocked**").nth(1).unwrap();
+        for (tool, _) in DISALLOWED_WHY {
+            assert!(blocked.contains(&format!("`{tool}`")), "{tool}");
+        }
+        for ((name, _), _) in SUBAGENTS_OFF_ENV_WHY.iter().chain(SESSION_ENV_WHY) {
+            assert!(page.contains(&format!("| `{name}` |")), "{name}");
+        }
+        // Allowed and blocked never overlap.
+        let allowed = page
+            .split("**Allowed:**")
+            .nth(1)
+            .unwrap()
+            .split('\n')
+            .next()
+            .unwrap();
+        for (tool, _) in DISALLOWED_WHY {
+            assert!(!allowed.contains(&format!("`{tool}`")), "{tool}");
+        }
+        assert!(allowed.contains("`Bash`") && allowed.contains("`Edit`"));
+    }
+
+    /// "Every claude fleetd starts" on the page covers the router's one-shot too.
+    #[test]
+    fn the_router_gets_the_same_deny_list_and_switches() {
+        use fleetd::hub::intake::router;
+        let args = router::one_shot_args("m");
+        for (tool, _) in DISALLOWED_WHY {
+            assert!(args.iter().any(|a| a == tool), "{tool}");
+        }
+        let env = router::router_env(&Default::default());
+        for ((name, value), _) in SUBAGENTS_OFF_ENV_WHY
+            .iter()
+            .chain([&(AUTO_MEMORY_OFF_ENV, "")])
+        {
+            assert!(env.iter().any(|(k, v)| k == name && v == value), "{name}");
+        }
+        let settings: Value = serde_json::from_str(&router::one_shot_settings()).unwrap();
+        for (name, _) in SUBAGENTS_ON_ENV_WHY {
+            assert_eq!(settings["env"][name], "", "{name}");
+        }
+    }
+
+    #[test]
+    fn roles_follow_the_hubs_policy() {
+        let page = page(&root()).unwrap();
+        assert!(page.contains("| Lead | One per project, started by the project's first order | [Lead tools](#lead-tools) | Yes |"));
+        assert!(page.contains("| Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |"));
+        assert!(page.contains("| QA | `spawn_agent` with kind `review` and `qa: true` |"));
+        assert!(page.contains(&format!("| Open tasks per lead | {MAX_OPEN_TASKS} ")));
+    }
+
+    #[test]
+    fn who_may_call_is_what_the_role_is_offered_and_the_hub_allows() {
+        assert_eq!(who_may_call("task_spawn"), "a lead");
+        assert_eq!(who_may_call("review_verdict"), "a task's agent");
+        assert_eq!(who_may_call("claim_done"), "a lead, a task's agent");
+    }
+
+    #[test]
+    fn source_text_shows_literally() {
+        assert_eq!(
+            prose("done:<n> or `T<n>`, a*"),
+            "done:&lt;n> or `T<n>`, a\\*"
+        );
+    }
+
+    #[test]
+    fn schema_words() {
+        assert_eq!(pattern_words("^T[1-9][0-9]*$"), "`T<n>`, e.g. `T1`.");
+        assert_eq!(
+            clean("`--item P<n>`: the plan item this task works on"),
+            "The plan item this task works on."
+        );
+        assert_eq!(clean("A [`Brief`] whose"), "A `Brief` whose.");
+        assert_eq!(clean("M9: a research judge"), "A research judge.");
+        assert_eq!(
+            clean("https://github.com/<owner>/<name>/pull/<n>"),
+            "Like `https://github.com/<owner>/<name>/pull/<n>`."
+        );
+    }
+}

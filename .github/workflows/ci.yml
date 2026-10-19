@@ -42,9 +42,10 @@ jobs:
         # failure classifier and the conformance probe (against a stand-in replaying the recorded initialize
         # answer). Its own step so a claude protocol drift reads as such; re-record the fixtures when bumping TESTED.
         run: cargo test --locked -p fleetd --lib node::runner
-      - name: fleetd.sh/docs is up to date
+      - name: fleetd.sh/docs and the generated pages are up to date
         # site/docs/ is committed (Vercel has no build step); this fails while it differs from docs/site/*.md and
-        # fleetd help. Fix: cargo run -q -p docsgen, then commit site/docs.
+        # fleetd help, or while a page docsgen writes from the code (docs/site/reference/agent-tools.md) differs from
+        # what it generates. Fix: cargo run -q -p docsgen, then commit docs/site and site/docs.
         run: cargo run --locked -q -p docsgen -- --check
       # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
       - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
