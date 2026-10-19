@@ -120,12 +120,29 @@ export async function launch(fixture: FixtureName | undefined, main = appMain, h
 
 export async function setView(app: ElectronApplication, page: Page, size: SizeName, theme: Theme) {
   const { width, height } = sizes[size];
+  // The native window must be done resizing before the viewport override below: a native resize that lands after it
+  // (macOS clamping a window larger than the screen, or showing it late on ready-to-show) resets the page's visible
+  // size to the window's, so the checks measured one size and the screenshot was another. That raced on the macOS
+  // runners, whose screens are as small as 1024×768. So: wait until the window is shown, size it only within the
+  // display's work area (where nothing clamps it), and let the override supply the rest of the size.
   await app.evaluate(
-    ({ BrowserWindow, nativeTheme }, v) => {
+    async ({ BrowserWindow, nativeTheme, screen }, v) => {
       nativeTheme.themeSource = v.theme;
       const win = BrowserWindow.getAllWindows()[0];
       if (!win) throw new Error("the app opened no window");
-      win.setContentSize(v.width, v.height);
+      if (!win.isVisible()) await new Promise((shown) => win.once("show", () => shown(null)));
+      const area = screen.getDisplayMatching(win.getBounds()).workAreaSize;
+      const [frameW = 0, frameH = 0] = win.getSize();
+      const [contentW = 0, contentH = 0] = win.getContentSize();
+      win.setContentSize(Math.min(v.width, area.width - (frameW - contentW)), Math.min(v.height, area.height - (frameH - contentH)));
+      // macOS applies a frame change asynchronously (and may still clamp it): wait until the size stops changing.
+      let last = win.getContentSize().join("x");
+      for (let i = 0; i < 25; i++) {
+        await new Promise((tick) => setTimeout(tick, 20));
+        const now = win.getContentSize().join("x");
+        if (now === last) break;
+        last = now;
+      }
     },
     { width, height, theme },
   );
@@ -133,15 +150,76 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
   // the checks and the screenshot all see exactly the size asked for. Not with page.setViewportSize: on an Electron
   // page it sends a device scale factor of 1, which overrides --force-device-scale-factor and makes every @2x shot
   // a 1x one. The override below carries the scale, and is re-sent on every resize.
-  await cdp(page).then((session) =>
-    session.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: false }),
-  );
+  views.set(page, { width, height });
+  await applyView(page);
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-  await page.waitForFunction(
-    (v) => window.innerWidth === v.width && window.innerHeight === v.height && window.devicePixelRatio === v.scale,
-    { width, height, scale },
-    { timeout: 5_000 },
+  await holdView(page);
+}
+
+// For a picture of the real window (the macOS traffic lights are native, so a page screenshot can't show them): no
+// viewport override, the window itself at the size, and the page laid out in it. Throws when the screen can't hold
+// that size, rather than labelling a cropped or shrunk window with it.
+export async function setNativeView(app: ElectronApplication, page: Page, size: SizeName, theme: Theme) {
+  const { width, height } = sizes[size];
+  views.delete(page);
+  await (await cdp(page)).send("Emulation.clearDeviceMetricsOverride");
+  const real = await app.evaluate(
+    async ({ BrowserWindow, nativeTheme }, v) => {
+      nativeTheme.themeSource = v.theme;
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win) throw new Error("the app opened no window");
+      if (!win.isVisible()) await new Promise((shown) => win.once("show", () => shown(null)));
+      win.setContentSize(v.width, v.height);
+      for (let i = 0; i < 25; i++) {
+        await new Promise((tick) => setTimeout(tick, 20));
+        const [w = 0, h = 0] = win.getContentSize();
+        if (w === v.width && h === v.height) break;
+      }
+      const [w = 0, h = 0] = win.getContentSize();
+      return { width: w, height: h };
+    },
+    { width, height, theme },
   );
+  if (real.width !== width || real.height !== height) {
+    throw new Error(`the window is ${real.width}×${real.height}: this screen can't hold ${size} (${width}×${height})`);
+  }
+  await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+  await page.waitForFunction((v) => window.innerWidth === v.width && window.innerHeight === v.height, { width, height });
+}
+
+// The viewport each page was last set to.
+const views = new WeakMap<Page, { width: number; height: number }>();
+
+async function applyView(page: Page) {
+  const view = views.get(page);
+  if (!view) throw new Error("setView() has not run on this page");
+  const session = await cdp(page);
+  await session.send("Emulation.setDeviceMetricsOverride", { ...view, deviceScaleFactor: scale, mobile: false });
+  return view;
+}
+
+// Waits until the page is at its set viewport and scale; if a late native resize knocked it off, applies the
+// override again once. Run before checking and before every screenshot, so both see the size that was asked for.
+async function holdView(page: Page) {
+  const view = views.get(page);
+  if (!view) return;
+  const at = (timeout: number) =>
+    page
+      .waitForFunction(
+        (v) => window.innerWidth === v.width && window.innerHeight === v.height && window.devicePixelRatio === v.scale,
+        { ...view, scale },
+        { timeout },
+      )
+      .then(
+        () => true,
+        () => false,
+      );
+  if (await at(2_000)) return;
+  await applyView(page);
+  if (!(await at(3_000))) {
+    const got = await page.evaluate(() => `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}`);
+    throw new Error(`the page is ${got}, not the ${view.width}×${view.height} @${scale} it was set to`);
+  }
 }
 
 const sessions = new WeakMap<Page, Promise<CDPSession>>();
@@ -261,11 +339,14 @@ export interface Shot {
 }
 
 async function capture(page: Page, file: string, findings: Finding[]) {
+  await holdView(page);
   if (findings.length > 0) await run(page, `annotate(${JSON.stringify(findings)})`);
   await page.screenshot({ path: path.join(resultsDir, file), animations: "disabled", caret: "hide" });
   if (findings.length > 0) await run(page, "clearAnnotations()");
-  // An "@2x" shot that is really 1x hides exactly what scale 2 is for (Retina text, hairlines, canvases).
-  const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  // An "@2x" shot that is really 1x hides exactly what scale 2 is for (Retina text, hairlines, canvases), and a shot
+  // of another size than the checks measured hides what they found. Compared with the size that was set, not one
+  // read afterwards, which a later resize could have changed.
+  const viewport = views.get(page) ?? (await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })));
   const got = pngSize(path.join(resultsDir, file));
   const want = { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
   if (got.width !== want.width || got.height !== want.height) {
@@ -284,6 +365,7 @@ export async function shoot(
   const name = `${meta.screen}--${meta.fixture}--${meta.size}--${meta.theme}--${process.platform}@${scale}x`;
   mkdirSync(path.join(resultsDir, "png"), { recursive: true });
   mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
+  await holdView(page);
   const findings = await check(page, reserved);
   const png = path.join("png", `${name}.png`);
   await capture(page, png, []);

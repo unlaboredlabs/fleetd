@@ -2,11 +2,11 @@
 // its native traffic lights (a page screenshot leaves them out).
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { launch, resultsDir, scale, setView, type Shot, settle, show } from "./harness.ts";
-import { platformChecks, themes } from "./registry.ts";
+import { launch, pngSize, resultsDir, setNativeView, type Shot, settle, show } from "./harness.ts";
+import { platformChecks, sizes, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
 
@@ -56,22 +56,62 @@ test("the macOS window, traffic lights included, for the contact sheet", async (
     const dir = path.join(resultsDir, "png");
     mkdirSync(dir, { recursive: true });
     mkdirSync(path.join(resultsDir, "shots"), { recursive: true });
+    // The largest QA size every runner's screen holds (the smallest is 1024×768), shown as the real window lays it
+    // out: no viewport override, which would lay out a wider page than the window and crop it.
+    const size = "small";
     for (const theme of themes) {
-      await setView(app, page, "medium", theme);
+      await setNativeView(app, page, size, theme);
       await settle(page);
+      await page.waitForFunction((t) => document.documentElement.dataset["theme"] === t, theme, { timeout: 5_000 });
       const source = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getMediaSourceId() ?? "");
       // "window:<CGWindowID>:0"
       const windowId = source.split(":")[1];
       if (!windowId) throw new Error(`no window id in "${source}"`);
-      const name = `window--typical--medium--${theme}--darwin@${scale}x`;
-      const png = path.join("png", `${name}.png`);
-      try {
-        execFileSync("screencapture", ["-x", "-o", `-l${windowId}`, path.join(resultsDir, png)]);
-      } catch (error) {
-        // Without the Screen Recording permission this is an extra picture lost, not a QA failure.
-        test.skip(true, `screencapture failed: ${String(error)}`);
+      const file = path.join(resultsDir, "png", `window--typical--${size}--${theme}.png`);
+      // screencapture takes what the window server last got from the window, which can be a frame from before the
+      // theme switched: bring the window up, make it paint, and accept the picture only when its background
+      // matches the theme.
+      let luminance = -1;
+      for (let attempt = 0; attempt < 3 && (luminance < 0 || luminance < 128 !== (theme === "dark")); attempt++) {
+        await app.evaluate(async ({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows()[0];
+          if (!win) return;
+          win.moveTop();
+          win.webContents.invalidate();
+          await win.webContents.capturePage();
+        });
+        await settle(page);
+        try {
+          execFileSync("screencapture", ["-x", "-o", `-l${windowId}`, file]);
+        } catch (error) {
+          // Without the Screen Recording permission this is an extra picture lost, not a QA failure.
+          test.skip(true, `screencapture failed: ${String(error)}`);
+        }
+        luminance = await app.evaluate(({ nativeImage }, f) => {
+          // The median of a grid over the lower half: the page background, whatever panels sit on it.
+          const image = nativeImage.createFromPath(f);
+          const { width, height } = image.getSize();
+          const bitmap = image.toBitmap();
+          const samples: number[] = [];
+          for (let gx = 1; gx < 10; gx++) {
+            for (let gy = 5; gy < 10; gy++) {
+              const i = (Math.floor((height * gy) / 10 - 1) * width + Math.floor((width * gx) / 10)) * 4;
+              // BGRA
+              samples.push(0.0722 * (bitmap[i] ?? 0) + 0.7152 * (bitmap[i + 1] ?? 0) + 0.2126 * (bitmap[i + 2] ?? 0));
+            }
+          }
+          samples.sort((a, b) => a - b);
+          return samples[Math.floor(samples.length / 2)] ?? -1;
+        }, file);
       }
-      const shot: Shot = { screen: "window", fixture: "typical", size: "medium", theme, scale, platform: "darwin", png, scrolled: [], findings: [] };
+      expect(luminance < 128, `the ${theme} window shot's background has luminance ${Math.round(luminance)}`).toBe(theme === "dark");
+      // screencapture writes at the display's own scale, whatever the app was told; the label says what the file is.
+      const real = pngSize(file).width / sizes[size].width;
+      expect(Number.isInteger(real) && pngSize(file).height === sizes[size].height * real, `window shot is ${JSON.stringify(pngSize(file))}`).toBe(true);
+      const name = `window--typical--${size}--${theme}--darwin@${real}x`;
+      const png = path.join("png", `${name}.png`);
+      renameSync(file, path.join(resultsDir, png));
+      const shot: Shot = { screen: "window", fixture: "typical", size, theme, scale: real, platform: "darwin", png, scrolled: [], findings: [] };
       writeFileSync(path.join(resultsDir, "shots", `${name}.json`), JSON.stringify(shot, null, 2));
     }
   } finally {
