@@ -11,9 +11,9 @@ use crate::effort::Effort;
 use crate::events::{HubEvent, HubEventType};
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
-    Ask, AskId, AskState, Batch, BatchId, Decision, DecisionId, DecisionKey, DecisionScope,
-    DecisionSource, DecisionValue, DecisionWhy, IntakeText, Lead, PlaybookName, PlaybookRef,
-    Serves, Workstream, WorkstreamId, WorkstreamState,
+    Ask, AskAnswerKind, AskId, AskState, Batch, BatchId, Decision, DecisionId, DecisionKey,
+    DecisionScope, DecisionSource, DecisionValue, DecisionWhy, IntakeText, Lead, PlaybookName,
+    PlaybookRef, Serves, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{
@@ -664,11 +664,14 @@ input!(InboxReplyInput {
     batch_id: Option<BatchId>,
 });
 
-/// answered: a Decision was written. later: moved to the next batch. retired: "forget Dn". pref: "pref:" recorded.
+/// answered: the ask is answered (a decide ask's decision is written once `undoUntil` passes). skipped: "skip",
+/// the lead keeps its recommendation and no decision is written. later: moved to the next batch. retired: "forget
+/// Dn". pref: "pref:" recorded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InboxReplyOutcome {
     Answered,
+    Skipped,
     Withdrawn,
     Later,
     Retired,
@@ -681,7 +684,14 @@ input!(InboxReplyApplied {
     ask_id: Option<AskId>,
     outcome: InboxReplyOutcome,
     value: Option<String>,
+    /// What the human sees: the picked option's label, the free text, or the kept recommendation's label.
+    label: Option<String>,
+    /// option, text or skip, for a decide ask.
+    kind: Option<AskAnswerKind>,
+    /// Absent while a decide answer's undo window runs.
     decision_id: Option<DecisionId>,
+    /// Until then `inbox_undo` takes the answer back.
+    undo_until: Option<Timestamp>,
     /// The written decision's source and by, filled by the hub from the caller (human device or agent key).
     source: Option<DecisionSource>,
     by: Option<String>,
@@ -695,6 +705,14 @@ output!(InboxReplyOutput {
     applied: Vec<InboxReplyApplied>,
     /// How to fix an unparseable reply.
     hint: Option<String>,
+});
+
+// inbox_undo: takes back a decide answer inside its undo window (`ASK_UNDO_WINDOW_MS`); the ask is open again and
+// the lead never hears of it. After the window it is refused: answer the ask again or record a new decision.
+input!(InboxUndoInput { ask_id: AskId });
+output!(InboxUndoOutput {
+    /// The ask, open again in its batch.
+    ask: Ask,
 });
 
 // decisions_search
@@ -1229,6 +1247,7 @@ tools! {
     inventory => Inventory, Read, InventoryInput, InventoryOutput;
     asks_list => AsksList, Read, AsksListInput, AsksListOutput;
     inbox_reply => InboxReply, Operate, InboxReplyInput, InboxReplyOutput;
+    inbox_undo => InboxUndo, Operate, InboxUndoInput, InboxUndoOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
     digest_get => DigestGet, Read, DigestGetInput, DigestGetOutput;
@@ -1409,7 +1428,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 73);
+        assert_eq!(McpToolName::ALL.len(), 74);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());

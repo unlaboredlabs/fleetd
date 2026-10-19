@@ -490,6 +490,21 @@
           "type": "string"
         },
         {
+          "const": "ask.answered",
+          "description": "A decide ask was answered; `data.askId`, `data.undoUntil`. Its decision and the lead's wake follow once the\nundo window passes.",
+          "type": "string"
+        },
+        {
+          "const": "ask.undone",
+          "description": "An answer was taken back inside its undo window; the ask is open again. `data.askId`.",
+          "type": "string"
+        },
+        {
+          "const": "ask.delivered",
+          "description": "The receipt: the lead was woken with the answer. `data.askId`, `data.deliveredAt`, `data.decisionId` (absent\nfor a skip).",
+          "type": "string"
+        },
+        {
           "const": "digest.ready",
           "description": "The human digest is ready; no project content, since every key sees it. Read it with digest_get. `data.at`.",
           "type": "string"
