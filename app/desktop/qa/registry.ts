@@ -32,6 +32,10 @@ export const fixtures = [
   "settings-prompts",
   "board-stage",
   "board-finish",
+  // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
+  "live-0",
+  "live-3",
+  "live-20",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
@@ -108,6 +112,13 @@ const gallerySections = [
 ] as const;
 
 export const screens: readonly Screen[] = [
+  // F2 (A4): the live strip under the lead's latest message, in the project's chat. live-0 draws no strip.
+  {
+    id: "chat",
+    route: "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["live-0", "live-3", "live-20"],
+    pending: "the chat screen (F3) mounts LiveStrip and A1 adds #/project/<machineId>/<projectId>",
+  },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {

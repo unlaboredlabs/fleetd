@@ -387,6 +387,16 @@
           "const": "source.fresh",
           "description": "A stale source answered again; `data.source`, `data.staleMs`.",
           "type": "string"
+        },
+        {
+          "const": "chat.message",
+          "description": "A project's chat got a message, or one of its messages finished streaming or had an inline item change state;\n`data` is `chat::ChatMessageEventData`.",
+          "type": "string"
+        },
+        {
+          "const": "chat.waiting",
+          "description": "A project's chat started or stopped waiting on you, or its lead started or ended a turn; `data` is the\n`chat::ProjectChatState`.",
+          "type": "string"
         }
       ],
       "x-open": true

@@ -139,6 +139,9 @@ export type AppClientMessage = {
   board: boolean;
   focus?: WorkstreamId;
   t: "live";
+} | {
+  project?: ProjectRef;
+  t: "chat";
 };
 
 /** A `call` failed, or (without `id`) the session did. */
@@ -165,6 +168,8 @@ export type AppServerMessage = {
   t: "error";
 } | LiveFrame & {
   t: "live";
+} | ChatDelta & {
+  t: "chat_delta";
 };
 
 /** Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40 */
@@ -491,6 +496,122 @@ export type ChangesListOutput = {
   truncated?: boolean;
 };
 
+export type KnownChatAuthor = "human" | "lead" | "system";
+/** KnownChatAuthor, or a value from a newer hub. */
+export type ChatAuthor = KnownChatAuthor | (string & {});
+
+/** How a human message reached the lead. */
+export type KnownChatDelivery = "turn" | "steer" | "queued";
+/** KnownChatDelivery, or a value from a newer hub. */
+export type ChatDelivery = KnownChatDelivery | (string & {});
+
+/**
+ * Streamed text of the subscribed chat's lead message `messageId`: append `append` to its text. `index` counts the
+ * frames of one message from 0, so a gap or a repeat shows; on either, read the message with `chat_history`. The
+ * `chat.message` event with `state: final` carries the full text.
+ */
+export type ChatDelta = {
+  append: string;
+  index: number;
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+  seq: number;
+};
+
+export type ChatHistoryInput = {
+  after?: number;
+  before?: number;
+  limit?: number;
+  projectRef: ProjectRef;
+};
+
+export type ChatHistoryOutput = {
+  messages: ChatMessage[];
+  /** More messages after the last one of this page. */
+  moreAfter: boolean;
+  /** More messages before the first one of this page. */
+  moreBefore: boolean;
+  next?: string;
+  state: ProjectChatState;
+  truncated?: boolean;
+};
+
+/**
+ * Where a history message came from, for messages from before the chat existed (a read model; nothing is moved or
+ * destroyed). Absent on messages written in the chat.
+ */
+export type KnownChatHistorySource = "order" | "note" | "steer" | "lead_message" | "order_outcome";
+/** KnownChatHistorySource, or a value from a newer hub. */
+export type ChatHistorySource = KnownChatHistorySource | (string & {});
+
+/** The two things a chat can't carry as plain text, shown inline in place of the message text. */
+export type ChatItem = SecretRequestItem & {
+  kind: "secret_request";
+} | CommandApprovalItem & {
+  kind: "command_approval";
+};
+
+export type ChatMessage = {
+  attachments?: AttachmentId[];
+  author: ChatAuthor;
+  /** A human message: the key name of the person who wrote it. */
+  by?: string;
+  /** A human message: the `clientRequestId` its `chat_send` carried, for the app's optimistic copy. */
+  clientRequestId?: string;
+  createdAt: Timestamp;
+  /** A human message: how it reached the lead. */
+  delivery?: ChatDelivery;
+  /** From before the chat: where this history message came from. */
+  history?: ChatHistorySource;
+  item?: ChatItem;
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+  seq: number;
+  state: ChatMessageState;
+  /** Markdown. Empty while a streamed message has no text yet, and for an inline `item`. */
+  text: string;
+  /** Set when the text was last appended to, or an item's state changed. */
+  updatedAt?: Timestamp;
+};
+
+/**
+ * `chat.message` data: on each new message, and again when a streamed message is final or an inline item changes
+ * state. `message` is the whole message when it fits the event's 2 KB; otherwise read it with `chat_history`
+ * (`after: seq - 1`, `limit: 1`).
+ */
+export type ChatMessageEventData = {
+  author: ChatAuthor;
+  message?: ChatMessage;
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+  seq: number;
+  state: ChatMessageState;
+};
+
+export type ChatMessageId = string;
+
+export type KnownChatMessageState = "final" | "streaming";
+/** KnownChatMessageState, or a value from a newer hub. */
+export type ChatMessageState = KnownChatMessageState | (string & {});
+
+export type ChatRequestId = string;
+
+export type ChatSendInput = {
+  /** From attachment_put. */
+  attachments?: AttachmentId[];
+  clientRequestId: string;
+  projectRef: ProjectRef;
+  text: string;
+};
+
+export type ChatSendOutput = {
+  /** Why the lead doesn't have it yet, with the fix; absent when it does or is starting. */
+  leadWaiting?: string;
+  message: ChatMessage;
+  next?: string;
+  truncated?: boolean;
+};
+
 /** `error` (the check could not run) counts as not passing. */
 export type CheckOutcome = "pass" | "fail" | "error";
 
@@ -642,6 +763,38 @@ export type CloneTarget = {
   /** The existing directory is a checkout of the same repository: `project_add` with `useExisting` adds it. */
   sameRemote: boolean;
 };
+
+/**
+ * A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the
+ * human: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`.
+ */
+export type CommandApprovalItem = {
+  answeredAt?: Timestamp;
+  /** The exact argv that runs once approved. Absent for a session's permission prompt, which has `tool`. */
+  argv?: string[];
+  /** The key name of the person who answered. */
+  by?: string;
+  class: GatedClass;
+  cwd?: string;
+  exitCode?: number;
+  inputSummary?: string;
+  machineId: MachineId;
+  /** The end of the output, once it ran. */
+  outputTail?: string;
+  /** One line: why. */
+  reason: string;
+  requestId: ChatRequestId;
+  /** Names only; the values come from the node's own sinks. */
+  secretEnv?: EnvName[];
+  state: CommandApprovalState;
+  timeoutSec?: number;
+  /** A permission prompt: the tool the agent wants to use, with `inputSummary`. */
+  tool?: string;
+};
+
+export type KnownCommandApprovalState = "open" | "approved" | "denied" | "ran" | "failed";
+/** KnownCommandApprovalState, or a value from a newer hub. */
+export type CommandApprovalState = KnownCommandApprovalState | (string & {});
 
 export type CommandStat = {
   failed: number;
@@ -906,6 +1059,8 @@ export type FiredIn = "current" | "compare" | "both";
 export type FleetStatus = {
   /** Latest failed, waiting and usage-limited events, and PRs the merge train sent back to their authors. */
   attention: HubEvent[];
+  /** Each project's chat: whether its lead waits on you, whether it works. Absent from hubs without chat. */
+  chats?: ProjectChatState[];
   cursor: EventSeq;
   machines: Machine[];
   projects: ProjectSummary[];
@@ -918,6 +1073,8 @@ export type FleetdStatusInput = { [key: string]: unknown };
 export type FleetdStatusOutput = {
   /** Latest failed, waiting and usage-limited events, and PRs the merge train sent back to their authors. */
   attention: HubEvent[];
+  /** Each project's chat: whether its lead waits on you, whether it works. Absent from hubs without chat. */
+  chats?: ProjectChatState[];
   cursor: EventSeq;
   machines: Machine[];
   next?: string;
@@ -1199,7 +1356,9 @@ export type KnownHubEventType =
   | "ci.main"
   | "github.drift"
   | "source.stale"
-  | "source.fresh";
+  | "source.fresh"
+  | "chat.message"
+  | "chat.waiting";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -2183,6 +2342,18 @@ export type ProjectAddedData = {
   title: string;
 };
 
+/** One chat's state, for the sidebar and the status row. */
+export type ProjectChatState = {
+  lastMessageAt?: Timestamp;
+  /** The newest message's `seq`; 0 for an empty chat. */
+  lastSeq: number;
+  /** The lead is mid-turn. */
+  leadWorking: boolean;
+  /** The lead's last message waits for a human reply, or an inline item is open. */
+  needsYou: boolean;
+  projectRef: ProjectRef;
+};
+
 export type ProjectDiscoverInput = {
   /** Include `gh repo list` (default true). */
   github?: boolean;
@@ -2739,6 +2910,30 @@ export type SecretEnvEntry = {
 
 /** 8 lowercase hex characters: the sha256 prefix of the plaintext */
 export type SecretFingerprint = string;
+
+/**
+ * The lead needs a secret. The app shows a masked field; the value never enters the transcript: it is sealed to the
+ * sink's machine and answered with `secret_submit`, naming `requestId`. Only its fingerprint comes back.
+ */
+export type SecretRequestItem = {
+  answeredAt?: Timestamp;
+  /** The key name of the person who answered. */
+  by?: string;
+  /** Once stored. */
+  fingerprint?: string;
+  /** The secret's key, e.g. `stripe.test_key`. */
+  name: string;
+  requestId: ChatRequestId;
+  /** Where it lands: `env:<machine>:<absolute path>` or `file:<machine>:<absolute path>`. */
+  sink: string;
+  state: SecretRequestState;
+  /** One line: why the lead needs it. */
+  text: string;
+};
+
+export type KnownSecretRequestState = "open" | "stored" | "withdrawn";
+/** KnownSecretRequestState, or a value from a newer hub. */
+export type SecretRequestState = KnownSecretRequestState | (string & {});
 
 export type SecretSink = string;
 
@@ -4151,6 +4346,8 @@ export interface ToolMap {
   attention_policy: { input: AttentionPolicyInput; output: AttentionPolicyOutput };
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
+  chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
+  chat_send: { input: ChatSendInput; output: ChatSendOutput };
   claims_list: { input: ClaimsListInput; output: ClaimsListOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
@@ -4236,6 +4433,8 @@ export interface HubEventDataMap {
   "change.ready": TrainEventData;
   "change.refused": TrainEventData;
   "change.state": ChangeStateData;
+  "chat.message": ChatMessageEventData;
+  "chat.waiting": ProjectChatState;
   "ci.main": CiMainData;
   "claim.failed": ClaimEventData;
   "claim.passed": ClaimEventData;

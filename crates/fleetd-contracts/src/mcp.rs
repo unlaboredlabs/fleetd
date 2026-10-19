@@ -58,6 +58,8 @@ pub struct FleetStatus {
     pub cursor: EventSeq,
     /// Absent until the hub runs the slot board (M5).
     pub slots: Option<SlotState>,
+    /// Each project's chat: whether its lead waits on you, whether it works. Absent from hubs without chat.
+    pub chats: Option<List<crate::chat::ProjectChatState, 0, 50>>,
 }
 
 /// Declares an output struct with the fields every tool result carries: `next`, a hint for the next call, and
@@ -1165,6 +1167,40 @@ output!(GithubWebhookSetOutput {
     repos: List<GithubHook, 0, 100>,
 });
 
+// chat_send: the human writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when
+// it is mid-turn, or queued while it starts. The same clientRequestId returns the same message.
+input!(ChatSendInput {
+    project_ref: ProjectRef,
+    text: Text<1, 20000>,
+    /// From attachment_put.
+    attachments: Option<Attachments>,
+    client_request_id: RequestId,
+});
+output!(ChatSendOutput {
+    message: crate::chat::ChatMessage,
+    /// Why the lead doesn't have it yet, with the fix; absent when it does or is starting.
+    lead_waiting: Option<String>,
+});
+
+// chat_history: a page of a project's chat, oldest first within the page. Without `before` or `after`, the newest
+// `limit` messages. `before: s` pages back from `s`; `after: s` reads what came after `s` (catching up after a
+// reconnect, or one message from its `chat.message` event).
+input!(ChatHistoryInput {
+    project_ref: ProjectRef,
+    before: Option<crate::chat::ChatSeq>,
+    after: Option<crate::chat::ChatSeq>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
+});
+output!(ChatHistoryOutput {
+    messages: List<crate::chat::ChatMessage, 0, { crate::chat::CHAT_PAGE_MAX }>,
+    /// More messages before the first one of this page.
+    more_before: bool,
+    /// More messages after the last one of this page.
+    more_after: bool,
+    state: crate::chat::ProjectChatState,
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -1304,6 +1340,8 @@ tools! {
     steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
     steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;
     steers_list => SteersList, Read, SteersListInput, SteersListOutput;
+    chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
+    chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1435,7 +1473,7 @@ mod tests {
 
     #[test]
     fn the_tool_table_matches_ts_names_and_scopes() {
-        assert_eq!(McpToolName::ALL.len(), 74);
+        assert_eq!(McpToolName::ALL.len(), 76);
         for tool in McpToolName::ALL {
             assert_eq!(McpToolName::parse(tool.as_str()), Some(*tool));
             assert_eq!(serde_json::to_value(tool).unwrap(), tool.as_str());
