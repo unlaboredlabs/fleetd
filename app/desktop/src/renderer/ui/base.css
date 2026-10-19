@@ -65,6 +65,36 @@ select {
   color: inherit;
 }
 
+/*
+ * macOS title bar: Electron drags the window from the union of every app-region: drag box, minus the no-drag
+ * boxes, whatever is stacked on top. So anything you can click or focus opts out here, once, wherever it sits; a
+ * control inside or over the top bar stays a control. Floating surfaces opt out as a whole (Overlay.module.css).
+ */
+:is(
+    button,
+    a[href],
+    input,
+    textarea,
+    select,
+    summary,
+    label,
+    [role="button"],
+    [role="link"],
+    [role="tab"],
+    [role="menuitem"],
+    [role="option"],
+    [role="radio"],
+    [role="checkbox"],
+    [role="switch"],
+    [role="combobox"],
+    [role="slider"],
+    [tabindex]:not([tabindex="-1"]),
+    [contenteditable="true"],
+    [data-no-drag]
+  ) {
+  -webkit-app-region: no-drag;
+}
+
 p,
 h1,
 h2,

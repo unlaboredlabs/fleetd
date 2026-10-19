@@ -21,7 +21,7 @@ test.afterAll(async () => {
   await launched.close();
 });
 
-const checkFor: Record<string, CheckId> = { overflow: "overflow", overlap: "overlap", edge: "edge", raw: "raw-text" };
+const checkFor: Record<string, CheckId> = { overflow: "overflow", overlap: "overlap", edge: "edge", raw: "raw-text", drag: "drag" };
 
 test("every planted violation is reported, and nothing else", async () => {
   const { app, page } = launched;

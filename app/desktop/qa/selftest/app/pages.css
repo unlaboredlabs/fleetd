@@ -27,3 +27,8 @@ pre, code { font-family: monospace; }
 .flex-ellipsis { display: flex; width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .palette { position: fixed; top: 80px; left: 50%; width: 400px; margin-left: -200px; padding: 16px; background: #fff; border: 1px solid #ccc; }
 @media (prefers-color-scheme: dark) { .palette { background: #111214; } }
+/* A title-bar drag region, and a panel stacked over one (a sheet over the macOS top bar). */
+.drag-bar { height: 32px; -webkit-app-region: drag; background: #ddd; }
+.drag-stack { position: relative; }
+.over-bar { position: absolute; top: 0; left: 40px; }
+.no-drag { -webkit-app-region: no-drag; }
