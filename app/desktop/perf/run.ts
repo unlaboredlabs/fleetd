@@ -24,7 +24,8 @@ const { values: flags } = parseArgs({
 const RUNS = Number(flags.runs);
 const IDLE_MS = 10_000;
 const SCROLL_MS = 4_000;
-const KEYS = "the writer ran the tests again and asked for a review";
+// About 160 keys: a p95 over fewer swings with two or three slow ones on a shared CI runner.
+const KEYS = "the writer ran the tests again and asked for a review. ".repeat(3).trim();
 
 /** One untimed launch first (a fresh runner's first one fills the font and shader caches, 8 s on CI), then RUNS. */
 const firstPaint = async (): Promise<{ cold: number; warm: Array<number> }> => {
