@@ -1,6 +1,6 @@
 import { isAbsolute, join } from "node:path";
 import tls from "node:tls";
-import { app, BrowserWindow, nativeTheme, powerMonitor } from "electron";
+import { app, BrowserWindow, nativeTheme, powerMonitor, session } from "electron";
 import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { osCredentialEnv } from "./hub/os";
 import { HubService, type HubMode } from "./hub/service";
@@ -22,6 +22,9 @@ const FLEETD_DIR = fleetdHome !== undefined && isAbsolute(fleetdHome) ? fleetdHo
 // Chromium's own state (caches, local storage) stays in a subdirectory, unless the caller chose one.
 if (!app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", join(FLEETD_DIR, "desktop"));
 
+// Idle memory (perf/budgets.ts): the network service runs in this process, not a utility process of its own. Pages
+// load only app:// and the hub socket is Node's, so it carries next to nothing.
+app.commandLine.appendSwitch("enable-features", "NetworkServiceInProcess2");
 harden();
 
 // Hubs behind a company or private CA: trust what the OS trusts, as the GPUI app did, not only Node's bundled roots.
@@ -68,6 +71,8 @@ const createWindow = (mode: HubMode): BrowserWindow => {
 
 void app.whenReady().then(() => {
   lockSession(join(import.meta.dirname, "../renderer"));
+  // Every window has spellcheck off; this keeps the session from setting up (and fetching) dictionaries anyway.
+  session.defaultSession.setSpellCheckerEnabled(false);
   let mode: HubMode;
   try {
     mode = hubMode();
